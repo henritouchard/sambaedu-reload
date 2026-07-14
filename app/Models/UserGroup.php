@@ -55,11 +55,11 @@ class UserGroup extends Model implements Wireable
      *
      * Story 4.14 — `->withPivot('is_head_teacher')` : SANS ce withPivot, Laravel
      * IGNORE l'attribut d'arête lors d'un `sync([$id => ['is_head_teacher' => …]])`
-     * (il ne le persiste pas). C'est la relation d'ÉCRITURE du fold de 4.13 ;
-     * c'est donc ici que le flag « professeur principal » est posé à l'import.
-     * (D4) On ne l'ajoute volontairement PAS sur `User::userGroups()`/`groups()`
-     * : aucune lecture aval ne consomme le flag en 4.14 — 4.15 le fera. Limiter
-     * le blast radius. `withPivot` n'introduit pas de timestamps (le pivot custom
+     * (il ne le persiste pas). C'est la relation d'ÉCRITURE du fold de 4.13.
+     * Story 42.2 (D5) — le flag n'est PLUS écrit par le chemin vivant (le
+     * read-back ne pose que `role`) : colonne STALE, `withPivot` conservé
+     * (fixtures de tests, bases brownfield) jusqu'à la migration destructive
+     * post-42.4. `withPivot` n'introduit pas de timestamps (le pivot custom
      * 5.2 reste `$timestamps=false`).
      */
     public function users(): BelongsToMany
@@ -71,10 +71,11 @@ class UserGroup extends Model implements Wireable
             'user_id'
         )
             ->using(\App\Models\Pivot\UserGroupUserPivot::class)
-            // Story 42.1 — `'role'` ajouté au withPivot (miroir de `is_head_teacher`,
-            // conservé jusqu'à 42.2). SANS ce withPivot, `sync([$id => ['role'=>…]])`
-            // IGNORE silencieusement l'attribut d'arête. `withPivot` n'introduit pas
-            // de timestamps (le pivot custom 5.2 reste `$timestamps=false`).
+            // Story 42.1/42.2 — `'role'` est l'attribut d'arête VIVANT (le
+            // miroir booléen 4.14 n'est plus écrit). SANS ce withPivot,
+            // `sync([$id => ['role'=>…]])` IGNORE silencieusement l'attribut
+            // d'arête. `withPivot` n'introduit pas de timestamps (le pivot
+            // custom 5.2 reste `$timestamps=false`).
             ->withPivot('is_head_teacher', 'role');
     }
 

@@ -396,6 +396,10 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     {
         // 1 prof + 2 élèves dans une classe 3A : le prof doit aller dans
         // Equipe_3A, les 2 élèves dans Classe_3A. PP_3A reste vide.
+        // 42.2 — createGroup : le groupe n'existe pas encore en SQL, AUCUNE
+        // arête → tous les membres passent par le DÉFAUT DÉRIVÉ de `users.role`
+        // (D2.3, une seule requête SQL — plus aucun isProf()/LDAP). Parité
+        // greenfield stricte avec l'ancienne partition (AC8).
         $service = $this->makeService(
             collect([
                 $this->adGroupRow('Classe_3A'),
@@ -492,11 +496,18 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         // Le CN primaire stocké en SQL est `Classe_3A` (résolu à la création) ;
         // l'edit-form renvoie ce nom. Le helper doit dériver la base `3A` et
-        // partitionner sans rien changer (membres déjà bien placés).
+        // router sans rien changer (membres déjà bien placés).
         $group = UserGroup::query()->create([
             'name' => 'Classe_3A',
             'display_name' => '3A',
             'type' => 'classe',
+        ]);
+
+        // 42.2 — arêtes posées à l'état backfillé 42.1 (prof ⇔ manager,
+        // élève ⇔ member) : la projection route par l'ARÊTE, plus par isProf().
+        $group->users()->attach([
+            $prof->id => ['role' => 'manager'],
+            $eleve->id => ['role' => 'member'],
         ]);
 
         $service->updateGroup($group->id, [
@@ -533,7 +544,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         );
 
         // Le prof reste connu SQL (sa branche removeMember ne porte que sur les DN SQL).
-        User::query()->create([
+        $prof = User::query()->create([
             'login' => 'prof.martin',
             'role' => 'prof',
             'dn' => 'CN=prof.martin,OU=Users,DC=example,DC=local',
@@ -552,6 +563,13 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'name' => 'Classe_3A',
             'display_name' => '3A',
             'type' => 'classe',
+        ]);
+
+        // 42.2 — arêtes backfillées : le prof retiré est absent de `user_ids`
+        // → sorti des 3 buckets par le diff (l'arête ne le retient pas).
+        $group->users()->attach([
+            $prof->id => ['role' => 'manager'],
+            $eleve->id => ['role' => 'member'],
         ]);
 
         // On ne garde que l'élève.
@@ -573,8 +591,14 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     #[Test]
     public function it_moves_member_between_equipe_and_classe_on_role_switch(): void
     {
-        // Un membre était prof (dans Equipe_3A), devient élève : au sync suivant
-        // il doit être retiré d'Equipe_3A et ajouté à Classe_3A (jamais dans les deux).
+        // Un membre était prof (dans Equipe_3A), devient élève : il est retiré
+        // d'Equipe_3A et ajouté à Classe_3A (jamais dans les deux).
+        // 42.2 (D7) — la bascule passe désormais par l'ARÊTE : le déplacement
+        // est prouvé APRÈS réalignement de l'arête à `member` (état que le
+        // read-back — qui dérive encore de `users.role` jusqu'à 42.4 — a posé
+        // après le changement de rôle global). Un `users.role` changé SANS
+        // arête réalignée ne rebascule plus rien (source de vérité = l'arête,
+        // cf. it_projects_by_edge_role_even_when_global_role_disagrees).
         $service = $this->makeService(
             collect([
                 $this->adGroupRow('Classe_3A'),
@@ -606,6 +630,10 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'type' => 'classe',
         ]);
 
+        // 42.2 (D7) — l'arête a été RÉALIGNÉE à `member` par le read-back
+        // consécutif au changement de rôle global : c'est ELLE qui route.
+        $group->users()->attach([$switched->id => ['role' => 'member']]);
+
         $service->updateGroup($group->id, [
             'name' => 'Classe_3A',
             'display_name' => '3A',
@@ -635,9 +663,10 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     #[Test]
     public function it_moves_member_from_classe_to_equipe_on_eleve_to_prof_switch(): void
     {
-        // Sens inverse (AC3 « ou inverse ») : un membre était élève (dans Classe_3A),
-        // devient prof : au sync suivant il doit être retiré de Classe_3A et ajouté
-        // à Equipe_3A (jamais dans les deux).
+        // Sens inverse : un membre était élève (dans Classe_3A), devient prof :
+        // il est retiré de Classe_3A et ajouté à Equipe_3A (jamais dans les deux).
+        // 42.2 (D7) — déplacement prouvé APRÈS réalignement de l'arête à
+        // `manager` (posée par le read-back après le changement de rôle global).
         $service = $this->makeService(
             collect([
                 $this->adGroupRow('Classe_3A'),
@@ -668,6 +697,9 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'display_name' => '3A',
             'type' => 'classe',
         ]);
+
+        // 42.2 (D7) — arête réalignée à `manager` par le read-back : elle route.
+        $group->users()->attach([$switched->id => ['role' => 'manager']]);
 
         $service->updateGroup($group->id, [
             'name' => 'Classe_3A',
@@ -968,8 +1000,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $group = UserGroup::query()->where('name', '3A')->firstOrFail();
         $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
 
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (PP) doit être PP');
-        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id), 'bob (PP) doit être PP');
+        $this->assertFalse($this->isPivotOwner($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
     }
 
     #[Test]
@@ -1028,8 +1060,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
 
         // (3) is_head_teacher=true posé pour bob (issu de pp_3a), false pour alice.
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (pp_3a) doit être PP');
-        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id), 'bob (pp_3a) doit être PP');
+        $this->assertFalse($this->isPivotOwner($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
     }
 
     #[Test]
@@ -1071,7 +1103,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $group = UserGroup::query()->firstOrFail();
         $this->assertSame('classe', $group->type);
         $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (pp_3a) doit être PP');
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id), 'bob (pp_3a) doit être PP');
     }
 
     #[Test]
@@ -1100,8 +1132,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         $group = UserGroup::query()->where('name', '3A')->firstOrFail();
         $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id));
-        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id));
+        $this->assertFalse($this->isPivotOwner($group->id, $alice->id));
     }
 
     #[Test]
@@ -1132,9 +1164,9 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $service->importFromUsersAdGroups();
 
         $group = UserGroup::query()->where('name', '3A')->firstOrFail();
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id));
-        $this->assertTrue($this->isHeadTeacher($group->id, $carol->id));
-        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $carol->id));
+        $this->assertFalse($this->isPivotOwner($group->id, $alice->id));
     }
 
     #[Test]
@@ -1160,7 +1192,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         $service->importFromUsersAdGroups();
         $group = UserGroup::query()->where('name', '3A')->firstOrFail();
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id));
 
         // bob n'est plus dans PP_3A (mais toujours dans Classe_3A).
         $this->adMembersByCn['PP_3A'] = [];
@@ -1168,7 +1200,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $service->importFromUsersAdGroups();
         $group = UserGroup::query()->where('name', '3A')->firstOrFail();
         $this->assertSame(['bob'], $group->users()->pluck('login')->all(), 'bob reste membre');
-        $this->assertFalse($this->isHeadTeacher($group->id, $bob->id), 'le flag suit l\'état AD (pas de rémanence)');
+        $this->assertFalse($this->isPivotOwner($group->id, $bob->id), 'le flag suit l\'état AD (pas de rémanence)');
     }
 
     #[Test]
@@ -1193,7 +1225,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         $group = UserGroup::query()->where('name', 'Cours_Histoire4A')->firstOrFail();
         $this->assertSame('cours', $group->type);
-        $this->assertFalse($this->isHeadTeacher($group->id, $prof->id));
+        $this->assertFalse($this->isPivotOwner($group->id, $prof->id));
     }
 
     // =========================================================================
@@ -1415,17 +1447,18 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         ]);
 
         $group = UserGroup::query()->where('name', '3A')->firstOrFail();
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id), 'prof1 (PP) doit être PP');
-        $this->assertFalse($this->isHeadTeacher($group->id, $prof2->id), 'prof2 non-PP');
-        $this->assertFalse($this->isHeadTeacher($group->id, $eleve->id), 'eleve non-PP');
+        $this->assertTrue($this->isPivotOwner($group->id, $prof1->id), 'prof1 (PP) doit être PP');
+        $this->assertFalse($this->isPivotOwner($group->id, $prof2->id), 'prof2 non-PP');
+        $this->assertFalse($this->isPivotOwner($group->id, $eleve->id), 'eleve non-PP');
     }
 
     #[Test]
-    public function it_mirrors_role_on_pivot_read_back(): void
+    public function it_writes_role_on_pivot_read_back(): void
     {
-        // 42.1 AC7 — le read-back pose `role` en MIROIR de `is_head_teacher` :
-        // prof1 PP → owner, prof2 prof non-PP → manager, eleve → member.
-        // L'invariant `role === 'owner'` ⇔ `is_head_teacher === true` tient.
+        // 42.1 AC7, réécrit rôle-seul en 42.2 AC5 — le read-back pose `role`
+        // (prof1 PP → owner, prof2 prof non-PP → manager, eleve → member) et
+        // NE TOUCHE PLUS `is_head_teacher` (miroir retiré du chemin vivant,
+        // colonne stale à son défaut false — D5).
         [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
 
         $service->createGroup([
@@ -1442,17 +1475,19 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame('manager', $this->pivotRole($group->id, $prof2->id), 'prof non-PP → manager');
         $this->assertSame('member', $this->pivotRole($group->id, $eleve->id), 'élève → member');
 
-        // Invariant miroir après le flux.
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
-        $this->assertFalse($this->isHeadTeacher($group->id, $prof2->id));
-        $this->assertFalse($this->isHeadTeacher($group->id, $eleve->id));
+        // 42.2 AC5 — le miroir n'est PLUS écrit : la colonne reste à son
+        // défaut (false), y compris pour le PP dont l'arête vaut `owner`.
+        $this->assertFalse($this->legacyHeadTeacherFlag($group->id, $prof1->id), 'miroir non écrit (stale)');
+        $this->assertFalse($this->legacyHeadTeacherFlag($group->id, $prof2->id));
+        $this->assertFalse($this->legacyHeadTeacherFlag($group->id, $eleve->id));
     }
 
     #[Test]
     public function it_keeps_role_mirror_idempotent_across_two_imports(): void
     {
-        // 42.1 AC7 — un 2e read-back sans changement conserve exactement le
-        // même `role` sur chaque arête (aucune bascule de rôle fantôme).
+        // 42.1 AC7, réécrit rôle-seul en 42.2 AC5 — un 2e read-back sans
+        // changement conserve exactement le même `role` sur chaque arête
+        // (aucune bascule de rôle fantôme).
         [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
 
         $service->createGroup([
@@ -1545,7 +1580,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame([], $this->removedDnsFor('PP_3A'), '2e run : aucun remove PP_ superflu');
 
         // Pivot stable.
-        $this->assertTrue($this->isHeadTeacher($group->fresh()->id, $prof1->id));
+        $this->assertTrue($this->isPivotOwner($group->fresh()->id, $prof1->id));
     }
 
     #[Test]
@@ -1568,15 +1603,15 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'head_teacher_ids' => [$prof1->id],
         ]);
 
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
-        $this->assertFalse($this->isHeadTeacher($group->id, $prof2->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $prof1->id));
+        $this->assertFalse($this->isPivotOwner($group->id, $prof2->id));
 
         // syncFromAd ultérieur isolé : l'état AD PP_3A={prof1} → flag stable.
         $service->importFromUsersAdGroups();
 
         $reloaded = UserGroup::query()->where('name', '3A')->firstOrFail();
-        $this->assertTrue($this->isHeadTeacher($reloaded->id, $prof1->id), 'flag stable après read-back');
-        $this->assertFalse($this->isHeadTeacher($reloaded->id, $prof2->id));
+        $this->assertTrue($this->isPivotOwner($reloaded->id, $prof1->id), 'flag stable après read-back');
+        $this->assertFalse($this->isPivotOwner($reloaded->id, $prof2->id));
         $this->assertSame(
             ['eleve.un', 'prof.deux', 'prof.un'],
             $reloaded->users()->pluck('login')->sort()->values()->all()
@@ -1627,8 +1662,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(),
             'pré-condition : PP_3A contient prof1 + prof2'
         );
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof2->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $prof1->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $prof2->id));
 
         // Réinitialiser le journal pour n'observer que le 2e appel.
         $this->membershipCalls = [];
@@ -1654,8 +1689,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         // …et aucun remove n'a été émis sur PP_3A (PP dérivés du pivot).
         $this->assertSame([], $this->removedDnsFor('PP_3A'), 'M6 : aucun retrait PP_ sur édition sans la clé');
         // Le pivot reste true pour les deux PP.
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id), 'M6 : pivot prof1 toujours PP');
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof2->id), 'M6 : pivot prof2 toujours PP');
+        $this->assertTrue($this->isPivotOwner($group->id, $prof1->id), 'M6 : pivot prof1 toujours PP');
+        $this->assertTrue($this->isPivotOwner($group->id, $prof2->id), 'M6 : pivot prof2 toujours PP');
 
         // -- (c) retrait d'UN PP via removeMember (clé absente) ----------------
         // On retire prof2 des membres (sans head_teacher_ids) : prof2 quitte PP_
@@ -1679,7 +1714,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(),
             'M6 : prof1 (encore membre + PP) préservé dans PP_3A'
         );
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id), 'M6 : prof1 reste PP après retrait de prof2');
+        $this->assertTrue($this->isPivotOwner($group->id, $prof1->id), 'M6 : prof1 reste PP après retrait de prof2');
 
         // -- (b) `[]` EXPLICITE vide bien PP_ ---------------------------------
         $this->membershipCalls = [];
@@ -1697,7 +1732,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'M6 : [] explicite retire le dernier PP'
         );
         $this->assertSame([], collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(), 'M6 : PP_3A vidé');
-        $this->assertFalse($this->isHeadTeacher($group->id, $prof1->id), 'M6 : pivot effacé après [] explicite');
+        $this->assertFalse($this->isPivotOwner($group->id, $prof1->id), 'M6 : pivot effacé après [] explicite');
     }
 
     #[Test]
@@ -1729,7 +1764,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'Q1 : description inchangée → aucun write LDAP de description'
         );
         // Le toggle PP a bien convergé (rien n'a cassé).
-        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
+        $this->assertTrue($this->isPivotOwner($group->id, $prof1->id));
     }
 
     #[Test]
@@ -1812,9 +1847,9 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(['alice', 'bob'], $logins);
 
         // AC2 — flag PP re-posé depuis PP_3A (bob est PP).
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), '4.16 : flag PP bob re-posé par le read-back scopé');
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id), '4.16 : flag PP bob re-posé par le read-back scopé');
         $alice = User::query()->where('login', 'alice')->firstOrFail();
-        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), '4.16 : alice non PP');
+        $this->assertFalse($this->isPivotOwner($group->id, $alice->id), '4.16 : alice non PP');
     }
 
     #[Test]
@@ -2031,7 +2066,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(['alice', 'bob'], $logins, '4.16 : membres des CN minuscules projetés');
 
         // Flag PP re-posé depuis `pp_3a` malgré la casse.
-        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), '4.16 : flag PP bob re-posé depuis pp_3a');
+        $this->assertTrue($this->isPivotOwner($group->id, $bob->id), '4.16 : flag PP bob re-posé depuis pp_3a');
 
         // Groupe hors scope `5c` non purgé.
         $this->assertTrue(
@@ -2041,9 +2076,528 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     }
 
     /**
-     * Lit `is_head_teacher` brut sur l'arête (cross-driver : cast en bool).
+     * Story 42.2 — la qualité « professeur principal » d'une arête se lit sur
+     * le RÔLE (`role === 'owner'`) : le flag booléen 4.14 n'est plus écrit par
+     * le chemin vivant (miroir retiré, colonne stale — D5).
      */
-    private function isHeadTeacher(int $groupId, int $userId): bool
+    private function isPivotOwner(int $groupId, int $userId): bool
+    {
+        return $this->pivotRole($groupId, $userId) === 'owner';
+    }
+
+    // =========================================================================
+    // Story 42.2 — Projection AD routée par le RÔLE D'ARÊTE (remplace 4.12)
+    // =========================================================================
+
+    #[Test]
+    public function it_routes_members_to_buckets_by_edge_role(): void
+    {
+        // AC1/AC2 — arêtes member/manager/owner → 3 buckets D1 :
+        // Equipe_ = manager ∪ owner, Classe_ = member, PP_ = owner. La clé
+        // `head_teacher_ids` est ABSENTE : les PP courants sont dérivés du
+        // pivot `role='owner'` (AC3 — plus aucune lecture du flag 4.14).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => [], 'PP_3A' => []],
+            mutableMembership: true,
+        );
+
+        $alice = User::query()->create([
+            'login' => 'alice', 'role' => 'eleve',
+            'dn' => 'CN=alice,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $bob = User::query()->create([
+            'login' => 'bob', 'role' => 'prof',
+            'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $carl = User::query()->create([
+            'login' => 'carl', 'role' => 'prof',
+            'dn' => 'CN=carl,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('alice', 'bob', 'carl');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        // Arêtes SEULES (aucun flag 4.14 posé) : la dérivation PP lit `role`.
+        $group->users()->attach([
+            $alice->id => ['role' => 'member'],
+            $bob->id => ['role' => 'manager'],
+            $carl->id => ['role' => 'owner'],
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$alice->id, $bob->id, $carl->id],
+            // head_teacher_ids ABSENT → PP dérivés du pivot role='owner'.
+        ]);
+
+        // Equipe_ = manager ∪ owner (carl owner reste dans l'équipe — D1).
+        $this->assertEqualsCanonicalizing(
+            [
+                'CN=bob,OU=Users,DC=example,DC=local',
+                'CN=carl,OU=Users,DC=example,DC=local',
+            ],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        // Classe_ = member.
+        $this->assertSame(
+            ['CN=alice,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Classe_3A')
+        );
+        // PP_ = owner (dérivé de l'arête, clé absente).
+        $this->assertSame(
+            ['CN=carl,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('PP_3A')
+        );
+    }
+
+    #[Test]
+    public function it_derives_default_role_for_payload_member_without_edge(): void
+    {
+        // AC2 (D2.3) — un membre du payload SANS arête (nouvel ajout : l'arête
+        // ne sera créée que par le read-back) reçoit le défaut dérivé de
+        // `users.role` (prof → manager → Equipe_), résolu en SQL pur.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        $alice = User::query()->create([
+            'login' => 'alice', 'role' => 'eleve',
+            'dn' => 'CN=alice,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $bob = User::query()->create([
+            'login' => 'bob', 'role' => 'prof',
+            'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('alice', 'bob');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        // Seule alice a une arête (pivot PRÉ-update) ; bob est un NOUVEAU membre.
+        $group->users()->attach([$alice->id => ['role' => 'member']]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$alice->id, $bob->id],
+        ]);
+
+        // bob (sans arête, users.role=prof) → défaut dérivé manager → Equipe_.
+        $this->assertSame(
+            ['CN=bob,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        // alice (arête member, déjà dans Classe_3A) : aucun mouvement.
+        $this->assertSame([], $this->addedDnsFor('Classe_3A'));
+        $this->assertSame([], $this->removedDnsFor('Classe_3A'));
+    }
+
+    #[Test]
+    public function it_demotes_unchecked_owner_to_manager_at_projection(): void
+    {
+        // AC2 (D2.2) / piège n°4 — ex-PP décoché : son arête dit encore `owner`
+        // au moment de la projection (le read-back ne l'a pas rétrogradée).
+        // La rétrogradation de projection owner→manager le fait SORTIR de PP_
+        // (pas de rémanence) tout en le GARDANT dans Equipe_ (pas de perte rwx).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [],
+                'Equipe_3A' => [['dn' => 'CN=carl,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [['dn' => 'CN=carl,OU=Users,DC=example,DC=local']],
+            ],
+            mutableMembership: true,
+        );
+
+        $carl = User::query()->create([
+            'login' => 'carl', 'role' => 'prof',
+            'dn' => 'CN=carl,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('carl');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        $group->users()->attach([$carl->id => ['role' => 'owner']]);
+
+        // La section PP décoche carl : `[]` EXPLICITE (effacement volontaire).
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$carl->id],
+            'head_teacher_ids' => [],
+        ]);
+
+        // Sorti de PP_ …
+        $this->assertSame(
+            ['CN=carl,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('PP_3A')
+        );
+        // … mais JAMAIS sorti d'Equipe_ (rétrogradation manager, pas member).
+        $this->assertSame([], $this->removedDnsFor('Equipe_3A'));
+        $this->assertSame([], $this->addedDnsFor('Classe_3A'));
+    }
+
+    #[Test]
+    public function it_falls_back_to_derived_role_on_invalid_edge_role(): void
+    {
+        // AC2 — valeur d'arête HORS vocabulaire : fallback rôle dérivé +
+        // Log::warning, PAS d'exception (fail-soft ; jamais assertValidRole en
+        // levée dans le chemin de projection — piège n°9).
+        \Illuminate\Support\Facades\Log::spy();
+
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => [], 'PP_3A' => []],
+            mutableMembership: true,
+        );
+
+        $bob = User::query()->create([
+            'login' => 'bob', 'role' => 'prof',
+            'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('bob');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        // Valeur sale (SQLite ne borne pas les varchar — NFR-S4).
+        $group->users()->attach([$bob->id => ['role' => 'chef']]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$bob->id],
+        ]);
+
+        // Fallback dérivé (users.role=prof → manager → Equipe_), pas d'exception.
+        $this->assertSame(
+            ['CN=bob,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        $this->assertSame([], $this->addedDnsFor('Classe_3A'));
+
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
+            ->with(
+                \Mockery::pattern('/hors vocabulaire/'),
+                \Mockery::on(static fn(array $ctx): bool => ($ctx['edge_role'] ?? null) === 'chef')
+            )
+            ->once();
+    }
+
+    #[Test]
+    public function it_projects_by_edge_role_even_when_global_role_disagrees(): void
+    {
+        // AC11 (D7) — l'ARÊTE PRIME sur `users.role` : un prof SQL dont l'arête
+        // dit `member` est projeté dans Classe_ (pas Equipe_). C'est LE point
+        // de l'epic : la source de vérité du rôle est la relation, plus
+        // l'heuristique globale. (Le réalignement éventuel viendra du read-back
+        // 42.4 ou de l'édition 42.3 — pas de la projection.)
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => [], 'PP_3A' => []],
+            mutableMembership: true,
+        );
+
+        $bob = User::query()->create([
+            'login' => 'bob', 'role' => 'prof',
+            'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('bob');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        $group->users()->attach([$bob->id => ['role' => 'member']]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$bob->id],
+        ]);
+
+        $this->assertSame(
+            ['CN=bob,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Classe_3A'),
+            'D7 : l\'arête member prime sur users.role=prof'
+        );
+        $this->assertSame([], $this->addedDnsFor('Equipe_3A'));
+    }
+
+    #[Test]
+    public function it_does_not_remove_legitimate_se4_members_on_brownfield_projection(): void
+    {
+        // AC8 (piège n°2 — LE risque de la story) — brownfield : AD pré-peuplé
+        // par SE4 (Equipe_3A={prof1,prof2}, Classe_3A={eleve}), arêtes
+        // backfillées 42.1 (manager ⇔ prof, member sinon). La projection par
+        // arêtes produit des cibles IDENTIQUES à l'ancienne partition isProf :
+        // AUCUN retrait de membre légitime, aucun mouvement.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [
+                    ['dn' => 'CN=prof.un,OU=Users,DC=example,DC=local'],
+                    ['dn' => 'CN=prof.deux,OU=Users,DC=example,DC=local'],
+                ],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        $prof1 = User::query()->create([
+            'login' => 'prof.un', 'role' => 'prof',
+            'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $prof2 = User::query()->create([
+            'login' => 'prof.deux', 'role' => 'prof',
+            'dn' => 'CN=prof.deux,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $eleve = User::query()->create([
+            'login' => 'eleve.un', 'role' => 'eleve',
+            'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('prof.un', 'prof.deux', 'eleve.un');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        // État backfillé 42.1 : manager ⇔ prof SQL, member sinon.
+        $group->users()->attach([
+            $prof1->id => ['role' => 'manager'],
+            $prof2->id => ['role' => 'manager'],
+            $eleve->id => ['role' => 'member'],
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+        ]);
+
+        // Cibles identiques à l'ancienne partition : ZÉRO add, ZÉRO remove.
+        $this->assertSame([], $this->removedDnsFor('Equipe_3A'), 'AUCUN prof SE4 arraché d\'Equipe_ (piège n°2)');
+        $this->assertSame([], $this->removedDnsFor('Classe_3A'));
+        $this->assertSame([], $this->removedDnsFor('PP_3A'));
+        $this->assertSame([], $this->addedDnsFor('Equipe_3A'));
+        $this->assertSame([], $this->addedDnsFor('Classe_3A'));
+        $this->assertSame([], $this->addedDnsFor('PP_3A'));
+    }
+
+    #[Test]
+    public function it_tolerates_missing_pp_group_in_ad(): void
+    {
+        // AC6 — AD sans groupe `PP_<base>` (volumétrie réelle : 4 pp_ sur lab1,
+        // PP marginal) : getGroupMembers('PP_…') → collection vide, addMember →
+        // false. La projection ne lève RIEN ; les autres cibles sont projetées
+        // normalement et le groupe converge.
+        $service = $this->makeService(
+            collect([
+                // PAS de PP_3A dans le lot AD.
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => []],
+            mutableMembership: true,
+            failAddMemberCns: ['PP_3A'],
+        );
+
+        $prof1 = User::query()->create([
+            'login' => 'prof.un', 'role' => 'prof',
+            'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $eleve = User::query()->create([
+            'login' => 'eleve.un', 'role' => 'eleve',
+            'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('prof.un', 'eleve.un');
+
+        $created = $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        // Aucune exception ; le groupe converge sur la ligne nue.
+        $this->assertSame('3A', $created->name);
+
+        // Les autres cibles sont projetées normalement.
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        $this->assertSame(
+            ['CN=eleve.un,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Classe_3A')
+        );
+
+        // La tentative PP_ a eu lieu (fail-soft : retour false, sans effet).
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('PP_3A')
+        );
+
+        // AD-first assumé : sans PP_3A lisible, le read-back ne peut pas poser
+        // `owner` — l'arête retombe sur le dérivé (prof → manager).
+        $this->assertSame('manager', $this->pivotRole($created->id, $prof1->id));
+    }
+
+    #[Test]
+    public function it_reprojects_group_to_ad_when_edge_role_changes(): void
+    {
+        // AC4(a) — ancrage observer : un UPDATE de rôle d'arête (canal
+        // updateExistingPivot / sync() associatif) reprojette LE groupe concerné
+        // via le chokepoint (bob member→manager : Classe_ → Equipe_).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        // L'observer résout le service via le container : on y installe NOTRE
+        // instance (GroupRepository mocké) pour capter les écritures AD.
+        $this->app->instance(UserGroupService::class, $service);
+
+        $bob = User::query()->create([
+            'login' => 'bob', 'role' => 'prof',
+            'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('bob');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        $group->users()->attach([$bob->id => ['role' => 'member']]);
+
+        // Changement de rôle sur l'arête (dimension NOUVELLE — D4).
+        $group->users()->updateExistingPivot($bob->id, ['role' => 'manager']);
+
+        $this->assertSame(
+            ['CN=bob,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Equipe_3A'),
+            'AC4 : le flip member→manager reprojette bob vers Equipe_'
+        );
+        $this->assertSame(
+            ['CN=bob,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('Classe_3A'),
+            'AC4 : … et le retire de Classe_'
+        );
+    }
+
+    #[Test]
+    public function it_suspends_ad_resync_observer_during_syncFromAd(): void
+    {
+        // AC4(b) / piège n°1 — le read-back `syncFromAd` flippe des rôles en
+        // masse (sync() associatif, dérivation heuristique) : le resync AD de
+        // l'observer pivot DOIT être suspendu (flag dédié), sinon chaque flip
+        // déclencherait une reprojection LDAP (tempête d'I/O, écrire l'AD
+        // pendant qu'on le lit). Un syncFromAd ne produit AUCUNE écriture
+        // membership AD.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+        $this->app->instance(UserGroupService::class, $service);
+
+        $bob = User::query()->create([
+            'login' => 'bob', 'role' => 'prof',
+            'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('bob');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+        // Arête volontairement DÉSALIGNÉE : le read-back va la flipper
+        // member→manager (bob est prof non-PP) → event `updated` sur le pivot.
+        $group->users()->attach([$bob->id => ['role' => 'member']]);
+
+        $service->importFromUsersAdGroups();
+
+        // Le flip a bien eu lieu…
+        $this->assertSame('manager', $this->pivotRole($group->id, $bob->id));
+        // …mais AUCUNE écriture membership AD n'a été déclenchée (suspension).
+        $this->assertSame([], $this->membershipCalls, 'AC4(b) : zéro write LDAP pendant le read-back');
+        // Le flag dédié est restauré dans le finally.
+        $this->assertTrue(
+            \App\Observers\UserGroupUserPivotObserver::$adResyncEnabled,
+            'flag $adResyncEnabled restauré après syncFromAd'
+        );
+    }
+
+    /**
+     * Story 42.2 (AC5) — lit le flag booléen LEGACY `is_head_teacher` brut,
+     * UNIQUEMENT pour prouver que le chemin vivant ne l'écrit plus (stale).
+     */
+    private function legacyHeadTeacherFlag(int $groupId, int $userId): bool
     {
         $value = \Illuminate\Support\Facades\DB::table('user_group_user')
             ->where('user_group_id', $groupId)
@@ -2122,12 +2676,15 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
     /**
      * @param array<string,array<int,array{cn:string,dn:string}>> $groupMembersByCn
+     * @param array<int,string> $failAddMemberCns Story 42.2 (AC6) — CN dont
+     *        `addMember` retourne `false` (groupe AD absent, fail-soft LDAP).
      */
     private function makeService(
         Collection $groupsWithMemberCount,
         array $rights,
         array $groupMembersByCn = [],
         bool $mutableMembership = false,
+        array $failAddMemberCns = [],
     ): UserGroupService {
         $this->membershipCalls = [];
         $this->descriptionUpdateCalls = [];
@@ -2152,8 +2709,14 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         );
 
         $groupRepository->method('addMember')->willReturnCallback(
-            function (string $cn, string $dn) use ($mutableMembership): bool {
+            function (string $cn, string $dn) use ($mutableMembership, $failAddMemberCns): bool {
                 $this->membershipCalls[] = ['op' => 'add', 'group' => $cn, 'dn' => $dn];
+
+                // 42.2 (AC6) — groupe AD absent : la couche LDAP réelle renvoie
+                // false (fail-soft), sans mutation d'état.
+                if (in_array($cn, $failAddMemberCns, true)) {
+                    return false;
+                }
 
                 if ($mutableMembership) {
                     $this->adMembersByCn[$cn] ??= [];

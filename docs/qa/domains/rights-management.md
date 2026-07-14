@@ -1107,3 +1107,55 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - [ ] `assertValidRole` rejette hors vocabulaire ; `defaultRoleForGlobalRole` jamais owner
 - [ ] Badge PP UI lu sur `role === 'owner'` ; canal projection `head_teacher_ids` inchangé
 - [ ] Aucune écriture AD ; `UserPolicy` inchangée
+
+## Section 16 — Projection AD des memberships depuis les arêtes (Story 42.2, 2026-07-14)
+
+> **Contexte.** Le routage des membres vers le trio legacy `Classe_X`/`Equipe_X`/`PP_X` passe des deux heuristiques historiques (partition `User::isProf()` — 4.12 ; flag d'arête `is_head_teacher` → `PP_` — 4.15) au **rôle d'arête** `user_group_user.role` (42.1) : `member` → `Classe_<base>`, `manager` → `Equipe_<base>`, `owner` → `Equipe_<base>` **ET** `PP_<base>` (orthogonalité 4.15 conservée). Bascule ATOMIQUE : plus AUCUNE lecture de `is_head_teacher` dans la chaîne de projection, et le miroir n'est plus écrit par le read-back (`projectFoldedGroup` ne pose que `role` — la colonne devient STALE, drop destructif différé post-42.4). Résolution du rôle effectif (D2) : override `owner` autoritaire depuis `head_teacher_ids ∩ membres` → rôle de l'arête (avec rétrogradation de projection `owner`→`manager` pour un ex-PP décoché) → défaut dérivé de `users.role` en UNE requête SQL (jamais de LDAP par user). Fail-soft partout : rôle hors vocabulaire = fallback + warning ; `PP_X` absent en AD = no-op. NOUVEAU : un **changement de rôle sur l'arête** (UPDATE pivot) reprojette automatiquement le groupe vers l'AD (observer `updated`, suspendu pendant `syncFromAd` par un flag dédié — la synchro FS ShareService, elle, continue de tourner au read-back). La mécanique de noms (fold 4.13, `stripClasseLikePrefix`, CN scopés OU étab, matching `ad_guid`) est INTACTE ; `ShareService`/`AclService`/`UserPolicy` : zéro diff.
+
+### Runbook e2e /vm (différé post-merge)
+- **Préalable** : `cd /var/www/sambaedu-reload && php artisan migrate:status` — la migration 42.1 `2026_07_13_120000_add_role_to_user_group_user` doit être `Ran` (les arêtes doivent porter un rôle backfillé AVANT toute projection par arêtes). Aucune migration nouvelle en 42.2.
+- **Contrôle projection** : depuis la fiche groupe d'une classe `<x>`, modifier la liste des membres (ou les PP), puis : `samba-tool group listmembers Equipe_<x>` → les profs (`manager`+`owner`) ; `samba-tool group listmembers Classe_<x>` → les élèves (`member`) ; `samba-tool group listmembers PP_<x>` → les seuls PP (`owner`).
+- **Contrôle brownfield (CRITIQUE)** : sur un groupe pré-peuplé SE4, comparer `listmembers Equipe_<x>` AVANT/APRÈS une édition sans changement de membres — AUCUN retrait ne doit apparaître.
+- **Contrôle resync sur changement de rôle** : `UPDATE` du rôle d'une arête via l'app (dès 42.3 : édition UI ; en attendant : tinker `$group->users()->updateExistingPivot($userId, ['role' => 'manager'])`) → le membre change de groupe AD sans passer par l'edit-form.
+
+### Scénario 16.1 — Routage 3 buckets par le rôle d'arête (CRITIQUE)
+- **Préparation** : classe `3A` avec arêtes `alice=member`, `bob=manager`, `carl=owner` (état backfillé 42.1 ou posé main).
+- **Action** : sauvegarder la liste des membres depuis l'edit-form (updateGroup SANS `head_teacher_ids`).
+- **Attendu** : `Equipe_3A` = {bob, carl} (owner ⊂ équipe, jamais exclusif), `Classe_3A` = {alice}, `PP_3A` = {carl} (dérivé du pivot `role='owner'` — plus aucune lecture `is_head_teacher`). Les 3 cibles sont TOUJOURS synchronisées (bucket vide → vidage, pas de rémanence). Aucune requête LDAP par user (dérivation `users.role` en une requête pour les seuls membres sans arête).
+
+### Scénario 16.2 — Changement de rôle d'arête → resync AD automatique
+- **Préparation** : `bob` membre de `3A` avec arête `member` (présent dans `Classe_3A` en AD).
+- **Action** : UPDATE du rôle de l'arête à `manager` (canal Eloquent : `updateExistingPivot`/`sync()` associatif — l'UI 42.3 empruntera ce canal).
+- **Attendu** : reprojection AUTOMATIQUE du seul groupe concerné — bob ajouté à `Equipe_3A`, retiré de `Classe_3A`. Filtres : groupes `classe`/`equipe` uniquement ; AUCUN resync si l'update ne touche pas `role` ; AUCUN resync pendant un `syncFromAd` (flag dédié `$adResyncEnabled`, jamais `$syncEnabled` qui gouverne la synchro FS) ni quand `$syncEnabled=false` (imports users). Fail-soft : un échec LDAP est loggé, l'écriture pivot reste valide. Les writes SQL bruts (backfill, MergeLegacy) ne déclenchent RIEN (voulu).
+
+### Scénario 16.3 — Ex-PP décoché : rétrogradation de projection (piège n°4)
+- **Préparation** : `carl` arête `owner`, présent dans `Equipe_3A` ET `PP_3A`.
+- **Action** : section « Professeur principal » → décocher carl → save (`head_teacher_ids=[]` explicite).
+- **Attendu** : carl SORT de `PP_3A` (pas de rémanence) mais RESTE dans `Equipe_3A` (rétrogradation de projection `owner`→`manager` : pas de perte rwx). Son arête est réalignée `manager` par le read-back. La préservation « clé absente = PP conservés / `[]` explicite = effacement volontaire » (4.15 M6) est INTACTE.
+
+### Scénario 16.4 — `PP_X` absent en AD : fail-soft (volumétrie lab1 : 4 pp_ seulement)
+- **Préparation** : classe dont l'AD ne porte PAS de CN `PP_<base>` ; désigner un PP côté SE5.
+- **Attendu** : AUCUNE exception — la lecture `PP_` renvoie vide, l'`addMember` échoue en silence (false), les cibles `Equipe_`/`Classe_` sont projetées normalement et le save aboutit. AD-first assumé : sans `PP_` lisible, le read-back ne peut pas poser `owner` (l'arête retombe sur le dérivé `manager` ; le toast UI signale la convergence incomplète — 4.15 Q2).
+
+### Scénario 16.5 — Parité brownfield : aucun retrait de membre légitime (CRITIQUE, piège n°2)
+- **Préparation** : AD fédéré pré-peuplé SE4 (`Equipe_3A={prof1,prof2}`, `Classe_3A={eleve}`), arêtes backfillées 42.1 (`manager` ⇔ prof SQL, `member` sinon).
+- **Action** : sauvegarder la liste des membres sans changement.
+- **Attendu** : ZÉRO `removeMember`, ZÉRO `addMember` — cibles STRICTEMENT identiques à l'ancienne partition `isProf()` (le diff idempotent `syncAdGroupMembersByUserIds` est réutilisé tel quel, retraits bornés aux DN connus SQL). Une résolution de rôle buggée arracherait des profs d'`Equipe_X` sur les 75 établissements → perte rwx immédiate : ce scénario est NON NÉGOCIABLE avant tout déploiement.
+
+### Scénario 16.6 — L'arête PRIME sur le rôle global (D7, changement assumé)
+- **Préparation** : `bob` a `users.role='prof'` mais une arête `member` sur `3A`.
+- **Action** : projection (save de l'edit-form).
+- **Attendu** : bob est projeté dans `Classe_3A` (l'ARÊTE est la source de vérité — plus l'heuristique globale). Un changement prof↔élève sur la fiche user ne rebascule PLUS le membre tant que son arête n'a pas été réalignée (read-back — qui dérive encore de `users.role` jusqu'à 42.4 — ou édition 42.3). Rôle d'arête HORS vocabulaire (donnée sale) : fallback dérivé + `Log::warning`, jamais d'exception.
+
+> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` : `it_routes_members_to_buckets_by_edge_role` (16.1), `it_reprojects_group_to_ad_when_edge_role_changes` + `it_suspends_ad_resync_observer_during_syncFromAd` (16.2), `it_demotes_unchecked_owner_to_manager_at_projection` (16.3), `it_tolerates_missing_pp_group_in_ad` (16.4), `it_does_not_remove_legitimate_se4_members_on_brownfield_projection` (16.5), `it_projects_by_edge_role_even_when_global_role_disagrees` + `it_falls_back_to_derived_role_on_invalid_edge_role` (16.6), `it_derives_default_role_for_payload_member_without_edge` (D2.3), tests 4.12/4.15 adaptés (fixtures arêtes, D7), miroir 42.1 réécrit rôle-seul (`it_writes_role_on_pivot_read_back`). `tests/Feature/Observers/UserGroupUserPivotObserverTest.php` : ancrage `updated` (resync classe/equipe, filtre wasChanged('role'), suspension double flag, non-classe ignoré, fail-soft). Non-régression : filtre AC12 complet (180 tests).
+
+### Checklist rapide Section 16
+- [ ] `migrate:status` /vm : migration 42.1 `Ran` AVANT tout e2e (aucune migration 42.2)
+- [ ] Routage : manager∪owner → `Equipe_`, member → `Classe_`, owner → `PP_` (3 cibles toujours synchronisées)
+- [ ] `grep is_head_teacher app/` : plus AUCUN lecteur vivant (vestiges D5 : pivot, UserGroup withPivot, MergeLegacy, Backfill, migrations)
+- [ ] Changement de rôle d'arête → reprojection AD automatique du seul groupe concerné
+- [ ] AUCUNE reprojection pendant `syncFromAd` (flag dédié) ; synchro FS ShareService toujours active au read-back
+- [ ] Ex-PP décoché : sort de `PP_`, reste dans `Equipe_`
+- [ ] `PP_X` absent AD : save OK, pas d'exception
+- [ ] Brownfield : AUCUN retrait de membre légitime d'`Equipe_X` pré-peuplé SE4
+- [ ] Stats `head_teacher_updated` (clé publique) inchangée dans les retours `syncFromAd`

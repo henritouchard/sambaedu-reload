@@ -41,8 +41,8 @@ class UserGroupUserPivot extends Pivot
      *  - `member`  : membre simple (élève, ou tout user sans rôle de gestion) ;
      *  - `manager` : professeur membre (dérivé de `users.role='prof'`) ;
      *  - `owner`   : « propriétaire » de l'arête — ABSORBE l'ancien flag d'arête
-     *                `is_head_teacher` (professeur principal), invariant
-     *                `role === ROLE_OWNER` ⇔ `is_head_teacher === true`.
+     *                `is_head_teacher` (professeur principal). Depuis 42.2, le
+     *                rôle est la SEULE source (le miroir n'est plus écrit).
      *
      * SQLite ne borne PAS les varchar (`string('role', 20)` non appliqué en
      * test — `project_sqlite_tests_no_varchar_enforcement`). La garde applicative
@@ -81,11 +81,14 @@ class UserGroupUserPivot extends Pivot
         'is_head_teacher' => 'boolean',
     ];
 
-    // NB Story 42.1 — pas de cast pour `role` : c'est un `string` natif fiable
-    // sur les deux drivers. Le cast `is_head_teacher => boolean` reste requis
-    // (SQLite renvoie « 0 »/« 1 »). Le miroir `role === ROLE_OWNER` ⇔
-    // `is_head_teacher === true` est maintenu à l'ÉCRITURE (jusqu'à 42.2), donc
-    // aucune dérivation en lecture n'est ajoutée ici.
+    // NB Story 42.1/42.2 — pas de cast pour `role` : c'est un `string` natif
+    // fiable sur les deux drivers. Depuis 42.2, le miroir `is_head_teacher`
+    // n'est PLUS écrit sur le chemin vivant (le read-back `projectFoldedGroup`
+    // ne pose que `role`) : la colonne devient STALE et n'est plus LUE par
+    // aucun code vivant (audit 42.2 — restent les vestiges one-shot
+    // MergeLegacyUserGroups/BackfillUserGroupUserRoles, gardés hasColumn).
+    // Colonne + cast + withPivot CONSERVÉS (fixtures de tests, bases
+    // brownfield) jusqu'à la migration destructive `dropColumn` post-42.4.
 
     /**
      * Story 42.1 — Garde applicative du vocabulaire de rôle d'arête.

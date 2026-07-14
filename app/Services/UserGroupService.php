@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Facades\SEConfig;
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
 use App\Constants\Ldap\FunctionGroups;
 use App\Constants\Ldap\MainGroups;
 use App\Repositories\GroupRepository;
@@ -73,7 +75,8 @@ class UserGroupService
             ? array_values(array_unique(array_map('intval', $data['user_ids'])))
             : [];
 
-        // Story 4.15 — IDs des professeurs principaux (arête `is_head_teacher`).
+        // Story 4.15 — IDs des professeurs principaux (canal `head_teacher_ids`,
+        // projetés arête `role='owner'` depuis 42.2).
         $headTeacherUserIds = !empty($data['head_teacher_ids']) && is_array($data['head_teacher_ids'])
             ? array_values(array_unique(array_map('intval', $data['head_teacher_ids'])))
             : [];
@@ -89,16 +92,19 @@ class UserGroupService
         }
 
         // Story 4.15 (D2) — l'écriture AD (incluant la 3ᵉ cible `PP_<base>`)
-        // précède toujours `syncFromAd()` : le read-back 4.14 re-pose alors le
-        // flag `is_head_teacher` depuis le `PP_<base>` qu'on vient d'écrire,
-        // donc le pivot SQL converge sans clignotement. On force l'écriture dès
-        // qu'il y a des membres OU des PP à projeter.
+        // précède toujours `syncFromAd()` : le read-back re-pose alors l'arête
+        // `role='owner'` depuis le `PP_<base>` qu'on vient d'écrire, donc le
+        // pivot SQL converge sans clignotement. On force l'écriture dès qu'il
+        // y a des membres OU des PP à projeter. Story 42.2 (T2.3) — 5ᵉ param
+        // `[]` : le groupe n'existe pas encore en SQL, aucune arête à fournir
+        // (l'override owner + le défaut dérivé couvrent tous les membres).
         if (count($selectedUserIds) > 0 || count($headTeacherUserIds) > 0) {
             $this->syncRoleAwareAdGroupMembers(
                 $payload['name'],
                 $payload['type'],
                 $selectedUserIds,
                 $headTeacherUserIds,
+                [],
             );
         }
 
@@ -156,30 +162,43 @@ class UserGroupService
         // Story 4.15 — `head_teacher_ids` peut accompagner le payload (UI
         // « Professeur principal »). Quand il est présent sans `user_ids`
         // explicite, on dérive les membres courants depuis le pivot SQL pour
-        // que la partition Equipe_/Classe_ + la 3ᵉ cible PP_ restent cohérentes.
+        // que le routage Equipe_/Classe_ + la 3ᵉ cible PP_ restent cohérents.
         $hasUserIds = array_key_exists('user_ids', $data) && is_array($data['user_ids']);
         $hasHeadTeacherIds = array_key_exists('head_teacher_ids', $data) && is_array($data['head_teacher_ids']);
 
         if ($hasUserIds || $hasHeadTeacherIds) {
+            // Story 42.2 (T2.1) — arêtes pivot lues en UNE requête (`role`,
+            // withPivot 42.1) : map `user_id => rôle d'arête` fournie à la
+            // résolution D2 de la projection. État volontairement PRÉ-update
+            // (le pivot n'est réaligné que par le read-back APRÈS l'écriture
+            // AD — flux 4.15/D2 AD-first) : les nouveaux membres du payload
+            // n'ont pas d'arête → défaut dérivé ; les membres retirés sont
+            // absents de `$selectedUserIds` → sortis des 3 buckets par le diff.
+            $edgeRolesByUserId = [];
+            foreach ($group->users()->pluck('user_group_user.role', 'users.id') as $userId => $role) {
+                $edgeRolesByUserId[(int) $userId] = (string) $role;
+            }
+
             $selectedUserIds = $hasUserIds
                 ? array_values(array_unique(array_map('intval', $data['user_ids'])))
-                : $group->users()->pluck('users.id')->map(static fn(mixed $id): int => (int) $id)->all();
+                : array_keys($edgeRolesByUserId);
 
-            // Story 4.15 — distinction CLÉ ABSENTE vs `[]` EXPLICITE.
-            // La 3ᵉ cible `PP_<base>` est TOUJOURS resynchronisée par
-            // `syncRoleAwareAdGroupMembers` ; sans précaution, tout appel
+            // Story 4.15 — distinction CLÉ ABSENTE vs `[]` EXPLICITE (INCHANGÉE
+            // sur le fond). La 3ᵉ cible `PP_<base>` est TOUJOURS resynchronisée
+            // par `syncRoleAwareAdGroupMembers` ; sans précaution, tout appel
             // d'`updateGroup` qui omet `head_teacher_ids` (edit-form : retrait
             // d'un membre, sauvegarde de la liste) écraserait `$headTeacherUserIds`
             // à `[]` → `PP_<base>` vidé en AD, puis le read-back `syncFromAd`
-            // efface le pivot `is_head_teacher` : perte SILENCIEUSE des PP sur
+            // rétrograderait les arêtes `owner` : perte SILENCIEUSE des PP sur
             // une édition sans rapport. On préserve donc les PP existants en les
             // dérivant du pivot quand la clé est ABSENTE ; un `[]` EXPLICITE
             // (section « Professeur principal » qui retire tous les PP) reste un
-            // effacement volontaire.
+            // effacement volontaire. Story 42.2 (T2.2) — la dérivation lit le
+            // RÔLE d'arête (`role='owner'`), plus l'ancien flag d'arête 4.14.
             $headTeacherUserIds = $hasHeadTeacherIds
                 ? array_values(array_unique(array_map('intval', $data['head_teacher_ids'])))
                 : $group->users()
-                    ->wherePivot('is_head_teacher', true)
+                    ->wherePivot('role', UserGroupUserPivot::ROLE_OWNER)
                     ->pluck('users.id')
                     ->map(static fn(mixed $id): int => (int) $id)
                     ->all();
@@ -190,6 +209,7 @@ class UserGroupService
                 $payload['type'],
                 $selectedUserIds,
                 $headTeacherUserIds,
+                $edgeRolesByUserId,
             );
         }
 
@@ -336,9 +356,11 @@ class UserGroupService
             'skipped' => 0,
             'linked_users' => 0,
             'detached_users' => 0,
-            // 4.14 — arêtes dont SEUL l'attribut de pivot a changé (ex.
-            // is_head_teacher true↔false sur retrait/ajout PP), sans
-            // attach/detach. Renvoyé par sync()['updated'].
+            // 4.14/42.2 — arêtes dont SEUL l'attribut de pivot a changé (depuis
+            // 42.2 : bascule du rôle d'arête `role`, ex. owner↔manager sur
+            // retrait/ajout PP), sans attach/detach. Renvoyé par
+            // sync()['updated']. La CLÉ est un contrat de stats public
+            // (retours, logs, UI) — ne pas la renommer.
             'head_teacher_updated' => 0,
             'deleted' => 0,
             'errors' => 0,
@@ -416,6 +438,15 @@ class UserGroupService
         );
 
         UserGroupObserver::disableSync();
+        // Story 42.2 (D4/T3.3) — suspendre le resync AD de l'observer pivot
+        // pendant le read-back : `projectFoldedGroup` fait un `sync()` associatif
+        // qui UPDATE des rôles en masse (dérivation heuristique) — sans cette
+        // suspension, chaque flip déclencherait une reprojection LDAP par arête
+        // (tempête d'I/O sur un import ~600 groupes), et écrire l'AD PENDANT
+        // qu'on le lit est conceptuellement faux. Flag DÉDIÉ : la synchro FS
+        // ShareService (`$syncEnabled`, events created/deleted) DOIT continuer
+        // à tourner au read-back (création des dossiers élèves — Story 5.2).
+        UserGroupUserPivotObserver::disableAdResync();
 
         try {
             DB::transaction(function () use (&$stats, $foldedGroups, $onlyGroupNames): void {
@@ -467,13 +498,14 @@ class UserGroupService
             });
         } finally {
             UserGroupObserver::enableSync();
+            UserGroupUserPivotObserver::enableAdResync();
         }
 
         $log(
             'info',
             "Import groupes utilisateurs terminé: {$stats['created']} créés, {$stats['updated']} mis à jour, " .
                 "{$stats['skipped']} inchangés, {$stats['linked_users']} liaison(s) ajoutée(s), " .
-                "{$stats['detached_users']} liaison(s) retirée(s), {$stats['head_teacher_updated']} flag(s) PP mis à jour, " .
+                "{$stats['detached_users']} liaison(s) retirée(s), {$stats['head_teacher_updated']} rôle(s) d'arête mis à jour, " .
                 "{$stats['deleted']} supprimé(s), {$stats['errors']} erreur(s)"
         );
 
@@ -576,9 +608,8 @@ class UserGroupService
 
         // Union des membres des CN du groupe foldé (un seul sync()).
         // 4.14 — on capture en parallèle les membres issus du/des
-        // CN `PP_<base>` pour poser l'attribut d'arête
-        // `is_head_teacher=true` sur leur ligne pivot. Le sync()
-        // devient ASSOCIATIF `[$userId => ['is_head_teacher'=>bool]]`
+        // CN `PP_<base>` pour poser l'arête `role='owner'` sur leur
+        // ligne pivot. Le sync() est ASSOCIATIF `[$userId => ['role'=>…]]`
         // tout en préservant l'union/dédup/idempotence de 4.13 :
         // la clé est l'`user_id` (un membre présent dans Classe_ ET
         // PP_ → une seule arête, PP-priorité), le sync() détache
@@ -596,18 +627,20 @@ class UserGroupService
             }
         }
 
-        // Le flag n'a de sens que pour les groupes foldés de
-        // classe/équipe. Les CN standalone non-classe (Cours_,
-        // Matiere_@, orphelin equipe…) ne portent jamais `true` :
-        // ils n'ont pas de CN `PP_` dans `$folded['cns']`, donc
-        // `$ppUserIds` y est vide — `is_head_teacher` reste false.
-        // Story 42.1 — miroir `role` posé EN MÊME TEMPS que `is_head_teacher`
-        // (invariant `role === 'owner'` ⇔ `is_head_teacher === true`). Le rôle
-        // des membres non-PP est dérivé du rôle GLOBAL `users.role` résolu EN
-        // UNE SEULE requête pour l'union des membres (jamais `isProf()` par
-        // membre — round-trip LDAP). L'import RESTE autoritaire sur `role`
-        // (AD-first transitoire) ; la dérivation `Equipe_`-consciente avec
-        // précédence et données sales est le read-back 42.4, pas cette story.
+        // `owner` n'a de sens que pour les groupes foldés de classe/équipe.
+        // Les CN standalone non-classe (Cours_, Matiere_@, orphelin equipe…)
+        // n'ont pas de CN `PP_` dans `$folded['cns']`, donc `$ppUserIds` y est
+        // vide — le rôle y reste le dérivé de `users.role`.
+        // Story 42.2 (T4.1) — le payload n'écrit plus QUE `role` : le miroir
+        // booléen 4.14 est retiré du chemin vivant (D5 — la colonne, son
+        // cast et le withPivot restent jusqu'à la migration destructive
+        // post-42.4 ; elle devient STALE, plus aucun code vivant ne la lit).
+        // Le rôle des membres non-PP est dérivé du rôle GLOBAL `users.role`
+        // résolu EN UNE SEULE requête pour l'union des membres (jamais
+        // `isProf()` par membre — round-trip LDAP). L'import RESTE autoritaire
+        // sur `role` (AD-first transitoire) ; la dérivation `Equipe_`-consciente
+        // avec précédence et données sales est le read-back 42.4, pas cette
+        // story — cette dérivation heuristique reste donc EN L'ÉTAT ici.
         $uniqueMemberIds = array_values(array_unique($memberIds));
         $globalRoles = $uniqueMemberIds === []
             ? collect()
@@ -617,12 +650,10 @@ class UserGroupService
 
         $syncPayload = [];
         foreach ($uniqueMemberIds as $memberId) {
-            $isPP = isset($ppUserIds[$memberId]);
             $syncPayload[$memberId] = [
-                'is_head_teacher' => $isPP,
-                'role' => $isPP
-                    ? \App\Models\Pivot\UserGroupUserPivot::ROLE_OWNER
-                    : \App\Models\Pivot\UserGroupUserPivot::defaultRoleForGlobalRole(
+                'role' => isset($ppUserIds[$memberId])
+                    ? UserGroupUserPivot::ROLE_OWNER
+                    : UserGroupUserPivot::defaultRoleForGlobalRole(
                         $globalRoles[$memberId] ?? null
                     ),
             ];
@@ -928,41 +959,60 @@ class UserGroupService
 
     /**
      * Projette les membres SQL sélectionnés vers le(s) groupe(s) AD cible(s),
-     * en partitionnant par rôle pour les groupes de classe/équipe (parité SE4).
+     * routés par le RÔLE D'ARÊTE `user_group_user.role` pour les groupes de
+     * classe/équipe (Story 42.2 — remplace la partition `isProf()` de 4.12).
      *
-     * - `type ∈ {classe, equipe}` : les profs (`User::isProf()`) vont dans
-     *   `Equipe_<name>`, tout le reste (élèves/admin/autre) dans `Classe_<name>`.
-     *   Chaque cible est synchronisée par le diff idempotent fail-soft de
-     *   {@see syncAdGroupMembersByUserIds()}. Story 4.15 — 3ᵉ cible `PP_<name>`
-     *   peuplée par les `is_head_teacher=true` (`$headTeacherUserIds`). Cette
-     *   cible est ORTHOGONALE à `Equipe_`/`Classe_` : un prof principal reste
-     *   dans `Equipe_<name>` (parité rwx prof 4.12) **et** est ajouté à
-     *   `PP_<name>`. `PP_` n'est PAS exclusif de la partition prof/élève. Elle
-     *   est toujours synchronisée (vidage si plus de PP, pas de rémanence).
+     * - `type ∈ {classe, equipe}` — buckets D1 :
+     *   `Equipe_<base>` = arêtes `manager` ∪ `owner` (un owner est un cas
+     *   particulier de prof : il ne sort JAMAIS du bucket équipe — parité rwx
+     *   prof 4.12, orthogonalité 4.15 conservée) ; `Classe_<base>` = arêtes
+     *   `member` ; `PP_<base>` = arêtes `owner`. Les 3 cibles sont TOUJOURS
+     *   synchronisées (bucket vide → vidage par le diff idempotent fail-soft
+     *   de {@see syncAdGroupMembersByUserIds()}, pas de rémanence).
+     * - Résolution du rôle effectif (D2, dans cet ordre de précédence) :
+     *   1. `owner` si l'id ∈ `$headTeacherUserIds ∩ $selectedUserIds` — le
+     *      paramètre PP reste AUTORITAIRE (canal de désignation 4.15) ;
+     *   2. sinon rôle de l'ARÊTE (`$edgeRolesByUserId`) si elle existe — avec
+     *      rétrogradation de projection `owner`→`manager` pour un ex-PP décoché
+     *      (son arête dit encore `owner` jusqu'au read-back : il doit sortir de
+     *      `PP_` mais rester dans `Equipe_`) ;
+     *   3. sinon (membre du payload SANS arête — nouvel ajout, l'arête sera
+     *      créée par le read-back) : défaut dérivé de `users.role` résolu EN
+     *      UNE SEULE requête pour tous les manquants (JAMAIS `isProf()` —
+     *      round-trip LDAP interdit).
+     *   Valeur d'arête HORS vocabulaire : fallback rôle dérivé + Log::warning —
+     *   la projection est fail-soft, pas d'exception.
      * - autres types (`cours`, `matiere`, `projet`, `custom`…) : une seule
-     *   cible résolue via {@see resolvePrimaryGroupName()} — comportement inchangé.
+     *   cible résolue via {@see resolvePrimaryGroupName()} — comportement inchangé
+     *   (le rôle d'arête n'y route rien).
      *
      * Le nom reçu peut être NU (`3A`, depuis `createGroup`) ou déjà le CN
      * primaire stocké en SQL (`Classe_3A`, depuis `updateGroup` dont le form
      * renvoie `group->name`). Pour les classes/équipes on dérive donc la base
      * nue (suppression d'un éventuel préfixe `Classe_`/`Equipe_`/`PP_`) avant
-     * de partitionner — c'est exactement la dé-duplication de la résolution
-     * exigée par la story (createGroup résolu vs updateGroup brut).
+     * de router — c'est exactement la dé-duplication de la résolution
+     * exigée par la story 4.12 (createGroup résolu vs updateGroup brut).
      *
      * Bypass CN legacy préfixé d'un AUTRE type : un nom déjà préfixé par une
      * autre catégorie (`Matiere_*@*`, `Cours_*`, `Projet_*`, `Matiere_*`) n'est
      * jamais ré-expansé — on synchronise exactement ce groupe (1 SQL = 1 AD).
      *
      * @param array<int,int> $selectedUserIds
-     * @param array<int,int> $headTeacherUserIds Story 4.15 — `user_id` à
-     *        `is_head_teacher=true` à projeter vers `PP_<base>`. Intersecté
-     *        défensivement avec `$selectedUserIds` (un PP doit être membre).
+     * @param array<int,int> $headTeacherUserIds Story 4.15 — canal de désignation
+     *        PP (`head_teacher_ids`), projeté vers `PP_<base>`. Intersecté
+     *        défensivement avec `$selectedUserIds` (un PP doit être membre —
+     *        un id forgé hors membres est ignoré, sans exception).
+     * @param array<int,string> $edgeRolesByUserId Story 42.2 — map
+     *        `user_id => role` des arêtes pivot PRÉ-update (fournie par
+     *        l'appelant ; `[]` depuis `createGroup` — le groupe n'existe pas
+     *        encore en SQL, tous les membres passent par le défaut dérivé).
      */
     private function syncRoleAwareAdGroupMembers(
         string $rawName,
         string $type,
         array $selectedUserIds,
         array $headTeacherUserIds = [],
+        array $edgeRolesByUserId = [],
     ): void {
         $normalizedType = mb_strtolower(trim($type));
         $isClasseLike = in_array($normalizedType, ['class', 'classe', 'equipe'], true);
@@ -982,43 +1032,117 @@ class UserGroupService
         // de classe/équipe déjà présent (CN primaire stocké en SQL).
         $baseName = $this->stripClasseLikePrefix($rawName);
 
-        $profIds = [];
-        $nonProfIds = [];
-
-        if (count($selectedUserIds) > 0) {
-            $usersById = User::query()
-                ->whereIn('id', $selectedUserIds)
-                ->get()
-                ->keyBy(static fn(User $user): int => (int) $user->id);
-
-            foreach ($selectedUserIds as $userId) {
-                $user = $usersById->get($userId);
-
-                if ($user !== null && $user->isProf()) {
-                    $profIds[] = $userId;
-                } else {
-                    $nonProfIds[] = $userId;
-                }
-            }
-        }
-
-        // Toujours synchroniser les DEUX cibles (même avec une partition vide)
-        // pour que le retrait/bascule de rôle retire bien du groupe d'origine.
-        $this->syncAdGroupMembersByUserIds("Equipe_{$baseName}", $profIds);
-        $this->syncAdGroupMembersByUserIds("Classe_{$baseName}", $nonProfIds);
-
-        // Story 4.15 — 3ᵉ cible `PP_<base>`, ORTHOGONALE aux deux précédentes.
-        // Garde-fou D1 : un PP doit être membre du groupe (intersection avec
-        // `$selectedUserIds`) — un id PP forgé hors membres est ignoré, sans
-        // exception. On préserve l'ordre/dédup de `$selectedUserIds` pour des
-        // assertions stables. La cible est TOUJOURS synchronisée (même `$ppIds`
-        // vide → le diff idempotent vide `PP_<base>`, pas de rémanence).
+        // Garde-fou D1 (4.15, conservé) : un PP doit être membre du groupe —
+        // intersection avec `$selectedUserIds`, ordre/dédup préservés pour des
+        // assertions stables. `$ppIds` est LE bucket `PP_<base>` (D2.1 : le set
+        // PP est autoritaire ; une arête `owner` HORS de ce set est rétrogradée
+        // `manager` à la projection, jamais promue).
         $selectedSet = array_flip($selectedUserIds);
         $ppIds = array_values(array_unique(array_filter(
             $headTeacherUserIds,
             static fn(int $id): bool => isset($selectedSet[$id])
         )));
+        $ppSet = array_flip($ppIds);
+
+        // D2.3 — défaut dérivé pour les ids sans arête (ou à l'arête invalide) :
+        // `users.role` résolu en UNE SEULE requête (jamais `isProf()` en boucle —
+        // `project_isprof_iseleve_ldap_first_cost`).
+        $idsNeedingDerivedRole = [];
+        foreach ($selectedUserIds as $userId) {
+            if (isset($ppSet[$userId])) {
+                continue; // D2.1 — owner autoritaire, pas de dérivation.
+            }
+            $edgeRole = $edgeRolesByUserId[$userId] ?? null;
+            if ($edgeRole === null || !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
+                $idsNeedingDerivedRole[] = $userId;
+            }
+        }
+
+        $globalRolesById = $idsNeedingDerivedRole === []
+            ? collect()
+            : User::query()
+                ->whereIn('id', $idsNeedingDerivedRole)
+                ->pluck('role', 'id');
+
+        // Buckets D1 — `Equipe_` = manager ∪ owner ; `Classe_` = member.
+        $equipeIds = [];
+        $classeIds = [];
+
+        foreach ($selectedUserIds as $userId) {
+            // D2.1 — override PP autoritaire : owner → Equipe_ (ET PP_ via $ppIds).
+            if (isset($ppSet[$userId])) {
+                $equipeIds[] = $userId;
+                continue;
+            }
+
+            // D2.2 — rôle de l'arête, fail-soft sur valeur hors vocabulaire.
+            $edgeRole = $edgeRolesByUserId[$userId] ?? null;
+            if ($edgeRole !== null && !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
+                Log::warning('[UserGroupService] Rôle d\'arête hors vocabulaire — fallback rôle dérivé', [
+                    'group' => $rawName,
+                    'user_id' => $userId,
+                    'edge_role' => $edgeRole,
+                ]);
+                $edgeRole = null;
+            }
+            if ($edgeRole === UserGroupUserPivot::ROLE_OWNER) {
+                // Rétrogradation de projection : ex-PP décoché (arête encore
+                // `owner` jusqu'au read-back) — il sort de `PP_` (hors $ppIds)
+                // mais RESTE dans `Equipe_` (pas de perte rwx).
+                $edgeRole = UserGroupUserPivot::ROLE_MANAGER;
+            }
+
+            // D2.3 — défaut dérivé du rôle global pour les membres sans arête.
+            $effectiveRole = $edgeRole ?? UserGroupUserPivot::defaultRoleForGlobalRole(
+                $globalRolesById[$userId] ?? null
+            );
+
+            if ($effectiveRole === UserGroupUserPivot::ROLE_MANAGER) {
+                $equipeIds[] = $userId;
+            } else {
+                $classeIds[] = $userId;
+            }
+        }
+
+        // Toujours synchroniser les TROIS cibles (même bucket vide) pour que le
+        // retrait/bascule de rôle retire bien du groupe d'origine (pas de
+        // rémanence — parité 4.12/4.15 AC2).
+        $this->syncAdGroupMembersByUserIds("Equipe_{$baseName}", $equipeIds);
+        $this->syncAdGroupMembersByUserIds("Classe_{$baseName}", $classeIds);
         $this->syncAdGroupMembersByUserIds("PP_{$baseName}", $ppIds);
+    }
+
+    /**
+     * Story 42.2 (T3.2) — point d'entrée PUBLIC de reprojection AD d'un groupe
+     * depuis l'état COURANT de ses arêtes pivot (membres, rôles, owners lus en
+     * une requête). Délègue au chokepoint {@see syncRoleAwareAdGroupMembers()}
+     * — aucun canal de projection parallèle. Consommé par l'observer pivot
+     * (`UserGroupUserPivotObserver::updated`, resync sur changement de rôle) et
+     * réutilisable tel quel par 42.3 (édition du rôle en UI).
+     *
+     * Les PP projetés (`PP_<base>`) sont dérivés des arêtes `role='owner'` : ici
+     * l'arête EST la source (pas de payload `head_teacher_ids` en jeu). La
+     * couche LDAP sous-jacente reste fail-soft (groupe AD absent → no-op).
+     */
+    public function resyncGroupAdProjection(UserGroup $group): void
+    {
+        $edgeRolesByUserId = [];
+        foreach ($group->users()->pluck('user_group_user.role', 'users.id') as $userId => $role) {
+            $edgeRolesByUserId[(int) $userId] = (string) $role;
+        }
+
+        $headTeacherUserIds = array_keys(array_filter(
+            $edgeRolesByUserId,
+            static fn(string $role): bool => $role === UserGroupUserPivot::ROLE_OWNER
+        ));
+
+        $this->syncRoleAwareAdGroupMembers(
+            (string) $group->name,
+            (string) $group->type,
+            array_keys($edgeRolesByUserId),
+            $headTeacherUserIds,
+            $edgeRolesByUserId,
+        );
     }
 
     /**
