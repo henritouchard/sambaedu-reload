@@ -440,9 +440,9 @@ class UserGroupService
         UserGroupObserver::disableSync();
         // Story 42.2 (D4/T3.3) — suspendre le resync AD de l'observer pivot
         // pendant le read-back : `projectFoldedGroup` fait un `sync()` associatif
-        // qui UPDATE des rôles en masse (dérivation heuristique) — sans cette
-        // suspension, chaque flip déclencherait une reprojection LDAP par arête
-        // (tempête d'I/O sur un import ~600 groupes), et écrire l'AD PENDANT
+        // qui UPDATE des rôles en masse (read-back du trio AD — 42.4) — sans
+        // cette suspension, chaque flip déclencherait une reprojection LDAP par
+        // arête (tempête d'I/O sur un import ~600 groupes), et écrire l'AD PENDANT
         // qu'on le lit est conceptuellement faux. Flag DÉDIÉ : la synchro FS
         // ShareService (`$syncEnabled`, events created/deleted) DOIT continuer
         // à tourner au read-back (création des dossiers élèves — Story 5.2).
@@ -517,6 +517,15 @@ class UserGroupService
      * membres. Appelée dans un savepoint dédié par {@see syncFromAd()} : toute
      * exception (violation de contrainte, conflit ad_guid…) n'avorte que cette
      * projection, jamais la transaction d'ensemble.
+     *
+     * Story 42.4 — le RÔLE de chaque arête est reconstruit par READ-BACK du
+     * TRIO AD (D1 : `PP_` owner > `Equipe_` manager > `Classe_` member, tier MAX
+     * par user), avec préservation par SIGNAL MANQUANT (D3 : un rôle existant
+     * n'est rétrogradé que si le CN qui l'exprimerait est présent dans le fold)
+     * et dérivation heuristique conservée HORS trio (D5). Fail-soft intégral
+     * dans le savepoint (D6 : aucune exception nouvelle sur données sales).
+     * Ceci REMPLACE l'heuristique `users.role` de 42.1-AC7/42.2 pour les membres
+     * du trio et LÈVE la limite transitoire « l'import écrase un rôle édité ».
      *
      * @param array{name:string, cns:array<int,string>, ad_guid:?string, ad_dn:string, type:string, display_name:string} $folded
      * @param array<string,int> $stats
@@ -606,57 +615,138 @@ class UserGroupService
             }
         }
 
-        // Union des membres des CN du groupe foldé (un seul sync()).
-        // 4.14 — on capture en parallèle les membres issus du/des
-        // CN `PP_<base>` pour poser l'arête `role='owner'` sur leur
-        // ligne pivot. Le sync() est ASSOCIATIF `[$userId => ['role'=>…]]`
-        // tout en préservant l'union/dédup/idempotence de 4.13 :
-        // la clé est l'`user_id` (un membre présent dans Classe_ ET
-        // PP_ → une seule arête, PP-priorité), le sync() détache
-        // toujours les membres absents de l'union.
+        // =====================================================================
+        // Story 42.4 — READ-BACK des rôles d'arête depuis le TRIO AD réel.
+        // =====================================================================
+        // D1 — Pour chaque membre de l'UNION des CN du groupe foldé (un seul
+        // sync()), le rôle d'arête est dérivé du TIER MAX de ses CN
+        // d'appartenance dans le trio legacy :
+        //   `PP_` → owner (3)  >  `Equipe_` → manager (2)  >  `Classe_` → member (1).
+        // La précédence par `max()` garantit UNE SEULE arête par user×groupe
+        // (un user dans `Classe_3A` ET `Equipe_3A` → manager ; dans `Equipe_3A`
+        // ET `PP_3A` → owner). Un membre présent dans un CN du trio ne consulte
+        // PLUS `users.role` — l'AD est AUTORITAIRE. Ceci REMPLACE l'heuristique
+        // 42.1-AC7 (conservée « en l'état » par 42.2) et LÈVE la limite
+        // transitoire « l'import écrase un rôle édité » : l'import lit désormais
+        // ce que la projection 42.2 a réellement écrit dans l'AD (aller-retour
+        // projection→read-back→projection = no-op). `foldPrefixOf()` étant
+        // insensible à la casse, `classe_3a`/`Classe_3A` dérivent le même tier ;
+        // les espaces des bases (`Equipe_301 g1`) transitent sans traitement.
+        // D5 — un CN HORS trio (`foldPrefixOf() === null` : Cours_, Matiere_@,
+        // custom) garde la dérivation par `users.role` (`defaultRoleForGlobalRole`) :
+        // rien dans l'AD n'y porte de signal de rôle et sa projection n'a qu'une
+        // cible. Aucune requête LDAP nouvelle : mêmes appels
+        // `resolveMemberUserIdsFromAdGroup` par CN qu'en 4.13/42.2.
+        $tierOfPrefix = static fn (?string $prefix): int => match ($prefix) {
+            'PP_' => 3,
+            'Equipe_' => 2,
+            'Classe_' => 1,
+            default => 0,
+        };
+
         $memberIds = [];
-        $ppUserIds = [];
+        $trioTierByUser = [];      // user_id => tier (1|2|3) — MAX sur les CN du trio
+        // D3 — présence des CN du trio dans le fold : un rôle SQL existant ne
+        // peut être RÉTROGRADÉ que si le CN AD qui l'exprimerait est PRÉSENT.
+        $hasEquipeCn = false;
+        $hasPpCn = false;
+        // Review 42.4 #1 — la préservation D3 n'a de sens QUE pour un fold
+        // porteur d'au moins un CN du trio : sur un fold standalone hors-trio
+        // (Cours_, Matiere_@, custom — aucun CN Classe_/Equipe_/PP_ possible),
+        // « CN absent » n'est pas un signal manquant, c'est la structure même
+        // du fold — l'heuristique doit y RECALCULER un rôle frais à chaque
+        // import (AC4), jamais préserver un rôle stale.
+        $isTrioFold = false;
         foreach ($folded['cns'] as $cn) {
-            $isPpCn = $this->foldPrefixOf($cn) === 'PP_';
+            $prefix = $this->foldPrefixOf($cn);
+            if ($prefix !== null) {
+                $isTrioFold = true;
+            }
+            if ($prefix === 'Equipe_') {
+                $hasEquipeCn = true;
+            } elseif ($prefix === 'PP_') {
+                $hasPpCn = true;
+            }
+            $tier = $tierOfPrefix($prefix);
             foreach ($this->resolveMemberUserIdsFromAdGroup($cn) as $memberId) {
                 $memberId = (int) $memberId;
                 $memberIds[] = $memberId;
-                if ($isPpCn) {
-                    $ppUserIds[$memberId] = true;
+                if ($tier > 0) {
+                    $trioTierByUser[$memberId] = max($trioTierByUser[$memberId] ?? 0, $tier);
                 }
             }
         }
 
-        // `owner` n'a de sens que pour les groupes foldés de classe/équipe.
-        // Les CN standalone non-classe (Cours_, Matiere_@, orphelin equipe…)
-        // n'ont pas de CN `PP_` dans `$folded['cns']`, donc `$ppUserIds` y est
-        // vide — le rôle y reste le dérivé de `users.role`.
-        // Story 42.2 (T4.1) — le payload n'écrit plus QUE `role` : le miroir
-        // booléen 4.14 est retiré du chemin vivant (D5 — la colonne, son
-        // cast et le withPivot restent jusqu'à la migration destructive
-        // post-42.4 ; elle devient STALE, plus aucun code vivant ne la lit).
-        // Le rôle des membres non-PP est dérivé du rôle GLOBAL `users.role`
-        // résolu EN UNE SEULE requête pour l'union des membres (jamais
-        // `isProf()` par membre — round-trip LDAP). L'import RESTE autoritaire
-        // sur `role` (AD-first transitoire) ; la dérivation `Equipe_`-consciente
-        // avec précédence et données sales est le read-back 42.4, pas cette
-        // story — cette dérivation heuristique reste donc EN L'ÉTAT ici.
         $uniqueMemberIds = array_values(array_unique($memberIds));
-        $globalRoles = $uniqueMemberIds === []
+
+        // D5 — `users.role` n'est résolu QUE pour les membres HORS trio (une
+        // seule requête pour l'union restante — pour un fold de classe elle
+        // disparaît entièrement). Jamais `isProf()` par membre (round-trip LDAP,
+        // `project_isprof_iseleve_ldap_first_cost`).
+        $heuristicIds = array_values(array_filter(
+            $uniqueMemberIds,
+            static fn (int $id): bool => !isset($trioTierByUser[$id])
+        ));
+        $globalRoles = $heuristicIds === []
             ? collect()
             : User::query()
-                ->whereIn('id', $uniqueMemberIds)
+                ->whereIn('id', $heuristicIds)
                 ->pluck('role', 'id');
+
+        // D3 — arêtes EXISTANTES lues en UNE SEULE requête AVANT le sync()
+        // (jamais par membre — piège n°3). Groupe fraîchement créé : aucune
+        // arête → collection vide → aucune préservation (chemin naturel).
+        // Story 42.2 (T4.1) — le payload n'écrit QUE `role` : le miroir booléen
+        // 4.14 `is_head_teacher` reste retiré du chemin vivant (STALE jusqu'à la
+        // migration destructive post-42.4).
+        $existingRoles = DB::table('user_group_user')
+            ->where('user_group_id', $group->id)
+            ->pluck('role', 'user_id');
 
         $syncPayload = [];
         foreach ($uniqueMemberIds as $memberId) {
-            $syncPayload[$memberId] = [
-                'role' => isset($ppUserIds[$memberId])
-                    ? UserGroupUserPivot::ROLE_OWNER
-                    : UserGroupUserPivot::defaultRoleForGlobalRole(
-                        $globalRoles[$memberId] ?? null
-                    ),
-            ];
+            // Rôle DÉRIVÉ : D1 (tier du trio) sinon D5 (heuristique `users.role`).
+            // Toujours une constante de vocabulaire — jamais d'`assertValidRole`
+            // en levée dans le chemin d'import (fail-soft intégral, D6).
+            if (isset($trioTierByUser[$memberId])) {
+                $role = match ($trioTierByUser[$memberId]) {
+                    3 => UserGroupUserPivot::ROLE_OWNER,
+                    2 => UserGroupUserPivot::ROLE_MANAGER,
+                    default => UserGroupUserPivot::ROLE_MEMBER,
+                };
+            } else {
+                $role = UserGroupUserPivot::defaultRoleForGlobalRole(
+                    $globalRoles[$memberId] ?? null
+                );
+            }
+
+            // D3 — préservation par SIGNAL MANQUANT. Un rôle SQL existant VALIDE
+            // ne peut être rétrogradé que si le CN AD qui l'exprimerait est
+            // présent dans le fold. Composition :
+            //  (a) dérivé `member` + PAS de CN `Equipe_` + existant ∈
+            //      {manager,owner} → remonte à `manager` ;
+            //  (b) puis `manager` + PAS de CN `PP_` + existant `owner` →
+            //      remonte à `owner`.
+            // Si le CN EST présent, l'AD est autoritaire : la rétrogradation est
+            // un vrai changement (PP décoché, retrait d'équipe). Comparaisons
+            // STRICTES aux constantes `ROLE_*` : une valeur existante hors
+            // vocabulaire (SQLite ne borne pas les varchar — NFR-S4) n'est
+            // JAMAIS préservée, le dérivé s'applique (aucune exception — D6).
+            $existing = isset($existingRoles[$memberId]) ? (string) $existingRoles[$memberId] : null;
+            if ($isTrioFold && $existing !== null && in_array($existing, UserGroupUserPivot::ROLES, true)) {
+                if ($role === UserGroupUserPivot::ROLE_MEMBER
+                    && !$hasEquipeCn
+                    && ($existing === UserGroupUserPivot::ROLE_MANAGER || $existing === UserGroupUserPivot::ROLE_OWNER)) {
+                    $role = UserGroupUserPivot::ROLE_MANAGER;
+                }
+                if ($role === UserGroupUserPivot::ROLE_MANAGER
+                    && !$hasPpCn
+                    && $existing === UserGroupUserPivot::ROLE_OWNER) {
+                    $role = UserGroupUserPivot::ROLE_OWNER;
+                }
+            }
+
+            $syncPayload[$memberId] = ['role' => $role];
         }
 
         $syncChanges = $group->users()->sync($syncPayload);

@@ -124,8 +124,10 @@ class UserGroupUserPivot extends Pivot
 
         // Review 42.1 #2 — défense en profondeur : la garde est câblée sur le
         // point de dérivation partagé par tous les écrivains, pas seulement
-        // exercée en test. Coût nul, et 42.2/42.4 hériteront du filet quand des
-        // valeurs non constantes (UI, import AD) transiteront par ici.
+        // exercée en test. Coût nul : 42.2 (projection) et 42.4 (read-back du
+        // trio AD) en héritent — la dérivation heuristique HORS trio (D5) passe
+        // par ici, et le read-back du trio écrit des constantes de vocabulaire
+        // (jamais d'assertValidRole en levée dans le chemin d'import — D6).
         self::assertValidRole($role);
 
         return $role;
