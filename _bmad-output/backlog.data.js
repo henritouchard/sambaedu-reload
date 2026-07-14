@@ -1618,64 +1618,78 @@ const DATASETS = {
     {
       "num": 42,
       "title": "Socle rôle sur l'arête user↔groupe",
-      "status": "todo",
+      "status": "review",
       "summary": "Phase 1 du modèle de groupes multi-vertical (<strong>décision Henri 2026-07-07</strong>, <code>docs/group-model-multivertical-orientation.md</code>) : porter le <strong>rôle sur l'arête</strong> user↔groupe (colonne <code>role</code> sur le pivot <code>user_group_user</code>) et projeter les memberships AD <strong>depuis les arêtes</strong>, en gardant <code>ShareService</code> hard-codé et le nommage AD legacy (<code>Classe_X</code>/<code>Equipe_X</code>/<code>PP_X</code>). La source de vérité du rôle devient l'arête : le peuplement <code>Equipe_X</code> cesse de dépendre de la partition <code>User::isProf()</code> (quick-spec 4.12, en review) et <code>PP_X</code> — non couvrable par un rôle global — devient enfin peuplable. Vocabulaire seedé pour l'école : <code>member</code> (élève), <code>manager</code> (prof), <code>owner</code> (prof principal). <strong>Hors périmètre</strong> (phases suivantes) : tables profils/zones/matrice, moteur <code>setfacl</code>, role-groups <code>grp_&lt;groupe&gt;__&lt;role&gt;</code>, Nextcloud. Cadrage : <code>planning-artifacts/epics-socle-role-groupes.md</code>.",
       "stories": [
         {
           "id": "42-1",
           "title": "Colonne rôle sur l'arête + backfill",
-          "status": "todo",
-          "note": "Migration additive user_group_user.role (défaut member, vocabulaire applicatif borné, pas d'enum SQL figé) + backfill (isProf→manager, is_head_teacher→owner, sinon member) + withPivot. is_head_teacher écrit en MIROIR jusqu'à 42.2 (la projection 4.15 le lit encore) ; sa suppression = tâche 42.2. Aucune écriture AD. BLOQUANT 42.2/3/4. Reco dev : sonnet."
+          "status": "review",
+          "note": "<strong>2026-07-13 REVIEW sonnet approuvée</strong> (adversariale, dev opus) : 0 critique, 2 importants + 2 mineurs TOUS corrigés (rôle dérivé câblé sur syncGroupsFromAd + drawer via userGroupSyncPayloadWithDerivedRole ; assertValidRole dans defaultRoleForGlobalRole ; filet non-régression Sync*CommandTest ; commentaire hasColumn MergeLegacy). 142 tests/415 assertions verts. Doc codeReviews/42-1.md. — LIVRÉ : migration user_group_user.role (string 20, default member, index, gardes hasColumn) + BackfillUserGroupUserRoles idempotent (owner>manager>member, SQL pur zéro LDAP) + withPivot('role') ×3 + vocabulaire borné (assertValidRole/defaultRoleForGlobalRole sur UserGroupUserPivot) + miroir role⇔is_head_teacher. AUCUNE écriture AD ; canal projection 4.15 INTACT. BLOQUANT 42.2/3/4. Reco dev : sonnet."
         },
         {
           "id": "42-2",
           "title": "Projection AD dérivée des arêtes",
-          "status": "todo",
-          "note": "syncRoleAwareAdGroupMembers routé par rôle d'arête (member→Classe_, manager→Equipe_, owner→PP_ orthogonale conservée) — bascule ATOMIQUE depuis isProf/is_head_teacher, resync sur changement d'arête (observer pivot), fail-soft AD fédéré, matching GUID/sAMAccountName. Tests parité FR-S6/NFR-S2. Amont 42.1 + statuer 4.12 (review). Reco dev : fable/opus."
+          "status": "review",
+          "note": "<strong>2026-07-14 LIVRÉE ultradev</strong> (dev fable, review opus approuvée : 0 critique/important, 4 mineurs corrigés — gate observer aligné, role NULL silencieux, test brownfield SE4-only, contrat masse 42.3 documenté). Projection AD routée par les arêtes : Equipe_=manager∪owner, Classe_=member, PP_=owner ; partition isProf() SUPPRIMÉE ; observer updated() + flag \u0024adResyncEnabled suspendu pendant syncFromAd ; point d'entrée public resyncGroupAdProjection (consommé par 42.3) ; miroir is_head_teacher retiré du chemin vivant. Parité brownfield prouvée (zéro retrait de membres légitimes, membre SE4 sans ligne SQL préservé). 66+180 tests verts. Doc codeReviews/42-2.md."
         },
         {
           "id": "42-3",
           "title": "UI — rôle éditable sur la page groupe",
-          "status": "todo",
-          "note": "Colonne « Rôle » éditable sur la liste des membres (pages groupes, Livewire SFC), défaut dérivé User.role, édition→resync AD, WithToasts. Amont 42.1+42.2, parallèle 42.4. Reco dev : sonnet."
+          "status": "review",
+          "note": "<strong>2026-07-14 LIVRÉE ultradev</strong> (worktree, dev sonnet, review opus approuvée après corrections). Colonne « Rôle » éditable (libellés FR, edge_role sans collision avec role global), édition unitaire via observer 42.2, rattachement avec rôle proposé/surchargeable (contrat masse : disableAdResync + UN resync). ZÉRO diff app/**. Review #1 CRITIQUE pré-existant corrigé : SFC enfants head-teacher/class-share sans balise racine stable → 500 au re-render de la page classe (cassait AUSSI removeMember) — fix racine <div> stable, 6 tests rebasculés vrai canal ->call(). Garde owner sur type DB. 110/307 verts. Doc codeReviews/42-3.md."
         },
         {
           "id": "42-4",
           "title": "Readback des rôles au sync AD→SQL",
-          "status": "todo",
-          "note": "Import AD→SQL : arêtes avec rôle depuis le trio legacy (précédence owner>manager>member), suffixes étab/OU par UAI, données sales lab1 (equipe_ de cours, espaces, savepoint 25P02), idempotent. Amont 42.1+42.2, parallèle 42.3. Reco dev : opus."
+          "status": "review",
+          "note": "<strong>2026-07-14 LIVRÉE ultradev</strong> (worktree, dev opus, review sonnet + éval orchestrateur : 1 CRITIQUE corrigé — préservation D3 gardée \u0024isTrioFold, hors-trio = recalcul frais, plus de rôle stale immortel). Read-back du trio AD réel dans projectFoldedGroup : précédence PP_>Equipe_>Classe_ par max() de tier, préservation par signal manquant (fold sans PP_ → owner conservé), Equipe_ orpheline → manager pour tous (non destructif), aller-retour projection⇄read-back = no-op (lève la limite « l'import écrase un rôle édité »), savepoint 25P02, fédéré OU par UAI. 70+194 tests verts. Doc codeReviews/42-4.md. QA Section 18."
         }
       ]
     },
     {
       "num": 43,
       "title": "Application immédiate des réglages (refresh post-apply + propagation)",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Supprimer le « double logon » : le compagnon écrit les policies HKCU <strong>après</strong> le démarrage d'Explorer (course au logon structurelle) → effet visible seulement au relogon. L'epic ajoute une <strong>échelle de rafraîchissement post-apply</strong> dans le compagnon (SHChangeNotify existant → broadcast <code>WM_SETTINGCHANGE \"Policy\"</code> → restart <code>explorer.exe</code>, session préservée, applis intactes), pilotée par un hint <code>refresh</code> <strong>déclaré par projection</strong> (spec JSON, vocabulaire fermé, défaut = logon suivant), plus la <strong>cadence de check-in pilotée serveur</strong> (l'agent honore déjà le ttl_seconds par réponse — levier serveur-only, TTL global 3600 s aujourd'hui). Consommateur immédiat : Epic 41 (restrict_run effectif en ~2 s en session courante) + lot Explorer existant. Analyse 2026-07-10. Cadrage : <code>planning-artifacts/epics-application-immediate.md</code>.",
       "stories": [
         {
           "id": "43-1",
           "title": "Agent — échelle de rafraîchissement du compagnon (hint refresh du payload)",
-          "status": "review",
+          "status": "done",
           "note": "LIVRÉE ultradev 2026-07-11 (dev fable, review opus, 4 findings corrigés dont throttle 10 min explorer_restart). Agent bumpé 2.10.0 — PUBLICATION MANUELLE requise avant migration retrofit 43.2. Gestes FFI : shell_notify (SHChangeNotify, existant), policy_broadcast (SendMessageTimeout HWND_BROADCAST WM_SETTINGCHANGE \"Policy\"), explorer_restart (kill+respawn dans la session user). Agrégation centralisée fin de Companion.RunPass : UN geste (le plus fort) par passe, gated sur changed, jamais au régime stable ; fan-out HKU SYSTEM jamais concerné. Bump version + PUBLIER AVANT les seeders 43.2 (gate Epic 35). BLOQUANT pour 43.2. Tâche lab : policy_broadcast suffit-il pour RestrictRun ? Reco dev : fable."
         },
         {
           "id": "43-2",
           "title": "Serveur — hint refresh par projection + affichage temporalité d'effet",
-          "status": "review",
+          "status": "done",
           "note": "LIVRÉE ultradev 2026-07-11 (dev sonnet, review opus, 3 findings corrigés). Retrofit conservateur sans explorer_restart (lab non validé — ajustement = UPDATE de seed) ; hash gelés 5beb682b… ; migration retrofit à jouer APRÈS publication 2.10.0. Convention spec.refresh (registry/registry_list), vocabulaire fermé validé par AuthoringGuard ; AbstractCapabilityStateProvider recopie dans le payload (portées session/machine_user seulement). Le hash change → drift ponctuel de re-application, bénin. Golden PHP↔Go. Retrofit lot Explorer + blocked_executables. UI : catalogue + formulaires affichent « immédiat / après rafraîchissement du bureau / au prochain logon ». Amont : 43.1 PUBLIÉE."
         },
         {
           "id": "43-3",
           "title": "Serveur — ttl_seconds dynamique (cadence de propagation pilotée)",
-          "status": "review",
+          "status": "done",
           "note": "LIVRÉE ultradev 2026-07-11 (dev sonnet, review opus, 3 findings corrigés + 1 écarté motivé). AgentTtlResolver 90 s si capacité sensible assignée ; ttl_seconds sorti du hash PHP↔Go ; contrainte 41.3 : déflag = DELETE, jamais value=off. StateCompiler calcule le ttl_seconds par poste (constante config aujourd'hui, StateCompiler.php:74) : court (60-120 s) si parc en bascule sensible (flag examen 41.3), défaut sinon ; abaissement du défaut global à mesurer (les 304 ETag sont quasi gratuits). Limite honnête : le TTL court n'arrive qu'au prochain check-in — le défaut global borne le pire cas ; canal wake serveur→agent hors-scope. Zéro code agent. Vérifier que ttl_seconds n'entre pas dans le StateHasher. Parallélisable."
         },
         {
           "id": "43-4",
           "title": "Agent — fenêtre d'avertissement avant redémarrage d'Explorer (explorer_restart)",
-          "status": "review",
+          "status": "done",
           "note": "LIVRÉE 2026-07-13 (dev-cycle : dev fable, review opus, findings corrigés #1/#2/#3/#4 + spinner/typo à la demande). 100 % agent Go, ZÉRO changement serveur/contrat/golden. Le compagnon lève sa PROPRE fenêtre top-most « patientez » (WS_POPUP + WS_EX_TOPMOST|WS_EX_TOOLWINDOW, FFI user32/gdi32 sans cgo, message pump sur thread LockOSThread, WNDPROC via NewCallback) UNIQUEMENT quand le geste résolu de fin de passe est un explorer_restart RÉELLEMENT exécuté (jamais gestes faibles/stable/throttlé-dégradé, jamais session 0). La fenêtre appartient au process compagnon → SURVIT au kill d'explorer.exe ; c'est dismiss() qui la ferme après le retour du shell. Best-effort ABSOLU (D4) : échec/lenteur = warning + restart quand même ; shown=false ⇒ pas de lead time mort. Design : spinner ASCII animé (WM_TIMER, thread dédié) + police Segoe UI agrandie. Bump agent 2.11.0 — PUBLICATION MANUELLE requise (comportement visible). Amont : 43.1 explorer_restart (mergé main). Reco dev : fable. Doc review : codeReviews/43-4.md."
+        }
+      ]
+    },
+    {
+      "num": 44,
+      "title": "Windows — environnement par défaut du poste",
+      "status": "todo",
+      "summary": "Reprendre la main sur l'<strong>environnement Windows par défaut</strong> (barre des tâches, menu Démarrer, volet de navigation, apps préinstallées) par <strong>artefacts déclaratifs verrouillables par parc</strong>, sans script (doctrine capacités = mécanismes typés). Ancrages : type <code>registry</code> machine/SYSTEM (<code>handler_registry_windows.go</code> CreateKey+Set*), canal de dépose fichier (<code>provision/provision.go:98</code> Reconcile + patron wallpaper), hint <code>refresh=explorer_restart</code> (Epic 43). Story pilote 44.1 (barre vide verrouillée) ; candidates : menu Démarrer (<code>ConfigureStartPins</code>), compléter <code>explorer_sidebar_pins_hidden</code> (épingles du volet de navigation via <code>System.IsPinnedToNameSpaceTree</code> — bug constaté 2026-07-14 : <code>ThisPCPolicy</code> masque le volet de CONTENU, pas les épingles), boutons système/apps. Cadrage : <code>planning-artifacts/epics-windows.md</code>.",
+      "stories": [
+        {
+          "id": "44-1",
+          "title": "Barre des tâches vide et verrouillée",
+          "status": "todo",
+          "note": "CADRÉE 2026-07-14 (dialogue Henri). Barre sans aucune épingle d'app (layout vide PinListPlacement=Replace) + verrou NoPinningToTaskbar=1 (HKLM Policies\\Explorer, machine SYSTEM), opt-in par parc (défaut unmanaged, map symétrique, patron lot Explorer), effet session courante via spec.refresh=explorer_restart (Epic 43). VALIDATION LAB BLOQUANTE d'abord (Windows 11 : recette exacte vider+verrouiller, version-dépendante — W11 a retiré le layout XML du menu Démarrer). Arbitrage mécanisme post-lab : voie composable (XML déposé via provision + clés via type registry existant, ZÉRO bump agent) vs nouveau type taskbar_layout (contrat additif + handler Go + AuthoringGuard + golden, gate publication Epic 35). Réversible (off restaure défaut Windows). Boutons système (Démarrer/Recherche/Widgets/Copilot) hors périmètre. Reco dev : fable si poids agent Go, sinon sonnet (voie composable serveur) — à confirmer au create-story. Cf. epics-windows.md §44.1."
         }
       ]
     }
