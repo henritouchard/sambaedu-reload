@@ -2384,6 +2384,10 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
                 'Equipe_3A' => [
                     ['dn' => 'CN=prof.un,OU=Users,DC=example,DC=local'],
                     ['dn' => 'CN=prof.deux,OU=Users,DC=example,DC=local'],
+                    // Review 42.2 #3 — membre poussé par SE4 SANS ligne User
+                    // SQL : le filtre `current ∩ sqlKnown` du diff doit le
+                    // préserver (scénario le plus dangereux du piège n°2).
+                    ['dn' => 'CN=prof.se4only,OU=Users,DC=example,DC=local'],
                 ],
                 'PP_3A' => [],
             ],
@@ -2421,7 +2425,9 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
         ]);
 
-        // Cibles identiques à l'ancienne partition : ZÉRO add, ZÉRO remove.
+        // Cibles identiques à l'ancienne partition : ZÉRO add, ZÉRO remove —
+        // y compris `prof.se4only` (membre SE4 inconnu du SQL, hors périmètre
+        // du diff `current ∩ sqlKnown` — review 42.2 #3).
         $this->assertSame([], $this->removedDnsFor('Equipe_3A'), 'AUCUN prof SE4 arraché d\'Equipe_ (piège n°2)');
         $this->assertSame([], $this->removedDnsFor('Classe_3A'));
         $this->assertSame([], $this->removedDnsFor('PP_3A'));

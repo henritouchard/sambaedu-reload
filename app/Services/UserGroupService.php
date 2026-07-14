@@ -1077,6 +1077,13 @@ class UserGroupService
 
             // D2.2 — rôle de l'arête, fail-soft sur valeur hors vocabulaire.
             $edgeRole = $edgeRolesByUserId[$userId] ?? null;
+            if ($edgeRole === '') {
+                // Review 42.2 #2 — un `role` NULL SQL (attach brut hors
+                // écrivains dérivés) est casté '' par les appelants : c'est une
+                // arête ABSENTE (→ défaut dérivé), pas une valeur « hors
+                // vocabulaire » — pas de warning parasite à chaque projection.
+                $edgeRole = null;
+            }
             if ($edgeRole !== null && !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
                 Log::warning('[UserGroupService] Rôle d\'arête hors vocabulaire — fallback rôle dérivé', [
                     'group' => $rawName,

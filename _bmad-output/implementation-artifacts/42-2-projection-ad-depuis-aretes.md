@@ -242,3 +242,12 @@ Conclusion : plus AUCUN code vivant ne lit la colonne — elle peut devenir stal
 **fable** (confirme le pré-cadrage fable/opus de l'epic, borne haute).
 
 Justification : c'est la story pivot de l'epic et la plus dangereuse — elle écrit dans l'**AD fédéré partagé de 75 établissements** avec un diff qui sait RETIRER des membres (piège n°2 : une résolution de rôle buggée arrache des profs d'`Equipe_X` en brownfield → perte rwx immédiate en prod) ; elle exécute une **bascule atomique** entre deux heuristiques et une source d'arêtes avec quatre coutures inter-stories à ne pas déchirer (canal PP 4.15 conservé, read-back heuristique conservé pour 42.4, miroir retiré sans lecteur restant, point d'entrée resync pour 42.3) ; et l'ancrage événementiel (observer `updated` + suspension pendant `syncFromAd`) porte des risques de récursion/tempête LDAP non triviaux, vérifiés jusque dans le vendor. La story est très prescriptive, mais la surface d'échecs silencieux (fail-soft partout, diff destructif, events pivot) justifie le modèle le plus fort ; review par le modèle opposé (opus).
+
+## Code Review Record (2026-07-14)
+
+Review adversariale **opus** (dev fable, review = référence) : **approuvé** — 0 critique, 0 important, 4 mineurs tous corrigés/documentés. Doc : `_bmad-output/codeReviews/42-2.md`.
+
+1. (#1) Gate observer aligné sur le prédicat classe-like du chokepoint (`class` toléré).
+2. (#2) Rôle d'arête NULL (casté `''`) = arête absente → défaut dérivé silencieux ; warning réservé aux vraies valeurs hors vocabulaire.
+3. (#3) Test brownfield durci : membre SE4 sans ligne SQL (`prof.se4only`) préservé par le filtre `current ∩ sqlKnown`.
+4. (#4) **Contrat de consommation pour 42.3** : toute édition de rôles EN MASSE doit encadrer ses écritures pivot par `UserGroupUserPivotObserver::disableAdResync()`/`enableAdResync()` et déclencher UN `resyncGroupAdProjection($group)` explicite — sinon K events `updated` = K reprojections LDAP du même groupe. (L'édition unitaire 42.3 peut s'appuyer sur l'observer tel quel.)

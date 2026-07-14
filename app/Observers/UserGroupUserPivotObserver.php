@@ -120,7 +120,9 @@ class UserGroupUserPivotObserver
         }
 
         $group = UserGroup::find($groupId);
-        if (! $group || ! in_array($group->type, ['classe', 'equipe'], true)) {
+        // Review 42.2 #1 — prédicat aligné sur le chokepoint (`class` toléré :
+        // fixtures historiques `type='class'` traitées classe-like).
+        if (! $group || ! in_array($group->type, ['class', 'classe', 'equipe'], true)) {
             return; // hors scope — le rôle d'arête ne route rien ailleurs.
         }
 
