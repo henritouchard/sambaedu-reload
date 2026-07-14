@@ -45,6 +45,7 @@
                     <ul class="max-h-60 overflow-y-auto p-1.5">
                         @forelse ($this->availableUsers as $option)
                             <li x-show="search === '' || '{{ strtolower(addslashes($option['label'] . ' ' . $option['hint'])) }}'.includes(search.toLowerCase())"
+                                wire:key="available-user-{{ $option['value'] }}"
                                 class="px-2 py-1">
                                 <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 rounded px-2 py-1">
                                     <input type="checkbox" value="{{ $option['value'] }}"
@@ -56,6 +57,23 @@
                                         <span class="text-xs text-base-content/55 ml-auto flex-shrink-0">{{ $option['hint'] }}</span>
                                     @endif
                                 </label>
+                                {{-- Story 42.3 (D5/T3.3) — user NOUVELLEMENT coché : select du
+                                     rôle proposé (défaut dérivé, surchargeable Élève/Prof —
+                                     jamais owner au rattachement). Label au-dessus, pas de hint
+                                     décoratif, wrapper flex flex-col + w-full (piège DaisyUI 5,
+                                     pas de nouveau .form-control). --}}
+                                @if (in_array($option['value'], $selectedUserIds))
+                                    <div class="pl-8 pt-1 flex flex-col w-full max-w-[12rem]">
+                                        <label class="label-text text-xs opacity-70">Rôle</label>
+                                        <select wire:key="pending-role-{{ $option['value'] }}"
+                                            wire:change="setPendingRole({{ $option['value'] }}, $event.target.value)"
+                                            class="select select-bordered select-xs w-full">
+                                            @php($currentPendingRole = $pendingRoles[$option['value']] ?? $option['default_role'])
+                                            <option value="member" @selected($currentPendingRole === 'member')>Élève</option>
+                                            <option value="manager" @selected($currentPendingRole === 'manager')>Prof</option>
+                                        </select>
+                                    </div>
+                                @endif
                             </li>
                         @empty
                             <li class="px-3 py-2 text-sm text-base-content/60">Tous les utilisateurs sont déjà membres</li>

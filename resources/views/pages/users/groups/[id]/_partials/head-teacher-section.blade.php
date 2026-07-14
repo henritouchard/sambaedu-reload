@@ -264,9 +264,14 @@ new class extends Component {
 };
 ?>
 
+{{-- Review 42.3 #1 — balise RACINE STABLE obligatoire : un @if de premier
+     niveau fait capturer un tag racine vide par SupportNestingComponents
+     (marqueur [if BLOCK] de SupportMorphAwareBladeCompilation) → ViewException
+     « Invalid Livewire child tag name » au re-render de la page parente
+     (cassait updateMemberRole 42.3 ET removeMember pré-existant). --}}
+<div>
 @if (! $isClasse)
     {{-- Le component n'affiche rien si le UserGroup n'est pas de type classe. --}}
-    <div></div>
 @else
     {{-- Story 4.15 (refonte UI) — la désignation du PP n'est plus une card
          permanente mais une MODALE déclenchée par l'action « Nommer un
@@ -333,3 +338,4 @@ new class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 @endif
+</div>

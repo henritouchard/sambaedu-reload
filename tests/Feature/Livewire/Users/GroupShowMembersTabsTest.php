@@ -228,4 +228,77 @@ class GroupShowMembersTabsTest extends TestCase
             'le membre ne doit pas avoir été retiré'
         );
     }
+
+    // =========================================================================
+    // Story 42.3 — AC1 : colonne « Rôle » en lecture (view-model + libellés FR)
+    // =========================================================================
+
+    #[Test]
+    public function it_exposes_edge_role_distinct_from_global_role(): void
+    {
+        $this->actingAs($this->makeAdmin());
+        [$group, $profPp, $prof, $eleve] = $this->makeClasse();
+
+        $members = collect(Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members())
+            ->keyBy('id');
+
+        // Piège 42.1 #5 — collision de clés interdite : `role` (global) reste
+        // prof/eleve/autre, `edge_role` (arête) porte member/manager/owner.
+        $this->assertSame('prof', $members[$profPp->id]['role']);
+        $this->assertSame(UserGroupUserPivot::ROLE_OWNER, $members[$profPp->id]['edge_role']);
+        $this->assertSame('Prof principal', $members[$profPp->id]['edge_role_label']);
+
+        $this->assertSame('prof', $members[$prof->id]['role']);
+        $this->assertSame(UserGroupUserPivot::ROLE_MANAGER, $members[$prof->id]['edge_role']);
+        $this->assertSame('Prof', $members[$prof->id]['edge_role_label']);
+
+        $this->assertSame('eleve', $members[$eleve->id]['role']);
+        $this->assertSame(UserGroupUserPivot::ROLE_MEMBER, $members[$eleve->id]['edge_role']);
+        $this->assertSame('Élève', $members[$eleve->id]['edge_role_label']);
+    }
+
+    #[Test]
+    public function it_defaults_dirty_edge_role_to_member_label(): void
+    {
+        $this->actingAs($this->makeAdmin());
+        $group = UserGroup::create(['name' => 'Projet', 'type' => 'projet', 'display_name' => 'Projet X']);
+        $user = User::create(['login' => 'sale.role', 'role' => 'eleve', 'fullname' => 'Sale Role', 'is_active' => true]);
+        // Arête hors vocabulaire (donnée sale) — D1 : affichée « Élève ».
+        $group->users()->sync([$user->id => ['role' => 'superadmin']]);
+        $this->primeNoLdap('sale.role');
+
+        $members = collect(Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members())
+            ->keyBy('id');
+
+        $this->assertSame(UserGroupUserPivot::ROLE_MEMBER, $members[$user->id]['edge_role']);
+        $this->assertSame('Élève', $members[$user->id]['edge_role_label']);
+    }
+
+    #[Test]
+    public function it_renders_role_labels_in_members_table(): void
+    {
+        $this->actingAs($this->makeAdmin());
+        [$group] = $this->makeClasse();
+
+        // Onglet Profs (défaut visible côté Alpine mais le HTML des deux
+        // onglets est rendu côté serveur) : libellés FR visibles, aucune
+        // valeur technique en texte.
+        Livewire::test($this->componentPath(), ['id' => $group->id])
+            ->assertSee('Rôle')
+            ->assertSee('Élève')
+            ->assertSee('Prof')
+            ->assertSee('Prof principal');
+    }
+
+    #[Test]
+    public function it_does_not_render_role_select_for_reader(): void
+    {
+        $this->actingAs($this->makeReader());
+        [$group] = $this->makeClasse();
+
+        // Lecteur (`user.read` sans `user.modify`) : libellé seul, pas de
+        // `<select` pour la colonne Rôle (guard UI `@can('update-group')`).
+        Livewire::test($this->componentPath(), ['id' => $group->id])
+            ->assertDontSeeHtml('wire:change="updateMemberRole');
+    }
 }

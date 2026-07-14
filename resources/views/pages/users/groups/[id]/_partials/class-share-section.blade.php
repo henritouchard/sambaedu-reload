@@ -212,9 +212,14 @@ new class extends Component {
 };
 ?>
 
+{{-- Review 42.3 #1 — balise RACINE STABLE obligatoire : un @if de premier
+     niveau fait capturer un tag racine vide par SupportNestingComponents
+     (marqueur [if BLOCK] de SupportMorphAwareBladeCompilation) → ViewException
+     « Invalid Livewire child tag name » au re-render de la page parente
+     (cassait updateMemberRole 42.3 ET removeMember pré-existant). --}}
+<div>
 @if (! $isClasse)
     {{-- Le component n'affiche rien si le UserGroup n'est pas de type classe. --}}
-    <div></div>
 @else
     <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
@@ -358,3 +363,4 @@ new class extends Component {
         </div>
     </div>
 @endif
+</div>
