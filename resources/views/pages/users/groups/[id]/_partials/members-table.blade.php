@@ -1,6 +1,11 @@
 {{-- Table de membres réutilisée par les onglets Élèves / Profs.
      Params : $rows (collection de membres mappés), $withHeadTeacher (bool —
-     affiche l'icône « Professeur principal » après le nom dans l'onglet Profs). --}}
+     affiche l'icône « Professeur principal » après le nom dans l'onglet Profs).
+     Story 42.3 — colonne « Rôle » (arête `edge_role`/`edge_role_label`, D1) :
+     lecture pour tous, select pour les porteurs d'`update-group`. `$type`
+     (rôle GLOBAL du groupe, propriété du composant parent) est disponible ici
+     par héritage de scope Blade (@include partage get_defined_vars()) — il
+     gate l'option « Prof principal » (D3). --}}
 @php($withHeadTeacher = $withHeadTeacher ?? false)
 <div class="overflow-x-auto">
     <table class="table table-zebra">
@@ -8,12 +13,13 @@
             <tr>
                 <th>Nom</th>
                 <th>Login</th>
+                <th>Rôle</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
             @foreach ($rows as $member)
-                <tr>
+                <tr wire:key="member-row-{{ $member['id'] }}">
                     <td class="font-medium">
                         <span class="inline-flex items-center gap-2">
                             <a href="{{ route('app.user.show', ['login' => $member['login']]) }}"
@@ -28,6 +34,21 @@
                     </td>
                     <td>
                         <code class="text-sm bg-base-200 px-2 py-0.5 rounded font-mono">{{ $member['login'] }}</code>
+                    </td>
+                    <td>
+                        @can('update-group')
+                            <select wire:key="member-role-{{ $member['id'] }}"
+                                wire:change="updateMemberRole({{ $member['id'] }}, $event.target.value)"
+                                class="select select-bordered select-sm">
+                                <option value="member" @selected($member['edge_role'] === 'member')>Élève</option>
+                                <option value="manager" @selected($member['edge_role'] === 'manager')>Prof</option>
+                                @if (($type ?? null) === 'classe' || $member['edge_role'] === 'owner')
+                                    <option value="owner" @selected($member['edge_role'] === 'owner')>Prof principal</option>
+                                @endif
+                            </select>
+                        @else
+                            <span class="text-sm">{{ $member['edge_role_label'] }}</span>
+                        @endcan
                     </td>
                     <td class="text-right">
                         <div class="flex items-center justify-end gap-1">

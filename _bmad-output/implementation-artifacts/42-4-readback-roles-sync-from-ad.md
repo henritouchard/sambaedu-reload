@@ -94,7 +94,7 @@ afin que la migration d'un établissement SE4 (58 `classe_`, 606 `equipe_`, 4 `p
   - [x] T4.7 Fédéré (AC9) : DN `OU=0991229y` (adGroupRow adapté), rôles du trio, résolution `ad_guid`.
   - [x] T4.8 Adaptations : `it_suspends_ad_resync_observer_during_syncFromAd` (fixture bob → `Equipe_3A`, AC10) ; `it_writes_role_on_pivot_read_back`/tests 4.14-4.15 (PP→owner : mêmes attentes, fixtures trio-complètes déjà convergentes — vérifier, adapter les fixtures qui comptaient sur l'heuristique prof-en-`Classe_`-seule) ; balayer les tests read-back existants pour tout prof AD placé uniquement dans `Classe_` (dérivé désormais `member`).
   - [x] T4.9 Non-régression : filtre complet AC12 (run massif interdit — `project_vm_phpunit_bulk_run_false_failures`).
-- [x] **T5 — Doc QA append-only** — `docs/qa/domains/rights-management.md` : **Section 17** « Read-back des rôles au sync-from-ad (Story 42.4) » — scénarios (trio+précédence, orphan equipe manager, préservation sans PP_, données sales lab1, aller-retour stable) + runbook e2e /vm différé post-merge (import `php artisan import:sync-from-ad user_groups` puis vérif pivot `role` sur une classe avec/sans `pp_`, `migrate:status` préalable — 42.1 jouée). Sections 1-16 NON renumérotées. ⚠️ 42.3 (parallèle) ajoutera probablement AUSSI une section : collision de numéro possible au merge — bénin, renuméroter à l'intégration (le contenu est append-only).
+- [x] **T5 — Doc QA append-only** — `docs/qa/domains/rights-management.md` : **Section 18** « Read-back des rôles au sync-from-ad (Story 42.4) » — scénarios (trio+précédence, orphan equipe manager, préservation sans PP_, données sales lab1, aller-retour stable) + runbook e2e /vm différé post-merge (import `php artisan import:sync-from-ad user_groups` puis vérif pivot `role` sur une classe avec/sans `pp_`, `migrate:status` préalable — 42.1 jouée). Sections 1-16 NON renumérotées. ⚠️ 42.3 (parallèle) ajoutera probablement AUSSI une section : collision de numéro possible au merge — bénin, renuméroter à l'intégration (le contenu est append-only).
 
 ---
 
@@ -136,7 +136,7 @@ afin que la migration d'un établissement SE4 (58 `classe_`, 606 `equipe_`, 4 `p
 - **Piège n°8 — SQLite ne borne pas les varchar** : la préservation D3 compare STRICTEMENT aux constantes ; une valeur sale (`'chef'`, `''`) n'est ni préservée ni écrite — le dérivé D1/D5 (constantes ou `defaultRoleForGlobalRole`, gardée) est la seule source d'écriture. Pas d'`assertValidRole` en LEVÉE dans le chemin d'import (fail-soft, D6).
 - **Piège n°9 — ne pas toucher l'ordre AD-avant-read-back** : `createGroup`/`updateGroup` écrivent l'AD PUIS appellent `syncFromAd` (scopé). Le read-back D1 lit donc l'AD fraîchement projeté → convergence par construction. Ne rien « optimiser » dans ce flux (4.15-D2).
 - **Piège n°10 — suffixe étab** : jamais de strip `-<uai>` sur les CN (le CN n'est PAS suffixé, c'est le sAMAccountName qui l'est — vérifié lab1, `project_acl_equipe_group_missing_etab_suffix`). Le fold et le tier travaillent sur le CN tel quel.
-- **VM** : AUCUNE migration dans cette story ; e2e réel différé post-merge (runbook Section 17) ; `migrate:status` préalable (42.1 jouée sur /vm). Ne JAMAIS interagir avec la VM depuis ce worktree.
+- **VM** : AUCUNE migration dans cette story ; e2e réel différé post-merge (runbook Section 18) ; `migrate:status` préalable (42.1 jouée sur /vm). Ne JAMAIS interagir avec la VM depuis ce worktree.
 - **Worktree** : `cp -al` du vendor, jamais de symlink (`project_ultradev_worktree_vendor_trap`).
 
 ### Testing standards
@@ -148,7 +148,7 @@ afin que la migration d'un établissement SE4 (58 `classe_`, 606 `equipe_`, 4 `p
 ### Project Structure Notes
 
 - **AUCUN fichier créé côté app** ; 0 migration, 0 route, 0 vue, 0 fichier `agent/**` (pas de bump version agent).
-- Éditions : `app/Services/UserGroupService.php` (`projectFoldedGroup` + commentaires), `app/Models/Pivot/UserGroupUserPivot.php` (commentaires), `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php`, `docs/qa/domains/rights-management.md` (Section 17 append-only).
+- Éditions : `app/Services/UserGroupService.php` (`projectFoldedGroup` + commentaires), `app/Models/Pivot/UserGroupUserPivot.php` (commentaires), `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php`, `docs/qa/domains/rights-management.md` (Section 18 append-only).
 - Racine projet = Laravel (`app/`, pas `laravel/app`).
 
 ### References
@@ -185,14 +185,14 @@ claude-opus-4-8 (dev-story, worktree ultradev/42-4)
 - `app/Services/UserGroupService.php` (modifié — `projectFoldedGroup` : read-back du trio D1/D3/D5/D6 + docblock ; commentaire `syncFromAd`)
 - `app/Models/Pivot/UserGroupUserPivot.php` (modifié — commentaire de traçabilité 42.4 seulement)
 - `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` (modifié — 12 nouveaux tests AC1-AC9 + fixture AC10 adaptée)
-- `docs/qa/domains/rights-management.md` (modifié — Section 17 append-only)
+- `docs/qa/domains/rights-management.md` (modifié — Section 18 append-only)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (modifié — ligne 42-4 uniquement)
 
 ## Change Log
 
 | Date | Version | Description | Auteur |
 |---|---|---|---|
-| 2026-07-14 | 1.0 | Story IMPLÉMENTÉE (dev-story, claude-opus-4-8, worktree ultradev/42-4) → review. Read-back du trio AD dans `projectFoldedGroup` : tier MAX par user (D1), `users.role` conservé HORS trio (D5, 1 requête sur les seuls membres non-trio), préservation par signal manquant (D3, arêtes existantes lues 1 requête avant `sync()`, composition member→manager→owner, comparaisons strictes), fail-soft intégral (D6). Aller-retour projection 42.2 ⇄ read-back no-op prouvé (greenfield + brownfield sans PP_ : owner UI survit, limite 42.1-AC7 LEVÉE). Périmètre STRICT : app = `projectFoldedGroup` + commentaire `syncFromAd` + 1 commentaire pivot (chokepoint/fold/observer/vestiges INTOUCHÉS, diff vérifié) ; 0 migration, 0 vue. 12 nouveaux tests (AC1-AC9) + fixture AC10 adaptée (bob → Equipe_3A). Tests HÔTE : LegacyCompatibility 68/68 ; AC12 192/192 (554 assertions), 0 régression. QA Section 17. | Dev (Opus 4.8) |
+| 2026-07-14 | 1.0 | Story IMPLÉMENTÉE (dev-story, claude-opus-4-8, worktree ultradev/42-4) → review. Read-back du trio AD dans `projectFoldedGroup` : tier MAX par user (D1), `users.role` conservé HORS trio (D5, 1 requête sur les seuls membres non-trio), préservation par signal manquant (D3, arêtes existantes lues 1 requête avant `sync()`, composition member→manager→owner, comparaisons strictes), fail-soft intégral (D6). Aller-retour projection 42.2 ⇄ read-back no-op prouvé (greenfield + brownfield sans PP_ : owner UI survit, limite 42.1-AC7 LEVÉE). Périmètre STRICT : app = `projectFoldedGroup` + commentaire `syncFromAd` + 1 commentaire pivot (chokepoint/fold/observer/vestiges INTOUCHÉS, diff vérifié) ; 0 migration, 0 vue. 12 nouveaux tests (AC1-AC9) + fixture AC10 adaptée (bob → Equipe_3A). Tests HÔTE : LegacyCompatibility 68/68 ; AC12 192/192 (554 assertions), 0 régression. QA Section 18. | Dev (Opus 4.8) |
 | 2026-07-14 | 0.1 | Story CRÉÉE (SM/create-story, Fable 5, worktree ultradev/42-4). AC-skeleton de l'epic figé en 12 AC. Décisions actées : D1 dérivation par CN du trio avec précédence par tier (PP_→owner, Equipe_→manager, Classe_→member ; l'AD prime sur users.role — un prof en Classe_ seule devient member, changement ASSUMÉ) ; D2 Equipe_ orphelin (~548/606 lab1) → arêtes `manager` (membership-only=member serait DESTRUCTIF à la reprojection : vidage d'Equipe_<base> en AD ; ignorer casserait le cleanup 4.13) ; D3 préservation par signal manquant (fold sans PP_ → owner existant conservé si dérivé manager ; fold sans Equipe_ → manager conservé ; CN présent = AD autoritaire ; comparaisons strictes aux constantes) — sans D3 la limite 42.1-AC7 ne serait pas levée sur les 54/58 classes lab1 sans pp_ ; D4 appartenance/résolution AD-first intactes (ad_guid, login=cn, jamais de CN suffixé) ; D5 heuristique conservée hors trio (Cours_/Matiere_/custom) ; D6 fail-soft intégral dans le savepoint 25P02. Aller-retour projection 42.2 ⇄ read-back = no-op (greenfield trio complet ET brownfield sans PP_). Piège identifié : fixture du test de suspension adResync à adapter (bob → Equipe_3A). Périmètre : projectFoldedGroup + tests + doc QA — AUCUN chevauchement avec 42.3 (UI). | SM (Fable 5) |
 
 ---

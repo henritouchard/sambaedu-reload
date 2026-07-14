@@ -1158,13 +1158,76 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - [ ] Ex-PP décoché : sort de `PP_`, reste dans `Equipe_`
 - [ ] `PP_X` absent AD : save OK, pas d'exception
 - [ ] Brownfield : AUCUN retrait de membre légitime d'`Equipe_X` pré-peuplé SE4
+
+## Section 17 — Rôle d'arête visible et éditable sur la page groupe (Story 42.3, 2026-07-14)
+
+> **Contexte.** La fiche groupe (`/app/users/groups/[id]`) expose désormais une colonne « Rôle » sur la liste des membres (onglets Élèves ET Profs), qui LIT et ÉCRIT le rôle d'arête `user_group_user.role` (42.1) — libellés FR (`member`→« Élève », `manager`→« Prof », `owner`→« Prof principal »), valeurs techniques jamais rendues comme texte. View-model : clés NOUVELLES `edge_role`/`edge_role_label`, la clé `role` existante (rôle GLOBAL prof/eleve/autre, pilote les onglets + le badge PP) reste INTACTE — **aucune collision** (piège 42.1 #5). Édition UNITAIRE (`updateMemberRole`) = write Eloquent direct (`updateExistingPivot`), l'observer pivot (42.2) reprojette l'AD automatiquement si le rôle change réellement (dirty) — **aucun appel `updateGroup`/`resyncGroupAdProjection` explicite** sur ce chemin. Le rattachement (edit-form) propose un rôle par défaut dérivé (`defaultRoleForGlobalRole`, jamais `owner`), surchargeable (Élève/Prof) ; les surcharges sont appliquées EN MASSE après `updateGroup` sous `UserGroupUserPivotObserver::disableAdResync()`/`enableAdResync()` (try/finally) suivies d'**UN SEUL** `resyncGroupAdProjection()` explicite (contrat review 42.2 #4). Option « Prof principal » offerte au select UNIQUEMENT pour les groupes `classe` (refus serveur si forgé sur un autre type, même via payload direct) ; une arête `owner` préexistante sur un groupe non-classe reste visible/rétrogradable. **Zéro fichier `app/**` modifié** (AC8) — 3 blades de la page groupe (`index`, `members-table`, `edit-form`), tests, doc QA seulement ; `head-teacher-section.blade.php` et `class-share-section.blade.php` NON touchés.
+>
+> **Limite transitoire ASSUMÉE (D6, cf. Section 16)** : un read-back `syncFromAd` (déclenché par tout `updateGroup` du groupe — save de l'edit-form, retrait de membre, save de la modale PP) redérive encore les rôles depuis l'heuristique (`users.role` + CN `PP_`), et PEUT réécraser une édition de rôle non conforme à cette heuristique (ex. élève promu « Prof » via la colonne, puis un save de l'edit-form sans rapport rétablit son rôle dérivé). `owner` survit au read-back via l'appartenance AD `PP_<base>`, SAUF si ce groupe AD est absent (fail-soft 42.2 AC6 → retombe `manager`). L'UI ne promet RIEN de faux : le toast (« Rôle mis à jour. ») est factuel, aucun texte n'affirme une persistance définitive. Cette limite sera levée par la Story 42.4 (read-back dérivé de l'appartenance AD que la projection 42.2 écrit déjà depuis l'arête éditée).
+
+### Runbook e2e /vm (différé post-merge)
+- **Préalable** : `cd /var/www/sambaedu-reload && php artisan migrate:status` — les migrations 42.1/42.2 doivent être `Ran` (aucune migration nouvelle en 42.3).
+- **Contrôle colonne + édition unitaire** : depuis la fiche groupe d'une classe `<x>`, changer le rôle d'un élève en « Prof » via le select de la colonne → `samba-tool group listmembers Equipe_<x>` doit désormais lister ce membre, `samba-tool group listmembers Classe_<x>` ne doit plus le lister — sans avoir touché à l'edit-form.
+- **Contrôle « Prof principal »** : promouvoir un prof en « Prof principal » via la colonne (classe uniquement) → `samba-tool group listmembers PP_<x>` liste ce membre ; ouvrir la modale « Nommer un professeur principal » → le prof apparaît coché (canal 4.15 inchangé, convergence par le pivot).
+- **Contrôle rattachement + surcharge** : ajouter un nouveau membre élève à une classe en le rattachant directement avec le rôle « Prof » (surcharge du défaut « Élève ») → après save, `samba-tool group listmembers Equipe_<x>` le liste immédiatement (une seule reprojection malgré la surcharge, pas de tempête de commandes AD observée dans les logs).
+- **Contrôle limite transitoire (D6, non-régression assumée)** : après une édition de rôle non conforme à l'heuristique (ex. élève promu « Prof » via la colonne), déclencher un `updateGroup` sans rapport (ex. renommer le groupe puis annuler, ou retirer un autre membre) → vérifier que le rôle édité est bien rétabli à son défaut dérivé par le read-back (comportement ATTENDU, pas un bug — cf. limite D6).
+
+### Scénario 17.1 — Colonne « Rôle » en lecture, libellés FR, aucune collision de clé (CRITIQUE)
+- **Préparation** : classe `3A` avec un élève (`member`), un prof (`manager`), un prof PP (`owner`).
+- **Attendu** : la colonne « Rôle » affiche « Élève »/« Prof »/« Prof principal » dans les DEUX onglets ; le view-model expose `edge_role` (arête) ET `role` (global, INCHANGÉ, pilote toujours le split onglets + badge PP) — un élève promu `manager` sur son arête reste dans l'onglet Élèves (rôle global) tout en affichant « Prof » en colonne (rôle d'arête) : **comportement voulu**, pas un bug. Aucune valeur technique (`member|manager|owner`) rendue en texte visible.
+
+### Scénario 17.2 — Arête sale/vide affichée « Élève » (D1)
+- **Préparation** : une arête avec `role` hors vocabulaire (donnée corrompue, ex. `superadmin`) ou vide.
+- **Attendu** : la colonne affiche « Élève » (fallback `ROLE_MEMBER`), aucune exception, cohérent avec la résolution D2 de la projection 42.2 (arête absente/invalide → défaut dérivé).
+
+### Scénario 17.3 — Édition unitaire → resync AD automatique EXACTEMENT une fois (CRITIQUE)
+- **Préparation** : classe avec un élève (`member`), observer pivot activé (`enableSync`/`enableAdResync`).
+- **Action** : changer son rôle en « Prof » via le select de la colonne (`updateMemberRole`).
+- **Attendu** : le pivot passe à `manager`, l'observer pivot (42.2) déclenche EXACTEMENT une reprojection AD du groupe (le membre bascule de `Classe_<x>` vers `Equipe_<x>`) — AUCUN appel `updateGroup`/`resyncGroupAdProjection` explicite depuis la page. Re-sélectionner la valeur COURANTE (pas de changement réel) = no-op silencieux, ZÉRO event `updated`, ZÉRO reprojection (pivot non dirty).
+
+### Scénario 17.4 — Gardes serveur (D3/D7, CRITIQUE)
+- **Préparation** : (a) un groupe `projet` avec un prof membre ; (b) une valeur de rôle hors vocabulaire (ex. `superadmin`) envoyée à `updateMemberRole` ; (c) un utilisateur non-membre du groupe ; (d) un utilisateur `user.read` sans `user.modify`.
+- **Attendu** : (a) `owner` refusé sur un groupe non-classe (toast d'erreur, pivot inchangé) — même en payload forgé ; (b) valeur hors vocabulaire : `assertValidRole` lève, capturée en toast d'erreur, AUCUNE écriture, **jamais de 500** ; (c) userId non membre : toast d'erreur, aucune ligne pivot créée ; (d) lecteur seul : `Gate::authorize('update-group')` rejette (403), pivot inchangé, colonne affichée SANS select côté UI.
+
+### Scénario 17.5 — Cohérence colonne ↔ modale « Professeur principal » (D2, CRITIQUE)
+- **Préparation** : classe avec un prof simple (`manager`).
+- **Action** : promouvoir ce prof en « Prof principal » via la colonne (classe uniquement).
+- **Attendu** : l'arête passe à `owner`, le badge PP apparaît IMMÉDIATEMENT dans la liste des membres (`title="Professeur principal"`) sans recharger la page (invalidation des computed `members`/`students`/`teachers`) ; à la PROCHAINE ouverture de la modale « Nommer un professeur principal », le prof apparaît coché (`refreshState()` existant, canal 4.15 INCHANGÉ — `head-teacher-section.blade.php` non modifié). Rétrograder ce PP via la colonne (repasser à « Prof ») le retire de la sélection PP à la prochaine ouverture de la modale. Un save de la modale PP continue de rafraîchir la colonne via l'event `head-teachers-updated` existant (listener `refreshMembers`).
+
+### Scénario 17.6 — Rattachement : défaut dérivé + surcharge + contrat masse (AC5, CRITIQUE)
+- **Préparation** : groupe avec un prof déjà membre (`manager`) ; deux NOUVEAUX candidats au rattachement : un élève (défaut `member`) et un prof (défaut `manager`).
+- **Action** : cocher les deux candidats dans l'edit-form ; surcharger UNIQUEMENT le rôle de l'élève à « Prof » (le prof reste à son défaut) ; sauvegarder.
+- **Attendu** : après `save()`, l'élève surchargé porte l'arête `manager` (surcharge appliquée), le prof porte `manager` (défaut, AUCUNE écriture supplémentaire puisque choisi == défaut dérivé posé par le read-back `updateGroup`), le prof DÉJÀ membre garde son arête INTACTE (piège 42.1 #2, jamais réécrite par ce chemin). `resyncGroupAdProjection` est appelé **EXACTEMENT une fois** malgré la surcharge (preuve du contrat masse review 42.2 #4 : `disableAdResync()`/`enableAdResync()` autour du write pivot en masse, puis UNE reprojection explicite) — zéro surcharge choisie (rôle == défaut partout) ⇒ ZÉRO write pivot supplémentaire, ZÉRO resync explicite.
+
+### Scénario 17.7 — Limite transitoire read-back (D6, documentée — AUCUN test n'asserte la survie)
+- **Préparation** : un rôle édité via la colonne de façon NON conforme à l'heuristique (ex. élève promu « Prof »).
+- **Attendu** : un read-back ultérieur (`syncFromAd`, déclenché par tout `updateGroup` du groupe — save edit-form, retrait de membre, save modale PP) RÉÉCRASE ce rôle vers le dérivé de l'heuristique (`users.role` + CN `PP_`) — comportement ASSUMÉ, pas un bug, levé en 42.4. `owner` survit via l'appartenance AD `PP_<base>`, SAUF si ce groupe AD est absent (fail-soft 42.2 AC6). Aucun texte UI n'affirme une persistance définitive (toast factuel « Rôle mis à jour. »).
+
+### Scénario 17.8 — Zéro chevauchement fichiers avec la Story 42.4 (AC8, CRITIQUE)
+- **Préparation/Contrôle** : `git diff` de la story.
+- **Attendu** : AUCUN diff dans `app/Services/UserGroupService.php`, `app/Observers/UserGroupUserPivotObserver.php`, `app/Models/**`, ni dans `head-teacher-section.blade.php`/`class-share-section.blade.php`. Seuls modifiés : `resources/views/pages/users/groups/[id]/index.blade.php`, `_partials/members-table.blade.php`, `_partials/edit-form.blade.php`, les tests, cette section de doc QA.
+
+> **Défaut pré-existant observé puis CORRIGÉ en review 42.3 (#1)** : une interaction Livewire (`SupportMorphAwareBladeCompilation` × `SupportNestingComponents`) cassait le RE-RENDU successif de la page groupe `classe` (ViewException « Invalid Livewire child tag name ») dès qu'une action Livewire du parent aboutissait — y compris l'action `removeMember` INCHANGÉE (défaut antérieur à la story). Racine confirmée : `class-share-section.blade.php` et `head-teacher-section.blade.php` structuraient tout leur template autour d'un `@if (!$isClasse) … @else … @endif` de premier niveau (pas de tag racine stable) ; le marqueur `<!--[if BLOCK]>` injecté par Livewire devant ce `@if` faisait capturer un tag racine vide. **Correctif (review 42.3 #1)** : les deux partials sont désormais enveloppés dans une balise racine `<div>` stable — l'édition de rôle ET `removeMember` fonctionnent sur le vrai canal Livewire ; les tests `GroupMemberRoleEditTest` passent tous par `->call()` (plus de contournement par appel direct d'instance).
+
+> **Couverture automatisée.** `tests/Feature/Livewire/Users/GroupShowMembersTabsTest.php` (colonne/libellés/collision de clés — `it_exposes_edge_role_distinct_from_global_role`, `it_defaults_dirty_edge_role_to_member_label`, `it_renders_role_labels_in_members_table`, `it_does_not_render_role_select_for_reader`), `tests/Feature/Livewire/Users/GroupMemberRoleEditTest.php` (12 tests — édition unitaire, gardes D3/D7, cohérence badge PP, resync exactement une fois, rattachement défaut/surcharge/contrat masse).
+
+### Checklist rapide Section 17
+- [ ] Colonne « Rôle » visible sur les deux onglets, libellés FR, aucune valeur technique en texte
+- [ ] `edge_role`/`edge_role_label` distincts de `role` (global) — aucune collision de clé
+- [ ] Arête sale/vide → « Élève » (fallback D1)
+- [ ] Édition unitaire → EXACTEMENT une reprojection AD (observer 42.2) ; re-sélection identique = no-op
+- [ ] `owner` refusé hors classe (payload forgé compris) ; valeur hors vocabulaire → toast, zéro écriture, jamais de 500 ; non-membre/lecteur refusés
+- [ ] Badge PP ↔ colonne : convergence immédiate côté colonne, modale relit à l'ouverture suivante (canal 4.15 intact)
+- [ ] Rattachement : défaut dérivé correct, surcharge appliquée aux SEULS nouveaux ids, arêtes existantes intactes, resync EXACTEMENT une fois malgré K surcharges
+- [ ] Limite transitoire D6 documentée, aucune promesse UI de persistance définitive
+- [ ] `git diff` : zéro fichier `app/**`, zéro diff `head-teacher-section.blade.php`/`class-share-section.blade.php`
 - [ ] Stats `head_teacher_updated` (clé publique) inchangée dans les retours `syncFromAd`
 
 ---
 
-## Section 17 — Read-back des rôles au sync-from-ad (Story 42.4, 2026-07-14)
+## Section 18 — Read-back des rôles au sync-from-ad (Story 42.4, 2026-07-14)
 
-> ⚠️ **Numérotation** : la story 42.3 (UI rôle éditable), développée en parallèle, ajoute AUSSI une « Section 17 » dans son propre worktree. Collision bénigne — à renuméroter à l'intégration (contenu append-only).
+> ⚠️ **Numérotation** : la story 42.3 (UI rôle éditable), développée en parallèle, ajoute AUSSI une « Section 18 » dans son propre worktree. Collision bénigne — à renuméroter à l'intégration (contenu append-only).
 
 > **Contexte.** À l'import AD→SQL (`syncFromAd`, transitoire), le rôle de CHAQUE arête `user_group_user.role` est désormais **reconstruit par read-back du TRIO AD réel** dans `projectFoldedGroup` — l'HEURISTIQUE `users.role` (posée en 42.1-AC7, conservée « en l'état » par 42.2) est REMPLACÉE pour tout membre d'un CN du trio. **D1 — dérivation par tier MAX** : pour chaque membre de l'union des CN du groupe foldé, le rôle est le maximum des tiers de ses CN d'appartenance : `PP_<base>` → `owner` (3) > `Equipe_<base>` → `manager` (2) > `Classe_<base>` → `member` (1). Précédence par tier (un user dans `Classe_` ET `Equipe_` → `manager` ; dans `Equipe_` ET `PP_` → `owner`), une seule arête par user×groupe. **L'AD prime sur `users.role`** : un prof présent SEULEMENT dans `Classe_X` devient `member` (changement ASSUMÉ vs l'heuristique — c'est le POINT de la story). `foldPrefixOf` est insensible à la casse (`classe_3a`/`Classe_3A` = même tier) et les espaces des bases (`Equipe_301 g1`) transitent sans traitement. **D5 — heuristique conservée HORS trio** : les standalone non-trio (`Cours_`, `Matiere_@`, custom — `foldPrefixOf()===null`) gardent `defaultRoleForGlobalRole(users.role)` résolu en UNE requête (sur les seuls membres non-trio). **D2 — `Equipe_` orphelin** (~548/606 lab1 : cours/sous-groupes sans `Classe_`/`PP_` jumeau) : la ligne standalone nue de type `equipe` reçoit des arêtes `manager` pour TOUS ses membres, élève inclus (membership-only=`member` serait DESTRUCTIF : la reprojection viderait `Equipe_<base>` en AD ; `manager` est AD-fidèle et non destructif). **D3 — préservation par SIGNAL MANQUANT** : un rôle SQL existant valide n'est RÉTROGRADÉ que si le CN AD qui l'exprimerait est PRÉSENT dans le fold — fold sans `PP_` (54/58 classes lab1) : un `owner` édité en UI est CONSERVÉ ; fold sans `Equipe_` : un `manager`/`owner` est conservé ; si le CN est présent, l'AD est autoritaire (retrait = vrai changement). Comparaisons STRICTES aux constantes `ROLE_*` (une valeur sale n'est jamais préservée). **D6 — fail-soft intégral** : aucune exception nouvelle sur données sales, le savepoint 25P02 par groupe reste l'unique isolation. Ceci **LÈVE la limite transitoire 42.1-AC7/42.2-D7** : l'aller-retour projection 42.2 ⇄ read-back est un NO-OP (l'import lit ce que la projection a réellement écrit dans l'AD). **Périmètre** : SEUL `projectFoldedGroup` change côté app — chokepoint 42.2, fold 4.13, `GroupRepository`, observer, `MergeLegacyUserGroups`/`BackfillUserGroupUserRoles`, `is_head_teacher` : ZÉRO diff. AUCUNE écriture AD (le read-back LIT l'AD), AUCUNE migration.
 
@@ -1176,33 +1239,33 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
   - **orphan `equipe_` de cours** (`equipe_<cours>` sans `classe_`/`pp_`) : tous les membres `manager` (élève inclus) ; un 2ᵉ import ne bascule aucun rôle.
 - **Idempotence** : relancer l'import une 2ᵉ fois → `head_teacher_updated`/`linked_users`/`detached_users == 0`, pivot strictement identique.
 
-### Scénario 17.1 — Read-back du trio + précédence par tier (CRITIQUE)
+### Scénario 18.1 — Read-back du trio + précédence par tier (CRITIQUE)
 - **Préparation** : AD `Classe_3A={alice(élève),paul(prof)}`, `Equipe_3A={bob(prof),alice}`, `PP_3A={bob}`.
 - **Attendu** : `(3A,bob)=owner` (PP_), `(3A,alice)=manager` (Equipe_ prime sur Classe_), `(3A,paul)=member` (prof en `Classe_` seul — l'AD prime sur `users.role='prof'`). Une seule arête par user×groupe.
 
-### Scénario 17.2 — Casse legacy + espaces dans la base
+### Scénario 18.2 — Casse legacy + espaces dans la base
 - **Préparation** : CN tout-minuscules `classe_301 g1`/`equipe_301 g1`/`pp_301 g1` (base avec espace).
 - **Attendu** : mêmes tiers que la forme canonique — le membre de `equipe_`+`pp_` → `owner`, le membre de `classe_` seul → `member`. Fold en une ligne nue `301 g1`.
 
-### Scénario 17.3 — `Equipe_` orphelin → `manager` + aller-retour non destructif (D2)
+### Scénario 18.3 — `Equipe_` orphelin → `manager` + aller-retour non destructif (D2)
 - **Préparation** : AD avec `Equipe_301 g1` SEUL (pas de `Classe_`/`PP_`), membres = {prof, élève}.
 - **Attendu** : ligne nue `301 g1` type `equipe`, arêtes `manager` pour TOUS (élève inclus). Une reprojection (`resyncGroupAdProjection`) ne produit **AUCUN `removeMember`** sur `Equipe_301 g1` (membres inchangés ; `Classe_`/`PP_` = buckets vides no-op).
 
-### Scénario 17.4 — Préservation par signal manquant (D3, la subtilité centrale)
+### Scénario 18.4 — Préservation par signal manquant (D3, la subtilité centrale)
 - **(a) sans `PP_`** : fold `Classe_3A`+`Equipe_3A` (pas de `PP_3A`), arête existante `owner` d'un membre d'`Equipe_3A` → **reste `owner`** (le CN `PP_` absent ne peut pas rétrograder).
 - **(b) `PP_` présent, user retiré** : fold avec `PP_3A` présent mais l'user n'y est plus membre → **rétrogradé `manager`** (AD autoritaire, PP décoché en AD).
 - **(c) sans `Equipe_`** : fold `Classe_3A` seule, arête existante `manager` d'un membre → **reste `manager`** ; arête `owner` → **reste `owner`** (composition).
 - **(d) valeur sale** : arête existante `'chef'` (hors vocabulaire) → **jamais préservée**, le dérivé D1 s'applique, aucune exception.
 
-### Scénario 17.5 — Aller-retour stable projection ⇄ read-back (lève 42.1-AC7)
+### Scénario 18.5 — Aller-retour stable projection ⇄ read-back (lève 42.1-AC7)
 - **(a) greenfield trio complet** : arêtes `owner`/`manager`/`member` posées → projection 42.2 → `syncFromAd` → **mêmes rôles** ; une 2ᵉ projection = zéro add/remove.
 - **(b) brownfield sans `PP_`** : un `owner` posé sur l'arête (comme le fera l'UI 42.3) → projection (add `PP_3A` échoue fail-soft) → `syncFromAd` → **`owner` INTACT** (la limite « l'import écrase un rôle édité » est LEVÉE).
 
-### Scénario 17.6 — Données sales tolérées (savepoint 25P02, fautif AU MILIEU)
+### Scénario 18.6 — Données sales tolérées (savepoint 25P02, fautif AU MILIEU)
 - **Préparation** : lot `[classe_ok, groupe_fautif(conflit ad_guid), pp_profs, equipe_301_esp]`.
 - **Attendu** : le groupe fautif LÈVE et est isolé (`errors==1`) ; les groupes AVANT et APRÈS sont projetés avec leurs rôles ; la transaction d'ensemble survit. Déchet `pp_profs` toléré (folde en ligne `profs`, membre `owner` — comportement 4.13/4.14 EXISTANT, ni aggravé ni corrigé).
 
-### Scénario 17.7 — Fédéré : résolution inchangée (D4)
+### Scénario 18.7 — Fédéré : résolution inchangée (D4)
 - **Préparation** : DN portant l'OU par UAI (`CN=Classe_3CK,OU=classes,OU=0991229y,OU=Groups,…`).
 - **Attendu** : fold vers la ligne nue `3CK`, rôles dérivés du trio, ligne résolue par `ad_guid` (canonique `Classe_`). ZÉRO diff `GroupRepository`, aucun matching nouveau par CN suffixé/sAMAccountName (le CN n'est PAS suffixé — le suffixe est le sAMAccountName).
 
@@ -1210,9 +1273,9 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - **`getGroupMembers` erreur LDAP = collection vide** : une erreur transitoire sur `Equipe_X` rendrait `collect([])` → rétrogradation en masse `manager→member` (comme elle détache déjà les membres — limite 4.13 préexistante de l'import AD-first). ZÉRO diff `GroupRepository` : ne pas « fiabiliser » ici.
 - **`is_head_teacher` STALE** : le read-back ne pose que `role` ; la colonne miroir reste à son défaut et n'est plus LUE par aucun code vivant (drop destructif différé post-42.4, HORS story).
 
-> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` : `it_reads_back_trio_roles_with_tier_precedence` (17.1), `it_reads_back_trio_roles_case_insensitively_with_spaces_in_base` (17.2), `it_reads_back_orphan_equipe_members_as_manager_non_destructively` (17.3), `it_preserves_existing_owner_when_pp_cn_absent`/`it_demotes_owner_to_manager_when_removed_from_present_pp`/`it_preserves_manager_and_owner_when_equipe_cn_absent`/`it_never_preserves_out_of_vocabulary_existing_role` (17.4 a-d), `it_roundtrips_trio_roles_greenfield_as_no_op`/`it_preserves_ui_owner_on_brownfield_import_without_pp` (17.5 a-b), `it_reads_back_trio_idempotently_with_zero_updated_on_second_run` (idempotence), `it_isolates_dirty_data_in_savepoint_and_projects_the_rest` (17.6), `it_reads_back_trio_roles_with_federated_ou_by_uai` (17.7). Fixture adaptée : `it_suspends_ad_resync_observer_during_syncFromAd` (bob → `Equipe_3A` pour provoquer le flip `member→manager`). Non-régression : filtre AC12 complet (192 tests / 554 assertions).
+> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` : `it_reads_back_trio_roles_with_tier_precedence` (18.1), `it_reads_back_trio_roles_case_insensitively_with_spaces_in_base` (18.2), `it_reads_back_orphan_equipe_members_as_manager_non_destructively` (18.3), `it_preserves_existing_owner_when_pp_cn_absent`/`it_demotes_owner_to_manager_when_removed_from_present_pp`/`it_preserves_manager_and_owner_when_equipe_cn_absent`/`it_never_preserves_out_of_vocabulary_existing_role` (18.4 a-d), `it_roundtrips_trio_roles_greenfield_as_no_op`/`it_preserves_ui_owner_on_brownfield_import_without_pp` (18.5 a-b), `it_reads_back_trio_idempotently_with_zero_updated_on_second_run` (idempotence), `it_isolates_dirty_data_in_savepoint_and_projects_the_rest` (18.6), `it_reads_back_trio_roles_with_federated_ou_by_uai` (18.7). Fixture adaptée : `it_suspends_ad_resync_observer_during_syncFromAd` (bob → `Equipe_3A` pour provoquer le flip `member→manager`). Non-régression : filtre AC12 complet (192 tests / 554 assertions).
 
-### Checklist rapide Section 17
+### Checklist rapide Section 18
 - [ ] `migrate:status` /vm : migration 42.1 `Ran` AVANT tout e2e (aucune migration 42.4)
 - [ ] Trio : `PP_`→owner > `Equipe_`→manager > `Classe_`→member (tier MAX par user, une arête)
 - [ ] Prof présent SEULEMENT dans `Classe_` → `member` (l'AD prime sur `users.role`)
