@@ -12,6 +12,7 @@ use App\Services\Print\Exceptions\PrintDriverException;
 use App\Services\Print\Exceptions\SambaUnavailableException;
 use App\Services\Print\Exceptions\WindowsPivotUnreachableException;
 use App\Services\Print\PrintDriverService;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -44,7 +45,7 @@ new class extends Component {
     /** @var array<int, array{ppd:string,model:string}> */
     public array $availableDrivers = [];
 
-    /** @var array<int, array{id:int,name:string,display_name:?string}> */
+    /** @var array<int, array{id:int,name:string,display_name:?string,description:?string,workstations_count:int}> */
     public array $availableGroups = [];
 
     public bool $cupsAvailable = true;
@@ -95,6 +96,30 @@ new class extends Component {
      * @var array{driver_name:string,display_name:string}|null
      */
     public ?array $pendingAttachDriver = null;
+
+    // ===== Panneau global « Pilotes Windows publiés » (ex-onglet Drivers) =====
+    // Inventaire global des pilotes publiés sur Samba, fusionné avec l'audit
+    // SER (orphelins, sources, rattachements). Réservé admin (manage-printer).
+    // Repliable + lazy-load : le listing `rpcclient enumdrivers` n'est déclenché
+    // qu'à la première ouverture, pour ne pas alourdir chaque visite de l'onglet.
+
+    /**
+     * Liste fusionnée Samba + SER, listée globalement.
+     *
+     * @var list<array{driver_name:string,architecture:string,source:?string,orphan:?bool,attached_printers:list<string>,created_at:?string,notes:?string,is_in_samba:bool}>
+     */
+    public array $publishedDrivers = [];
+
+    public bool $driversPanelOpen = false;
+    public bool $driversPanelLoaded = false;
+    /** Disponibilité Samba pour le panneau global — distinct de `$sambaAvailable`
+     *  (celui-ci ne concerne que la section drivers de la modale d'édition). */
+    public bool $driversPanelSambaOk = true;
+
+    #[Url]
+    public string $driverFilter = 'all'; // all|attached|unattached|orphans
+    #[Url]
+    public string $sourceFilter = '';    // ''|upload-w10|synced|manual-cli
 
     public function boot(
         CupsPrinterService $cupsService,
@@ -148,10 +173,15 @@ new class extends Component {
             $groups = $this->permissionService->getAuthorizedWorkstationGroups($user, 'server.admin');
         }
 
+        // Comptage des postes en une seule requête (pas de N+1 par ligne).
+        $groups->loadCount('workstations');
+
         $this->availableGroups = $groups->map(fn(WorkstationGroup $g) => [
             'id' => $g->id,
             'name' => $g->name,
             'display_name' => $g->display_name,
+            'description' => $g->description,
+            'workstations_count' => $g->workstations_count,
         ])->values()->all();
     }
 
@@ -799,6 +829,7 @@ new class extends Component {
             $this->toastSuccess("Driver {$driverDef['Driver Name']} téléversé et associé à {$this->editingCupsName}.");
             $this->closeUploadDriverModal();
             $this->loadPrinterDrivers($this->editingCupsName);
+            $this->refreshDriversPanelIfLoaded();
         } catch (WindowsPivotUnreachableException $e) {
             $this->driverService->unlinkDriverFiles($copiedFiles);
             $this->toastError("Poste pivot {$this->newDriverPivot} injoignable — vérifier qu'il est allumé.");
@@ -866,6 +897,7 @@ new class extends Component {
         if ($this->editingCupsName !== null) {
             $this->loadPrinterDrivers($this->editingCupsName);
         }
+        $this->refreshDriversPanelIfLoaded();
     }
 
     /**
@@ -912,6 +944,7 @@ new class extends Component {
             $this->toastSuccess("Driver {$driverName} associé à {$this->editingCupsName}.");
             $this->pendingAttachDriver = null;
             $this->loadPrinterDrivers($this->editingCupsName);
+            $this->refreshDriversPanelIfLoaded();
         } catch (KerberosTicketException $e) {
             $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
         } catch (SambaUnavailableException $e) {
@@ -958,6 +991,7 @@ new class extends Component {
 
             $this->toastSuccess("Driver détaché de {$this->editingCupsName}.");
             $this->loadPrinterDrivers($this->editingCupsName);
+            $this->refreshDriversPanelIfLoaded();
         } catch (KerberosTicketException $e) {
             $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
         } catch (SambaUnavailableException $e) {
@@ -1029,6 +1063,7 @@ new class extends Component {
             if ($this->editingCupsName !== null) {
                 $this->loadPrinterDrivers($this->editingCupsName);
             }
+            $this->refreshDriversPanelIfLoaded();
         } catch (KerberosTicketException $e) {
             $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
         } catch (SambaUnavailableException $e) {
@@ -1043,6 +1078,162 @@ new class extends Component {
                 'error' => $e->getMessage(),
             ]);
             $this->toastError('Une erreur interne est survenue lors de la suppression du driver.');
+        }
+    }
+
+    // ========================================================================
+    // PANNEAU GLOBAL « PILOTES WINDOWS PUBLIÉS » (ex-onglet Drivers)
+    // ========================================================================
+
+    /**
+     * Replie / déplie le panneau global. Lazy-load au premier dépliage :
+     * on ne déclenche le `rpcclient enumdrivers` qu'à la demande.
+     */
+    public function toggleDriversPanel(): void
+    {
+        if (!Gate::allows('manage-printer')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        $this->driversPanelOpen = !$this->driversPanelOpen;
+
+        if ($this->driversPanelOpen && !$this->driversPanelLoaded) {
+            $this->loadPublishedDrivers();
+            $this->driversPanelLoaded = true;
+        }
+    }
+
+    public function updatedDriverFilter(): void
+    {
+        if ($this->driversPanelLoaded) {
+            $this->loadPublishedDrivers();
+        }
+    }
+
+    public function updatedSourceFilter(): void
+    {
+        if ($this->driversPanelLoaded) {
+            $this->loadPublishedDrivers();
+        }
+    }
+
+    /**
+     * Construit le listing global fusionné `rpcclient enumdrivers` (Samba
+     * runtime) + enrichissement SER (audit, source, rattachements). Fusion sur
+     * clé composite driver_name|architecture : un driver peut être en Samba
+     * sans ligne SER (orphan inverse), en SER orphan (Samba l'a perdu), ou dans
+     * les deux. Fail-soft : Samba injoignable → banner + liste SER seule.
+     */
+    public function loadPublishedDrivers(): void
+    {
+        $sambaList = [];
+        try {
+            $sambaList = $this->driverService->listAllDrivers();
+            $this->driversPanelSambaOk = true;
+        } catch (SambaUnavailableException $e) {
+            $this->driversPanelSambaOk = false;
+            Log::warning('PrintersTab: Samba injoignable (panneau drivers)', ['error' => $e->getMessage()]);
+        } catch (KerberosTicketException $e) {
+            $this->driversPanelSambaOk = false;
+            Log::warning('PrintersTab: Kerberos KO (panneau drivers)', ['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            $this->driversPanelSambaOk = false;
+            Log::error('PrintersTab: erreur listage drivers Samba (panneau)', ['error' => $e->getMessage()]);
+        }
+
+        // Index Samba par clé composite.
+        $sambaIndex = [];
+        foreach ($sambaList as $d) {
+            $sambaIndex[$d['driver_name'] . '|' . $d['architecture']] = $d;
+        }
+
+        // Index SER avec rattachements groupés par driver/arch.
+        $serGrouped = [];
+        foreach (PrinterDriver::query()->orderBy('driver_name')->get() as $row) {
+            $key = $row->driver_name . '|' . $row->architecture;
+            if (!isset($serGrouped[$key])) {
+                $serGrouped[$key] = [
+                    'driver_name' => $row->driver_name,
+                    'architecture' => $row->architecture,
+                    'source' => $row->source,
+                    'orphan' => $row->orphan,
+                    'notes' => $row->notes,
+                    'created_at' => $row->created_at?->toDateTimeString(),
+                    'attached_printers' => [],
+                ];
+            }
+            $serGrouped[$key]['attached_printers'][] = $row->printer_cups_name;
+        }
+
+        $rows = [];
+        $allKeys = array_unique(array_merge(array_keys($sambaIndex), array_keys($serGrouped)));
+        foreach ($allKeys as $key) {
+            $samba = $sambaIndex[$key] ?? null;
+            $ser = $serGrouped[$key] ?? null;
+            $rows[] = [
+                'driver_name' => $samba['driver_name'] ?? ($ser['driver_name'] ?? ''),
+                'architecture' => $samba['architecture'] ?? ($ser['architecture'] ?? 'x64'),
+                'source' => $ser['source'] ?? null,
+                'orphan' => $ser['orphan'] ?? null,
+                'attached_printers' => $ser['attached_printers'] ?? [],
+                'created_at' => $ser['created_at'] ?? null,
+                'notes' => $ser['notes'] ?? null,
+                'is_in_samba' => $samba !== null,
+            ];
+        }
+
+        // Filtres UI.
+        if ($this->driverFilter === 'attached') {
+            $rows = array_values(array_filter($rows, fn($r) => !empty($r['attached_printers'])));
+        } elseif ($this->driverFilter === 'unattached') {
+            $rows = array_values(array_filter($rows, fn($r) => empty($r['attached_printers']) && !$r['orphan']));
+        } elseif ($this->driverFilter === 'orphans') {
+            $rows = array_values(array_filter($rows, fn($r) => $r['orphan'] === true));
+        }
+        if ($this->sourceFilter !== '') {
+            $rows = array_values(array_filter($rows, fn($r) => $r['source'] === $this->sourceFilter));
+        }
+
+        usort($rows, fn($a, $b) => strcmp($a['driver_name'], $b['driver_name']));
+
+        $this->publishedDrivers = $rows;
+    }
+
+    /**
+     * Relance manuellement la réconciliation SER ↔ Samba (`printer-drivers:sync`).
+     * Verrou anti-concurrence avec le cron (03:35) et les autres admins.
+     */
+    public function triggerSync(): void
+    {
+        Gate::authorize('manage-printer');
+
+        $lock = Cache::lock('printer-drivers-sync', 60);
+        if (!$lock->get()) {
+            $this->toastWarning('Une synchronisation est déjà en cours. Réessayer dans quelques secondes.');
+            return;
+        }
+        try {
+            Artisan::call('printer-drivers:sync');
+            $this->toastSuccess('Synchronisation drivers terminée.');
+            $this->loadPublishedDrivers();
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: erreur déclenchement sync drivers', ['error' => $e->getMessage()]);
+            $this->toastError('Erreur lors du déclenchement de la synchronisation.');
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Rafraîchit le panneau global s'il est déjà chargé — appelé après chaque
+     * mutation par-imprimante (upload / détache / suppression) pour garder
+     * l'inventaire global cohérent sans forcer un reload à froid.
+     */
+    private function refreshDriversPanelIfLoaded(): void
+    {
+        if ($this->driversPanelLoaded) {
+            $this->loadPublishedDrivers();
         }
     }
 
@@ -1194,6 +1385,124 @@ new class extends Component {
         @endif
     </div>
 
+    {{-- Panneau global « Pilotes Windows publiés » (ex-onglet Drivers, admin) --}}
+    @can('manage-printer')
+        <div class="flex-shrink-0 card bg-base-100 shadow-sm">
+            {{-- En-tête cliquable (replie / déplie) --}}
+            <div role="button" tabindex="0" wire:click="toggleDriversPanel"
+                class="card-body py-3 flex-row items-center justify-between gap-3 cursor-pointer select-none">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid {{ $driversPanelOpen ? 'fa-chevron-down' : 'fa-chevron-right' }} text-xs opacity-60"></i>
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span class="font-semibold">Pilotes Windows publiés</span>
+                    @if ($driversPanelLoaded)
+                        <span class="badge badge-ghost badge-sm">{{ count($publishedDrivers) }}</span>
+                    @endif
+                </div>
+                <span class="text-xs text-base-content/50 hidden sm:inline">Inventaire global · orphelins · synchronisation</span>
+            </div>
+
+            @if ($driversPanelOpen)
+                <div class="card-body pt-0 gap-3">
+                    @unless ($driversPanelSambaOk)
+                        <div class="alert alert-warning">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span>Service Samba injoignable — drivers indisponibles. Vérifier le service `smbd` et le
+                                ticket Kerberos du compte machine `se4fs$`.</span>
+                        </div>
+                    @endunless
+
+                    {{-- Filtres + bouton sync --}}
+                    <div class="flex flex-wrap items-center gap-3 justify-between">
+                        <div role="tablist" class="tabs tabs-boxed bg-base-200 flex-wrap">
+                            <button type="button" role="tab" class="tab {{ $driverFilter === 'all' ? 'tab-active' : '' }}"
+                                wire:click="$set('driverFilter', 'all')">Tous</button>
+                            <button type="button" role="tab"
+                                class="tab {{ $driverFilter === 'attached' ? 'tab-active' : '' }}"
+                                wire:click="$set('driverFilter', 'attached')">Avec imprimante</button>
+                            <button type="button" role="tab"
+                                class="tab {{ $driverFilter === 'unattached' ? 'tab-active' : '' }}"
+                                wire:click="$set('driverFilter', 'unattached')">Sans imprimante</button>
+                            <button type="button" role="tab"
+                                class="tab {{ $driverFilter === 'orphans' ? 'tab-active' : '' }}"
+                                wire:click="$set('driverFilter', 'orphans')">Orphans</button>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <select wire:model.live="sourceFilter" class="select select-bordered select-sm">
+                                <option value="">Toutes sources</option>
+                                <option value="upload-w10">upload-w10</option>
+                                <option value="synced">synced</option>
+                                <option value="manual-cli">manual-cli</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline" wire:click="triggerSync"
+                                @if (!$driversPanelSambaOk) disabled @endif>
+                                <i class="fa-solid fa-rotate"></i>
+                                Synchroniser
+                            </button>
+                        </div>
+                    </div>
+
+                    {{-- Tableau drivers --}}
+                    @if (empty($publishedDrivers))
+                        <div class="flex flex-col items-center justify-center py-10">
+                            <div class="text-4xl mb-3 opacity-20">
+                                <i class="fa-solid fa-floppy-disk"></i>
+                            </div>
+                            <p class="text-base-content/60 text-center max-w-md">
+                                Aucun driver Windows publié. Pour en téléverser un : ouvrir la modale d'édition d'une
+                                imprimante ci-dessus puis la section « Drivers Windows ».
+                            </p>
+                        </div>
+                    @else
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm table-zebra">
+                                <thead>
+                                    <tr>
+                                        <th>Driver</th>
+                                        <th>Arch.</th>
+                                        <th>Source</th>
+                                        <th>Imprimantes rattachées</th>
+                                        <th>Statut</th>
+                                        <th>Auteur / date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($publishedDrivers as $d)
+                                        <tr wire:key="pub-drv-{{ $d['driver_name'] }}-{{ $d['architecture'] }}">
+                                            <td class="text-xs font-mono">{{ $d['driver_name'] }}</td>
+                                            <td><span class="badge badge-ghost badge-sm">{{ $d['architecture'] }}</span></td>
+                                            <td class="text-xs">{{ $d['source'] ?? '—' }}</td>
+                                            <td>
+                                                <div class="flex flex-wrap gap-1">
+                                                    @forelse ($d['attached_printers'] as $cupsName)
+                                                        <span class="badge badge-outline badge-sm">{{ $cupsName }}</span>
+                                                    @empty
+                                                        <span class="text-xs text-base-content/40">—</span>
+                                                    @endforelse
+                                                </div>
+                                            </td>
+                                            <td>
+                                                @if ($d['orphan'])
+                                                    <span class="badge badge-error badge-sm">orphelin</span>
+                                                @elseif (!$d['is_in_samba'])
+                                                    <span class="badge badge-warning badge-sm">hors Samba</span>
+                                                @else
+                                                    <span class="badge badge-success badge-sm">actif</span>
+                                                @endif
+                                            </td>
+                                            <td class="text-xs">{{ $d['created_at'] ?? '—' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            @endif
+        </div>
+    @endcan
+
     <!-- Modale ajout -->
     @teleport('body')
         <x-molecules.modal wire:model="showAddModal" title="Nouvelle imprimante" closeMethod="closeAddModal"
@@ -1201,18 +1510,18 @@ new class extends Component {
 
             <x-molecules.modal.section title="Configuration CUPS">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text">Nom *</span></label>
-                        <input type="text" wire:model="newName" class="input input-bordered input-sm font-mono"
+                    <div class="form-control w-full">
+                        <label class="label py-1"><span class="label-text font-medium">Nom <span class="text-error">*</span></span></label>
+                        <input type="text" wire:model="newName" class="input input-bordered input-sm w-full font-mono"
                             placeholder="ex: imp-salle-a" maxlength="15" />
                         @error('newName')
                             <span class="text-xs text-error mt-1">{{ $message }}</span>
                         @enderror
                         <span class="text-xs text-base-content/60 mt-1">Lettres, chiffres, _ et -. Max 15 caractères.</span>
                     </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text">URI *</span></label>
-                        <input type="text" wire:model="newUri" class="input input-bordered input-sm font-mono"
+                    <div class="form-control w-full">
+                        <label class="label py-1"><span class="label-text font-medium">URI <span class="text-error">*</span></span></label>
+                        <input type="text" wire:model="newUri" class="input input-bordered input-sm w-full font-mono"
                             placeholder="socket://192.168.1.10:9100" />
                         @error('newUri')
                             <span class="text-xs text-error mt-1">{{ $message }}</span>
@@ -1220,17 +1529,17 @@ new class extends Component {
                         <span class="text-xs text-base-content/60 mt-1">socket:// ipp:// ipps:// lpd:// http://
                             https://</span>
                     </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text">Description CUPS</span></label>
-                        <input type="text" wire:model="newDescription" class="input input-bordered input-sm" />
+                    <div class="form-control w-full">
+                        <label class="label py-1"><span class="label-text font-medium">Description</span></label>
+                        <input type="text" wire:model="newDescription" class="input input-bordered input-sm w-full" />
                     </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text">Lieu</span></label>
-                        <input type="text" wire:model="newLocation" class="input input-bordered input-sm" />
+                    <div class="form-control w-full">
+                        <label class="label py-1"><span class="label-text font-medium">Lieu</span></label>
+                        <input type="text" wire:model="newLocation" class="input input-bordered input-sm w-full" />
                     </div>
-                    <div class="form-control md:col-span-2">
-                        <label class="label py-1"><span class="label-text">Modèle (PPD)</span></label>
-                        <select wire:model="newPpd" class="select select-bordered select-sm">
+                    <div class="form-control w-full md:col-span-2">
+                        <label class="label py-1"><span class="label-text font-medium">Modèle (PPD)</span></label>
+                        <select wire:model="newPpd" class="select select-bordered select-sm w-full">
                             <option value="">— aucun (raw) —</option>
                             @foreach ($availableDrivers as $drv)
                                 <option value="{{ $drv['ppd'] }}">{{ $drv['model'] }}</option>
@@ -1240,25 +1549,11 @@ new class extends Component {
                 </div>
             </x-molecules.modal.section>
 
-            <x-molecules.modal.section title="Métadonnées SER">
-                <div class="form-control">
-                    <label class="label py-1"><span class="label-text">Description SER (interne)</span></label>
-                    <textarea wire:model="newDescriptionSer" class="textarea textarea-bordered textarea-sm" rows="2"></textarea>
-                </div>
-            </x-molecules.modal.section>
-
             <x-molecules.modal.section title="Rattachement aux parcs">
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                    @forelse ($availableGroups as $g)
-                        <label class="cursor-pointer flex items-center gap-2">
-                            <input type="checkbox" wire:model="newWorkstationGroupIds" value="{{ $g['id'] }}"
-                                class="checkbox checkbox-sm" />
-                            <span class="text-sm">{{ $g['display_name'] ?? $g['name'] }}</span>
-                        </label>
-                    @empty
-                        <p class="text-sm text-base-content/60">Aucun parc disponible.</p>
-                    @endforelse
-                </div>
+                @include('pages.parc._partials.parc-attach-table', [
+                    'availableGroups' => $availableGroups,
+                    'model' => 'newWorkstationGroupIds',
+                ])
             </x-molecules.modal.section>
 
             <x-slot:footer>
@@ -1279,30 +1574,30 @@ new class extends Component {
             @if ($editingCupsName)
                 <x-molecules.modal.section title="Configuration CUPS">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div class="form-control md:col-span-2">
-                            <label class="label py-1"><span class="label-text">Nom (verrouillé)</span></label>
+                        <div class="form-control w-full md:col-span-2">
+                            <label class="label py-1"><span class="label-text font-medium">Nom (verrouillé)</span></label>
                             <input type="text" value="{{ $editingCupsName }}" disabled
-                                class="input input-bordered input-sm font-mono" />
+                                class="input input-bordered input-sm w-full font-mono" />
                             <span class="text-xs text-base-content/60 mt-1">Pour renommer, supprimer puis recréer.</span>
                         </div>
-                        <div class="form-control md:col-span-2">
-                            <label class="label py-1"><span class="label-text">URI *</span></label>
-                            <input type="text" wire:model="editUri" class="input input-bordered input-sm font-mono" />
+                        <div class="form-control w-full md:col-span-2">
+                            <label class="label py-1"><span class="label-text font-medium">URI <span class="text-error">*</span></span></label>
+                            <input type="text" wire:model="editUri" class="input input-bordered input-sm w-full font-mono" />
                             @error('editUri')
                                 <span class="text-xs text-error mt-1">{{ $message }}</span>
                             @enderror
                         </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Description CUPS</span></label>
-                            <input type="text" wire:model="editDescription" class="input input-bordered input-sm" />
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text font-medium">Description</span></label>
+                            <input type="text" wire:model="editDescription" class="input input-bordered input-sm w-full" />
                         </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Lieu</span></label>
-                            <input type="text" wire:model="editLocation" class="input input-bordered input-sm" />
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text font-medium">Lieu</span></label>
+                            <input type="text" wire:model="editLocation" class="input input-bordered input-sm w-full" />
                         </div>
-                        <div class="form-control md:col-span-2">
-                            <label class="label py-1"><span class="label-text">Changer le modèle PPD</span></label>
-                            <select wire:model="editPpd" class="select select-bordered select-sm">
+                        <div class="form-control w-full md:col-span-2">
+                            <label class="label py-1"><span class="label-text font-medium">Changer le modèle PPD</span></label>
+                            <select wire:model="editPpd" class="select select-bordered select-sm w-full">
                                 <option value="">— ne pas changer —</option>
                                 @foreach ($availableDrivers as $drv)
                                     <option value="{{ $drv['ppd'] }}">{{ $drv['model'] }}</option>
@@ -1312,25 +1607,11 @@ new class extends Component {
                     </div>
                 </x-molecules.modal.section>
 
-                <x-molecules.modal.section title="Métadonnées SER">
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text">Description SER (interne)</span></label>
-                        <textarea wire:model="editDescriptionSer" class="textarea textarea-bordered textarea-sm" rows="2"></textarea>
-                    </div>
-                </x-molecules.modal.section>
-
                 <x-molecules.modal.section title="Rattachement aux parcs">
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                        @forelse ($availableGroups as $g)
-                            <label class="cursor-pointer flex items-center gap-2">
-                                <input type="checkbox" wire:model="editWorkstationGroupIds" value="{{ $g['id'] }}"
-                                    class="checkbox checkbox-sm" />
-                                <span class="text-sm">{{ $g['display_name'] ?? $g['name'] }}</span>
-                            </label>
-                        @empty
-                            <p class="text-sm text-base-content/60">Aucun parc disponible.</p>
-                        @endforelse
-                    </div>
+                    @include('pages.parc._partials.parc-attach-table', [
+                        'availableGroups' => $availableGroups,
+                        'model' => 'editWorkstationGroupIds',
+                    ])
                 </x-molecules.modal.section>
 
                 {{-- Story 6.2 — Drivers Windows (section dans modale édit) --}}

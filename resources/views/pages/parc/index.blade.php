@@ -25,7 +25,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public string $tab = 'groups';
 
     /** Onglets valides de la page (allow-list du switch). */
-    private const TABS = ['groups', 'machines', 'printers', 'drivers'];
+    private const TABS = ['groups', 'machines', 'printers'];
 
     // Filtres machines
     #[Url]
@@ -555,9 +555,6 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 'machines' => ['label' => 'Postes', 'icon' => 'fa-solid fa-computer'],
                 'printers' => ['label' => 'Imprimantes', 'icon' => 'fa-solid fa-print'],
             ];
-            if (Gate::allows('manage-printer')) {
-                $parcTabs['drivers'] = ['label' => 'Drivers', 'icon' => 'fa-solid fa-floppy-disk'];
-            }
         @endphp
         <x-molecules.tabs :tabs="$parcTabs" :active="$tab" class="bg-base-200 w-fit" />
 
@@ -567,8 +564,6 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 @include('pages.parc._partials.machines-tab')
             @elseif ($tab === 'printers')
                 <livewire:pages::parc._partials.printers-tab />
-            @elseif ($tab === 'drivers')
-                <livewire:pages::parc._partials.drivers-tab />
             @else
                 {{-- Vérification synchronisation AD/SQL --}}
                 <div class="flex-shrink-0">

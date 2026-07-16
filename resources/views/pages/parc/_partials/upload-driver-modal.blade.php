@@ -27,12 +27,12 @@
 
         <x-molecules.modal.section title="1. Poste pivot Windows 10">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                <div class="form-control md:col-span-2">
+                <div class="form-control w-full md:col-span-2">
                     <label class="label py-1">
-                        <span class="label-text">Hostname du poste W10 (15 caractères max)</span>
+                        <span class="label-text font-medium">Hostname du poste W10 (15 caractères max)</span>
                     </label>
                     <input type="text" wire:model="newDriverPivot"
-                        class="input input-bordered input-sm font-mono" placeholder="ex: w10-salle-a" maxlength="15" />
+                        class="input input-bordered input-sm w-full font-mono" placeholder="ex: w10-salle-a" maxlength="15" />
                     @error('newDriverPivot')
                         <span class="text-xs text-error mt-1">{{ $message }}</span>
                     @enderror
@@ -83,12 +83,12 @@
             </x-molecules.modal.section>
 
             <x-molecules.modal.section title="3. Métadonnées (optionnel)">
-                <div class="form-control">
+                <div class="form-control w-full">
                     <label class="label py-1">
-                        <span class="label-text">Nom interne / notes</span>
+                        <span class="label-text font-medium">Nom interne / notes</span>
                     </label>
                     <input type="text" wire:model="newDriverDisplayName"
-                        class="input input-bordered input-sm" placeholder="ex: Driver imprimante salle A (PostScript)" />
+                        class="input input-bordered input-sm w-full" placeholder="ex: Driver imprimante salle A (PostScript)" />
                     @error('newDriverDisplayName')
                         <span class="text-xs text-error mt-1">{{ $message }}</span>
                     @enderror
