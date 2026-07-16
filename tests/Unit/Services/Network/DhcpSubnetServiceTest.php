@@ -450,5 +450,15 @@ class DhcpSubnetServiceTest extends TestCase
 
         // En-tête de provenance.
         $this->assertStringContainsString('NE PAS éditer manuellement', $out);
+
+        // Régression : le fichier généré DOIT être lisible par parse_ini_file().
+        // parse_ini_file() ne reconnaît que « ; » comme commentaire — un en-tête
+        // en « # » serait parsé comme du contenu et casserait toute la config LDAP.
+        $tmp = tempnam(sys_get_temp_dir(), 'dhcp-subnets-');
+        file_put_contents($tmp, $out);
+        $parsed = @parse_ini_file($tmp);
+        unlink($tmp);
+        $this->assertNotFalse($parsed, 'Le rendu dhcp-subnets.conf doit être un INI valide (parse_ini_file).');
+        $this->assertStringNotContainsString("\n# ", "\n" . $out, 'Pas de commentaires « # » (non reconnus par parse_ini_file).');
     }
 }

@@ -525,11 +525,13 @@ class DhcpSubnetService
     public function renderSubnetsConfFile(iterable $subnets): string
     {
         $lines = [];
-        $lines[] = '# /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf';
-        $lines[] = '# Fichier généré automatiquement par SambaEdu-Reload (Story 8.3).';
-        $lines[] = '# NE PAS éditer manuellement — écrasé à chaque mutation VLAN';
-        $lines[] = '# depuis /app/network/dhcp (onglet Sous-réseaux).';
-        $lines[] = '# Source de vérité : table SQL dhcp_subnets.';
+        // Commentaires INI : « ; » uniquement — parse_ini_file() ne reconnaît PAS « # »
+        // et parserait ces lignes comme du contenu (crash sur « ( » etc.).
+        $lines[] = '; /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf';
+        $lines[] = '; Fichier généré automatiquement par SambaEdu-Reload (Story 8.3).';
+        $lines[] = '; NE PAS éditer manuellement — écrasé à chaque mutation VLAN';
+        $lines[] = '; depuis /app/network/dhcp (onglet Sous-réseaux).';
+        $lines[] = '; Source de vérité : table SQL dhcp_subnets.';
         $lines[] = '';
 
         // Tri stable par vlan_id (indépendant de l'ordre de la collection).
