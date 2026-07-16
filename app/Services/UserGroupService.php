@@ -1376,13 +1376,19 @@ class UserGroupService
     {
         $normalizedType = mb_strtolower(trim($type));
 
+        // Garde d'idempotence (4.16 Q2, généralisée post-42) : les types hors
+        // classe/équipe sont stockés en SQL avec leur CN PRÉFIXÉ (`Projet_X`,
+        // `Cours_X`, …) — `updateGroup` repasse donc ici un nom déjà préfixé.
+        // Sans la détection casse-insensible, on double-préfixait
+        // (`Projet_Projet_X`) : écriture AD fail-soft sur un CN inexistant,
+        // read-back scopé à vide, re-lookup SQL null → 500 sur tout save avec
+        // membres d'un groupe projet/cours/matière. Le bras classe/équipe reste
+        // sans garde : ses appelants strippent (`stripClasseLikePrefix`).
         return match ($normalizedType) {
             'class', 'classe', 'equipe' => "Classe_{$rawName}",
-            'cours' => "Cours_{$rawName}",
-            'projet' => "Projet_{$rawName}",
-            'matiere', 'matière' => "Matiere_{$rawName}",
-            // 4.16 (Q2) — détection casse-insensible : `matiere_x@y` minuscule ne
-            // doit pas re-préfixer en `Matiere_matiere_x@y` (double préfixe).
+            'cours' => strncasecmp($rawName, 'Cours_', 6) === 0 ? $rawName : "Cours_{$rawName}",
+            'projet' => strncasecmp($rawName, 'Projet_', 7) === 0 ? $rawName : "Projet_{$rawName}",
+            'matiere', 'matière' => strncasecmp($rawName, 'Matiere_', 8) === 0 ? $rawName : "Matiere_{$rawName}",
             'matiere_classe', 'matiere-classe' => strncasecmp($rawName, 'Matiere_', 8) === 0 ? $rawName : "Matiere_{$rawName}",
             default => $rawName,
         };

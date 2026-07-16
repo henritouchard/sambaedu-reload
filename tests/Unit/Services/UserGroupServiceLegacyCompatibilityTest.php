@@ -2611,6 +2611,52 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     // =========================================================================
 
     #[Test]
+    public function it_does_not_double_prefix_non_classe_group_on_update(): void
+    {
+        // Régression (validation e2e 42.3 #5, 2026-07-16) — un groupe hors
+        // classe/équipe est stocké en SQL avec son CN PRÉFIXÉ (`Projet_proj2`) ;
+        // `updateGroup` repassait ce nom à `resolvePrimaryGroupName` qui
+        // re-préfixait (`Projet_Projet_proj2`) : écriture AD fail-soft sur un CN
+        // inexistant, read-back scopé à vide, re-lookup null → RuntimeException
+        // (500 sur tout save avec membres d'un groupe projet/cours/matière).
+        // La garde d'idempotence 4.16 est généralisée à cours/projet/matière.
+        $service = $this->makeService(
+            collect([$this->adGroupRow('Projet_proj2', 'OU=Projets')]),
+            [],
+            [
+                'Projet_proj2' => [['cn' => 'eleve.proj', 'dn' => 'CN=eleve.proj,OU=Users,DC=example,DC=local']],
+            ],
+            mutableMembership: true,
+        );
+
+        $eleve = User::query()->create([
+            'login' => 'eleve.proj', 'role' => 'eleve',
+            'dn' => 'CN=eleve.proj,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('eleve.proj');
+
+        $group = UserGroup::query()->create([
+            'name' => 'Projet_proj2', 'display_name' => 'proj2', 'type' => 'projet',
+        ]);
+
+        $updated = $service->updateGroup($group->id, [
+            'name' => 'Projet_proj2',
+            'display_name' => 'proj2',
+            'type' => 'projet',
+            'user_ids' => [$eleve->id],
+        ]);
+
+        // Plus d'exception, la ligne est retrouvée sous son CN stocké.
+        $this->assertSame('Projet_proj2', $updated->name);
+        // La cible AD est le CN réel — jamais le double préfixe.
+        $this->assertSame([], $this->addedDnsFor('Projet_Projet_proj2'));
+        $this->assertSame([], $this->removedDnsFor('Projet_Projet_proj2'));
+        // Le read-back a créé l'arête du nouveau membre (finding 42.3 #5 :
+        // le canal réel crée bien l'arête que la surcharge UI met à jour).
+        $this->assertSame('member', $this->pivotRole($group->id, $eleve->id));
+    }
+
+    #[Test]
     public function it_reads_back_trio_roles_with_tier_precedence(): void
     {
         // AC1 (D1) — Classe_3A={alice(eleve),paul(prof)}, Equipe_3A={bob(prof),
