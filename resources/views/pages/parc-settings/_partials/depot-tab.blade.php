@@ -260,16 +260,6 @@ return new class extends Component {
         }
     }
 
-    public function selectAllDepotInstallApps(): void
-    {
-        $this->selectedDepotInstallApps = $this->depotApplications->getCollection()->filter(fn($app) => !$app->is_installed)->pluck('id')->toArray();
-    }
-
-    public function deselectAllDepotInstallApps(): void
-    {
-        $this->selectedDepotInstallApps = [];
-    }
-
     #[On('open-create-depot-modal')]
     public function openCreateDepotModal(): void
     {
@@ -509,9 +499,9 @@ return new class extends Component {
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox checkbox-sm"
-                                    wire:click="{{ count($selectedDepotInstallApps) > 0 ? 'deselectAllDepotInstallApps' : 'selectAllDepotInstallApps' }}"
-                                    @if (count($selectedDepotInstallApps) > 0) checked @endif />
+                                <x-molecules.select-all-checkbox class="checkbox-sm"
+                                    :ids="$this->depotApplications->getCollection()->filter(fn($app) => !$app->is_installed)->pluck('id')"
+                                    model="selectedDepotInstallApps" />
                             </th>
                             <th>Application</th>
                             <th>Version</th>
@@ -522,12 +512,15 @@ return new class extends Component {
                     </thead>
                     <tbody>
                         @forelse ($this->depotApplications as $app)
-                            <tr wire:key="depot-tab-app-{{ $app->id }}" class="hover cursor-pointer"
-                                wire:click="toggleDepotInstallAppSelection({{ $app->id }})">
+                            <tr wire:key="depot-tab-app-{{ $app->id }}"
+                                @class(['hover', 'cursor-pointer' => !$app->is_installed])
+                                @if (!$app->is_installed) wire:click="toggleDepotInstallAppSelection({{ $app->id }})" @endif>
                                 <td>
                                     @if (!$app->is_installed)
+                                        {{-- Affichage piloté par la propriété DOM (x-effect) : la ligne
+                                             entière toggle côté serveur via wire:click sur le <tr>. --}}
                                         <input type="checkbox" class="checkbox checkbox-sm"
-                                            @if (in_array($app->id, $selectedDepotInstallApps)) checked @endif />
+                                            x-effect="$el.checked = ($wire.selectedDepotInstallApps ?? []).map(String).includes('{{ $app->id }}')" />
                                     @endif
                                 </td>
                                 <td>

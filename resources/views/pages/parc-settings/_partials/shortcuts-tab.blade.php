@@ -22,7 +22,6 @@ new class extends Component {
     public int $currentPage = 1;
 
     public array $selectedShortcuts = [];
-    public bool $selectAll = false;
 
     /** @var Shortcut[] */
     public array $shortcuts = [];
@@ -156,28 +155,6 @@ new class extends Component {
         }
     }
 
-    public function updatedSelectedShortcuts()
-    {
-        $this->updateSelectAllState();
-    }
-
-    public function toggleSelectAll()
-    {
-        if ($this->selectAll) {
-            $this->selectedShortcuts = [];
-        } else {
-            $this->selectedShortcuts = collect($this->shortcuts)->pluck('key')->all();
-        }
-        $this->selectAll = !$this->selectAll;
-    }
-
-    private function updateSelectAllState()
-    {
-        $totalShortcuts = count($this->shortcuts);
-        $selectedCount = count($this->selectedShortcuts);
-        $this->selectAll = $selectedCount === $totalShortcuts && $totalShortcuts > 0;
-    }
-
     public function bulkDelete()
     {
         if (Gate::denies('bulkDelete-shortcut')) {
@@ -203,7 +180,6 @@ new class extends Component {
 
             $this->toast('success', 'Suppression réussie', $message);
             $this->selectedShortcuts = [];
-            $this->selectAll = false;
             $this->loadShortcuts();
         } catch (\Exception $e) {
             Log::error('ShortcutsTab bulkDelete error: ' . $e->getMessage());
@@ -324,8 +300,8 @@ new class extends Component {
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox checkbox-sm" wire:model.live="selectAll"
-                                    @change="$wire.toggleSelectAll()" />
+                                <x-molecules.select-all-checkbox class="checkbox-sm" :ids="collect($shortcuts)->pluck('key')"
+                                    model="selectedShortcuts" />
                             </th>
                             <th>Raccourci</th>
                             <th>Type</th>

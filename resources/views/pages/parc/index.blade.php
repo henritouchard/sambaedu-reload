@@ -62,7 +62,6 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     // Sélection
     public array $selectedMachines = [];
     public array $selectedGroups = [];
-    public bool $selectAllMachines = false;
 
     // Pagination
     #[Url]
@@ -391,7 +390,6 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             }
 
             $this->selectedMachines = [];
-            $this->selectAllMachines = false;
         } catch (\InvalidArgumentException $e) {
             $this->toastError($e->getMessage());
         } catch (\Exception $e) {

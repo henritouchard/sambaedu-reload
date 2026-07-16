@@ -539,16 +539,6 @@ new class extends Component
             $this->selectedDepotApps[] = $appId;
         }
     }
-
-    public function selectAllDepotApps(): void
-    {
-        $this->selectedDepotApps = array_column($this->depotApps, 'id');
-    }
-
-    public function deselectAllDepotApps(): void
-    {
-        $this->selectedDepotApps = [];
-    }
 };
 ?>
 
@@ -597,7 +587,8 @@ new class extends Component
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox checkbox-sm" />
+                                <x-molecules.select-all-checkbox class="checkbox-sm" :ids="$this->applications->pluck('id')"
+                                    model="selectedApps" />
                             </th>
                             <th>Application</th>
                             <th>Identifiant</th>
@@ -838,9 +829,8 @@ new class extends Component
                             <thead>
                                 <tr>
                                     <th class="w-10">
-                                        <input type="checkbox" class="checkbox checkbox-sm"
-                                            @if (count($selectedDepotApps) === count($depotApps) && count($depotApps) > 0) checked @endif
-                                            wire:click="{{ count($selectedDepotApps) === count($depotApps) ? 'deselectAllDepotApps' : 'selectAllDepotApps' }}" />
+                                        <x-molecules.select-all-checkbox class="checkbox-sm" :ids="array_column($depotApps, 'id')"
+                                            model="selectedDepotApps" />
                                     </th>
                                     <th>Application</th>
                                     <th>Version</th>
@@ -852,8 +842,10 @@ new class extends Component
                                     <tr wire:key="depot-app-{{ $app['id'] }}" class="hover cursor-pointer"
                                         wire:click="toggleDepotAppSelection({{ $app['id'] }})">
                                         <td>
+                                            {{-- Affichage piloté par la propriété DOM (x-effect) : la ligne
+                                                 entière toggle côté serveur via wire:click sur le <tr>. --}}
                                             <input type="checkbox" class="checkbox checkbox-sm"
-                                                @if (in_array($app['id'], $selectedDepotApps)) checked @endif />
+                                                x-effect="$el.checked = ($wire.selectedDepotApps ?? []).map(String).includes('{{ $app['id'] }}')" />
                                         </td>
                                         <td>
                                             <div class="font-medium">{{ $app['name'] }}</div>

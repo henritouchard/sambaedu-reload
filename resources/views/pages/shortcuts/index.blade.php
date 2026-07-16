@@ -25,7 +25,6 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
 
     // Sélection bulk
     public array $selectedShortcuts = [];
-    public bool $selectAll = false;
 
     // Données
     /** @var Shortcut[] */
@@ -165,29 +164,6 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
         }
     }
 
-    // Gestion de la sélection
-    public function updatedSelectedShortcuts()
-    {
-        $this->updateSelectAllState();
-    }
-
-    public function toggleSelectAll()
-    {
-        if ($this->selectAll) {
-            $this->selectedShortcuts = [];
-        } else {
-            $this->selectedShortcuts = collect($this->shortcuts)->pluck('key')->all();
-        }
-        $this->selectAll = !$this->selectAll;
-    }
-
-    private function updateSelectAllState()
-    {
-        $totalShortcuts = count($this->shortcuts);
-        $selectedCount = count($this->selectedShortcuts);
-        $this->selectAll = $selectedCount === $totalShortcuts && $totalShortcuts > 0;
-    }
-
     // Actions groupées
     public function bulkDelete()
     {
@@ -214,7 +190,6 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
 
             $this->toast('success', 'Suppression réussie', $message);
             $this->selectedShortcuts = [];
-            $this->selectAll = false;
             $this->loadShortcuts();
         } catch (\Exception $e) {
             Log::error('ShortcutsPage bulkDelete error: ' . $e->getMessage());
@@ -394,8 +369,7 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
                     <x-slot:header>
                         <th>
                             <label>
-                                <input type="checkbox" class="checkbox" wire:model.live="selectAll"
-                                    @change="$wire.toggleSelectAll()">
+                                <x-molecules.select-all-checkbox :ids="collect($shortcuts)->pluck('key')" model="selectedShortcuts" />
                             </label>
                         </th>
                         <th>Raccourci</th>
@@ -404,7 +378,7 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
                         <th>Cibles</th>
                     </x-slot:header>
                     @foreach ($shortcuts as $shortcut)
-                        <tr class="hover:bg-sky-50 cursor-pointer"
+                        <tr wire:key="shortcut-{{ $shortcut->key }}" class="hover:bg-sky-50 cursor-pointer"
                             onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.shortcuts.show', $shortcut->key) }}'">
                             <td class="checkbox-cell p-0">
                                 <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">

@@ -80,8 +80,7 @@
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox" wire:model.live="selectAllMachines"
-                                    @click="$wire.selectedMachines = $wire.selectedMachines.length === {{ $this->machines->total() }} ? [] : {{ json_encode($this->machines->pluck('id')->toArray()) }}">
+                                <x-molecules.select-all-checkbox :ids="$this->machines->pluck('id')" model="selectedMachines" />
                             </th>
                             <th>Nom</th>
                             <th>OS</th>

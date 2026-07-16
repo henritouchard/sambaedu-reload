@@ -40,24 +40,6 @@ new class extends Component {
         $this->userGroupService = $userGroupService;
     }
 
-    public function toggleUserSelection(string $login): void
-    {
-        if (in_array($login, $this->selectedUsers, true)) {
-            $this->selectedUsers = array_values(array_diff($this->selectedUsers, [$login]));
-            return;
-        }
-
-        $this->selectedUsers[] = $login;
-    }
-
-    public function selectAllVisibleUsers(): void
-    {
-        $this->selectedUsers = collect($this->users->items())
-            ->map(fn(User $userItem): string => $userItem->login)
-            ->values()
-            ->all();
-    }
-
     public function clearSelectedUsers(): void
     {
         $this->selectedUsers = [];
@@ -85,24 +67,6 @@ new class extends Component {
     {
         $this->selectedUserGroups = [];
         $this->resetPage(pageName: 'groupsPage');
-    }
-
-    public function toggleGroupSelection(int $groupId): void
-    {
-        if (in_array($groupId, $this->selectedUserGroups, true)) {
-            $this->selectedUserGroups = array_values(array_diff($this->selectedUserGroups, [$groupId]));
-            return;
-        }
-
-        $this->selectedUserGroups[] = $groupId;
-    }
-
-    public function selectAllVisibleGroups(): void
-    {
-        $this->selectedUserGroups = collect($this->groups->items())
-            ->map(fn(UserGroup $groupItem): int => $groupItem->id)
-            ->values()
-            ->all();
     }
 
     public function clearSelectedGroups(): void
@@ -588,8 +552,7 @@ new class extends Component {
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox" @checked(count($selectedUsers) > 0 && count($selectedUsers) === count($this->users->items()))
-                                    wire:click="{{ count($selectedUsers) > 0 ? 'clearSelectedUsers' : 'selectAllVisibleUsers' }}">
+                                <x-molecules.select-all-checkbox :ids="collect($this->users->items())->pluck('login')" model="selectedUsers" />
                             </th>
                             <th>Nom</th>
                             <th>Prénom</th>
@@ -600,12 +563,12 @@ new class extends Component {
                     </thead>
                     <tbody>
                         @forelse ($this->users as $user)
-                            <tr class="hover:bg-sky-50 cursor-pointer"
+                            <tr wire:key="user-row-{{ $user->login }}" class="hover:bg-sky-50 cursor-pointer"
                                 onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.user.show', ['login' => $user->login, 'from' => route('app.users', ['tab' => 'users'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
-                                        <input type="checkbox" class="checkbox" @checked(in_array($user->login, $selectedUsers, true))
-                                            wire:click.stop="toggleUserSelection('{{ $user->login }}')">
+                                        <input type="checkbox" class="checkbox"
+                                            wire:model.live="selectedUsers" value="{{ $user->login }}">
                                     </label>
                                 </td>
                                 <td>{{ $user->lastname ?: '-' }}</td>
@@ -756,8 +719,7 @@ new class extends Component {
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox" @checked(count($selectedUserGroups) > 0 && count($selectedUserGroups) === count($this->groups->items()))
-                                    wire:click="{{ count($selectedUserGroups) > 0 ? 'clearSelectedGroups' : 'selectAllVisibleGroups' }}">
+                                <x-molecules.select-all-checkbox :ids="collect($this->groups->items())->pluck('id')" model="selectedUserGroups" />
                             </th>
                             <th>Nom affiché</th>
                             <th>Nom technique</th>
@@ -767,12 +729,12 @@ new class extends Component {
                     </thead>
                     <tbody>
                         @forelse ($this->groups as $groupItem)
-                            <tr class="hover cursor-pointer"
+                            <tr wire:key="group-row-{{ $groupItem->id }}" class="hover cursor-pointer"
                                 onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.users.groups.edit', ['id' => $groupItem->id, 'from' => route('app.users', ['tab' => 'groups'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
-                                        <input type="checkbox" class="checkbox" @checked(in_array($groupItem->id, $selectedUserGroups, true))
-                                            wire:click.stop="toggleGroupSelection({{ $groupItem->id }})">
+                                        <input type="checkbox" class="checkbox"
+                                            wire:model.live="selectedUserGroups" value="{{ $groupItem->id }}">
                                     </label>
                                 </td>
                                 <td>{{ $groupItem->display_name ?: $groupItem->name }}</td>
