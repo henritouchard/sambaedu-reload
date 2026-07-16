@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -300,6 +301,11 @@ new class extends Component {
     // ADD
     // ========================================================================
 
+    /**
+     * Ouvre la modale d'ajout. Déclenchable depuis le dropdown d'actions
+     * de la page parent (onglet Imprimantes) via l'événement `parc-add-printer`.
+     */
+    #[On('parc-add-printer')]
     public function openAddModal(): void
     {
         if (!Gate::allows('manage-printer')) {
@@ -1270,13 +1276,6 @@ new class extends Component {
                 @else
                     <div></div>
                 @endif
-
-                @can('manage-printer')
-                    <button type="button" class="btn btn-primary btn-sm" wire:click="openAddModal">
-                        <i class="fa-solid fa-plus"></i>
-                        Ajouter une imprimante
-                    </button>
-                @endcan
             </div>
         </div>
     </div>

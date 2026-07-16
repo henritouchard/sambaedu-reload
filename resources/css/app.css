@@ -8,6 +8,15 @@
 
 @plugin "daisyui";
 
+/* Anti-glitch sidebar : coupe l'animation du drawer tant que la page charge.
+   La classe `preload` (posée sur <html>) est retirée après le premier paint,
+   ce qui réactive l'animation d'ouverture au clic (mobile) sans le flash au load. */
+.preload .drawer-side,
+.preload .drawer-side * {
+    transition: none !important;
+    animation: none !important;
+}
+
 /* Thème clair */
 [data-theme="light"] {
 

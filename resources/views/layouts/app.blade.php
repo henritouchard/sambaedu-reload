@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="light">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="light" class="preload">
 
 <head>
     <meta charset="utf-8">
@@ -11,6 +11,13 @@
     @livewireStyles
 
     {!! ToastMagic::styles() !!}
+
+    {{-- Neutralise l'animation du drawer tant que le CSS n'est pas peint (évite le glitch « sidebar plié → déplié » au changement de page). --}}
+    <script>
+        window.addEventListener('load', () => {
+            requestAnimationFrame(() => document.documentElement.classList.remove('preload'));
+        });
+    </script>
 
 </head>
 

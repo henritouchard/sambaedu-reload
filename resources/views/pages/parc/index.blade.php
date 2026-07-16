@@ -528,19 +528,48 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     description="Gérez les postes et groupes de postes de votre établissement">
 
     <x-slot:actions>
-        <div class="flex gap-2">
-            <button type="button" class="btn btn-primary" wire:click="$dispatch('open-group-modal')">
-                <i class="fa-solid fa-plus"></i>
-                Nouveau Groupe
-            </button>
-            <!-- <div class="dropdown dropdown-end">
-                <label tabindex="0" class="btn btn-outline">
-                    <i class="fa-solid fa-ellipsis-vertical"></i>
-                    Actions
-                    <i class="fa-solid fa-chevron-down text-xs ml-1"></i>
-                </label>
-                
-            </div> -->
+        {{-- Dropdown d'actions contextuel : les entrées dépendent de l'onglet actif. --}}
+        <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-primary">
+                <i class="fa-solid fa-bolt"></i>
+                Actions
+                <i class="fa-solid fa-chevron-down text-xs ml-1"></i>
+            </label>
+            <ul tabindex="0"
+                class="dropdown-content z-[50] menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-300 mt-2">
+                @if ($tab === 'groups')
+                    <li>
+                        <button type="button" wire:click="$dispatch('open-group-modal')">
+                            <i class="fa-solid fa-folder-plus"></i>
+                            Nouveau groupe
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" wire:click="syncFromAd">
+                            <i class="fa-solid fa-rotate"></i>
+                            Synchroniser depuis l'AD
+                        </button>
+                    </li>
+                @elseif ($tab === 'machines')
+                    <li>
+                        <button type="button" wire:click="syncFromAd">
+                            <i class="fa-solid fa-rotate"></i>
+                            Synchroniser depuis l'AD
+                        </button>
+                    </li>
+                @elseif ($tab === 'printers')
+                    @can('manage-printer')
+                        <li>
+                            <button type="button" wire:click="$dispatch('parc-add-printer')">
+                                <i class="fa-solid fa-plus"></i>
+                                Ajouter une imprimante
+                            </button>
+                        </li>
+                    @else
+                        <li class="menu-disabled"><span class="text-base-content/50">Aucune action disponible</span></li>
+                    @endcan
+                @endif
+            </ul>
         </div>
     </x-slot:actions>
 
