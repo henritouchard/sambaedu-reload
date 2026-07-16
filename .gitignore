@@ -104,3 +104,11 @@ Desktop.ini
 # Laravel Dusk (host isolé)
 .env.dusk
 /database/dusk.sqlite
+
+# Config Claude Code locale (skills, scripts, settings…) — non versionnée.
+/.claude/
+
+# BMAD — install et artefacts de sortie sortis du tracking git
+# (conservés localement uniquement).
+/_bmad/
+/_bmad-output/
