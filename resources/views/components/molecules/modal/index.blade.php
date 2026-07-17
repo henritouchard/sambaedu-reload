@@ -61,7 +61,12 @@
 
 @php
     $wireModel = $attributes->wire('model')->value();
-    $bodyScrollClass = $noScroll ? 'overflow-hidden' : 'overflow-y-auto';
+    // Le corps scrolle en HAUTEUR uniquement. On borne explicitement l'axe X
+    // (`overflow-x-hidden`) : `overflow-y-auto` seul laisse l'axe X calculé en
+    // `auto` par le navigateur → un scroll horizontal parasite apparaît dès qu'un
+    // enfant dépasse (grille de cartes, tooltip `w-max`, input). Un contenu large
+    // légitime (table) doit porter son propre conteneur `overflow-x-auto`.
+    $bodyScrollClass = $noScroll ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden';
 @endphp
 
 <div>
