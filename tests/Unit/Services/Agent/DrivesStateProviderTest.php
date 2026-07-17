@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
-use App\Enums\FilePolicyMode;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
@@ -168,70 +167,56 @@ class DrivesStateProviderTest extends TestCase
     // =========================================================================
 
     #[Test]
-    public function default_policy_partages_emits_the_drives(): void
+    public function default_policy_emits_home_and_classes(): void
     {
-        // Aucune politique persistée ⇒ défaut global `Partages` ⇒ jeu fixe émis
+        // Aucune politique persistée ⇒ défaut `home✓ shares✓` ⇒ jeu fixe émis
         // (garde-fou golden : sortie identique à l'historique).
         self::assertNull(SystemSetting::get(\App\Services\FilePolicyService::SETTING_KEY));
         self::assertCount(2, $this->provider->itemsFor($this->ctx()));
     }
 
     #[Test]
-    public function global_web_only_policy_suppresses_all_drives(): void
+    public function all_capabilities_off_is_web_only_and_suppresses_all_drives(): void
     {
-        \App\Services\FilePolicyService::setGlobal(FilePolicyMode::AutreWeb);
+        \App\Services\FilePolicyService::setGlobal(false, false, false);
 
         self::assertCount(0, $this->provider->itemsFor($this->ctx()));
     }
 
     #[Test]
-    public function global_nextcloud_desktop_policy_suppresses_all_drives(): void
+    public function nextcloud_only_mounts_no_drive(): void
     {
-        \App\Services\FilePolicyService::setGlobal(FilePolicyMode::NextcloudDesktop);
+        // Nextcloud natif seul (home & partages coupés) : l'agent ne monte aucun
+        // lecteur — le provisioning du client Desktop est un autre canal.
+        \App\Services\FilePolicyService::setGlobal(false, false, true);
 
         self::assertCount(0, $this->provider->itemsFor($this->ctx()));
     }
 
     #[Test]
-    public function parc_override_suppresses_drives_even_when_global_is_partages(): void
+    public function home_only_emits_just_the_home_drive(): void
     {
-        // Global `Partages`, mais le parc du poste bascule en web → aucun lecteur.
-        $parc = WorkstationGroup::factory()->physical()->create([
-            'files_policy_mode' => FilePolicyMode::AutreWeb,
-        ]);
-        $this->ws->groups()->attach($parc->id);
+        // `home✓ shares✗` : K: seul, jamais H: ni répertoires gérés.
+        \App\Services\FilePolicyService::setGlobal(true, false, false);
+        $share = NetworkShare::factory()->create(['directory_name' => 'gere', 'letter' => 'P:']);
+        $this->assign($share, User::class, $this->user->id);
 
-        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+        $letters = $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
+        self::assertSame(['K:'], $letters);
     }
 
     #[Test]
-    public function parc_override_partages_re_enables_drives_when_global_is_web(): void
+    public function shares_only_emits_classes_and_managed_directories_without_home(): void
     {
-        // Global `AutreWeb` (pas de lecteur par défaut), mais une salle reste en
-        // partages → l'override RÉACTIVE les lecteurs pour ses postes.
-        \App\Services\FilePolicyService::setGlobal(FilePolicyMode::AutreWeb);
-        $parc = WorkstationGroup::factory()->physical()->create([
-            'files_policy_mode' => FilePolicyMode::Partages,
-        ]);
-        $this->ws->groups()->attach($parc->id);
+        // `home✗ shares✓` : H: et les répertoires gérés, mais pas le home K:.
+        \App\Services\FilePolicyService::setGlobal(false, true, false);
+        $share = NetworkShare::factory()->create(['directory_name' => 'gere', 'letter' => 'P:']);
+        $this->assign($share, User::class, $this->user->id);
 
-        self::assertCount(2, $this->provider->itemsFor($this->ctx()));
-    }
-
-    #[Test]
-    public function logical_parc_override_wins_over_physical(): void
-    {
-        // Salle physique en `Partages`, parc logique en `AutreWeb` : le logique
-        // l'emporte (précédence iso capacités) → aucun lecteur.
-        $physical = WorkstationGroup::factory()->physical()->create([
-            'files_policy_mode' => FilePolicyMode::Partages,
-        ]);
-        $logical = WorkstationGroup::factory()->logical()->create([
-            'files_policy_mode' => FilePolicyMode::AutreWeb,
-        ]);
-        $this->ws->groups()->attach([$physical->id, $logical->id]);
-
-        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+        $letters = $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
+        self::assertSame(['H:', 'P:'], $letters);
     }
 
     // =========================================================================

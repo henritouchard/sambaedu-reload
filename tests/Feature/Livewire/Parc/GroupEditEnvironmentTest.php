@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Parc;
 
-use App\Enums\FilePolicyMode;
 use App\Enums\WorkstationEnvironment;
 use App\Models\User;
 use App\Models\WorkstationGroup;
@@ -86,48 +85,6 @@ class GroupEditEnvironmentTest extends TestCase
             ->call('save');
 
         self::assertNull(WorkstationGroup::query()->findOrFail($group->id)->environment);
-    }
-
-    #[Test]
-    public function the_form_prefills_the_persisted_files_policy_override(): void
-    {
-        $group = WorkstationGroup::factory()->create([
-            'files_policy_mode' => FilePolicyMode::AutreWeb,
-        ]);
-
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
-            ->assertSet('files_policy_mode', 'autre_web');
-    }
-
-    #[Test]
-    public function saving_persists_the_files_policy_override(): void
-    {
-        $group = WorkstationGroup::factory()->create(['files_policy_mode' => null]);
-
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
-            ->set('files_policy_mode', 'nextcloud_desktop')
-            ->set('files_nextcloud_server_url', 'https://cloud.parc.fr')
-            ->call('save')
-            ->assertHasNoErrors();
-
-        $fresh = WorkstationGroup::query()->findOrFail($group->id);
-        self::assertSame(FilePolicyMode::NextcloudDesktop, $fresh->files_policy_mode);
-        self::assertSame('https://cloud.parc.fr', $fresh->files_nextcloud_server_url);
-    }
-
-    #[Test]
-    public function saving_empty_files_policy_resets_override_to_null(): void
-    {
-        // '' = hérite du défaut global → colonne null.
-        $group = WorkstationGroup::factory()->create([
-            'files_policy_mode' => FilePolicyMode::AutreWeb,
-        ]);
-
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
-            ->set('files_policy_mode', '')
-            ->call('save');
-
-        self::assertNull(WorkstationGroup::query()->findOrFail($group->id)->files_policy_mode);
     }
 
     #[Test]

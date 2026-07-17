@@ -75,9 +75,6 @@ class WorkstationGroup extends Model implements Wireable
         'controlhub_version',
         'controlhub_label',
         'environment',
-        'files_policy_mode',
-        'files_nextcloud_server_url',
-        'files_nextcloud_web_url',
         'archived_at',
     ];
 
@@ -93,7 +90,6 @@ class WorkstationGroup extends Model implements Wireable
         'managed_by_control_hub' => 'boolean',
         'controlhub_version' => 'datetime',
         'environment' => \App\Enums\WorkstationEnvironment::class,
-        'files_policy_mode' => \App\Enums\FilePolicyMode::class,
         'archived_at' => 'datetime',
     ];
 

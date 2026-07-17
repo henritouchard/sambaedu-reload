@@ -1,7 +1,6 @@
 <?php
 
 use App\Components\Traits\WithToasts;
-use App\Enums\FilePolicyMode;
 use App\Services\FilePolicyService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -10,21 +9,24 @@ use Livewire\Component;
 /**
  * Onglet « Personnels et partagés » de /admin/settings/files.
  *
- * Déclare le DÉFAUT d'instance de la politique de gestion des fichiers (décision
- * Henri 2026-07-17) : comment les utilisateurs accèdent à leurs fichiers persos
- * (home) et partagés (classes), et donc si l'agent monte les lecteurs réseau.
- * Trois modes ({@see FilePolicyMode}). La surcharge PAR PARC se fait dans le
- * formulaire d'édition d'un parc. Le mode gouverne le
- * {@see \App\Services\Agent\Providers\DrivesStateProvider}.
+ * Déclare le réglage GLOBAL d'instance de la politique de gestion des fichiers
+ * (décision Henri 2026-07-17) : TROIS CAPACITÉS INDÉPENDANTES —
+ *  - `home`      : montage du home perso K: ;
+ *  - `shares`    : montage des partages serveur (classes H: + répertoires gérés) ;
+ *  - `nextcloud` : provisionnement du client Nextcloud Desktop (à venir).
  *
- * Composant enfant (nested) — double garde `server.admin` (le host la porte déjà).
+ * On peut activer/désactiver chacune séparément. Tout désactivé = « web
+ * uniquement » (rien monté). Gouverne le
+ * {@see \App\Services\Agent\Providers\DrivesStateProvider}. Pas d'override par
+ * parc. Composant enfant (nested) — double garde `server.admin`.
  */
 new class extends Component {
     use WithToasts;
 
-    public string $mode = '';
+    public bool $home = true;
+    public bool $shares = true;
+    public bool $nextcloud = false;
     public string $nextcloudServerUrl = '';
-    public string $nextcloudWebUrl = '';
 
     public function mount(): void
     {
@@ -33,18 +35,10 @@ new class extends Component {
         }
 
         $config = FilePolicyService::globalConfig();
-        $this->mode = $config['mode'];
-        $this->nextcloudServerUrl = $config['nextcloud']['server_url'];
-        $this->nextcloudWebUrl = $config['nextcloud']['web_url'];
-    }
-
-    /** @return array<int, array{value:string, label:string}> */
-    public function getModesProperty(): array
-    {
-        return array_map(
-            fn (FilePolicyMode $m): array => ['value' => $m->value, 'label' => $m->label()],
-            FilePolicyMode::cases(),
-        );
+        $this->home = $config['home'];
+        $this->shares = $config['shares'];
+        $this->nextcloud = $config['nextcloud'];
+        $this->nextcloudServerUrl = $config['nextcloud_server_url'];
     }
 
     public function save(): void
@@ -53,17 +47,9 @@ new class extends Component {
             abort(403);
         }
 
-        $mode = FilePolicyMode::tryFrom($this->mode);
-        if ($mode === null) {
-            $this->toastError('Mode de gestion des fichiers invalide.');
-
-            return;
-        }
-
         try {
             $this->validate([
                 'nextcloudServerUrl' => ['nullable', 'string', 'max:255'],
-                'nextcloudWebUrl' => ['nullable', 'string', 'max:255'],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->toastError('Configuration Nextcloud invalide.');
@@ -71,7 +57,7 @@ new class extends Component {
         }
 
         try {
-            FilePolicyService::setGlobal($mode, $this->nextcloudServerUrl, $this->nextcloudWebUrl);
+            FilePolicyService::setGlobal($this->home, $this->shares, $this->nextcloud, $this->nextcloudServerUrl);
             $this->toastSuccess('Politique de gestion des fichiers enregistrée.');
         } catch (\Throwable $e) {
             Log::error('FilePolicySettings: échec save', ['error' => $e->getMessage()]);
@@ -89,52 +75,60 @@ new class extends Component {
                 Politique par défaut de l'établissement
             </h3>
             <p class="text-sm opacity-70 mb-4">
-                Détermine comment les utilisateurs accèdent à leurs fichiers personnels (home) et
-                partagés (classes). Un parc peut surcharger ce défaut depuis sa fiche d'édition. En
-                dehors du mode « Partages réseau », l'agent ne monte <strong>aucun lecteur</strong>
-                (y compris le home K:) — rien ne doit être déposé sur un lecteur.
+                Choisissez, indépendamment, ce que l'agent met à disposition sur les postes. Tout
+                désactivé = accès <strong>web uniquement</strong> (aucun lecteur monté).
             </p>
 
             <form wire:submit.prevent="save" class="space-y-5">
                 <div class="grid grid-cols-1 gap-3">
-                    @foreach ($this->modes as $m)
-                        <label class="card bg-base-200 cursor-pointer hover:bg-base-300 transition-colors {{ $mode === $m['value'] ? 'ring-2 ring-primary' : '' }}">
-                            <div class="card-body p-4 flex-row items-center gap-3">
-                                <input type="radio" wire:model.live="mode" value="{{ $m['value'] }}"
-                                    class="radio radio-primary" />
-                                <span class="font-medium">{{ $m['label'] }}</span>
+                    {{-- Home perso K: --}}
+                    <label class="card bg-base-200 cursor-pointer hover:bg-base-300 transition-colors {{ $home ? 'ring-2 ring-primary' : '' }}">
+                        <div class="card-body p-4 flex-row items-center gap-3">
+                            <input type="checkbox" wire:model.live="home" class="checkbox checkbox-primary" />
+                            <div class="min-w-0 flex-1">
+                                <span class="font-medium">Répertoire personnel (K:)</span>
+                                <p class="text-xs opacity-70">Monte le home de l'utilisateur (« Mes documents »).</p>
                             </div>
-                        </label>
-                    @endforeach
+                        </div>
+                    </label>
+
+                    {{-- Partages serveur H: --}}
+                    <label class="card bg-base-200 cursor-pointer hover:bg-base-300 transition-colors {{ $shares ? 'ring-2 ring-primary' : '' }}">
+                        <div class="card-body p-4 flex-row items-center gap-3">
+                            <input type="checkbox" wire:model.live="shares" class="checkbox checkbox-primary" />
+                            <div class="min-w-0 flex-1">
+                                <span class="font-medium">Partages réseau (H:)</span>
+                                <p class="text-xs opacity-70">Monte les classes (H:) et les répertoires réseau gérés.</p>
+                            </div>
+                        </div>
+                    </label>
+
+                    {{-- Nextcloud natif --}}
+                    <label class="card bg-base-200 cursor-pointer hover:bg-base-300 transition-colors {{ $nextcloud ? 'ring-2 ring-primary' : '' }}">
+                        <div class="card-body p-4 flex-row items-center gap-3">
+                            <input type="checkbox" wire:model.live="nextcloud" class="checkbox checkbox-primary" />
+                            <div class="min-w-0 flex-1">
+                                <span class="font-medium">Nextcloud natif (client Desktop)</span>
+                                <p class="text-xs opacity-70">Provisionne le client Nextcloud Desktop sur les postes (à venir).</p>
+                            </div>
+                        </div>
+                    </label>
                 </div>
 
-                {{-- Config Nextcloud — utile hors « Partages réseau » (consommée par le
-                     provisioning du client Desktop, à venir). --}}
-                <div class="{{ $mode === \App\Enums\FilePolicyMode::Partages->value ? 'opacity-50' : '' }}">
+                {{-- Config Nextcloud — utile quand « Nextcloud natif » est actif (consommée
+                     par le provisioning du client Desktop, à venir). --}}
+                <div class="{{ $nextcloud ? '' : 'opacity-50' }}">
                     <div class="divider text-xs opacity-60">Nextcloud</div>
-                    <div class="grid grid-cols-1 gap-4">
-                        <div class="form-control w-full">
-                            <label class="label py-2">
-                                <span class="label-text font-medium">URL du serveur Nextcloud</span>
-                            </label>
-                            <input type="text" wire:model="nextcloudServerUrl"
-                                placeholder="https://cloud.etablissement.fr"
-                                class="input input-bordered w-full @error('nextcloudServerUrl') input-error @enderror" />
-                            @error('nextcloudServerUrl')
-                                <span class="text-xs text-error mt-1">{{ $message }}</span>
-                            @enderror
-                        </div>
-                        <div class="form-control w-full">
-                            <label class="label py-2">
-                                <span class="label-text font-medium">URL d'accès web (optionnel)</span>
-                            </label>
-                            <input type="text" wire:model="nextcloudWebUrl"
-                                placeholder="https://cloud.etablissement.fr/apps/files"
-                                class="input input-bordered w-full @error('nextcloudWebUrl') input-error @enderror" />
-                            @error('nextcloudWebUrl')
-                                <span class="text-xs text-error mt-1">{{ $message }}</span>
-                            @enderror
-                        </div>
+                    <div class="form-control w-full">
+                        <label class="label py-2">
+                            <span class="label-text font-medium">URL du serveur Nextcloud</span>
+                        </label>
+                        <input type="text" wire:model="nextcloudServerUrl"
+                            placeholder="https://cloud.etablissement.fr"
+                            class="input input-bordered w-full @error('nextcloudServerUrl') input-error @enderror" />
+                        @error('nextcloudServerUrl')
+                            <span class="text-xs text-error mt-1">{{ $message }}</span>
+                        @enderror
                     </div>
                 </div>
 
