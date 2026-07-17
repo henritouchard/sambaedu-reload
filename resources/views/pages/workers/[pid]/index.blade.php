@@ -121,7 +121,7 @@ new #[Title('Détail Worker')] class extends Component {
             @php
                 $workerTabs = collect($tabs)->map(fn (string $label): array => ['label' => $label])->all();
             @endphp
-            <x-molecules.tabs :tabs="$workerTabs" :active="$selectedTab" action="selectTab" class="w-fit" />
+            <x-molecules.tabs :tabs="$workerTabs" :active="$selectedTab" action="selectTab" />
 
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body p-0 overflow-hidden">

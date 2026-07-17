@@ -68,6 +68,11 @@ class MachineShowPageTest extends TestCase
         if ($this->createdTables) {
             Schema::dropIfExists('agent_report_events');
             Schema::dropIfExists('agent_resource_states');
+            Schema::dropIfExists('application_workstation_group');
+            Schema::dropIfExists('application_workstation');
+            Schema::dropIfExists('app_profile_workstation_group');
+            Schema::dropIfExists('app_profile_workstation');
+            Schema::dropIfExists('app_profiles');
             Schema::dropIfExists('applications');
             Schema::dropIfExists('wpkg_workstation_options');
             Schema::dropIfExists('machine_power_action_tasks');
@@ -244,6 +249,55 @@ class MachineShowPageTest extends TestCase
                 $table->unsignedBigInteger('workstation_id');
                 $table->string('option_key', 64);
                 $table->string('option_value', 255);
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Onglet Applications — les computed props `wpkgAttachedProfiles`/
+        // `wpkgAttachedApplications` eager-load les pivots profils/apps (directs
+        // poste + hérités parc). Sans ces tables, le render de l'onglet casse.
+        if (!Schema::hasTable('app_profiles')) {
+            Schema::create('app_profiles', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('display_name')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('app_profile_workstation')) {
+            Schema::create('app_profile_workstation', function (Blueprint $table) {
+                $table->foreignId('workstation_id')->constrained('workstations')->cascadeOnDelete();
+                $table->unsignedBigInteger('app_profile_id');
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('app_profile_workstation_group')) {
+            Schema::create('app_profile_workstation_group', function (Blueprint $table) {
+                $table->unsignedBigInteger('workstation_group_id');
+                $table->unsignedBigInteger('app_profile_id');
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('application_workstation')) {
+            Schema::create('application_workstation', function (Blueprint $table) {
+                $table->foreignId('workstation_id')->constrained('workstations')->cascadeOnDelete();
+                $table->unsignedBigInteger('application_id');
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('application_workstation_group')) {
+            Schema::create('application_workstation_group', function (Blueprint $table) {
+                $table->unsignedBigInteger('workstation_group_id');
+                $table->unsignedBigInteger('application_id');
                 $table->timestamps();
             });
             $this->createdTables = true;
@@ -781,8 +835,9 @@ class MachineShowPageTest extends TestCase
         // Review #1 — câblage réel : `setTab('state')` autorisé + directive
         // @elseif ($tab === 'state') monte le SFC `desired-state-tab`. #[Lazy] ⇒
         // le rendu ne contient que le placeholder (« État cible du poste »).
-        // Review #7 — la branche `state` est PLATE : sur tab=state, la branche
-        // Général ne doit PAS fuiter (pas de card « Groupes logiques »).
+        // Review #7 — la branche `state` est PLATE : sur tab=state, aucune autre
+        // branche ne doit fuiter. On cible le CORPS de la card « Groupes logiques »
+        // (désormais dans l'onglet dédié), pas son libellé d'onglet toujours visible.
         $ws = $this->makeWorkstation();
         $this->mockGroupService($ws);
 
@@ -790,7 +845,7 @@ class MachineShowPageTest extends TestCase
             ->call('setTab', 'state')
             ->assertSet('tab', 'state')
             ->assertSee('État cible du poste')
-            ->assertDontSee('Groupes logiques');
+            ->assertDontSee('Une machine peut appartenir à plusieurs groupes logiques');
     }
 
     public function test_state_tab_renders_even_with_deployment_statuses(): void
@@ -818,15 +873,57 @@ class MachineShowPageTest extends TestCase
             ->assertDontSee('Déploiement des applications'); // titre de la card déploiement (branche Général)
     }
 
-    public function test_general_tab_still_shows_logical_groups(): void
+    public function test_general_tab_shows_technical_details_moved_from_header(): void
     {
-        // Review #7 — non-régression du déplacement : l'onglet Général (défaut)
-        // affiche toujours la card « Groupes logiques ».
+        // Le détail du poste (ex-card header) vit désormais dans l'onglet Général :
+        // salle physique + grille technique. Le corps de la card « Groupes logiques »
+        // ne doit PAS y figurer (il a son propre onglet).
         $ws = $this->makeWorkstation();
         $this->mockGroupService($ws);
 
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
             ->assertSet('tab', 'general')
-            ->assertSee('Groupes logiques');
+            ->assertSee('Salle physique')
+            ->assertSee('Adresse IP')
+            ->assertDontSee('Une machine peut appartenir à plusieurs groupes logiques');
+    }
+
+    public function test_logical_tab_shows_logical_groups_card(): void
+    {
+        // Les groupes logiques ont leur onglet dédié : le corps de la card s'y affiche.
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'logical')
+            ->assertSet('tab', 'logical')
+            ->assertSee('Une machine peut appartenir à plusieurs groupes logiques');
+    }
+
+    public function test_settings_tab_shows_ini_options(): void
+    {
+        // Les options .ini WPKG ont désormais leur propre onglet « Paramètres »
+        // (ex-sous-onglet « Options .ini » de l'onglet Applications).
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'settings')
+            ->assertSet('tab', 'settings')
+            ->assertSee('Options .ini WPKG');
+    }
+
+    public function test_applications_tab_has_no_subtabs(): void
+    {
+        // L'onglet Applications n'affiche plus que les assignations : les anciens
+        // sous-onglets (dont « Options .ini ») ont disparu.
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'wpkg')
+            ->assertSet('tab', 'wpkg')
+            ->assertSee('Profils applicatifs')
+            ->assertDontSee('Options .ini WPKG');
     }
 }

@@ -521,7 +521,7 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
                 'subnets' => ['label' => 'Sous-réseaux ('.$subnets->count().')', 'icon' => 'fa-solid fa-sitemap'],
             ];
         @endphp
-        <x-molecules.tabs :tabs="$dhcpTabs" :active="$tab" class="bg-base-200 w-fit" />
+        <x-molecules.tabs :tabs="$dhcpTabs" :active="$tab" />
 
         {{-- Contenu des onglets --}}
         @if ($tab === 'subnets')

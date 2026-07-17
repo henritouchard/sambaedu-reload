@@ -106,7 +106,7 @@ new #[Title('Configuration par défaut du parc')] class extends Component {
                 'tools' => ['label' => 'Outils agent', 'icon' => 'fa-solid fa-screwdriver-wrench'],
             ];
         @endphp
-        <x-molecules.tabs :tabs="$parcDefaultsTabs" :active="$tab" class="bg-base-200 w-fit" />
+        <x-molecules.tabs :tabs="$parcDefaultsTabs" :active="$tab" />
 
         {{-- Contenu des onglets --}}
         <div class="flex flex-col">

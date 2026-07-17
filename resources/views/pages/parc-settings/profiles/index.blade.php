@@ -540,7 +540,7 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                     'workstations' => ['label' => 'Postes', 'icon' => 'fa-solid fa-computer', 'badge' => $profile->workstations->count()],
                 ];
             @endphp
-            <x-molecules.tabs :tabs="$profileTabs" :active="$tab" class="bg-base-200 w-fit" />
+            <x-molecules.tabs :tabs="$profileTabs" :active="$tab" />
 
             <!-- Contenu des onglets -->
             <div class="flex-1 min-h-0">
