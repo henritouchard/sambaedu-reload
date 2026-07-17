@@ -62,6 +62,12 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
      */
     public array $roleSelections = [];
 
+    // --- Sélection multiple + suppression groupée ---------------------------
+    /** @var array<int, string> ids (string, cf. x-molecules.select-all-checkbox) sélectionnés */
+    public array $selectedShares = [];
+    public bool $isBulkDeleteOpen = false;
+    public string $deleteConfirmation = '';
+
     public function mount(): void
     {
         // Defense-in-depth + cohérence avec la page détail (mount `view`) : ferme
@@ -151,6 +157,102 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->search = '';
         $this->currentPage = 1;
         $this->loadShares();
+    }
+
+    // --- Suppression groupée ------------------------------------------------
+
+    /** @return list<int> ids sélectionnés dédupliqués (castés int). */
+    private function selectedShareIds(): array
+    {
+        return array_values(array_unique(array_map('intval', $this->selectedShares)));
+    }
+
+    /**
+     * Chaîne EXACTE à saisir pour confirmer : le nom du lecteur si UN SEUL est
+     * sélectionné, sinon le mot-clé `SUPPRIMER` (typer N noms serait impraticable).
+     */
+    public function getBulkConfirmTargetProperty(): string
+    {
+        $ids = $this->selectedShareIds();
+        if (count($ids) === 1) {
+            return (string) (NetworkShare::whereKey($ids[0])->value('name') ?? '');
+        }
+
+        return 'SUPPRIMER';
+    }
+
+    /** @return list<array{id:int,name:string,letter:?string}> lignes sélectionnées (affichage modale). */
+    public function getSelectedShareRowsProperty(): array
+    {
+        $ids = $this->selectedShareIds();
+        if ($ids === []) {
+            return [];
+        }
+
+        return NetworkShare::whereIn('id', $ids)->orderBy('name')
+            ->get(['id', 'name', 'letter'])
+            ->map(fn (NetworkShare $s): array => ['id' => $s->id, 'name' => $s->name, 'letter' => $s->letter])
+            ->all();
+    }
+
+    public function openBulkDelete(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        if ($this->selectedShareIds() === []) {
+            $this->toastError('Aucun lecteur réseau sélectionné.');
+
+            return;
+        }
+
+        $this->deleteConfirmation = '';
+        $this->isBulkDeleteOpen = true;
+    }
+
+    public function bulkDelete(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        $ids = $this->selectedShareIds();
+        if ($ids === []) {
+            $this->isBulkDeleteOpen = false;
+
+            return;
+        }
+
+        // Garde-fou destructif : saisie EXACTE requise (nom si un seul, sinon
+        // « SUPPRIMER »). Comparaison trimée, sensible à la casse.
+        if (trim($this->deleteConfirmation) !== $this->bulkConfirmTarget) {
+            $this->toastError('La confirmation saisie ne correspond pas.');
+
+            return;
+        }
+
+        $shares = NetworkShare::whereIn('id', $ids)->get();
+        $service = app(NetworkShareService::class);
+        $deprovFailures = 0;
+
+        foreach ($shares as $share) {
+            // Révoque les ACL + archive le dossier (mv en poubelle, jamais rm -rf)
+            // AVANT la suppression SQL (iso page détail) ; le pivot cascade.
+            if (! $service->deprovision($share)) {
+                $deprovFailures++;
+            }
+            NetworkShare::whereKey($share->id)->delete();
+        }
+
+        $count = $shares->count();
+        $this->isBulkDeleteOpen = false;
+        $this->deleteConfirmation = '';
+        $this->selectedShares = [];
+        $this->currentPage = 1;
+        $this->loadShares();
+
+        if ($deprovFailures > 0) {
+            $this->toastWarning("{$count} lecteur(s) supprimé(s), mais la révocation serveur a échoué pour {$deprovFailures}. Consultez les journaux.");
+        } else {
+            $this->toastSuccess("{$count} lecteur(s) réseau supprimé(s) : accès révoqués et dossiers archivés (fichiers conservés côté serveur).");
+        }
     }
 
     // --- Création -----------------------------------------------------------
@@ -584,6 +686,19 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         </div>
 
         @if (count($shares) > 0)
+            {{-- Barre d'actions groupées — visible dès qu'au moins un lecteur est coché. --}}
+            @can('manage-networkshare')
+                @if (count($selectedShares) > 0)
+                    <div class="flex items-center justify-between gap-3 rounded-lg border border-base-300 bg-base-200 px-4 py-2">
+                        <span class="text-sm font-medium">{{ count($selectedShares) }} lecteur(s) sélectionné(s)</span>
+                        <button type="button" class="btn btn-error btn-sm" wire:click="openBulkDelete">
+                            <i class="fa-solid fa-trash"></i>
+                            Supprimer la sélection
+                        </button>
+                    </div>
+                @endif
+            @endcan
+
             {{-- Tableau aligné sur le style de l'app (cf. /app/users) : carte + table
                  zebra dans un conteneur scrollable horizontal, en-tête décompte. --}}
             <div class="card bg-base-100 shadow-sm overflow-hidden">
@@ -595,6 +710,11 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                     <table class="table table-zebra">
                         <thead>
                             <tr>
+                                @can('manage-networkshare')
+                                    <th class="w-12">
+                                        <x-molecules.select-all-checkbox :ids="collect($shares)->pluck('id')" model="selectedShares" />
+                                    </th>
+                                @endcan
                                 <th>Nom</th>
                                 <th>Répertoire</th>
                                 <th>Description</th>
@@ -605,7 +725,15 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         <tbody>
                             @foreach ($shares as $share)
                                 <tr wire:key="share-row-{{ $share['id'] }}" class="hover:bg-sky-50 cursor-pointer"
-                                    onclick="window.location.href='{{ route('admin.shares.show', $share['id']) }}'">
+                                    onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('admin.shares.show', $share['id']) }}'">
+                                    @can('manage-networkshare')
+                                        <td class="checkbox-cell p-0">
+                                            <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
+                                                <input type="checkbox" class="checkbox"
+                                                    wire:model.live="selectedShares" value="{{ $share['id'] }}">
+                                            </label>
+                                        </td>
+                                    @endcan
                                     <td class="font-bold">{{ $share['name'] }}</td>
                                     <td><span class="font-mono text-sm">{{ $share['directory_name'] }}</span></td>
                                     <td>
@@ -858,6 +986,61 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 @disabled(! $selectedTpl)>
                 <span wire:loading.remove wire:target="createFromTemplate"><i class="fa-solid fa-wand-magic-sparkles"></i> Matérialiser</span>
                 <span wire:loading wire:target="createFromTemplate"><span class="loading loading-spinner loading-xs"></span> Création...</span>
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- Modale de confirmation — suppression groupée (garde-fou destructif :
+         saisie exacte requise ; informe que les fichiers sont archivés, pas détruits). --}}
+    <x-molecules.modal wire:model="isBulkDeleteOpen" size="max-w-lg" height="h-auto"
+        title="Supprimer des lecteurs réseau" icon="fa-triangle-exclamation text-error">
+        <div class="space-y-4">
+            <div class="alert alert-warning">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <div class="text-sm">
+                    <p class="font-semibold">Révoque l'accès et archive les dossiers.</p>
+                    <p>
+                        Les fichiers <strong>ne sont pas détruits</strong> : chaque dossier est déplacé dans une
+                        corbeille serveur (<code>Partages/.trash/</code>) et n'est plus accessible aux utilisateurs.
+                        Les assignations sont supprimées.
+                    </p>
+                </div>
+            </div>
+
+            <div>
+                <p class="text-sm font-medium mb-2">{{ count($this->selectedShareRows) }} lecteur(s) à supprimer :</p>
+                <ul class="max-h-40 overflow-y-auto rounded-lg border border-base-300 divide-y divide-base-200">
+                    @foreach ($this->selectedShareRows as $row)
+                        <li class="flex items-center justify-between px-3 py-2 text-sm">
+                            <span class="font-medium">{{ $row['name'] }}</span>
+                            @if ($row['letter'])
+                                <span class="badge badge-sm badge-primary">{{ $row['letter'] }}</span>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text text-sm">
+                        Pour confirmer, saisissez
+                        <code class="px-1 font-semibold text-error">{{ $this->bulkConfirmTarget }}</code>
+                        @if (count($this->selectedShareRows) === 1)<span class="opacity-60">(le nom du lecteur)</span>@endif
+                    </span>
+                </label>
+                <input type="text" wire:model.live="deleteConfirmation" class="input input-bordered"
+                    autocomplete="off" placeholder="{{ $this->bulkConfirmTarget }}" />
+            </div>
+        </div>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="$set('isBulkDeleteOpen', false)">Annuler</button>
+            <button type="button" class="btn btn-error"
+                wire:click="bulkDelete" wire:loading.attr="disabled" wire:target="bulkDelete"
+                @disabled(trim($deleteConfirmation) !== $this->bulkConfirmTarget)>
+                <span wire:loading.remove wire:target="bulkDelete"><i class="fa-solid fa-trash"></i> Supprimer les lecteurs</span>
+                <span wire:loading wire:target="bulkDelete"><span class="loading loading-spinner loading-xs"></span> Suppression...</span>
             </button>
         </x-slot:footer>
     </x-molecules.modal>

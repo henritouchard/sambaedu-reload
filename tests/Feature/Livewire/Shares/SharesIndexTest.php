@@ -182,4 +182,76 @@ class SharesIndexTest extends TestCase
 
         Livewire::test(self::PAGE)->assertStatus(403);
     }
+
+    // --- Suppression groupée -------------------------------------------------
+
+    #[Test]
+    public function bulk_delete_removes_selected_shares_after_typed_confirmation(): void
+    {
+        $a = NetworkShare::factory()->create(['name' => 'Alpha', 'directory_name' => 'alpha']);
+        $b = NetworkShare::factory()->create(['name' => 'Beta', 'directory_name' => 'beta']);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::PAGE)
+            ->set('selectedShares', [(string) $a->id, (string) $b->id])
+            ->call('openBulkDelete')
+            ->assertSet('isBulkDeleteOpen', true)
+            // Plusieurs sélectionnés → mot-clé SUPPRIMER.
+            ->set('deleteConfirmation', 'SUPPRIMER')
+            ->call('bulkDelete')
+            ->assertSet('isBulkDeleteOpen', false);
+
+        $this->assertDatabaseCount('network_shares', 0);
+    }
+
+    #[Test]
+    public function bulk_delete_single_selection_requires_the_exact_share_name(): void
+    {
+        $a = NetworkShare::factory()->create(['name' => 'Direction', 'directory_name' => 'direction']);
+        $this->actingAs($this->manager());
+
+        // Mauvaise saisie (le mot-clé au lieu du nom) → rien supprimé.
+        Livewire::test(self::PAGE)
+            ->set('selectedShares', [(string) $a->id])
+            ->set('deleteConfirmation', 'SUPPRIMER')
+            ->call('bulkDelete');
+        $this->assertDatabaseCount('network_shares', 1);
+
+        // Nom exact → supprimé.
+        Livewire::test(self::PAGE)
+            ->set('selectedShares', [(string) $a->id])
+            ->set('deleteConfirmation', 'Direction')
+            ->call('bulkDelete');
+        $this->assertDatabaseCount('network_shares', 0);
+    }
+
+    #[Test]
+    public function bulk_delete_rejects_a_wrong_confirmation(): void
+    {
+        $a = NetworkShare::factory()->create(['name' => 'Alpha', 'directory_name' => 'alpha']);
+        $b = NetworkShare::factory()->create(['name' => 'Beta', 'directory_name' => 'beta']);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::PAGE)
+            ->set('selectedShares', [(string) $a->id, (string) $b->id])
+            ->set('deleteConfirmation', 'nope')
+            ->call('bulkDelete');
+
+        $this->assertDatabaseCount('network_shares', 2);
+    }
+
+    #[Test]
+    public function viewer_cannot_bulk_delete(): void
+    {
+        $a = NetworkShare::factory()->create(['name' => 'Alpha', 'directory_name' => 'alpha']);
+        $this->actingAs($this->viewerOnly());
+
+        Livewire::test(self::PAGE)
+            ->set('selectedShares', [(string) $a->id])
+            ->set('deleteConfirmation', 'Alpha')
+            ->call('bulkDelete')
+            ->assertStatus(403);
+
+        $this->assertDatabaseCount('network_shares', 1);
+    }
 }
