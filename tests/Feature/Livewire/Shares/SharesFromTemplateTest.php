@@ -56,7 +56,7 @@ class SharesFromTemplateTest extends TestCase
         parent::tearDown();
     }
 
-    private const PAGE = 'pages::shares.index';
+    private const PAGE = 'pages::admin.shares.index';
 
     private function manager(): User
     {

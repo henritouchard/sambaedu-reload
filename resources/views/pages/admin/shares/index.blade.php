@@ -522,7 +522,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->resetTemplateForm();
 
         // Retour vers la page détail du share créé (édition fine ensuite, 34.2).
-        $this->redirect(route('app.shares.show', $result->share->id), navigate: true);
+        $this->redirect(route('admin.shares.show', $result->share->id), navigate: true);
     }
 
     private function normalizedLetter(?string $raw): ?string
@@ -592,7 +592,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 </x-slot:header>
                 @foreach ($shares as $share)
                     <tr class="hover:bg-sky-50 cursor-pointer"
-                        onclick="window.location.href='{{ route('app.shares.show', $share['id']) }}'">
+                        onclick="window.location.href='{{ route('admin.shares.show', $share['id']) }}'">
                         <td class="font-bold">{{ $share['name'] }}</td>
                         <td><span class="font-mono text-sm">{{ $share['directory_name'] }}</span></td>
                         <td>

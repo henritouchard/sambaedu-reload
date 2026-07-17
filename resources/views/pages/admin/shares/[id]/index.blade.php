@@ -380,7 +380,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                 : "Le répertoire « {$name} » a été supprimé, mais la révocation des accès serveur a échoué. Consultez les journaux.",
         ]);
 
-        return redirect()->route('app.shares');
+        return redirect()->route('admin.shares');
     }
 
     // --- Helpers ------------------------------------------------------------
@@ -461,7 +461,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
 <x-organisms.page title="Lecteur réseau géré" :scrollable="true">
     <x-slot:actions>
-        <a href="{{ route('app.shares') }}" class="btn btn-ghost btn-sm">
+        <a href="{{ route('admin.shares') }}" class="btn btn-ghost btn-sm">
             <i class="fa-solid fa-arrow-left"></i> Retour
         </a>
         @can('manage-networkshare')

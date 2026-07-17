@@ -123,6 +123,46 @@
                 </select>
             </div>
 
+            {{-- Politique de gestion des fichiers — override par parc (décision Henri
+                 2026-07-17). '' = hérite du défaut d'établissement. --}}
+            <div class="form-control w-full">
+                <label class="label py-2">
+                    <x-atoms.tooltip label="Gestion des fichiers (override du parc)" labelClass="label-text font-medium"
+                        icon="true" iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
+                        Surcharge la politique d'accès aux fichiers de l'établissement pour ce parc. Hors « Partages
+                        réseau », l'agent ne monte <strong>aucun lecteur</strong> (home K: inclus) sur ses postes.
+                        Laisser « Hériter » pour suivre le défaut global.
+                    </x-atoms.tooltip>
+                </label>
+                <select wire:model.live="files_policy_mode" class="select select-bordered w-full">
+                    <option value="">— Hériter du défaut de l'établissement —</option>
+                    @foreach (\App\Enums\FilePolicyMode::cases() as $fpm)
+                        <option value="{{ $fpm->value }}">{{ $fpm->label() }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            {{-- Config Nextcloud spécifique au parc (optionnelle) — masquée si le parc
+                 hérite ou reste en partages réseau. Consommée par le provisioning à venir. --}}
+            @if ($files_policy_mode !== '' && $files_policy_mode !== \App\Enums\FilePolicyMode::Partages->value)
+                <div class="form-control w-full">
+                    <label class="label py-2">
+                        <span class="label-text font-medium">URL serveur Nextcloud (spécifique au parc)</span>
+                    </label>
+                    <input type="text" wire:model="files_nextcloud_server_url"
+                        placeholder="Laisser vide pour hériter du défaut"
+                        class="input input-bordered w-full" />
+                </div>
+                <div class="form-control w-full">
+                    <label class="label py-2">
+                        <span class="label-text font-medium">URL web Nextcloud (spécifique au parc)</span>
+                    </label>
+                    <input type="text" wire:model="files_nextcloud_web_url"
+                        placeholder="Laisser vide pour hériter du défaut"
+                        class="input input-bordered w-full" />
+                </div>
+            @endif
+
             {{-- Label de contrat amont (Story 30.2) — masqué si pas de contrat actif (NFR3). --}}
             @if ($hasActiveContract)
                 <div class="form-control w-full">

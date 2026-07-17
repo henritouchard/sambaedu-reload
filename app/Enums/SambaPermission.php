@@ -36,7 +36,7 @@ enum SambaPermission: string
     // Lecteurs réseau gérés (story 34.2)
     /**
      * Story 34.2 (Q5) — consultation des répertoires réseau gérés
-     * (`network_shares`) : page liste `/app/shares`, ouverture en lecture.
+     * (`network_shares`) : page liste `/admin/shares`, ouverture en lecture.
      * Permission DÉDIÉE (NE réutilise PAS `share.view`, qui gouverne les
      * partages de CLASSE) — accordée au Référent Numérique, qui n'a aucune
      * permission `share.*`.

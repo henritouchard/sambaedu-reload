@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\FilePolicyMode;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
 use App\Enums\WorkstationEnvironment;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Workstation;
@@ -159,6 +161,77 @@ class DrivesStateProviderTest extends TestCase
         $this->ws->groups()->attach($nomadeParc->id);
 
         self::assertCount(2, $this->provider->itemsFor($this->ctx()));
+    }
+
+    // =========================================================================
+    // Politique de gestion des fichiers (FilePolicyService) — gating des lecteurs
+    // =========================================================================
+
+    #[Test]
+    public function default_policy_partages_emits_the_drives(): void
+    {
+        // Aucune politique persistée ⇒ défaut global `Partages` ⇒ jeu fixe émis
+        // (garde-fou golden : sortie identique à l'historique).
+        self::assertNull(SystemSetting::get(\App\Services\FilePolicyService::SETTING_KEY));
+        self::assertCount(2, $this->provider->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function global_web_only_policy_suppresses_all_drives(): void
+    {
+        \App\Services\FilePolicyService::setGlobal(FilePolicyMode::AutreWeb);
+
+        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function global_nextcloud_desktop_policy_suppresses_all_drives(): void
+    {
+        \App\Services\FilePolicyService::setGlobal(FilePolicyMode::NextcloudDesktop);
+
+        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function parc_override_suppresses_drives_even_when_global_is_partages(): void
+    {
+        // Global `Partages`, mais le parc du poste bascule en web → aucun lecteur.
+        $parc = WorkstationGroup::factory()->physical()->create([
+            'files_policy_mode' => FilePolicyMode::AutreWeb,
+        ]);
+        $this->ws->groups()->attach($parc->id);
+
+        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function parc_override_partages_re_enables_drives_when_global_is_web(): void
+    {
+        // Global `AutreWeb` (pas de lecteur par défaut), mais une salle reste en
+        // partages → l'override RÉACTIVE les lecteurs pour ses postes.
+        \App\Services\FilePolicyService::setGlobal(FilePolicyMode::AutreWeb);
+        $parc = WorkstationGroup::factory()->physical()->create([
+            'files_policy_mode' => FilePolicyMode::Partages,
+        ]);
+        $this->ws->groups()->attach($parc->id);
+
+        self::assertCount(2, $this->provider->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function logical_parc_override_wins_over_physical(): void
+    {
+        // Salle physique en `Partages`, parc logique en `AutreWeb` : le logique
+        // l'emporte (précédence iso capacités) → aucun lecteur.
+        $physical = WorkstationGroup::factory()->physical()->create([
+            'files_policy_mode' => FilePolicyMode::Partages,
+        ]);
+        $logical = WorkstationGroup::factory()->logical()->create([
+            'files_policy_mode' => FilePolicyMode::AutreWeb,
+        ]);
+        $this->ws->groups()->attach([$physical->id, $logical->id]);
+
+        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
     }
 
     // =========================================================================
