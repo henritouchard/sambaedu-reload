@@ -52,11 +52,12 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Synchronisation automatique des groupes utilisateurs depuis l'AD
-        $schedule->command('user-groups:sync-from-ad')
-                 ->everyFiveMinutes()
-                 ->withoutOverlapping()
-                 ->runInBackground();
+        // NB : pas d'entrée dédiée pour les groupes utilisateurs — le tick
+        // `users:sync-from-ad` ci-dessus les synchronise DÉJÀ en premier
+        // (SyncUsersFromAdJob → UserGroupService::syncFromAd(), avant les
+        // users pour éviter les FK violations). L'ancienne entrée
+        // `user-groups:sync-from-ad` pointait une commande jamais créée
+        // (NamespaceNotFoundException loggée toutes les 5 min depuis l'origine).
 
         // Purge des error_logs de plus de 30 jours
         $schedule->command('error-logs:prune')
