@@ -102,20 +102,27 @@ class ErrorLoggerTest extends TestCase
     }
 
     // ─── Tests Feature : Dashboard admin ──────────────────────────────────
+    //
+    // Error Logger est désormais l'onglet « Logs » de la page
+    // /admin/settings/system-status (décision Henri 2026-07-17). Il capte aussi
+    // les exceptions Laravel (diagnostic runtime SE5), donc PAS dans « Migration ».
+    // La feature est embarquée : `/admin/error-logger` redirige vers cet onglet
+    // et le contenu se teste directement sur le composant Livewire embarqué.
 
     /**
-     * AC3 — La page /admin/error-logger retourne 200 pour un admin.
+     * L'ancienne route /admin/error-logger redirige vers l'onglet « Logs »
+     * de l'État du système.
      */
-    public function test_admin_can_access_error_logger(): void
+    public function test_error_logger_url_redirects_to_system_status_logs_tab(): void
     {
         $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
             ->get('/admin/error-logger');
 
-        $response->assertStatus(200);
+        $response->assertRedirect('/admin/settings/system-status?tab=logs');
     }
 
     /**
-     * AC5 — Utilisateur non-admin → redirigé.
+     * AC5 — Utilisateur non-admin → redirigé (auth du groupe /admin).
      */
     public function test_non_admin_is_redirected(): void
     {
@@ -125,7 +132,7 @@ class ErrorLoggerTest extends TestCase
     }
 
     /**
-     * AC3 — La page affiche les erreurs loggées.
+     * AC3 — Le composant embarqué affiche les erreurs loggées.
      */
     public function test_page_displays_error_log_data(): void
     {
@@ -135,12 +142,10 @@ class ErrorLoggerTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
-            ->get('/admin/error-logger');
-
-        $response->assertStatus(200);
-        $response->assertSee('Undefined variable $foo');
-        $response->assertSee('legacy');
+        \Livewire\Livewire::test('pages::admin.error-logger.index')
+            ->assertStatus(200)
+            ->assertSee('Undefined variable $foo')
+            ->assertSee('legacy');
     }
 
     /**
@@ -159,11 +164,10 @@ class ErrorLoggerTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
-            ->get('/admin/error-logger?sourceFilter=legacy');
-
-        $response->assertStatus(200);
-        $response->assertSee('Legacy PHP warning');
-        $response->assertDontSee('Laravel runtime exception');
+        \Livewire\Livewire::test('pages::admin.error-logger.index')
+            ->set('sourceFilter', 'legacy')
+            ->assertStatus(200)
+            ->assertSee('Legacy PHP warning')
+            ->assertDontSee('Laravel runtime exception');
     }
 }

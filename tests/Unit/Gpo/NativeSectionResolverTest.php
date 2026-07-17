@@ -27,7 +27,7 @@ class NativeSectionResolverTest extends TestCase
         $result = NativeSectionResolver::resolve('redirections-roaming-test');
 
         self::assertArrayHasKey('profils-itinerants', $result);
-        self::assertSame('/admin/settings?tab=profils-itinerants', $result['profils-itinerants']['url']);
+        self::assertSame('/admin/settings/files?tab=roaming', $result['profils-itinerants']['url']);
     }
 
     #[Test]
@@ -178,12 +178,12 @@ class NativeSectionResolverTest extends TestCase
     #[Test]
     public function it_appends_from_gpo_with_ampersand_for_profils_itinerants_url(): void
     {
-        // L'URL '/admin/settings?tab=profils-itinerants' contient déjà un '?'
+        // L'URL '/admin/settings/files?tab=roaming' contient déjà un '?'
         // → le paramètre doit être ajouté avec '&', pas '?' (Piège 8 / AC1.3).
         $url = NativeSectionResolver::buildUrl('profils-itinerants', '{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}');
 
         // Vérifie que le '&' est utilisé et non un second '?'
-        self::assertStringStartsWith('/admin/settings?tab=profils-itinerants&from_gpo=', $url);
+        self::assertStringStartsWith('/admin/settings/files?tab=roaming&from_gpo=', $url);
         self::assertStringNotContainsString('?from_gpo=', $url); // pas de double '?'
     }
 

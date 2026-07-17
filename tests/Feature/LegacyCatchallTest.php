@@ -246,7 +246,7 @@ class LegacyCatchallTest extends TestCase
 
         $response = $this->get('/gpo/no_roam.php');
 
-        $response->assertRedirect('/admin/settings?tab=profils-itinerants');
+        $response->assertRedirect('/admin/settings/files?tab=roaming');
     }
 
     /**

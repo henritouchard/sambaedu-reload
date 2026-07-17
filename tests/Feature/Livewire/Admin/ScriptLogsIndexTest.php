@@ -77,7 +77,9 @@ class ScriptLogsIndexTest extends TestCase
         Livewire::test($this->componentName)
             ->assertSet('sortBy', 'started_at')
             ->assertSet('sortDir', 'desc')
-            ->assertSee('Logs')
+            // Le titre de page est désormais porté par la page hôte à onglets
+            // (/admin/settings/migration) ; le corps embarqué expose ses libellés.
+            ->assertSee('Réinitialiser filtres')
             // Post review Opus-D — vérifier rendu HTML effectif (et pas seulement state).
             ->assertSeeHtml('data-testid="logs-table"')
             ->assertSeeHtml('data-testid="dashboard-banner"')

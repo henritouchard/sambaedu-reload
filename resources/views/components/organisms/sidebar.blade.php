@@ -56,7 +56,7 @@
                          Visible uniquement server.admin (action critique). --}}
                     <li>
                         <a href="{{ route('admin.settings') }}"
-                            class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/settings*') || request()->is('admin/quotas*') || request()->is('admin/controlHub/*') || request()->is('admin/sync-from-ad*') || request()->is('admin/error-logger*') || request()->is('admin/legacy-monitor*') || request()->is('admin/homelegacy*') || request()->is('app/network/dhcp*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
+                            class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/settings*') || request()->is('admin/quotas*') || request()->is('admin/controlHub/*') || request()->is('app/network/dhcp*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
                             <i class="fa-solid fa-cog text-xl"></i>
                             Réglages
                         </a>

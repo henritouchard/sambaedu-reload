@@ -174,26 +174,23 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Logs d'exécution scripts"
-    icon="fa-solid fa-clipboard-list"
-    description="Logs centralisés d'exécution des scripts user/system du parc.">
-
-    <x-slot:actions>
-        <div class="flex flex-wrap gap-2 items-center">
-            <button type="button" class="btn btn-outline btn-sm" wire:click="clearFilters"
-                data-testid="clear-filters">
-                <i class="fa-solid fa-eraser"></i>
-                Réinitialiser filtres
-            </button>
-            <button type="button"
-                class="btn btn-sm {{ $filterFailuresOnly ? 'btn-error' : 'btn-outline btn-error' }}"
-                wire:click="toggleFailuresOnly"
-                data-testid="toggle-failures-only">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                {{ $filterFailuresOnly ? 'Tous les logs' : 'Voir uniquement les échecs' }}
-            </button>
-        </div>
-    </x-slot:actions>
+{{-- Corps seul (sans chrome de page) : embarqué comme onglet « Logs scripts »
+     de /admin/settings/migration. --}}
+<div class="flex flex-col gap-6">
+    <div class="flex flex-wrap gap-2 items-center justify-end">
+        <button type="button" class="btn btn-outline btn-sm" wire:click="clearFilters"
+            data-testid="clear-filters">
+            <i class="fa-solid fa-eraser"></i>
+            Réinitialiser filtres
+        </button>
+        <button type="button"
+            class="btn btn-sm {{ $filterFailuresOnly ? 'btn-error' : 'btn-outline btn-error' }}"
+            wire:click="toggleFailuresOnly"
+            data-testid="toggle-failures-only">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            {{ $filterFailuresOnly ? 'Tous les logs' : 'Voir uniquement les échecs' }}
+        </button>
+    </div>
 
     <div class="space-y-6">
 
@@ -441,4 +438,4 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
         </div>
 
     </div>
-</x-organisms.page>
+</div>

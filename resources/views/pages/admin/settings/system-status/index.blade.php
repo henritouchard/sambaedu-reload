@@ -15,6 +15,7 @@ use App\SystemStatus\DistroInventoryService;
 use App\SystemStatus\Jobs\RunDistroInstallScriptJob;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
@@ -32,6 +33,17 @@ use Livewire\Component;
  */
 new #[Title('État du système')] class extends Component {
     use WithToasts;
+
+    /**
+     * Onglet actif (convention onglets : #[Url(keep:true)] $tab).
+     *  - « general » : checks d'environnement + inventaire distros.
+     *  - « logs »    : Error Logger embarqué (erreurs legacy PHP + exceptions
+     *    Laravel) — diagnostic runtime, pas un outil de migration.
+     */
+    #[Url(keep: true)]
+    public string $tab = 'general';
+
+    private const TABS = ['general', 'logs'];
 
     /**
      * Sections thématiques → classes de checks (exécutés dans l'ordre).
@@ -70,7 +82,19 @@ new #[Title('État du système')] class extends Component {
     public function mount(): void
     {
         $this->ensureAdmin();
+
+        if (! in_array($this->tab, self::TABS, true)) {
+            $this->tab = 'general';
+        }
+
         $this->loadDistros();
+    }
+
+    public function setTab(string $tab): void
+    {
+        if (in_array($tab, self::TABS, true)) {
+            $this->tab = $tab;
+        }
     }
 
     /**
@@ -245,13 +269,24 @@ new #[Title('État du système')] class extends Component {
 
 <x-organisms.page title="État du système"
     icon="fa-solid fa-heart-pulse"
-    description="Connectivité AD, base de données, controlHub, Apache, iPXE et disponibilité des distros."
+    description="Diagnostic du serveur : connectivité et environnement (Général) et journaux d'erreurs runtime (Logs)."
     back="{{ route('admin.settings') }}">
 
+    <div class="flex flex-col gap-6 pt-4">
+
+        @php
+            $statusTabs = [
+                'general' => ['label' => 'Général', 'icon' => 'fa-solid fa-heart-pulse'],
+                'logs' => ['label' => 'Logs', 'icon' => 'fa-solid fa-bug'],
+            ];
+        @endphp
+        <x-molecules.tabs :tabs="$statusTabs" :active="$tab" />
+
+        @if ($tab === 'general')
     {{-- wire:init : les checks se lancent automatiquement juste APRÈS le
          premier rendu (la page s'affiche tout de suite, l'état des
          connexions arrive en différé — objectif « coup d'œil »). --}}
-    <div class="flex flex-col gap-8 pt-4" wire:init="runChecks"
+    <div class="flex flex-col gap-8" wire:init="runChecks"
         @if ($installRunning) wire:poll.5s="refreshInstallStates" @endif>
 
         {{-- ============================================================
@@ -382,5 +417,13 @@ new #[Title('État du système')] class extends Component {
                 </div>
             @endforeach
         </x-molecules.settings-section>
+    </div>
+        @elseif ($tab === 'logs')
+            {{-- Error Logger embarqué : erreurs legacy PHP + exceptions Laravel
+                 (diagnostic runtime). Sorti de « Migration SE4 → SE5 » car il
+                 sert aussi le fonctionnement natif SE5. --}}
+            <livewire:pages::admin.error-logger.index />
+        @endif
+
     </div>
 </x-organisms.page>

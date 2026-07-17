@@ -46,13 +46,15 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Legacy Monitor" description="Appels catchall en temps réel — identifiez les routes legacy encore actives">
-    <x-slot:actions>
+{{-- Corps seul (sans chrome de page) : embarqué comme onglet « Legacy Monitor »
+     de /admin/settings/migration. --}}
+<div class="flex flex-col gap-6">
+    <div class="flex justify-end">
         <button wire:click="$refresh" class="btn btn-outline btn-primary btn-sm">
             <i class="fas fa-refresh"></i>
             Actualiser
         </button>
-    </x-slot:actions>
+    </div>
 
     {{-- Filtres --}}
     <div class="flex flex-wrap gap-4 mb-6">
@@ -150,4 +152,4 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
             </div>
         @endif
     </div>
-</x-organisms.page>
+</div>

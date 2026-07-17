@@ -36,13 +36,13 @@ class LegacyCatchallController extends Controller
 
         // 0bis. Redirections natives (story 1bis.18f — pivot 2026-04-27).
         // Pages legacy `gpo/no_roam.php`, `gpo/user_profile_stats.php` et
-        // `gpo/del_roam.php` remplacées par la page admin native
-        // /admin/settings?tab=profils-itinerants + endpoint script natif.
+        // `gpo/del_roam.php` remplacées par l'onglet « Profils itinérants » de la
+        // page native /admin/settings/files?tab=roaming + endpoint script natif.
         // Early-return STRICTEMENT avant tout pipeline d'exécution legacy
         // pour préserver les bookmarks navigateurs sans toucher
         // gestion_gpo.php (byte-identique préservé).
         if ($path === 'gpo/no_roam.php' || $path === 'gpo/user_profile_stats.php') {
-            return redirect()->to('/admin/settings?tab=profils-itinerants');
+            return redirect()->to('/admin/settings/files?tab=roaming');
         }
         if ($path === 'gpo/del_roam.php') {
             $qs = $request->getQueryString();

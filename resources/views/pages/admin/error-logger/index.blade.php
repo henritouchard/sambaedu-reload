@@ -49,13 +49,15 @@ new #[Title('Error Logger - Instance SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Error Logger" description="Erreurs capturées (legacy PHP & exceptions Laravel) — diagnostic unifié">
-    <x-slot:actions>
+{{-- Corps seul (sans chrome de page) : embarqué comme onglet « Error Logger »
+     de /admin/settings/migration. --}}
+<div class="flex flex-col gap-6">
+    <div class="flex justify-end">
         <button wire:click="$refresh" class="btn btn-outline btn-primary btn-sm">
             <i class="fas fa-refresh"></i>
             Actualiser
         </button>
-    </x-slot:actions>
+    </div>
 
     {{-- Erreur sélectionnée (épinglée au-dessus) --}}
     @if ($this->selectedError)
@@ -175,4 +177,4 @@ new #[Title('Error Logger - Instance SE4FS')] class extends Component {
             </div>
         @endif
     </div>
-</x-organisms.page>
+</div>
