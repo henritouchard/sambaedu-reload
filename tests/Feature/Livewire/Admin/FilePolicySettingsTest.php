@@ -22,7 +22,7 @@ class FilePolicySettingsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::admin.settings.files.index';
+    private const COMPONENT = 'pages::admin.settings.files._partials.personnels-partages-tab';
 
     protected function setUp(): void
     {

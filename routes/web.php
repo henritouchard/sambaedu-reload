@@ -385,9 +385,12 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     // décision Henri 2026-07-16). Le groupe impose déjà `sambaedu.admin` ; on
     // CONSERVE en plus la permission fine `networkshare.view` (defense-in-depth,
     // iso mount() des pages). Noms : `admin.shares` / `admin.shares.show`.
-    Route::livewire('/shares', 'pages::admin.shares.index')
-        ->middleware('can:networkshare.view')
-        ->name('shares');
+    //
+    // La LISTE est désormais l'onglet « Lecteurs réseaux » de /admin/settings/files
+    // (décision Henri 2026-07-17) : `/admin/shares` redirige vers cet onglet (le
+    // nom `admin.shares` reste stable pour les liens existants, ex. retour du
+    // détail). Le DÉTAIL d'un partage reste une sous-page dédiée.
+    Route::redirect('/shares', '/admin/settings/files?tab=lecteurs-reseaux')->name('shares');
     Route::livewire('/shares/{id}', 'pages::admin.shares.[id].index')
         ->middleware('can:networkshare.view')
         ->whereNumber('id')
