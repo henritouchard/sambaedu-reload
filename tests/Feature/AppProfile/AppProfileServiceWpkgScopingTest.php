@@ -125,9 +125,8 @@ class AppProfileServiceWpkgScopingTest extends TestCase
                 $table->primary(['app_profile_id', 'workstation_id'], 'apw_primary');
             });
         }
-        // Story 31.1 — le garde catalogue (assertApplicationsInUpstreamCatalog) résout
-        // ControlHubContract::active() ; table requise même si vide (court-circuit NFR3
-        // → null → aucun bornage, comportement 29.1 inchangé).
+        // Table présente par sécurité pour tout code amont résolvant un contrat actif ;
+        // vide ici → aucun effet sur le scoping WPKG testé.
         if (!Schema::hasTable('controlhub_contracts')) {
             Schema::create('controlhub_contracts', function (Blueprint $table) {
                 $table->id();

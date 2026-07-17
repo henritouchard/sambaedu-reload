@@ -17,7 +17,6 @@ use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
 use App\Components\Traits\WithReturnBack;
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\SyncRequestService;
@@ -803,9 +802,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             return collect();
         }
         $existing = $this->workstation->applications()->pluck('applications.id')->toArray();
-        // Story 31.1 — borne la liste proposée au catalogue applicatif amont
-        // (pass-through NFR3 si standalone / catalogue vide).
-        $query = Application::query()->inUpstreamCatalog()->whereNotIn('id', $existing);
+        // L'assignation à une entité (poste) propose TOUTE app du catalogue local.
+        // Le bornage au catalogue amont (controlHub) ne concerne QUE l'administration
+        // des applications, pas l'assignation.
+        $query = Application::query()->whereNotIn('id', $existing);
         if ($this->wpkgAppSearch !== '') {
             $query->where(function ($q) {
                 $q->where('name', 'LIKE', "%{$this->wpkgAppSearch}%")
@@ -895,9 +895,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $this->toastSuccess(count($this->selectedWpkgAppIdsToAdd).' application(s) ajoutée(s)');
             $this->closeAttachWpkgAppModal();
             $this->loadMachine();
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            // Story 31.1 — refus « hors catalogue amont » : message explicite (FR8).
-            $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[MachineWpkg] Erreur attach apps: '.$e->getMessage());
             $this->toastError('Erreur lors de l\'ajout des applications');

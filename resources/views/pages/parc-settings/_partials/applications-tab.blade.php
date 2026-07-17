@@ -2,7 +2,6 @@
 
 use App\Components\Traits\WithToasts;
 use App\Enums\ApplicationStatus;
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Models\Application;
 use App\Models\Depot;
 use App\Models\DepotApplication;
@@ -250,10 +249,6 @@ new class extends Component
                     $added++;
                 }
             }
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            $this->toastError($e->getMessage());
-
-            return;
         } catch (AuthorizationException $e) {
             $this->toastAccessDenied();
 
@@ -334,10 +329,6 @@ new class extends Component
                     $deployed++;
                 }
             }
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            $this->toastError($e->getMessage());
-
-            return;
         } catch (AuthorizationException $e) {
             $this->toastAccessDenied('Vous n\'avez pas les droits pour déployer sur ce groupe.');
 

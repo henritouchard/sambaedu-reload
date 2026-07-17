@@ -1,9 +1,7 @@
 <?php
 
 use App\Components\Traits\WithToasts;
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Models\Application;
-use App\Services\ControlHub\UpstreamCatalogResolver;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -64,12 +62,10 @@ new class extends Component {
             return collect();
         }
 
-        // Story 31.1 — appliquer une app « par défaut parc » = install la plus large
-        // (Broadcast fleet-wide) : seules les apps du catalogue amont sont proposées à
-        // l'ajout. Pass-through si standalone / catalogue vide (NFR3). Les défauts DÉJÀ
-        // actifs restent affichés via defaults() (non filtrée) pour permettre le retrait (D4).
+        // Assigner une app « par défaut parc » = assignation à une entité (le parc
+        // entier) : TOUTE app du catalogue local est proposée. Le bornage au catalogue
+        // amont (controlHub) ne concerne QUE l'administration des applications.
         return Application::query()
-            ->inUpstreamCatalog()
             ->search($term)
             ->orderBy('name')
             ->limit(30)
@@ -83,16 +79,6 @@ new class extends Component {
         $app = Application::query()->find($applicationId);
         if ($app === null) {
             $this->toastError('Application introuvable.');
-            return;
-        }
-
-        // Story 31.1 — enforcement : passer une app HORS catalogue amont en défaut parc
-        // l'installerait sur tout le parc (contournement du bornage FR5). Refus explicite.
-        // Le retrait ($value === false) n'est jamais borné (D4).
-        if ($value && ! app(UpstreamCatalogResolver::class)->permits((string) $app->app_id)) {
-            $this->toastError(
-                ApplicationNotInUpstreamCatalogException::fromAppIds([(string) $app->app_id])->getMessage()
-            );
             return;
         }
 
