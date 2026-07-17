@@ -144,16 +144,6 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     Route::livewire('/shortcuts/new', 'pages::shortcuts.new.index')->name('shortcuts.new');
     Route::livewire('/shortcuts/{id}', 'pages::shortcuts.[id].index')->name('shortcuts.show');
 
-    // Routes Livewire pour les lecteurs réseau gérés (Story 34.2).
-    // Permissions DÉDIÉES networkshare.* (Q5) — refnum + admins partages/users.
-    Route::livewire('/shares', 'pages::shares.index')
-        ->middleware('can:networkshare.view')
-        ->name('shares');
-    Route::livewire('/shares/{id}', 'pages::shares.[id].index')
-        ->middleware('can:networkshare.view')
-        ->whereNumber('id')
-        ->name('shares.show');
-
     // Routes Livewire pour les règles d'accès aux dossiers (Story 36.4).
     // Permissions DÉDIÉES folderrule.* (D6) — refnum + admin machines. Le
     // contrôle PAR PARC des (dé)assignations est dans le service (piège #9).
@@ -391,6 +381,18 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     // Navigation legacy (menus SE4FS)
     Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
 
+    // Lecteurs réseau gérés (Story 34.2) — déplacé sous /admin (admin-only,
+    // décision Henri 2026-07-16). Le groupe impose déjà `sambaedu.admin` ; on
+    // CONSERVE en plus la permission fine `networkshare.view` (defense-in-depth,
+    // iso mount() des pages). Noms : `admin.shares` / `admin.shares.show`.
+    Route::livewire('/shares', 'pages::admin.shares.index')
+        ->middleware('can:networkshare.view')
+        ->name('shares');
+    Route::livewire('/shares/{id}', 'pages::admin.shares.[id].index')
+        ->middleware('can:networkshare.view')
+        ->whereNumber('id')
+        ->name('shares.show');
+
     // Synchronisation depuis l'AD — Story 7.2 AC8 : can:server.admin (action critique).
     Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')
         ->middleware('can:server.admin')
@@ -421,6 +423,13 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/settings/credentials', 'pages::admin.settings.credentials.index')
         ->middleware('can:server.admin')
         ->name('settings.credentials');
+
+    // /admin/settings/files — Gestion des fichiers : politique d'accès aux fichiers
+    // (mode partages/nextcloud, défaut instance via SystemSetting `files.policy`) +
+    // accès à la gestion des partages réseau. Décision Henri 2026-07-17.
+    Route::livewire('/settings/files', 'pages::admin.settings.files.index')
+        ->middleware('can:server.admin')
+        ->name('settings.files');
 
     // /admin/settings/security — Sécurité & session : déconnexion auto sur inactivité
     // (durée de vie de la session serveur, pilotée via SystemSetting `security.session_idle`).

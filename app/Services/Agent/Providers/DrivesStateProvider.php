@@ -14,6 +14,7 @@ use App\Models\WorkstationGroup;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
+use App\Services\FilePolicyService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -63,6 +64,13 @@ use Illuminate\Support\Facades\Log;
  * (un montage réseau est réseau par nature) et de l'appartenance à une classe.
  * Machine-only (`user` null) → aucun lecteur : un montage dépend du login de
  * session (les shares assignés à un WG ne s'affichent donc qu'EN session user).
+ *
+ * **Politique de gestion des fichiers** (décision Henri 2026-07-17) : le provider
+ * ne monte les lecteurs QUE si le mode effectif est `Partages`
+ * ({@see \App\Services\FilePolicyService::effectiveMode()}, défaut global surchargé
+ * par parc). En mode `NextcloudDesktop` / `AutreWeb`, AUCUN lecteur n'est émis
+ * (home K: inclus) — tout passe par Nextcloud. Défaut `Partages` ⇒ sortie
+ * inchangée (golden préservé).
  *
  * **Scope `session`** : monté DANS la session user (lettre par-user, UNC du home
  * dépendant du login), appliqué par le compagnon de session.
@@ -121,6 +129,16 @@ final class DrivesStateProvider implements StateProvider
     public function itemsFor(TargetContext $ctx): Collection
     {
         if ($ctx->user === null) {
+            return collect();
+        }
+
+        // Politique de gestion des fichiers (décision Henri 2026-07-17) : dans les
+        // modes « Nextcloud Desktop » / « Web uniquement », l'établissement (ou le
+        // parc) ne veut AUCUN lecteur réseau — tout passe par Nextcloud. On coupe
+        // alors le montage complet (home K:, classes H:, partages gérés). Défaut
+        // `Partages` ⇒ émission historique inchangée (golden `state.v1.json` /
+        // `FROZEN_STATE_HASH` préservés). Résolution global + override parc.
+        if (! FilePolicyService::effectiveMode($ctx)->drivesEnabled()) {
             return collect();
         }
 

@@ -54,7 +54,7 @@ class ShareDetailTest extends TestCase
         parent::tearDown();
     }
 
-    private const PAGE = 'pages::shares.[id].index';
+    private const PAGE = 'pages::admin.shares.[id].index';
 
     private function manager(): User
     {
@@ -229,7 +229,7 @@ class ShareDetailTest extends TestCase
 
         Livewire::test(self::PAGE, ['id' => $share->id])
             ->call('deleteShare')
-            ->assertRedirect(route('app.shares'));
+            ->assertRedirect(route('admin.shares'));
 
         $this->assertDatabaseMissing('network_shares', ['id' => $share->id]);
         $this->assertDatabaseMissing('network_share_assignables', ['network_share_id' => $share->id]);

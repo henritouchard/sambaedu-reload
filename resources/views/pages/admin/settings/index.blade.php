@@ -245,15 +245,15 @@ new #[Title('Réglages')] class extends Component {
                     testid="card-dhcp" />
             @endcan
 
-            @can('view-networkshare')
+            @can('server.admin')
                 <x-molecules.settings-card
-                    href="{{ route('app.shares') }}"
-                    icon="fa-solid fa-hard-drive"
+                    href="{{ route('admin.settings.files') }}"
+                    icon="fa-solid fa-folder-tree"
                     iconColor="info"
-                    title="Lecteurs réseau gérés"
-                    description="Répertoires réseau (lecteurs) assignés par utilisateur, groupe ou parc."
-                    badge="Partages"
-                    testid="card-shares" />
+                    title="Gestion des fichiers"
+                    description="Politique d'accès aux fichiers (partages réseau / Nextcloud) et lecteurs réseau gérés."
+                    badge="Fichiers"
+                    testid="card-files" />
             @endcan
 
             <x-molecules.settings-card
