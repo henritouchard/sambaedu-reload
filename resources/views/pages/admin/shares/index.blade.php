@@ -577,73 +577,80 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         @endcan
     </div>
 
-    <div class="flex flex-col h-full">
-        <div class="space-y-3">
-            <div class="flex-1 min-w-48">
-                <x-atoms.searchInput wire:model.live.debounce.500ms="search" id="searchInput"
-                    placeholder="Rechercher (par nom, répertoire...)" icon="fa-magnifying-glass" class="w-full" />
-            </div>
+    <div class="flex flex-col gap-4">
+        <div class="min-w-48">
+            <x-atoms.searchInput wire:model.live.debounce.500ms="search" id="searchInput"
+                placeholder="Rechercher (par nom, répertoire...)" icon="fa-magnifying-glass" class="w-full" />
         </div>
 
         @if (count($shares) > 0)
-            <div class="flex justify-between items-center my-4">
-                <span class="text-base-content/70">{{ $totalShares }} répertoire(s) trouvé(s)</span>
-            </div>
+            {{-- Tableau aligné sur le style de l'app (cf. /app/users) : carte + table
+                 zebra dans un conteneur scrollable horizontal, en-tête décompte. --}}
+            <div class="card bg-base-100 shadow-sm overflow-hidden">
+                <div class="px-4 py-3 border-b border-base-300 text-sm text-base-content/70">
+                    {{ $totalShares }} répertoire(s) trouvé(s)
+                </div>
 
-            <x-organisms.data-table
-                colgroup="<colgroup><col style='width: 22%'><col style='width: 18%'><col style='width: auto'><col style='width: 8%'><col style='width: 16%'></colgroup>">
-                <x-slot:header>
-                    <th>Nom</th>
-                    <th>Répertoire</th>
-                    <th>Description</th>
-                    <th>Lettre</th>
-                    <th>Assignations</th>
-                </x-slot:header>
-                @foreach ($shares as $share)
-                    <tr class="hover:bg-sky-50 cursor-pointer"
-                        onclick="window.location.href='{{ route('admin.shares.show', $share['id']) }}'">
-                        <td class="font-bold">{{ $share['name'] }}</td>
-                        <td><span class="font-mono text-sm">{{ $share['directory_name'] }}</span></td>
-                        <td>
-                            @if (!empty($share['description']))
-                                <span class="text-sm text-base-content/70 line-clamp-2" title="{{ $share['description'] }}">{{ $share['description'] }}</span>
-                            @else
-                                <span class="text-sm text-base-content/30">—</span>
-                            @endif
-                        </td>
-                        <td>
-                            @if ($share['letter'])
-                                <span class="badge badge-primary">{{ $share['letter'] }}</span>
-                            @else
-                                <span class="badge badge-ghost" title="Lettre attribuée automatiquement">auto</span>
-                            @endif
-                        </td>
-                        <td>
-                            @if ($share['total_assignments'] === 0)
-                                <span class="text-sm text-base-content/40">Aucune</span>
-                            @else
-                                <div class="flex flex-wrap gap-1 text-xs">
-                                    @if ($share['users_count'] > 0)
-                                        <span class="badge badge-sm badge-accent">
-                                            <i class="fa-solid fa-user text-xs mr-1"></i>{{ $share['users_count'] }}
-                                        </span>
-                                    @endif
-                                    @if ($share['user_groups_count'] > 0)
-                                        <span class="badge badge-sm badge-secondary">
-                                            <i class="fa-solid fa-users text-xs mr-1"></i>{{ $share['user_groups_count'] }}
-                                        </span>
-                                    @endif
-                                    @if ($share['workstation_groups_count'] > 0)
-                                        <span class="badge badge-sm badge-warning" title="Parc — montage seul">
-                                            <i class="fa-solid fa-layer-group text-xs mr-1"></i>{{ $share['workstation_groups_count'] }}
-                                        </span>
-                                    @endif
-                                </div>
-                            @endif
-                        </td>
-                    </tr>
-                @endforeach
-            </x-organisms.data-table>
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Nom</th>
+                                <th>Répertoire</th>
+                                <th>Description</th>
+                                <th>Lettre</th>
+                                <th>Assignations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($shares as $share)
+                                <tr wire:key="share-row-{{ $share['id'] }}" class="hover:bg-sky-50 cursor-pointer"
+                                    onclick="window.location.href='{{ route('admin.shares.show', $share['id']) }}'">
+                                    <td class="font-bold">{{ $share['name'] }}</td>
+                                    <td><span class="font-mono text-sm">{{ $share['directory_name'] }}</span></td>
+                                    <td>
+                                        @if (!empty($share['description']))
+                                            <span class="text-sm text-base-content/70 line-clamp-2" title="{{ $share['description'] }}">{{ $share['description'] }}</span>
+                                        @else
+                                            <span class="text-sm text-base-content/30">—</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($share['letter'])
+                                            <span class="badge badge-primary">{{ $share['letter'] }}</span>
+                                        @else
+                                            <span class="badge badge-ghost" title="Lettre attribuée automatiquement">auto</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($share['total_assignments'] === 0)
+                                            <span class="text-sm text-base-content/40">Aucune</span>
+                                        @else
+                                            <div class="flex flex-wrap gap-1 text-xs">
+                                                @if ($share['users_count'] > 0)
+                                                    <span class="badge badge-sm badge-accent">
+                                                        <i class="fa-solid fa-user text-xs mr-1"></i>{{ $share['users_count'] }}
+                                                    </span>
+                                                @endif
+                                                @if ($share['user_groups_count'] > 0)
+                                                    <span class="badge badge-sm badge-secondary">
+                                                        <i class="fa-solid fa-users text-xs mr-1"></i>{{ $share['user_groups_count'] }}
+                                                    </span>
+                                                @endif
+                                                @if ($share['workstation_groups_count'] > 0)
+                                                    <span class="badge badge-sm badge-warning" title="Parc — montage seul">
+                                                        <i class="fa-solid fa-layer-group text-xs mr-1"></i>{{ $share['workstation_groups_count'] }}
+                                                    </span>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
             @if ($pagination)
                 <x-molecules.pagination :currentPage="$pagination['current_page']" :lastPage="$pagination['last_page']" :total="$pagination['total']" :from="$pagination['from']"
@@ -651,7 +658,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                     perPageModel="perPage" itemLabel="répertoire" itemLabelPlural="répertoires" />
             @endif
         @else
-            <div class="card flex-1 flex flex-col justify-center items-center mt-8">
+            <div class="card bg-base-100 shadow-sm flex flex-col justify-center items-center">
                 <div class="card-body flex-col justify-center items-center flex-0 py-16">
                     <i class="fa-solid fa-network-wired text-5xl opacity-30 mb-4"></i>
                     <h3 class="text-lg font-semibold mb-2">Aucun lecteur réseau</h3>
@@ -702,6 +709,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                     </label>
                     <input type="text" wire:model="letter" class="input input-bordered" maxlength="8" placeholder="P:" />
                     @error('letter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                    <span class="text-xs text-base-content/50 mt-1">
+                        Lettres réservées (indisponibles) : A-D, <strong>H</strong> (classes), I,
+                        <strong>K</strong> (home), L. Laissez vide pour une attribution automatique (M..Z).
+                    </span>
                 </div>
             </div>
         </x-molecules.modal.section>
