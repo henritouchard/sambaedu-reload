@@ -4,9 +4,12 @@ use Livewire\Component;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
+use Livewire\Attributes\Computed;
 use App\Jobs\DispatchMachinePowerActionJob;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\Parc\MachinePowerService;
+use App\Services\Parc\WorkstationReinstallService;
+use App\Models\WorkstationReinstallRequest;
 use App\Services\Parc\WorkstationDebugService;
 use App\Services\AppProfile\AppProfileService;
 use App\Models\AppProfile;
@@ -637,6 +640,137 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             ->values();
     }
 
+    /* ================================================================
+     * Story 3.11 — Réinstallation OS pilotée (poste unique).
+     * ================================================================ */
+
+    // État de la modale de réinstallation.
+    public bool $reinstallModalOpen = false;
+    public string $reinstallTarget = '';
+    public string $reinstallWhen = 'now';        // now | schedule
+    public ?string $reinstallScheduledAt = null; // datetime-local (Europe/Paris)
+
+    /** Requête de réinstallation active du poste (badge + annulation). */
+    #[Computed]
+    public function activeReinstall(): ?WorkstationReinstallRequest
+    {
+        if (!$this->workstation) {
+            return null;
+        }
+
+        return app(WorkstationReinstallService::class)->activeRequestFor($this->workstation);
+    }
+
+    /** Catalogue OS install-only exposé dans le select (D9). */
+    #[Computed]
+    public function reinstallOsCatalog(): array
+    {
+        return app(WorkstationReinstallService::class)->osCatalog();
+    }
+
+    public function openReinstallModal(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ce poste.");
+            return;
+        }
+        if ($this->workstation && $this->workstation->isProtected()) {
+            $this->toastError('Ce poste est protégé et ne peut pas être réinstallé.');
+            return;
+        }
+
+        $catalog = $this->reinstallOsCatalog;
+        $this->reinstallTarget = $this->reinstallTarget ?: (string) ($catalog[0]['enum'] ?? '');
+        $this->reinstallWhen = 'now';
+        $this->reinstallScheduledAt = null;
+        $this->reinstallModalOpen = true;
+    }
+
+    public function closeReinstallModal(): void
+    {
+        $this->reinstallModalOpen = false;
+    }
+
+    /**
+     * Arme la réinstallation. Appelée par la modale de confirmation destructive
+     * (open-confirm-modal → armReinstall).
+     */
+    public function armReinstall(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ce poste.");
+            return;
+        }
+        if (!$this->workstation) {
+            $this->toastError('Machine non trouvée');
+            return;
+        }
+
+        $scheduledAt = null;
+        if ($this->reinstallWhen === 'schedule') {
+            if (empty($this->reinstallScheduledAt)) {
+                $this->toastError('Veuillez saisir une date et une heure de planification.');
+                return;
+            }
+            try {
+                $scheduledAt = Carbon::parse($this->reinstallScheduledAt, config('app.timezone'));
+            } catch (\Throwable $e) {
+                $this->toastError('Date de planification invalide.');
+                return;
+            }
+            if ($scheduledAt->lessThanOrEqualTo(Carbon::now())) {
+                $this->toastError('La date de planification doit être dans le futur.');
+                return;
+            }
+        }
+
+        try {
+            $service = app(WorkstationReinstallService::class);
+            $service->armForMachine(
+                $this->workstation,
+                $this->reinstallTarget,
+                $scheduledAt,
+                'user:' . (auth()->id() ?? 0),
+                auth()->id(),
+            );
+
+            $label = $service->labelFor($this->reinstallTarget);
+            $this->reinstallModalOpen = false;
+            unset($this->activeReinstall);
+
+            if ($scheduledAt) {
+                $this->toastSuccess("Réinstallation ({$label}) planifiée le {$scheduledAt->format('d/m/Y H:i')}.");
+            } else {
+                $this->toastSuccess("Réinstallation ({$label}) armée — le poste va redémarrer sous peu.");
+            }
+        } catch (\InvalidArgumentException|\DomainException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[MachineShow] Erreur armement réinstallation: ' . $e->getMessage(), [
+                'machine_id' => $this->workstation->id,
+            ]);
+            $this->toastError("Erreur lors de l'armement de la réinstallation.");
+        }
+    }
+
+    public function cancelReinstall(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit d'annuler cette réinstallation.");
+            return;
+        }
+
+        $req = $this->activeReinstall;
+        if (!$req) {
+            $this->toastWarning('Aucune réinstallation à annuler.');
+            return;
+        }
+
+        app(WorkstationReinstallService::class)->cancel($req);
+        unset($this->activeReinstall);
+        $this->toastSuccess('Réinstallation annulée.');
+    }
+
     public function getDeploymentStatusesProperty(): array
     {
         if (!$this->workstation) {
@@ -1035,6 +1169,40 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         @endforeach
                     </ul>
                 </div>
+            @endif
+
+            {{-- Story 3.11 — Réinstallation OS pilotée (poste unique). --}}
+            @if ($workstation)
+                @can('computer.install')
+                    @php $activeReinstall = $this->activeReinstall; @endphp
+                    @if ($activeReinstall)
+                        {{-- Badge état + annulation. --}}
+                        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                            <span class="text-sm font-medium">
+                                Réinstallation {{ $activeReinstall->status }}
+                            </span>
+                            <button type="button"
+                                class="btn btn-xs btn-ghost"
+                                wire:click="cancelReinstall"
+                                wire:confirm="Annuler la réinstallation armée de ce poste ?">
+                                Annuler
+                            </button>
+                        </div>
+                    @elseif ($workstation->isProtected())
+                        <button type="button" class="btn btn-outline btn-disabled" disabled
+                            title="Poste protégé — réinstallation impossible">
+                            <i class="fa-solid fa-shield-halved"></i>
+                            Réinstaller le poste
+                        </button>
+                    @else
+                        <button type="button" class="btn btn-outline btn-error"
+                            wire:click="openReinstallModal">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                            Réinstaller le poste
+                        </button>
+                    @endif
+                @endcan
             @endif
         </div>
     </x-slot:actions>
@@ -1595,6 +1763,15 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
         <!-- Modale log d'installation WPKG (partagée) -->
         <livewire:components::organisms.install-log-modal />
+
+        {{-- Story 3.11 — Modale de réinstallation OS (poste unique). --}}
+        @can('computer.install')
+            @include('pages.parc._partials.reinstall-modal', [
+                'reinstallTitle' => 'Réinstaller le poste',
+                'confirmTitle' => 'Confirmer la réinstallation',
+                'confirmMessage' => 'Cette opération EFFACE le disque du poste et réinstalle',
+            ])
+        @endcan
     @else
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body flex flex-col items-center justify-center py-16">

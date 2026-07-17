@@ -663,4 +663,32 @@ return [
             'pxelinux_cfg' => env('IPXE_MEMTEST_CFG', '/bin/pxelinux.cfg/memtest86plus.cfg'),
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.11 — Réinstallation OS pilotée (poste / salle) (D5 / D11)
+    |--------------------------------------------------------------------------
+    |
+    | Paramètres de la réinstallation armée depuis l'admin web
+    | (`workstation_reinstall_requests`), consommée par
+    | IpxeService::resolveProgrammedAction() (garde anti-boucle D5) et par le
+    | tick `parc:reinstall-due` (throttle par vagues D11).
+    */
+    'reinstall' => [
+        // TTL (heures) d'une requête armée (garde anti-boucle D5). Au-delà, la
+        // requête passe `failed` et libère son slot de concurrence (D11).
+        'ttl_hours' => (int) env('IPXE_REINSTALL_TTL_HOURS', 6),
+
+        // Plafond de PXE boots servant l'install avant abandon (garde anti-boucle
+        // D5). Un poste qui échoue en boucle au chargement kernel/initrd ne doit
+        // pas réinstaller indéfiniment.
+        'max_boot_serves' => (int) env('IPXE_REINSTALL_MAX_BOOT_SERVES', 8),
+
+        // Plafond de concurrence du rollout (D11). Le tick ne déclenche le reboot
+        // forcé que d'autant de postes dûs qu'il reste de slots libres
+        // (max_concurrent − postes en cours). Borne le débit de reboots ET le
+        // nombre de machines téléchargeant l'image simultanément. Ajustable selon
+        // la capacité réseau/serveur de l'établissement.
+        'max_concurrent' => (int) env('IPXE_REINSTALL_MAX_CONCURRENT', 40),
+    ],
 ];

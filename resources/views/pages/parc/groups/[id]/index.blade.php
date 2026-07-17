@@ -7,6 +7,9 @@ use Livewire\Attributes\On;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\Parc\WorkstationGroupScheduleService;
 use App\Services\Parc\MachinePowerService;
+use App\Services\Parc\WorkstationReinstallService;
+use App\Models\WorkstationReinstallRequest;
+use Livewire\Attributes\Computed;
 use App\Services\AppProfile\AppProfileService;
 use App\Models\AppProfile;
 use App\Models\Application;
@@ -949,6 +952,140 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         $this->selectedGroupMachineIds = $this->group->members->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
 
         $this->executeSelectedGroupMachinesAction($action);
+    }
+
+    /* ================================================================
+     * Story 3.11 — Réinstallation OS pilotée (salle / groupe — fan-out).
+     * ================================================================ */
+
+    public bool $reinstallModalOpen = false;
+    public string $reinstallTarget = '';
+    public string $reinstallWhen = 'now';
+    public ?string $reinstallScheduledAt = null;
+
+    #[Computed]
+    public function reinstallOsCatalog(): array
+    {
+        return app(WorkstationReinstallService::class)->osCatalog();
+    }
+
+    /** Requêtes de réinstallation actives des postes du groupe (panneau). */
+    #[Computed]
+    public function reinstallActiveRequests(): \Illuminate\Support\Collection
+    {
+        if (!$this->group) {
+            return collect();
+        }
+
+        $ids = $this->group->members->pluck('id')->all();
+        if (empty($ids)) {
+            return collect();
+        }
+
+        return WorkstationReinstallRequest::query()
+            ->with('workstation')
+            ->whereIn('workstation_id', $ids)
+            ->active()
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    public function openReinstallModal(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ces postes.");
+            return;
+        }
+        $catalog = $this->reinstallOsCatalog;
+        $this->reinstallTarget = $this->reinstallTarget ?: (string) ($catalog[0]['enum'] ?? '');
+        $this->reinstallWhen = 'now';
+        $this->reinstallScheduledAt = null;
+        $this->reinstallModalOpen = true;
+    }
+
+    public function closeReinstallModal(): void
+    {
+        $this->reinstallModalOpen = false;
+    }
+
+    /**
+     * Arme la réinstallation de tous les postes du groupe (fan-out, liste figée
+     * à l'instant — D3). Skip protégés + doublons actifs. Retour de fan-out clair.
+     */
+    public function armReinstall(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ces postes.");
+            return;
+        }
+        if (!$this->group) {
+            $this->toastError('Groupe non trouvé');
+            return;
+        }
+
+        $scheduledAt = null;
+        if ($this->reinstallWhen === 'schedule') {
+            if (empty($this->reinstallScheduledAt)) {
+                $this->toastError('Veuillez saisir une date et une heure de planification.');
+                return;
+            }
+            try {
+                $scheduledAt = Carbon::parse($this->reinstallScheduledAt, config('app.timezone'));
+            } catch (\Throwable $e) {
+                $this->toastError('Date de planification invalide.');
+                return;
+            }
+            if ($scheduledAt->lessThanOrEqualTo(Carbon::now())) {
+                $this->toastError('La date de planification doit être dans le futur.');
+                return;
+            }
+        }
+
+        try {
+            $service = app(WorkstationReinstallService::class);
+            $result = $service->armForMachines(
+                $this->group->members,
+                $this->reinstallTarget,
+                $scheduledAt,
+                'group:' . $this->group->id,
+                auth()->id(),
+            );
+
+            $this->reinstallModalOpen = false;
+            unset($this->reinstallActiveRequests);
+
+            $this->toastSuccess(sprintf(
+                '%d poste(s) armé(s), %d déjà en cours, %d protégé(s) ignoré(s).',
+                $result['armed_count'],
+                $result['skipped_duplicate'],
+                $result['skipped_protected'],
+            ));
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[GroupShow] Erreur armement réinstallation groupe: ' . $e->getMessage(), [
+                'group_id' => $this->group->id,
+            ]);
+            $this->toastError("Erreur lors de l'armement de la réinstallation.");
+        }
+    }
+
+    public function cancelReinstallRequest(int $requestId): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit d'annuler cette réinstallation.");
+            return;
+        }
+
+        $req = WorkstationReinstallRequest::find($requestId);
+        if (!$req) {
+            $this->toastWarning('Réinstallation introuvable.');
+            return;
+        }
+
+        app(WorkstationReinstallService::class)->cancel($req);
+        unset($this->reinstallActiveRequests);
+        $this->toastSuccess('Réinstallation annulée.');
     }
 
     /**
@@ -1930,6 +2067,15 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                 </li>
                             @endcan
                         @endif
+                        @can('computer.install')
+                            <hr class="border-zinc-200 my-1">
+                            <li>
+                                <button type="button" class="text-error" wire:click="openReinstallModal">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                    Réinstaller la salle
+                                </button>
+                            </li>
+                        @endcan
                         <hr class="border-zinc-200 my-1">
                         <li>
                             @if ($isLocked)
@@ -1955,6 +2101,27 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     @if ($group)
         {{-- Modale réutilisable de création / édition de groupe (ici : mode édition). --}}
         <livewire:pages::parc.groups._partials.group-form-modal :key="'group-form-modal-' . $group->id" />
+
+        {{-- Story 3.11 — Panneau des réinstallations en cours de la salle. --}}
+        @include('pages.parc.groups.[id]._partials.reinstall-panel')
+
+        {{-- Story 3.11 — Modale de réinstallation (fan-out salle/groupe). --}}
+        @can('computer.install')
+            {{-- Fix review #5 — compte EXACT des postes impactés : armReinstall
+                 arme TOUS les membres de la salle (D3 liste figée), en excluant
+                 les postes protégés (D10). Littéral server-side stable. --}}
+            @php
+                $reinstallImpactCount = $group->members
+                    ->reject(fn ($m) => $m->isProtected())
+                    ->count();
+            @endphp
+            @include('pages.parc._partials.reinstall-modal', [
+                'reinstallTitle' => 'Réinstaller la salle',
+                'confirmTitle' => 'Confirmer la réinstallation de la salle',
+                'confirmMessage' => 'Cette opération EFFACE le disque de TOUS les postes de la salle et réinstalle',
+                'confirmCountExpr' => (string) $reinstallImpactCount,
+            ])
+        @endcan
 
         <div class="space-y-6">
             {{-- Carte d'identité du groupe --}}

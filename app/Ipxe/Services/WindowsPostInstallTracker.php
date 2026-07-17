@@ -96,6 +96,14 @@ final class WindowsPostInstallTracker
         $workstation->last_report_at = Carbon::now();
         $workstation->save();
         $this->persistMachineBootLog($workstation, 'ipxe_win_report', true, $ip);
+
+        // Story 3.11 — consommation one-shot de la réinstallation armée. L'OOBE
+        // atteint = l'OS Windows est fraîchement installé et a bootté (point
+        // terminal « install terminée », parallèle du `linux_install_done`). La
+        // requête active passe `done` → plus servie aux boots suivants. Best-effort,
+        // À CÔTÉ de `programmed_action` (non touché).
+        $this->markReinstallDone($workstation);
+
         Log::channel($this->channel())->info('ipxe.windows.action.oobe_complete', [
             'action_type' => 'ipxe.windows.action.oobe_complete',
             'ip' => $ip,
@@ -620,6 +628,25 @@ final class WindowsPostInstallTracker
             // à voir les changements via refresh).
             $workstation->fill($locked->getAttributes())->exists = true;
         });
+    }
+
+    /**
+     * Story 3.11 — Marque `done` la réinstallation OS armée du poste (table
+     * dédiée `workstation_reinstall_requests`). Best-effort — jamais bloquant.
+     */
+    private function markReinstallDone(Workstation $workstation): void
+    {
+        try {
+            app(\App\Services\Parc\WorkstationReinstallService::class)
+                ->markDoneForWorkstation($workstation);
+        } catch (Throwable $e) {
+            Log::channel($this->channel())->warning('ipxe.reinstall.mark_done_failed', [
+                'action_type' => 'ipxe.reinstall.mark_done_failed',
+                'workstation_id' => $workstation->id ?? null,
+                'exception_class' => $e::class,
+                'message' => substr($e->getMessage(), 0, 200),
+            ]);
+        }
     }
 
     /**

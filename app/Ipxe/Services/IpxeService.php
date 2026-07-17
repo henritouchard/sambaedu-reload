@@ -45,6 +45,7 @@ final class IpxeService
         private readonly IpxeMenuRenderer $renderer,
         private readonly IpxeActionResolver $actionResolver,
         private readonly IpxeAuthorizes $authService,
+        private readonly \App\Services\Parc\WorkstationReinstallService $reinstallService,
     ) {
     }
 
@@ -517,15 +518,24 @@ final class IpxeService
             );
         }
 
-        // Story 4.10 — Auth obligatoire pour TOUTES les actions whitelistées
-        // (rescuecd, winpe, factory_reset, clonezilla_*, gparted, hdt,
-        // memtest86plus). Inclut les actions destructrices (factory_reset
-        // écrase sda1). Cf. handleAdmin.
-        if (($denied = $this->guard($request, 'action')) !== null) {
+        // Résolution du poste AVANT la garde (locate() est read-only, sans effet
+        // de bord) : elle sert la pré-autorisation par requête de réinstall (#1).
+        $workstation = $this->locator->locate($mac, $uuid, $product);
+
+        // Fix review #1 (3.11) — pré-autorisation par requête de réinstallation
+        // active. Le chain automatique du menu `known` (bloc `:action`) chaine
+        // vers `/ipxe/action/{action}` SANS credentials AD : sans dérogation, la
+        // garde renverrait `auth_failed` et la feature ne se déclencherait
+        // jamais. On autorise l'action SANS auth SI ET SEULEMENT SI le poste
+        // porte une requête de réinstall ACTIVE dont `target_action` ===
+        // l'action EXACTE demandée (l'armement via l'UI gardée `computer.install`
+        // EST l'artefact d'autorisation, D8). Best-effort DB : tout échec de
+        // résolution retombe sur la garde AD normale (sécurité par défaut =
+        // fermé).
+        if (! $this->isReinstallPreAuthorized($workstation, $adminAction)
+            && ($denied = $this->guard($request, 'action')) !== null) {
             return $denied;
         }
-
-        $workstation = $this->locator->locate($mac, $uuid, $product);
 
         Log::channel($this->channel())->info('ipxe.action.dispatched', [
             'action_type' => 'ipxe.action.dispatched',
@@ -689,25 +699,145 @@ final class IpxeService
     }
 
     /**
-     * Story 3.1 — AC4.2.
+     * Fix review #1 (3.11) — Une action `/ipxe/action/{action}` est
+     * pré-autorisée SANS auth AD si et seulement si le poste résolu porte une
+     * requête de réinstallation ACTIVE dont `target_action` correspond
+     * EXACTEMENT à l'action demandée.
      *
-     * **Placeholder** historique pour le mécanisme `action` programmée
-     * (install Linux/Windows, clonezilla, factory reset) qui sera implémenté
-     * par les stories 3.4-3.7. Retourne TOUJOURS `null` en 3.1/3.2.
+     * Garde-fous stricts (« fermé par défaut ») :
+     *  - poste inconnu (`null`) → jamais pré-autorisé (garde AD).
+     *  - poste `protected` (D10 niveau 3) → jamais pré-autorisé (de toute façon
+     *    `resolveProgrammedAction` aura déjà annulé la requête au boot).
+     *  - action hors whitelist install-only (D9) → jamais pré-autorisé. En
+     *    pratique `target_action` est toujours un `install_*` (validé à
+     *    l'armement), donc l'égalité stricte exclut déjà `factory_reset`,
+     *    `clonezilla_*`, `winpe`, etc. ; le check `isInstallOnly` est une
+     *    défense en profondeur redondante.
+     *  - best-effort DB : toute exception → `false` (retour à la garde AD).
+     */
+    private function isReinstallPreAuthorized(?Workstation $workstation, IpxeAdminAction $action): bool
+    {
+        if ($workstation === null) {
+            return false;
+        }
+
+        try {
+            if ($workstation->isProtected()) {
+                return false;
+            }
+
+            if (! $this->reinstallService->isInstallOnly($action->value)) {
+                return false;
+            }
+
+            $active = $this->reinstallService->activeRequestFor($workstation);
+
+            return $active !== null && $active->target_action === $action->value;
+        } catch (Throwable $e) {
+            Log::channel($this->channel())->warning('ipxe.reinstall.preauth_failed', [
+                'action_type' => 'ipxe.reinstall.preauth_failed',
+                'workstation_id' => $workstation->id ?? null,
+                'action' => $action->value,
+                'exception_class' => $e::class,
+                'message' => substr($e->getMessage(), 0, 200),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Story 3.11 — Résolution de la réinstallation OS armée depuis l'admin.
      *
-     * Note 3.2 : le mécanisme « action programmée DB-driven » est distinct
-     * des actions admin whitelistées (handleAction + IpxeAdminAction). Celles-ci
-     * sont déclenchées explicitement depuis le menu admin/maintenance, pas
-     * pré-programmées en base.
+     * Lit la requête active du poste (table dédiée `workstation_reinstall_requests`,
+     * distincte de `Workstation::programmed_action` réservé au post-install) et,
+     * si elle doit être servie, retourne le tableau
+     * `['name' => <valeur enum>, 'label' => <libellé ASCII menu_items>]` attendu
+     * par {@see IpxeMenuRenderer::renderKnown()} → le boot auto-sélectionne
+     * l'install et chaine vers `/ipxe/action/{action}` (sans opérateur).
      *
-     * @param  Workstation  $ws  Modèle Eloquent (avec relations eager-loaded
-     *                           par le locator).
-     * @return array<string,mixed>|null  Toujours `null` en 3.1/3.2.
+     * Garde-fous (best-effort — un échec DB ne doit JAMAIS priver le poste de
+     * menu, cf. wrapping `safeRender` du caller) :
+     *  - **D10 niveau 3** : poste `protected` → `cancel` de toute requête active
+     *    + retourne `null` (filet de sécurité non-contournable, couvre la course
+     *    « poste devenu protégé après armement »).
+     *  - **D5** : requête expirée (`expires_at < now`) ou plafond de serves
+     *    atteint → `markFailed` + `null` (le poste repasse en boot disque normal).
+     *  - Sinon : incrémente les serves + `markServed` (armed → serving) et sert
+     *    l'install.
+     *
+     * @param  Workstation  $ws  Modèle Eloquent (relations eager-loaded par le locator).
+     * @return array{name:string, label:string}|null
      */
     public function resolveProgrammedAction(Workstation $ws): ?array
     {
-        // Stories 3.4-3.7 surchargeront/enrichiront cette méthode.
-        return null;
+        try {
+            // D10 niveau 3 — un poste protégé ne se réinstalle jamais, même si
+            // une requête a été armée avant qu'il ne devienne `protected`.
+            if ($ws->isProtected()) {
+                $active = $this->reinstallService->activeRequestFor($ws);
+                if ($active !== null) {
+                    $this->reinstallService->cancel($active);
+                }
+
+                return null;
+            }
+
+            $request = $this->reinstallService->activeRequestFor($ws);
+            if ($request === null) {
+                return null;
+            }
+
+            // Fix review #2 — une planification future ne doit JAMAIS être servie
+            // avant l'heure : on ne sert pas, on ne markFailed pas, on n'incrémente
+            // pas boot_served_count (le poste repasse en boot disque normal jusqu'à
+            // l'heure prévue). Filtre strictement local ici (pas dans
+            // activeRequestFor, qui doit continuer à matcher les requêtes futures
+            // pour le skip-doublon de l'armement).
+            if ($request->scheduled_at !== null && $request->scheduled_at->greaterThan(now())) {
+                return null;
+            }
+
+            // D5 — garde anti-boucle : TTL dépassé ou plafond de serves atteint.
+            if ($request->isExpired() || $request->hasExceededServeCap()) {
+                $this->reinstallService->markFailed($request);
+                Log::channel($this->channel())->warning('ipxe.reinstall.aborted', [
+                    'action_type' => 'ipxe.reinstall.aborted',
+                    'workstation_id' => $ws->id ?? null,
+                    'reinstall_request_id' => $request->id,
+                    'boot_served_count' => $request->boot_served_count,
+                    'reason' => $request->isExpired() ? 'expired' : 'serve_cap',
+                ]);
+
+                return null;
+            }
+
+            $target = IpxeAdminAction::tryFrom($request->target_action);
+            if ($target === null) {
+                // Valeur devenue invalide (whitelist retirée) — abandon propre.
+                $this->reinstallService->markFailed($request);
+
+                return null;
+            }
+
+            // Comptabilise le serve (garde anti-boucle D5) : armed → serving.
+            $this->reinstallService->markServed($request);
+
+            return [
+                'name' => $target->value,
+                'label' => $this->reinstallService->labelFor($target->value),
+            ];
+        } catch (Throwable $e) {
+            // Best-effort : un souci DB ne doit pas priver le poste de menu.
+            Log::channel($this->channel())->warning('ipxe.reinstall.resolve_failed', [
+                'action_type' => 'ipxe.reinstall.resolve_failed',
+                'workstation_id' => $ws->id ?? null,
+                'exception_class' => $e::class,
+                'message' => substr($e->getMessage(), 0, 200),
+            ]);
+
+            return null;
+        }
     }
 
     /**

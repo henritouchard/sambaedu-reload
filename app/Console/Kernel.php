@@ -37,6 +37,16 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping(5)
                  ->runInBackground();
 
+        // Story 3.11 : Déclenchement des réinstallations OS dûes (tick 1 min),
+        // borné par le plafond de concurrence `reinstall.max_concurrent` (D11).
+        // Tick léger (SELECT + N enqueue) → les workers habituels traitent les
+        // DispatchMachinePowerActionJob (reboot forcé / WOL). withoutOverlapping
+        // pour éviter deux vagues concurrentes.
+        $schedule->command('parc:reinstall-due')
+                 ->everyMinute()
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Réconciliation TOTP des comptes de service (se4install) : aligne le
         // mot de passe AD sur la fenêtre 6 h courante. Tick 1 min → désync
         // post-rollover bornée à ~1 min ; no-op idempotent quand rien n'a
@@ -66,6 +76,11 @@ class Kernel extends ConsoleKernel
 
         // Story 4-4 : Purge des runs d'historique de programmations > 30 jours
         $schedule->command('parc:prune-group-schedule-runs')
+                 ->daily()
+                 ->runInBackground();
+
+        // Story 3.11 : Purge des réinstallations terminales (done/failed/canceled) > 30 jours
+        $schedule->command('parc:prune-reinstall-requests')
                  ->daily()
                  ->runInBackground();
 

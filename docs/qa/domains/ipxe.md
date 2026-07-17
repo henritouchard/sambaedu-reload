@@ -2740,3 +2740,100 @@ monitoring d'extinction (`legacy_catchall_logs`) reste exploitable sans le legac
 - Non-régression : `IpxeNamespaceTest`, `IpxeLegacyRoutingNonRegressionTest`,
   `IpxeBootEndpointTest` (ordre routes `/ipxe/*` avant catchall — aucune route
   ajoutée/déplacée).
+
+---
+
+## Story 3.11 — Réinstallation OS pilotée depuis l'admin (poste / salle)
+
+### Vue d'ensemble
+
+L'admin arme une réinstallation OS depuis l'interface web (fiche poste, page
+salle, ou multi-sélection de l'inventaire) en choisissant l'OS et le moment
+(immédiat ou planifié). La feature **implémente le placeholder
+`IpxeService::resolveProgrammedAction()`** déféré par l'Epic 3.
+
+### Flux complet : armer → reboot → auto-install → done
+
+1. **Armer** (UI, permission `computer.install`) → une ligne
+   `workstation_reinstall_requests` par poste (`status='armed'`,
+   `scheduled_at=now()` si immédiat, `expires_at=now()+TTL`). Aucun reboot n'est
+   dispatché à la création.
+2. **Tick** `parc:reinstall-due` (`everyMinute`) → pour les requêtes dûes
+   (`scheduled_at <= now`, `triggered_at IS NULL`), déclenche un reboot forcé
+   (fallback WOL si éteint) via l'infra async 4.2 (`MachinePowerActionTask` +
+   `DispatchMachinePowerActionJob`, `initiated_by='reinstall:<id>'`), pose
+   `triggered_at`. **Throttlé par vagues** : au plus `reinstall.max_concurrent`
+   postes en vol simultanément.
+3. **Boot** → `resolveProgrammedAction()` lit la requête active, incrémente
+   `boot_served_count` (garde D5), passe `armed→serving`, retourne
+   `['name'=><enum>, 'label'=><menu_items>]`. Le menu `known` auto-sélectionne
+   l'action et chaine vers la route **native** `/ipxe/action/{action}` (D7 —
+   plus vers le tombstone `/ipxe/action.php`).
+4. **Done** → à la fin d'install, `LinuxPostInstallTracker::record()` (succès)
+   ou `WindowsPostInstallTracker::recordOobeComplete()` appelle
+   `markDoneForWorkstation()` → la requête passe `done` et n'est plus servie.
+
+### Garde anti-boucle (D5) — vérifications clés
+
+- Un poste qui échoue au chargement kernel/initrd continue d'être servi
+  (`serving`) tant que le succès n'est pas confirmé — **pas de panne silencieuse
+  « repassé en boot normal »**.
+- Au-delà de `reinstall.max_boot_serves` (défaut 8) serves OU de `expires_at`
+  (TTL `reinstall.ttl_hours`, défaut 6 h), `resolveProgrammedAction` retourne
+  `null`, la requête passe `failed` (log `ipxe.reinstall.aborted`), le poste
+  reboote normalement, et le slot de concurrence est libéré.
+
+### Postes `protected` (D10 — défense en profondeur 3 niveaux)
+
+1. UI : action masquée/désactivée, exclus/grisés de la multi-sélection.
+2. Service : `armForMachine`/`armForMachines` skippent et rapportent
+   (« N protégé(s) ignoré(s) »).
+3. Boot : `resolveProgrammedAction` refuse de servir un poste `protected` (même
+   si une requête existait avant qu'il ne le devienne) et la passe `canceled`
+   (filet non-contournable).
+
+### Table dédiée vs `programmed_action` (D4)
+
+`workstation_reinstall_requests` porte l'**intention d'install à armer**.
+`Workstation::programmed_action` (JSON) reste réservé au **suivi post-install**
+(Linux `*_done`, Windows `etape/ret`). Aucune collision : les deux coexistent,
+le seul pont est `markDone()` quand un tracker confirme. **Ne jamais** écrire un
+état d'install dans `Workstation::status` (varchar(20) domaine fermé → SQLSTATE
+22001).
+
+### Checklist E2E VM (`192.168.122.50`)
+
+> Migrations VM non auto-appliquées + config/route cache VM.
+
+1. `php artisan migrate` (crée `workstation_reinstall_requests`) puis
+   `config:cache` + `route:cache` + chown www-admin après sync.
+2. Fiche poste de test → « Réinstaller le poste » → `install_win11` →
+   « Maintenant » → confirmer. Vérifier la ligne `armed` en DB.
+3. Attendre ≤ 60 s (tick) : `triggered_at` posé + une `machine_power_action_tasks`
+   `restart` `initiated_by='reinstall:<id>'`. Le poste re-PXE-boote.
+4. Au boot : le menu `known` auto-boot sur « Action programmee » (timeout court)
+   et chaine vers `/ipxe/action/install_win11`. `boot_served_count`+1,
+   `status='serving'`.
+5. À la fin d'OOBE : callback `/ipxe/windows/action etape=oobe ret=0` →
+   `status='done'`. Le poste reboote ensuite normalement (plus servi).
+6. Anti-boucle : couper l'image serveur, armer, laisser expirer (ou dépasser
+   8 serves) → `status='failed'`, poste en boot disque.
+7. Salle : « Réinstaller la salle » → vérifier le fan-out (N lignes, protégés
+   ignorés) et le panneau des réinstallations en cours.
+
+### Couverture automatisée (hôte)
+
+- `WorkstationReinstallServiceTest` (armement immédiat/planifié, fan-out bulk,
+  skip protégé/doublon, garde anti-boucle, résolution active).
+- `ResolveProgrammedActionTest` (sert / expire / plafond serves / refuse+cancel
+  protégé / null).
+- `ExecuteReinstallDueCommandTest` (tick idempotent `triggered_at`, plafond de
+  concurrence / vagues, `Carbon::setTestNow`, `Queue::fake`).
+- `MachineReinstallTest` (fiche poste : armer immédiat/planifié, annuler,
+  protégé bloqué, permission refusée).
+- `InventoryReinstallTest` (multi-sélection : fan-out, skip protégé/doublon,
+  grande sélection bulk, permission).
+- `GroupReinstallTest` (fan-out salle sur `$group->members`, `initiated_by`
+  groupe, planifié, liste figée D3).
+- `ReinstallArchitectureTest` (chain natif `known.blade.php`, `Str::isUuid`
+  préservé, `/ipxe/action/{action}` avant catchall).

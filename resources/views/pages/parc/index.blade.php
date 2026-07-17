@@ -63,6 +63,12 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public array $selectedMachines = [];
     public array $selectedGroups = [];
 
+    // Story 3.11 — Réinstallation OS de la sélection (multi-sélection inventaire).
+    public bool $reinstallModalOpen = false;
+    public string $reinstallTarget = '';
+    public string $reinstallWhen = 'now';
+    public ?string $reinstallScheduledAt = null;
+
     // Pagination
     #[Url]
     public int $machinesPerPage = 20;
@@ -401,6 +407,93 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         }
     }
 
+    /* ================================================================
+     * Story 3.11 — Réinstallation OS de la sélection (fan-out inventaire).
+     * ================================================================ */
+
+    public function getReinstallOsCatalogProperty(): array
+    {
+        return app(\App\Services\Parc\WorkstationReinstallService::class)->osCatalog();
+    }
+
+    public function openReinstallModal(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ces postes.");
+            return;
+        }
+        if (empty($this->selectedMachines)) {
+            $this->toastWarning('Aucune machine sélectionnée.');
+            return;
+        }
+        $catalog = $this->reinstallOsCatalog;
+        $this->reinstallTarget = $this->reinstallTarget ?: (string) ($catalog[0]['enum'] ?? '');
+        $this->reinstallWhen = 'now';
+        $this->reinstallScheduledAt = null;
+        $this->reinstallModalOpen = true;
+    }
+
+    public function closeReinstallModal(): void
+    {
+        $this->reinstallModalOpen = false;
+    }
+
+    public function armReinstall(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ces postes.");
+            return;
+        }
+        if (empty($this->selectedMachines)) {
+            $this->toastWarning('Aucune machine sélectionnée.');
+            return;
+        }
+
+        $scheduledAt = null;
+        if ($this->reinstallWhen === 'schedule') {
+            if (empty($this->reinstallScheduledAt)) {
+                $this->toastError('Veuillez saisir une date et une heure de planification.');
+                return;
+            }
+            try {
+                $scheduledAt = \Carbon\Carbon::parse($this->reinstallScheduledAt, config('app.timezone'));
+            } catch (\Throwable $e) {
+                $this->toastError('Date de planification invalide.');
+                return;
+            }
+            if ($scheduledAt->lessThanOrEqualTo(\Carbon\Carbon::now())) {
+                $this->toastError('La date de planification doit être dans le futur.');
+                return;
+            }
+        }
+
+        try {
+            $machines = \App\Models\Workstation::whereIn('id', $this->selectedMachines)->get();
+            $result = app(\App\Services\Parc\WorkstationReinstallService::class)->armForMachines(
+                $machines,
+                $this->reinstallTarget,
+                $scheduledAt,
+                'user:' . (auth()->id() ?? 0),
+                auth()->id(),
+            );
+
+            $this->reinstallModalOpen = false;
+            $this->selectedMachines = [];
+
+            $this->toastSuccess(sprintf(
+                '%d poste(s) armé(s), %d déjà en cours, %d protégé(s) ignoré(s).',
+                $result['armed_count'],
+                $result['skipped_duplicate'],
+                $result['skipped_protected'],
+            ));
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[Parc] Erreur armement réinstallation sélection: ' . $e->getMessage());
+            $this->toastError("Erreur lors de l'armement de la réinstallation.");
+        }
+    }
+
     // Actions sur les groupes
     public function deleteGroup(int $groupId): void
     {
@@ -603,4 +696,17 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
 
     {{-- Modale réutilisable de création / édition de groupe (ici : mode création). --}}
     <livewire:pages::parc.groups._partials.group-form-modal />
+
+    {{-- Story 3.11 — Modale de réinstallation de la sélection (fan-out inventaire). --}}
+    @can('computer.install')
+        @include('pages.parc._partials.reinstall-modal', [
+            'reinstallTitle' => 'Réinstaller la sélection',
+            'confirmTitle' => 'Confirmer la réinstallation de la sélection',
+            'confirmMessage' => 'Cette opération EFFACE le disque de TOUS les postes sélectionnés et réinstalle',
+            // Fix review #5 — compte réactif : nombre EXACT de postes sélectionnés,
+            // lu côté Alpine au clic (les protégés sont skippés à l'armement et
+            // rapportés dans le toast de retour).
+            'confirmCountExpr' => '$wire.selectedMachines.length',
+        ])
+    @endcan
 </x-organisms.page>

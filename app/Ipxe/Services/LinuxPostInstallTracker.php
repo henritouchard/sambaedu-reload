@@ -120,6 +120,14 @@ final class LinuxPostInstallTracker
 
         $this->persistMachineBootLog($workstation, $ret, $ip);
 
+        // Story 3.11 — consommation one-shot de la réinstallation armée (À CÔTÉ
+        // du marqueur `programmed_action` ci-dessus, sans le toucher). Sur
+        // succès, la requête active passe `done` → elle ne sera plus servie aux
+        // boots suivants. Best-effort : ne jamais faire échouer le callback.
+        if ($ret === 0) {
+            $this->markReinstallDone($workstation);
+        }
+
         if ($ret === 0) {
             Log::channel($this->channel())->info('ipxe.linux.action.success', [
                 'action_type' => 'ipxe.linux.action.success',
@@ -156,6 +164,25 @@ final class LinuxPostInstallTracker
             'mac_prefix' => $mac !== '' ? substr($mac, 0, 6) : '',
             'uuid_prefix' => $uuid !== '' ? substr($uuid, 0, 8) : '',
         ]);
+    }
+
+    /**
+     * Story 3.11 — Marque `done` la réinstallation OS armée du poste (table
+     * dédiée `workstation_reinstall_requests`). Best-effort — jamais bloquant.
+     */
+    private function markReinstallDone(Workstation $workstation): void
+    {
+        try {
+            app(\App\Services\Parc\WorkstationReinstallService::class)
+                ->markDoneForWorkstation($workstation);
+        } catch (Throwable $e) {
+            Log::channel($this->channel())->warning('ipxe.reinstall.mark_done_failed', [
+                'action_type' => 'ipxe.reinstall.mark_done_failed',
+                'workstation_id' => $workstation->id ?? null,
+                'exception_class' => $e::class,
+                'message' => substr($e->getMessage(), 0, 200),
+            ]);
+        }
     }
 
     /**

@@ -80,7 +80,11 @@
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <x-molecules.select-all-checkbox :ids="$this->machines->pluck('id')" model="selectedMachines" />
+                                {{-- Story 3.11 — exclut les postes protégés du « tout sélectionner »
+                                     (non réinstallables — D10 niveau 1). --}}
+                                <x-molecules.select-all-checkbox
+                                    :ids="$this->machines->reject(fn($m) => $m->isProtected())->pluck('id')"
+                                    model="selectedMachines" />
                             </th>
                             <th>Nom</th>
                             <th>OS</th>
@@ -99,9 +103,12 @@
                             <tr class="hover cursor-pointer"
                                 onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc.machines.show', ['id' => $machine->id, 'from' => route('app.parc.index', ['tab' => 'machines'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
-                                    <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
+                                    <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer"
+                                        @if ($machine->isProtected()) title="Poste protégé — non réinstallable" @endif>
                                         <input type="checkbox" class="checkbox" wire:model.live="selectedMachines"
-                                            value="{{ $machine->id }}">
+                                            value="{{ $machine->id }}"
+                                            @disabled($machine->isProtected())
+                                            @class(['opacity-40 cursor-not-allowed' => $machine->isProtected()])>
                                     </label>
                                 </td>
                                 <td>
@@ -263,6 +270,12 @@
                         <i class="fa-solid fa-folder-plus"></i>
                         Ajouter aux groupes
                     </button>
+                    @can('computer.install')
+                        <button type="button" class="btn btn-error btn-sm" wire:click="openReinstallModal">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                            Réinstaller la sélection
+                        </button>
+                    @endcan
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="$set('selectedMachines', [])">
                         <i class="fa-solid fa-xmark"></i>
                     </button>

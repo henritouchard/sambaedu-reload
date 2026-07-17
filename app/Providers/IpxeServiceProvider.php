@@ -103,6 +103,7 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(IpxeMenuRenderer::class),
             $app->make(IpxeActionResolver::class),
             $app->make(IpxeAuthorizes::class),
+            $app->make(\App\Services\Parc\WorkstationReinstallService::class),
         ));
 
         // Story 3.3 — D5/D6 — bindings enrollment.
