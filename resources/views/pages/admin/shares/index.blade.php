@@ -550,23 +550,32 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     $hasFilters = $search !== '';
 @endphp
 
-<x-organisms.page title="Lecteurs réseau gérés" :scrollable="false"
-    description="Créez et assignez des répertoires réseau (lecteurs) par utilisateur, groupe ou parc">
-
-    <x-slot:actions>
+{{-- Rendu comme ONGLET de /admin/settings/files (« Lecteurs réseaux »), pas comme
+     page autonome : plus de wrapper <x-organisms.page> (le host fournit le chrome).
+     Les actions passent de <x-slot:actions> à un en-tête interne. --}}
+<div>
+    <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+            <h3 class="text-lg font-semibold">Lecteurs réseau gérés</h3>
+            <p class="text-sm opacity-70">
+                Créez et assignez des répertoires réseau (lecteurs) par utilisateur, groupe ou parc.
+            </p>
+        </div>
         @can('manage-networkshare')
-            <button type="button" class="btn btn-outline" wire:click="openTemplate">
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                Créer depuis un template
-            </button>
-            <button type="button" class="btn highlight btn-primary" wire:click="openCreate">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                </svg>
-                Nouveau répertoire
-            </button>
+            <div class="flex gap-2 shrink-0">
+                <button type="button" class="btn btn-outline" wire:click="openTemplate">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    Créer depuis un template
+                </button>
+                <button type="button" class="btn highlight btn-primary" wire:click="openCreate">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Nouveau répertoire
+                </button>
+            </div>
         @endcan
-    </x-slot:actions>
+    </div>
 
     <div class="flex flex-col h-full">
         <div class="space-y-3">
@@ -841,4 +850,4 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             </button>
         </x-slot:footer>
     </x-molecules.modal>
-</x-organisms.page>
+</div>

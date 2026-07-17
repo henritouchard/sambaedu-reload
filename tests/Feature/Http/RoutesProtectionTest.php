@@ -81,8 +81,9 @@ class RoutesProtectionTest extends TestCase
             'parc groups new'   => ['/app/parc/groups/new', 'computer.install'],
             'parc groups edit'  => ['/app/parc/groups/1/edit', 'computer.install'],
             // Story 34.2 — lecteurs réseau gérés : feature réservée admin+refnum,
-            // gardée par la permission dédiée `networkshare.view` (review #4).
-            'shares listing'    => ['/admin/shares', 'networkshare.view'],
+            // gardée par la permission dédiée `networkshare.view` (review #4). La
+            // LISTE est désormais l'onglet « Lecteurs réseaux » de /admin/settings/files
+            // (/admin/shares redirige) ; seul le DÉTAIL reste une route gardée.
             'shares show'       => ['/admin/shares/1', 'networkshare.view'],
             // Story 36.4 — règles d'accès aux dossiers : gate policy-backed
             // `viewAny-folderrule` (correction review #1/#2). Le droit global
