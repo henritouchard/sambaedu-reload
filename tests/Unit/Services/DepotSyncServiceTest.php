@@ -350,6 +350,58 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals(1, DepotApplication::where('depot_id', $depot->id)->count());
     }
 
+    #[Test]
+    public function sync_all_depots_skips_imposed_depots_without_any_http_call(): void
+    {
+        Depot::query()->delete();
+
+        // Un dépôt imposé (URL controlhub:// non joignable) + un dépôt classique.
+        Depot::create([
+            'name' => 'ControlHub',
+            'url' => 'controlhub://managed',
+            'is_primary' => true,
+            'is_active' => true,
+            'is_imposed' => true,
+        ]);
+        Depot::create([
+            'name' => 'Classique',
+            'url' => 'http://test.example.com/wpkg',
+            'is_primary' => false,
+            'is_active' => true,
+            'is_imposed' => false,
+        ]);
+
+        Http::fake([
+            'test.example.com/wpkg/packages.xml' => Http::response($this->getSampleXml(), 200),
+        ]);
+
+        $stats = $this->service->syncAllDepots();
+
+        // Seul le dépôt classique est synchronisé ; JAMAIS de HTTP vers le dépôt imposé.
+        $this->assertEquals(1, $stats['synced']);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'test.example.com'));
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'controlhub'));
+    }
+
+    #[Test]
+    public function sync_depot_skips_an_imposed_depot(): void
+    {
+        $imposed = Depot::create([
+            'name' => 'ControlHub',
+            'url' => 'controlhub://managed',
+            'is_primary' => true,
+            'is_active' => true,
+            'is_imposed' => true,
+        ]);
+
+        Http::fake();
+
+        $result = $this->service->syncDepot($imposed);
+
+        $this->assertEquals(['new' => 0, 'updated' => 0, 'purged' => 0], $result);
+        Http::assertNothingSent();
+    }
+
     private function getSampleXml(): string
     {
         return <<<XML

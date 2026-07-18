@@ -566,6 +566,41 @@ class ContractSeveranceTest extends TestCase
         $log->save();
     }
 
+    // ── Story 51.1 (AC10) — rupture = release PASSIF côté dépôts ──────────────
+
+    #[Test]
+    public function severance_lifts_the_depot_add_lock_and_keeps_the_imposed_depot_and_apps(): void
+    {
+        Event::fake([ControlHubContractChanged::class]);
+
+        $contract = ControlHubContract::factory()->create();
+        ControlHubContractCatalogApp::create([
+            'controlhub_contract_id' => $contract->id, 'app_key' => 'firefox',
+        ]);
+
+        // Dépôt imposé matérialisé + app transférée dessus.
+        $imposed = \App\Services\ControlHub\ImposedDepotReconciler::getOrCreateImposedDepot();
+        $app = Application::create([
+            'depot_id' => $imposed->id, 'app_id' => 'firefox', 'name' => 'Firefox',
+            'status' => ApplicationStatus::Installed,
+        ]);
+
+        // AVANT : contrat actif ⇒ le verrou d'ajout de dépôt est actif.
+        self::assertNotNull(ControlHubContract::active());
+
+        $this->service()->sever(ControlHubLinkAuditLog::ORIGIN_COMMAND, 'refnum01');
+
+        // APRÈS : le verrou d'ajout tombe via active() → null (release PASSIF, aucune
+        // écriture dépôt dans sever()).
+        self::assertNull(ControlHubContract::active());
+        // Le dépôt imposé reste dans la liste (état figé), toujours marqué is_imposed
+        // (orphelin — restera exclu de la synchro HTTP), et l'app conserve son depot_id.
+        $imposed->refresh();
+        self::assertNotNull(\App\Models\Depot::find($imposed->id));
+        self::assertTrue($imposed->is_imposed);
+        self::assertSame($imposed->id, $app->fresh()->depot_id);
+    }
+
     // ── Q2/#5 — trace d'origine des apps matérialisées (vrai service) ─────────
 
     #[Test]

@@ -336,17 +336,15 @@ class WorkstationGroupSyncService
 
     /**
      * Récupère ou crée le dépôt dédié aux applications ControlHub.
+     *
+     * Story 51.1 — DÉLÈGUE au point d'entrée UNIQUE
+     * {@see ImposedDepotReconciler::getOrCreateImposedDepot()} : plus de définition
+     * divergente du dépôt imposé (l'ancien stub posait `is_primary => false` ; la
+     * définition canonique le promeut `is_imposed => true, is_primary => true`).
      */
     private function getOrCreateControlHubDepot(): Depot
     {
-        return Depot::firstOrCreate(
-            ['name' => 'ControlHub'],
-            [
-                'url' => 'controlhub://managed',
-                'is_primary' => false,
-                'is_active' => true,
-            ]
-        );
+        return ImposedDepotReconciler::getOrCreateImposedDepot();
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -87,24 +87,41 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                         </button>
                     </li>
                 @elseif ($tab === 'depot')
-                    <li>
-                        <button type="button" wire:click="$dispatch('open-create-depot-modal')">
-                            <i class="fa-solid fa-plus"></i>
-                            Ajouter un dépôt
-                        </button>
-                    </li>
+                    {{-- Story 51.1 (AC8, review #7) — Sous contrat amont actif, seuls
+                         l'AJOUT et la DÉSACTIVATION de dépôt sont masqués (le canal dépôts
+                         est imposé par l'autorité amont) ; la SYNCHRONISATION reste
+                         accessible (AC8 : syncCurrentDepot reste fonctionnel). Les gardes
+                         serveur du SFC depot-tab restent la vraie barrière. --}}
+                    @php($upstreamManaged = \App\Models\ControlHubContract::active() !== null)
+                    @if ($upstreamManaged)
+                        <li class="menu-title">
+                            <span>
+                                <i class="fa-solid fa-lock"></i>
+                                Dépôts gérés par l'autorité amont
+                            </span>
+                        </li>
+                    @else
+                        <li>
+                            <button type="button" wire:click="$dispatch('open-create-depot-modal')">
+                                <i class="fa-solid fa-plus"></i>
+                                Ajouter un dépôt
+                            </button>
+                        </li>
+                    @endif
                     <li>
                         <button type="button" wire:click="$dispatch('sync-current-depot')">
                             <i class="fa-solid fa-sync"></i>
                             Synchroniser le dépôt
                         </button>
                     </li>
-                    <li>
-                        <button type="button" class="text-warning" wire:click="$dispatch('open-delete-depot-modal')">
-                            <i class="fa-solid fa-eye-slash"></i>
-                            Désactiver le dépôt
-                        </button>
-                    </li>
+                    @unless ($upstreamManaged)
+                        <li>
+                            <button type="button" class="text-warning" wire:click="$dispatch('open-delete-depot-modal')">
+                                <i class="fa-solid fa-eye-slash"></i>
+                                Désactiver le dépôt
+                            </button>
+                        </li>
+                    @endunless
                 @elseif ($tab === 'shortcuts')
                     @can('create-shortcut')
                         <li>

@@ -21,6 +21,8 @@ trait CreatesAppStoreSchema
                 $table->string('url', 512);
                 $table->boolean('is_primary')->default(false);
                 $table->boolean('is_active')->default(true);
+                // Story 51.1 — marqueur de dépôt imposé (projection du catalogue amont).
+                $table->boolean('is_imposed')->default(false);
                 $table->string('xml_hash', 64)->nullable();
                 $table->timestamps();
             });

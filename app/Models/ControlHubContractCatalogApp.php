@@ -47,6 +47,11 @@ class ControlHubContractCatalogApp extends Model
         // Optionnels (nullable) : un contrat sans source reste accepté (NFR3).
         'source_xml_url',
         'source_xml_sha',
+        // Story 51.1 — champs d'AFFICHAGE du dépôt imposé (projection JSON → depot_applications).
+        // Optionnels (nullable) : absence tolérée, l'affichage dégrade proprement.
+        'version',
+        'category',
+        'icon_url',
         // Story 39.4 — descripteur d'exécutable (PERSISTANCE SEULE, AC7 ; pull différé).
         // executable_url N'EST PAS une colonne (même piège d'idempotence que artifact_url, AC5).
         'executable_checksum',

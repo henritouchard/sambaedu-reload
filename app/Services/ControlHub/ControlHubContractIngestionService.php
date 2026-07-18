@@ -674,6 +674,14 @@ class ControlHubContractIngestionService
             $sourceXmlUrl = $app['source_xml_url'] ?? null;
             $sourceXmlSha = $app['source_xml_sha'] ?? null;
 
+            // Story 51.1 — champs d'AFFICHAGE du dépôt imposé (AC1). Additifs OPTIONNELS
+            // (rétrocompat NFR3 : absence tolérée) ; normalisation null/'' → null, à
+            // l'identique de display_name/source_xml_*. Champs STABLES (pas d'URL volatile
+            // qui casserait l'idempotence NFR4) — la clé naturelle reste INCHANGÉE.
+            $version = $app['version'] ?? null;
+            $category = $app['category'] ?? null;
+            $iconUrl = $app['icon_url'] ?? null;
+
             // Story 39.4 — Canal ④, `executable` : PERSISTANCE SEULE (AC7). On lit et stocke
             // `checksum`/`filename`/`size` (mêmes normalisations que source_xml_*), mais AUCUN pull
             // n'est déclenché ici (pas de dispatch de job pour catalog_apps — cf. dispatchArtifactPulls,
@@ -696,6 +704,10 @@ class ControlHubContractIngestionService
                     'display_name' => $displayName === null || $displayName === '' ? null : (string) $displayName,
                     'source_xml_url' => $sourceXmlUrl === null || $sourceXmlUrl === '' ? null : (string) $sourceXmlUrl,
                     'source_xml_sha' => $sourceXmlSha === null || $sourceXmlSha === '' ? null : (string) $sourceXmlSha,
+                    // Story 51.1 — champs d'affichage du dépôt imposé (null/'' → null).
+                    'version' => $version === null || $version === '' ? null : (string) $version,
+                    'category' => $category === null || $category === '' ? null : (string) $category,
+                    'icon_url' => $iconUrl === null || $iconUrl === '' ? null : (string) $iconUrl,
                     // Review 39.4 #1 — checksum normalisé minuscule (cohérence avec artifact_checksum ;
                     // persistance seule pour executable, mais on garde l'identité stable homogène).
                     'executable_checksum' => $executableChecksum === null || $executableChecksum === '' ? null : strtolower((string) $executableChecksum),

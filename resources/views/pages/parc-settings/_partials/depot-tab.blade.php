@@ -2,6 +2,7 @@
 
 use App\Components\Traits\WithToasts;
 use App\Jobs\InstallApplicationJob;
+use App\Models\ControlHubContract;
 use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Models\InstallationLog;
@@ -77,6 +78,17 @@ return new class extends Component {
     public function depots()
     {
         return $this->appStoreService->listDepots();
+    }
+
+    /**
+     * Story 51.1 (AC8) — L'instance est-elle gérée par un contrat amont actif ?
+     * Le verrou d'AJOUT de dépôt suit le LIEN (`active()`), PAS le catalogue : un
+     * contrat actif à catalogue vide verrouille quand même l'ajout (AC9).
+     */
+    #[Computed]
+    public function isManaged(): bool
+    {
+        return ControlHubContract::active() !== null;
     }
 
     #[Computed]
@@ -172,6 +184,14 @@ return new class extends Component {
             $depot = \App\Models\Depot::find($this->depotId);
             if (!$depot) {
                 $this->toastError('Dépôt non trouvé');
+
+                return;
+            }
+
+            // Story 51.1 (AC8) — Le dépôt imposé est une projection du catalogue amont,
+            // jamais une source HTTP synchronisable.
+            if ($depot->is_imposed) {
+                $this->toastWarning('Dépôt géré par l\'autorité amont — synchronisation non applicable.');
 
                 return;
             }
@@ -304,6 +324,17 @@ return new class extends Component {
                 return;
             }
 
+            // Story 51.1 (AC8/AC10) — Le dépôt imposé ne doit être ni désactivé ni
+            // dépriorisé TANT QUE le lien amont est ACTIF. À la rupture du lien (AC10 :
+            // release passif), le dépôt imposé « redevient gérable » (désactivable par
+            // l'admin) : la garde suit donc `isManaged()` (le LIEN), pas le seul flag
+            // `is_imposed` (qui reste true à jamais, l'état étant figé). Garde SERVEUR.
+            if ($depot->is_imposed && $this->isManaged()) {
+                $this->toastError('Dépôt imposé par l\'autorité amont — désactivation impossible.');
+                $this->closeDeleteDepotModal();
+                return;
+            }
+
             $name = $depot->name;
             $depot->update(['is_active' => false, 'is_primary' => false]);
 
@@ -322,6 +353,16 @@ return new class extends Component {
 
     public function createDepot(): void
     {
+        // Story 51.1 (AC8) — Sous contrat amont actif, l'ajout de dépôt est VERROUILLÉ
+        // (le canal dépôts est imposé par l'autorité amont). Garde SERVEUR = vraie
+        // barrière (l'UI masque le bouton, mais la garde serveur est opposable).
+        if ($this->isManaged()) {
+            $this->toastError('Dépôts gérés par l\'autorité amont — ajout de dépôt verrouillé.');
+            $this->closeCreateDepotModal();
+
+            return;
+        }
+
         $this->validate([
             'newDepotName' => 'required|string|max:255|unique:depots,name',
             'newDepotUrl' => 'required|url|max:512',
@@ -356,6 +397,19 @@ return new class extends Component {
 ?>
 
 <div class="flex flex-col gap-4 flex-1 min-h-0">
+    {{-- Story 51.1 (AC8) — Bandeau : sous contrat amont actif, les dépôts sont gérés
+         par l'autorité amont (ajout/suppression verrouillés côté serveur, l'UI l'explique). --}}
+    @if ($this->isManaged)
+        <div class="flex-shrink-0 alert alert-info alert-sm">
+            <i class="fa-solid fa-lock"></i>
+            <span>
+                Dépôts gérés par l'autorité amont : le catalogue applicatif du contrat fait
+                autorité. L'ajout, la suppression et la synchronisation manuelle des dépôts
+                sont désactivés tant que le lien est actif.
+            </span>
+        </div>
+    @endif
+
     <!-- Stats du dépôt -->
     @php $dStats = $this->depotStats; @endphp
     <div class="flex-shrink-0 flex gap-3">
@@ -426,7 +480,9 @@ return new class extends Component {
                         @foreach ($this->depots as $depot)
                             <option value="{{ $depot->id }}">
                                 {{ $depot->name }}
-                                @if ($depot->is_primary)
+                                @if ($depot->is_imposed)
+                                    (imposé par l'autorité amont)
+                                @elseif ($depot->is_primary)
                                     (principal)
                                 @endif
                             </option>

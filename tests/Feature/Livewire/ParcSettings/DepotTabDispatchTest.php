@@ -12,7 +12,10 @@ use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Models\InstallationLog;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -44,6 +47,17 @@ class DepotTabDispatchTest extends TestCase
         parent::setUp();
         $this->createAppStoreSchema();
 
+        // Story 51.1 — le SFC depot-tab lit ControlHubContract::active() (computed
+        // isManaged) à chaque rendu : la table doit exister. Vide par défaut ⇒
+        // standalone (comportement inchangé).
+        Schema::create('controlhub_contracts', function (Blueprint $table): void {
+            $table->id();
+            $table->string('link_state')->default('active');
+            $table->timestamp('received_at')->nullable();
+            $table->string('schema_version')->nullable();
+            $table->timestamps();
+        });
+
         $this->depot = Depot::create([
             'name' => 'Dépôt principal',
             'url' => 'http://test.example.com/wpkg',
@@ -54,8 +68,18 @@ class DepotTabDispatchTest extends TestCase
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('controlhub_contracts');
         $this->dropAppStoreSchema();
         parent::tearDown();
+    }
+
+    /**
+     * Story 51.1 — Table minimale `controlhub_contracts` + contrat actif (le schéma
+     * AppStore minimal ne la crée pas). Suffit à `ControlHubContract::active()`.
+     */
+    private function activateUpstreamContract(): void
+    {
+        \App\Models\ControlHubContract::create(['link_state' => 'active']);
     }
 
     private function makeDepotApp(string $appId): DepotApplication
@@ -190,6 +214,106 @@ class DepotTabDispatchTest extends TestCase
     /* =================================================================
      * AC6 — panneau de progression (activeInstallations)
      * ================================================================= */
+
+    /* =================================================================
+     * Story 51.1 (AC8) — verrouillage sous contrat amont actif
+     * ================================================================= */
+
+    #[Test]
+    public function it_refuses_depot_creation_under_an_active_upstream_contract(): void
+    {
+        $this->actingAsManager();
+        $this->activateUpstreamContract();
+
+        $before = Depot::count();
+
+        Livewire::test(self::COMPONENT)
+            ->set('newDepotName', 'Dépôt pirate')
+            ->set('newDepotUrl', 'https://pirate.example.com/packages.xml')
+            ->call('createDepot')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        // Garde SERVEUR : aucun dépôt créé (la vraie barrière, pas seulement l'UI).
+        self::assertSame($before, Depot::count());
+        self::assertNull(Depot::where('name', 'Dépôt pirate')->first());
+    }
+
+    #[Test]
+    public function it_refuses_deleting_the_imposed_depot(): void
+    {
+        $this->actingAsManager();
+        $this->activateUpstreamContract();
+
+        $imposed = Depot::create([
+            'name' => 'ControlHub',
+            'url' => 'controlhub://managed',
+            'is_primary' => true,
+            'is_active' => true,
+            'is_imposed' => true,
+        ]);
+
+        Livewire::test(self::COMPONENT)
+            ->set('deleteDepotId', $imposed->id)
+            ->call('deleteDepot')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        // Le dépôt imposé n'est ni supprimé ni désactivé/dépriorisé.
+        $imposed->refresh();
+        self::assertTrue($imposed->is_active);
+        self::assertTrue($imposed->is_primary);
+        self::assertTrue($imposed->is_imposed);
+    }
+
+    #[Test]
+    public function after_severance_the_imposed_depot_becomes_manageable_again(): void
+    {
+        // Review 51.1 #2 (AC10) — À la rupture du lien (release passif), le dépôt imposé
+        // « redevient gérable » : la garde de refus suit `isManaged()` (le LIEN), pas le
+        // seul flag `is_imposed` (qui reste true à jamais, l'état étant figé). SANS contrat
+        // actif, l'admin doit pouvoir le désactiver.
+        $this->actingAsManager();
+        // PAS de activateUpstreamContract() → lien rompu / absent (standalone).
+
+        $imposed = Depot::create([
+            'name' => 'ControlHub',
+            'url' => 'controlhub://managed',
+            'is_primary' => true,
+            'is_active' => true,
+            'is_imposed' => true,
+        ]);
+
+        Livewire::test(self::COMPONENT)
+            ->set('deleteDepotId', $imposed->id)
+            ->call('deleteDepot')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        // Le dépôt imposé orphelin est désactivé (soft-disable UI) et conservé en base.
+        $imposed->refresh();
+        self::assertFalse($imposed->is_active);
+        self::assertTrue($imposed->is_imposed, 'le flag is_imposed reste (état figé, AC10)');
+    }
+
+    #[Test]
+    public function it_allows_depot_creation_in_standalone(): void
+    {
+        // Non-régression : sans contrat amont, la création de dépôt reste fonctionnelle.
+        $this->actingAsManager();
+
+        Http::fake([
+            '*' => Http::response('<?xml version="1.0"?><packages></packages>', 200),
+        ]);
+
+        $before = Depot::count();
+
+        Livewire::test(self::COMPONENT)
+            ->set('newDepotName', 'Nouveau dépôt local')
+            ->set('newDepotUrl', 'https://local.example.com/packages.xml')
+            ->call('createDepot')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        self::assertSame($before + 1, Depot::count());
+        self::assertNotNull(Depot::where('name', 'Nouveau dépôt local')->first());
+    }
 
     #[Test]
     public function active_installations_lists_in_progress_logs_of_current_user(): void

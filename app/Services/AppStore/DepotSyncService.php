@@ -31,7 +31,10 @@ class DepotSyncService
     {
         $stats = ['synced' => 0, 'new' => 0, 'updated' => 0, 'purged' => 0, 'errors' => []];
 
-        $depots = Depot::active()->get();
+        // Story 51.1 (AC8) — Le dépôt imposé (projection du catalogue amont) n'est JAMAIS
+        // synchronisé en HTTP : on l'exclut de la boucle (ni tenté, ni compté comme synced).
+        // La garde de syncDepot() reste en defense-in-depth (chemin syncCurrentDepot).
+        $depots = Depot::active()->where('is_imposed', false)->get();
 
         foreach ($depots as $depot) {
             try {
@@ -61,6 +64,19 @@ class DepotSyncService
      */
     public function syncDepot(Depot $depot): array
     {
+        // Story 51.1 (AC8) — Le dépôt IMPOSÉ est une PROJECTION table→table du catalogue
+        // amont (controlhub_contract_catalog_apps → depot_applications), jamais une source
+        // HTTP : son URL `controlhub://managed` n'est pas joignable. On SAUTE toute synchro
+        // (aucun Http::get) — la matérialisation est portée par ImposedDepotReconciler. Vaut
+        // aussi pour un dépôt imposé orphelin (contrat severed) : il reste exclu de la synchro.
+        if ($depot->is_imposed) {
+            Log::debug('[AppStore] Dépôt imposé — synchro HTTP ignorée (projection du catalogue amont)', [
+                'depot' => $depot->name,
+            ]);
+
+            return ['new' => 0, 'updated' => 0, 'purged' => 0];
+        }
+
         Log::info('[AppStore] Synchronisation du depot', ['depot' => $depot->name, 'url' => $depot->url]);
 
         $xmlUrl = str_ends_with($depot->url, '/packages.xml')

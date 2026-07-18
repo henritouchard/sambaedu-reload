@@ -2577,3 +2577,107 @@ php artisan test --filter=ContractV1Test              # FROZEN_STATE_HASH inchan
 - [ ] AC9 : sha256 OK→matérialisé/downloaded ; KO→error, aucune écriture, tmp supprimé ; filename dérivé serveur
 - [ ] AC10/NFR-A4 : `StateCompiler`/`ContractV1`/golden/`FROZEN_STATE_HASH`/`agent/**` non touchés ; pas de bump `version.go`
 - [ ] VM (différé) : 2 migrations additives à jouer (`migrate`) + `route:cache`/`config:cache` + chown www-admin après sync
+
+## Section 24 — Dépôt applicatif imposé par le contrat amont (Story 51.1, 2026-07-18)
+
+**Intention.** Le catalogue applicatif du contrat amont (`catalog_apps`, JSON) devient LE dépôt de
+référence unique de l'instance : projection table→table en dépôt imposé (`is_imposed`), transfert
+des apps communes (sans réinstall), désinstallation en cascade du hors-catalogue, suppression des
+anciens dépôts, verrou d'ajout/synchro sous contrat. **Bascule EXCLUSIVE (D2), JSON pas XML (D1).**
+Ne couvre PAS la convergence effective sur les postes (Story 51.2, agent).
+
+> ⚠️ **Opération DESTRUCTIVE de masse.** À dérouler d'abord sur une VM de test avec un contrat
+> disposant d'un `catalog_apps` peuplé. **Un catalogue vide = pas de bascule** (verrou seul).
+
+### Runbook — bascule du canal dépôts
+
+1. Instance managée (contrat actif) avec `catalog_apps` peuplé (`firefox`, `vlc`…).
+2. Rejouer la commande jumelle : `php artisan controlhub:reconcile-imposed-depot`.
+3. Vérifier les compteurs affichés (matérialisé / purgé / transféré / désinstallé / dépôts supprimés).
+
+### Scénario 24.1 — Matérialisation du dépôt imposé (projection JSON)
+
+1. Contrat actif, catalogue non vide.
+2. Déclencher la réconciliation (réception d'un contrat OU commande jumelle).
+3. Vérifier : UN dépôt `ControlHub` (`is_imposed = true`, `is_primary = true`, url
+   `controlhub://managed`) ; ses `depot_applications` reflètent le catalogue (name = `display_name`
+   ou `app_key`, `version`/`category`/`icon_url` d'affichage si fournis) ; aucune requête HTTP.
+
+### Scénario 24.2 — Transfert des apps communes (jamais désinstall/réinstall)
+
+1. Une `Application` installée sur `deb.sambaedu.org` dont l'`app_id` ∈ catalogue amont.
+2. Réconcilier.
+3. Vérifier : `depot_id` re-pointé sur le dépôt imposé ; `status`, `installed_version`, fichiers,
+   pivots profils/parcs/postes **INCHANGÉS**.
+
+### Scénario 24.3 — Désinstallation en cascade du hors-catalogue
+
+1. Une `Application` sur un dépôt non imposé dont l'`app_id` ∉ catalogue amont, assignée à un
+   profil + un poste + un parc.
+2. Réconcilier.
+3. Vérifier : ligne supprimée, tous les pivots détachés (profils/postes/parcs/dépendances), logs +
+   statuts poste supprimés, catalogue WPKG régénéré. **Les apps `depot_id IS NULL` (matérialisées
+   amont + locales sans dépôt) restent INTOUCHÉES.**
+
+### Scénario 24.4 — Ordre invariant (piège FK cascade)
+
+1. Sur le MÊME dépôt non imposé : une app commune (catalogue) + une app hors-catalogue.
+2. Réconcilier.
+3. Vérifier : la commune SURVIT (transférée AVANT la suppression du dépôt), la hors-catalogue est
+   détruite, l'ancien dépôt est **réellement supprimé** (`Depot::delete()`, pas le soft-disable UI).
+
+### Scénario 24.5 — Catalogue vide = verrou sans bascule (AC9)
+
+1. Contrat actif mais `catalog_apps` VIDE.
+2. Réconcilier.
+3. Vérifier : AUCUN dépôt imposé créé, AUCUN transfert, AUCUNE désinstallation, AUCUNE suppression.
+   SEUL le verrou d'ajout de dépôt est actif (bandeau UI + refus serveur `createDepot`).
+
+### Scénario 24.6 — Verrouillage UI/serveur (AC8)
+
+1. Page Parc → onglet Dépôt sous contrat actif.
+2. Vérifier : bandeau « Dépôts gérés par l'autorité amont » ; boutons Ajouter/Synchroniser/Désactiver
+   masqués (menu Actions) ; le dépôt imposé porte « (imposé par l'autorité amont) » dans le sélecteur.
+3. Garde serveur : `createDepot` refusé (toast, aucun `Depot` créé) ; `deleteDepot` refusé sur le
+   dépôt imposé ; `syncCurrentDepot`/`syncAllDepots` sautent le dépôt imposé (aucun HTTP `controlhub://`).
+
+### Scénario 24.7 — Rupture du lien = release passif (AC10)
+
+1. Après bascule, rompre le lien (`php artisan controlhub:sever-link`).
+2. Vérifier : verrou d'ajout tombé (`active()` → null) ; le dépôt imposé RESTE dans la liste (état
+   figé, redevient gérable) ; les apps transférées gardent leur `depot_id` ; aucun ancien dépôt
+   supprimé n'est recréé. Le dépôt imposé orphelin reste exclu de `syncAllDepots` (`is_imposed`).
+
+### Scénario 24.8 — Résilience & idempotence (AC11)
+
+1. Re-jouer `controlhub:reconcile-imposed-depot` sur un état déjà convergé → compteurs à zéro,
+   aucune écriture.
+2. Une app en échec de désinstallation → son dépôt d'origine est **conservé** (pas de cascade FK
+   destructrice) ; corriger puis rejouer la commande.
+
+### Scénario 24.9 (VM) — Bascule de bout en bout
+
+1. `/vm` : `cd /var/www/sambaedu-reload && php artisan migrate` (2 migrations additives 51.1 :
+   `..._add_display_fields_to_controlhub_catalog_apps`, `..._add_is_imposed_to_depots`), puis
+   `config:cache`/`route:cache` + chown www-admin.
+2. Ingérer un contrat avec `catalog_apps` peuplé ; observer la réconciliation automatique
+   (listener `ReconcileImposedDepot`, 3ᵉ position après `ProvisionOrderedApplications`).
+3. Vérifier en base : dépôt `ControlHub` imposé, anciens dépôts supprimés, apps hors-catalogue
+   parties, apps communes re-pointées.
+
+### Checklist rapide Story 51.1
+
+- [ ] `CACHE_DRIVER=array vendor/bin/phpunit --filter=ImposedDepotReconciliation` → vert
+- [ ] `--filter=DepotTabDispatch` (verrou UI/serveur + standalone) → vert
+- [ ] `--filter=DepotSyncService` (saute `is_imposed`, aucun HTTP `controlhub://`) → vert
+- [ ] `--filter=ContractSeverance` (release passif dépôts) → vert
+- [ ] AC1 : `catalog_apps.version`/`category`/`icon_url` additifs optionnels, `''`→`null`, pas de bump `schema_version`
+- [ ] AC4 : dépôt imposé unique + projection table→table (zéro HTTP/DOMDocument)
+- [ ] AC5 : transfert commune = `depot_id` seul (status/pivots intacts)
+- [ ] AC6 : cascade `deleteApplication()` réutilisée + cache par-poste invalidé (piège #2) ; `depot_id NULL` intouchées (piège #4)
+- [ ] AC7 : ordre transfert→désinstall→suppression (piège #1 FK cascade)
+- [ ] AC9 : catalogue vide = verrou sans bascule (piège #3)
+- [ ] AC10 : rupture = levée passive via `active()` → null (sever() non modifié)
+- [ ] Listener en 3ᵉ position APRÈS `ProvisionOrderedApplications` (invariant testé)
+- [ ] Non-régression : `ControlHubContractIngestion`, `UpstreamOrderProvisioning`, `AppStoreService`, `AppStoreInstallFlow`, `WorkstationGroupSync` verts
+- [ ] VM (différé) : 2 migrations additives + `route:cache`/`config:cache` + chown www-admin après sync
