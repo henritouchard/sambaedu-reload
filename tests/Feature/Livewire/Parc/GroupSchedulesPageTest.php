@@ -163,6 +163,28 @@ class GroupSchedulesPageTest extends TestCase
             $this->createdTables = true;
         }
 
+        // Story 3.11 — table dédiée lue par le panneau réinstall (SFC enfant) de
+        // la page groupe. Sans elle, le render du panneau lève « no such table ».
+        if (!Schema::hasTable('workstation_reinstall_requests')) {
+            Schema::create('workstation_reinstall_requests', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained('workstations')->cascadeOnDelete();
+                $table->string('target_action', 40);
+                $table->string('status', 16)->default('armed');
+                $table->unsignedInteger('boot_served_count')->default(0);
+                $table->string('initiated_by', 100)->nullable();
+                $table->unsignedBigInteger('created_by_user_id')->nullable();
+                $table->timestamp('scheduled_at')->nullable();
+                $table->timestamp('triggered_at')->nullable();
+                $table->timestamp('boot_served_at')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->timestamps();
+                $table->index(['workstation_id', 'status']);
+                $table->index(['scheduled_at', 'status']);
+            });
+            $this->createdTables = true;
+        }
+
         if (!Schema::hasTable('workstation_group_schedules')) {
             Schema::create('workstation_group_schedules', function (Blueprint $table) {
                 $table->id();
