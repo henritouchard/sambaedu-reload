@@ -138,6 +138,14 @@ class RoamingProfileCleanupTest extends TestCase
     public function it_returns_null_when_profiles_root_absent(): void
     {
         // /home/profiles n'existe pas sur l'hôte CI → fail-soft null.
+        // Sur un serveur de fichiers réel (VM), le dossier existe et le scan
+        // renvoie [] (dossier vide) au lieu de null : prérequis « root absent »
+        // non rempli → test host-side, on skip quand le FS réel est présent.
+        if (is_dir(RoamingProfileService::PROFILES_ROOT)) {
+            $this->markTestSkipped(
+                RoamingProfileService::PROFILES_ROOT . ' présent (serveur de fichiers réel) — test host-side.'
+            );
+        }
         $this->assertNull($this->service->scanProfileSizes());
     }
 

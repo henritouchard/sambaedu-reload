@@ -26,6 +26,11 @@ use Symfony\Component\Finder\Finder;
  * Story 38.5 : `LegacyEmbedService` (dernière route legacy embarquée) a été
  * SUPPRIMÉ — retiré de la liste blanche (la frontière architecturale s'est
  * refermée : plus aucun couple contrôleur/service embed dédié).
+ *
+ * Story 38.6 : `InteractsWithSe4Extinction` (commandes se4:{status,unplug,
+ * replug,purge}) est autorisé à consulter `sambaedu.legacy_path` — c'est
+ * l'outillage d'extinction lui-même (déplacement vers `.off`, purge), pas une
+ * réintroduction du canal. Il reste soumis au test du littéral FS.
  */
 class GpoLegacyIsolationTest extends TestCase
 {
@@ -38,6 +43,17 @@ class GpoLegacyIsolationTest extends TestCase
     private const WHITELIST = [
         'LegacyCatchallController.php',
         'config.inc.php', // stub : include_path FPM inerte
+    ];
+
+    /**
+     * Basenames autorisés en PLUS à consulter `sambaedu.legacy_path` (mais
+     * toujours interdits de littéral `/var/www/sambaedu`) : l'outillage
+     * d'extinction 38.6 opère sur le chemin legacy par définition.
+     *
+     * @var list<string>
+     */
+    private const WHITELIST_LEGACY_PATH_CONFIG = [
+        'InteractsWithSe4Extinction.php',
     ];
 
     #[Test]
@@ -70,9 +86,11 @@ class GpoLegacyIsolationTest extends TestCase
     {
         $violations = [];
 
+        $whitelist = [...self::WHITELIST, ...self::WHITELIST_LEGACY_PATH_CONFIG];
+
         foreach ($this->scannedFiles() as $file) {
             $basename = basename($file->getRelativePathname());
-            if (in_array($basename, self::WHITELIST, true)) {
+            if (in_array($basename, $whitelist, true)) {
                 continue;
             }
 
