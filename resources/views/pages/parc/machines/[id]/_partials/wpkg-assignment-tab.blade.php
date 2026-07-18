@@ -4,8 +4,9 @@
     composant parent `pages/parc/machines/[id]/index.blade.php` :
     - $this->wpkgAttachedProfiles  ['direct' => …, 'inherited' => …]
     - $this->wpkgAttachedApplications  ['direct' => …, 'inherited' => …]
-    - méthodes attachWpkg*, detachWpkg*
-    - sous-onglets via $wpkgSubTab (assignment | options).
+    - méthodes attachWpkg*, detachWpkg*.
+    Les options `.ini` ont leur propre onglet de premier niveau « Paramètres »
+    (voir la branche @elseif ($tab === 'settings') du composant parent).
 --}}
 @php
     $profiles = $this->wpkgAttachedProfiles;
@@ -21,27 +22,8 @@
 @endphp
 
 <div class="space-y-4">
-    {{-- Sous-onglets WPKG : assignment / options --}}
-    <div role="tablist" class="tabs tabs-bordered">
-        <button type="button" role="tab"
-            class="tab {{ $wpkgSubTab === 'assignment' ? 'tab-active' : '' }}"
-            wire:click="setWpkgSubTab('assignment')">
-            <i class="fa-solid fa-list-check mr-2"></i>
-            Assignations
-        </button>
-        <button type="button" role="tab"
-            class="tab {{ $wpkgSubTab === 'options' ? 'tab-active' : '' }}"
-            wire:click="setWpkgSubTab('options')">
-            <i class="fa-solid fa-sliders mr-2"></i>
-            Options .ini
-        </button>
-    </div>
-
-    @if ($wpkgSubTab === 'options')
-        @include('pages.parc.machines.[id]._partials.wpkg-options-tab')
-    @else
-        {{-- Sous-onglet « Assignations » --}}
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    {{-- Assignations WPKG (profils applicatifs + applications directes/héritées) --}}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {{-- Profils applicatifs --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
@@ -185,6 +167,5 @@
                     @endif
                 </div>
             </div>
-        </div>
-    @endif
+    </div>
 </div>

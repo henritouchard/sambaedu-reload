@@ -72,6 +72,8 @@ class BulkPasswordResetGroupsTest extends TestCase
                 $table->id();
                 $table->unsignedBigInteger('user_id');
                 $table->unsignedBigInteger('user_group_id');
+                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                $table->string('role', 20)->default('member');
                 $table->timestamps();
             });
         }

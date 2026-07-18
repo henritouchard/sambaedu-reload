@@ -15,14 +15,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 31.1 (correction post-review #M2) — bornage du DÉFAUT DIFFUSÉ d'apps
- * (`is_parc_default`, onglet « Applications » de /admin/settings/parc-defaults)
- * au catalogue applicatif amont.
+ * Défaut DIFFUSÉ d'apps (`is_parc_default`, onglet « Applications » de
+ * /admin/settings/parc-defaults) — NON borné au catalogue amont.
  *
- * Passer une app en défaut parc l'installe sur TOUS les postes (couche Broadcast
- * 27.17) : c'est l'install la plus large, donc bornée par FR5. Refus serveur
- * (`is_parc_default` inchangé) pour une app hors catalogue ; consultation filtrée ;
- * standalone/retrait non bornés (NFR3 / D4).
+ * Assigner un défaut parc = assignation à une entité (le parc entier) : comme les
+ * autres chemins d'assignation, ce n'est PAS borné au catalogue amont. Le bornage
+ * ne concerne que l'administration des applications. Ces tests verrouillent que le
+ * défaut parc reste posable pour toute app, y compris sous un contrat amont actif.
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. R3 : aucun « central ».
  */
@@ -88,19 +87,19 @@ class ParcDefaultsCatalogBoundaryTest extends TestCase
     }
 
     #[Test]
-    public function set_parc_default_is_refused_for_app_out_of_catalog(): void
+    public function set_parc_default_is_allowed_for_app_out_of_catalog(): void
     {
+        // L'assignation d'un défaut parc n'est pas bornée : même sous un contrat amont
+        // actif, une app hors catalogue peut devenir défaut parc.
         $this->actAsAdmin();
         $this->activeContractWithCatalog(['firefox']);
         $chrome = $this->makeApp('chrome'); // hors catalogue
 
-        \Livewire\Livewire::test(self::APPS_TAB)
-            ->call('setParcDefault', $chrome->id, true)
-            ->assertDispatched('toastMagic', fn ($event, $params): bool => ($params['status'] ?? null) === 'error');
+        \Livewire\Livewire::test(self::APPS_TAB)->call('setParcDefault', $chrome->id, true);
 
-        self::assertFalse(
+        self::assertTrue(
             (bool) Application::query()->find($chrome->id)->is_parc_default,
-            '#M2 : une app hors catalogue ne peut pas devenir défaut parc',
+            'défaut parc non borné : une app hors catalogue peut le devenir',
         );
     }
 
@@ -142,8 +141,7 @@ class ParcDefaultsCatalogBoundaryTest extends TestCase
         self::assertTrue((bool) Application::query()->find($chrome->id)->is_parc_default);
     }
 
-    // NB : le filtrage de consultation (searchResults → `inUpstreamCatalog()`) n'est pas
-    // testé ici car le scope `search()` utilise `ILIKE` (PG-only, KO en SQLite). Le scope
-    // `inUpstreamCatalog` qui réalise le bornage est couvert par
-    // UpstreamCatalogBoundaryTest::ac1_scope_only_returns_apps_in_catalog.
+    // NB : la consultation `searchResults` n'est plus bornée (assignation). Le scope
+    // `inUpstreamCatalog` (outillage app-admin) reste couvert par
+    // UpstreamCatalogBoundaryTest::scope_only_returns_apps_in_catalog_when_bounded.
 }

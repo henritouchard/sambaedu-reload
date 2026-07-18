@@ -676,7 +676,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 'printers' => ['label' => 'Imprimantes', 'icon' => 'fa-solid fa-print'],
             ];
         @endphp
-        <x-molecules.tabs :tabs="$parcTabs" :active="$tab" class="bg-base-200 w-fit" />
+        <x-molecules.tabs :tabs="$parcTabs" :active="$tab" />
 
         <!-- Contenu des onglets -->
         <div class="flex-1 min-h-0 flex flex-col">

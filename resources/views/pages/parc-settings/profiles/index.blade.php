@@ -5,7 +5,6 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\WithPagination;
 use App\Services\AppProfile\AppProfileService;
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Components\Traits\WithToasts;
 use App\Components\Traits\WithReturnBack;
 use App\Models\AppProfile;
@@ -235,9 +234,10 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
         // IDs des applications déjà dans le profil
         $existingAppIds = $this->profile->applications->pluck('id')->toArray();
 
-        // Story 31.1 — canal d'install (composition de profil) borné au catalogue
-        // applicatif amont. Pass-through si standalone / catalogue vide (NFR3).
-        $query = Application::query()->inUpstreamCatalog();
+        // La composition d'un profil applicatif propose TOUTE app du catalogue local.
+        // Le bornage au catalogue amont (controlHub) ne concerne QUE l'administration
+        // des applications, pas l'assignation.
+        $query = Application::query();
 
         // Exclure les applications déjà présentes
         if (!empty($existingAppIds)) {
@@ -330,10 +330,6 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
             $this->loadProfile();
             $this->closeAddAppsModal();
             $this->toastSuccess(count($this->selectedAppsToAdd) . ' application(s) ajoutée(s)');
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            // Story 31.1 — refus explicite « hors catalogue amont » (FR8), pas un
-            // échec opaque. Filet defense-in-depth (la liste proposée est déjà filtrée).
-            $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[ProfileDetail] Erreur ajout apps: ' . $e->getMessage());
             $this->toastError('Erreur lors de l\'ajout des applications');
@@ -544,7 +540,7 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                     'workstations' => ['label' => 'Postes', 'icon' => 'fa-solid fa-computer', 'badge' => $profile->workstations->count()],
                 ];
             @endphp
-            <x-molecules.tabs :tabs="$profileTabs" :active="$tab" class="bg-base-200 w-fit" />
+            <x-molecules.tabs :tabs="$profileTabs" :active="$tab" />
 
             <!-- Contenu des onglets -->
             <div class="flex-1 min-h-0">

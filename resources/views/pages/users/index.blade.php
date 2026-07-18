@@ -397,7 +397,7 @@ new class extends Component {
         ];
     @endphp
     <x-molecules.tabs :tabs="$usersTabs" :active="$activeTab" action="switchTab"
-        class="mb-4 w-fit bg-base-200/60 p-1" />
+        class="mb-4" />
 
     <div class="card bg-base-100 shadow-sm mb-4">
         <div class="card-body py-4">

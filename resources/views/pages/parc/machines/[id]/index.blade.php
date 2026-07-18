@@ -20,7 +20,6 @@ use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
 use App\Components\Traits\WithReturnBack;
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\SyncRequestService;
@@ -49,7 +48,8 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public string $deploymentTab = 'errors';
 
     // Story 15.4 / Décision A 2026-05-07 — onglet de premier niveau (général | wpkg).
-    // Le sous-onglet `wpkgSubTab` bascule entre assignation et options `.ini`.
+    // Les options `.ini` WPKG ont leur propre onglet de premier niveau « settings »
+    // (Paramètres), ex-sous-onglet de l'onglet Applications.
     #[Url(as: 'tab', keep: true)]
     public string $tab = 'general';
 
@@ -58,8 +58,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     {
         return $this->resolveBack(route('app.parc.index', ['tab' => 'machines']));
     }
-
-    public string $wpkgSubTab = 'assignment';
 
     // ── Modales WPKG (assignation directe poste) ───────────────────────────
     public bool $showAttachWpkgProfileModal = false;
@@ -824,14 +822,8 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     {
         // Story 37.1 — onglet « État cible » (consultation pure, aucun droit
         // supplémentaire ; visible sous le gate de page existant).
-        $allowed = ['general', 'wpkg', 'agent', 'state'];
+        $allowed = ['general', 'logical', 'wpkg', 'settings', 'agent', 'state'];
         $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
-    }
-
-    public function setWpkgSubTab(string $sub): void
-    {
-        $allowed = ['assignment', 'options'];
-        $this->wpkgSubTab = in_array($sub, $allowed, true) ? $sub : 'assignment';
     }
 
     public function loadWpkgOptionsState(): void
@@ -937,9 +929,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             return collect();
         }
         $existing = $this->workstation->applications()->pluck('applications.id')->toArray();
-        // Story 31.1 — borne la liste proposée au catalogue applicatif amont
-        // (pass-through NFR3 si standalone / catalogue vide).
-        $query = Application::query()->inUpstreamCatalog()->whereNotIn('id', $existing);
+        // L'assignation à une entité (poste) propose TOUTE app du catalogue local.
+        // Le bornage au catalogue amont (controlHub) ne concerne QUE l'administration
+        // des applications, pas l'assignation.
+        $query = Application::query()->whereNotIn('id', $existing);
         if ($this->wpkgAppSearch !== '') {
             $query->where(function ($q) {
                 $q->where('name', 'LIKE', "%{$this->wpkgAppSearch}%")
@@ -1029,9 +1022,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $this->toastSuccess(count($this->selectedWpkgAppIdsToAdd).' application(s) ajoutée(s)');
             $this->closeAttachWpkgAppModal();
             $this->loadMachine();
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            // Story 31.1 — refus « hors catalogue amont » : message explicite (FR8).
-            $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[MachineWpkg] Erreur attach apps: '.$e->getMessage());
             $this->toastError('Erreur lors de l\'ajout des applications');
@@ -1112,7 +1102,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Détails du Poste" :scrollable="true" description="Détail du poste"
+<x-organisms.page title="Détails du Poste" :scrollable="true"
     backUrl="{{ $this->backUrl() }}" backText="Retour aux postes">
 
     <x-slot:actions>
@@ -1220,34 +1210,35 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
         <div class="space-y-6">
 
-            {{-- Card header : identité + salle physique + warning --}}
+            {{-- Bande identité épinglée : reste visible sur tous les onglets pour
+                 rappeler de quel poste il s'agit. Le détail (salle physique, grille
+                 technique, AD GUID) est descendu dans l'onglet « Général ». --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body">
-                    {{-- En-tête identité --}}
-                    <div class="flex items-start gap-4 mb-6">
-                            {{-- Pin d'état de présence (canal agent) sur l'icône poste --}}
-                            <div class="indicator">
-                                @if ($presence === 'online')
-                                    <span class="indicator-item status status-success status-lg"
-                                          title="Allumé — check-in {{ $workstation->agent_last_checkin_at->diffForHumans() }}"
-                                          aria-label="Allumé"></span>
-                                @elseif ($presence === 'reported_off')
-                                    <span class="indicator-item status status-lg"
-                                          title="Éteint — extinction signalée {{ $workstation->agent_reported_offline_at->diffForHumans() }}"
-                                          aria-label="Éteint"></span>
-                                @elseif ($presence === 'silent')
-                                    <span class="indicator-item status status-warning status-lg"
-                                          title="Injoignable — dernier check-in {{ $workstation->agent_last_checkin_at->diffForHumans() }}"
-                                          aria-label="Injoignable"></span>
-                                @endif
-                                <div class="bg-primary/10 text-primary flex items-center justify-center rounded-xl w-16 h-16">
-                                    <i class="fa-solid fa-computer text-2xl"></i>
-                                </div>
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        {{-- Pin d'état de présence (canal agent) sur l'icône poste --}}
+                        <div class="indicator">
+                            @if ($presence === 'online')
+                                <span class="indicator-item status status-success status-lg"
+                                      title="Allumé — check-in {{ $workstation->agent_last_checkin_at->diffForHumans() }}"
+                                      aria-label="Allumé"></span>
+                            @elseif ($presence === 'reported_off')
+                                <span class="indicator-item status status-lg"
+                                      title="Éteint — extinction signalée {{ $workstation->agent_reported_offline_at->diffForHumans() }}"
+                                      aria-label="Éteint"></span>
+                            @elseif ($presence === 'silent')
+                                <span class="indicator-item status status-warning status-lg"
+                                      title="Injoignable — dernier check-in {{ $workstation->agent_last_checkin_at->diffForHumans() }}"
+                                      aria-label="Injoignable"></span>
+                            @endif
+                            <div class="bg-primary/10 text-primary flex items-center justify-center rounded-xl w-12 h-12">
+                                <i class="fa-solid fa-computer text-xl"></i>
                             </div>
-                        <div class="flex-1">
-                            <h2 class="text-2xl font-bold">{{ $workstation->name }}</h2>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-bold truncate">{{ $workstation->name }}</h2>
                             <p class="text-base-content/60 mt-0.5">
-                                <code class="bg-base-200 px-2 py-0.5 rounded">{{ $workstation->os }}</code>
+                                <code class="bg-base-200 px-2 py-0.5 rounded text-sm">{{ $workstation->os ?: '—' }}</code>
                             </p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
@@ -1264,120 +1255,28 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                             @endif
                         </div>
                     </div>
-
-                    {{-- Salle physique --}}
-                    <div class="rounded-xl border border-base-200 p-4 mb-6">
-                        <div class="flex items-center gap-3 mb-3">
-                            <div class="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
-                                <i class="fa-solid fa-door-open text-warning"></i>
-                            </div>
-                            <div class="flex-1">
-                                <p class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">
-                                    Salle physique
-                                </p>
-                                <p class="text-xs text-base-content/40">
-                                    Une machine ne peut appartenir qu'à une seule salle.
-                                </p>
-                            </div>
-                        </div>
-
-                        @if ($workstation->physicalRoom)
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <a href="{{ route('app.parc.groups.show', $workstation->physicalRoom->id) }}"
-                                    class="flex-1 min-w-[200px] flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/5 border border-warning/25 hover:border-warning/60 hover:bg-warning/10 transition-colors font-semibold text-warning truncate">
-                                    <i class="fa-solid fa-location-dot text-sm"></i>
-                                    <span class="truncate">{{ $workstation->physicalRoom->name }}</span>
-                                    <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-40 ml-auto"></i>
-                                </a>
-                                <button type="button"
-                                    wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'change-physical-room', groups: {{ $availablePhysicalRooms->filter(fn($r) => $r->id !== $workstation->physicalRoom?->id)->values()->toJson() }} })"
-                                    class="btn btn-warning btn-sm gap-2">
-                                    <i class="fa-solid fa-pen-to-square"></i>
-                                    Modifier
-                                </button>
-                                <button type="button"
-                                    class="btn btn-ghost btn-sm btn-square text-base-content/40 hover:text-error"
-                                    wire:click="removeFromPhysicalRoom"
-                                    wire:confirm="Retirer ce poste de la salle physique ?"
-                                    title="Retirer de la salle">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-                        @else
-                            <button type="button"
-                                wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'assign-physical-room', groups: {{ $availablePhysicalRooms->toJson() }} })"
-                                class="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 border-dashed border-base-300 hover:border-warning hover:bg-warning/5 transition-all text-base-content/60 hover:text-warning font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-base-300 disabled:hover:bg-transparent disabled:hover:text-base-content/60"
-                                @disabled($availablePhysicalRooms->isEmpty())>
-                                <i class="fa-solid fa-plus"></i>
-                                Assigner une salle
-                            </button>
-                        @endif
-                    </div>
-
-                    {{-- Grille infos techniques --}}
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Système</span>
-                            <p class="font-medium mt-0.5">{{ $workstation->os ?: '—' }}</p>
-                        </div>
-                        <div>
-                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Adresse IP</span>
-                            <p class="font-mono font-medium mt-0.5">{{ $workstation->ip ?: '—' }}</p>
-                        </div>
-                        <div>
-                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Adresse MAC</span>
-                            <p class="font-mono text-sm mt-0.5">{{ $workstation->mac ?: '—' }}</p>
-                        </div>
-                        <div>
-                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernier rapport</span>
-                            <p class="font-medium mt-0.5">
-                                {{ $workstation->last_report_at?->format('d/m/Y H:i') ?? '—' }}
-                            </p>
-                        </div>
-                    </div>
-
-                    @if ($workstation->ad_guid)
-                        <div class="mt-4">
-                            <span class="text-xs text-base-content/60 uppercase tracking-wide">AD GUID</span>
-                            <p class="font-mono text-xs bg-base-200 p-2 rounded mt-1 break-all">{{ $workstation->ad_guid }}</p>
-                        </div>
-                    @endif
                 </div>
             </div>
 
             {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg).
                  Accès deep-link via ?tab=wpkg. La card header reste visible
                  dans les 2 modes (identité + statut sont communs). --}}
-            <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'general' ? 'tab-active' : '' }}"
-                    wire:click="setTab('general')">
-                    <i class="fa-solid fa-circle-info mr-2"></i>
-                    Général
-                </button>
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'wpkg' ? 'tab-active' : '' }}"
-                    wire:click="setTab('wpkg')">
-                    <i class="fa-solid fa-cube mr-2"></i>
-                    Applications
-                </button>
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'agent' ? 'tab-active' : '' }}"
-                    wire:click="setTab('agent')">
-                    <i class="fa-solid fa-tower-broadcast mr-2"></i>
-                    Agent
-                </button>
-                {{-- Story 37.1 — État cible (raccourcis + applications + origine). --}}
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'state' ? 'tab-active' : '' }}"
-                    wire:click="setTab('state')">
-                    <i class="fa-solid fa-bullseye mr-2"></i>
-                    État cible
-                </button>
-            </div>
+            {{-- Story 37.1 — Onglet « État cible » ajouté à la barre. --}}
+            <x-molecules.tabs :tabs="[
+                'general' => ['label' => 'Général', 'icon' => 'fa-solid fa-circle-info'],
+                'logical' => ['label' => 'Groupes logiques', 'icon' => 'fa-solid fa-layer-group', 'badge' => $workstation->logicalGroups->count()],
+                'wpkg' => ['label' => 'Applications', 'icon' => 'fa-solid fa-cube'],
+                'settings' => ['label' => 'Paramètres', 'icon' => 'fa-solid fa-sliders'],
+                'agent' => ['label' => 'Agent', 'icon' => 'fa-solid fa-tower-broadcast'],
+                'state' => ['label' => 'État cible', 'icon' => 'fa-solid fa-bullseye'],
+            ]" :active="$tab" />
 
             @if ($tab === 'wpkg')
                 @include('pages.parc.machines.[id]._partials.wpkg-assignment-tab')
+            @elseif ($tab === 'settings')
+                {{-- Onglet « Paramètres » — options .ini WPKG du poste (ex-sous-onglet
+                     « Options .ini » de l'onglet Applications). --}}
+                @include('pages.parc.machines.[id]._partials.wpkg-options-tab')
             @elseif ($tab === 'agent')
             {{-- Onglet Agent — mode debug + canal agent (token, conformité) --}}
 
@@ -1529,8 +1428,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                      ⇒ inclusion via @livewire (jamais la tag-syntax, piège #6). --}}
                 @livewire('pages::parc.machines.[id]._partials.desired-state-tab', ['workstationId' => $workstation->id], key('state-'.$workstation->id))
 
-            @else
-            {{-- Card groupes logiques --}}
+            @elseif ($tab === 'logical')
+            {{-- Onglet « Groupes logiques » — appartenance aux groupes logiques du
+                 poste (déplacé depuis l'onglet Général). --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <div class="flex items-center justify-between mb-4">
@@ -1579,6 +1479,86 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                                     </button>
                                 </div>
                             @endforeach
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            @else
+            {{-- Onglet « Général » — détail du poste descendu depuis l'ancienne card
+                 header : salle physique, grille technique (système/IP/MAC/rapport)
+                 et AD GUID. --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card-body">
+                    {{-- Salle physique --}}
+                    <div class="rounded-xl border border-base-200 p-4 mb-6">
+                        <div class="flex items-center gap-2 mb-3">
+                            <i class="fa-solid fa-door-open text-base-content/40"></i>
+                            <p class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">
+                                Salle physique
+                            </p>
+                            <span class="text-xs text-base-content/40">— une seule par machine</span>
+                        </div>
+
+                        @if ($workstation->physicalRoom)
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <a href="{{ route('app.parc.groups.show', $workstation->physicalRoom->id) }}"
+                                    class="group flex-1 min-w-[200px] flex items-center gap-2.5 px-3 py-2 rounded-lg border border-base-300 bg-base-200/40 hover:border-primary hover:bg-primary/5 transition-colors font-semibold text-base-content truncate">
+                                    <i class="fa-solid fa-location-dot text-sm text-primary"></i>
+                                    <span class="truncate">{{ $workstation->physicalRoom->name }}</span>
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-30 ml-auto group-hover:opacity-60"></i>
+                                </a>
+                                <button type="button"
+                                    wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'change-physical-room', groups: {{ $availablePhysicalRooms->filter(fn($r) => $r->id !== $workstation->physicalRoom?->id)->values()->toJson() }} })"
+                                    class="btn btn-sm btn-outline gap-2">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                    Modifier
+                                </button>
+                                <button type="button"
+                                    class="btn btn-ghost btn-sm btn-square text-base-content/40 hover:text-error"
+                                    wire:click="removeFromPhysicalRoom"
+                                    wire:confirm="Retirer ce poste de la salle physique ?"
+                                    title="Retirer de la salle">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        @else
+                            <button type="button"
+                                wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'assign-physical-room', groups: {{ $availablePhysicalRooms->toJson() }} })"
+                                class="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 border-dashed border-base-300 hover:border-primary hover:bg-primary/5 transition-all text-base-content/60 hover:text-primary font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-base-300 disabled:hover:bg-transparent disabled:hover:text-base-content/60"
+                                @disabled($availablePhysicalRooms->isEmpty())>
+                                <i class="fa-solid fa-plus"></i>
+                                Assigner une salle
+                            </button>
+                        @endif
+                    </div>
+
+                    {{-- Grille infos techniques --}}
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Système</span>
+                            <p class="font-medium mt-0.5">{{ $workstation->os ?: '—' }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Adresse IP</span>
+                            <p class="font-mono font-medium mt-0.5">{{ $workstation->ip ?: '—' }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Adresse MAC</span>
+                            <p class="font-mono text-sm mt-0.5">{{ $workstation->mac ?: '—' }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernier rapport</span>
+                            <p class="font-medium mt-0.5">
+                                {{ $workstation->last_report_at?->format('d/m/Y H:i') ?? '—' }}
+                            </p>
+                        </div>
+                    </div>
+
+                    @if ($workstation->ad_guid)
+                        <div class="mt-4">
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">AD GUID</span>
+                            <p class="font-mono text-xs bg-base-200 p-2 rounded mt-1 break-all">{{ $workstation->ad_guid }}</p>
                         </div>
                     @endif
                 </div>

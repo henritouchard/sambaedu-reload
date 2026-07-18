@@ -15,7 +15,7 @@ use Tests\TestCase;
  *   gpo/no_roam.php
  *   gpo/user_profile_stats.php
  *   gpo/del_roam.php
- * et émet une 302 vers la page native /admin/settings?tab=profils-itinerants
+ * et émet une 302 vers la page native /admin/settings/files?tab=roaming
  * (resp. /admin/gpo/del-roam.sh) **avant** tout pipeline legacy
  * (executeViaBootstrap ou proxy).
  *
@@ -40,7 +40,7 @@ class LegacyRoamingRedirectsTest extends TestCase
     {
         $this->get('/gpo/no_roam.php')
             ->assertStatus(302)
-            ->assertRedirect('/admin/settings?tab=profils-itinerants');
+            ->assertRedirect('/admin/settings/files?tab=roaming');
     }
 
     #[Test]
@@ -48,7 +48,7 @@ class LegacyRoamingRedirectsTest extends TestCase
     {
         $this->get('/gpo/user_profile_stats.php')
             ->assertStatus(302)
-            ->assertRedirect('/admin/settings?tab=profils-itinerants');
+            ->assertRedirect('/admin/settings/files?tab=roaming');
     }
 
     #[Test]

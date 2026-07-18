@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
-use App\Enums\FilePolicyMode;
 use App\Models\User;
 use App\Services\FilePolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,9 +13,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Page /admin/settings/files — déclaration du défaut d'instance de la politique
- * de gestion des fichiers (mode + config Nextcloud), persistée via
- * {@see FilePolicyService} (SystemSetting `files.policy`).
+ * Page /admin/settings/files — réglage GLOBAL de la politique de gestion des
+ * fichiers : trois capacités indépendantes (home/shares/nextcloud) + URL serveur
+ * Nextcloud, persistées via {@see FilePolicyService} (SystemSetting `files.policy`).
  */
 class FilePolicySettingsTest extends TestCase
 {
@@ -35,42 +34,57 @@ class FilePolicySettingsTest extends TestCase
     }
 
     #[Test]
-    public function it_prefills_the_persisted_global_policy(): void
+    public function it_prefills_the_persisted_global_capabilities(): void
     {
-        FilePolicyService::setGlobal(FilePolicyMode::AutreWeb, 'https://cloud.etab.fr');
+        FilePolicyService::setGlobal(false, true, true, 'https://cloud.etab.fr');
 
         Livewire::test(self::COMPONENT)
-            ->assertSet('mode', 'autre_web')
+            ->assertSet('home', false)
+            ->assertSet('shares', true)
+            ->assertSet('nextcloud', true)
             ->assertSet('nextcloudServerUrl', 'https://cloud.etab.fr');
     }
 
     #[Test]
-    public function it_defaults_to_partages_when_nothing_saved(): void
+    public function it_defaults_to_home_and_shares_when_nothing_saved(): void
     {
-        Livewire::test(self::COMPONENT)->assertSet('mode', 'partages');
+        Livewire::test(self::COMPONENT)
+            ->assertSet('home', true)
+            ->assertSet('shares', true)
+            ->assertSet('nextcloud', false);
     }
 
     #[Test]
-    public function saving_persists_the_global_policy(): void
+    public function saving_persists_each_capability_independently(): void
     {
         Livewire::test(self::COMPONENT)
-            ->set('mode', 'nextcloud_desktop')
+            ->set('home', false)
+            ->set('shares', true)
+            ->set('nextcloud', true)
             ->set('nextcloudServerUrl', 'https://cloud.etab.fr')
             ->call('save')
             ->assertHasNoErrors();
 
-        self::assertSame(FilePolicyMode::NextcloudDesktop, FilePolicyService::globalMode());
-        self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud']['server_url']);
+        self::assertSame(
+            ['home' => false, 'shares' => true, 'nextcloud' => true],
+            FilePolicyService::capabilities(),
+        );
+        self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
 
     #[Test]
-    public function a_forged_invalid_mode_is_refused_and_writes_nothing(): void
+    public function saving_everything_off_is_web_only(): void
     {
         Livewire::test(self::COMPONENT)
-            ->set('mode', 'bogus')
-            ->call('save');
+            ->set('home', false)
+            ->set('shares', false)
+            ->set('nextcloud', false)
+            ->call('save')
+            ->assertHasNoErrors();
 
-        // Rien persisté → repli défaut Partages.
-        self::assertSame(FilePolicyMode::Partages, FilePolicyService::globalMode());
+        self::assertSame(
+            ['home' => false, 'shares' => false, 'nextcloud' => false],
+            FilePolicyService::capabilities(),
+        );
     }
 }

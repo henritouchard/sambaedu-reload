@@ -139,12 +139,11 @@ class AgentServiceProvider extends ServiceProvider
         // parc + défaut instance) ; court-circuit NFR3 sans contrat actif (≤ 1
         // requête, jamais la table `items`). Mémoïsation == par-requête (PHP-FPM).
         $this->app->singleton(UpstreamLockResolver::class, fn () => new UpstreamLockResolver());
-        // Story 31.1 — BORNAGE du canal d'install refnum au catalogue applicatif
-        // amont. Singleton ⇒ catalogue (`app_key` du contrat actif) résolu UNE fois
-        // et partagé par le scope de consultation (Application::scopeInUpstreamCatalog)
-        // ET le garde service (AppProfileService::assertApplicationsInUpstreamCatalog).
-        // Court-circuit NFR3 sans contrat actif (≤ 1 requête `controlhub_contracts`,
-        // jamais la table catalog). Mémoïsation == par-requête (PHP-FPM).
+        // Catalogue applicatif amont — outillage de l'ADMINISTRATION des applications
+        // (scope Application::scopeInUpstreamCatalog). L'assignation d'apps aux entités
+        // n'est PAS bornée. Singleton ⇒ catalogue (`app_key` du contrat actif) résolu
+        // UNE fois. Court-circuit NFR3 sans contrat actif (≤ 1 requête
+        // `controlhub_contracts`, jamais la table catalog). Mémoïsation == par-requête (PHP-FPM).
         $this->app->singleton(UpstreamCatalogResolver::class, fn () => new UpstreamCatalogResolver());
         // Story 30.5 — DÉTECTEUR de collision verrou/verrou à l'assignation
         // (prévention prédictive, FR13). Singleton par-requête : réutilise le

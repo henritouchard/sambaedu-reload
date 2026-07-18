@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\AppProfile;
 
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Models\AppProfile;
 use App\Models\Application;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
-use App\Services\ControlHub\UpstreamCatalogResolver;
 use App\Wpkg\Deployment\Events\AppProfileApplicationsChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationGroupChanged;
@@ -93,12 +91,6 @@ final class AppProfileService
      */
     public function createProfile(array $data): AppProfile
     {
-        // Story 31.1 — composer un profil avec des apps = canal d'install : borner
-        // au catalogue amont AVANT toute écriture (inerte hors-contexte / standalone).
-        if (!empty($data['application_ids'])) {
-            $this->assertApplicationsInUpstreamCatalog($this->normalizeIds($data['application_ids']));
-        }
-
         return DB::transaction(function () use ($data) {
             $profile = AppProfile::create([
                 'name' => $data['name'],
@@ -129,12 +121,6 @@ final class AppProfileService
      */
     public function updateProfile(int $id, array $data): ?AppProfile
     {
-        // Story 31.1 — sync d'apps sur un profil = canal d'install : borner les
-        // apps ajoutées au catalogue amont AVANT écriture (inerte hors-contexte).
-        if (array_key_exists('application_ids', $data) && !empty($data['application_ids'])) {
-            $this->assertApplicationsInUpstreamCatalog($this->normalizeIds($data['application_ids']));
-        }
-
         return DB::transaction(function () use ($id, $data) {
             $profile = AppProfile::find($id);
 
@@ -208,11 +194,6 @@ final class AppProfileService
         if (! $profile) {
             return false;
         }
-
-        // Story 31.1 — defense-in-depth : composer un profil avec des apps = canal
-        // d'install (ré-épandu sur les parcs). Bornage au catalogue applicatif amont
-        // AVANT écriture (inerte si appelant non-web / standalone / catalogue vide).
-        $this->assertApplicationsInUpstreamCatalog($applicationIds);
 
         DB::transaction(function () use ($profile, $profileId, $applicationIds) {
             $profile->applications()->syncWithoutDetaching($applicationIds);
@@ -453,8 +434,6 @@ final class AppProfileService
 
         // Story 29.1 — defense-in-depth : assignation scopée par parc.
         $this->assertCanAssignWpkgOnGroup($group);
-        // Story 31.1 — defense-in-depth : bornage au catalogue applicatif amont.
-        $this->assertApplicationsInUpstreamCatalog($applicationIds);
 
         $attached = DB::transaction(function () use ($group, $groupId, $applicationIds) {
             $changes = $group->applications()->syncWithoutDetaching($applicationIds);
@@ -538,8 +517,6 @@ final class AppProfileService
         // Story 29.1 — defense-in-depth : scope = salle physique du poste
         // (null si nomade → fallback global seul).
         $this->assertCanAssignWpkgOnGroup($workstation->physicalRoom);
-        // Story 31.1 — defense-in-depth : bornage au catalogue applicatif amont.
-        $this->assertApplicationsInUpstreamCatalog($applicationIds);
 
         $attached = DB::transaction(function () use ($workstation, $workstationId, $applicationIds) {
             $changes = $workstation->applications()->syncWithoutDetaching($applicationIds);
@@ -658,11 +635,6 @@ final class AppProfileService
         $profilesRemoved = array_values(array_diff($targetProfileIds, $sourceProfileIds));
         $appsAdded = array_values(array_diff($sourceAppIds, $targetAppIds));
         $appsRemoved = array_values(array_diff($targetAppIds, $sourceAppIds));
-
-        // Story 31.1 — le clone AJOUTE des apps au parc cible : borner ce delta au
-        // catalogue applicatif amont (D4 : seul l'ajout est filtré, pas le retrait).
-        // Inerte si appelant non-web / standalone / catalogue vide.
-        $this->assertApplicationsInUpstreamCatalog($appsAdded);
 
         Log::channel('wpkg-deploy')->info('[AppProfileService] Clone configuration parc — début', [
             'deployment_id' => $deploymentId,
@@ -803,59 +775,6 @@ final class AppProfileService
         Gate::authorize('assign-wpkg-workstationGroup', $group);
     }
 
-    /**
-     * Story 31.1 — Garde defense-in-depth : refuse l'AJOUT d'applications hors du
-     * catalogue applicatif AMONT faisant autorité (FR5). Jumeau du garde 29.1
-     * {@see self::assertCanAssignWpkgOnGroup()} — placé côte à côte en tête des
-     * méthodes d'install, AVANT toute écriture pivot.
-     *
-     * INERTE sur deux chemins (non-régression) :
-     *  (a) `Auth::check() === false` (console, agent desired-state, seeders) — ces
-     *      appelants non-web ne sont pas soumis au bornage (AC #6), exactement
-     *      comme le garde WPKG de 29.1 ;
-     *  (b) `!UpstreamCatalogResolver::isBounded()` — standalone OU catalogue vide
-     *      (NFR3 / D1) : aucune lecture, aucun refus.
-     *
-     * Sinon : résout les `app_id` (string) des `$applicationIds` et lève
-     * {@see ApplicationNotInUpstreamCatalogException} si AU MOINS UN n'est pas
-     * autorisé. Borner = filtrer ce qu'on **ajoute** (D4) — ce garde n'est JAMAIS
-     * appelé sur les chemins de retrait ni de gestion du catalogue local.
-     *
-     * @param  list<int>  $applicationIds  IDs (déjà normalisés) à ajouter.
-     *
-     * @throws ApplicationNotInUpstreamCatalogException
-     */
-    private function assertApplicationsInUpstreamCatalog(array $applicationIds): void
-    {
-        if (! Auth::check()) {
-            return; // (a) non-régression appelant non-web (AC #6).
-        }
-
-        $resolver = app(UpstreamCatalogResolver::class);
-        if (! $resolver->isBounded()) {
-            return; // (b) standalone OU catalogue vide (NFR3 / D1).
-        }
-
-        if ($applicationIds === []) {
-            return;
-        }
-
-        $appIdsById = Application::query()
-            ->whereIn('id', $applicationIds)
-            ->pluck('app_id', 'id');
-
-        $rejected = [];
-        foreach ($appIdsById as $appId) {
-            $appId = (string) $appId;
-            if (! $resolver->permits($appId)) {
-                $rejected[$appId] = true;
-            }
-        }
-
-        if ($rejected !== []) {
-            throw ApplicationNotInUpstreamCatalogException::fromAppIds(array_keys($rejected));
-        }
-    }
 
     /**
      * Normalise un array d'IDs : cast int, filtre > 0, dédoublonne.
@@ -923,15 +842,13 @@ final class AppProfileService
     /**
      * Liste toutes les applications pour un select (sans pagination).
      *
-     * Story 31.1 — ce sélecteur alimente la COMPOSITION d'un profil applicatif
-     * (canal d'install ré-épandu sur les parcs). Il est donc borné au catalogue
-     * applicatif amont via {@see Application::scopeInUpstreamCatalog} (pass-through
-     * NFR3 si standalone / catalogue vide).
+     * Alimente la COMPOSITION d'un profil applicatif (assignation à une entité) :
+     * TOUTE app du catalogue local est proposée. Le bornage au catalogue amont
+     * (controlHub) ne concerne QUE l'administration des applications.
      */
     public function listApplicationsForSelect(): Collection
     {
         return Application::query()
-            ->inUpstreamCatalog()
             ->orderBy('name')
             ->get(['id', 'app_id', 'name', 'version', 'category']);
     }

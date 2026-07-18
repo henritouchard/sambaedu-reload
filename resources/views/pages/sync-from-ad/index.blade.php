@@ -658,11 +658,10 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Synchronisation depuis l'AD" :scrollable="true"
-    description="Assistant de mise en place Laravel - Import des données depuis Active Directory">
-
-    <x-slot:actions>
-        <div class="flex gap-2">
+{{-- Corps seul (sans chrome de page) : embarqué comme onglet « Sync from AD »
+     de /admin/settings/migration. --}}
+<div class="flex flex-col gap-6">
+    <div class="flex flex-wrap gap-2 justify-end items-end">
             <div class="min-w-80">
                 <label class="label py-0">
                     <span class="label-text text-xs">Contexte de synchronisation</span>
@@ -689,8 +688,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 <i class="fa-solid fa-rotate-left"></i>
                 Réinitialiser
             </button>
-        </div>
-    </x-slot:actions>
+    </div>
 
     <div class="space-y-4">
         {{-- Info card --}}
@@ -978,4 +976,4 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             </div>
         @endif
     </div>
-</x-organisms.page>
+</div>

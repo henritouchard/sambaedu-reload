@@ -34,7 +34,7 @@ final class NativeSectionResolver
     private const MAPPING = [
         'profils-itinerants' => [
             'patterns' => ['redirections', 'roaming', 'profil', 'no_roam'],
-            'url' => '/admin/settings?tab=profils-itinerants',
+            'url' => '/admin/settings/files?tab=roaming',
             'label' => 'Gérer les profils itinérants nativement',
             'icon' => 'fa-users-gear',
         ],
@@ -116,8 +116,9 @@ final class NativeSectionResolver
      * Construit l'URL de navigation vers une section native, avec ou sans
      * paramètre `?from_gpo={guid}` pour le breadcrumb de retour.
      *
-     * Si l'URL de base contient déjà un `?` (cas `profils-itinerants`), le
-     * paramètre est ajouté avec `&` et non `?`.
+     * Si l'URL de base contient déjà un `?` (cas `profils-itinerants` →
+     * `/admin/settings/files?tab=roaming`), le paramètre est ajouté avec `&`
+     * et non `?`.
      *
      * Si `$fromGpoGuid` est null ou vide, retourne l'URL sans paramètre.
      *
@@ -141,7 +142,7 @@ final class NativeSectionResolver
         }
 
         // Détecter si l'URL de base contient déjà un paramètre de requête.
-        // Ex. '/admin/settings?tab=profils-itinerants' → utiliser '&'.
+        // Ex. '/admin/settings/files?tab=roaming' → utiliser '&'.
         $separator = str_contains($baseUrl, '?') ? '&' : '?';
 
         return $baseUrl . $separator . 'from_gpo=' . rawurlencode($fromGpoGuid);

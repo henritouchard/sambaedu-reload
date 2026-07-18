@@ -7,6 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\View\Component;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -34,6 +35,15 @@ abstract class TestCase extends BaseTestCase
         // Le bridge legacy (LegacyCatchallController::bridgeLegacySession) y écrit
         // login/level/etab et fait fuiter l'état d'un test vers les suivants.
         $_SESSION = [];
+        // Illuminate\View\Component::$bladeViewCache (+ $factory) sont STATIQUES et
+        // survivent à la reconstruction de l'app entre tests. Le premier rendu d'un
+        // composant anonyme (`<x-slot>`, index anonymes) enregistre le namespace
+        // `__components` sur SA factory ; les tests suivants héritent d'une factory
+        // neuve MAIS le cache statique court-circuite la ré-inscription → « No hint
+        // path defined for [__components] » (ex. PrintersTabTest en run groupé). On
+        // vide le cache statique à chaque test pour forcer la ré-inscription.
+        Component::flushCache();
+        Component::forgetFactory();
     }
 
     /**

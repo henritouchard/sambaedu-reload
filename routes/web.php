@@ -65,8 +65,6 @@ Route::prefix("authentication")->name("auth.")->group(function () {
 // Story 20.4 — `federated.audit` APRÈS `sambaedu.auth` : journalise les actions
 // des sessions fédérées (no-op pour l'AD locale, ne touche pas le flux LDAP).
 Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('app.')->group(function () {
-    // Navigation legacy déplacée sous /admin/homelegacy
-
     Route::livewire('/dashboard', 'pages::dashboard.index')->name('dashboard');
     Route::livewire('/dashboard/activity', 'pages::dashboard.activity.index')->name('dashboard.activity');
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
@@ -372,14 +370,19 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     // Control Hub - Livewire fullpage component
     Route::livewire('/control-hub', 'pages::control-hub.index')->name('controlHub.control-hub');
 
-    // Legacy Monitor - Dashboard des appels catchall
-    Route::livewire('/legacy-monitor', 'pages::admin.legacy-monitor.index')->name('legacy-monitor');
+    // Legacy Monitor est désormais un onglet de « Migration SE4 → SE5 »
+    // (/admin/settings/migration). Error Logger capte AUSSI les exceptions
+    // Laravel (diagnostic runtime SE5, pas seulement legacy) : il vit dans
+    // l'onglet « Logs » de /admin/settings/system-status. Les routes redirigent
+    // vers l'onglet correspondant ; les noms restent stables pour les liens et
+    // bookmarks existants. Décision Henri 2026-07-17.
+    Route::redirect('/legacy-monitor', '/admin/settings/migration?tab=legacy-monitor')
+        ->name('legacy-monitor');
+    Route::redirect('/error-logger', '/admin/settings/system-status?tab=logs')
+        ->name('error-logger');
 
-    // Error Logger - Erreurs capturées (legacy PHP & exceptions Laravel)
-    Route::livewire('/error-logger', 'pages::admin.error-logger.index')->name('error-logger');
-
-    // Navigation legacy (menus SE4FS)
-    Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
+    // Navigation legacy (menus SE4FS embarqués) SUPPRIMÉE — plus d'accès à
+    // l'ancienne interface (extinction se4, décision Henri 2026-07-17).
 
     // Lecteurs réseau gérés (Story 34.2) — déplacé sous /admin (admin-only,
     // décision Henri 2026-07-16). Le groupe impose déjà `sambaedu.admin` ; on
@@ -396,8 +399,12 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->whereNumber('id')
         ->name('shares.show');
 
-    // Synchronisation depuis l'AD — Story 7.2 AC8 : can:server.admin (action critique).
-    Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')
+    // Synchronisation depuis l'AD — désormais l'onglet « Sync from AD » de
+    // /admin/settings/migration (décision Henri 2026-07-17). La route redirige
+    // vers cet onglet ; le nom `admin.sync-from-ad` reste stable. On CONSERVE
+    // `can:server.admin` (Story 7.2 AC8, action critique) : un non-admin est
+    // bloqué avant la redirection.
+    Route::redirect('/sync-from-ad', '/admin/settings/migration?tab=sync-from-ad')
         ->middleware('can:server.admin')
         ->name('sync-from-ad');
 
@@ -410,16 +417,17 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings');
 
-    // /admin/quotas — Ex-onglet Quotas & FS (Story 5.1c) promu en route racine.
-    Route::livewire('/quotas', 'pages::admin.quotas.index')
-        ->middleware('can:server.admin')
-        ->name('quotas');
+    // /admin/quotas — Quotas & FS est désormais l'onglet « Quotas & FS » de
+    // /admin/settings/files (décision Henri 2026-07-17, iso migration shares).
+    // `/admin/quotas` redirige vers cet onglet ; le nom `admin.quotas` reste
+    // stable pour les liens et bookmarks existants.
+    Route::redirect('/quotas', '/admin/settings/files?tab=quotas-fs')->name('quotas');
 
-    // /admin/settings/profils-itinerants — Ex-onglet Profils itinérants (1bis.18f)
-    // promu en sous-route de /admin/settings (cohérent avec /admin/settings/gpo/*
-    // et /admin/settings/system/*).
-    Route::livewire('/settings/profils-itinerants', 'pages::admin.settings.profils-itinerants.index')
-        ->middleware('can:server.admin')
+    // /admin/settings/profils-itinerants — Profils itinérants est désormais l'onglet
+    // « Profils itinérants » de /admin/settings/files (décision Henri 2026-07-17, iso
+    // migration quotas/shares). La route redirige vers cet onglet ; le nom
+    // `admin.settings.profils-itinerants` reste stable pour les liens et bookmarks.
+    Route::redirect('/settings/profils-itinerants', '/admin/settings/files?tab=roaming')
         ->name('settings.profils-itinerants');
 
     // /admin/settings/credentials — Compte de service se4install + rotation TOTP 6 h.
@@ -433,6 +441,15 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/settings/files', 'pages::admin.settings.files.index')
         ->middleware('can:server.admin')
         ->name('settings.files');
+
+    // /admin/settings/migration — « Migration SE4 → SE5 » : page HÔTE à onglets
+    // regroupant les outils de migration / observabilité du canal legacy (Sync
+    // from AD, Logs scripts, Error Logger, Legacy Monitor), tous voués à
+    // disparaître une fois le parc entièrement bascule agent. Chaque onglet
+    // embarque la feature (composant Livewire imbriqué). Décision Henri 2026-07-17.
+    Route::livewire('/settings/migration', 'pages::admin.settings.migration.index')
+        ->middleware('can:server.admin')
+        ->name('settings.migration');
 
     // /admin/settings/security — Sécurité & session : déconnexion auto sur inactivité
     // (durée de vie de la session serveur, pilotée via SystemSetting `security.session_idle`).
@@ -552,16 +569,6 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
             ->name('index');
     });
 
-    // ============================================================
-    // Story 16.14 — E : Dashboard jobs système (AC5.1).
-    // Nouveau groupe settings/system — extensible (futures 16.12/16.13bis).
-    // ============================================================
-    Route::prefix('settings/system')->name('system.')->group(function () {
-        Route::livewire('/jobs', 'pages::admin.settings.system.jobs.index')
-            ->middleware('can:server.admin')
-            ->name('jobs.index');
-    });
-
     // ========================================
     // Story 16.12 — UI Livewire de consultation des logs d'exécution scripts.
     // `/admin/settings/scripts-logs/` (index paginé + bandeau indicateurs)
@@ -569,8 +576,12 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     // Permission `server.admin` (iso 16.9) + double check dans mount().
     // ========================================
     Route::prefix('settings/scripts-logs')->name('scripts-logs.')->group(function () {
-        Route::livewire('/', 'pages::admin.settings.scripts-logs.index')
-            ->middleware('can:server.admin')
+        // L'INDEX est désormais l'onglet « Logs scripts » de
+        // /admin/settings/migration (décision Henri 2026-07-17) : la liste y est
+        // embarquée. `/admin/settings/scripts-logs` redirige vers cet onglet ; le
+        // nom `admin.scripts-logs.index` reste stable (retour du détail, liens).
+        // Le DÉTAIL d'un log reste une sous-page dédiée.
+        Route::redirect('/', '/admin/settings/migration?tab=logs-scripts')
             ->name('index');
 
         Route::livewire('/{id}', 'pages::admin.settings.scripts-logs.[id].index')

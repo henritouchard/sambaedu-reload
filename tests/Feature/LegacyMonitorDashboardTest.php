@@ -46,15 +46,20 @@ class LegacyMonitorDashboardTest extends TestCase
         parent::tearDown();
     }
 
+    // Legacy Monitor est désormais l'onglet « Legacy Monitor » de la page
+    // /admin/settings/migration (décision Henri 2026-07-17). La feature est
+    // embarquée : `/admin/legacy-monitor` redirige vers cet onglet et le contenu
+    // se teste directement sur le composant Livewire embarqué.
+
     /**
-     * AC4 — Admin authentifié peut accéder à /admin/legacy-monitor → 200
+     * L'ancienne route /admin/legacy-monitor redirige vers l'onglet migration.
      */
-    public function test_admin_can_access_legacy_monitor(): void
+    public function test_legacy_monitor_url_redirects_to_migration_tab(): void
     {
         $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
             ->get('/admin/legacy-monitor');
 
-        $response->assertStatus(200);
+        $response->assertRedirect('/admin/settings/migration?tab=legacy-monitor');
     }
 
     /**
@@ -69,7 +74,7 @@ class LegacyMonitorDashboardTest extends TestCase
     }
 
     /**
-     * AC1 — La page affiche les données de legacy_catchall_logs
+     * AC1 — Le composant embarqué affiche les données de legacy_catchall_logs
      */
     public function test_page_displays_catchall_log_data(): void
     {
@@ -82,15 +87,13 @@ class LegacyMonitorDashboardTest extends TestCase
             'created_at'   => now(),
         ]);
 
-        $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
-            ->get('/admin/legacy-monitor');
-
-        $response->assertStatus(200);
-        $response->assertSee('app/old-users.php');
+        \Livewire\Livewire::test('pages::admin.legacy-monitor.index')
+            ->assertStatus(200)
+            ->assertSee('app/old-users.php');
     }
 
     /**
-     * AC3 — Filtre par path : la page filtrée n'affiche que les lignes matchantes
+     * AC3 — Filtre par path : seules les lignes matchantes sont affichées
      */
     public function test_filter_by_path_returns_matching_rows_only(): void
     {
@@ -105,12 +108,11 @@ class LegacyMonitorDashboardTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
-            ->get('/admin/legacy-monitor?filterPath=users');
-
-        $response->assertStatus(200);
-        $response->assertSee('app/users.php');
-        $response->assertDontSee('app/machines.php');
+        \Livewire\Livewire::test('pages::admin.legacy-monitor.index')
+            ->set('filterPath', 'users')
+            ->assertStatus(200)
+            ->assertSee('app/users.php')
+            ->assertDontSee('app/machines.php');
     }
 
     /**
@@ -129,11 +131,10 @@ class LegacyMonitorDashboardTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->withoutMiddleware([SambaEduAuth::class, RequireAdminRights::class])
-            ->get('/admin/legacy-monitor?filterMethod=POST');
-
-        $response->assertStatus(200);
-        $response->assertSee('app/form.php');
-        $response->assertDontSee('app/users.php');
+        \Livewire\Livewire::test('pages::admin.legacy-monitor.index')
+            ->set('filterMethod', 'POST')
+            ->assertStatus(200)
+            ->assertSee('app/form.php')
+            ->assertDontSee('app/users.php');
     }
 }

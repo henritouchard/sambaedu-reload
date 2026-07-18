@@ -65,12 +65,11 @@ use Illuminate\Support\Facades\Log;
  * Machine-only (`user` null) → aucun lecteur : un montage dépend du login de
  * session (les shares assignés à un WG ne s'affichent donc qu'EN session user).
  *
- * **Politique de gestion des fichiers** (décision Henri 2026-07-17) : le provider
- * ne monte les lecteurs QUE si le mode effectif est `Partages`
- * ({@see \App\Services\FilePolicyService::effectiveMode()}, défaut global surchargé
- * par parc). En mode `NextcloudDesktop` / `AutreWeb`, AUCUN lecteur n'est émis
- * (home K: inclus) — tout passe par Nextcloud. Défaut `Partages` ⇒ sortie
- * inchangée (golden préservé).
+ * **Politique de gestion des fichiers** (décision Henri 2026-07-17) : trois
+ * capacités GLOBALES indépendantes ({@see \App\Services\FilePolicyService::capabilities()}).
+ * `home` gouverne l'émission du home K: ; `shares` gouverne les classes H: ET les
+ * répertoires réseau gérés. Ni home ni partages (état « web uniquement ») ⇒ aucun
+ * lecteur. Défaut `home✓ shares✓` ⇒ sortie inchangée (golden préservé).
  *
  * **Scope `session`** : monté DANS la session user (lettre par-user, UNC du home
  * dépendant du login), appliqué par le compagnon de session.
@@ -132,19 +131,19 @@ final class DrivesStateProvider implements StateProvider
             return collect();
         }
 
-        // Politique de gestion des fichiers (décision Henri 2026-07-17) : dans les
-        // modes « Nextcloud Desktop » / « Web uniquement », l'établissement (ou le
-        // parc) ne veut AUCUN lecteur réseau — tout passe par Nextcloud. On coupe
-        // alors le montage complet (home K:, classes H:, partages gérés). Défaut
-        // `Partages` ⇒ émission historique inchangée (golden `state.v1.json` /
-        // `FROZEN_STATE_HASH` préservés). Résolution global + override parc.
-        if (! FilePolicyService::effectiveMode($ctx)->drivesEnabled()) {
-            return collect();
-        }
+        // Politique de gestion des fichiers (décision Henri 2026-07-17) : trois
+        // capacités GLOBALES indépendantes. `home` gouverne le home K: ; `shares`
+        // gouverne les classes H: ET les répertoires réseau gérés. Ni home ni
+        // partages (« web uniquement ») ⇒ aucun lecteur. Défaut `home✓ shares✓` ⇒
+        // émission historique inchangée (golden `state.v1.json` /
+        // `FROZEN_STATE_HASH` préservés). Réglage GLOBAL d'instance uniquement.
+        $policy = FilePolicyService::capabilities();
 
-        $candidates = [
+        $candidates = [];
+
+        if ($policy['home']) {
             // K: — home de l'utilisateur (partage `users`, sous-dossier = login).
-            new StateCandidate(
+            $candidates[] = new StateCandidate(
                 maille: StateMaille::User,
                 payload: [
                     'letter' => 'K:',
@@ -153,9 +152,12 @@ final class DrivesStateProvider implements StateProvider
                 ],
                 updatedAt: null,
                 sourceId: 1,
-            ),
+            );
+        }
+
+        if ($policy['shares']) {
             // H: — racine du partage `classes` (navigation vers la/les classe(s)).
-            new StateCandidate(
+            $candidates[] = new StateCandidate(
                 maille: StateMaille::Broadcast,
                 payload: [
                     'letter' => 'H:',
@@ -164,11 +166,13 @@ final class DrivesStateProvider implements StateProvider
                 ],
                 updatedAt: null,
                 sourceId: 2,
-            ),
-        ];
+            );
 
-        foreach ($this->networkShareCandidates($ctx) as $candidate) {
-            $candidates[] = $candidate;
+            // Répertoires réseau gérés (Story 34.1) — gouvernés par la même
+            // capacité `shares` que les classes.
+            foreach ($this->networkShareCandidates($ctx) as $candidate) {
+                $candidates[] = $candidate;
+            }
         }
 
         return collect($candidates);

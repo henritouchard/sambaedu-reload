@@ -140,7 +140,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                 'shortcuts' => ['label' => 'Raccourcis', 'icon' => 'fa-solid fa-arrow-up-right-from-square'],
             ];
         @endphp
-        <x-molecules.tabs :tabs="$parcSettingsTabs" :active="$tab" class="bg-base-200 w-fit" />
+        <x-molecules.tabs :tabs="$parcSettingsTabs" :active="$tab" />
 
         <!-- Contenu des onglets -->
         <div class="flex-1 min-h-0 flex flex-col" wire:key="parc-settings-tab-{{ $tab }}">

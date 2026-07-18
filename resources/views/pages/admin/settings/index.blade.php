@@ -35,52 +35,16 @@ new #[Title('Réglages')] class extends Component {
             title="Système"
             icon="fa-solid fa-gears"
             color="primary"
-            description="Quotas, profils itinérants, jobs en arrière-plan et logs d'exécution.">
+            description="État du système, jobs en arrière-plan et logs d'exécution.">
 
             <x-molecules.settings-card
                 href="{{ route('admin.settings.system-status') }}"
                 icon="fa-solid fa-heart-pulse"
                 iconColor="primary"
                 title="État du système"
-                description="Connectivité AD, base de données, controlHub, Apache, iPXE et distros installables."
+                description="Connectivité AD, base de données, controlHub, Apache, iPXE et distros installables (Général) ; journaux d'erreurs runtime legacy PHP + Laravel (Logs)."
                 badge="Diagnostic"
                 testid="card-system-status" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.quotas') }}"
-                icon="fa-solid fa-hard-drive"
-                iconColor="primary"
-                title="Quotas & FS"
-                description="Quotas par profil, période de grâce et corbeille XFS."
-                badge="Stockage"
-                testid="card-quotas" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.settings.profils-itinerants') }}"
-                icon="fa-solid fa-users-gear"
-                iconColor="primary"
-                title="Profils itinérants"
-                description="Exclusions ExcludeProfileDirs et statistiques globales des dossiers roaming."
-                badge="Roaming"
-                testid="card-profils-itinerants" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.system.jobs.index') }}"
-                icon="fa-solid fa-list-check"
-                iconColor="primary"
-                title="Jobs système"
-                description="Dashboard des jobs Laravel et tâches en arrière-plan."
-                badge="Monitoring"
-                testid="card-jobs" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.scripts-logs.index') }}"
-                icon="fa-solid fa-scroll"
-                iconColor="primary"
-                title="Logs scripts"
-                description="Consultation des logs d'exécution des scripts (samba-tool, etc.)."
-                badge="Diagnostic"
-                testid="card-scripts-logs" />
 
             <x-molecules.settings-card
                 href="{{ route('admin.settings.credentials') }}"
@@ -182,47 +146,17 @@ new #[Title('Réglages')] class extends Component {
             title="Migration"
             icon="fa-solid fa-exchange-alt"
             color="warning"
-            description="Outils d'assistance à la migration SE4 → SE5 (sambaedu-reload).">
+            description="Outils d'assistance à la migration SE4 → SE5 et observabilité du canal legacy — voués à disparaître une fois le parc bascule agent.">
 
             <x-molecules.settings-card
-                href="{{ route('admin.sync-from-ad') }}"
-                icon="fa-solid fa-rotate"
-                iconColor="primary"
-                title="Sync from AD"
-                description="Synchronisation depuis l'Active Directory : utilisateurs, groupes et structures SE4FS."
-                badge="Synchronisation"
-                badgeColor="primary"
-                testid="card-sync-from-ad" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.error-logger') }}"
-                icon="fa-solid fa-bug"
-                iconColor="error"
-                title="Error Logger"
-                description="Erreurs capturées en temps réel (legacy PHP & exceptions Laravel)."
-                badge="Diagnostic"
-                badgeColor="error"
-                testid="card-error-logger" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.legacy-monitor') }}"
-                icon="fa-solid fa-eye"
+                href="{{ route('admin.settings.migration') }}"
+                icon="fa-solid fa-exchange-alt"
                 iconColor="warning"
-                title="Legacy Monitor"
-                description="Surveillance des appels catchall pour identifier les routes legacy encore utilisées."
-                badge="Monitoring"
+                title="Migration SE4 → SE5"
+                description="Sync from AD, logs d'exécution des scripts et legacy monitor — regroupés en onglets."
+                badge="Migration"
                 badgeColor="warning"
-                testid="card-legacy-monitor" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.homelegacy') }}"
-                icon="fa-solid fa-compass"
-                iconColor="info"
-                title="Navigation Legacy"
-                description="Accès aux menus et pages de l'ancienne interface SE4FS embarquée."
-                badge="Legacy"
-                badgeColor="info"
-                testid="card-homelegacy" />
+                testid="card-migration" />
         </x-molecules.settings-section>
 
         {{-- ============================================================
@@ -251,7 +185,7 @@ new #[Title('Réglages')] class extends Component {
                     icon="fa-solid fa-folder-tree"
                     iconColor="info"
                     title="Gestion des fichiers"
-                    description="Politique d'accès aux fichiers (partages réseau / Nextcloud) et lecteurs réseau gérés."
+                    description="Politique d'accès aux fichiers (partages réseau / Nextcloud), quotas &amp; FS, lecteurs réseau gérés et profils itinérants."
                     badge="Fichiers"
                     testid="card-files" />
             @endcan

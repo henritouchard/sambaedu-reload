@@ -35,14 +35,6 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     // (distinct de shared_local, le défaut étant résolu côté serveur).
     public string $environment = '';
 
-    // Override PAR PARC de la politique de gestion des fichiers (décision Henri
-    // 2026-07-17). '' = hérite du défaut global (SystemSetting `files.policy`).
-    // Le mode gouverne le montage des lecteurs (DrivesStateProvider) ; les URLs
-    // Nextcloud sont saisies ici mais consommées par le provisioning à venir.
-    public string $files_policy_mode = '';
-    public string $files_nextcloud_server_url = '';
-    public string $files_nextcloud_web_url = '';
-
     // Label de contrat amont (Story 30.2). '' = aucun → null en base (miroir exact
     // du pattern `environment`). Section masquée si pas de contrat amont actif.
     public string $controlhubLabel = '';
@@ -96,9 +88,6 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             $this->parent_id = $this->group->parent_id;
             $this->is_physical = (bool) $this->group->is_physical;
             $this->environment = $this->group->environment?->value ?? '';
-            $this->files_policy_mode = $this->group->files_policy_mode?->value ?? '';
-            $this->files_nextcloud_server_url = $this->group->files_nextcloud_server_url ?? '';
-            $this->files_nextcloud_web_url = $this->group->files_nextcloud_web_url ?? '';
             $this->controlhubLabel = $this->group->controlhub_label ?? '';
 
             $this->loadControlHubLabels();
@@ -198,17 +187,6 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             }
         }
 
-        // Override politique fichiers : '' = hérite (null). Une valeur non vide
-        // doit appartenir à l'enum fermé (sinon requête forgée).
-        $filesPolicyMode = null;
-        if ($this->files_policy_mode !== '') {
-            $filesPolicyMode = \App\Enums\FilePolicyMode::tryFrom($this->files_policy_mode);
-            if ($filesPolicyMode === null) {
-                $this->toastError('Mode de gestion des fichiers invalide.');
-                return;
-            }
-        }
-
         try {
             // `name` (technique) est immuable : on ne l'envoie jamais en édition.
             $this->parcService->updateGroup($this->id, [
@@ -217,9 +195,6 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
                 'parent_id' => $validated['parent_id'] ?: null,
                 'is_physical' => $validated['is_physical'],
                 'environment' => $environment,
-                'files_policy_mode' => $filesPolicyMode,
-                'files_nextcloud_server_url' => trim($this->files_nextcloud_server_url) ?: null,
-                'files_nextcloud_web_url' => trim($this->files_nextcloud_web_url) ?: null,
             ]);
 
             // Story 30.2 — Mapping du label de contrat amont via le service dédié

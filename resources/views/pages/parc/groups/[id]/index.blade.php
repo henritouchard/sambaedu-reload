@@ -20,7 +20,6 @@ use App\Models\WorkstationGroup;
 use App\Models\WorkstationGroupSchedule;
 use App\Components\Traits\WithToasts;
 use App\Components\Traits\WithReturnBack;
-use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\SyncRequestService;
 use Carbon\Carbon;
@@ -1534,9 +1533,10 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return collect();
         }
         $existing = $this->group->applications()->pluck('applications.id')->toArray();
-        // Story 31.1 — borne la liste proposée au catalogue applicatif amont
-        // (pass-through NFR3 si standalone / catalogue vide).
-        $query = Application::query()->inUpstreamCatalog()->whereNotIn('id', $existing);
+        // L'assignation à une entité (parc/groupe) propose TOUTE app du catalogue local.
+        // Le bornage au catalogue amont (controlHub) ne concerne QUE l'administration
+        // des applications, pas l'assignation.
+        $query = Application::query()->whereNotIn('id', $existing);
         if ($this->wpkgAppSearch !== '') {
             $query->where(function ($q) {
                 $q->where('name', 'LIKE', "%{$this->wpkgAppSearch}%")
@@ -1664,9 +1664,6 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             $this->toastSuccess(count($this->selectedWpkgAppIdsToAdd).' application(s) ajoutée(s)');
             $this->closeAttachWpkgAppModal();
             $this->loadGroup();
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            // Story 31.1 — refus « hors catalogue amont » : message explicite (FR8).
-            $this->toastError($e->getMessage());
         } catch (\Throwable $e) {
             Log::error('[GroupWpkg] Erreur attach apps: '.$e->getMessage());
             $this->toastError('Erreur lors de l\'ajout');
@@ -1802,10 +1799,8 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             $this->bulkPreviewAppIds = [];
             return;
         }
-        // Story 31.1 — le bulk catégorie ne propose que des apps du catalogue amont
-        // (sinon T3 refuserait ensuite les apps hors catalogue → incohérence UX).
+        // Le bulk catégorie propose TOUTE app de la catégorie (assignation non bornée).
         $this->bulkPreviewAppIds = Application::query()
-            ->inUpstreamCatalog()
             ->where('category', $this->bulkCategory)
             ->orderBy('app_id')
             ->pluck('id')
@@ -1875,9 +1870,6 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             ));
             $this->closeBulkCategoryModal();
             $this->loadGroup();
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            // Story 31.1 — refus « hors catalogue amont » : message explicite (FR8).
-            $this->toastError($e->getMessage());
         } catch (\Throwable $e) {
             Log::error('[GroupWpkg] Erreur bulk catégorie: '.$e->getMessage());
             $this->toastError('Erreur lors de l\'opération bulk : '.$e->getMessage());
@@ -1940,10 +1932,6 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             ));
             $this->closeCloneModal();
             $this->loadGroup();
-        } catch (ApplicationNotInUpstreamCatalogException $e) {
-            // Story 31.1 — le clone copierait une app hors catalogue amont : refus
-            // explicite FR8, aucune écriture (le garde lève avant la transaction).
-            $this->toastError($e->getMessage());
         } catch (\Throwable $e) {
             Log::error('[GroupWpkg] Erreur clone: '.$e->getMessage());
             $this->toastError('Erreur lors du clone : '.$e->getMessage());
