@@ -192,3 +192,89 @@ php artisan test \
 ```
 
 Attendu : verts. `LegacyModuleBbbTest` est skippé (pré-existant, hors 38.5).
+
+## Story 38.6 — Extinction à blanc, observation, suppression définitive (commandes `se4:*`) (2026-07-18)
+
+### Contexte
+
+L'extinction du legacy est pilotée par 4 commandes artisan versionnées, rejouables à
+l'identique sur chaque instance (dev /vm, lab1, étabs) — jamais de procédure SSH
+manuelle. Toutes se lancent en **CLI root** sur l'instance (`a2dissite`/`systemctl`/
+`mv` exigent root ; `se4:status` seule est en lecture et s'en passe).
+
+| Commande | Rôle |
+|---|---|
+| `php artisan se4:status [--days=7]` | État bascule (vhost `sambaedu-legacy`, dossiers legacy/`.off`) + agrégation `legacy_catchall_logs` sur la fenêtre + verdict **GO/NO-GO**. Exit 0 = GO. |
+| `php artisan se4:unplug [--days=7] [--force]` | Extinction à blanc : préflight (NO-GO → refus sauf `--force`), puis `a2dissite sambaedu-legacy` → `systemctl reload apache2` → `mv /var/www/sambaedu → .off`. Idempotente. |
+| `php artisan se4:replug` | Rollback en une commande (mv inverse + `a2ensite` + reload). Idempotente. |
+| `php artisan se4:purge --confirm` | Post-GO uniquement : `trash`/`gio trash` de `.off` (JAMAIS `rm -rf` ; abort si aucun utilitaire). Refuse si l'extinction n'est pas en place. |
+
+Effets attendus de l'extinction à blanc : le catchall répond **404 loggé**
+(`LEGACY_LOG_404`, D4 story 38.1) pour tout path legacy ; les **tombstones sont
+inchangés** (routes natives avant le catchall) ; l'observabilité
+`legacy_catchall_logs` + `/admin/settings/migration?tab=legacy-monitor` reste
+fonctionnelle sans le FS legacy.
+
+Critère GO = zéro hit legacy non-tombstone sur la fenêtre : seuls comptent les hits
+`source` non-tombstone sur un endpoint `.php` **sous un répertoire racine du canal
+legacy** (allowlist `LEGACY_CHANNEL_DIRS` du concern : `gpo/`, `wpkg/`, `partages/`,
+`annu/`, `parcs/`, etc.). Les hits `source='tombstone'`, le bruit de navigation SE5
+(404 sans `.php`) et les sondes de scanners (`/wp-login.php`, `phpmyadmin/…`) ne
+bloquent pas — ils restent listés dans le rapport pour contrôle humain.
+
+Notes de robustesse (review 38.6) : le `systemctl reload apache2` est
+**inconditionnel** — relancer `se4:unplug`/`se4:replug` après un échec mi-séquence
+converge toujours (y compris la branche « rien à faire », qui recharge par sûreté) ;
+`a2query` absent (exit 127) → abort explicite, jamais un « vhost inactif » silencieux ;
+`sambaedu.legacy_path` vide ou non absolu → abort.
+
+### Séquence type par instance
+
+1. `se4:status` — vérifier le NO-GO résiduel ; traiter chaque hit legacy (fix/story).
+2. Pré-GO spécifique instance : GPO de domaine « applications » `{D418994B-…}`
+   vérifiée/**vidée** sur le DC (jamais déliée ni supprimée — GPO globale
+   multi-étabs) ; logon Windows de test → zéro hit `gpo/*.php`.
+3. `se4:unplug` — extinction à blanc (le préflight refuse si hits récents).
+4. E2e parc : boot PXE, install Windows native, logon avec agent, WPKG natif,
+   Guacamole, GPO bootstrap (runbooks des domaines concernés, `docs/qa/README.md`).
+5. Observation **N=7 jours** : `se4:status --days=7` en fin de fenêtre ; tout hit
+   inattendu → traité, fenêtre relancée.
+6. GO → `se4:purge --confirm`.
+
+### Scénario 38.6-1 — Aller-retour extinction/rollback
+
+1. Sur l'instance (root) : `php artisan se4:unplug` → vhost désactivé, FS déplacé
+   en `.off`, sortie mentionnant `se4:replug`.
+2. `curl -I http://<instance>/gpo/wallpaper_out.php` → réponse tombstone inchangée
+   (204) ; `curl -I http://<instance>/annu/sync_cron.php` → 404 (loggé).
+3. `php artisan se4:replug` → FS restauré, vhost réactivé, Apache rechargé.
+4. Relancer `se4:unplug` pour laisser l'extinction en place.
+5. Rejouer `se4:unplug` une seconde fois → « rien à faire », exit 0 (idempotence).
+
+### Scénario 38.6-2 — Préflight garde-fou (lab1 / exception Linux Q4)
+
+Sur une instance dont le canal Linux est encore vivant (lab1 : `applications.php
+os=linux`, `gpo/network_out.php`, `printers/out_printers.php` — poste réel
+172.20.1.101) :
+
+1. `php artisan se4:unplug` → **refus NO-GO** avec le rapport des hits.
+2. Ne **PAS** utiliser `--force` sur lab1 tant que l'exception Q4 n'est pas soldée
+   (extinction mesurée du poste Linux ou agent Linux post-MVP).
+
+### Scénario 38.6-3 — Purge refusée hors conditions
+
+1. `se4:purge` sans `--confirm` → refus.
+2. `se4:purge --confirm` avec le legacy encore branché → refus (« extinction à
+   blanc n'est pas en place »).
+3. Conditions réunies (unplugged + GO) → `.off` part à la corbeille, jamais rm -rf.
+
+### Non-régression automatisée (HÔTE)
+
+```
+vendor/bin/phpunit tests/Feature/Console/Se4ExtinctionCommandsTest.php \
+  tests/Feature/LegacyMonitorDashboardTest.php \
+  tests/Feature/LegacyCatchallTest.php \
+  tests/Feature/Legacy/LegacyTombstoneEndpointsTest.php
+```
+
+Attendu : verts (21 tests commandes + 42 non-régression au 2026-07-18).
