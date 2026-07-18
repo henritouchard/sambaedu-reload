@@ -108,6 +108,27 @@ class WindowsIsoDownloadTest extends TestCase
     }
 
     #[Test]
+    public function it_reports_upload_reinject_and_skips_download(): void
+    {
+        // Story 3.10 — un download URL télécharge (curl), un upload et une
+        // ré-injection sautent la phase download (fichier déjà sur disque).
+        $url = WindowsIsoDownload::factory()->make(['source' => WindowsIsoDownload::SOURCE_URL]);
+        self::assertFalse($url->isUpload());
+        self::assertFalse($url->isReinject());
+        self::assertFalse($url->skipsDownload());
+
+        $upload = WindowsIsoDownload::factory()->upload()->make();
+        self::assertTrue($upload->isUpload());
+        self::assertFalse($upload->isReinject());
+        self::assertTrue($upload->skipsDownload());
+
+        $reinject = WindowsIsoDownload::factory()->reinject()->make();
+        self::assertFalse($reinject->isUpload());
+        self::assertTrue($reinject->isReinject());
+        self::assertTrue($reinject->skipsDownload());
+    }
+
+    #[Test]
     public function it_exposes_expected_fillable_attributes(): void
     {
         $expected = [

@@ -25,7 +25,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $version            'Win10' | 'Win11'
  * @property string $iso_name           'Win11_24H2.iso'
  * @property string|null $source_url    URL Microsoft saisie (publique) — null si dépôt manuel
- * @property string $source             'url' (curl serveur) | 'upload' (fichier déposé)
+ * @property string $source             'url' (curl serveur) | 'upload' (fichier déposé) | 'reinject' (ré-extraction pilotes)
  * @property WindowsIsoDownloadStatus $status
  * @property \Illuminate\Support\Carbon|null $started_at
  * @property \Illuminate\Support\Carbon|null $completed_at
@@ -82,13 +82,39 @@ class WindowsIsoDownload extends Model
     public const SOURCE_UPLOAD = 'upload';
 
     /**
+     * Origine de l'ISO : ré-extraction d'une ISO déjà déployée (Story 3.10) —
+     * déclenchée par le bouton « Réappliquer les pilotes » pour ré-injecter le
+     * pack de pilotes NIC dans un `boot.wim` frais. L'ISO source est déjà sur
+     * disque (conservée depuis le premier déploiement) → phase curl sautée.
+     */
+    public const SOURCE_REINJECT = 'reinject';
+
+    /**
      * L'ISO provient-elle d'un dépôt manuel (upload) plutôt que d'un
-     * téléchargement curl depuis Microsoft ? Détermine si le Job saute la
-     * phase `Downloading` (le fichier est déjà sur disque).
+     * téléchargement curl depuis Microsoft ?
      */
     public function isUpload(): bool
     {
         return $this->source === self::SOURCE_UPLOAD;
+    }
+
+    /**
+     * S'agit-il d'une ré-injection de pilotes (ré-extraction d'une ISO déjà
+     * présente) ?
+     */
+    public function isReinject(): bool
+    {
+        return $this->source === self::SOURCE_REINJECT;
+    }
+
+    /**
+     * Le Job doit-il sauter la phase `Downloading` (curl) parce que l'ISO
+     * source est déjà sur disque ? Vrai pour un dépôt manuel (upload) ET pour
+     * une ré-injection (ré-extraction). Faux pour un téléchargement URL.
+     */
+    public function skipsDownload(): bool
+    {
+        return $this->isUpload() || $this->isReinject();
     }
 
     /**

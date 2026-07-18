@@ -144,10 +144,10 @@ class DownloadWindowsIsoJob implements ShouldQueue
         $isoStoragePath = (string) config('ipxe.iso_management.iso_storage_path', storage_path('install/iso'));
         $isoPath        = rtrim($isoStoragePath, '/') . '/' . $download->iso_name;
 
-        // Dépôt manuel : le fichier est déjà sur disque (renommé par
-        // l'orchestrator). On saute toute la phase curl et on passe directement
-        // à l'extraction.
-        $isUpload = $download->isUpload();
+        // Dépôt manuel (upload) OU ré-injection de pilotes (ré-extraction d'une
+        // ISO déjà déployée, Story 3.10) : le fichier est déjà sur disque. On
+        // saute toute la phase curl et on passe directement à l'extraction.
+        $skipsDownload = $download->skipsDownload();
 
         try {
             // === Phase 1 : Downloading (curl) — flux URL uniquement ===========
@@ -155,7 +155,7 @@ class DownloadWindowsIsoJob implements ShouldQueue
             // #14 — Transition pending → downloading sous lockForUpdate + check
             // status pour éviter écrasement d'un cancel concurrent (race
             // PostgreSQL). Si annulé entre dispatch et pickup => log + return.
-            if (! $isUpload) {
+            if (! $skipsDownload) {
                 $shouldContinue = DB::transaction(function () use ($download): bool {
                     /** @var WindowsIsoDownload|null $fresh */
                     $fresh = WindowsIsoDownload::query()
@@ -207,9 +207,11 @@ class DownloadWindowsIsoJob implements ShouldQueue
                     return;
                 }
             } elseif (! is_file($isoPath)) {
-                // Dépôt manuel mais fichier absent (rename KO / purge externe) —
-                // échec terminal explicite plutôt que de lancer un extract sur rien.
-                $this->markFailed($download, -1, 'Fichier déposé introuvable : ' . $isoPath, 'upload-missing');
+                // Dépôt manuel / ré-injection mais fichier absent (rename KO,
+                // purge externe, ISO effacée entre soumission et pickup) —
+                // échec terminal explicite plutôt qu'un extract sur rien.
+                $stage = $download->isReinject() ? 'reinject-missing' : 'upload-missing';
+                $this->markFailed($download, -1, 'Fichier ISO source introuvable : ' . $isoPath, $stage);
 
                 return;
             }

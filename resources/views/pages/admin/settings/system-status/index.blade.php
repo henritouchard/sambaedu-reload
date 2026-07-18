@@ -9,10 +9,6 @@ use App\Doctor\Checks\Gpo\DcReachableCheck;
 use App\Doctor\Checks\Gpo\KerberosTicketCheck;
 use App\Doctor\Checks\Ipxe\IpxeConfigCheck;
 use App\Doctor\EnvironmentCheck;
-use App\SystemStatus\Distro;
-use App\SystemStatus\DistroInstallTracker;
-use App\SystemStatus\DistroInventoryService;
-use App\SystemStatus\Jobs\RunDistroInstallScriptJob;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -26,17 +22,16 @@ use Livewire\Component;
  * `sambaedu:doctor`, organisée ici en sections thématiques. Aucun check
  * n'est exécuté au chargement de la page (certains font du réseau).
  *
- * Disponibilité des distros : inventaire filesystem read-only
- * ({@see DistroInventoryService}) chargé au mount (rapide), avec action de
- * provisioning async ({@see RunDistroInstallScriptJob} — whitelist enum) et
- * suivi `wire:poll` uniquement pendant un install.
+ * NB : l'inventaire des distros installables a été déplacé vers la page
+ * dédiée `/admin/settings/os` (2026-07-18) — les distros sont des sources
+ * d'installation, pas un diagnostic d'environnement.
  */
 new #[Title('État du système')] class extends Component {
     use WithToasts;
 
     /**
      * Onglet actif (convention onglets : #[Url(keep:true)] $tab).
-     *  - « general » : checks d'environnement + inventaire distros.
+     *  - « general » : checks d'environnement (connectivité AD/DB/hub/Apache/iPXE).
      *  - « logs »    : Error Logger embarqué (erreurs legacy PHP + exceptions
      *    Laravel) — diagnostic runtime, pas un outil de migration.
      */
@@ -68,17 +63,6 @@ new #[Title('État du système')] class extends Component {
     /** Checks déjà lancés au moins une fois (affichage de l'état vide). */
     public bool $checksRan = false;
 
-    /**
-     * Inventaire distros : [['key','label','available','missing',
-     * 'installable','install_state'], ...].
-     *
-     * @var array<int, array<string, mixed>>
-     */
-    public array $distros = [];
-
-    /** Au moins un install en cours → active le wire:poll. */
-    public bool $installRunning = false;
-
     public function mount(): void
     {
         $this->ensureAdmin();
@@ -86,8 +70,6 @@ new #[Title('État du système')] class extends Component {
         if (! in_array($this->tab, self::TABS, true)) {
             $this->tab = 'general';
         }
-
-        $this->loadDistros();
     }
 
     public function setTab(string $tab): void
@@ -134,105 +116,6 @@ new #[Title('État du système')] class extends Component {
         $this->results = $results;
         $this->checksRan = true;
         $this->lastRunAt = \Illuminate\Support\Carbon::now()->format('H:i:s');
-    }
-
-    /**
-     * Dispatch l'install async d'une distro manquante (AC3).
-     */
-    public function installDistro(string $key): void
-    {
-        $this->ensureAdmin();
-
-        $distro = Distro::tryFrom($key);
-        if ($distro === null || $distro->installScriptPath() === null) {
-            $this->toastError('Distro inconnue ou non installable depuis cette page.');
-
-            return;
-        }
-
-        // Fix review F10 : revalider côté serveur que la distro est bien
-        // manquante (le bouton est masqué quand disponible, mais l'action
-        // Livewire reste appelable directement — relancer un script sur des
-        // assets servis en prod peut les écraser pendant un boot).
-        foreach (app(DistroInventoryService::class)->list() as $item) {
-            if ($item['distro'] === $distro && $item['available']) {
-                $this->toastWarning(sprintf('%s est déjà disponible — rien à installer.', $distro->label()));
-
-                return;
-            }
-        }
-
-        // Fix review F2 : lock atomique partagé (pattern WineImageQueuer)
-        // AVANT le push — deux requêtes concurrentes ne peuvent pas
-        // dispatcher deux scripts parallèles sur le même répertoire OS.
-        // Le job relâche le lock en fin d'exécution (handle/failed).
-        $tracker = app(DistroInstallTracker::class);
-        if (! $tracker->tryAcquireLock($distro)) {
-            $this->toastWarning(sprintf('Installation de %s déjà en cours.', $distro->label()));
-
-            return;
-        }
-
-        // `running` posé AVANT le dispatch : le job peut patienter en queue,
-        // l'UI doit refléter l'intention immédiatement.
-        $tracker->start($distro);
-        RunDistroInstallScriptJob::dispatch($distro);
-
-        $this->loadDistros();
-        $this->toastInfo(
-            sprintf('Installation de %s lancée en arrière-plan — suivi sur cette page.', $distro->label()),
-            'Provisioning démarré',
-        );
-    }
-
-    /**
-     * Cible du wire:poll pendant un install : rafraîchit l'inventaire +
-     * les états, et notifie la fin.
-     */
-    public function refreshInstallStates(): void
-    {
-        $this->ensureAdmin();
-        $this->loadDistros();
-
-        // Fix review F13 : l'idempotence des toasts repose sur le flag
-        // `notified` persisté dans l'état (pas sur un diff de propriété
-        // Livewire volatile) — un rechargement de page ou un poll doublé
-        // n'émet pas deux fois la notification.
-        $tracker = app(DistroInstallTracker::class);
-        foreach ($this->distros as $distro) {
-            $state = $distro['install_state'];
-            if ($state === null || ($state['notified'] ?? false) === true) {
-                continue;
-            }
-            if ($state['status'] === 'done') {
-                $tracker->markNotified(Distro::from($distro['key']));
-                $this->toastSuccess(sprintf('%s est désormais disponible à l\'installation.', $distro['label']));
-            } elseif ($state['status'] === 'failed') {
-                $tracker->markNotified(Distro::from($distro['key']));
-                $this->toastError(
-                    sprintf('Installation de %s échouée : %s', $distro['label'], $state['detail'] ?? 'détail indisponible'),
-                );
-            }
-        }
-    }
-
-    private function loadDistros(): void
-    {
-        $tracker = app(DistroInstallTracker::class);
-
-        $this->distros = array_map(
-            static fn (array $item): array => [
-                'key' => $item['distro']->value,
-                'label' => $item['distro']->label(),
-                'available' => $item['available'],
-                'missing' => $item['missing'],
-                'installable' => $item['installable'],
-                'install_state' => $tracker->stateFor($item['distro']),
-            ],
-            app(DistroInventoryService::class)->list(),
-        );
-
-        $this->installRunning = $tracker->anyRunning();
     }
 
     /**
@@ -286,8 +169,7 @@ new #[Title('État du système')] class extends Component {
     {{-- wire:init : les checks se lancent automatiquement juste APRÈS le
          premier rendu (la page s'affiche tout de suite, l'état des
          connexions arrive en différé — objectif « coup d'œil »). --}}
-    <div class="flex flex-col gap-8" wire:init="runChecks"
-        @if ($installRunning) wire:poll.5s="refreshInstallStates" @endif>
+    <div class="flex flex-col gap-8" wire:init="runChecks">
 
         {{-- ============================================================
              Checks d'environnement
@@ -358,65 +240,6 @@ new #[Title('État du système')] class extends Component {
                 @endforeach
             </div>
         @endif
-
-        {{-- ============================================================
-             Distros disponibles à l'installation
-             ============================================================ --}}
-        <x-molecules.settings-section
-            title="Distros installables"
-            icon="fa-solid fa-compact-disc"
-            color="secondary"
-            description="Sources d'installation présentes sous la racine des assets OS. Les actions de provisioning s'exécutent en arrière-plan.">
-
-            @foreach ($distros as $distro)
-                <div class="card bg-base-100 shadow-sm border border-base-300" data-testid="distro-{{ $distro['key'] }}">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between">
-                            <h3 class="font-semibold">{{ $distro['label'] }}</h3>
-                            @if ($distro['available'])
-                                <span class="badge badge-success badge-sm">Disponible</span>
-                            @elseif (($distro['install_state']['status'] ?? null) === 'running')
-                                <span class="badge badge-info badge-sm">
-                                    <span class="loading loading-spinner loading-xs mr-1"></span>En cours…
-                                </span>
-                            @else
-                                <span class="badge badge-ghost badge-sm">Manquante</span>
-                            @endif
-                        </div>
-
-                        @if (! $distro['available'])
-                            <p class="text-xs text-base-content/50 mt-1">
-                                Manquant : {{ implode(', ', $distro['missing']) }}
-                            </p>
-
-                            @if (($distro['install_state']['status'] ?? null) === 'failed')
-                                <p class="text-xs text-error mt-1" data-testid="distro-{{ $distro['key'] }}-failed">
-                                    Dernier essai échoué : {{ $distro['install_state']['detail'] ?? 'détail indisponible' }}
-                                </p>
-                            @endif
-
-                            <div class="card-actions justify-end mt-2">
-                                @if ($distro['installable'])
-                                    <button class="btn btn-sm btn-outline btn-secondary"
-                                        wire:click="installDistro('{{ $distro['key'] }}')"
-                                        @if (($distro['install_state']['status'] ?? null) === 'running') disabled @endif
-                                        data-testid="install-{{ $distro['key'] }}">
-                                        <i class="fa-solid fa-download mr-1"></i>
-                                        {{ ($distro['install_state']['status'] ?? null) === 'failed' ? 'Réessayer' : 'Installer' }}
-                                    </button>
-                                @else
-                                    <a href="{{ route('admin.ipxe.iso-windows') }}"
-                                        class="btn btn-sm btn-outline"
-                                        data-testid="goto-iso-windows-{{ $distro['key'] }}">
-                                        <i class="fa-brands fa-windows mr-1"></i>Gérer les ISO Windows
-                                    </a>
-                                @endif
-                            </div>
-                        @endif
-                    </div>
-                </div>
-            @endforeach
-        </x-molecules.settings-section>
     </div>
         @elseif ($tab === 'logs')
             {{-- Error Logger embarqué : erreurs legacy PHP + exceptions Laravel

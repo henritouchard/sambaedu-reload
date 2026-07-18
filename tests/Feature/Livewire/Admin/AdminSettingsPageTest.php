@@ -177,6 +177,7 @@ class AdminSettingsPageTest extends TestCase
         // dans « Gestion des fichiers » et « État du système »).
         Livewire::test('pages::admin.settings.index')
             ->assertSee('État du système')
+            ->assertSee('OS')
             ->assertSee('Toutes les GPOs')
             ->assertSee('Vue par OU')
             ->assertSee('Migration SE4 → SE5')

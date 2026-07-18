@@ -42,7 +42,7 @@ new #[Title('Réglages')] class extends Component {
                 icon="fa-solid fa-heart-pulse"
                 iconColor="primary"
                 title="État du système"
-                description="Connectivité AD, base de données, controlHub, Apache, iPXE et distros installables (Général) ; journaux d'erreurs runtime legacy PHP + Laravel (Logs)."
+                description="Connectivité AD, base de données, controlHub, Apache et iPXE (Général) ; journaux d'erreurs runtime legacy PHP + Laravel (Logs)."
                 badge="Diagnostic"
                 testid="card-system-status" />
 
@@ -91,6 +91,15 @@ new #[Title('Réglages')] class extends Component {
                 description="Couche Broadcast appliquée à tous les postes : fond d'écran, écran de verrouillage, registre, applications par défaut et outils agent."
                 badge="Broadcast"
                 testid="card-parc-defaults" />
+
+            <x-molecules.settings-card
+                href="{{ route('admin.settings.os') }}"
+                icon="fa-solid fa-compact-disc"
+                iconColor="primary"
+                title="OS"
+                description="Sources d'installation des systèmes déployés par iPXE : disponibilité et provisioning des distros (Windows, Debian, Ubuntu, PrimTux, NIRD)."
+                badge="Distros"
+                testid="card-os" />
         </x-molecules.settings-section>
 
         {{-- ============================================================

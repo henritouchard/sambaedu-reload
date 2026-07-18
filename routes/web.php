@@ -458,11 +458,20 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->name('settings.security');
 
     // /admin/settings/system-status — État du système : checks à la demande
-    // (AD / PostgreSQL / controlHub / Apache / iPXE via app/Doctor) +
-    // disponibilité des distros installables + actions de provisioning async.
+    // (AD / PostgreSQL / controlHub / Apache / iPXE via app/Doctor) + onglet Logs
+    // (error-logger). L'inventaire des distros a été déplacé vers /settings/os.
     Route::livewire('/settings/system-status', 'pages::admin.settings.system-status.index')
         ->middleware('can:server.admin')
         ->name('settings.system-status');
+
+    // /admin/settings/os — Sources d'installation OS (distros iPXE) : inventaire
+    // filesystem read-only + provisioning async des distros Linux (Debian /
+    // Ubuntu / PrimTux / NIRD). Les distros Windows renvoient vers la page de
+    // gestion des ISO dédiée. Extrait de « État du système » (les distros ne
+    // sont pas un diagnostic mais des sources d'installation).
+    Route::livewire('/settings/os', 'pages::admin.settings.os.index')
+        ->middleware('can:server.admin')
+        ->name('settings.os');
 
     // /admin/settings/agent — Console de pilotage de la flotte agent desired-state
     // (rings/releases 25.1, enrôlements porte 2 25.3, progression 25.5, catalogue

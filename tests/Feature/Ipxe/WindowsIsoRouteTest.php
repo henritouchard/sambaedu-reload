@@ -106,8 +106,8 @@ class WindowsIsoRouteTest extends TestCase
 
         $response->assertOk();
         $response->assertSeeText('Gestion ISO Windows');
-        $response->assertSeeText('Versions Windows déployées');
-        $response->assertSeeText('Nouvelle source Windows');
+        $response->assertSeeText('Versions Windows disponibles');
+        $response->assertSeeText('Nouvelle source Windows'); // titre de la modale (dans le DOM)
         $response->assertSeeText('Historique');
     }
 }

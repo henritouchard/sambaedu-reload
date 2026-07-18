@@ -70,6 +70,11 @@ class WindowsIsoWindowsLivewireTest extends TestCase
             'ipxe.iso_management.global_lock_key' => 'ipxe.iso.download.test-lw-lock',
             'ipxe.iso_management.global_lock_ttl' => 60,
             'ipxe.iso_management.queue_name'      => 'ipxe_iso_downloads_test',
+            // Lock store = array (aligné sur cache.default) : l'orchestrator
+            // verrouille sur ce store, et le forceRelease de setUp/tearDown
+            // (store par défaut) vise les mêmes clés — sinon un lock `file`
+            // fuité par un submit précédent bloque les tests suivants.
+            'ipxe.iso_management.lock_store'      => 'array',
             'cache.default'                       => 'array',
         ]);
         Cache::lock('ipxe.iso.download.test-lw-lock')->forceRelease();
@@ -146,8 +151,8 @@ class WindowsIsoWindowsLivewireTest extends TestCase
 
         Livewire::test('pages::admin.ipxe.iso-windows.index')
             ->assertOk()
-            ->assertSee('Versions Windows déployées')
-            ->assertSee('Nouvelle source Windows')
+            ->assertSee('Versions Windows disponibles')
+            ->assertSee('Nouvelle source Windows') // titre de la modale (toujours dans le DOM)
             ->assertSee('Historique');
     }
 
@@ -170,12 +175,13 @@ class WindowsIsoWindowsLivewireTest extends TestCase
     }
 
     #[Test]
-    public function it_displays_non_deployee_when_sources_missing(): void
+    public function it_displays_empty_state_when_sources_missing(): void
     {
         $this->actingAs($this->makeAdmin());
 
         Livewire::test('pages::admin.ipxe.iso-windows.index')
-            ->assertSee('non déployée');
+            ->assertSee('Aucune source Windows déployée')
+            ->assertSet('versions', []);
     }
 
     /* =================================================================
@@ -246,6 +252,133 @@ class WindowsIsoWindowsLivewireTest extends TestCase
         }
 
         self::assertSame(0, WindowsIsoDownload::query()->count());
+    }
+
+    /* =================================================================
+     * Réinjection des pilotes (Story 3.10)
+     * ================================================================= */
+
+    #[Test]
+    public function it_opens_confirm_modal_when_reinjecting_a_deployed_version(): void
+    {
+        $this->seedVersion('Win11', 'Win11_24H2.iso');
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->call('reinjectDrivers', 'Win11')
+            ->assertDispatched('open-confirm-modal');
+    }
+
+    #[Test]
+    public function it_creates_reinject_row_and_dispatches_job_on_confirm(): void
+    {
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        $this->seedVersion('Win11', 'Win11_24H2.iso');
+
+        // L'ISO source doit être présente sur disque (conservée au succès).
+        $isoDir = $this->tmpBase . '/iso';
+        @mkdir($isoDir, 0755, true);
+        file_put_contents($isoDir . '/Win11_24H2.iso', 'FAKE-ISO');
+        config(['ipxe.iso_management.iso_storage_path' => $isoDir]);
+
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->call('confirmReinject', 'Win11')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        $download = WindowsIsoDownload::query()->latest('id')->first();
+        self::assertNotNull($download);
+        self::assertSame('Win11', $download->version);
+        self::assertSame('Win11_24H2.iso', $download->iso_name);
+        self::assertSame(WindowsIsoDownload::SOURCE_REINJECT, $download->source);
+        self::assertSame(WindowsIsoDownloadStatus::Pending, $download->status);
+
+        Queue::assertPushed(DownloadWindowsIsoJob::class);
+    }
+
+    #[Test]
+    public function it_toasts_error_when_reinjecting_a_non_deployed_version(): void
+    {
+        $this->actingAs($this->makeAdmin());
+        // Aucune version déployée (pas de seedVersion).
+
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->call('confirmReinject', 'Win11')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        self::assertSame(0, WindowsIsoDownload::query()->count());
+        Queue::assertNothingPushed();
+    }
+
+    /* =================================================================
+     * Versions list + modales (refonte 2026-07-18)
+     * ================================================================= */
+
+    #[Test]
+    public function it_builds_versions_list_ordered_by_newness(): void
+    {
+        $this->seedVersion('Win11', 'Win11_24H2.iso');
+        $this->seedVersion('Win11-old', 'Win11_23H2.iso');
+        $this->seedVersion('Win10', 'Win10_22H2.iso');
+        $this->actingAs($this->makeAdmin());
+
+        $versions = Livewire::test('pages::admin.ipxe.iso-windows.index')->get('versions');
+
+        // Ordre : Win11 courante, Win11 archivée, Win10 courante.
+        self::assertCount(3, $versions);
+        self::assertSame('Win11', $versions[0]['os']);
+        self::assertTrue($versions[0]['is_current']);
+        self::assertSame('Win11', $versions[1]['os']);
+        self::assertFalse($versions[1]['is_current']);
+        self::assertSame('Win10', $versions[2]['os']);
+        self::assertTrue($versions[2]['is_current']);
+    }
+
+    #[Test]
+    public function it_opens_the_new_source_modal(): void
+    {
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->assertSet('showNewSourceModal', false)
+            ->call('openNewSource')
+            ->assertSet('showNewSourceModal', true);
+    }
+
+    #[Test]
+    public function it_opens_the_driver_modal_for_a_valid_version(): void
+    {
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->call('openDriverModal', 'Win11')
+            ->assertSet('showDriverModal', true)
+            ->assertSet('driverModalOs', 'Win11');
+    }
+
+    #[Test]
+    public function it_refuses_to_open_the_driver_modal_for_an_unknown_version(): void
+    {
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->call('openDriverModal', 'Win95')
+            ->assertSet('showDriverModal', false)
+            ->assertDispatched('toastMagic', status: 'error');
+    }
+
+    #[Test]
+    public function it_refuses_ingest_for_version_with_invalid_target(): void
+    {
+        $this->actingAs($this->makeAdmin());
+
+        // driverModalOs reste vide (aucune modale ouverte) → cible invalide.
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->call('ingestDriverForVersion')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        Queue::assertNothingPushed();
     }
 
     /* =================================================================

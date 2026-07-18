@@ -2600,6 +2600,31 @@ préservé.
 `DownloadWindowsIsoJob` qui marque le download `failed` (toast côté UI 3.6),
 plutôt que de livrer un boot.wim incomplet (demi-boot).
 
+### Réappliquer les pilotes à une ISO déjà déployée (bouton « Réappliquer »)
+
+L'injection n'a lieu qu'à l'extraction d'une ISO. Si on **ingère un pilote après
+coup** (ISO déjà déployée), le `boot.wim` en place ne le contient pas encore.
+Le bouton **« Réappliquer les pilotes »** (colonne *Pilotes réseau* du tableau
+« Versions Windows déployées ») relance l'extraction **sur l'ISO conservée**
+(supprimée seulement en cas d'échec), sans re-télécharger : `boot.wim` frais
+(pristine) → réinjection du pack courant. Idempotence par construction (jamais
+une réinjection sur un wim déjà injecté).
+
+- Techniquement : row `source = reinject` → `DownloadWindowsIsoJob` **saute la
+  phase curl** (comme un upload, `WindowsIsoDownload::skipsDownload()`) et
+  ré-extrait. Trace dans l'historique + même lock global (mutuellement exclusif
+  avec download/upload).
+- Garde-fous : bouton absent si version non déployée ; désactivé si une opération
+  ISO est déjà en cours ; toast d'erreur si l'ISO source a été purgée du disque
+  (`resubmitExtraction` → `WindowsIsoValidationException` : re-télécharger).
+
+```bash
+# Smoke : ingérer un pilote APRÈS un déploiement, cliquer « Réappliquer les
+# pilotes » (Win11), puis vérifier que le boot.wim ré-extrait le contient :
+ssh /vm 'wimlib-imagex dir /var/sambaedu/unattended/install/os/Win11/sources/boot.wim 2 \
+         | grep -iE "drivers|nicload"'
+```
+
 ### Scénario smoke e2e (M700 / I219)
 
 1. Ingérer le pack Lenovo I219 : `php artisan ipxe:winpe-drivers:ingest intel-i219 <u1etn…exe>` (ou via l'UI).
@@ -2628,6 +2653,12 @@ plutôt que de livrer un boot.wim incomplet (demi-boot).
   non-régression 3.6.
 - `IpxeNamespaceTest` (3 méthodes 3.10) — emplacements/exceptions, CRLF strict +
   ordre nicload→install, `WindowsInstallBatBuilder` sans drvload (D2/AC3.3).
+- **Réinjection** : `WindowsIsoDownloadOrchestratorTest` (`resubmitExtraction` :
+  row `reinject` + dispatch, version non déployée, ISO absente du disque, version
+  non supportée, lock pris), `DownloadWindowsIsoJobTest` (source `reinject` saute
+  le curl et extrait ; `reinject-missing` si ISO absente), `WindowsIsoDownloadTest`
+  (`skipsDownload()`), `WindowsIsoWindowsLivewireTest` (modale, confirm → row +
+  toast, version non déployée → toast erreur).
 
 ### Post-correctifs & non-régressions (review 3.10)
 

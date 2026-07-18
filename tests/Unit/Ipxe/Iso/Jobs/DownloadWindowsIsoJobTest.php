@@ -396,6 +396,63 @@ class DownloadWindowsIsoJobTest extends TestCase
     }
 
     #[Test]
+    public function it_skips_curl_for_reinject_source_and_extracts_directly(): void
+    {
+        // Story 3.10 — ré-injection : l'ISO est déjà déployée/présente sur
+        // disque. Le Job saute le curl et ré-extrait (fresh boot.wim + pack).
+        $isoPath = '/tmp/sambaedu-test/iso/Win11_24H2.iso';
+        @mkdir(dirname($isoPath), 0775, true);
+        file_put_contents($isoPath, 'FAKE-ISO-CONTENT');
+
+        Process::fake();
+        $spy = $this->fakeExtractor();
+
+        $download = WindowsIsoDownload::factory()->reinject()->pending()->create([
+            'iso_name'             => 'Win11_24H2.iso',
+            'version'              => 'Win11',
+            'initiated_by_user_id' => $this->user->id,
+        ]);
+
+        try {
+            (new DownloadWindowsIsoJob($download->id))->handle();
+
+            $download->refresh();
+            self::assertSame(WindowsIsoDownloadStatus::Success, $download->status);
+            self::assertSame(0, $download->exit_code);
+
+            Process::assertNotRan(fn ($p) => str_starts_with($p->command, 'curl'));
+            self::assertCount(1, $spy->calls);
+            self::assertSame('Win11', $spy->calls[0]['version']);
+            self::assertSame($isoPath, $spy->calls[0]['isoPath']);
+        } finally {
+            @unlink($isoPath);
+        }
+    }
+
+    #[Test]
+    public function it_marks_failed_for_reinject_when_iso_missing(): void
+    {
+        Process::fake();
+        $spy = $this->fakeExtractor();
+
+        @unlink('/tmp/sambaedu-test/iso/Win11_GONE.iso');
+
+        $download = WindowsIsoDownload::factory()->reinject()->pending()->create([
+            'iso_name'             => 'Win11_GONE.iso',
+            'version'              => 'Win11',
+            'initiated_by_user_id' => $this->user->id,
+        ]);
+
+        (new DownloadWindowsIsoJob($download->id))->handle();
+
+        $download->refresh();
+        self::assertSame(WindowsIsoDownloadStatus::Failed, $download->status);
+        self::assertStringContainsString('reinject-missing', (string) $download->error);
+        self::assertSame([], $spy->calls, 'Pas d\'extraction si l\'ISO source est absente.');
+        Process::assertNothingRan();
+    }
+
+    #[Test]
     public function it_marks_failed_for_upload_when_file_is_missing(): void
     {
         Process::fake();

@@ -112,4 +112,16 @@ class WindowsIsoDownloadFactory extends Factory
             'source_url' => null,
         ]);
     }
+
+    /**
+     * Ré-injection de pilotes (ré-extraction d'une ISO déjà déployée, Story
+     * 3.10) : aucune URL source, le fichier est déjà sur disque.
+     */
+    public function reinject(): static
+    {
+        return $this->state(fn () => [
+            'source'     => WindowsIsoDownload::SOURCE_REINJECT,
+            'source_url' => null,
+        ]);
+    }
 }

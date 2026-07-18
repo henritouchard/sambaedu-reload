@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Ipxe\Iso;
 
+use App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob;
 use App\Ipxe\Iso\Services\WindowsIsoSourcesReader;
 use App\Models\User;
+use App\Models\WindowsIsoDownload;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -169,6 +173,46 @@ class WinpeDriverIngestLivewireTest extends TestCase
             ->assertDispatched('toastMagic', status: 'success');
 
         self::assertFileExists($this->packPath . '/intel-i219/e1d68x64.inf');
+    }
+
+    #[Test]
+    public function it_ingests_a_driver_and_reapplies_it_to_a_deployed_version(): void
+    {
+        // Version Win11 déployée + ISO source encore sur disque (réinjection OK).
+        mkdir($this->deployBase . '/Win11', 0755, true);
+        file_put_contents($this->deployBase . '/Win11/version', 'Win11_24H2.iso');
+        $isoDir = $this->workDir . '/iso';
+        mkdir($isoDir, 0755, true);
+        file_put_contents($isoDir . '/Win11_24H2.iso', 'FAKE-ISO');
+
+        config([
+            'ipxe.iso_management.iso_storage_path' => $isoDir,
+            'ipxe.iso_management.global_lock_key'  => 'ipxe.iso.download.winpe-reapply-test',
+            'ipxe.iso_management.lock_store'       => 'array',
+            'cache.default'                        => 'array',
+        ]);
+        Cache::lock('ipxe.iso.download.winpe-reapply-test')->forceRelease();
+        Queue::fake();
+
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test(self::COMPONENT)
+            ->call('openDriverModal', 'Win11')
+            ->set('driverFamily', 'intel-i219')
+            ->set('driverArchive', $this->zipWithInf())
+            ->call('ingestDriverForVersion')
+            ->assertDispatched('toastMagic', status: 'success')
+            ->assertSet('showDriverModal', false);
+
+        // 1) Le pilote est bien ingéré dans le pack global.
+        self::assertFileExists($this->packPath . '/intel-i219/e1d68x64.inf');
+
+        // 2) Une réinjection (ré-extraction) de Win11 a été déclenchée.
+        self::assertSame(
+            1,
+            WindowsIsoDownload::query()->where('source', WindowsIsoDownload::SOURCE_REINJECT)->count(),
+        );
+        Queue::assertPushed(DownloadWindowsIsoJob::class);
     }
 
     #[Test]

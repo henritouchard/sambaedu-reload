@@ -9,6 +9,7 @@ use App\Ipxe\Iso\Exceptions\WindowsIsoLockException;
 use App\Ipxe\Iso\Exceptions\WindowsIsoValidationException;
 use App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob;
 use App\Ipxe\Iso\Services\WindowsIsoDownloadOrchestrator;
+use App\Ipxe\Iso\Services\WindowsIsoSourcesReader;
 use App\Ipxe\Iso\Services\WindowsIsoUrlValidator;
 use App\Models\User;
 use App\Models\WindowsIsoDownload;
@@ -258,6 +259,122 @@ class WindowsIsoDownloadOrchestratorTest extends TestCase
         try {
             $this->expectException(WindowsIsoLockException::class);
             $this->orchestrator->submitUpload($partPath, 'Win11_24H2.iso', 'Win11', $this->user->id, '127.0.0.1');
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /* =================================================================
+     * Ré-injection des pilotes (resubmitExtraction — Story 3.10)
+     * ================================================================= */
+
+    /**
+     * Stub du reader de sources déployées : contrôle ce que « la version
+     * courante » retourne pour chaque OS sans toucher au filesystem.
+     */
+    private function stubSourcesReader(?string $win10, ?string $win11): WindowsIsoSourcesReader
+    {
+        return new class($win10, $win11) extends WindowsIsoSourcesReader {
+            public function __construct(private ?string $w10, private ?string $w11) {}
+
+            public function list(): array
+            {
+                return [
+                    'win10' => ['current' => $this->w10, 'old' => null],
+                    'win11' => ['current' => $this->w11, 'old' => null],
+                ];
+            }
+        };
+    }
+
+    #[Test]
+    public function it_resubmit_extraction_creates_reinject_row_and_dispatches_job(): void
+    {
+        // L'ISO déployée est encore sur disque (conservée au succès).
+        file_put_contents($this->isoStoragePath . '/Win11_24H2.iso', 'FAKE-ISO');
+
+        $download = $this->orchestrator->resubmitExtraction(
+            'Win11',
+            $this->user->id,
+            '127.0.0.1',
+            $this->stubSourcesReader(null, 'Win11_24H2.iso'),
+        );
+
+        self::assertSame('Win11', $download->version);
+        self::assertSame('Win11_24H2.iso', $download->iso_name);
+        self::assertNull($download->source_url);
+        self::assertSame(WindowsIsoDownload::SOURCE_REINJECT, $download->source);
+        self::assertTrue($download->skipsDownload());
+        self::assertSame(WindowsIsoDownloadStatus::Pending, $download->status);
+
+        Queue::assertPushedOn('ipxe_iso_downloads_test', DownloadWindowsIsoJob::class, function (DownloadWindowsIsoJob $job) use ($download) {
+            return $job->downloadId === $download->id;
+        });
+    }
+
+    #[Test]
+    public function it_resubmit_throws_when_no_version_deployed(): void
+    {
+        try {
+            $this->expectException(WindowsIsoValidationException::class);
+            $this->orchestrator->resubmitExtraction(
+                'Win11',
+                $this->user->id,
+                '127.0.0.1',
+                $this->stubSourcesReader(null, null), // aucune version déployée
+            );
+        } finally {
+            Queue::assertNothingPushed();
+            self::assertSame(0, WindowsIsoDownload::query()->count());
+        }
+    }
+
+    #[Test]
+    public function it_resubmit_throws_when_iso_source_missing_on_disk(): void
+    {
+        // Version déployée déclarée, mais l'ISO source a été purgée du disque.
+        try {
+            $this->expectException(WindowsIsoValidationException::class);
+            $this->orchestrator->resubmitExtraction(
+                'Win11',
+                $this->user->id,
+                '127.0.0.1',
+                $this->stubSourcesReader(null, 'Win11_PURGED.iso'),
+            );
+        } finally {
+            Queue::assertNothingPushed();
+            self::assertSame(0, WindowsIsoDownload::query()->count());
+        }
+    }
+
+    #[Test]
+    public function it_resubmit_throws_for_unsupported_version(): void
+    {
+        $this->expectException(WindowsIsoValidationException::class);
+        $this->orchestrator->resubmitExtraction(
+            'Win95',
+            $this->user->id,
+            '127.0.0.1',
+            $this->stubSourcesReader('Win95.iso', null),
+        );
+    }
+
+    #[Test]
+    public function it_resubmit_throws_lock_when_global_lock_held(): void
+    {
+        file_put_contents($this->isoStoragePath . '/Win11_24H2.iso', 'FAKE-ISO');
+
+        $lock = Cache::lock('ipxe.iso.download.test-lock', 60);
+        self::assertTrue($lock->get());
+
+        try {
+            $this->expectException(WindowsIsoLockException::class);
+            $this->orchestrator->resubmitExtraction(
+                'Win11',
+                $this->user->id,
+                '127.0.0.1',
+                $this->stubSourcesReader(null, 'Win11_24H2.iso'),
+            );
         } finally {
             $lock->release();
         }

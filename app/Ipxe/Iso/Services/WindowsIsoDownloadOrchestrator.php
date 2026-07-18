@@ -6,6 +6,7 @@ namespace App\Ipxe\Iso\Services;
 
 use App\Ipxe\Iso\Enums\WindowsIsoDownloadStatus;
 use App\Ipxe\Iso\Exceptions\WindowsIsoLockException;
+use App\Ipxe\Iso\Exceptions\WindowsIsoValidationException;
 use App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob;
 use App\Models\WindowsIsoDownload;
 use Illuminate\Support\Facades\Cache;
@@ -216,6 +217,116 @@ class WindowsIsoDownloadOrchestrator
                 DownloadWindowsIsoJob::dispatch($download->id)->onQueue($queue);
 
                 Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.upload.submitted', [
+                    'download_id' => $download->id,
+                    'iso_name'    => $download->iso_name,
+                    'version'     => $download->version,
+                    'user_id'     => $initiatedByUserId,
+                    'host_ip'     => $validatedHostIp,
+                ]);
+
+                return $download;
+            });
+
+            return $download;
+        } catch (\Throwable $e) {
+            try {
+                $lock->release();
+            } catch (\Throwable) {
+                // Ignore.
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Story 3.10 — Ré-injecte les pilotes NIC dans une ISO **déjà déployée**,
+     * sans re-télécharger. L'ISO source est conservée sur disque après un
+     * déploiement réussi ; on relance simplement l'extraction, qui re-copie un
+     * `boot.wim` frais (pristine) puis y ré-injecte le pack de pilotes courant
+     * (idempotence par construction — cf. {@see WinpeDriverInjector}).
+     *
+     * Réutilise intégralement {@see DownloadWindowsIsoJob} : la row `source =
+     * reinject` fait sauter la phase curl (le fichier est déjà là), exactement
+     * comme un dépôt manuel. Même lock global que download/upload (les trois
+     * touchent `Win{N}/` — mutuellement exclusifs).
+     *
+     * @param  string  $version  'Win10' | 'Win11'.
+     *
+     * @throws WindowsIsoValidationException si version invalide, aucune ISO
+     *                                       déployée pour cette version, ou ISO
+     *                                       source absente du disque.
+     * @throws WindowsIsoLockException si lock global indisponible.
+     */
+    public function resubmitExtraction(
+        string $version,
+        int $initiatedByUserId,
+        string $hostIp,
+        ?WindowsIsoSourcesReader $sourcesReader = null,
+    ): WindowsIsoDownload {
+        // 1) Whitelist version (interpolée dans des chemins côté extracteur).
+        if (! in_array($version, WindowsIsoDownload::VERSIONS, true)) {
+            throw new WindowsIsoValidationException("Version Windows non supportée : {$version}");
+        }
+
+        // 2) ISO actuellement déployée pour cette version — source de vérité =
+        //    le fichier `version` lu par le reader (= ce que l'UI affiche).
+        $sourcesReader ??= app(WindowsIsoSourcesReader::class);
+        $sources = $sourcesReader->list();
+        $isoName = $sources[strtolower($version)]['current'] ?? null;
+
+        if ($isoName === null) {
+            throw new WindowsIsoValidationException(
+                "Aucune version {$version} déployée — rien à réinjecter.",
+            );
+        }
+
+        // 3) L'ISO source doit être encore présente (conservée au succès, mais
+        //    peut avoir été purgée manuellement). Sinon : re-téléchargement requis.
+        $isoStoragePath = (string) config('ipxe.iso_management.iso_storage_path', storage_path('install/iso'));
+        $isoPath = rtrim($isoStoragePath, '/') . '/' . $isoName;
+        if (! is_file($isoPath)) {
+            throw new WindowsIsoValidationException(
+                "L'ISO source « {$isoName} » n'est plus présente sur le serveur — "
+                . "re-téléchargez-la pour réappliquer les pilotes.",
+            );
+        }
+
+        $validatedHostIp = (filter_var($hostIp, FILTER_VALIDATE_IP) !== false) ? $hostIp : null;
+
+        // 4) Lock global non-bloquant (partagé avec les flux URL + upload).
+        $lockKey = (string) config('ipxe.iso_management.global_lock_key', 'ipxe.iso.download.global');
+        $lockTtl = (int) config('ipxe.iso_management.global_lock_ttl', 7200);
+
+        $lock = $this->lockStore()->lock($lockKey, $lockTtl);
+        if (! $lock->get()) {
+            Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.reinject.rejected_locked', [
+                'iso_name' => $isoName,
+                'version'  => $version,
+                'user_id'  => $initiatedByUserId,
+                'host_ip'  => $validatedHostIp,
+            ]);
+
+            throw new WindowsIsoLockException(
+                "Une opération ISO est déjà en cours, attendez sa fin ou annulez-la.",
+            );
+        }
+
+        try {
+            $download = DB::transaction(function () use ($version, $isoName, $initiatedByUserId, $validatedHostIp): WindowsIsoDownload {
+                $download = WindowsIsoDownload::create([
+                    'version'              => $version,
+                    'iso_name'             => $isoName,
+                    'source_url'           => null,
+                    'source'               => WindowsIsoDownload::SOURCE_REINJECT,
+                    'status'               => WindowsIsoDownloadStatus::Pending,
+                    'initiated_by_user_id' => $initiatedByUserId,
+                    'host_ip'              => $validatedHostIp,
+                ]);
+
+                $queue = (string) config('ipxe.iso_management.queue_name', 'ipxe_iso_downloads');
+                DownloadWindowsIsoJob::dispatch($download->id)->onQueue($queue);
+
+                Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.reinject.submitted', [
                     'download_id' => $download->id,
                     'iso_name'    => $download->iso_name,
                     'version'     => $download->version,

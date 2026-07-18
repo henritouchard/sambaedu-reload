@@ -100,6 +100,25 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
      */
     public ?string $lastTerminalNotified = null;
 
+    // ---- État des modales + liste versions (refonte 2026-07-18) -------------
+
+    /** Modale « Nouvelle source » (téléchargement URL / dépôt fichier). */
+    public bool $showNewSourceModal = false;
+
+    /** Modale « Ajouter un pilote » + OS ciblé ('Win10' | 'Win11'). */
+    public bool $showDriverModal = false;
+
+    /** OS de la version pour laquelle on ajoute un pilote (modale). */
+    public string $driverModalOs = '';
+
+    /**
+     * Versions Windows déployées, ordonnées par nouveauté (Win11 avant Win10,
+     * courante avant archivée) — une ligne par slot déployé.
+     *
+     * @var array<int, array{os: string, label: string, slot: string, slot_label: string, iso: string, is_current: bool}>
+     */
+    public array $versions = [];
+
     // ---- Authentification garde-fou ----------------------------------------
 
     protected function rules(): array
@@ -161,7 +180,18 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
      * `upload` (réservé Livewire) ; on passe `getRealPath()` au service, jamais
      * `move()` (cf. [[project_livewire_reserved_upload_method]]).
      */
-    public function ingestDrivers(WinpeDriverIngestor $ingestor): void
+    /**
+     * Cœur d'ingestion partagé (validation + délégation au service). Retourne
+     * la liste des `.inf` ingérés, ou `null` si un contrôle échoue (un toast
+     * a alors déjà été émis). Utilisé par {@see ingestDrivers()} (ingestion
+     * seule) ET {@see ingestDriverForVersion()} (ingestion + réinjection).
+     *
+     * Contraintes [[project_livewire_reserved_upload_method]] : on passe
+     * `getRealPath()` (JAMAIS `move()`) au service.
+     *
+     * @return array<int, string>|null
+     */
+    private function ingestArchive(WinpeDriverIngestor $ingestor): ?array
     {
         $this->validate([
             'driverFamily'  => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9._-]+$/'],
@@ -175,11 +205,11 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         if (! in_array($extension, ['exe', 'zip'], true)) {
             $this->toastError('Archive non reconnue : déposez un `.exe` (Lenovo) ou un `.zip` (Intel).', 'Pilotes NIC');
 
-            return;
+            return null;
         }
 
         try {
-            $infFiles = $ingestor->ingest(
+            return $ingestor->ingest(
                 $this->driverFamily,
                 $this->driverArchive->getRealPath(),
                 $originalName,
@@ -187,7 +217,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         } catch (WinpeDriverIngestionException $e) {
             $this->toastError($e->getMessage(), 'Ingestion pilotes échouée');
 
-            return;
+            return null;
         } catch (\Throwable $e) {
             Log::channel((string) config('ipxe.log.channel', 'ipxe'))->error('ipxe.winpe.drivers.ingest.exception', [
                 'exception' => $e::class,
@@ -196,15 +226,90 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
             ]);
             $this->toastError('Erreur inattendue lors de l\'ingestion des pilotes. Consultez les logs.');
 
+            return null;
+        }
+    }
+
+    /**
+     * Ingestion « seule » (ajout au pack global) — le pilote sera injecté au
+     * prochain (re)déploiement d'ISO. Conservé pour la CLI/parité et couvert
+     * par les tests dédiés.
+     */
+    public function ingestDrivers(WinpeDriverIngestor $ingestor): void
+    {
+        $infFiles = $this->ingestArchive($ingestor);
+        if ($infFiles === null) {
             return;
         }
 
         $this->toastSuccess(
-            sprintf('Famille « %s » : %d fichier(s) .inf ingéré(s). Injectés au boot.wim à la prochaine extraction d\'ISO.', $this->driverFamily, count($infFiles)),
+            sprintf('Famille « %s » : %d fichier(s) .inf ingéré(s). Injectés au boot.wim au prochain déploiement d\'ISO.', $this->driverFamily, count($infFiles)),
             'Pilotes NIC ingérés',
         );
         $this->reset(['driverArchive', 'driverFamily']);
         $this->refreshDriverFamilies();
+    }
+
+    /**
+     * Modale « Ajouter un pilote » d'une version : ingère le pilote (pack
+     * global) PUIS réinjecte immédiatement dans le boot.wim de CETTE version
+     * (ré-extraction via l'orchestrator, source `reinject`). Décision Henri
+     * 2026-07-18 : une seule action = le pilote finit dans le boot.wim de la
+     * ligne. NB : le pack étant global, le pilote deviendra aussi disponible
+     * pour les autres versions à leur prochaine (ré)extraction.
+     */
+    public function ingestDriverForVersion(WinpeDriverIngestor $ingestor): void
+    {
+        if (! in_array($this->driverModalOs, WindowsIsoDownload::VERSIONS, true)) {
+            $this->toastError('Version Windows cible invalide.');
+
+            return;
+        }
+
+        $infFiles = $this->ingestArchive($ingestor);
+        if ($infFiles === null) {
+            return;
+        }
+
+        // Réinjection immédiate dans la version ciblée (ré-extraction async).
+        try {
+            $download = app(WindowsIsoDownloadOrchestrator::class)->resubmitExtraction(
+                version: $this->driverModalOs,
+                initiatedByUserId: (int) Auth::id(),
+                hostIp: (string) (request()->ip() ?? ''),
+            );
+
+            $this->toastSuccess(
+                sprintf(
+                    'Pilote « %s » ingéré (%d .inf) — réapplication à %s lancée (« %s »), suivi en bas de page.',
+                    $this->driverFamily,
+                    count($infFiles),
+                    $this->driverModalOs,
+                    $download->iso_name,
+                ),
+                'Pilote ajouté',
+            );
+            $this->lastTerminalNotified = null;
+        } catch (WindowsIsoValidationException | WindowsIsoLockException $e) {
+            // Le pilote EST ingéré (pack global) ; seule la réapplication
+            // immédiate a échoué (ISO absente / opération déjà en cours).
+            $this->toastWarning(
+                sprintf('Pilote « %s » ingéré, mais réapplication à %s impossible : %s', $this->driverFamily, $this->driverModalOs, $e->getMessage()),
+                'Réapplication différée',
+            );
+        } catch (\Throwable $e) {
+            Log::channel((string) config('ipxe.log.channel', 'ipxe'))->error('ipxe.iso.reinject.exception', [
+                'exception' => $e::class,
+                'message'   => $e->getMessage(),
+                'user_id'   => Auth::id(),
+            ]);
+            $this->toastWarning('Pilote ingéré, mais erreur lors de la réapplication. Consultez les logs.');
+        }
+
+        $this->reset(['driverArchive', 'driverFamily']);
+        $this->showDriverModal = false;
+        $this->refreshDriverFamilies();
+        $this->refreshData();
     }
 
     /**
@@ -215,6 +320,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
     {
         $sourcesReader ??= app(WindowsIsoSourcesReader::class);
         $this->sources = $sourcesReader->list();
+        $this->buildVersions();
 
         // Notification "fin" si transition observée pendant le polling.
         $previousRunning = $this->currentRunning;
@@ -289,6 +395,10 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         preg_match('/^Win(10|11)/', $isoName, $mv);
         $versionNum = $mv[1] ?? '11';
 
+        // On ferme la modale « Nouvelle source » avant d'ouvrir la modale de
+        // confirmation (évite l'empilement de deux dialogs).
+        $this->showNewSourceModal = false;
+
         $this->dispatch(
             'open-confirm-modal',
             title: 'Confirmer le téléchargement de l\'ISO Windows',
@@ -325,6 +435,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
             $this->toastSuccess("Téléchargement lancé pour « {$download->iso_name} » — suivi en bas de page.");
             $this->url = '';
             $this->lastTerminalNotified = null;  // permet de re-notifier la fin du nouveau download
+            $this->showNewSourceModal = false;
             $this->refreshData();
         } catch (WindowsIsoValidationException $e) {
             $this->toastError($e->getMessage(), 'URL invalide');
@@ -370,6 +481,151 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         $this->refreshData();
     }
 
+    // ---- Réinjection des pilotes NIC (Story 3.10) --------------------------
+
+    /**
+     * Ouvre la modale de confirmation pour réappliquer les pilotes NIC à une
+     * ISO déjà déployée (ré-extraction du `boot.wim` + réinjection du pack).
+     * Le nom de la version est passé en paramètre à `confirmReinject` via la
+     * modale (`params: [$version]`).
+     */
+    public function reinjectDrivers(string $version): void
+    {
+        if (! (bool) config('ipxe.iso_management.enabled', true)) {
+            $this->toastError("La gestion des ISO Windows est désactivée.");
+
+            return;
+        }
+        if ($this->currentRunning !== null) {
+            $this->toastError("Une opération ISO est déjà en cours — attendez sa fin ou annulez-la.");
+
+            return;
+        }
+        if (! in_array($version, WindowsIsoDownload::VERSIONS, true)) {
+            $this->toastError("Version Windows inconnue.");
+
+            return;
+        }
+
+        $versionNum = str_replace('Win', '', $version);
+        $this->dispatch(
+            'open-confirm-modal',
+            title: 'Réappliquer les pilotes réseau',
+            message: 'Réextraire l\'ISO Windows ' . $versionNum . ' actuellement déployée pour y réinjecter '
+                . 'les pilotes réseau du pack ? L\'opération dure quelques minutes et se déroule en arrière-plan.',
+            confirmText: 'Réappliquer les pilotes',
+            cancelText: 'Annuler',
+            variant: 'warning',
+            method: 'confirmReinject',
+            params: [$version],
+            wireId: $this->getId(),
+        );
+    }
+
+    /**
+     * Confirmation modale — délègue à l'orchestrator (ré-extraction sur l'ISO
+     * conservée, source `reinject` → phase curl sautée).
+     */
+    public function confirmReinject(string $version): void
+    {
+        if (! (bool) config('ipxe.iso_management.enabled', true)) {
+            $this->toastError("La gestion des ISO Windows est désactivée.");
+
+            return;
+        }
+
+        try {
+            $download = app(WindowsIsoDownloadOrchestrator::class)->resubmitExtraction(
+                version: $version,
+                initiatedByUserId: (int) Auth::id(),
+                hostIp: (string) (request()->ip() ?? ''),
+            );
+
+            $this->toastSuccess("Réinjection des pilotes lancée pour « {$download->iso_name} » — suivi en bas de page.");
+            $this->lastTerminalNotified = null;
+            $this->refreshData();
+        } catch (WindowsIsoValidationException $e) {
+            $this->toastError($e->getMessage(), 'Réinjection impossible');
+        } catch (WindowsIsoLockException $e) {
+            $this->toastError($e->getMessage(), 'Opération déjà en cours');
+        } catch (\Throwable $e) {
+            Log::channel((string) config('ipxe.log.channel', 'ipxe'))->error('ipxe.iso.reinject.exception', [
+                'exception' => $e::class,
+                'message'   => $e->getMessage(),
+                'user_id'   => Auth::id(),
+            ]);
+            $this->toastError("Erreur inattendue lors de la réinjection des pilotes. Consultez les logs.");
+        }
+    }
+
+    // ---- Modales + liste versions (refonte 2026-07-18) ----------------------
+
+    /**
+     * Construit la liste des versions déployées ordonnée par nouveauté
+     * (Win11 avant Win10, courante avant archivée) — une ligne par slot
+     * effectivement présent. Alimente le tableau « Versions Windows ».
+     */
+    private function buildVersions(): void
+    {
+        $versions = [];
+        foreach (['win11' => 'Windows 11', 'win10' => 'Windows 10'] as $key => $label) {
+            $os = ucfirst($key); // 'win11' => 'Win11', 'win10' => 'Win10'
+            foreach (['current' => 'Courante', 'old' => 'Archivée'] as $slot => $slotLabel) {
+                $iso = $this->sources[$key][$slot] ?? null;
+                if ($iso === null) {
+                    continue;
+                }
+                $versions[] = [
+                    'os'         => $os,
+                    'label'      => $label,
+                    'slot'       => $slot,
+                    'slot_label' => $slotLabel,
+                    'iso'        => $iso,
+                    'is_current' => $slot === 'current',
+                ];
+            }
+        }
+
+        $this->versions = $versions;
+    }
+
+    /** Ouvre la modale « Nouvelle source ». */
+    public function openNewSource(): void
+    {
+        $this->showNewSourceModal = true;
+    }
+
+    /** Ferme la modale « Nouvelle source ». */
+    public function closeNewSource(): void
+    {
+        $this->showNewSourceModal = false;
+    }
+
+    /**
+     * Ouvre la modale « Ajouter un pilote » pour un OS déployé donné.
+     */
+    public function openDriverModal(string $os): void
+    {
+        if (! in_array($os, WindowsIsoDownload::VERSIONS, true)) {
+            $this->toastError('Version Windows inconnue.');
+
+            return;
+        }
+
+        $this->driverModalOs = $os;
+        $this->reset(['driverArchive', 'driverFamily']);
+        $this->resetErrorBag(['driverArchive', 'driverFamily']);
+        $this->refreshDriverFamilies();
+        $this->showDriverModal = true;
+    }
+
+    /** Ferme la modale « Ajouter un pilote ». */
+    public function closeDriverModal(): void
+    {
+        $this->showDriverModal = false;
+        $this->reset(['driverArchive', 'driverFamily']);
+    }
+
     // ---- Dépôt manuel (upload chunké) --------------------------------------
 
     /**
@@ -408,20 +664,11 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
             return;
         }
 
-        $sizeGo = round($sizeBytes / (1024 * 1024 * 1024), 2);
-        $this->dispatch(
-            'open-confirm-modal',
-            title: 'Confirmer le dépôt de l\'ISO Windows',
-            message: 'Déposer « ' . $validated['iso_name'] . ' » (' . $sizeGo . ' Go) comme source Windows '
-                . $validated['version_num'] . ' ? Le fichier sera téléversé puis extrait, remplaçant la version '
-                . 'courante (l\'ancienne sera renommée en `-old`).',
-            confirmText: 'Téléverser et déployer',
-            cancelText: 'Annuler',
-            variant: 'warning',
-            method: 'beginUpload',
-            params: [],
-            wireId: $this->getId(),
-        );
+        // La modale « Nouvelle source » est déjà l'action délibérée : on démarre
+        // le dépôt directement (progression affichée dans la modale), sans
+        // empiler une modale de confirmation par-dessus. La validation du nom
+        // ($validated ci-dessus) a déjà eu lieu et lève un toast si invalide.
+        $this->beginUpload();
     }
 
     /**
@@ -491,6 +738,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
             @unlink($metaPath);  // le `.part` a été renommé par l'orchestrator.
             $this->toastSuccess("Dépôt accepté pour « {$download->iso_name} » — extraction lancée, suivi en bas de page.");
             $this->lastTerminalNotified = null;
+            $this->showNewSourceModal = false;
             $this->dispatch('iso-upload-reset');
             $this->refreshData();
         } catch (WindowsIsoValidationException $e) {
@@ -561,107 +809,97 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                     <span class="loading loading-spinner loading-xs"></span>
                 </span>
             </button>
+            <button type="button" wire:click="openNewSource" class="btn btn-primary btn-sm"
+                @disabled($currentRunning !== null)
+                data-testid="new-source-button">
+                <i class="fa-solid fa-plus"></i>
+                Nouvelle source
+            </button>
         </div>
     </x-slot:actions>
 
     <div id="ipxe-iso-windows" class="space-y-6">
 
         {{-- ============================================================
-             Bandeau d'info
+             Bandeau d'info (court)
              ============================================================ --}}
         <div class="alert alert-info shadow-sm">
             <i class="fa-solid fa-circle-info"></i>
-            <div class="text-sm space-y-1">
-                <p class="font-medium">Mise en place des sources d'installation Windows</p>
-                <p class="opacity-90">
-                    Cette page permet de télécharger une nouvelle ISO Microsoft (Windows 10 / Windows 11) puis de
-                    l'extraire dans <code>/var/sambaedu/unattended/install/os/Win{10,11}/</code>. La version courante est
-                    automatiquement archivée en <code>Win{N}-old</code>. Le téléchargement et l'extraction se font en
-                    arrière-plan ; vous serez notifié à la fin via un toast.
-                </p>
-                <p class="opacity-90 text-xs">
-                    Récupérez l'URL d'une ISO sur le
-                    <a href="https://www.microsoft.com/fr-fr/software-download/windows11" target="_blank" rel="noopener" class="link link-hover">
-                        site officiel Microsoft (Windows 11)
-                    </a>
-                    ou
-                    <a href="https://www.microsoft.com/fr-fr/software-download/windows10" target="_blank" rel="noopener" class="link link-hover">
-                        Windows 10
-                    </a>.
-                </p>
+            <div class="text-sm">
+                <p>Sources d'installation Windows servies par iPXE. Le téléchargement/dépôt et l'ajout de
+                    pilotes se font en arrière-plan — vous êtes notifié à la fin par un toast.</p>
             </div>
         </div>
 
         {{-- ============================================================
-             Card "Versions Windows déployées" (sources)
+             Card "Versions Windows disponibles" — liste par nouveauté
              ============================================================ --}}
         <div class="card bg-base-100 shadow-sm border border-base-200">
             <div class="card-body space-y-2">
                 <h2 class="card-title text-lg">
                     <i class="fa-solid fa-server text-primary"></i>
-                    Versions Windows déployées
+                    Versions Windows disponibles
                 </h2>
-                <p class="text-sm text-base-content/70">
-                    Sources actuellement disponibles pour l'installation iPXE Win10/Win11.
-                </p>
 
-                <div class="overflow-x-auto">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Version</th>
-                                <th>Slot</th>
-                                <th>ISO source</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><span class="badge badge-info">Windows 10</span></td>
-                                <td>Courante</td>
-                                <td>
-                                    @if ($sources['win10']['current'])
-                                        <span class="font-mono text-sm">{{ $sources['win10']['current'] }}</span>
-                                    @else
-                                        <span class="badge badge-ghost">non déployée</span>
-                                    @endif
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge badge-info">Windows 10</span></td>
-                                <td>Ancienne</td>
-                                <td>
-                                    @if ($sources['win10']['old'])
-                                        <span class="font-mono text-sm opacity-70">{{ $sources['win10']['old'] }}</span>
-                                    @else
-                                        <span class="badge badge-ghost">non déployée</span>
-                                    @endif
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge badge-primary">Windows 11</span></td>
-                                <td>Courante</td>
-                                <td>
-                                    @if ($sources['win11']['current'])
-                                        <span class="font-mono text-sm">{{ $sources['win11']['current'] }}</span>
-                                    @else
-                                        <span class="badge badge-ghost">non déployée</span>
-                                    @endif
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge badge-primary">Windows 11</span></td>
-                                <td>Ancienne</td>
-                                <td>
-                                    @if ($sources['win11']['old'])
-                                        <span class="font-mono text-sm opacity-70">{{ $sources['win11']['old'] }}</span>
-                                    @else
-                                        <span class="badge badge-ghost">non déployée</span>
-                                    @endif
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                @if (count($versions) === 0)
+                    <p class="text-sm text-base-content/60" data-testid="no-version">
+                        Aucune source Windows déployée. Cliquez « Nouvelle source » (en haut à droite) pour en
+                        télécharger ou en déposer une.
+                    </p>
+                @else
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Version</th>
+                                    <th>Slot</th>
+                                    <th>ISO source</th>
+                                    <th>Pilotes réseau</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($versions as $v)
+                                    <tr data-testid="version-{{ $v['os'] }}-{{ $v['slot'] }}">
+                                        <td>
+                                            <span class="badge {{ $v['os'] === 'Win11' ? 'badge-primary' : 'badge-info' }}">{{ $v['label'] }}</span>
+                                        </td>
+                                        <td>
+                                            @if ($v['is_current'])
+                                                <span class="badge badge-success badge-sm">Courante</span>
+                                            @else
+                                                <span class="badge badge-ghost badge-sm">Archivée</span>
+                                            @endif
+                                        </td>
+                                        <td class="font-mono text-sm {{ $v['is_current'] ? '' : 'opacity-70' }}">{{ $v['iso'] }}</td>
+                                        <td>
+                                            @if ($v['is_current'])
+                                                <div class="flex flex-wrap gap-1">
+                                                    <button type="button" wire:click="openDriverModal('{{ $v['os'] }}')"
+                                                        class="btn btn-xs btn-primary btn-outline"
+                                                        @disabled($currentRunning !== null)
+                                                        data-testid="add-driver-{{ $v['os'] }}">
+                                                        <i class="fa-solid fa-plus"></i>
+                                                        Ajouter un pilote
+                                                    </button>
+                                                    <button type="button" wire:click="reinjectDrivers('{{ $v['os'] }}')"
+                                                        class="btn btn-xs btn-outline"
+                                                        wire:loading.attr="disabled" wire:target="reinjectDrivers,confirmReinject"
+                                                        @disabled($currentRunning !== null)
+                                                        data-testid="reinject-drivers-{{ strtolower($v['os']) }}">
+                                                        <i class="fa-solid fa-arrows-rotate"></i>
+                                                        Réappliquer
+                                                    </button>
+                                                </div>
+                                            @else
+                                                <span class="text-xs text-base-content/40">archive (rollback)</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
             </div>
         </div>
 
@@ -736,18 +974,16 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         @endif
 
         {{-- ============================================================
-             Card "Nouvelle source Windows" — URL Microsoft OU dépôt fichier
-             (onglets, switch client Alpine).
+             Modale « Nouvelle source » (bouton haut-droite openNewSource) —
+             URL Microsoft OU dépôt fichier (onglets, switch client Alpine).
              ============================================================ --}}
         @php($urlEnabled = config('ipxe.iso_management.enabled', true))
         @php($uploadEnabled = config('ipxe.iso_management.upload_enabled', true) && config('ipxe.iso_management.enabled', true))
         @php($uploadMaxGo = round(((int) config('ipxe.iso_management.upload_max_total_bytes', 10 * 1024 * 1024 * 1024)) / (1024 * 1024 * 1024), 1))
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body space-y-4" x-data="{ mode: 'url' }">
-                <h2 class="card-title text-lg">
-                    <i class="fa-solid fa-plus text-primary"></i>
-                    Nouvelle source Windows
-                </h2>
+        <x-molecules.modal wire:model="showNewSourceModal" closeMethod="closeNewSource"
+            title="Nouvelle source Windows" icon="fa-plus text-primary"
+            size="max-w-3xl" height="h-auto max-h-[90vh]">
+            <div class="space-y-4" x-data="{ mode: 'url' }">
 
                 @if (! $urlEnabled)
                     <div class="alert alert-warning">
@@ -816,12 +1052,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                             </span>
                         </button>
                     </div>
-
-                    <p class="text-xs text-base-content/60">
-                        <i class="fa-solid fa-shield"></i>
-                        Validation 2 couches : sanity check Livewire + service `WindowsIsoUrlValidator`
-                        (anti-SSRF). Le téléchargement (curl + extraction) tourne en arrière-plan via Laravel Queue.
-                    </p>
                 </div>
 
                 {{-- ---- Panneau dépôt fichier (upload chunké) --------------------- --}}
@@ -889,22 +1119,21 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                     </div>
                 </div>
             </div>
-        </div>
+        </x-molecules.modal>
 
         {{-- ============================================================
-             Card "Pilotes réseau WinPE (boot.wim)" — Story 3.10
+             Modale « Ajouter un pilote » (par version — openDriverModal)
              ============================================================ --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body space-y-4">
-                <h2 class="card-title text-lg">
-                    <i class="fa-solid fa-network-wired text-primary"></i>
-                    Pilotes réseau WinPE (boot.wim)
-                </h2>
+        <x-molecules.modal wire:model="showDriverModal" closeMethod="closeDriverModal"
+            title="Ajouter un pilote réseau" icon="fa-network-wired text-primary"
+            size="max-w-2xl" height="h-auto max-h-[90vh]">
+            <div class="space-y-4">
                 <p class="text-sm text-base-content/70">
-                    Certains postes récents (NIC non pris en charge nativement par WinPE depuis Windows 11 24H2)
-                    ne montent pas le réseau au démarrage de l'installation. Déposez ici les pilotes réseau
-                    (archive <code>.exe</code> Lenovo ou <code>.zip</code> Intel) : ils seront injectés
-                    automatiquement et durablement dans le <code>boot.wim</code> à chaque extraction d'ISO.
+                    Cible : <strong>{{ $driverModalOs }}</strong>. Déposez une archive de pilotes réseau
+                    (<code>.exe</code> Lenovo ou <code>.zip</code> Intel) : le pilote est ajouté au pack et
+                    <strong>réappliqué immédiatement</strong> à cette version (ré-extraction en arrière-plan).
+                    Utile pour les postes récents dont le NIC n'est pas pris en charge nativement par WinPE
+                    (Windows 11 24H2+).
                 </p>
 
                 {{-- Familles déjà présentes (lecture seule). --}}
@@ -949,30 +1178,25 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                     </div>
                 </div>
 
-                <div>
-                    <button type="button" wire:click="ingestDrivers"
-                        class="btn btn-primary btn-sm"
-                        wire:loading.attr="disabled" wire:target="ingestDrivers,driverArchive"
-                        data-testid="driver-ingest-button">
-                        <span wire:loading.remove wire:target="ingestDrivers,driverArchive">
-                            <i class="fa-solid fa-upload"></i>
-                            Ingérer les pilotes
-                        </span>
-                        <span wire:loading wire:target="ingestDrivers,driverArchive">
-                            <span class="loading loading-spinner loading-xs"></span>
-                            Traitement…
-                        </span>
-                    </button>
-                </div>
-
-                <p class="text-xs text-base-content/60">
-                    <i class="fa-solid fa-circle-info"></i>
-                    Les <code>.exe</code> Lenovo sont extraits via <code>innoextract</code> ; les <code>.zip</code> Intel
-                    via <code>unzip</code>. Prérequis serveur : <code>wimtools</code>, <code>innoextract</code>,
-                    <code>unzip</code>. Le pack est server-side uniquement (jamais téléchargé par les postes).
-                </p>
             </div>
-        </div>
+
+            <x-slot:footer>
+                <button type="button" wire:click="closeDriverModal" class="btn btn-ghost">Annuler</button>
+                <button type="button" wire:click="ingestDriverForVersion"
+                    class="btn btn-primary"
+                    wire:loading.attr="disabled" wire:target="ingestDriverForVersion,driverArchive"
+                    data-testid="driver-ingest-button">
+                    <span wire:loading.remove wire:target="ingestDriverForVersion,driverArchive">
+                        <i class="fa-solid fa-plus"></i>
+                        Ajouter et réappliquer
+                    </span>
+                    <span wire:loading wire:target="ingestDriverForVersion,driverArchive">
+                        <span class="loading loading-spinner loading-xs"></span>
+                        Traitement…
+                    </span>
+                </button>
+            </x-slot:footer>
+        </x-molecules.modal>
 
         {{-- ============================================================
              Card "Historique" (10 derniers téléchargements)
