@@ -51,8 +51,12 @@ class KernelScheduleTest extends TestCase
     }
 
     #[Test]
-    public function it_schedules_automatic_user_groups_sync_from_ad(): void
+    public function it_does_not_schedule_user_groups_sync_from_ad(): void
     {
+        // Les groupes utilisateurs sont synchronisés par le tick `users:sync-from-ad`
+        // (SyncUsersFromAdJob → UserGroupService::syncFromAd(), avant les users).
+        // L'ancienne entrée dédiée `user-groups:sync-from-ad` pointait une commande
+        // jamais créée (NamespaceNotFoundException loggée toutes les 5 min) → retirée.
         $kernel = $this->app->make(Kernel::class);
         $schedule = $this->app->make(Schedule::class);
 
@@ -64,7 +68,7 @@ class KernelScheduleTest extends TestCase
             static fn($event): bool => str_contains((string) $event->command, 'user-groups:sync-from-ad')
         );
 
-        $this->assertTrue($hasUserGroupsSync, 'Le scheduler doit déclencher user-groups:sync-from-ad automatiquement.');
+        $this->assertFalse($hasUserGroupsSync, 'Le scheduler ne doit PLUS planifier user-groups:sync-from-ad (commande inexistante).');
     }
 
     #[Test]

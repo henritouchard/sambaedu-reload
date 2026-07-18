@@ -11,12 +11,13 @@ use PHPUnit\Framework\TestCase;
  * Garde-fou architectural Story 16.14 — Routes + ordre + permissions (AC7.3).
  *
  * Vérifie :
- *   1. Les routes nouvelles (`by-ou`, `jobs`) sont déclarées dans routes/web.php.
- *   2. Elles sont gardées par `can:server.admin`.
- *   3. La route `by-ou` est déclarée AVANT la route `{guid}` (anti-régression piège 1 de 16.9).
+ *   1. La route `by-ou` est déclarée dans routes/web.php et gardée par `can:server.admin`.
+ *   2. La route `by-ou` est déclarée AVANT la route `{guid}` (anti-régression piège 1 de 16.9).
+ *   3. Le groupe `settings/system-status` (« État du système ») existe.
  *
  * NB : la route `sections` (« Sections natives ») a été retirée (commit 6e98c41) ;
- * ses assertions ont été supprimées de ce garde-fou.
+ * la route dédiée `jobs` a été consolidée dans `settings/system-status`. Les
+ * assertions correspondantes ont été retirées/recalées.
  */
 class Story1614RoutesTest extends TestCase
 {
@@ -54,41 +55,22 @@ class Story1614RoutesTest extends TestCase
     // donc été retirées de ce garde-fou (le garde couvre désormais /by-ou +
     // /jobs, toujours en vigueur).
 
-    #[Test]
-    public function route_system_jobs_is_declared(): void
-    {
-        self::assertStringContainsString(
-            "'/jobs'",
-            $this->webPhpContent,
-            "La route /jobs doit être déclarée dans routes/web.php (AC5.1)."
-        );
-
-        self::assertStringContainsString(
-            "name('jobs.index')",
-            $this->webPhpContent,
-            "La route jobs doit avoir le nom 'jobs.index' dans le groupe system. (AC5.1)."
-        );
-    }
+    // NOTE : la route dédiée `/jobs` (« Dashboard jobs » 16.14/AC5) a été
+    // CONSOLIDÉE dans `/admin/settings/system-status` (page « État du système »,
+    // onglet dédié) — le groupe `settings/system` est devenu `settings/system-status`.
+    // Les assertions `'/jobs'` + `name('jobs.index')` ont donc été retirées de ce
+    // garde ; la présence du groupe est couverte par
+    // `system_group_exists_for_system_status_route` ci-dessous.
 
     #[Test]
     public function all_new_routes_have_server_admin_middleware(): void
     {
-        // Chaque nouvelle route doit être entourée d'un ->middleware('can:server.admin')
-        // On vérifie que les 3 blocs de code correspondants contiennent cette protection.
-
-        // Approche : compter les occurrences de middleware + route voisine
+        // La route by-ou doit être entourée d'un ->middleware('can:server.admin').
         $byOuSection = $this->extractRouteBlock($this->webPhpContent, "'/by-ou'");
         self::assertStringContainsString(
             "can:server.admin",
             $byOuSection,
             "La route by-ou doit être protégée par can:server.admin."
-        );
-
-        $jobsSection = $this->extractRouteBlock($this->webPhpContent, "'/jobs'");
-        self::assertStringContainsString(
-            "can:server.admin",
-            $jobsSection,
-            "La route jobs doit être protégée par can:server.admin."
         );
     }
 
@@ -111,12 +93,12 @@ class Story1614RoutesTest extends TestCase
     }
 
     #[Test]
-    public function system_group_exists_for_jobs_route(): void
+    public function system_group_exists_for_system_status_route(): void
     {
         self::assertStringContainsString(
-            "settings/system",
+            "settings/system-status",
             $this->webPhpContent,
-            "Un groupe Route::prefix('settings/system') doit exister pour le dashboard jobs (AC5.1)."
+            "Un groupe Route::prefix('settings/system-status') doit exister (« État du système », ex-dashboard jobs consolidé — AC5.1)."
         );
     }
 

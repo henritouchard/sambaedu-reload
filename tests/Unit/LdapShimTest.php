@@ -113,6 +113,8 @@ class LdapShimTest extends TestCase
                 $table->foreignId('user_group_id');
                 // Colonne pivot lue par la relation User↔UserGroup (PP sur l'arête).
                 $table->boolean('is_head_teacher')->default(false);
+                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                $table->string('role', 20)->default('member');
             });
         }
 

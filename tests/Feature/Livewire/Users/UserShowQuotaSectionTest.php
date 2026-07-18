@@ -106,6 +106,8 @@ class UserShowQuotaSectionTest extends TestCase
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->unsignedBigInteger('user_id');
                 $table->unsignedBigInteger('user_group_id');
+                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                $table->string('role', 20)->default('member');
                 $table->primary(['user_id', 'user_group_id']);
             });
             $this->createdTables = true;

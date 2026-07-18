@@ -53,6 +53,8 @@ class AppCustomizationServiceTest extends TestCase
             $t->id();
             $t->unsignedBigInteger('user_id');
             $t->unsignedBigInteger('user_group_id');
+            // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+            $t->string('role', 20)->default('member');
             $t->timestamps();
         });
         Schema::create('workstation_groups', function (Blueprint $t): void {

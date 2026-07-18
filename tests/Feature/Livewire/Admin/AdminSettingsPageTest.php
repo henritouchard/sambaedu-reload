@@ -172,13 +172,15 @@ class AdminSettingsPageTest extends TestCase
         $admin = $this->makeAdmin('admin-cards');
         $this->actingAs($admin);
 
+        // Cartes du landing après réorganisation (les anciennes cartes Quotas /
+        // Profils itinérants / Error Logger / Legacy Monitor ont été fusionnées
+        // dans « Gestion des fichiers » et « État du système »).
         Livewire::test('pages::admin.settings.index')
-            ->assertSee('Quotas')
-            ->assertSee('Profils itinérants')
+            ->assertSee('État du système')
             ->assertSee('Toutes les GPOs')
-            ->assertSee('Sync from AD')
-            ->assertSee('Error Logger')
-            ->assertSee('Legacy Monitor')
+            ->assertSee('Vue par OU')
+            ->assertSee('Migration SE4 → SE5')
+            ->assertSee('Gestion des fichiers')
             ->assertSee('ControlHub');
     }
 

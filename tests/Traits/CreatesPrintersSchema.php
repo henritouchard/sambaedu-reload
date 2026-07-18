@@ -45,11 +45,33 @@ trait CreatesPrintersSchema
             });
             $this->createdPrinterTables[] = 'printer_workstation_group';
         }
+
+        // `workstations` + pivot `workstation_group_workstation` : minimum requis
+        // pour `loadCount('workstations')` de l'onglet Imprimantes (nombre de postes
+        // par parc). Scopé aux tests imprimantes — PAS dans CreatesPermissionSchema,
+        // car ce nom de table est déjà défini par plusieurs bootstrappers plus riches
+        // (IpxeSchemaBootstrapper avec `uuid`, etc.) qu'une table minimale masquerait.
+        if (!Schema::hasTable('workstations')) {
+            Schema::create('workstations', function (Blueprint $table) {
+                $table->id();
+                $table->string('name')->nullable();
+                $table->timestamps();
+            });
+            $this->createdPrinterTables[] = 'workstations';
+        }
+        if (!Schema::hasTable('workstation_group_workstation')) {
+            Schema::create('workstation_group_workstation', function (Blueprint $table) {
+                $table->unsignedBigInteger('workstation_group_id');
+                $table->unsignedBigInteger('workstation_id');
+                $table->primary(['workstation_group_id', 'workstation_id'], 'wgw_pk');
+            });
+            $this->createdPrinterTables[] = 'workstation_group_workstation';
+        }
     }
 
     protected function dropPrintersSchema(): void
     {
-        $dropOrder = ['printer_workstation_group', 'printers'];
+        $dropOrder = ['workstation_group_workstation', 'workstations', 'printer_workstation_group', 'printers'];
         foreach ($dropOrder as $table) {
             if (in_array($table, $this->createdPrinterTables, true)) {
                 Schema::dropIfExists($table);
