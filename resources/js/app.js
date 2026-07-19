@@ -1,3 +1,12 @@
+// Fonts IBM Plex — importées côté JS pour que Vite émette les woff2
+// (importées dans app.css, Tailwind inline le CSS et casse les url relatives)
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-sans/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+
 import './bootstrap';
 import './theme';
 import './dropdown-top-layer';

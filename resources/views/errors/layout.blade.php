@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>@yield('title') — SambaEdu</title>
 
+    {{-- Applique le thème sauvegardé avant le premier paint (anti-FOUC) --}}
+    <script>
+        try { document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light'); } catch (e) {}
+    </script>
+
     @vite(['resources/css/app.css'])
 </head>
 <body class="bg-base-200/30 min-h-screen flex items-center justify-center p-6">

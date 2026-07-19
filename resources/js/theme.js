@@ -13,23 +13,9 @@ class ThemeManager {
      * Initialise le thème au chargement de la page
      */
     init() {
-        // Récupérer le thème sauvegardé dans localStorage
-        const savedTheme = localStorage.getItem('theme');
-
-        // Forcer le thème clair par défaut (thème sombre désactivé pour l'instant)
-        let theme;
-        if (savedTheme) {
-            // Utiliser le thème sauvegardé
-            theme = savedTheme;
-        } else {
-            // Toujours utiliser le thème clair par défaut
-            theme = 'light';
-        }
-
-        this.applyTheme(theme);
-
-        // Note: La détection automatique du thème système est désactivée
-        // pour forcer l'utilisation du thème clair uniquement
+        // Thème sauvegardé, sinon clair par défaut (pas de détection système :
+        // le choix est explicite via le toggle et persiste en localStorage)
+        this.applyTheme(localStorage.getItem('theme') || 'light');
     }
 
     /**

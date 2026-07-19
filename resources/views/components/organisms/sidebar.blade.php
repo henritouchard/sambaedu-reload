@@ -1,7 +1,7 @@
 <!-- Sidebar -->
 <div class="drawer-side">
     <label for="drawer-toggle" aria-label="close sidebar" class="drawer-overlay"></label>
-    <aside class="min-h-full w-80 border-r border-gray-200 bg-base-100 shadow-xl">
+    <aside class="min-h-full w-80 border-r border-base-300 bg-base-100 shadow-xl">
         <!-- Sidebar header -->
         <div class="p-6 backdrop-blur-sm">
             <h2 class="text-xl font-bold text-base-content flex items-center justify-center">

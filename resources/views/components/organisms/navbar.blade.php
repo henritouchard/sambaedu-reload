@@ -1,5 +1,5 @@
 <!-- Navbar -->
-<div class="top-2 p-2 border-b border-zinc-200 flex items-center justify-between shadow-none bg-base-100">
+<div class="top-2 p-2 border-b border-base-300 flex items-center justify-between shadow-none bg-base-100">
     <!-- Mobile menu button - visible only on small screens -->
     <label for="drawer-toggle" class="btn btn-ghost btn-circle lg:hidden">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -14,7 +14,7 @@
             <i class="fa-solid fa-clock-rotate-left"></i>
         </a>
 
-        {{-- <x-atoms.theme-toggle position="relative" size="md" /> --}}
+        <x-atoms.theme-toggle position="relative" size="md" />
 
         <!-- Notifications -->
         <div class="dropdown dropdown-end">
