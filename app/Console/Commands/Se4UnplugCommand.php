@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\InteractsWithSe4Extinction;
+use App\Services\LegacyGpoNeutralizationInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
@@ -67,14 +68,39 @@ class Se4UnplugCommand extends Command
         }
 
         $days = max(1, (int) $this->option('days'));
+        $gpoStatus = $this->gpoApplicationsStatus();
 
-        if (! $this->renderStatus($days, $vhostEnabled) && ! $this->option('force')) {
+        if (! $this->renderStatus($days, $vhostEnabled, $gpoStatus) && ! $this->option('force')) {
             $this->newLine();
             $this->error('Préflight NO-GO : des routes legacy sont encore appelées — extinction refusée.');
             $this->line('Traiter les hits ci-dessus (fix ou story), ou relancer avec --force en connaissance de cause.');
             $this->line('Ne JAMAIS forcer sur une instance dont le canal Linux est encore vivant (exception Q4 — lab1).');
 
             return self::FAILURE;
+        }
+
+        if ($gpoStatus['status'] === LegacyGpoNeutralizationInspector::STATUS_APPLIES && ! $this->option('force')) {
+            $this->newLine();
+            $this->error('Préflight : la GPO de domaine « applications » s\'applique encore aux postes de ce collège — extinction refusée.');
+            $this->line($gpoStatus['detail']);
+            $this->line('Neutralisation = blocage d\'héritage côté collège (gPOptions=1 sur l\'OU des postes).');
+            $this->line('Ne JAMAIS vider/délier/supprimer la GPO elle-même : elle est partagée avec les collèges encore en SE4.');
+
+            return self::FAILURE;
+        }
+
+        if ($this->legacyEnvScoriePresent()) {
+            if (! $this->removeLegacyEnvScorie()) {
+                $this->error('Échec du retrait de la scorie .env — abandon.');
+
+                return self::FAILURE;
+            }
+
+            // Recache config en root puis restitue la propriété à PHP-FPM
+            // (www-admin) — un cache root casserait le site.
+            Process::run(sprintf('php %s config:cache', escapeshellarg(base_path('artisan'))));
+            Process::run(sprintf('chown -R www-admin:www-admin %s', escapeshellarg(base_path('bootstrap/cache'))));
+            $this->info('Scorie .env LEGACY_CONFIG_CHANNEL_ENABLED retirée (config recachée, chown www-admin).');
         }
 
         if ($vhostEnabled) {

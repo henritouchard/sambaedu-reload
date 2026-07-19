@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands\Concerns;
 
 use App\Models\LegacyCatchallLog;
+use App\Services\LegacyGpoNeutralizationInspector;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Throwable;
 
 /**
  * Story 38.6 — Logique partagée des commandes d'extinction `se4:*`.
@@ -35,9 +38,21 @@ trait InteractsWithSe4Extinction
     ];
 
     /**
+     * Scorie `.env` post-38.2 : la clé config a été supprimée, la ligne ne
+     * doit plus exister sur les instances (trompeuse).
+     */
+    private const LEGACY_ENV_SCORIE_KEY = 'LEGACY_CONFIG_CHANNEL_ENABLED';
+
+    /**
      * Seam de test : force le résultat de la garde root (null = euid réel).
      */
     public static ?bool $assumeRoot = null;
+
+    /**
+     * Seam de test : chemin `.env` (null = `base_path('.env')`) — patron
+     * ManagesScriptLoggingFlag, JAMAIS le `.env` réel dans les tests.
+     */
+    public static ?string $envPath = null;
 
     protected function ensureRoot(): bool
     {
@@ -115,6 +130,73 @@ trait InteractsWithSe4Extinction
         return true;
     }
 
+    protected function envFilePath(): string
+    {
+        return static::$envPath ?? base_path('.env');
+    }
+
+    protected function legacyEnvScoriePresent(): bool
+    {
+        $path = $this->envFilePath();
+
+        if (! File::exists($path)) {
+            return false;
+        }
+
+        return preg_match('/^' . self::LEGACY_ENV_SCORIE_KEY . '=/m', File::get($path)) === 1;
+    }
+
+    /**
+     * Retire la ligne scorie du `.env` (non destructif, ancré ligne par
+     * ligne — le reste du fichier est préservé byte-pour-byte).
+     */
+    protected function removeLegacyEnvScorie(): bool
+    {
+        $path = $this->envFilePath();
+        $contents = File::get($path);
+        $cleaned = preg_replace('/^' . self::LEGACY_ENV_SCORIE_KEY . '=[^\r\n]*\r?\n?/m', '', $contents, 1);
+
+        if ($cleaned === null) {
+            return false; // erreur PCRE — ne JAMAIS écrire un .env vidé
+        }
+
+        File::put($path, $cleaned);
+
+        return true;
+    }
+
+    /**
+     * Migrations en attente (affichage pré-GO ; jamais bloquant — hygiène de
+     * déploiement, pas une condition d'extinction).
+     *
+     * @return list<string>
+     */
+    protected function pendingMigrations(): array
+    {
+        try {
+            $migrator = app('migrator');
+
+            if (! $migrator->repositoryExists()) {
+                return [];
+            }
+
+            $files = $migrator->getMigrationFiles(database_path('migrations'));
+            $ran = $migrator->getRepository()->getRan();
+
+            return array_values(array_diff(array_keys($files), $ran));
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @return array{status: string, detail: string}
+     */
+    protected function gpoApplicationsStatus(): array
+    {
+        return app(LegacyGpoNeutralizationInspector::class)->inspect();
+    }
+
     /**
      * Agrège la fenêtre d'observation et classe chaque ligne.
      *
@@ -163,15 +245,19 @@ trait InteractsWithSe4Extinction
     }
 
     /**
-     * Affiche l'état de la bascule + le rapport d'observation, et retourne
-     * le verdict GO (true) / NO-GO (false). `$vhostState` évite un second
-     * a2query quand l'appelant connaît déjà l'état.
+     * Affiche l'état de la bascule + les checks pré-GO + le rapport
+     * d'observation, et retourne le verdict GO (true) / NO-GO (false).
+     * `$vhostState` et `$gpoStatus` évitent une double interrogation quand
+     * l'appelant connaît déjà l'état.
+     *
+     * @param  array{status: string, detail: string}|null  $gpoStatus
      */
-    protected function renderStatus(int $days, ?bool $vhostState = null): bool
+    protected function renderStatus(int $days, ?bool $vhostState = null, ?array $gpoStatus = null): bool
     {
         $legacyPath = $this->legacyPath();
         $offPath = $this->offPath();
         $vhost = $vhostState ?? $this->vhostEnabled();
+        $gpo = $gpoStatus ?? $this->gpoApplicationsStatus();
 
         $this->line('État de la bascule :');
         $this->line(sprintf('  vhost sambaedu-legacy : %s', match ($vhost) {
@@ -181,6 +267,19 @@ trait InteractsWithSe4Extinction
         }));
         $this->line(sprintf('  %s : %s', $legacyPath, is_dir($legacyPath) ? 'présent' : 'absent'));
         $this->line(sprintf('  %s : %s', $offPath, is_dir($offPath) ? 'présent (extinction à blanc en place)' : 'absent'));
+        $this->newLine();
+
+        $pending = $this->pendingMigrations();
+
+        $this->line('Checks pré-GO :');
+        $this->line(sprintf('  migrations en attente : %s', $pending === [] ? 'aucune' : count($pending) . ' — lancer php artisan migrate'));
+        $this->line(sprintf('  scorie .env %s : %s', self::LEGACY_ENV_SCORIE_KEY, $this->legacyEnvScoriePresent() ? 'PRÉSENTE (retirée par se4:unplug)' : 'absente'));
+        $this->line(sprintf('  GPO domaine « applications » : %s — %s', match ($gpo['status']) {
+            LegacyGpoNeutralizationInspector::STATUS_NEUTRALIZED => 'neutralisée pour ce collège',
+            LegacyGpoNeutralizationInspector::STATUS_ABSENT => 'absente du domaine',
+            LegacyGpoNeutralizationInspector::STATUS_APPLIES => 'S\'APPLIQUE ENCORE',
+            default => 'INDÉTERMINÉ',
+        }, $gpo['detail']));
         $this->newLine();
 
         $report = $this->observationReport($days);

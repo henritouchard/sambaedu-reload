@@ -9,6 +9,7 @@ use App\Console\Commands\Se4ReplugCommand;
 use App\Console\Commands\Se4StatusCommand;
 use App\Console\Commands\Se4UnplugCommand;
 use App\Models\LegacyCatchallLog;
+use App\Services\LegacyGpoNeutralizationInspector;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
@@ -52,6 +53,13 @@ class Se4ExtinctionCommandsTest extends TestCase
         $this->tmpBase = sys_get_temp_dir() . '/se4-extinction-test-' . uniqid('', true);
         @mkdir($this->tmpBase, 0755, true);
         config(['sambaedu.legacy_path' => $this->legacyDir()]);
+
+        // JAMAIS le .env réel : fixture isolée (sans scorie par défaut).
+        file_put_contents($this->envFixture(), "APP_NAME=test\n");
+        Se4StatusCommand::$envPath = $this->envFixture();
+        Se4UnplugCommand::$envPath = $this->envFixture();
+        Se4ReplugCommand::$envPath = $this->envFixture();
+        Se4PurgeCommand::$envPath = $this->envFixture();
     }
 
     protected function tearDown(): void
@@ -62,12 +70,22 @@ class Se4ExtinctionCommandsTest extends TestCase
         Se4UnplugCommand::$assumeRoot = null;
         Se4ReplugCommand::$assumeRoot = null;
         Se4PurgeCommand::$assumeRoot = null;
+        Se4StatusCommand::$envPath = null;
+        Se4UnplugCommand::$envPath = null;
+        Se4ReplugCommand::$envPath = null;
+        Se4PurgeCommand::$envPath = null;
 
+        @unlink($this->envFixture());
         @rmdir($this->legacyDir());
         @rmdir($this->offDir());
         @rmdir($this->tmpBase);
 
         parent::tearDown();
+    }
+
+    private function envFixture(): string
+    {
+        return $this->tmpBase . '/.env';
     }
 
     private function legacyDir(): string
@@ -233,6 +251,25 @@ class Se4ExtinctionCommandsTest extends TestCase
             ->assertExitCode(0);
     }
 
+    public function test_status_reports_pre_go_checks(): void
+    {
+        $this->fakeVhostDisabled();
+        file_put_contents($this->envFixture(), "APP_NAME=test\nLEGACY_CONFIG_CHANNEL_ENABLED=true\n");
+        $this->mockGpo(LegacyGpoNeutralizationInspector::STATUS_NEUTRALIZED, 'héritage bloqué');
+
+        $this->artisan('se4:status')
+            ->expectsOutputToContain('scorie .env LEGACY_CONFIG_CHANNEL_ENABLED : PRÉSENTE')
+            ->expectsOutputToContain('GPO domaine « applications » : neutralisée pour ce collège')
+            ->assertExitCode(0);
+    }
+
+    private function mockGpo(string $status, string $detail = ''): void
+    {
+        $this->mock(LegacyGpoNeutralizationInspector::class, function ($mock) use ($status, $detail) {
+            $mock->shouldReceive('inspect')->andReturn(['status' => $status, 'detail' => $detail]);
+        });
+    }
+
     // ── se4:unplug ──────────────────────────────────────────────────────────
 
     public function test_unplug_refuses_without_root(): void
@@ -368,6 +405,62 @@ class Se4ExtinctionCommandsTest extends TestCase
 
         Process::assertDidntRun('a2dissite sambaedu-legacy');
         Process::assertDidntRun(fn ($process) => str_starts_with($process->command, 'mv '));
+    }
+
+    public function test_unplug_aborts_when_gpo_applications_still_applies(): void
+    {
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+        $this->mockGpo(LegacyGpoNeutralizationInspector::STATUS_APPLIES, 'liée racine sans blocage');
+
+        $this->artisan('se4:unplug')
+            ->expectsOutputToContain('GPO de domaine « applications » s\'applique encore')
+            ->expectsOutputToContain('JAMAIS vider/délier/supprimer la GPO')
+            ->assertExitCode(1);
+
+        Process::assertDidntRun('a2dissite sambaedu-legacy');
+    }
+
+    public function test_unplug_force_overrides_gpo_gate(): void
+    {
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+        $this->mockGpo(LegacyGpoNeutralizationInspector::STATUS_APPLIES, 'liée racine sans blocage');
+
+        $this->artisan('se4:unplug', ['--force' => true])->assertExitCode(0);
+
+        Process::assertRan('a2dissite sambaedu-legacy');
+    }
+
+    public function test_unplug_gpo_indeterminate_does_not_block(): void
+    {
+        // LDAP injoignable (inspecteur réel sans annuaire en test) → warning
+        // affiché mais extinction non bloquée.
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+
+        $this->artisan('se4:unplug')
+            ->expectsOutputToContain('INDÉTERMINÉ')
+            ->assertExitCode(0);
+    }
+
+    public function test_unplug_removes_env_scorie_and_recaches_config(): void
+    {
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+        file_put_contents($this->envFixture(), "APP_NAME=test\nLEGACY_CONFIG_CHANNEL_ENABLED=true\nAPP_ENV=production\n");
+
+        $this->artisan('se4:unplug')
+            ->expectsOutputToContain('Scorie .env LEGACY_CONFIG_CHANNEL_ENABLED retirée')
+            ->assertExitCode(0);
+
+        $this->assertSame("APP_NAME=test\nAPP_ENV=production\n", file_get_contents($this->envFixture()));
+        Process::assertRan(fn ($process) => str_contains($process->command, 'config:cache'));
+        Process::assertRan(fn ($process) => str_starts_with($process->command, 'chown -R www-admin'));
     }
 
     public function test_unplug_aborts_when_legacy_path_not_configured(): void

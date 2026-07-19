@@ -231,10 +231,18 @@ converge toujours (y compris la branche « rien à faire », qui recharge par s�
 ### Séquence type par instance
 
 1. `se4:status` — vérifier le NO-GO résiduel ; traiter chaque hit legacy (fix/story).
-2. Pré-GO spécifique instance : GPO de domaine « applications » `{D418994B-…}`
-   vérifiée/**vidée** sur le DC (jamais déliée ni supprimée — GPO globale
-   multi-étabs) ; logon Windows de test → zéro hit `gpo/*.php`.
-3. `se4:unplug` — extinction à blanc (le préflight refuse si hits récents).
+   Le rapport inclut les **checks pré-GO** : migrations en attente, scorie `.env`
+   `LEGACY_CONFIG_CHANNEL_ENABLED`, et neutralisation de la GPO de domaine
+   « applications » pour ce collège (`LegacyGpoNeutralizationInspector`, lecture
+   seule AD).
+2. GPO « applications » : elle est hébergée AU-DESSUS de l'ensemble des collèges —
+   ne JAMAIS la vider/délier/supprimer (les collèges encore en SE4 la consomment).
+   Neutralisation = **blocage d'héritage côté collège** (`gPOptions=1` sur l'OU des
+   postes, cf. dev `OU=computers` et lab1 `OU=0991229y,OU=computers`). Si le check
+   la dit encore appliquée : poser le blocage sur l'OU des postes, rien d'autre.
+3. `se4:unplug` — extinction à blanc (le préflight refuse si hits récents OU si la
+   GPO « applications » s'applique encore, sauf `--force` ; retire lui-même la
+   scorie `.env` + config recache).
 4. E2e parc : boot PXE, install Windows native, logon avec agent, WPKG natif,
    Guacamole, GPO bootstrap (runbooks des domaines concernés, `docs/qa/README.md`).
 5. Observation **N=7 jours** : `se4:status --days=7` en fin de fenêtre ; tout hit
