@@ -119,6 +119,12 @@ final class WindowsPostInstallTracker
     public function recordInstallBatGenerated(Workstation $workstation, string $ip = ''): void
     {
         $this->persistMachineBootLog($workstation, 'ipxe_win_install', true, $ip);
+
+        // Story 3.11 — le payload WinPE est délivré : l'installeur a la main. On
+        // bascule la requête armée en `installing` pour qu'elle ne soit plus
+        // servie aux boots suivants (les reboots de `setup.exe` doivent tomber
+        // sur le disque). Best-effort, à côté de `programmed_action`.
+        $this->markReinstallInstalling($workstation);
     }
 
     /**
@@ -628,6 +634,27 @@ final class WindowsPostInstallTracker
             // à voir les changements via refresh).
             $workstation->fill($locked->getAttributes())->exists = true;
         });
+    }
+
+    /**
+     * Story 3.11 — Marque `installing` la réinstallation armée du poste dès que
+     * le payload WinPE est délivré : les reboots de `setup.exe` ne doivent plus
+     * se faire re-servir l'action, sinon l'installation repart de zéro sans
+     * jamais atteindre l'OOBE. Best-effort — jamais bloquant.
+     */
+    private function markReinstallInstalling(Workstation $workstation): void
+    {
+        try {
+            app(\App\Services\Parc\WorkstationReinstallService::class)
+                ->markInstallingForWorkstation($workstation);
+        } catch (Throwable $e) {
+            Log::channel($this->channel())->warning('ipxe.reinstall.mark_installing_failed', [
+                'action_type' => 'ipxe.reinstall.mark_installing_failed',
+                'workstation_id' => $workstation->id ?? null,
+                'exception_class' => $e::class,
+                'message' => substr($e->getMessage(), 0, 200),
+            ]);
+        }
     }
 
     /**

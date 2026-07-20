@@ -224,6 +224,29 @@ class WorkstationReinstallServiceTest extends TestCase
         $this->assertNull($this->service->activeRequestFor($ws));
     }
 
+    public function test_mark_installing_for_workstation(): void
+    {
+        $ws = Workstation::factory()->create();
+        $req = $this->service->armForMachine($ws, 'install_win11', null, 'user:1');
+
+        $this->service->markInstallingForWorkstation($ws);
+
+        // `installing` reste ACTIF : pas de réarmement en double possible, et le
+        // sweep TTL peut encore rattraper une installation qui ne rapporte
+        // jamais son OOBE.
+        $this->assertSame(WorkstationReinstallRequest::STATUS_INSTALLING, $req->fresh()->status);
+        $this->assertNotNull($this->service->activeRequestFor($ws));
+    }
+
+    public function test_mark_installing_for_workstation_is_noop_without_request(): void
+    {
+        $ws = Workstation::factory()->create();
+
+        $this->service->markInstallingForWorkstation($ws);
+
+        $this->assertNull($this->service->activeRequestFor($ws));
+    }
+
     public function test_serve_cap_guard(): void
     {
         config(['ipxe.reinstall.max_boot_serves' => 3]);

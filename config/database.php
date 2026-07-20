@@ -76,6 +76,16 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => 'prefer',
+
+            // Fuseau de la session Postgres. Laravel sérialise ses dates en
+            // littéral NAÏF formaté dans `app.timezone` ; si la session SQL est
+            // sur un autre fuseau, Postgres réinterprète ce littéral et décale
+            // l'instant stocké en `timestamptz` (symptôme constaté : une
+            // réinstallation « immédiate » armée à 19h06 Paris relue à 21h06,
+            // donc jamais servie au boot iPXE avant 2h). On aligne donc la
+            // session sur le fuseau applicatif par défaut, tout en laissant
+            // `DB_TIMEZONE` disponible pour les déploiements hors Europe/Paris.
+            'timezone' => env('DB_TIMEZONE', env('APP_TIMEZONE', 'Europe/Paris')),
         ],
 
         'sqlsrv' => [

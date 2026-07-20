@@ -10,6 +10,7 @@ use App\Ipxe\Enums\IpxeMenuKind;
 use App\Ipxe\Support\MacAddressNormalizer;
 use App\Models\MachineBootLog;
 use App\Models\Workstation;
+use App\Models\WorkstationReinstallRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
@@ -785,6 +786,16 @@ final class IpxeService
 
             $request = $this->reinstallService->activeRequestFor($ws);
             if ($request === null) {
+                return null;
+            }
+
+            // L'installeur a déjà la main (payload délivré, cf.
+            // `markInstallingForWorkstation`). `setup.exe` redémarre la machine
+            // lui-même en fin de phase WinPE ; avec le PXE en tête du boot order
+            // ce reboot retombe ici. Re-servir l'action relancerait WinPE de
+            // zéro et l'installation n'atteindrait jamais l'OOBE. On laisse donc
+            // le poste tomber sur son disque local pour qu'elle se poursuive.
+            if ($request->status === WorkstationReinstallRequest::STATUS_INSTALLING) {
                 return null;
             }
 

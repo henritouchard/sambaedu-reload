@@ -116,4 +116,30 @@ class ResolveProgrammedActionTest extends TestCase
         $this->assertNull($this->service->resolveProgrammedAction($ws));
         $this->assertSame(WorkstationReinstallRequest::STATUS_CANCELED, $req->fresh()->status);
     }
+
+    /**
+     * Une requête `installing` n'est PLUS servie : le payload a été délivré et
+     * `setup.exe` redémarre la machine lui-même en fin de phase WinPE. Avec le
+     * PXE en tête du boot order ce reboot retombe sur `/ipxe/boot` ; re-servir
+     * l'action relancerait WinPE de zéro et l'OOBE ne serait jamais atteint
+     * (boucle constatée sur `testenrol` le 2026-07-19, 4 cycles de ~10 min).
+     */
+    public function test_installing_request_is_not_served_again(): void
+    {
+        $ws = Workstation::factory()->create();
+        $req = WorkstationReinstallRequest::factory()->armed()->create([
+            'workstation_id' => $ws->id,
+            'target_action' => 'install_win11',
+            'status' => WorkstationReinstallRequest::STATUS_INSTALLING,
+            'boot_served_count' => 1,
+        ]);
+
+        $this->assertNull($this->service->resolveProgrammedAction($ws));
+
+        // Ni serve comptabilisé, ni bascule d'état : le poste tombe simplement
+        // sur son disque local pour que l'installation se poursuive.
+        $fresh = $req->fresh();
+        $this->assertSame(1, $fresh->boot_served_count);
+        $this->assertSame(WorkstationReinstallRequest::STATUS_INSTALLING, $fresh->status);
+    }
 }

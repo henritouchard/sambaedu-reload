@@ -285,12 +285,43 @@ class WorkstationReinstallService
         $req->save();
     }
 
+    /**
+     * `serving → installing` : le payload d'installation a été délivré au poste,
+     * l'installeur a la main. À partir de là la requête ne doit PLUS être servie
+     * au boot (cf. `IpxeService::resolveProgrammedAction`) — voir
+     * {@see markInstallingForWorkstation} pour le pourquoi.
+     */
     public function markInstalling(WorkstationReinstallRequest $req): void
     {
         if ($req->isTerminal()) {
             return;
         }
         $req->update(['status' => WorkstationReinstallRequest::STATUS_INSTALLING]);
+    }
+
+    /**
+     * Helper appelé par les trackers quand l'installeur a pris la main
+     * (`install.bat` WinPE délivré) : bascule la requête active en `installing`.
+     *
+     * Sans ça, `setup.exe` — qui redémarre la machine lui-même en fin de phase
+     * WinPE et ne rend jamais la main — retombe sur le PXE (premier dans le boot
+     * order), se fait re-servir l'action, et WinPE repart de zéro : l'OOBE n'est
+     * jamais atteint, donc `markDoneForWorkstation` n'est jamais appelé, et la
+     * boucle n'est bornée que par le serve cap. Constaté sur `testenrol` le
+     * 2026-07-19 (4 cycles de ~10 min).
+     *
+     * `installing` reste dans `ACTIVE_STATUSES` : le poste ne peut pas être
+     * réarmé en double, et si l'installation échoue sans jamais rapporter l'OOBE,
+     * le sweep TTL la passera `failed` et libèrera le poste.
+     *
+     * Enveloppé best-effort par l'appelant.
+     */
+    public function markInstallingForWorkstation(Workstation $ws): void
+    {
+        $req = $this->activeRequestFor($ws);
+        if ($req !== null) {
+            $this->markInstalling($req);
+        }
     }
 
     public function markFailed(WorkstationReinstallRequest $req): void
