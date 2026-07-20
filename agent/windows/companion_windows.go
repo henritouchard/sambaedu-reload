@@ -12,7 +12,16 @@ import (
 	"sambaedu/agent/shared"
 )
 
-var procFreeConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("FreeConsole")
+var (
+	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
+	procFreeConsole  = kernel32.NewProc("FreeConsole")
+	procAllocConsole = kernel32.NewProc("AllocConsole")
+)
+
+// consoleAttached : état console de CE processus, tel que piloté par
+// attachConsole/detachConsole. Le compagnon démarre avec la console héritée de
+// la tâche planifiée (binaire CONSOLE), donc true.
+var consoleAttached = true
 
 // detachConsole : la tâche planifiée lance un binaire CONSOLE dans la session
 // interactive → Windows lui ouvre une fenêtre, qui resterait affichée toute
@@ -24,6 +33,59 @@ var procFreeConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("FreeCons
 // rendre la main au shell — tout le diagnostic vit dans companion.log.
 func detachConsole() {
 	_, _, _ = procFreeConsole.Call()
+	consoleAttached = false
+}
+
+// attachConsole : RÉ-alloue une console à un processus qui a déjà appelé
+// FreeConsole (Story 2.12.3). Sans elle, la décision console du compagnon était
+// IRRÉVERSIBLE — un seul point de lecture du drapeau `debug`, à t≈0, et plus
+// aucun chemin de retour ensuite.
+//
+// Pourquoi c'était cassé : sur un poste fraîchement réinstallé, la tâche
+// session-fetch (SYSTEM, qui écrit cache\sessions\<SID>\state.json) et la tâche
+// du compagnon partagent le trigger At log on — elles sont en COURSE. Le
+// compagnon lisait un cache encore absent, DebugFromStateCacheFile rendait false
+// (best-effort : toute erreur → false) et la console partait pour de bon, alors
+// que le poste était bien en debug côté serveur. Le reste convergeait quand même
+// (RunPass tolère 60 s d'attente du cache) : seule la console manquait, sans la
+// moindre trace d'erreur. Constaté 2026-07-20, poste réinstallé.
+//
+// AllocConsole seul ne suffit pas : après FreeConsole, les handles standards
+// hérités au démarrage sont MORTS. Il faut rouvrir CONOUT$ et re-pointer
+// os.Stdout/os.Stderr dessus, sinon la console s'ouvre… vide (le Logger écrit
+// dans un handle invalide). Best-effort intégral : tout échec laisse le
+// diagnostic vivre dans companion.log, comme avant.
+func attachConsole() error {
+	if consoleAttached {
+		return nil
+	}
+	if ret, _, err := procAllocConsole.Call(); ret == 0 {
+		return fmt.Errorf("AllocConsole : %w", err)
+	}
+
+	handle, err := windows.CreateFile(
+		windows.StringToUTF16Ptr("CONOUT$"),
+		windows.GENERIC_READ|windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		nil, windows.OPEN_EXISTING, 0, 0,
+	)
+	if err != nil {
+		// Console allouée mais inutilisable : on la rend plutôt que de laisser
+		// une fenêtre morte à l'écran.
+		_, _, _ = procFreeConsole.Call()
+
+		return fmt.Errorf("ouverture de CONOUT$ : %w", err)
+	}
+
+	_ = windows.SetStdHandle(windows.STD_OUTPUT_HANDLE, handle)
+	_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, handle)
+	console := os.NewFile(uintptr(handle), "CONOUT$")
+	os.Stdout = console
+	os.Stderr = console
+
+	consoleAttached = true
+
+	return nil
 }
 
 // Câblage Windows du compagnon de session (Story 24.6) — sous-commande
@@ -72,10 +134,13 @@ func runCompanion() error {
 	//     tourner, quelle que soit la session) + echo des logs en direct ;
 	//   - debug OFF → comportement nominal : FreeConsole (la fenêtre héritée
 	//     de la tâche planifiée se ferme — bref flash au logon).
-	// Latence assumée : le 1er logon suivant l'activation lit le cache encore
-	// « non-debug » ; la console apparaît au logon suivant (cache rafraîchi).
+	// Cette lecture reste le chemin NOMINAL (cache déjà présent = console
+	// conservée sans le moindre clignotement), mais elle n'est plus la SEULE :
+	// OnDebugChange ci-dessous rattrape le cas où le cache n'est pas encore là
+	// (poste réinstallé, session-fetch en course) ET le toggle en cours de
+	// session. Voir attachConsole.
 	if shared.DebugFromStateCacheFile(store.SessionStatePath(sid)) {
-		logger.Echo = true
+		logger.SetEcho(true)
 		logger.Infof("Mode debug actif (serveur) : console conservée, logs recopiés en direct.")
 	} else {
 		detachConsole()
@@ -182,7 +247,38 @@ func runCompanion() error {
 		// SEULEMENT : le MachineEngine SYSTEM (main_windows.go) n'a AUCUNE ops
 		// de refresh — jamais de geste en session 0 (piège n° 2).
 		Refresh: &refreshOps{log: logger},
-		Log:     logger,
+		// Story 2.12.3 : le drapeau `debug` est RELU à chaque passe et la console
+		// suit — première observation (rattrapage de la course au logon d'un poste
+		// réinstallé) comme bascule en cours de session.
+		OnDebugChange: func(debug bool) {
+			if !debug {
+				if consoleAttached {
+					logger.Infof("Mode debug désactivé (serveur) : console détachée, le diagnostic continue dans companion.log.")
+					logger.SetEcho(false)
+					detachConsole()
+				}
+
+				return
+			}
+			// Chemin nominal (console jamais détachée) : rien à dire de plus que
+			// le message déjà émis au démarrage.
+			if consoleAttached {
+				logger.SetEcho(true)
+
+				return
+			}
+			if err := attachConsole(); err != nil {
+				// Le poste est en debug mais on n'a pas su rendre une console :
+				// on le DIT dans le log plutôt que d'échouer en silence — c'est
+				// exactement le silence qui avait rendu le bug indétectable.
+				logger.Warningf("Mode debug actif (serveur) mais rattachement de la console impossible : %v — le diagnostic reste dans companion.log.", err)
+
+				return
+			}
+			logger.SetEcho(true)
+			logger.Infof("Mode debug actif (serveur) : console rattachée, logs recopiés en direct.")
+		},
+		Log: logger,
 	}
 
 	// Le processus meurt à la fin de session (logoff) ; Interrupt couvre le

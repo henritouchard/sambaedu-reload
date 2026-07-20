@@ -383,7 +383,34 @@ package shared
 // ⚠️ Un binaire ≤ 2.12.1 n'émet aucun item `companion` : l'absence de la ligne
 // vaut « agent trop ancien », PAS « compagnon sain ».
 //
+// 2.12.3 — console de debug du compagnon : décision RÉVERSIBLE.
+//
+// Le compagnon lisait le drapeau `debug` UNE SEULE FOIS, à t≈0, dans son cache
+// per-SID, puis appelait FreeConsole. Or aucun AllocConsole n'existait nulle
+// part : la décision était définitive pour la session. Sur un poste fraîchement
+// réinstallé, cache\sessions\<SID>\ n'existe pas encore à cet instant —
+// session-fetch (SYSTEM, qui l'écrit) et SessionCompanion partagent le trigger
+// At log on, ils sont en COURSE — donc lecture ratée ⇒ `false` (best-effort :
+// toute erreur → false) ⇒ console perdue alors que le poste était bien en debug.
+// Le reste convergeait normalement, RunPass tolérant 60 s d'attente du cache
+// (WaitForCache) : SEULE la console manquait, sans la moindre erreur nulle part.
+// La décision console avait zéro tolérance temporelle là où la convergence en
+// avait soixante secondes. Constaté 2026-07-20 sur poste réinstallé, agent
+// 2.12.2, debug bien actif côté serveur.
+//
+// Correctif : `Companion.OnDebugChange` — le drapeau est relu à CHAQUE passe et
+// notifié aux seuls CHANGEMENTS (level-triggered, aucun geste sur passe stable).
+// Côté Windows, `attachConsole` réalloue une console (AllocConsole + réouverture
+// de CONOUT$ et re-pointage de os.Stdout/os.Stderr — après FreeConsole les
+// handles hérités sont morts, sans quoi la console s'ouvrirait vide). La lecture
+// initiale reste le chemin nominal (cache déjà présent = console conservée, zéro
+// clignotement) ; le hook n'est qu'un rattrapage. Effet de bord bienvenu : le
+// toggle debug prend désormais effet EN COURS de session, sans rouvrir la
+// session — la « latence assumée au logon suivant » documentée en 24.6 disparaît.
+// Un échec de rattachement est LOGGÉ en warning (c'est le silence qui avait rendu
+// ce bug indétectable), jamais fatal.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.12.2"
+var Version = "2.12.3"

@@ -81,6 +81,24 @@ type Companion struct {
 	// un statut d'item (D4). Purement local : ni réseau ni token (NFR5).
 	Refresh RefreshOps
 
+	// OnDebugChange : notification du drapeau `debug` de l'enveloppe, à CHAQUE
+	// fois qu'il CHANGE — première observation incluse (Story 2.12.3). Le
+	// câblage console du compagnon ne peut PAS se contenter d'une lecture au
+	// démarrage : sur un poste fraîchement réinstallé, cache\sessions\<SID>\
+	// n'existe pas encore quand le compagnon démarre (session-fetch SYSTEM et
+	// SessionCompanion partagent le trigger At log on — ils sont en COURSE), la
+	// lecture rend `false` et la console est détachée DÉFINITIVEMENT alors que
+	// le poste est en debug. Ce hook rattrape : dès la première passe qui lit un
+	// cache, la plateforme (ré)alloue ou détache la console. Couvre aussi le
+	// toggle EN COURS de session — plus besoin de rouvrir la session.
+	// nil = inerte (tests hôte, non-Windows).
+	OnDebugChange func(debug bool)
+
+	// lastDebug : dernière valeur notifiée à OnDebugChange (nil = jamais).
+	// En mémoire seulement — un redémarrage du compagnon re-notifie, ce qui
+	// est exactement ce qu'on veut (nouvelle console à câbler).
+	lastDebug *bool
+
 	Log *Logger
 
 	// Now : horloge injectable (tests). nil = time.Now.
@@ -202,6 +220,12 @@ func (c *Companion) RunPass() (bool, error) {
 		return false, err
 	}
 
+	// Drapeau `debug` de l'enveloppe : notifié AVANT la convergence, pour que
+	// la console de diagnostic soit là quand les handlers parlent (Story
+	// 2.12.3). Level-triggered comme le reste : on ne notifie QUE les
+	// changements, donc aucun geste console sur une passe stable.
+	c.notifyDebug(state.Debug)
+
 	// Partition des portées (piège n° 3) — JAMAIS de recouvrement :
 	//   service SYSTEM  → machine SEULEMENT ;
 	//   compagnon (ici) → session + machine_user SEULEMENT.
@@ -259,6 +283,21 @@ func (c *Companion) RunPass() (bool, error) {
 	c.runRefreshGesture()
 
 	return true, nil
+}
+
+// notifyDebug : appelle OnDebugChange au PREMIER état observé puis à chaque
+// bascule. Best-effort et JAMAIS fatal (NFR1) : le câblage d'une console de
+// diagnostic ne doit sous aucun prétexte empêcher une passe de converger.
+func (c *Companion) notifyDebug(debug bool) {
+	if c.lastDebug != nil && *c.lastDebug == debug {
+		return
+	}
+	c.lastDebug = &debug
+
+	if c.OnDebugChange == nil {
+		return
+	}
+	c.OnDebugChange(debug)
 }
 
 // runRefreshGesture : collecte le besoin de rafraîchissement accumulé par les

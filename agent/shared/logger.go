@@ -31,6 +31,10 @@ type Logger struct {
 	Now func() time.Time
 
 	// Echo : recopie chaque ligne sur stderr (mode console `agent.exe run`).
+	// Depuis 2.12.3, le compagnon la BASCULE en cours de vie (console rattachée
+	// quand le drapeau `debug` arrive après le démarrage) : passer par SetEcho,
+	// jamais par une écriture directe du champ — l'écriture doit se faire sous
+	// le mutex qui protège la lecture dans log().
 	Echo bool
 
 	mu sync.Mutex
@@ -66,6 +70,14 @@ func (l *Logger) retention() int {
 	}
 
 	return l.RetentionDays
+}
+
+// SetEcho bascule la recopie stderr sous le mutex du logger.
+func (l *Logger) SetEcho(echo bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.Echo = echo
 }
 
 func (l *Logger) Debugf(format string, args ...any)   { l.log("DEBUG", format, args...) }

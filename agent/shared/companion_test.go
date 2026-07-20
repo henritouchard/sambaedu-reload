@@ -1028,3 +1028,72 @@ func TestCompanionRunUserRainmeterIniFailureGraceful(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// Story 2.12.3 — le drapeau `debug` est relu à CHAQUE passe et notifié aux
+// seuls changements. Régression visée : sur un poste réinstallé, le cache
+// per-SID n'existe pas encore au démarrage du compagnon (course avec
+// session-fetch SYSTEM), la lecture initiale rend false et la console partait
+// définitivement. Ici on vérifie que la première passe qui lit un cache
+// debug=true le fait bien remonter.
+func TestCompanionNotifiesDebugFlagOnChangeOnly(t *testing.T) {
+	c, store := newTestCompanion(t, nil)
+
+	var seen []bool
+	c.OnDebugChange = func(debug bool) { seen = append(seen, debug) }
+
+	envelope := func(debug string) string {
+		return `{"schema":"se5.desired-state/v1","generated_at":"2026-07-20T08:00:00+00:00","ttl_seconds":3600,"debug":` +
+			debug + `,"machine":[],"session":[],"machine_user":[]}`
+	}
+
+	// Cache absent : aucune passe, donc aucune notification — on ne DEVINE
+	// jamais le drapeau, on ne notifie que ce qu'on a lu.
+	if ran, err := c.RunPass(); ran || err != nil {
+		t.Fatalf("cache absent : passe inattendue (%v, %v)", ran, err)
+	}
+	if len(seen) != 0 {
+		t.Fatalf("cache absent : aucune notification attendue, got %v", seen)
+	}
+
+	// Premier cache lu, debug=true → notification (c'est le rattrapage de la
+	// course au logon).
+	writeSessionCache(t, store, envelope("true"))
+	if _, err := c.RunPass(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Passe stable : même valeur → AUCUNE notification (level-triggered, pas
+	// de geste console à chaque cycle).
+	if _, err := c.RunPass(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bascule serveur en cours de session → notification.
+	writeSessionCache(t, store, envelope("false"))
+	if _, err := c.RunPass(); err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []bool{true, false}; len(seen) != len(want) || seen[0] != want[0] || seen[1] != want[1] {
+		t.Errorf("notifications : got %v, want %v", seen, want)
+	}
+}
+
+// Enveloppe SANS champ `debug` (absent → false) : la notification part quand
+// même à la première observation, sinon une console héritée resterait ouverte
+// sur un poste qui n'est pas en debug.
+func TestCompanionNotifiesDebugAbsentAsFalse(t *testing.T) {
+	c, store := newTestCompanion(t, nil)
+
+	var seen []bool
+	c.OnDebugChange = func(debug bool) { seen = append(seen, debug) }
+
+	writeSessionCache(t, store, `{"schema":"se5.desired-state/v1","generated_at":"2026-07-20T08:00:00+00:00","ttl_seconds":3600,"machine":[],"session":[],"machine_user":[]}`)
+	if _, err := c.RunPass(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(seen) != 1 || seen[0] {
+		t.Errorf("notifications : got %v, want [false]", seen)
+	}
+}

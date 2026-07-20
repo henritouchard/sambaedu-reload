@@ -272,9 +272,12 @@ class WindowsUnattendBuilderTest extends TestCase
 
         $commands = $this->firstLogonCommandsByOrder($xml);
         // Story 25.4 : un Order d'install agent (CA + binaire + service) s'insère
-        // entre le durcissement ACL (2) et le curl oobe (désormais 4).
-        // + Order 6 : reboot terminal de fin d'install (shutdown /r).
-        self::assertSame([1, 2, 3, 4, 5, 6], array_keys($commands));
+        // entre le durcissement ACL (2) et le curl oobe (désormais 5).
+        // + Order 4 : spice-guest-tools, confort VM (garde client-side, no-op
+        //   sur une machine physique), AVANT le curl — l'action.cmd récupéré
+        //   peut rebooter en ~5 s.
+        // + Order 7 : reboot terminal de fin d'install (shutdown /r).
+        self::assertSame([1, 2, 3, 4, 5, 6, 7], array_keys($commands));
         // 1 : échange ticket → token (dépôt C:\ProgramData\SambaEdu\Agent\token).
         self::assertStringContainsString('/api/v1/agent/enrollment', $commands[1]);
         self::assertStringContainsString('C:\ProgramData\SambaEdu\Agent\token', $commands[1]);
@@ -319,11 +322,43 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertNotFalse($caPos);
         self::assertNotFalse($binPos);
         self::assertLessThan($binPos, $caPos, 'La CA doit être déployée avant le download du binaire.');
-        // 4-5 : les commandes historiques glissent, inchangées.
-        self::assertStringContainsString('etape=oobe', $commands[4]);
-        self::assertStringContainsString('call %windir%\action.cmd', $commands[5]);
-        // 6 : reboot terminal de fin d'install (porte le `shutdown -r` du legacy).
-        self::assertStringContainsString('shutdown', $commands[6]);
+        // 4 : confort VM. Le garde SMBIOS sort AVANT tout téléchargement — une
+        // machine physique ne doit ni résoudre le serveur ni écrire sur disque.
+        self::assertStringContainsString('Win32_ComputerSystem', $commands[4]);
+        self::assertStringContainsString("-notmatch 'QEMU|KVM|Bochs'", $commands[4]);
+        $guardPos = strpos($commands[4], '-notmatch');
+        $dlPos = strpos($commands[4], 'Invoke-WebRequest');
+        self::assertNotFalse($guardPos);
+        self::assertNotFalse($dlPos);
+        self::assertLessThan($dlPos, $guardPos, 'Le garde VM doit précéder le téléchargement.');
+        // `/S` = NSIS (binaire vérifié : Nullsoft Install System v3.02.1). NSIS
+        // ignore silencieusement les switches Inno (`/VERYSILENT`) et affiche son
+        // GUI — combiné à `-Wait`, l'install resterait bloquée sans opérateur.
+        self::assertStringContainsString("'/S'", $commands[4]);
+        // `-Wait` obligatoire : installeur graphique, rend la main immédiatement
+        // sinon le reboot de l'Order 7 tomberait en pleine install.
+        self::assertStringContainsString('-Wait', $commands[4]);
+        // Échec non bloquant, comme les Orders 1 et 3.
+        self::assertStringContainsString('exit 0', $commands[4]);
+        // Observabilité : `exit 0` rend skip/succès/échec indistinguables sans
+        // trace. Les trois issues écrivent dans un fichier DÉDIÉ — surtout pas
+        // `install.log`, tronqué par le `echo ... >` de l'Order 7.
+        self::assertStringContainsString('spice-guest-tools.log', $commands[4]);
+        self::assertStringNotContainsString('install.log', $commands[4]);
+        self::assertStringContainsString('skip, hors QEMU/KVM', $commands[4]);
+        self::assertStringContainsString("'install rc=' + \$p.ExitCode", $commands[4]);
+        self::assertStringContainsString("'erreur ' + \$_.Exception.Message", $commands[4]);
+        // -PassThru requis pour disposer de $p.ExitCode.
+        self::assertStringContainsString('-PassThru', $commands[4]);
+        // L'Order 7 tronque toujours install.log — si ce `>` devenait `>>`, la
+        // raison d'être du fichier dédié disparaîtrait (garde de régression).
+        self::assertStringContainsString('>c:\netinst\install.log', $commands[7]);
+        self::assertStringNotContainsString('>>c:\netinst\install.log', $commands[7]);
+        // 5-6 : les commandes historiques glissent, inchangées.
+        self::assertStringContainsString('etape=oobe', $commands[5]);
+        self::assertStringContainsString('call %windir%\action.cmd', $commands[6]);
+        // 7 : reboot terminal de fin d'install (porte le `shutdown -r` du legacy).
+        self::assertStringContainsString('shutdown', $commands[7]);
     }
 
     #[Test]

@@ -140,14 +140,42 @@
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $dir='C:\Program Files\SambaEdu\Agent'; New-Item -Force -ItemType Directory $dir | Out-Null; $ca=Join-Path $env:TEMP 'se4-ca.crt'; Invoke-WebRequest -UseBasicParsing -Uri 'http://###_SE4FS_NAME_###/api/v1/agent/ca' -OutFile $ca; certutil -addstore -f Root $ca | Out-Null; $exe=Join-Path $dir 'agent.exe'; Invoke-WebRequest -UseBasicParsing -Uri 'http://###_SE4FS_NAME_###/api/v1/agent/stable/download' -OutFile $exe; &amp; $exe install -server-url 'http://###_SE4FS_NAME_###' } catch { } exit 0"</CommandLine>
 				</SynchronousCommand>
+				<!-- Confort VM : spice-guest-tools (presse-papier, résolution dynamique,
+				     agent invité). Ciblage IMPOSSIBLE côté serveur — aucune colonne
+				     manufacturer/model sur `workstations`, le serveur ne sait pas qu'une
+				     machine est une VM. Le garde est donc client-side et sort en ~1 s sur
+				     une machine physique (aucun réseau, aucun téléchargement).
+				     Hors catalogue applicatif À DESSEIN : une entrée locale serait
+				     supprimée à la sync controlHub (autorité amont). Le binaire est servi
+				     par `/ipxe/os/{path}` (LAN-only, sans JWT, aucun filtre d'extension).
+				     `Start-Process -Wait` et NON `&amp; $exe` comme l'Order 3 : l'agent est
+				     une appli console (l'opérateur `&amp;` attend), spice-guest-tools est un
+				     installeur graphique qui rend la main immédiatement — sans `-Wait` le
+				     reboot de l'Order 7 tomberait en pleine install.
+				     `/S` majuscule : NSIS 3.02.1 (vérifié sur le binaire), PAS Inno Setup.
+				     NSIS ignore silencieusement les switches inconnus (`/VERYSILENT`…) et
+				     affiche alors son GUI — sur une VM sans opérateur, `-Wait` bloquerait
+				     indéfiniment. Échec non bloquant (try/catch, exit 0), cohérent Orders 1/3.
+				     Trace : `c:\netinst\spice-guest-tools.log`, fichier DÉDIÉ et non
+				     `install.log` — l'Order 7 y fait `echo ... &gt;` (un seul chevron, donc
+				     TRONCATURE) et effacerait toute ligne écrite ici. Les trois issues sont
+				     tracées (skip / rc= / erreur) : sans ça, `exit 0` rend le skip, le succès
+				     et l'échec rigoureusement indistinguables. Aucune remontée serveur —
+				     diagnostic sur le poste uniquement. -->
 				<SynchronousCommand wcm:action="add">
 					<Order>4</Order>
+					<Description>spice guest tools (VM uniquement)</Description>
+					<RequiresUserInput>false</RequiresUserInput>
+					<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "function L($m) { try { Add-Content -Path 'c:\netinst\spice-guest-tools.log' -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $m) } catch { } }; try { New-Item -Force -ItemType Directory 'c:\netinst' | Out-Null; $cs = Get-CimInstance Win32_ComputerSystem; $sig = $cs.Manufacturer + ' ' + $cs.Model; if ($sig -notmatch 'QEMU|KVM|Bochs') { L ('skip, hors QEMU/KVM (' + $sig + ')'); exit 0 }; $exe = Join-Path $env:TEMP 'spice-guest-tools.exe'; Invoke-WebRequest -UseBasicParsing -Uri 'http://###_SE4FS_NAME_###/ipxe/os/tools/spice-guest-tools.exe' -OutFile $exe; $p = Start-Process -FilePath $exe -ArgumentList '/S' -Wait -PassThru; L ('install rc=' + $p.ExitCode + ' (' + $sig + ')') } catch { L ('erreur ' + $_.Exception.Message) } exit 0"</CommandLine>
+				</SynchronousCommand>
+				<SynchronousCommand wcm:action="add">
+					<Order>5</Order>
 					<Description>postinst curl</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c curl -sL --retry 20 --retry-max-time 300 --fail -F "etape=oobe" -F "name=###_NAME_###" -F "uuid=###_UUID_###" -F "mac=###_MAC_###" -F "ret=0" -o "%windir%\action.cmd" "http://###_SE4FS_NAME_###/ipxe/windows/action"</CommandLine>
 				</SynchronousCommand>
 				<SynchronousCommand wcm:action="add">
-					<Order>5</Order>
+					<Order>6</Order>
 					<Description>postinst action</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c if exist %windir%\action.cmd (call %windir%\action.cmd)</CommandLine>
@@ -167,7 +195,7 @@
 				     non porté ici car `handleOobe` renvoie un body vide. Marqueur
 				     install.log posé pour le suivi (parité legacy `cmd_oobe`). -->
 				<SynchronousCommand wcm:action="add">
-					<Order>6</Order>
+					<Order>7</Order>
 					<Description>reboot fin install</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c (if not exist c:\netinst md c:\netinst) &amp; echo install finie&gt;c:\netinst\install.log &amp; shutdown /r /t 30 /c "Installation terminee, redemarrage"</CommandLine>
