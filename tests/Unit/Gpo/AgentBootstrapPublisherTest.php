@@ -139,16 +139,17 @@ final class AgentBootstrapPublisherTest extends TestCase
     }
 
     #[Test]
-    public function it_resolves_flat_computers_ou_when_no_establishment_layer(): void
+    public function it_resolves_flat_computers_ou_only_outside_federation(): void
     {
         config([
             'sambaedu.admin_passwd' => 's3cr3t',
             'sambaedu.ldap_base_dn' => 'DC=localdev,DC=fr',
         ]);
 
-        // Topologie plate : seule OU=computers,<base> existe.
+        // Topologie plate SANS code établissement (/vm) : le conteneur plat EST
+        // celui de l'instance, le résoudre est légitime.
         $publisher = $this->testablePublisher(
-            establishmentCode: '0991229y',
+            establishmentCode: '',
             existingOus: ['OU=computers,DC=localdev,DC=fr'],
         );
 
@@ -156,6 +157,50 @@ final class AgentBootstrapPublisherTest extends TestCase
             'OU=computers,DC=localdev,DC=fr',
             $this->resolveOu($publisher),
         );
+    }
+
+    #[Test]
+    public function it_never_falls_back_to_the_shared_computers_container_when_federated(): void
+    {
+        config([
+            'sambaedu.admin_passwd' => 's3cr3t',
+            'sambaedu.ldap_base_dn' => 'DC=lab1,DC=fr',
+        ]);
+
+        // Établissement identifié, mais seule l'OU PARTAGÉE existe. Y retomber
+        // bloquerait l'héritage ET lierait SE_agent_bootstrap pour les ~75
+        // collèges : on préfère ne pas lier du tout.
+        $publisher = $this->testablePublisher(
+            establishmentCode: '0991229y',
+            existingOus: ['OU=computers,DC=lab1,DC=fr'],
+        );
+
+        self::assertNull(
+            $this->resolveOu($publisher),
+            'Un établissement identifié ne doit JAMAIS retomber sur l\'OU computers du domaine.',
+        );
+    }
+
+    #[Test]
+    public function a_federated_instance_publishes_without_link_rather_than_touching_the_shared_ou(): void
+    {
+        // Même garde, vue depuis le déploiement : le résultat doit être un
+        // published_without_link explicite, et AUCUNE écriture sur l'OU partagée.
+        $baseDn = 'DC=lab1,DC=fr';
+        $sharedComputersDn = 'OU=computers,DC=lab1,DC=fr';
+        $guid = '{11111111-2222-3333-4444-555555555555}';
+        config(['sambaedu.ldap_base_dn' => $baseDn]);
+
+        $gpo = Mockery::mock(GpoService::class);
+        $gpo->shouldReceive('removeLink')->once()->with($baseDn, $guid)->andReturn(true);
+        $gpo->shouldNotReceive('setInheritance');
+        $gpo->shouldNotReceive('setLink');
+
+        $publisher = $this->testablePublisher('0991229y', [$sharedComputersDn], $gpo);
+
+        $result = $this->invokeIsolate($publisher, $guid, $this->resolveOu($publisher));
+
+        self::assertSame(AgentBootstrapDeployResult::KIND_PUBLISHED_WITHOUT_LINK, $result->kind);
     }
 
     #[Test]

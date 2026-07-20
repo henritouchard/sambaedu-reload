@@ -530,10 +530,20 @@ class AgentBootstrapPublisher
     }
 
     /**
-     * Dérive le DN de l'OU computers cible, en gérant les DEUX topologies :
+     * Dérive le DN de l'OU computers cible, pour les DEUX topologies :
      *  - couche établissement (prod/lab1) : `OU=<code>,OU=computers,<base>` ;
      *  - plate (localdev /vm)              : `OU=computers,<base>`.
-     * Détection par LDAP read (existence). Fail-soft → null si aucune.
+     *
+     * ⚠️ GARDE ANTI-FÉDÉRATION (symétrique de {@see resolveTargetUsersOuDn}) :
+     * dès qu'un code établissement existe, SEULE la couche établissement est
+     * acceptable. Le repli sur `OU=computers,<base>` — conteneur partagé par les
+     * ~75 collèges — est REFUSÉ : la séquence d'isolation y bloquerait
+     * l'héritage ET y lierait `SE_agent_bootstrap`, contaminant toute la
+     * fédération. Le repli plat n'est autorisé qu'en l'absence de code
+     * établissement (instance non fédérée).
+     *
+     * Détection par LDAP read (existence). Fail-soft → null si aucune, ce qui
+     * produit un `published_without_link` explicite plutôt qu'un lien fautif.
      */
     protected function resolveTargetOuDn(\App\Gpo\Support\GpoActionLog $log): ?string
     {
@@ -547,21 +557,38 @@ class AgentBootstrapPublisher
         $computersDn = 'OU=computers,' . $baseDn;
         $code = $this->establishmentCode();
 
-        $candidates = [];
         if ($code !== '') {
-            $candidates[] = 'OU=' . $code . ',' . $computersDn;
-        }
-        $candidates[] = $computersDn;
+            $scopedDn = 'OU=' . $code . ',' . $computersDn;
 
-        foreach ($candidates as $dn) {
-            if ($this->ouExists($dn)) {
-                $log->step('OU computers cible résolue', ['ou_dn' => $dn]);
+            if ($this->ouExists($scopedDn)) {
+                $log->step('OU computers cible résolue (couche établissement)', ['ou_dn' => $scopedDn]);
 
-                return $dn;
+                return $scopedDn;
             }
+
+            // Volontairement AUCUN repli sur le conteneur partagé : on y
+            // bloquerait l'héritage ET on y lierait SE_agent_bootstrap, pour les
+            // ~75 collèges d'un coup. Publier sans lien est un défaut réparable
+            // et visible (outcome `published_without_link`) ; contaminer la
+            // fédération ne l'est pas.
+            $log->step(
+                'warn: OU computers de l\'établissement absente — GPO publiée SANS lien '
+                . '(repli sur le conteneur partagé REFUSÉ : il s\'appliquerait aux autres collèges)',
+                ['expected_dn' => $scopedDn, 'shared_dn_refused' => $computersDn],
+            );
+
+            return null;
         }
 
-        $log->step('aucune OU computers candidate n\'existe (fail-soft)', ['candidates' => $candidates]);
+        // Aucun code établissement → instance non fédérée : le conteneur plat
+        // est bien le nôtre.
+        if ($this->ouExists($computersDn)) {
+            $log->step('OU computers cible résolue (topologie plate, hors fédération)', ['ou_dn' => $computersDn]);
+
+            return $computersDn;
+        }
+
+        $log->step('aucune OU computers candidate n\'existe (fail-soft)', ['candidates' => [$computersDn]]);
 
         return null;
     }
