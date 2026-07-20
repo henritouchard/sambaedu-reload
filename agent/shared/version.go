@@ -330,7 +330,24 @@ package shared
 // vérifier au moment de publier si la 2.11.0 (fenêtre explorer_restart,
 // epic 43) l'a été — sinon la 2.12.0 livre les lots en attente d'un coup.
 //
+// 2.12.1 — CORRECTIF : compagnon de session muet sur poste fraîchement
+// installé par le bootstrap GPO. `startup.cmd` dépose agent.exe par
+// `move /Y "%TEMP%\agent.tmp"` ; en SYSTEM %TEMP% = C:\Windows\TEMP, et un
+// move intra-volume est un RENAME — NTFS conserve la DACL au lieu de la
+// ré-hériter de Program Files. agent.exe se retrouve en SYSTEM+Admins seuls
+// (ACE (I) mais ORPHELINES) : la tâche compagnon, en RunLevel Limited, échoue
+// en 0x80070005 ACCESS_DENIED à chaque logon. Le service SYSTEM, lui, tourne
+// normalement → AUCUN signal côté SE5 (l'overlay ne produit plus d'item de
+// rapport depuis 27.1bis), diagnostic uniquement par
+// `Get-ScheduledTaskInfo`/`icacls` sur le poste. `installService` répare
+// désormais la DACL du binaire ({@see resetBinaryACL}, icacls /reset) avant
+// d'enregistrer service et tâches — idempotent, non bloquant, et rejoué à
+// chaque boot par le bootstrap (qui appelle `agent.exe install`), donc les
+// postes déjà déployés se réparent seuls. Le script GPO figé n'est PAS touché
+// (dernier artefact AD, jamais ré-édité). Pas de changement de contrat : un
+// binaire antérieur reste fonctionnel côté SYSTEM, seul le compagnon manque.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.12.0"
+var Version = "2.12.1"

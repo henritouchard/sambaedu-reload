@@ -54,6 +54,15 @@ func installService(serverURL string, intervalSeconds int) error {
 	if err != nil {
 		return fmt.Errorf("chemin du binaire : %w", err)
 	}
+	// Réparation de la DACL orpheline laissée par le `move` du bootstrap GPO
+	// ({@see resetBinaryACL}) : sans Users:(RX) sur agent.exe, la tâche
+	// compagnon (RunLevel Limited) échoue en 0x80070005 à chaque logon. Posé
+	// AVANT l'enregistrement du service et des tâches, et non bloquant : un
+	// échec d'icacls ne doit pas empêcher l'install du canal SYSTEM, qui lui
+	// fonctionne sans ce droit.
+	if err := resetBinaryACL(exe); err != nil {
+		fmt.Fprintf(os.Stderr, "avertissement : réparation de l'ACL du binaire en échec : %v (le compagnon de session peut rester muet)\n", err)
+	}
 
 	m, err := mgr.Connect()
 	if err != nil {

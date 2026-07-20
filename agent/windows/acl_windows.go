@@ -42,6 +42,38 @@ func setAgentACL(path string) error {
 	)
 }
 
+// resetBinaryACL rétablit sur le binaire de l'agent l'héritage de son
+// répertoire d'installation — le binaire est l'EXCEPTION à la convention 23.3
+// (canal agent = SYSTEM + Admins) : il DOIT rester exécutable par
+// BUILTIN\Users, sinon il n'y a pas de compagnon de session DU TOUT.
+//
+// Pourquoi c'est nécessaire : le bootstrap GPO figé
+// (resources/gpo/SE_agent_bootstrap/.../startup.cmd) télécharge l'agent dans
+// %TEMP% puis fait `move /Y "%TEMP%\agent.tmp" "%AGENT_EXE%"`. Le script tourne
+// en SYSTEM, donc %TEMP% = C:\Windows\TEMP — dossier dont l'héritage est cassé
+// et qui n'accorde qu'à SYSTEM + Administrators. Un `move` intra-volume est un
+// RENAME : NTFS CONSERVE la DACL du fichier au lieu de la ré-hériter du
+// répertoire de destination. agent.exe atterrit donc dans Program Files en
+// SYSTEM+Admins seuls, ACE marquées (I) mais ORPHELINES (le répertoire, lui,
+// porte bien Users:(RX)).
+//
+// Symptôme : le service SYSTEM tourne normalement (check-ins, convergence
+// machine — tout paraît sain côté serveur), mais la tâche planifiée du
+// compagnon (RunLevel Limited, jeton user filtré) échoue en 0x80070005
+// ACCESS_DENIED à CHAQUE logon. Pas de compagnon ⇒ pas de console debug, pas de
+// Rainmeter lancé, pas d'overlay — sans la moindre trace côté SE5. Constaté sur
+// poste fraîchement réinstallé (2026-07-20).
+//
+// `/reset` plutôt qu'un `/grant` ciblé : on veut EXACTEMENT l'ACL qu'aurait tout
+// fichier normalement créé dans le répertoire d'installation (TrustedInstaller,
+// ALL APPLICATION PACKAGES, Users:(RX)…), pas une ACE rajoutée par-dessus une
+// DACL orpheline. Idempotent : sans effet sur un binaire déjà correct — le
+// chemin auto-update (atomicCopyFile CRÉE le fichier dans Program Files, donc
+// hérite correctement) n'est pas concerné, mais la réparation reste gratuite.
+func resetBinaryACL(path string) error {
+	return runIcacls(path, "/reset")
+}
+
 // setSessionCacheACL : ACL du répertoire de cache per-SID (Story 24.6,
 // contrat 24.3) — le user LIT son état ((OI) propage le R aux fichiers),
 // n'écrit rien, ne lit pas le cache d'un autre SID. Les fichiers héritent
