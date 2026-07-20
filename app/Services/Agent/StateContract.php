@@ -102,6 +102,43 @@ final class StateContract
     ];
 
     /**
+     * Types acceptés AU RAPPORT SEULEMENT — jamais servis dans le contrat
+     * desired-state (aucun provider, aucune maille, absents des golden files).
+     *
+     * Ce sont des CANAUX DE SIGNALEMENT de l'agent vers le serveur : ils
+     * décrivent la santé de l'agent lui-même, pas la conformité d'une ressource
+     * du poste. `RESOURCE_TYPES` reste donc la liste FERMÉE de ce que le
+     * serveur SERT ; `reportableTypes()` est celle de ce qu'il ACCEPTE.
+     *
+     * - `agent_update` : échec du dernier cycle d'auto-update (Story 25.2,
+     *   décision n° 7 — émis par `drainUpdateReportItems`).
+     * - `companion` : le compagnon de session ne donne plus signe de vie alors
+     *   qu'une session interactive est ouverte. Sans lui, une tâche compagnon
+     *   qui échoue au lancement (ACL du binaire, droit de logon, crash) est
+     *   TOTALEMENT muette côté serveur — le service SYSTEM continuant de
+     *   rapporter normalement, le poste paraît sain. Diagnostiqué à la main le
+     *   2026-07-20 (DACL orpheline, 0x80070005).
+     *
+     * @var list<string>
+     */
+    public const REPORT_ONLY_TYPES = [
+        'agent_update',
+        'companion',
+    ];
+
+    /**
+     * Types acceptés à l'ingestion d'un rapport : ce que le serveur sert, PLUS
+     * les canaux de signalement de l'agent. Liste fermée — un type inconnu
+     * reste un 422 (un agent forgé ne gonfle pas la table).
+     *
+     * @return list<string>
+     */
+    public static function reportableTypes(): array
+    {
+        return [...self::RESOURCE_TYPES, ...self::REPORT_ONLY_TYPES];
+    }
+
+    /**
      * Les trois portées de l'enveloppe, dans l'ordre canonique.
      *
      * @return list<string>

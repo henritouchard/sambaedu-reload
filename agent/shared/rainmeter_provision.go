@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Orchestration du provisioning Rainmeter côté SERVICE SYSTEM (Story 27.1bis,
@@ -119,13 +120,25 @@ func (a *Agent) fetchRainmeterManifest(cfg Config) (*rainmeterManifest, bool) {
 // installé. Outil absent/désactivé = provisioning désactivé (no-op gracieux,
 // D4 — on ne désinstalle jamais l'existant).
 func (a *Agent) provisionRainmeterPortable(cfg Config, tool *rainmeterToolEntry) {
-	if a.Rainmeter.RainmeterInstalled() {
-		return // déjà posé (marqueur d'extraction complète) — no-op idempotent
-	}
+	// D4 EN PREMIER : sans outil actif au manifest, il n'y a aucune autorité
+	// serveur à laquelle comparer — et on ne désinstalle JAMAIS l'existant.
 	if tool == nil {
 		a.Log.Debugf("Outil Rainmeter absent ou désactivé du manifest : provisioning sauté (Rainmeter absent reste gracieux, D4).")
 
 		return
+	}
+	// Comparaison de VERSION, et non simple présence : le marqueur porte le
+	// SHA-256 de l'artefact posé (écrit plus bas, autorité serveur D6). Tester
+	// sa seule existence — ce que faisait `RainmeterInstalled()` ici — rendait
+	// toute mise à jour de l'outil INDÉLIVRABLE : réuploader un portable neuf
+	// n'atteignait jamais un poste déjà provisionné, en silence. Marqueur
+	// absent/illisible ⇒ version inconnue ⇒ on (re)provisionne.
+	installed, known := a.Rainmeter.InstalledSHA256()
+	if known && strings.EqualFold(installed, tool.SHA256) {
+		return // version posée == version servie — no-op idempotent
+	}
+	if known {
+		a.Log.Infof("Rainmeter posé en %s, servi en %s : remplacement.", installed, tool.SHA256)
 	}
 
 	toolURL := cfg.ServerURL + RainmeterToolsRoute + tool.Filename
@@ -144,6 +157,29 @@ func (a *Agent) provisionRainmeterPortable(cfg Config, tool *rainmeterToolEntry)
 			// Vérif AVANT extraction : jamais un artefact corrompu posé. Retry
 			// au prochain passage.
 			a.Log.Warningf("Artefact Rainmeter : SHA-256 téléchargé (%s) != attendu (%s) — rejeté, retry au prochain cycle.", actual, tool.SHA256)
+
+			return
+		}
+		// Marqueur retiré JUSTE AVANT la bascule — après le download et la
+		// vérification de hash, jamais avant : un serveur injoignable ne doit
+		// pas désarmer un poste sain.
+		//
+		// Pourquoi le retirer : `RainmeterOps.Installed()` relit ce marqueur, et
+		// le watchdog du compagnon cesse de relancer Rainmeter dès qu'il est
+		// absent (watchdog.go). Sans ça, le watchdog ressusciterait l'ANCIENNE
+		// image entre nos RemoveAll et nos Rename. On ne TUE pas l'instance déjà
+		// vivante (le provisioning est SYSTEM, le lancement est compagnon — on
+		// ne traverse pas cette frontière) : si elle verrouille Rainmeter.exe,
+		// la bascule échoue en partage de fichier et on retente au cycle
+		// suivant, marqueur toujours absent. L'instance meurt au logoff et le
+		// remplacement passe. Convergence différée, jamais perdue.
+		//
+		// Corollaire assumé : entre le retrait du marqueur et sa réécriture, le
+		// poste est « Rainmeter non installé » — overlay inerte pour la session
+		// en cours. C'est le prix d'un remplacement sûr, et c'est borné par le
+		// cycle.
+		if err := os.Remove(a.Rainmeter.InstalledMarkerPath()); err != nil && !os.IsNotExist(err) {
+			a.Log.Warningf("Retrait du marqueur d'installation Rainmeter en échec : %v — remplacement reporté au prochain cycle.", err)
 
 			return
 		}

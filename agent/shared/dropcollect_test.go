@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 const otherSID = "S-1-5-21-1111111111-2222222222-3333333333-1002"
@@ -218,5 +219,141 @@ func TestPurgeThenCollectExcludesOrphanItems(t *testing.T) {
 
 	if len(items) != 1 || items[0].Type != "wallpaper" {
 		t.Errorf("le fantôme drives de la session partie ne doit plus être collecté : %+v", items)
+	}
+}
+
+// writeCompanionDrop pose un drop per-SID daté (mtime maîtrisé) — le signe de
+// vie sur lequel s'appuie DetectCompanionHealth.
+func writeCompanionDrop(t *testing.T, store *Store, sid string, modTime time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(store.SessionReportDir(sid), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body, err := BuildSessionReportDrop(modTime.UTC().Format(time.RFC3339), []ReportItem{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := store.SessionReportPath(sid)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, modTime, modTime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDetectCompanionHealthFreshDropIsCompliant(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	writeCompanionDrop(t, store, "S-1-5-21-1", now.Add(-time.Minute))
+
+	items := DetectCompanionHealth(store, map[string]bool{"S-1-5-21-1": true}, nil, now, time.Hour, nil)
+
+	if len(items) != 1 || items[0].Status != "compliant" {
+		t.Fatalf("compliant attendu : %+v", items)
+	}
+	if !ValidChecksum(items[0].Hash) {
+		t.Errorf("hash hex-64 exigé par le serveur : %q", items[0].Hash)
+	}
+}
+
+// Le cas qui motive toute la détection : la session est ouverte, le compagnon
+// n'a jamais déposé — tâche en échec au lancement.
+func TestDetectCompanionHealthMissingDropIsError(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+
+	items := DetectCompanionHealth(
+		store,
+		map[string]bool{"S-1-5-21-42": true},
+		map[string]string{"S-1-5-21-42": "pierre.martin"},
+		now, time.Hour, nil,
+	)
+
+	if len(items) != 1 || items[0].Status != "error" {
+		t.Fatalf("error attendu : %+v", items)
+	}
+	if !strings.Contains(items[0].Detail, "pierre.martin") {
+		t.Errorf("le detail doit nommer la session concernée : %q", items[0].Detail)
+	}
+	if items[0].Detail == "" {
+		t.Error("le serveur exige un detail non vide sur status=error")
+	}
+	if !ValidChecksum(items[0].Hash) {
+		t.Errorf("hash hex-64 exigé par le serveur : %q", items[0].Hash)
+	}
+}
+
+// Drop présent mais RANCE : le compagnon est mort en cours de session.
+func TestDetectCompanionHealthStaleDropIsError(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	writeCompanionDrop(t, store, "S-1-5-21-7", now.Add(-2*time.Hour))
+
+	items := DetectCompanionHealth(store, map[string]bool{"S-1-5-21-7": true}, nil, now, time.Hour, nil)
+
+	if len(items) != 1 || items[0].Status != "error" {
+		t.Fatalf("error attendu sur drop rance : %+v", items)
+	}
+}
+
+// activeSIDs nil = énumération indisponible (quarantaine, pas d'énumérateur) :
+// FAIL-OPEN, aucun verdict — iso PurgeOrphanDrops.
+func TestDetectCompanionHealthNilSIDsIsFailOpen(t *testing.T) {
+	store := newTestStore(t)
+
+	if items := DetectCompanionHealth(store, nil, nil, time.Now(), time.Hour, nil); items != nil {
+		t.Fatalf("aucun verdict attendu sur énumération indisponible : %+v", items)
+	}
+}
+
+// Zéro session : aucun compagnon à attendre → compliant. C'est ce qui EFFACE
+// une erreur précédente (le type n'a pas de provider, le serveur ne le prune
+// jamais : il faut rapporter explicitement le retour à la normale).
+func TestDetectCompanionHealthNoSessionIsCompliant(t *testing.T) {
+	store := newTestStore(t)
+
+	items := DetectCompanionHealth(store, map[string]bool{}, nil, time.Now(), time.Hour, nil)
+
+	if len(items) != 1 || items[0].Status != "compliant" {
+		t.Fatalf("compliant attendu sans session : %+v", items)
+	}
+}
+
+// Le hash ne dépend QUE de l'ensemble des SID muets, jamais de l'ordre
+// d'itération de la map (aléatoire en Go) : sans tri, le serveur verrait un
+// drift à chaque cycle sur une panne stable.
+func TestDetectCompanionHealthHashIsOrderIndependent(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	sids := map[string]bool{"S-1-5-21-1": true, "S-1-5-21-2": true, "S-1-5-21-3": true}
+
+	first := DetectCompanionHealth(store, sids, nil, now, time.Hour, nil)
+	for range 20 {
+		got := DetectCompanionHealth(store, sids, nil, now, time.Hour, nil)
+		if got[0].Hash != first[0].Hash {
+			t.Fatalf("hash instable entre deux passes : %s != %s", got[0].Hash, first[0].Hash)
+		}
+	}
+}
+
+// Une session saine et une muette : verdict error, et le hash distingue la
+// population muette (un drift est émis à la bascule, pas à chaque cycle).
+func TestDetectCompanionHealthHashTracksSilentSet(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	writeCompanionDrop(t, store, "S-1-5-21-1", now)
+
+	both := map[string]bool{"S-1-5-21-1": true, "S-1-5-21-2": true}
+	one := map[string]bool{"S-1-5-21-2": true}
+
+	a := DetectCompanionHealth(store, both, nil, now, time.Hour, nil)
+	b := DetectCompanionHealth(store, one, nil, now, time.Hour, nil)
+
+	if a[0].Status != "error" || b[0].Status != "error" {
+		t.Fatalf("error attendu des deux côtés : %+v / %+v", a, b)
+	}
+	if a[0].Hash != b[0].Hash {
+		t.Errorf("même ensemble muet {S-1-5-21-2} ⇒ même hash : %s != %s", a[0].Hash, b[0].Hash)
 	}
 }

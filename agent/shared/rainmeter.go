@@ -177,6 +177,31 @@ func (r *RainmeterStore) RainmeterInstalled() bool {
 	return err == nil
 }
 
+// InstalledSHA256 : SHA-256 de l'artefact RÉELLEMENT posé, tel qu'inscrit dans
+// le marqueur par provisionRainmeterPortable (autorité serveur, D6). C'est la
+// version installée sur le poste — à comparer au SHA du manifest pour décider
+// d'un remplacement.
+//
+// Retourne ("", false) si le marqueur est absent, illisible, ou d'une longueur
+// autre que 64 caractères hexadécimaux : un marqueur douteux vaut « version
+// inconnue » et déclenche un (re)provisioning, plutôt que de faire confiance à
+// un contenu qu'on ne sait pas interpréter. Normalisé en minuscules — le hex du
+// serveur l'est (hex.EncodeToString), mais la comparaison ne doit pas dépendre
+// de la casse (piège checksum-lowercase déjà rencontré sur le canal amont).
+func (r *RainmeterStore) InstalledSHA256() (string, bool) {
+	raw, err := os.ReadFile(r.InstalledMarkerPath())
+	if err != nil {
+		return "", false
+	}
+
+	sha := strings.ToLower(strings.TrimSpace(string(raw)))
+	if len(sha) != sha256HexLen {
+		return "", false
+	}
+
+	return sha, true
+}
+
 // hardenedSkinPath : chemin de la racine des skins (verrouillées RX sous
 // ProgramData) que le Rainmeter.ini durci déclare via SkinPath (Story 27.1ter).
 // Composé des constantes canoniques de PRODUCTION Windows (DefaultRainmeterRoot

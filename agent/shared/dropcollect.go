@@ -1,9 +1,12 @@
 package shared
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -235,4 +238,101 @@ func isBlank(s string) bool {
 	}
 
 	return true
+}
+
+// CompanionReportType : canal de signalement de la santé du compagnon de
+// session. N'est PAS un type desired-state (aucun provider serveur, absent de
+// ResourceTypes) : le serveur l'accepte au RAPPORT seulement
+// (StateContract::REPORT_ONLY_TYPES).
+//
+// Volontairement HORS ResourceTypes côté Go : le répertoire de drop est
+// inscriptible par le user (<SID>:M), donc un type accepté à la collecte est un
+// type FORGEABLE. `companion` n'est émis que par le service SYSTEM, après la
+// collecte — un drop qui le revendiquerait est rejeté par CollectSessionReports
+// comme n'importe quel type inconnu.
+const CompanionReportType = "companion"
+
+// DetectCompanionHealth : une session interactive est ouverte, le compagnon
+// est-il vivant ?
+//
+// POURQUOI : le compagnon ne peut pas signaler sa propre mort. Une tâche
+// planifiée qui échoue au lancement (DACL du binaire, droit de logon, crash
+// immédiat) est TOTALEMENT muette — le service SYSTEM continue de rapporter la
+// convergence machine, donc le poste paraît sain côté serveur alors que
+// l'overlay, le wallpaper et toute la portée session sont morts. Constaté à la
+// main le 2026-07-20 (agent.exe sans Users:RX → 0x80070005 à chaque logon,
+// diagnostic uniquement par Get-ScheduledTaskInfo sur le poste).
+//
+// SIGNAL : le drop per-SID que le compagnon dépose à chaque passe
+// (SessionReportPath). Pour chaque SID vivant, il doit exister et être FRAIS.
+// On se fie au mtime plutôt qu'au `generated_at` du corps : les deux sont
+// falsifiables par le user (il a M sur le répertoire), mais le mtime ne demande
+// aucun parse et l'os.Stat est de toute façon déjà fait à la collecte. La
+// falsification n'est pas un enjeu ici — le user ne peut que se déclarer sain
+// sur SON poste, jamais dégrader celui d'un autre (frontière de confiance
+// n° 8, déjà assumée pour les statuts session).
+//
+// activeSIDs nil (énumération indisponible, quarantaine) → aucun verdict :
+// FAIL-OPEN, iso PurgeOrphanDrops. Zéro session → `compliant` : il n'y a aucun
+// compagnon à attendre, et c'est ce qui EFFACE une erreur précédente (le type
+// n'ayant pas de provider, le serveur ne le prune jamais — il faut rapporter
+// explicitement le retour à la normale, pas omettre l'item).
+//
+// Retourne 0 ou 1 item (le rapport §6 exige des types uniques).
+func DetectCompanionHealth(store *Store, activeSIDs map[string]bool, logins map[string]string, now time.Time, grace time.Duration, log *Logger) []ReportItem {
+	if activeSIDs == nil {
+		return nil
+	}
+
+	silent := make([]string, 0, len(activeSIDs))
+	for sid := range activeSIDs {
+		info, err := os.Stat(store.SessionReportPath(sid))
+		if err != nil || now.Sub(info.ModTime()) > grace {
+			silent = append(silent, sid)
+		}
+	}
+	// Ordre stable : le hash ne doit dépendre que de l'ENSEMBLE des sessions
+	// muettes, jamais de l'ordre d'itération de la map (aléatoire en Go).
+	slices.Sort(silent)
+
+	if len(silent) == 0 {
+		return []ReportItem{{
+			Type:   CompanionReportType,
+			Status: "compliant",
+			Hash:   companionHash(nil),
+		}}
+	}
+
+	labels := make([]string, 0, len(silent))
+	for _, sid := range silent {
+		if login := logins[sid]; login != "" {
+			labels = append(labels, login+" ("+sid+")")
+
+			continue
+		}
+		labels = append(labels, sid)
+	}
+
+	detail := "compagnon de session sans signe de vie depuis plus de " +
+		grace.Round(time.Second).String() + " pour : " + strings.Join(labels, ", ") +
+		" — tâche SambaEduAgent-SessionCompanion en échec ? (overlay, wallpaper et portée session inertes)"
+	logWarning(log, "%s", detail)
+
+	return []ReportItem{{
+		Type:   CompanionReportType,
+		Status: "error",
+		Hash:   companionHash(silent),
+		Detail: truncateDetail(detail, 480),
+	}}
+}
+
+// companionHash : SHA-256 de l'ENSEMBLE des SID muets (triés, séparés par \n),
+// vide quand tout va bien. Le serveur exige un hex-64 sur tout item de rapport,
+// et cette forme lui donne du SENS : le hash ne bouge que si la population des
+// sessions muettes change — donc un événement de drift est émis à la bascule,
+// et pas à chaque cycle d'une panne qui dure.
+func companionHash(silent []string) string {
+	sum := sha256.Sum256([]byte(strings.Join(silent, "\n")))
+
+	return hex.EncodeToString(sum[:])
 }

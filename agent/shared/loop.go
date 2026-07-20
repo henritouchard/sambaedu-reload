@@ -166,6 +166,13 @@ type Agent struct {
 	// pas d'énumérateur / échec) → purge fail-open ; map vide = zéro session
 	// confirmée → purge légitime de tous les drops. PROCESS-LOCAL.
 	activeSIDs map[string]bool
+
+	// activeLogins : SID → login court des mêmes sessions, renseigné par la
+	// MÊME passe que activeSIDs. Sert UNIQUEMENT à libeller le detail de
+	// DetectCompanionHealth (« pierre.martin (S-1-5-21-…) » plutôt qu'un SID
+	// nu) : un SID seul est inexploitable pour qui lit la fiche machine.
+	// PROCESS-LOCAL.
+	activeLogins map[string]string
 }
 
 // NewAgentForTest construit un Agent avec son canal de réveil initialisé
@@ -393,6 +400,15 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	// appel). nil = indéterminé → PurgeOrphanDrops fail-open (aucune purge).
 	PurgeOrphanDrops(a.Store, a.activeSIDs, a.Log)
 	items := CollectSessionReports(a.Store, a.Log)
+	// Santé du compagnon : APRÈS la collecte (le verdict porte sur les drops
+	// qu'on vient de lire) et hors de sa validation (type service-only, jamais
+	// accepté depuis un drop user — cf. CompanionReportType). Fenêtre de grâce
+	// = 2 × la cadence effective : le compagnon dépose à chacune de ses passes,
+	// donc un seul dépôt manqué (démarrage, machine chargée) ne doit pas crier ;
+	// deux d'affilée, si.
+	items = append(items, DetectCompanionHealth(
+		a.Store, a.activeSIDs, a.activeLogins, time.Now(), 2*a.EffectiveInterval(cfg), a.Log,
+	)...)
 	items = append(items, a.drainUpdateReportItems()...)
 	// Story 27.3 : items de la convergence MACHINE (registre HKLM) — in-process,
 	// pas de drop. Drainés ici (un statut machine se rapporte au cycle où il a

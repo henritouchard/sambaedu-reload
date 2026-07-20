@@ -347,7 +347,43 @@ package shared
 // (dernier artefact AD, jamais ré-édité). Pas de changement de contrat : un
 // binaire antérieur reste fonctionnel côté SYSTEM, seul le compagnon manque.
 //
+// 2.12.2 — VISIBILITÉ + LIVRABILITÉ, deux angles morts révélés par le
+// diagnostic de la 2.12.1.
+//
+// (a) `companion` : nouveau canal de signalement (REPORT-ONLY, aucun provider
+// serveur). Le service SYSTEM juge la santé du compagnon sur les drops per-SID
+// qu'il collecte déjà — session interactive vivante + drop absent ou plus vieux
+// que 2 × la cadence effective ⇒ `error` nommant la session. C'est ce qui
+// manquait le 2026-07-20 : le compagnon mourait à chaque logon et le poste
+// paraissait parfaitement sain côté SE5. `compliant` est rapporté
+// EXPLICITEMENT au retour à la normale (le type n'ayant pas de provider, le
+// serveur ne le prune jamais : omettre l'item figerait l'erreur). Type
+// volontairement HORS ResourceTypes côté Go — le répertoire de drop est
+// inscriptible par le user, un type collectable serait un type forgeable.
+//
+// (b) `agent_update` réparé : il émettait `hash: ""` avec un type absent de la
+// liste serveur ⇒ 422 sur le rapport ENTIER du cycle. Le signal d'échec
+// détruisait son porteur, et ce chemin n'avait jamais fonctionné bout en bout
+// depuis 25.2. Côté serveur, `StateContract::REPORT_ONLY_TYPES` accueille les
+// deux types ; `RESOURCE_TYPES` (ce qui est SERVI) reste inchangé — golden
+// files intacts.
+//
+// (c) Catalogue d'outils enfin capable de LIVRER une mise à jour :
+// `provisionRainmeterPortable` compare le SHA-256 du marqueur à celui du
+// manifest au lieu de tester la seule présence du fichier. La donnée était déjà
+// écrite depuis 25.6, jamais relue — réuploader un portable neuf n'atteignait
+// aucun poste déjà provisionné, EN SILENCE. Le marqueur est retiré juste avant
+// la bascule : `RainmeterOps.Installed()` le relit, donc le watchdog du
+// compagnon cesse de relancer l'ancienne image pendant le remplacement. On ne
+// tue PAS l'instance vivante (le provisioning est SYSTEM, le lancement est
+// compagnon) : exe verrouillé ⇒ bascule en échec ⇒ retry au cycle suivant,
+// l'instance meurt au logoff. D4 intact : sans outil actif au manifest, on ne
+// désinstalle jamais.
+//
+// ⚠️ Un binaire ≤ 2.12.1 n'émet aucun item `companion` : l'absence de la ligne
+// vaut « agent trop ancien », PAS « compagnon sain ».
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.12.1"
+var Version = "2.12.2"

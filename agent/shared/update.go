@@ -363,9 +363,18 @@ func (a *Agent) drainUpdateReportItems() []ReportItem {
 	detail := a.pendingUpdateError
 	a.pendingUpdateError = ""
 
+	// Hash OBLIGATOIRE côté serveur (`items.*.hash` required + hex-64) : sans
+	// lui l'item était rejeté en 422 AVEC TOUT LE RAPPORT du cycle — le signal
+	// d'échec détruisait son porteur, et le type n'étant pas non plus dans la
+	// liste acceptée, ce chemin n'a jamais fonctionné bout en bout. Hash du
+	// message : deux échecs identiques ne produisent pas d'événement de drift à
+	// répétition, un échec DIFFÉRENT en produit un.
+	sum := sha256.Sum256([]byte(detail))
+
 	return []ReportItem{{
 		Type:   "agent_update",
 		Status: "error",
+		Hash:   hex.EncodeToString(sum[:]),
 		Detail: truncateDetail(detail, 480),
 	}}
 }

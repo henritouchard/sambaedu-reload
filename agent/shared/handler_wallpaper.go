@@ -24,6 +24,11 @@ func ValidWallpaperAssetFilename(filename string) bool {
 	return wallpaperAssetPattern.MatchString(filename)
 }
 
+// sha256HexLen : longueur d'un SHA-256 en hexadécimal (32 octets → 64
+// caractères). Même domaine que checksumPattern, exposé pour les contrôles de
+// longueur qui n'ont pas besoin de la regex complète.
+const sha256HexLen = 64
+
 // ValidChecksum valide un SHA-256 hex minuscule.
 func ValidChecksum(checksum string) bool {
 	return checksumPattern.MatchString(checksum)

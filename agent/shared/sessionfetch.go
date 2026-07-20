@@ -45,6 +45,7 @@ func (a *Agent) fetchSessionStates(cfg Config) {
 	// énumération WTS. nil = indéterminé (quarantaine / pas d'énumérateur /
 	// échec) → purge fail-open ; map vide (zéro session) → purge légitime.
 	a.activeSIDs = nil
+	a.activeLogins = nil
 	if a.quarantined {
 		a.Log.Debugf("Quarantaine active : fetch de session sauté (check-ins légers = GET /state machine uniquement).")
 
@@ -64,10 +65,13 @@ func (a *Agent) fetchSessionStates(cfg Config) {
 	// Ensemble des SID vivants AVANT le court-circuit « zéro session » : zéro
 	// session interactive = map vide autoritaire (tous les drops sont orphelins).
 	active := make(map[string]bool, len(sessions))
+	logins := make(map[string]string, len(sessions))
 	for _, session := range sessions {
 		active[session.SID] = true
+		logins[session.SID] = session.Login
 	}
 	a.activeSIDs = active
+	a.activeLogins = logins
 
 	if len(sessions) == 0 {
 		a.Log.Debugf("Aucune session interactive : pas de fetch de session.")

@@ -536,4 +536,71 @@ final class ReportEndpointTest extends TestCase
             (string) $response->headers->get(AuthenticateAgentToken::HEADER_NEW_TOKEN),
         );
     }
+    // ── Canaux de signalement de l'agent (report-only) ───────────────────
+
+    /**
+     * `agent_update` et `companion` n'ont AUCUN provider serveur : ils ne sont
+     * jamais SERVIS dans le contrat, mais doivent être ACCEPTÉS au rapport.
+     *
+     * Régression couverte : tant que la validation portait sur
+     * `RESOURCE_TYPES` seule, un échec d'auto-update recalait le rapport
+     * ENTIER en 422 — le signal détruisait son porteur, et la détection d'un
+     * compagnon muet aurait subi le même sort.
+     */
+    #[Test]
+    public function report_only_types_are_accepted_and_stored(): void
+    {
+        [$ws, $token] = $this->enrolledWorkstation();
+
+        $this->report($token, $this->reportPayload($ws, [
+            $this->item('agent_update', 'error', 'swap 2.12.0 en échec'),
+            $this->item('companion', 'error', 'compagnon sans signe de vie pour pierre.martin'),
+            $this->item('wallpaper', 'compliant'),
+        ]))->assertOk();
+
+        $this->assertSame(
+            ['agent_update', 'companion', 'wallpaper'],
+            AgentResourceState::where('workstation_id', $ws->id)
+                ->orderBy('type')->pluck('type')->all(),
+        );
+    }
+
+    /** La liste reste FERMÉE : un type hors contrat ET hors report-only = 422. */
+    #[Test]
+    public function unknown_type_is_still_rejected(): void
+    {
+        [$ws, $token] = $this->enrolledWorkstation();
+
+        $this->report($token, $this->reportPayload($ws, [
+            $this->item('definitely_not_a_type', 'compliant'),
+        ]))->assertStatus(422);
+
+        $this->assertNothingWritten();
+    }
+
+    /**
+     * Le retour à la normale doit être RAPPORTABLE : `companion` n'ayant pas de
+     * provider, il échappe au prune par session — omettre l'item laisserait
+     * l'erreur affichée pour toujours. L'agent rapporte donc explicitement
+     * `compliant`, ce qui écrase la ligne.
+     */
+    #[Test]
+    public function companion_recovery_overwrites_the_error_row(): void
+    {
+        [$ws, $token] = $this->enrolledWorkstation();
+
+        $this->report($token, $this->reportPayload($ws, [
+            $this->item('companion', 'error', 'compagnon sans signe de vie'),
+        ]))->assertOk();
+
+        $this->report($token, $this->reportPayload($ws, [
+            $this->item('companion', 'compliant'),
+        ]))->assertOk();
+
+        $row = AgentResourceState::where('workstation_id', $ws->id)
+            ->where('type', 'companion')->sole();
+
+        $this->assertSame('compliant', $row->status->value);
+        $this->assertNull($row->detail);
+    }
 }

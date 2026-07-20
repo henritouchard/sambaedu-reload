@@ -55,7 +55,12 @@ class ReportRequest extends FormRequest
             // `present` (pas `required`) : `items: []` est un rapport valide
             // (agent sans rien à rapporter — décision n° 9).
             'items' => ['present', 'array'],
-            'items.*.type' => ['required', 'string', Rule::in(StateContract::RESOURCE_TYPES), 'distinct'],
+            // `reportableTypes()` et NON `RESOURCE_TYPES` : le serveur accepte
+            // aussi les canaux de signalement de l'agent (`agent_update`,
+            // `companion`), qui n'ont pas de provider et ne sont jamais SERVIS.
+            // Avec la seule liste servie, un échec d'auto-update recalait le
+            // rapport ENTIER en 422 — le signal détruisait son porteur.
+            'items.*.type' => ['required', 'string', Rule::in(StateContract::reportableTypes()), 'distinct'],
             'items.*.status' => ['required', Rule::enum(AgentResourceStatus::class)],
             // /D : sans lui, `$` PCRE tolère un \n traînant → 65 octets
             // passeraient la validation (varchar(64) PG = 22001/500,

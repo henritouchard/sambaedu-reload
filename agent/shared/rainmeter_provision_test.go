@@ -435,3 +435,144 @@ func TestParseRainmeterManifest_IllegibleBodyErrors(t *testing.T) {
 		t.Fatal("un corps illisible doit retourner une erreur (no-op gracieux côté appelant)")
 	}
 }
+
+// portableFixtureWithExe : variante de portableFixture au contenu d'exe
+// CHOISI — deux appels avec des contenus différents produisent deux SHA-256
+// différents, ce qu'exige un test de remplacement de version.
+func portableFixtureWithExe(t *testing.T, version, exeContent string) (filename, checksum string, archive []byte) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range []struct{ name, content string }{
+		{"Rainmeter.exe", exeContent},
+		{"Skins/readme.txt", "skins"},
+	} {
+		w, err := zw.Create(e.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(e.content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archive = buf.Bytes()
+	sum := sha256.Sum256(archive)
+
+	return "sambaedu-rainmeter-" + version + ".zip", hex.EncodeToString(sum[:]), archive
+}
+
+// Le catalogue doit pouvoir LIVRER une mise à jour : un artefact servi dont le
+// SHA-256 diffère de celui inscrit au marqueur remplace la version posée.
+// Avant, la garde install-if-absent testait la seule PRÉSENCE du marqueur —
+// réuploader un portable neuf n'atteignait jamais un poste déjà provisionné.
+func TestSyncRainmeterTool_ServedVersionDiffersReplacesInstalled(t *testing.T) {
+	f := newFakeRainmeterServer(t)
+	skinBody, skinHash := skinFixture()
+	f.skinBody = skinBody
+
+	name1, hash1, archive1 := portableFixtureWithExe(t, "4.5.18", "MZ-fake-v1")
+	f.toolBody[name1] = archive1
+	f.manifestBody = manifestJSON(
+		&rainmeterToolEntry{Key: "rainmeter", Filename: name1, SHA256: hash1, Size: int64(len(archive1))},
+		&rainmeterSkinEntry{Filename: "SambaEduOverlay.ini", SHA256: skinHash},
+	)
+
+	agent, store, cfg := newRainmeterAgent(t, f)
+	agent.RainmeterACL = func(string) error { return nil }
+
+	agent.SyncRainmeterTool(cfg)
+
+	if got, _ := os.ReadFile(store.InstalledMarkerPath()); string(got) != hash1 {
+		t.Fatalf("marqueur = SHA servi attendu, got %q", got)
+	}
+
+	// Le serveur sert désormais un AUTRE artefact.
+	name2, hash2, archive2 := portableFixtureWithExe(t, "4.5.19", "MZ-fake-v2")
+	if hash2 == hash1 {
+		t.Fatal("fixture invalide : les deux archives doivent différer")
+	}
+	f.mu.Lock()
+	f.toolBody[name2] = archive2
+	f.manifestBody = manifestJSON(
+		&rainmeterToolEntry{Key: "rainmeter", Filename: name2, SHA256: hash2, Size: int64(len(archive2))},
+		&rainmeterSkinEntry{Filename: "SambaEduOverlay.ini", SHA256: skinHash},
+	)
+	f.mu.Unlock()
+
+	agent.SyncRainmeterTool(cfg)
+
+	if len(f.toolCalls) != 2 || f.toolCalls[1] != name2 {
+		t.Fatalf("nouvel artefact attendu au download : %v", f.toolCalls)
+	}
+	if got, err := os.ReadFile(store.ExePath()); err != nil || string(got) != "MZ-fake-v2" {
+		t.Fatalf("exe remplacé attendu : %v %q", err, got)
+	}
+	if got, _ := os.ReadFile(store.InstalledMarkerPath()); string(got) != hash2 {
+		t.Fatalf("marqueur re-scellé au nouveau SHA attendu, got %q", got)
+	}
+}
+
+// Marqueur corrompu (tronqué, vide, non-hex) = version INCONNUE : on
+// re-provisionne plutôt que de faire confiance à un contenu illisible.
+func TestSyncRainmeterTool_CorruptMarkerTriggersReprovision(t *testing.T) {
+	f := newFakeRainmeterServer(t)
+	skinBody, skinHash := skinFixture()
+	f.skinBody = skinBody
+	name, hash, archive := portableFixtureWithExe(t, "4.5.18", "MZ-fake-v1")
+	f.toolBody[name] = archive
+	f.manifestBody = manifestJSON(
+		&rainmeterToolEntry{Key: "rainmeter", Filename: name, SHA256: hash, Size: int64(len(archive))},
+		&rainmeterSkinEntry{Filename: "SambaEduOverlay.ini", SHA256: skinHash},
+	)
+
+	agent, store, cfg := newRainmeterAgent(t, f)
+	agent.RainmeterACL = func(string) error { return nil }
+
+	if err := os.MkdirAll(store.RootDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.InstalledMarkerPath(), []byte("pas-un-sha"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agent.SyncRainmeterTool(cfg)
+
+	if len(f.toolCalls) != 1 {
+		t.Fatalf("re-provisioning attendu sur marqueur illisible : %v", f.toolCalls)
+	}
+	if got, _ := os.ReadFile(store.InstalledMarkerPath()); string(got) != hash {
+		t.Fatalf("marqueur réparé au SHA servi attendu, got %q", got)
+	}
+}
+
+// D4 préservé : outil désactivé/absent du manifest, on ne désinstalle JAMAIS —
+// même si le marqueur porte une version qui ne correspond à rien de servi.
+func TestSyncRainmeterTool_ToolDisabledNeverUninstalls(t *testing.T) {
+	f := newFakeRainmeterServer(t)
+	skinBody, skinHash := skinFixture()
+	f.skinBody = skinBody
+	f.manifestBody = manifestJSON(nil, &rainmeterSkinEntry{Filename: "SambaEduOverlay.ini", SHA256: skinHash})
+
+	agent, store, cfg := newRainmeterAgent(t, f)
+	agent.RainmeterACL = func(string) error { return nil }
+
+	if err := os.MkdirAll(store.RootDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := strings.Repeat("a", 64)
+	if err := os.WriteFile(store.InstalledMarkerPath(), []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agent.SyncRainmeterTool(cfg)
+
+	if len(f.toolCalls) != 0 {
+		t.Fatalf("aucun download attendu sans outil actif : %v", f.toolCalls)
+	}
+	if got, _ := os.ReadFile(store.InstalledMarkerPath()); string(got) != marker {
+		t.Fatalf("marqueur intact attendu (D4 : jamais de désinstallation), got %q", got)
+	}
+}
