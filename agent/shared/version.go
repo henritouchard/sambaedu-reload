@@ -433,7 +433,49 @@ package shared
 // dernière TRANSITION vers le statut courant — quelques minutes = convergence en
 // cours, plusieurs jours = bloqué.
 //
+// 2.12.4 — la console de debug ne doit pas pouvoir tuer ni figer le compagnon
+// qu'elle sert à diagnostiquer. Régression DIRECTE de la 2.12.3, corrigée à
+// chaud le jour même.
+//
+// La 2.12.3 a rendu le mode debug enfin fiable — et a du même coup rendu
+// ATTEIGNABLES les deux dangers que le commentaire de detachConsole documentait
+// depuis 24.6 (constat lab ws 49). Avant elle, la course au logon empêchait le
+// drapeau `debug` de s'armer : la console n'apparaissait jamais, le risque était
+// théorique. Il ne l'est plus.
+//
+// Constaté 2026-07-20, quelques heures après la publication de la 2.12.3 : le
+// canal `companion` passe en `error` (« sans signe de vie depuis plus de 2h »)
+// alors que le processus tourne et que l'overlay s'affiche normalement. Une
+// console Windows fraîchement allouée a ENABLE_QUICK_EDIT_MODE actif par défaut
+// ; un clic dedans — réflexe devant une fenêtre qui surgit — met la console en
+// sélection et BLOQUE toute écriture stdout. `Logger.log` détient son mutex
+// pendant l'écriture : le compagnon se fige au premier log, plus aucune passe,
+// plus aucun drop. Rien ne se voit à l'écran, Rainmeter étant un processus
+// SÉPARÉ qui continue de rendre l'overlay. Le gel s'est levé seul deux heures
+// plus tard, à la première frappe dans la fenêtre.
+//
+// Correctif (`hardenConsole`, appliqué à la console allouée ET à celle héritée
+// de la tâche planifiée) : ENABLE_QUICK_EDIT_MODE retiré — avec
+// ENABLE_EXTENDED_FLAGS, obligatoire pour que le retrait soit pris en compte —
+// et SC_CLOSE supprimé du menu système, ce qui grise le bouton fermer et
+// neutralise Alt+F4 (fermer la console d'un processus console le TUE ; la
+// tâche n'ayant qu'un trigger At log on, la session ne reconvergerait plus
+// jusqu'au logon suivant).
+//
+// Leçon retenue au passage : l'overlay affiché ne prouve RIEN sur la vitalité du
+// compagnon. Le watchdog Rainmeter vit DANS le compagnon, mais Rainmeter est un
+// process distinct qui lui survit — un compagnon mort ou figé laisse un overlay
+// parfaitement rendu. Le canal `companion` (2.12.2) est le seul signal valide,
+// et c'est lui qui a levé le lièvre ici : vrai positif.
+//
+// ⚠️ Angle mort connu, NON traité : après une auto-update mid-session, le swap
+// renomme l'image verrouillée (swap.go) et le compagnon SURVIT — mais sur
+// l'ANCIENNE version, face à un service déjà en N+1, jusqu'au logon suivant.
+// DetectCompanionHealth ne voit pas cet écart (le compagnon vN dépose
+// normalement). Toute rupture de contrat entre vN et vN+1 (format du cache
+// per-SID, du drop, nouveaux types d'items) se manifeste dans cette fenêtre.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.12.3"
+var Version = "2.12.4"

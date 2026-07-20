@@ -13,9 +13,22 @@ import (
 )
 
 var (
-	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
-	procFreeConsole  = kernel32.NewProc("FreeConsole")
-	procAllocConsole = kernel32.NewProc("AllocConsole")
+	kernel32             = windows.NewLazySystemDLL("kernel32.dll")
+	procFreeConsole      = kernel32.NewProc("FreeConsole")
+	procAllocConsole     = kernel32.NewProc("AllocConsole")
+	procGetConsoleWindow = kernel32.NewProc("GetConsoleWindow")
+
+	user32            = windows.NewLazySystemDLL("user32.dll")
+	procGetSystemMenu = user32.NewProc("GetSystemMenu")
+	procDeleteMenu    = user32.NewProc("DeleteMenu")
+)
+
+// Constantes console/menu système (non exposées par golang.org/x/sys/windows).
+const (
+	enableQuickEditMode = 0x0040
+	enableExtendedFlags = 0x0080
+	scClose             = 0xF060
+	mfByCommand         = 0x0000
 )
 
 // consoleAttached : état console de CE processus, tel que piloté par
@@ -84,8 +97,60 @@ func attachConsole() error {
 	os.Stderr = console
 
 	consoleAttached = true
+	hardenConsole()
 
 	return nil
+}
+
+// hardenConsole : rend la console de diagnostic INOFFENSIVE pour le processus
+// qu'elle diagnostique. Deux dangers, tous deux documentés dès l'origine dans
+// detachConsole et tous deux réactivés par le rattachement de la 2.12.3 (avant
+// elle, la course au logon empêchait le mode debug de s'armer — la console
+// n'apparaissait jamais, donc le risque était inatteignable) :
+//
+//  1. QUICK-EDIT. Un simple clic dans la fenêtre met la console en sélection et
+//     BLOQUE toute écriture stdout. `Logger.log` tient son mutex pendant
+//     l'écriture : le compagnon se fige au premier log, définitivement. Vu de
+//     SE5 : plus aucun drop, donc `companion` en erreur — alors que le
+//     processus existe et que l'overlay (Rainmeter, processus SÉPARÉ) continue
+//     de s'afficher, ce qui rend le diagnostic trompeur.
+//  2. LE BOUTON FERMER. Fermer la console d'un processus console le TUE. On
+//     offrirait à l'utilisateur un moyen d'un clic de supprimer la convergence
+//     de sa propre session — jusqu'au logon suivant, la tâche planifiée n'ayant
+//     qu'un trigger At log on.
+//
+// Best-effort intégral : chaque étape est indépendante et un échec ne fait rien
+// perdre d'autre que le durcissement correspondant.
+func hardenConsole() {
+	// ENABLE_EXTENDED_FLAGS est OBLIGATOIRE pour que le retrait de
+	// ENABLE_QUICK_EDIT_MODE soit pris en compte (contrat SetConsoleMode).
+	if in, err := windows.CreateFile(
+		windows.StringToUTF16Ptr("CONIN$"),
+		windows.GENERIC_READ|windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		nil, windows.OPEN_EXISTING, 0, 0,
+	); err == nil {
+		defer func() { _ = windows.CloseHandle(in) }()
+
+		var mode uint32
+		if windows.GetConsoleMode(in, &mode) == nil {
+			mode &^= enableQuickEditMode
+			mode |= enableExtendedFlags
+			_ = windows.SetConsoleMode(in, mode)
+		}
+	}
+
+	// GetSystemMenu(hwnd, false) rend le menu système de la fenêtre ; en
+	// retirer SC_CLOSE grise le bouton ET désactive Alt+F4.
+	hwnd, _, _ := procGetConsoleWindow.Call()
+	if hwnd == 0 {
+		return
+	}
+	menu, _, _ := procGetSystemMenu.Call(hwnd, 0)
+	if menu == 0 {
+		return
+	}
+	_, _, _ = procDeleteMenu.Call(menu, scClose, mfByCommand)
 }
 
 // Câblage Windows du compagnon de session (Story 24.6) — sous-commande
@@ -140,6 +205,9 @@ func runCompanion() error {
 	// (poste réinstallé, session-fetch en course) ET le toggle en cours de
 	// session. Voir attachConsole.
 	if shared.DebugFromStateCacheFile(store.SessionStatePath(sid)) {
+		// La console héritée de la tâche planifiée est aussi dangereuse que
+		// celle qu'on alloue : elle se durcit de la même façon.
+		hardenConsole()
 		logger.SetEcho(true)
 		logger.Infof("Mode debug actif (serveur) : console conservée, logs recopiés en direct.")
 	} else {
