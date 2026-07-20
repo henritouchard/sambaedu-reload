@@ -6,7 +6,7 @@
     <div class="min-h-screen hero">
         <div class="hero-content flex-col lg:flex-row-reverse lg:align-center lg: gap-16">
             <div class="text-center">
-                <img src="{{ asset('img/LogoSambaEdu.png') }}" alt="Logo SambaEdu" class="mx-auto mb-6 max-w-md">
+                <x-atoms.logo class="mx-auto mb-6 max-w-md" />
                 <p class="text-base-content/80 text-lg">
                     Accédez à votre espace utilisateur
                 </p>

@@ -169,6 +169,17 @@
     }
 }
 
+/* Badges pastel : le rendu par défaut d'un badge coloré est la variante
+   « soft » de DaisyUI (fond teinté, texte de la couleur) — les aplats pleins
+   pesaient trop dans les tableaux. Les variantes explicites (outline / dash /
+   soft) et le badge-ghost gardent leur rendu propre. */
+.badge:not(.badge-outline, .badge-dash, .badge-soft, .badge-ghost) {
+    color: var(--badge-color, var(--color-base-content));
+    background-color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 8%, var(--color-base-100));
+    border-color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 10%, var(--color-base-100));
+    background-image: none;
+}
+
 .card {
     background-color: var(--color-base-100);
     border: 1px solid var(--color-border);
@@ -280,4 +291,17 @@
 
 .textarea {
     border-radius: var(--radius-box);
+}
+
+/* Logo : bascule automatique de la variante selon le thème actif */
+.logo-theme-dark {
+    display: none;
+}
+
+[data-theme="dark"] .logo-theme-light {
+    display: none;
+}
+
+[data-theme="dark"] .logo-theme-dark {
+    display: initial;
 }
