@@ -38,6 +38,12 @@ class SambaToolRunner
     private bool $dryRun = false;
 
     /**
+     * Quand false, `-H ldap://<DC>` est omis (les credentials `-U` + `PASSWD`
+     * restent posés). Voir {@see withoutDirectoryUrl()}.
+     */
+    private bool $withDirectoryUrl = true;
+
+    /**
      * Liste des arguments globaux `samba-tool` ajoutés à chaque appel
      * (`--use-kerberos=required` ou équivalent). Lazy-loaded depuis la config.
      *
@@ -46,10 +52,12 @@ class SambaToolRunner
     private ?array $globalArgsCache = null;
 
     /**
-     * Cache de la cible distante : `[list<string> $args, array<string,string> $env]`.
-     * Lazy-loaded depuis {@see SambaEduConfig::ldap()}.
+     * Cache de la cible distante : `[list<string> $hostArgs, list<string> $credArgs,
+     * array<string,string> $env]`. `$hostArgs` (`-H …`) est isolé des credentials
+     * car toutes les familles `samba-tool` ne l'acceptent pas (cf.
+     * {@see withoutDirectoryUrl()}). Lazy-loaded depuis {@see SambaEduConfig::ldap()}.
      *
-     * @var array{0: list<string>, 1: array<string, string>}|null
+     * @var array{0: list<string>, 1: list<string>, 2: array<string, string>}|null
      */
     private ?array $remoteTargetCache = null;
 
@@ -74,7 +82,7 @@ class SambaToolRunner
             return $result;
         }
 
-        [, $env] = $this->remoteTarget();
+        [, , $env] = $this->remoteTarget();
 
         $startedAt = microtime(true);
         $pending = Process::timeout($timeout);
@@ -116,6 +124,24 @@ class SambaToolRunner
     }
 
     /**
+     * Omet `-H ldap://<DC>` pour cet appel, en conservant `-U <admin>` +
+     * l'env `PASSWD` et les arguments Kerberos globaux.
+     *
+     * Nécessaire pour les familles de sous-commandes qui n'embarquent PAS le
+     * groupe d'options `hostopts` de samba-tool : `samba-tool dns *` prend le
+     * serveur en argument POSITIONNEL et rejette `-H` (« no such option »).
+     * Les appelants historiques (`gpo *`, `computer *`) l'acceptent, d'où le
+     * défaut inchangé — cette bascule est strictement opt-in (Story 8.4).
+     */
+    public function withoutDirectoryUrl(): self
+    {
+        $clone = clone $this;
+        $clone->withDirectoryUrl = false;
+
+        return $clone;
+    }
+
+    /**
      * Override du timeout pour ce runner (seconds).
      */
     public function withTimeout(int $seconds): self
@@ -137,9 +163,13 @@ class SambaToolRunner
     {
         $bin = (string) config('sambaedu.gpo.bin_path', '/usr/bin/samba-tool');
 
-        [$remoteArgs] = $this->remoteTarget();
+        [$hostArgs, $credArgs] = $this->remoteTarget();
 
-        return array_merge([$bin], $args, $remoteArgs, $this->globalArgs());
+        if (! $this->withDirectoryUrl) {
+            $hostArgs = [];
+        }
+
+        return array_merge([$bin], $args, $hostArgs, $credArgs, $this->globalArgs());
     }
 
     /**
@@ -161,7 +191,7 @@ class SambaToolRunner
      * local historique (pas de `-H`) — les appels samba-tool restant capables
      * de tourner sur un DC local le cas échéant.
      *
-     * @return array{0: list<string>, 1: array<string, string>}
+     * @return array{0: list<string>, 1: list<string>, 2: array<string, string>}
      */
     private function remoteTarget(): array
     {
@@ -169,7 +199,8 @@ class SambaToolRunner
             return $this->remoteTargetCache;
         }
 
-        $args = [];
+        $hostArgs = [];
+        $credArgs = [];
         $env = [];
 
         try {
@@ -177,7 +208,8 @@ class SambaToolRunner
             $host = $ldap->getHosts()[0] ?? '';
 
             if ($host !== '' && $ldap->adminName !== '') {
-                $args = ['-H', 'ldap://' . $host, '-U', $ldap->adminName];
+                $hostArgs = ['-H', 'ldap://' . $host];
+                $credArgs = ['-U', $ldap->adminName];
                 if ($ldap->adminPassword !== '') {
                     $env['PASSWD'] = $ldap->adminPassword;
                 }
@@ -188,7 +220,7 @@ class SambaToolRunner
             ]);
         }
 
-        return $this->remoteTargetCache = [$args, $env];
+        return $this->remoteTargetCache = [$hostArgs, $credArgs, $env];
     }
 
     /**
