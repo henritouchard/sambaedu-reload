@@ -68,7 +68,7 @@ new #[Title('Nouveau profil — Gestion des droits')] class extends Component {
 
 <x-organisms.page
     title="Nouveau profil"
-    description="Créer un nouveau profil de droits (rôle Spatie)"
+    description="Créer un nouveau profil de droits"
     icon="fa-solid fa-id-card-clip"
     backUrl="{{ route('app.rights-management', ['tab' => 'profiles']) }}">
 

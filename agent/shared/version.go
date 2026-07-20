@@ -410,6 +410,29 @@ package shared
 // Un échec de rattachement est LOGGÉ en warning (c'est le silence qui avait rendu
 // ce bug indétectable), jamais fatal.
 //
+// (b) Rattrapage de convergence — un écart réparé n'attend plus une heure pour
+// être signalé conforme. Sous politique STRICT (27.8), le premier passage sur un
+// poste réinstallé est non conforme PAR CONSTRUCTION (rien n'est encore
+// appliqué) : `Test()` négatif ⇒ `drift`, `Apply` répare dans la seconde, et il
+// n'existe aucun statut « corrigé ». Le poste était donc conforme quelques
+// secondes plus tard, mais le serveur ne l'apprenait qu'au cycle nominal
+// suivant. Constaté 2026-07-20 : drives/wallpaper/registry affichés en écart de
+// 11:37 à 12:37 — soit une heure d'alarme pour une divergence qui avait duré le
+// temps d'un Apply, et aucun moyen pour l'exploitant de la distinguer d'un écart
+// installé. Un rapport portant un écart programme désormais un cycle de
+// rattrapage à 360 s (ConvergenceFollowUpSeconds) au lieu du nominal. 360 et non
+// 60 : les items de portée session viennent des drops du compagnon, qui re-teste
+// toutes les 5 min — un rattrapage plus court relirait le MÊME drop et
+// conclurait à tort « toujours en écart ». UN SEUL rattrapage par épisode
+// (budget rechargé au premier rapport intégralement conforme) : un poste
+// durablement en écart ne doit pas passer en interrogation rapide, et c'est le
+// RÉSULTAT du rattrapage qui porte la distinction — encore en écart après lui ⇒
+// l'écart est installé. Jamais de rallongement : un `ttl_seconds` serveur plus
+// court que 360 s l'emporte. Côté serveur, la fiche poste gagne une colonne
+// « Depuis » (ConformityService::statusHeldSinceFor) : l'ancienneté de la
+// dernière TRANSITION vers le statut courant — quelques minutes = convergence en
+// cours, plusieurs jours = bloqué.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"

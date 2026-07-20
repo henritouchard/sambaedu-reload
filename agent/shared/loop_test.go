@@ -768,3 +768,92 @@ func TestSleepUntilDueOrWakeDebounceHonoredAfterDelay(t *testing.T) {
 		t.Fatalf("le cycle est parti avant l'expiration du debounce (%v) — branche non honorée", elapsed)
 	}
 }
+
+// Story 2.12.3 — rattrapage de convergence. Sous politique STRICT, un premier
+// passage répare mais rapporte `drift` ; sans rattrapage, le retour à la
+// conformité attendait le cycle nominal (une heure constatée le 2026-07-20).
+func TestApplyConvergenceFollowUp(t *testing.T) {
+	nominal := time.Duration(DefaultIntervalSeconds) * time.Second
+	followUp := time.Duration(ConvergenceFollowUpSeconds) * time.Second
+
+	t.Run("rapport conforme : cadence nominale", func(t *testing.T) {
+		a := &Agent{Log: &Logger{}}
+		a.lastReportNotCompliant = false
+		if got := a.applyConvergenceFollowUp(OutcomeOK, nominal); got != nominal {
+			t.Errorf("got %v, want %v", got, nominal)
+		}
+	})
+
+	t.Run("écart : un rattrapage, puis retour au nominal", func(t *testing.T) {
+		a := &Agent{Log: &Logger{}}
+		a.lastReportNotCompliant = true
+
+		if got := a.applyConvergenceFollowUp(OutcomeOK, nominal); got != followUp {
+			t.Fatalf("1er écart : got %v, want %v (rattrapage attendu)", got, followUp)
+		}
+		// Toujours en écart au rattrapage : l'écart est INSTALLÉ, on ne boucle
+		// pas en cadence rapide.
+		if got := a.applyConvergenceFollowUp(OutcomeOK, nominal); got != nominal {
+			t.Fatalf("écart persistant : got %v, want %v (pas de second rattrapage)", got, nominal)
+		}
+	})
+
+	t.Run("budget rechargé après un rapport conforme", func(t *testing.T) {
+		a := &Agent{Log: &Logger{}}
+
+		a.lastReportNotCompliant = true
+		_ = a.applyConvergenceFollowUp(OutcomeOK, nominal) // budget consommé
+		a.lastReportNotCompliant = false
+		_ = a.applyConvergenceFollowUp(OutcomeOK, nominal) // épisode clos
+
+		a.lastReportNotCompliant = true
+		if got := a.applyConvergenceFollowUp(OutcomeOK, nominal); got != followUp {
+			t.Errorf("nouvel épisode : got %v, want %v", got, followUp)
+		}
+	})
+
+	t.Run("ttl serveur court : le nominal gagne, jamais de rallongement", func(t *testing.T) {
+		a := &Agent{Log: &Logger{}}
+		a.lastReportNotCompliant = true
+
+		short := 90 * time.Second
+		if got := a.applyConvergenceFollowUp(OutcomeOK, short); got != short {
+			t.Errorf("got %v, want %v", got, short)
+		}
+		if a.followUpSpent {
+			t.Error("budget consommé alors qu'aucun rattrapage n'a été programmé")
+		}
+	})
+
+	t.Run("backoff : le rattrapage ne s'en mêle pas", func(t *testing.T) {
+		a := &Agent{Log: &Logger{}}
+		a.lastReportNotCompliant = true
+
+		if got := a.applyConvergenceFollowUp(OutcomeBackoff, nominal); got != nominal {
+			t.Errorf("got %v, want %v", got, nominal)
+		}
+		if a.followUpSpent {
+			t.Error("budget consommé sur un cycle en backoff")
+		}
+	})
+}
+
+func TestHasNotCompliantItem(t *testing.T) {
+	cases := []struct {
+		name  string
+		items []ReportItem
+		want  bool
+	}{
+		{"vide", nil, false},
+		{"tout conforme", []ReportItem{{Status: "compliant"}, {Status: "compliant"}}, false},
+		{"un drift", []ReportItem{{Status: "compliant"}, {Status: "drift"}}, true},
+		{"une erreur", []ReportItem{{Status: "error"}}, true},
+		// Statut futur inconnu : on arme plutôt que de rater.
+		{"statut inconnu", []ReportItem{{Status: "pending"}}, true},
+	}
+	for _, c := range cases {
+		if got := HasNotCompliantItem(c.items); got != c.want {
+			t.Errorf("%s : got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

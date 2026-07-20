@@ -173,6 +173,30 @@ type Agent struct {
 	// nu) : un SID seul est inexploitable pour qui lit la fiche machine.
 	// PROCESS-LOCAL.
 	activeLogins map[string]string
+
+	// lastReportNotCompliant : le rapport CONSTRUIT au dernier cycle portait au
+	// moins un item `drift` ou `error`. Lu par Run pour armer le rattrapage de
+	// convergence (voir ConvergenceFollowUpSeconds). PROCESS-LOCAL.
+	lastReportNotCompliant bool
+
+	// followUpSpent : le rattrapage de l'épisode d'écart COURANT a déjà été
+	// consommé. Rechargé au premier rapport intégralement conforme — donc un
+	// épisode = un rattrapage, jamais une boucle rapide sur un poste durablement
+	// en écart. PROCESS-LOCAL.
+	followUpSpent bool
+}
+
+// HasNotCompliantItem : le rapport porte-t-il au moins un item non conforme ?
+// Tout ce qui n'est pas `compliant` compte (`drift`, `error`, et tout statut
+// futur) — on ARME le rattrapage en cas de doute plutôt que de le rater.
+func HasNotCompliantItem(items []ReportItem) bool {
+	for _, item := range items {
+		if item.Status != "compliant" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // NewAgentForTest construit un Agent avec son canal de réveil initialisé
@@ -230,6 +254,36 @@ const (
 	MinServerIntervalSeconds = 60
 	MaxServerIntervalSeconds = 86400
 )
+
+// ConvergenceFollowUpSeconds : cadence du cycle de RATTRAPAGE qui suit un
+// rapport contenant au moins un item non conforme (Story 2.12.3).
+//
+// Le problème qu'il règle. La politique de drift est STRICT (27.8) : `Test()`
+// négatif vaut `drift`, MÊME quand l'`Apply` qui suit répare dans la seconde —
+// il n'existe aucun statut « corrigé ». Or le premier passage sur un poste
+// fraîchement réinstallé est non conforme PAR CONSTRUCTION (rien n'est encore
+// appliqué : pas de fond d'écran posé, pas de lettre montée, pas de clé
+// écrite). Le poste redevenait donc conforme en quelques secondes, mais le
+// serveur ne l'apprenait qu'au cycle suivant — une HEURE plus tard à la cadence
+// nominale. Constaté 2026-07-20 : drives/wallpaper/registry affichés en écart
+// de 11:37 à 12:37 pour une divergence qui avait duré le temps d'un Apply.
+// L'exploitant ne pouvait pas distinguer « écart transitoire déjà réparé » de
+// « écart installé qui demande une intervention ».
+//
+// Pourquoi 6 minutes et pas 60 secondes. Les items de portée session ne sont
+// pas re-testés par le service : ils viennent des drops du compagnon, qui
+// re-teste toutes les 5 minutes (`Companion.periodicPass`). Un rattrapage à
+// 60 s relirait le MÊME drop et conclurait « toujours en écart » — on
+// fabriquerait le faux positif qu'on cherche à supprimer. 360 s couvre la passe
+// périodique du compagnon avec une marge.
+//
+// UN SEUL rattrapage par épisode (budget rechargé au premier rapport
+// intégralement conforme) : un poste réellement bloqué en écart ne doit pas
+// se mettre à interroger le serveur en boucle — à l'échelle du parc ce serait
+// exactement le troupeau que le jitter et le plancher de 60 s existent pour
+// éviter. Et c'est le résultat du rattrapage qui PORTE la distinction : encore
+// en écart après lui ⇒ l'écart est installé, et l'affichage dit enfin vrai.
+const ConvergenceFollowUpSeconds = 360
 
 // Quarantined expose l'état de quarantaine (tests + diagnostics).
 func (a *Agent) Quarantined() bool { return a.quarantined }
@@ -421,6 +475,10 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	// même type (sinon l'ingestion serveur en écraserait un). No-op sur les types
 	// déjà uniques (wallpaper/shortcuts/printers/drives/overlay/agent_update).
 	items = MergeReportItemsByType(items)
+	// Armement du rattrapage de convergence : évalué sur les items EXACTEMENT
+	// tels qu'ils partent (après fusion par type — c'est le pire statut qui est
+	// rapporté, donc c'est lui qui doit décider).
+	a.lastReportNotCompliant = HasNotCompliantItem(items)
 	reportBody, err := BuildReport(a.Hostname, uuid, items, time.Now())
 	if err != nil {
 		a.Log.Errorf("Construction du rapport en échec : %v", err)
@@ -737,6 +795,7 @@ func (a *Agent) Run(ctx context.Context) {
 			a.Log.Infof("Prochain essai dans %d s (backoff exponentiel).", int(sleep/time.Second))
 		} else {
 			backoff = 0
+			interval = a.applyConvergenceFollowUp(outcome, interval)
 			jitter := a.Jitter(interval)
 			sleep = interval + jitter
 			if sleep < time.Second {
@@ -758,6 +817,49 @@ func (a *Agent) Run(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// applyConvergenceFollowUp : raccourcit l'intervalle du PROCHAIN cycle quand le
+// rapport qu'on vient de poster portait un écart, pour que la nouvelle « c'est
+// réparé » n'attende pas une heure (voir ConvergenceFollowUpSeconds). Retourne
+// l'intervalle à utiliser ; ne touche NI le backoff NI le jitter (appliqué
+// par-dessus le retour, comme pour la cadence nominale).
+//
+// Le rattrapage ne RACCOURCIT jamais rien au-delà du nominal : sur un poste dont
+// le `ttl_seconds` serveur est déjà court, l'intervalle nominal gagne — sinon on
+// RALLONGERAIT la boucle en croyant l'accélérer.
+func (a *Agent) applyConvergenceFollowUp(outcome Outcome, interval time.Duration) time.Duration {
+	if outcome != OutcomeOK {
+		return interval
+	}
+
+	// Rapport intégralement conforme : l'épisode d'écart est clos, on recharge
+	// le budget pour le prochain.
+	if !a.lastReportNotCompliant {
+		a.followUpSpent = false
+
+		return interval
+	}
+
+	// Écart déjà rattrapé une fois et toujours là : il est INSTALLÉ. On repart
+	// en cadence nominale — l'affichage serveur dit désormais quelque chose de
+	// vrai, et c'est précisément le signal qu'on voulait rendre lisible.
+	if a.followUpSpent {
+		a.Log.Debugf("Écart toujours présent après le rattrapage : retour à la cadence nominale (%d s).",
+			int(interval/time.Second))
+
+		return interval
+	}
+
+	followUp := time.Duration(ConvergenceFollowUpSeconds) * time.Second
+	if followUp >= interval {
+		return interval
+	}
+	a.followUpSpent = true
+	a.Log.Infof("Écart rapporté : cycle de rattrapage dans %d s (au lieu de %d s) — un écart réparé entre-temps sera signalé conforme sans attendre le cycle nominal.",
+		int(followUp/time.Second), int(interval/time.Second))
+
+	return followUp
 }
 
 // sleepUntilDueOrWake exécute la sieste de fin de cycle en l'interrompant sur :

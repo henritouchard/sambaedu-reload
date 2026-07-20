@@ -251,6 +251,38 @@ class ConformityService
     }
 
     /**
+     * Depuis quand le statut COURANT de chaque type tient, indexé par type.
+     *
+     * Pourquoi : la politique de drift est STRICT (27.8) — `Test()` négatif vaut
+     * `drift` même quand l'`Apply` qui suit répare aussitôt, et il n'existe aucun
+     * statut « corrigé ». Un `drift` affiché ne dit donc pas s'il s'agit d'une
+     * divergence transitoire déjà réparée (typiquement le PREMIER passage sur un
+     * poste réinstallé : rien n'est encore appliqué, tout est non conforme par
+     * construction) ou d'un écart INSTALLÉ qui demande une intervention. La date
+     * de la dernière TRANSITION vers ce statut fait exactement cette
+     * distinction : quelques minutes = en cours de convergence, plusieurs jours
+     * = bloqué.
+     *
+     * Null (type absent) = aucune transition enregistrée : le statut n'a jamais
+     * changé depuis le premier rapport, ou l'événement est sorti de la rétention
+     * (14 j, PruneAgentReportsCommand). On n'affiche alors rien plutôt que
+     * d'inventer une ancienneté.
+     *
+     * @return Collection<string, AgentReportEvent> indexée par type
+     */
+    public function statusHeldSinceFor(Workstation $workstation): Collection
+    {
+        return AgentReportEvent::query()
+            ->where('workstation_id', $workstation->id)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get(['type', 'status', 'created_at'])
+            // Ordre décroissant : le premier de chaque type est le plus récent.
+            ->unique('type')
+            ->keyBy('type');
+    }
+
+    /**
      * Derniers événements de changement d'un poste (fiche poste, AC2),
      * datés, du plus récent au plus ancien.
      *

@@ -720,6 +720,31 @@ class MachineShowPageTest extends TestCase
             ->assertSee('Derniers événements');
     }
 
+    public function test_machine_page_shows_how_long_a_drift_has_been_held(): void
+    {
+        // La politique STRICT (27.8) rapporte `drift` même quand l'Apply répare
+        // aussitôt : le statut seul ne dit pas si l'écart est transitoire ou
+        // installé. La colonne « Depuis » porte cette distinction, à partir de
+        // la dernière TRANSITION vers le statut courant.
+        $ws = $this->makeEnrolledWorkstation();
+        $this->mockGroupService($ws);
+        $this->seedState($ws, 'drives', AgentResourceStatus::Drift);
+
+        AgentReportEvent::create([
+            'workstation_id' => $ws->id,
+            'type' => 'drives',
+            'previous_status' => AgentResourceStatus::Compliant,
+            'status' => AgentResourceStatus::Drift,
+            'hash' => str_repeat('d', 64),
+            'created_at' => now()->subDays(3),
+        ]);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent')
+            ->assertSee('Depuis')
+            ->assertSee('il y a 3 jours');
+    }
+
     /**
      * Accorde `computer.control` (le gate de forceSyncWorkstation, review
      * 24.7 #1). Le défaut `$user = null` rend la closure guest-friendly :

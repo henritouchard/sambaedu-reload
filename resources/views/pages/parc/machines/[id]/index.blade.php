@@ -364,6 +364,22 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /**
+     * Depuis quand le statut courant de chaque type tient (indexé par type) —
+     * distingue un écart transitoire en cours de convergence d'un écart
+     * installé. Voir ConformityService::statusHeldSinceFor.
+     *
+     * @return Collection<string, \App\Models\AgentReportEvent>
+     */
+    public function getAgentStatusHeldSinceProperty(): Collection
+    {
+        if (! $this->workstation->isAgentEnrolled()) {
+            return collect();
+        }
+
+        return app(ConformityService::class)->statusHeldSinceFor($this->workstation);
+    }
+
+    /**
      * Story 24.7 / AC2 — Derniers événements de changement (10, datés).
      *
      * @return \Illuminate\Support\Collection<int, \App\Models\AgentReportEvent>

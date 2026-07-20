@@ -627,6 +627,104 @@ install_ipxe_winpe_deps() {
 }
 
 # ============================================================================
+# spice-guest-tools — confort VM, DEV UNIQUEMENT
+# ============================================================================
+
+# Dépose spice-guest-tools sous la racine `os_assets`, d'où la route
+# `/ipxe/os/{path}` (LAN-only, sans JWT) le sert aux postes en cours d'install.
+# L'`Order 4` du template unattend le récupère à cette URL — mais uniquement si
+# le SMBIOS de la machine annonce QEMU/KVM. Un parc physique ne le télécharge
+# jamais : le garde sort avant toute requête réseau.
+#
+# DEV UNIQUEMENT (`APP_ENV != production`), pour deux raisons : en production il
+# n'y a pas de VM au parc, et on ne veut pas d'un curl sortant vers Internet
+# pendant l'install serveur.
+#
+# NOTE — un banc de dev qui déclare `APP_ENV=production` ne recevra rien, et le
+# symptôme sera un silence (pas une erreur). Positionner `APP_ENV` en
+# conséquence sur la VM de développement.
+#
+# Best-effort de bout en bout : sans ce binaire, l'`Order 4` écrit `erreur ...`
+# dans `c:\netinst\spice-guest-tools.log` et l'installation Windows se poursuit
+# normalement (try/catch + exit 0). Rien ici ne doit faire échouer install.sh.
+install_spice_guest_tools() {
+  local target_dir="${1:-$APP_DIR}"
+  local url="https://www.spice-space.org/download/windows/spice-guest-tools/spice-guest-tools-latest.exe"
+
+  cd "$target_dir" 2>/dev/null || return 0
+
+  # Même lecture d'APP_ENV que run_migrations (Dotenv, tolère quotes/absence).
+  local app_env
+  app_env=$(php -r "require 'vendor/autoload.php'; (Dotenv\Dotenv::createImmutable(__DIR__))->safeLoad(); echo \$_ENV['APP_ENV'] ?? 'production';" 2>/dev/null)
+
+  if [[ "$app_env" == "production" ]]; then
+    log "APP_ENV=production → spice-guest-tools ignoré (confort VM, dev uniquement)."
+    return 0
+  fi
+
+  # Racine servie par IpxeOsAssetController — même défaut que config/ipxe.php.
+  local os_root
+  os_root=$(php -r "require 'vendor/autoload.php'; (Dotenv\Dotenv::createImmutable(__DIR__))->safeLoad(); echo \$_ENV['IPXE_OS_ASSETS_ROOT'] ?? '';" 2>/dev/null)
+  os_root="${os_root:-/var/sambaedu/unattended/install/os}"
+
+  local dest_dir="$os_root/tools"
+  local dest="$dest_dir/spice-guest-tools.exe"
+
+  # Idempotent : ~10 Mo, inutile de le retélécharger à chaque run d'install.sh.
+  if [[ -s "$dest" ]]; then
+    log_success "spice-guest-tools déjà présent: $dest"
+    return 0
+  fi
+
+  if ! command -v curl &>/dev/null; then
+    log_warning "curl indisponible — spice-guest-tools non déployé."
+    return 0
+  fi
+
+  if ! mkdir -p "$dest_dir" 2>/dev/null; then
+    log_warning "Création de $dest_dir échouée — spice-guest-tools non déployé."
+    return 0
+  fi
+
+  # Téléchargement vers un temporaire puis pose atomique : un transfert coupé ne
+  # doit JAMAIS laisser un .exe tronqué à l'emplacement servi (le poste
+  # l'exécuterait et échouerait de façon opaque).
+  local tmp
+  tmp=$(mktemp "${TMPDIR:-/tmp}/spice-guest-tools.XXXXXX.exe" 2>/dev/null) || return 0
+
+  log "Téléchargement de spice-guest-tools (confort VM, dev)..."
+  if ! curl -fsSL --connect-timeout 10 --max-time 300 -o "$tmp" "$url"; then
+    log_warning "Téléchargement de spice-guest-tools échoué ($url) — non bloquant."
+    rm -f "$tmp"
+    return 0
+  fi
+
+  # Garde-fou : une page d'erreur HTML ou une redirection captive ferait
+  # quelques Ko et passerait le `curl -f`. Le binaire réel pèse ~10 Mo.
+  local size
+  size=$(stat -c %s "$tmp" 2>/dev/null || echo 0)
+  if [[ "$size" -lt 1000000 ]]; then
+    log_warning "spice-guest-tools suspect (${size} octets, attendu ~10 Mo) — abandonné."
+    rm -f "$tmp"
+    return 0
+  fi
+
+  # 644 + www-admin : aligné sur ce que pose WindowsIsoExtractor pour Win11/ et
+  # winpe/. Apache (X-Sendfile) doit pouvoir lire le fichier.
+  local owner_args=()
+  if id www-admin &>/dev/null; then
+    owner_args=(-o www-admin -g www-admin)
+  fi
+
+  if install "${owner_args[@]}" -m 644 "$tmp" "$dest" 2>/dev/null; then
+    log_success "spice-guest-tools déployé: $dest ($((size / 1024 / 1024)) Mo)"
+  else
+    log_warning "Pose de $dest échouée — spice-guest-tools non déployé."
+  fi
+  rm -f "$tmp"
+}
+
+# ============================================================================
 # Queue workers systemd
 # ============================================================================
 
@@ -931,6 +1029,9 @@ main() {
 
   # Dépendances système du pipeline iPXE/WinPE (injection pilotes NIC — 3.10).
   install_ipxe_winpe_deps "$APP_DIR"
+
+  # spice-guest-tools servi aux VM en cours d'install (no-op si APP_ENV=production).
+  install_spice_guest_tools "$APP_DIR"
 
   # Phase 4: Base de données
   echo ""

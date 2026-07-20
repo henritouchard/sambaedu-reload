@@ -75,6 +75,14 @@
                         <tr class="bg-base-200">
                             <th>Type</th>
                             <th class="text-center">Statut</th>
+                            {{-- Ancienneté du statut COURANT : un écart de quelques
+                                 minutes est une convergence en cours (le premier
+                                 passage d'un poste réinstallé est non conforme par
+                                 construction) ; un écart de plusieurs jours est
+                                 installé. La politique STRICT (27.8) ne distinguant
+                                 pas les deux par le statut, c'est cette colonne qui
+                                 le fait. --}}
+                            <th>Depuis</th>
                             <th>Rapporté</th>
                             <th>Détail</th>
                             <th>Hash</th>
@@ -86,6 +94,18 @@
                                 <td class="font-mono text-sm">{{ $state->type }}</td>
                                 <td class="text-center">
                                     <x-atoms.conformity-badge :status="$state->status->value" />
+                                </td>
+                                @php
+                                    // La transition ne vaut « depuis » que si elle a
+                                    // mené au statut AFFICHÉ — sinon l'événement est
+                                    // antérieur au statut courant et mentirait.
+                                    $held = $this->agentStatusHeldSince->get($state->type);
+                                    $heldSince = $held && $held->status === $state->status
+                                        ? $held->created_at
+                                        : null;
+                                @endphp
+                                <td class="text-sm" title="{{ $heldSince ?? 'Aucune transition enregistrée' }}">
+                                    {{ $heldSince?->diffForHumans() ?? '—' }}
                                 </td>
                                 <td class="text-sm" title="{{ $state->reported_at }}">
                                     {{ $state->reported_at?->diffForHumans() ?? '—' }}

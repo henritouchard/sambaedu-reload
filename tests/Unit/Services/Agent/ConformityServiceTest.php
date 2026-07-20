@@ -265,4 +265,54 @@ class ConformityServiceTest extends TestCase
         self::assertCount(2, $events);
         self::assertSame(AgentResourceStatus::Compliant, $events->first()->status); // plus récent d'abord
     }
+
+    #[Test]
+    public function status_held_since_returns_the_latest_transition_per_type(): void
+    {
+        $ws = $this->enrolled();
+
+        AgentReportEvent::create([
+            'workstation_id' => $ws->id,
+            'type' => 'drives',
+            'previous_status' => AgentResourceStatus::Drift,
+            'status' => AgentResourceStatus::Compliant,
+            'hash' => str_repeat('a', 64),
+            'created_at' => now()->subDays(5),
+        ]);
+        AgentReportEvent::create([
+            'workstation_id' => $ws->id,
+            'type' => 'drives',
+            'previous_status' => AgentResourceStatus::Compliant,
+            'status' => AgentResourceStatus::Drift,
+            'hash' => str_repeat('b', 64),
+            'created_at' => now()->subDays(3),
+        ]);
+        AgentReportEvent::create([
+            'workstation_id' => $ws->id,
+            'type' => 'wallpaper',
+            'previous_status' => AgentResourceStatus::Drift,
+            'status' => AgentResourceStatus::Compliant,
+            'hash' => str_repeat('c', 64),
+            'created_at' => now()->subHours(2),
+        ]);
+
+        $held = $this->service->statusHeldSinceFor($ws);
+
+        $this->assertSame(['drives', 'wallpaper'], $held->keys()->sort()->values()->all());
+        // Le PLUS RÉCENT par type gagne : l'écart tient depuis 3 jours, pas 5.
+        $this->assertSame(AgentResourceStatus::Drift, $held['drives']->status);
+        $this->assertSame(3, (int) $held['drives']->created_at->diffInDays(now()));
+        $this->assertSame(AgentResourceStatus::Compliant, $held['wallpaper']->status);
+    }
+
+    #[Test]
+    public function status_held_since_is_empty_without_any_transition(): void
+    {
+        // Aucun événement (statut jamais changé, ou événements sortis de la
+        // rétention 14 j) : on ne renvoie rien plutôt qu'une ancienneté inventée.
+        $ws = $this->enrolled();
+        $this->state($ws, 'drives', AgentResourceStatus::Drift);
+
+        $this->assertTrue($this->service->statusHeldSinceFor($ws)->isEmpty());
+    }
 }
