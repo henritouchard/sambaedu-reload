@@ -55,7 +55,7 @@ new #[Lazy] class extends Component {
                     <p class="text-sm opacity-80">Chargement de l'état cible…</p>
                 </div>
             </div>
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body space-y-3">
                     <div class="skeleton h-6 w-40"></div>
                     <div class="skeleton h-4 w-full"></div>
@@ -63,7 +63,7 @@ new #[Lazy] class extends Component {
                     <div class="skeleton h-4 w-2/3"></div>
                 </div>
             </div>
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body space-y-3">
                     <div class="skeleton h-6 w-40"></div>
                     <div class="skeleton h-4 w-full"></div>
@@ -113,7 +113,7 @@ new #[Lazy] class extends Component {
     </div>
 
     {{-- ── Raccourcis ─────────────────────────────────────────────────────── --}}
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <h2 class="card-title text-base">
                 <i class="fa-solid fa-link text-primary"></i>
@@ -161,7 +161,7 @@ new #[Lazy] class extends Component {
     </div>
 
     {{-- ── Applications ───────────────────────────────────────────────────── --}}
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <h2 class="card-title text-base">
                 <i class="fa-solid fa-cube text-primary"></i>

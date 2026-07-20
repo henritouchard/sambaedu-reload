@@ -1239,7 +1239,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         {{-- Bande identité épinglée : reste visible sur tous les onglets pour
              rappeler de quel poste il s'agit. Le détail (salle physique, grille
              technique, AD GUID) est descendu dans l'onglet « Général ». --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body py-4">
                 <div class="flex items-center gap-4">
                     {{-- Pin d'état de présence (canal agent) sur l'icône poste --}}
@@ -1358,7 +1358,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         {{-- Onglet Agent — mode debug + canal agent (token, conformité) --}}
 
         {{-- Card mode debug du poste --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex items-start gap-3">
@@ -1420,7 +1420,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         </div>
 
         {{-- Story 23.2 / AC6 — Card canal agent (token desired-state, Epic 23) --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="card-title text-base">
@@ -1508,7 +1508,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         @elseif ($tab === 'logical')
         {{-- Onglet « Groupes logiques » — appartenance aux groupes logiques du
              poste (déplacé depuis l'onglet Général). --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="card-title text-base">
@@ -1565,10 +1565,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         {{-- Onglet « Général » — détail du poste descendu depuis l'ancienne card
              header : salle physique, grille technique (système/IP/MAC/rapport)
              et AD GUID. --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 {{-- Salle physique --}}
-                <div class="rounded-xl border border-base-200 p-4 mb-6">
+                <div class="rounded-xl border border-base-300 p-4 mb-6">
                     <div class="flex items-center gap-2 mb-3">
                         <i class="fa-solid fa-door-open text-base-content/40"></i>
                         <p class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">
@@ -1643,7 +1643,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
         {{-- Card déploiement --}}
         @if ($deploySuccess->isNotEmpty() || $deployErrors->isNotEmpty() || $deployInProgress->isNotEmpty())
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <div class="flex items-center gap-4 mb-4">
                         <h3 class="card-title text-base">

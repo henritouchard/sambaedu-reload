@@ -245,7 +245,7 @@ class MakePage extends Command
         $lines[] = '?>';
         $lines[] = '';
         $lines[] = "<x-organisms.page title=\"{$title}\">";
-        $lines[] = '    <div class="card bg-base-100 shadow-sm border border-base-200">';
+        $lines[] = '    <div class="card bg-base-100 shadow-sm border border-base-300">';
         $lines[] = '        <div class="card-body">';
         $lines = array_merge($lines, $bodyBlock);
         $lines[] = '        </div>';

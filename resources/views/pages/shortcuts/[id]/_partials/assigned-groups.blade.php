@@ -1,5 +1,5 @@
 <!-- Cibles assignées au raccourci -->
-<div class="card bg-base-100 shadow-sm border border-base-200">
+<div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <div class="flex items-center justify-between mb-4">
             <h3 class="card-title flex gap-4">

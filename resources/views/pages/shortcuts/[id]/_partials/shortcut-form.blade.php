@@ -1,6 +1,6 @@
 @php $creating = $creating ?? false; @endphp
 
-<div class="card bg-base-100 shadow-sm border border-base-200">
+<div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <!-- Header avec icône, nom et boutons édition -->
         <div class="flex items-center justify-between mb-4">

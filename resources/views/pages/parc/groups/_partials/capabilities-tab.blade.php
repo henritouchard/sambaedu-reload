@@ -584,7 +584,7 @@ new class extends Component {
         </div>
     </div>
 
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <div class="flex items-center justify-between gap-3">
                 <h2 class="card-title text-base">Capacités déviées pour ce parc</h2>
@@ -712,7 +712,7 @@ new class extends Component {
                     <div class="flex flex-col gap-2">
                         @foreach ($this->addableCapabilities as $capability)
                             <button type="button"
-                                class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 hover:bg-base-200 text-left"
+                                class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-300 hover:bg-base-200 text-left"
                                 wire:click="openAdd({{ $capability['id'] }})"
                                 data-testid="pick-capability-{{ $capability['id'] }}">
                                 <span class="min-w-0">

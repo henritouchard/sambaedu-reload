@@ -103,7 +103,7 @@ new #[Title('Détail Worker')] class extends Component {
         </div>
     @else
         <div class="space-y-4">
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body py-4">
                     <div class="flex flex-wrap items-center gap-2 text-sm">
                         <span class="badge badge-outline">Worker #{{ $worker->pid }}</span>
@@ -123,7 +123,7 @@ new #[Title('Détail Worker')] class extends Component {
             @endphp
             <x-molecules.tabs :tabs="$workerTabs" :active="$selectedTab" action="selectTab" />
 
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body p-0 overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="table table-zebra w-full">
@@ -164,7 +164,7 @@ new #[Title('Détail Worker')] class extends Component {
                 </div>
             </div>
 
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <h2 class="card-title text-xl">{{ $taskLogs->title }}</h2>
                     <p class="text-sm text-base-content/70 mb-4">
@@ -180,7 +180,7 @@ new #[Title('Détail Worker')] class extends Component {
                         @endif
 
                         @foreach ($taskLogs->entries as $entry)
-                            <div class="rounded-lg border border-base-200 p-3 bg-base-50">
+                            <div class="rounded-lg border border-base-300 p-3 bg-base-50">
                                 <div class="flex items-center justify-between mb-1">
                                     <span class="badge badge-outline">{{ strtoupper($entry->level) }}</span>
                                     <span class="text-xs text-base-content/60">{{ $entry->time }}</span>

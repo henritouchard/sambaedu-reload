@@ -18,12 +18,12 @@
         </div>
 
         @if ($cloneTargetGroupId === null)
-            <div class="max-h-72 overflow-y-auto border border-base-200 rounded-lg">
+            <div class="max-h-72 overflow-y-auto border border-base-300 rounded-lg">
                 @forelse ($this->availableCloneTargets as $candidate)
                     <button type="button"
                         wire:key="clone-target-{{ $candidate->id }}"
                         wire:click="previewCloneTo({{ $candidate->id }})"
-                        class="w-full text-left flex items-center gap-3 p-3 hover:bg-base-200 border-b border-base-200 last:border-b-0">
+                        class="w-full text-left flex items-center gap-3 p-3 hover:bg-base-200 border-b border-base-300 last:border-b-0">
                         <i class="fa-solid fa-folder-tree text-secondary"></i>
                         <div class="flex-1">
                             <div class="font-medium">{{ $candidate->display_name_or_name }}</div>

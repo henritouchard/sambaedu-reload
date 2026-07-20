@@ -1,44 +1,42 @@
 <!-- Onglet Groupes -->
 <div class="flex-1 min-h-0 flex flex-col gap-4">
     <!-- Filtres -->
-    <div class="flex-shrink-0 card bg-base-100 shadow-sm">
-        <div class="card-body py-3">
-            <div class="flex flex-wrap items-center gap-3">
-                <!-- Recherche -->
-                <div class="form-control">
-                    <input type="text" wire:model.live.debounce.300ms="groupSearch"
-                        placeholder="Rechercher un groupe..." class="input input-bordered w-48" />
-                </div>
-
-                <!-- Filtre type de groupes : tous / physiques / logiques -->
-                <div class="flex items-center gap-2">
-                    <label class="label-text text-xs">Groupes</label>
-                    <div class="join">
-                        <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'all' ? 'btn-active' : '' }}"
-                            wire:click="$set('groupTypeFilter', 'all')">
-                            <i class="fa-solid fa-layer-group text-xs"></i>
-                            Tous
-                        </button>
-                        <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'physical' ? 'btn-active' : '' }}"
-                            wire:click="$set('groupTypeFilter', 'physical')">
-                            <i class="fa-solid fa-building text-xs"></i>
-                            Physiques
-                        </button>
-                        <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'logical' ? 'btn-active' : '' }}"
-                            wire:click="$set('groupTypeFilter', 'logical')">
-                            <i class="fa-solid fa-network-wired text-xs"></i>
-                            Logiques
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Bouton reset -->
-                @if ($groupSearch)
-                    <button type="button" class="btn btn-ghost btn-sm" wire:click="resetGroupFilters">
-                        <i class="fa-solid fa-eraser"></i>
-                    </button>
-                @endif
+    <div class="flex-shrink-0 border-b border-base-300 pb-3">
+        <div class="flex flex-wrap items-center gap-3">
+            <!-- Recherche -->
+            <div class="form-control">
+                <input type="text" wire:model.live.debounce.300ms="groupSearch"
+                    placeholder="Rechercher un groupe..." class="input input-bordered w-48" />
             </div>
+
+            <!-- Filtre type de groupes : tous / physiques / logiques -->
+            <div class="flex items-center gap-2">
+                <label class="label-text text-xs">Groupes</label>
+                <div class="join">
+                    <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'all' ? 'btn-active' : '' }}"
+                        wire:click="$set('groupTypeFilter', 'all')">
+                        <i class="fa-solid fa-layer-group text-xs"></i>
+                        Tous
+                    </button>
+                    <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'physical' ? 'btn-active' : '' }}"
+                        wire:click="$set('groupTypeFilter', 'physical')">
+                        <i class="fa-solid fa-building text-xs"></i>
+                        Physiques
+                    </button>
+                    <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'logical' ? 'btn-active' : '' }}"
+                        wire:click="$set('groupTypeFilter', 'logical')">
+                        <i class="fa-solid fa-network-wired text-xs"></i>
+                        Logiques
+                    </button>
+                </div>
+            </div>
+
+            <!-- Bouton reset -->
+            @if ($groupSearch)
+                <button type="button" class="btn btn-ghost btn-sm" wire:click="resetGroupFilters">
+                    <i class="fa-solid fa-eraser"></i>
+                </button>
+            @endif
         </div>
     </div>
 

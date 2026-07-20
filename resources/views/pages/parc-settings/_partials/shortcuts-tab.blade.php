@@ -245,55 +245,53 @@ new class extends Component {
     ];
 @endphp
 
-<div class="flex flex-col gap-4 flex-1 min-h-0">
+<div class="flex flex-col gap-3 flex-1 min-h-0">
     <!-- Filtres -->
-    <div class="flex-shrink-0 card bg-base-100 shadow-sm border border-base-200">
-        <div class="card-body p-4">
-            <div class="flex flex-wrap gap-4 items-end">
-                <!-- Recherche -->
-                <div class="form-control flex-1 min-w-[200px]">
-                    <label class="label py-1">
-                        <span class="label-text text-xs">Rechercher</span>
-                    </label>
-                    <input type="text" wire:model.live.debounce.300ms="search"
-                        class="input input-bordered input-sm" placeholder="Nom, propriétaire..." />
-                </div>
-
-                <!-- Filtre type -->
-                <div class="form-control min-w-[180px]">
-                    <label class="label py-1">
-                        <span class="label-text text-xs">Type</span>
-                    </label>
-                    <select wire:model.live="type" class="select select-bordered select-sm">
-                        @foreach ($filters['type'] as $value => $label)
-                            <option value="{{ $value }}">{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <!-- Filtre emplacement -->
-                <div class="form-control min-w-[180px]">
-                    <label class="label py-1">
-                        <span class="label-text text-xs">Emplacement</span>
-                    </label>
-                    <select wire:model.live="place" class="select select-bordered select-sm">
-                        @foreach ($filters['place'] as $value => $label)
-                            <option value="{{ $value }}">{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <!-- Bouton reset -->
-                <button type="button" class="btn btn-ghost btn-sm" wire:click="resetFilters"
-                    title="Réinitialiser les filtres" @disabled(!$hasFilters)>
-                    <i class="fa-solid fa-rotate-left"></i>
-                </button>
+    <div class="flex-shrink-0 border-b border-base-300 pb-3">
+        <div class="flex flex-wrap gap-x-3 gap-y-2 items-end">
+            <!-- Recherche -->
+            <div class="form-control flex-1 min-w-[200px]">
+                <label class="label py-0">
+                    <span class="label-text text-xs">Rechercher</span>
+                </label>
+                <input type="text" wire:model.live.debounce.300ms="search"
+                    class="input input-bordered input-sm" placeholder="Nom, propriétaire..." />
             </div>
+
+            <!-- Filtre type -->
+            <div class="form-control min-w-[180px]">
+                <label class="label py-0">
+                    <span class="label-text text-xs">Type</span>
+                </label>
+                <select wire:model.live="type" class="select select-bordered select-sm">
+                    @foreach ($filters['type'] as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <!-- Filtre emplacement -->
+            <div class="form-control min-w-[180px]">
+                <label class="label py-0">
+                    <span class="label-text text-xs">Emplacement</span>
+                </label>
+                <select wire:model.live="place" class="select select-bordered select-sm">
+                    @foreach ($filters['place'] as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <!-- Bouton reset -->
+            <button type="button" class="btn btn-ghost btn-sm" wire:click="resetFilters"
+                title="Réinitialiser les filtres" @disabled(!$hasFilters)>
+                <i class="fa-solid fa-rotate-left"></i>
+            </button>
         </div>
     </div>
 
     <!-- Tableau des raccourcis -->
-    <div class="card bg-base-100 shadow-sm border border-base-200 flex-1 min-h-0 flex flex-col overflow-hidden">
+    <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0 flex flex-col overflow-hidden">
         <div class="card-body p-0 flex flex-col flex-1 min-h-0">
             <div class="overflow-auto flex-1 min-h-0">
                 <table class="table table-zebra table-pin-rows">

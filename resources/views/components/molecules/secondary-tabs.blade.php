@@ -58,7 +58,7 @@
                 focus-visible:ring-2 focus-visible:ring-primary/50
                 {{ $isActive
                     ? 'border-primary/30 ring-2 ring-primary ring-offset-1 ring-offset-base-100 bg-primary/5'
-                    : 'border-base-200 hover:shadow-md hover:-translate-y-0.5 hover:border-base-300' }}">
+                    : 'border-base-300 hover:shadow-md hover:-translate-y-0.5 hover:border-base-300' }}">
             <div class="card-body flex-row items-center gap-3 py-2.5 px-3">
                 <div class="w-9 h-9 rounded-lg {{ $figureBg }} flex items-center justify-center shrink-0">
                     @if (! empty($tab['icon']))

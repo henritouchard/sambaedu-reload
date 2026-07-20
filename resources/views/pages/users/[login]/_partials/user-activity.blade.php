@@ -1,6 +1,6 @@
 <!-- Activité de l'utilisateur -->
 <div
-    class="bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm h-full overflow-hidden">
+    class="bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10 rounded-3xl border border-base-300 shadow-xl backdrop-blur-sm h-full overflow-hidden">
     <div class="p-8">
         <div class="flex items-center gap-4 mb-8">
             <div
@@ -142,7 +142,7 @@
 
         <!-- Lien vers l'historique complet -->
         @if ($isOwnProfile)
-            <div class="mt-6 pt-4 border-t border-base-200">
+            <div class="mt-6 pt-4 border-t border-base-300">
                 <a href="/parcs/show_histo.php?selectionne=3&user={{ $user->login }}"
                     class="btn btn-sm btn-ghost btn-block justify-center">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -153,7 +153,7 @@
                 </a>
             </div>
         @elsecan('view-user')
-            <div class="mt-6 pt-4 border-t border-base-200">
+            <div class="mt-6 pt-4 border-t border-base-300">
                 <a href="/parcs/show_histo.php?selectionne=3&user={{ $user->login }}"
                     class="btn btn-sm btn-ghost btn-block justify-center">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

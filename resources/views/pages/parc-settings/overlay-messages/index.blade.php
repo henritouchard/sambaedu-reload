@@ -166,7 +166,7 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
         </div>
 
         {{-- Formulaire de création --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h2 class="card-title text-base">Nouveau message</h2>
 
@@ -252,7 +252,7 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
         </div>
 
         {{-- Liste des messages --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h2 class="card-title text-base">Messages récents</h2>
 

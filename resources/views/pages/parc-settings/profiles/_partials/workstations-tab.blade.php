@@ -1,7 +1,7 @@
-<div class="card bg-base-100 shadow-sm border border-base-200 h-full flex flex-col overflow-hidden">
+<div class="card bg-base-100 shadow-sm border border-base-300 h-full flex flex-col overflow-hidden">
     <div class="card-body p-0 flex flex-col flex-1 min-h-0">
         <!-- En-tête avec recherche et bouton ajout -->
-        <div class="flex-shrink-0 flex justify-between items-center p-4 border-b border-base-200">
+        <div class="flex-shrink-0 flex justify-between items-center p-4 border-b border-base-300">
             <div class="form-control w-64">
                 <input type="text" wire:model.live.debounce.300ms="workstationSearch"
                     class="input input-bordered input-sm" placeholder="Rechercher un poste..." />
@@ -91,7 +91,7 @@
         @if (
             $this->profileWorkstations instanceof \Illuminate\Pagination\LengthAwarePaginator &&
                 $this->profileWorkstations->hasPages())
-            <div class="border-t border-base-200 p-4">
+            <div class="border-t border-base-300 p-4">
                 {{ $this->profileWorkstations->links() }}
             </div>
         @endif

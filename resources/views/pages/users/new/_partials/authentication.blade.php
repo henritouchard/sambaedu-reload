@@ -1,6 +1,6 @@
 <!-- Authentification -->
 <div
-    class="bg-gradient-to-br from-accent/10 via-primary/5 to-secondary/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm overflow-hidden">
+    class="bg-gradient-to-br from-accent/10 via-primary/5 to-secondary/10 rounded-3xl border border-base-300 shadow-xl backdrop-blur-sm overflow-hidden">
     <div class="p-8">
         <div class="flex items-center gap-4 mb-8">
             <div

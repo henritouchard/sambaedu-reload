@@ -351,12 +351,12 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
             </div>
         @endif
 
-        <div class="card bg-base-100 border border-base-200 shadow-xl overflow-hidden">
+        <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
             <div class="card-body gap-6">
                 @if ($isConfigured)
                     {{-- ============ Rangée de statistiques ============ --}}
                     <div
-                        class="stats stats-vertical w-full rounded-2xl border border-base-200 bg-base-200/30 md:stats-horizontal">
+                        class="stats stats-vertical w-full rounded-2xl border border-base-300 bg-base-200/30 md:stats-horizontal">
                         <div class="stat">
                             <div class="stat-figure text-success"><i class="fas fa-handshake text-2xl"></i></div>
                             <div class="stat-title">Handshake</div>
@@ -403,7 +403,7 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
                                 <i class="fas fa-circle-info text-primary"></i>
                                 Détails de la connexion
                             </h3>
-                            <dl class="divide-y divide-base-200 overflow-hidden rounded-2xl border border-base-200">
+                            <dl class="divide-y divide-base-200 overflow-hidden rounded-2xl border border-base-300">
                                 <div class="flex items-center justify-between gap-4 px-4 py-3">
                                     <dt class="text-sm font-medium text-base-content/60">URL ControlHub</dt>
                                     <dd class="truncate font-mono text-sm text-success">{{ $baseUrl ?? 'Non définie' }}</dd>
@@ -429,7 +429,7 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
 
                         {{-- Panneau heartbeat + zone danger --}}
                         <section class="space-y-4 lg:col-span-2">
-                            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-4">
+                            <div class="rounded-2xl border border-base-300 bg-base-200/30 p-4">
                                 <x-atoms.tooltip color="" position="top" icon="true">
                                     <x-slot name="label">
                                         <h3 class="flex items-center gap-2 text-base font-semibold text-base-content/80">

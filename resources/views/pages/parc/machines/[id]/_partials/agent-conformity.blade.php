@@ -11,7 +11,7 @@
 --}}
 @if ($workstation->isAgentEnrolled())
     <div @if ($workstation->isAgentEnrolled() && !$workstation->isAgentQuarantined()) wire:poll.15s @endif
-         class="mt-6 pt-6 border-t border-base-200">
+         class="mt-6 pt-6 border-t border-base-300">
 
         {{-- En-tête + bouton « Forcer la synchro » --}}
         <div class="flex items-center justify-between mb-4">

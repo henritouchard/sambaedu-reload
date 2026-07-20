@@ -77,7 +77,7 @@ new #[Title('Workers - Dashboard')] class extends Component {
 
                 @forelse ($roleWorkers as $worker)
                     <a href="{{ route('app.workers.show', ['pid' => $worker->pid]) }}"
-                        class="card bg-base-100 shadow-sm border border-base-200 hover:border-primary transition-colors">
+                        class="card bg-base-100 shadow-sm border border-base-300 hover:border-primary transition-colors">
                         <div class="card-body gap-3">
                             <div class="flex items-center justify-between">
                                 <h2 class="card-title text-base">Worker #{{ $worker->pid }}</h2>

@@ -106,7 +106,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 2xl:grid-cols-3 gap-6">
                         <!-- Login -->
                         <div
-                            class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-primary/20 group">
+                            class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-300 hover:border-primary/20 group">
                             <div
                                 class="stat-figure text-primary group-hover:scale-110 transition-transform duration-300">
                                 <div class="bg-primary/10 p-3 rounded-xl">
@@ -128,7 +128,7 @@
                             };
                         @endphp
                         <div
-                            class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-info/20 group">
+                            class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-300 hover:border-info/20 group">
                             <div class="stat-figure text-info group-hover:scale-110 transition-transform duration-300">
                                 <div class="bg-info/10 p-3 rounded-xl">
                                     <i class="fa-solid fa-user-tag text-xl"></i>
@@ -140,7 +140,7 @@
 
                         <!-- Établissement -->
                             <div
-                                class="stat rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-accent/20 group">
+                                class="stat rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-300 hover:border-accent/20 group">
                                 <div class="stat-figure">
                                     <div class="p-3 rounded-xl bg-emerald-200">
                                         <i class="fa-solid fa-school text-emerald-500 text-2xl"></i>

@@ -1,5 +1,5 @@
 <!-- Informations générales -->
-<div class="card bg-base-100 shadow-sm border border-base-200">
+<div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <h3 class="card-title mb-4 flex gap-4">
             <i class="fa-solid fa-gear"></i>

@@ -359,7 +359,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
                 <div tabindex="0" role="button" class="btn btn-ghost">
                     <i class="fa-solid fa-ellipsis-vertical"></i>
                 </div>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow-lg border border-base-200">
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow-lg border border-base-300">
                     @if (!$isGlobal)
                         <li>
                             <button type="button" @click="$wire.openAssignmentModal(); document.activeElement.blur();">
@@ -367,7 +367,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
                                 Gérer les assignations
                             </button>
                         </li>
-                        <li class="border-t border-base-200 mt-1 pt-1">
+                        <li class="border-t border-base-300 mt-1 pt-1">
                             <button type="button" class="text-error" wire:click="delete"
                                 wire:confirm="Êtes-vous sûr de vouloir supprimer ce raccourci ?">
                                 <i class="fa-regular fa-trash-can"></i>

@@ -12,7 +12,7 @@
     </div>
 
     <!-- Liste des applications -->
-    <div class="card bg-base-100 shadow-sm border border-base-200 flex-1 min-h-0 flex flex-col overflow-hidden">
+    <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0 flex flex-col overflow-hidden">
         <div class="card-body p-0 flex flex-col flex-1 min-h-0">
             <div class="overflow-auto flex-1 min-h-0">
                 <table class="table table-zebra table-pin-rows">
@@ -76,7 +76,7 @@
             @if (
                 $this->profileApplications instanceof \Illuminate\Pagination\LengthAwarePaginator &&
                     $this->profileApplications->hasPages())
-                <div class="border-t border-base-200 p-4">
+                <div class="border-t border-base-300 p-4">
                     {{ $this->profileApplications->links() }}
                 </div>
             @endif

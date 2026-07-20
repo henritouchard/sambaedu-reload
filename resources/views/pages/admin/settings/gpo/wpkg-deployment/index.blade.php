@@ -320,7 +320,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         {{-- ===================================================================
              Carte « Réglages de déploiement » (Story 15.6) — toujours actifs
              =================================================================== --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="deployment-settings-card">
+        <div class="card bg-base-100 shadow-sm border border-base-300" data-testid="deployment-settings-card">
             <div class="card-body">
                 <h2 class="card-title text-lg flex items-center gap-2">
                     <i class="fa-solid fa-sliders text-primary"></i>

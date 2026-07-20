@@ -24,10 +24,10 @@
         </div>
 
         {{-- Liste --}}
-        <div class="max-h-96 overflow-y-auto border border-base-200 rounded-lg">
+        <div class="max-h-96 overflow-y-auto border border-base-300 rounded-lg">
             @forelse ($shortcuts as $shortcut)
                 <label wire:key="grp-add-shortcut-{{ $shortcut->id }}"
-                    class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0">
+                    class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-300 last:border-b-0">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                         wire:model.live="selectedShortcutIdsToAdd" value="{{ $shortcut->id }}" />
                     <img src="{{ route('shortcuts.icon', ['name' => $shortcut->name]) }}"

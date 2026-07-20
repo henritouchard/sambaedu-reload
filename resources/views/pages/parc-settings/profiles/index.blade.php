@@ -453,7 +453,7 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
     @if ($profile)
         <div class="h-full flex flex-col gap-4">
             <!-- En-tête du profil -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     @if ($isEditing)
                         <form wire:submit="saveProfile" class="space-y-4">

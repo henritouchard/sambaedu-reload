@@ -62,7 +62,7 @@
             @else
                 <div class="space-y-4">
                     @foreach ($byType as $block)
-                        <div class="border border-base-200 rounded-lg p-3">
+                        <div class="border border-base-300 rounded-lg p-3">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="font-mono font-semibold text-sm">{{ $block['type'] }}</span>
                                 <span class="text-sm {{ $block['compliant'] === $block['total'] ? 'text-success' : 'text-base-content/70' }}">

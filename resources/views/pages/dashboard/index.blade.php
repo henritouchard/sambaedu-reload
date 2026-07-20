@@ -314,7 +314,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             <!-- Utilisateurs -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <a href="{{ route('app.users') }}" class="card-title text-primary hover:underline w-fit">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,7 +345,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
             </div>
 
             <!-- Machines -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <a href="{{ route('app.parc.index') }}?tab=machines"
                         class="card-title text-success hover:underline w-fit">
@@ -377,7 +377,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
             </div>
 
             <!-- Parcs -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <a href="{{ route('app.parc.index') }}" class="card-title text-success hover:underline w-fit">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -408,7 +408,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
             </div>
 
             <!-- Applications -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <a href="{{ route('app.parc-settings.index') }}" class="card-title text-warning hover:underline w-fit">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -439,7 +439,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
             </div>
 
             <!-- Raccourcis -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <a href="{{ route('app.shortcuts') }}" class="card-title text-info hover:underline w-fit">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -473,7 +473,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
         <div class="grid grid-cols-1 gap-6">
             <!-- Activité récente -->
             <a href="{{ route('app.dashboard.activity') }}"
-                class="card bg-base-100 shadow-sm border border-base-200 hover:border-primary transition-colors">
+                class="card bg-base-100 shadow-sm border border-base-300 hover:border-primary transition-colors">
                 <div class="card-body">
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="card-title">Activité Récente</h2>

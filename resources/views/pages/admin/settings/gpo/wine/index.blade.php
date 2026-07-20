@@ -177,7 +177,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
         </div>
 
         {{-- Form principal --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body space-y-4">
                 <h2 class="card-title text-lg">
                     <i class="fa-solid fa-wine-glass text-primary"></i>

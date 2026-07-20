@@ -25,7 +25,7 @@
     {{-- Assignations WPKG (profils applicatifs + applications directes/héritées) --}}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {{-- Profils applicatifs --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="card-title text-base">
@@ -96,7 +96,7 @@
             </div>
 
             {{-- Applications directes --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="card-title text-base">

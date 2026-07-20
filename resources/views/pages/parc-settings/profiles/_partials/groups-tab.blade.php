@@ -18,7 +18,7 @@
     </div>
 
     <!-- Liste des groupes -->
-    <div class="card bg-base-100 shadow-sm border border-base-200 flex-1 min-h-0 flex flex-col overflow-hidden">
+    <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0 flex flex-col overflow-hidden">
         <div class="card-body p-0 flex flex-col flex-1 min-h-0">
             <div class="overflow-auto flex-1 min-h-0">
                 <table class="table table-zebra table-pin-rows">
@@ -106,7 +106,7 @@
                                                     {{ $group->name }}
                                                 </a>
                                                 <span class="text-xs text-base-content/50 block">
-                                                    <i class="fa-solid fa-arrow-turn-down-right mr-1"></i>
+                                                    <i class="fa-solid fa-turn-down mr-1"></i>
                                                     Hérité de {{ $group->parent?->name ?? 'parent' }}
                                                 </span>
                                             </div>
@@ -142,7 +142,7 @@
             </div>
 
             @if ($this->profileGroups instanceof \Illuminate\Pagination\LengthAwarePaginator && $this->profileGroups->hasPages())
-                <div class="border-t border-base-200 p-4">
+                <div class="border-t border-base-300 p-4">
                     {{ $this->profileGroups->links() }}
                 </div>
             @endif

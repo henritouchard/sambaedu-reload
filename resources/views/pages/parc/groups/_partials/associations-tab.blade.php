@@ -434,7 +434,7 @@ new class extends Component {
     </div>
 
     {{-- Bloc « ajouter une association » (composer) --}}
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <h2 class="card-title text-base">Ajouter une association</h2>
 
@@ -490,7 +490,7 @@ new class extends Component {
     </div>
 
     {{-- Liste des associations du parc (éditable / désactivable) --}}
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <h2 class="card-title text-base">Associations par défaut du parc</h2>
 

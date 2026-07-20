@@ -41,10 +41,10 @@
         </div>
 
         {{-- Liste --}}
-        <div class="max-h-96 overflow-y-auto border border-base-200 rounded-lg">
+        <div class="max-h-96 overflow-y-auto border border-base-300 rounded-lg">
             @forelse ($items as $app)
                 <label wire:key="{{ $keyPrefix }}-{{ $app->id }}"
-                    class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0">
+                    class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-300 last:border-b-0">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                         wire:model.live="{{ $selectionProperty }}" value="{{ $app->id }}" />
                     <x-atoms.icon-avatar icon="fa-cube" bgColor="bg-primary/10" textColor="text-primary"

@@ -1,5 +1,5 @@
 <!-- Configuration Linux -->
-<div class="card bg-base-100 shadow-sm border border-base-200">
+<div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <h3 class="text-2xl mb-4 flex items-center gap-2 ">
             <i class="fa-brands fa-linux text-2xl"></i>

@@ -2014,7 +2014,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                 </button>
                             @endif
                         </li>
-                        <hr class="border-zinc-200 my-1">
+                        <hr class="border-base-300 my-1">
                         @can('computer.control')
                             <li>
                                 <button type="button" wire:click="executeGroupAction('wake')" @disabled($batchRunning)
@@ -2043,7 +2043,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                         @endcan
                         @if ($group->is_physical)
                             @can('wallpaper.manage')
-                                <hr class="border-zinc-200 my-1">
+                                <hr class="border-base-300 my-1">
                                 <li>
                                     <button type="button"
                                         wire:click="$dispatch('open-wp-picker', { type: 'wallpaper', ownerId: {{ $group->id }} })">
@@ -2061,7 +2061,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                             @endcan
                         @endif
                         @can('computer.install')
-                            <hr class="border-zinc-200 my-1">
+                            <hr class="border-base-300 my-1">
                             <li>
                                 <button type="button" class="text-error" wire:click="openReinstallModal">
                                     <i class="fa-solid fa-arrows-rotate"></i>
@@ -2069,7 +2069,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                 </button>
                             </li>
                         @endcan
-                        <hr class="border-zinc-200 my-1">
+                        <hr class="border-base-300 my-1">
                         <li>
                             @if ($isLocked)
                                 <span class="opacity-40 cursor-not-allowed text-error">
@@ -2118,7 +2118,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
         <div class="space-y-6">
             {{-- Carte d'identité du groupe --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
+            <div class="card bg-base-100 shadow-sm border border-base-300 mb-6">
                 <div class="card-body">
                     <div class="flex items-start gap-4 mb-4">
                         <div
@@ -2215,7 +2215,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                     ->where('owner_id', $group->id)
                                     ->first();
                             @endphp
-                            <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-200">
+                            <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-300">
                                 <span class="text-xs text-base-content/50 uppercase tracking-wide shrink-0">Fonds
                                     d'écran</span>
 

@@ -9,7 +9,7 @@
     // d'options, N+1). null (poste nomade) → fallback droit global.
     $wpkgScope = $wpkgScope ?? $this->workstation?->physicalRoom;
 @endphp
-<div class="card bg-base-100 shadow-sm border border-base-200">
+<div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <div class="flex items-center justify-between mb-3">
             <h3 class="card-title text-base">
@@ -46,7 +46,7 @@
                     $isOverridden = $isOn; // false = défaut, true = override en BDD
                 @endphp
                 <div wire:key="wpkg-option-{{ $key }}"
-                    class="flex items-start gap-3 p-3 rounded-lg border {{ $isOverridden ? 'border-primary/30 bg-primary/5' : 'border-base-200' }}">
+                    class="flex items-start gap-3 p-3 rounded-lg border {{ $isOverridden ? 'border-primary/30 bg-primary/5' : 'border-base-300' }}">
                     <label class="flex items-start gap-3 cursor-pointer flex-1">
                         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5"
                             wire:click="toggleWpkgOption('{{ $key }}')"

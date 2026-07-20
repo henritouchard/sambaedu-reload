@@ -32,7 +32,7 @@
 @endphp
 
 @if ($schedulesCount > 0)
-<div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
+<div class="card bg-base-100 shadow-sm border border-base-300 mb-6">
     <div class="card-body">
         <div class="flex items-center justify-between mb-4">
             <div>
@@ -317,7 +317,7 @@
                 @endif
 
                 {{-- Toggle enabled --}}
-                <div class="flex items-center justify-between pt-2 border-t border-base-200">
+                <div class="flex items-center justify-between pt-2 border-t border-base-300">
                     <label class="label cursor-pointer gap-3">
                         <input type="checkbox"
                             wire:model="formEnabled"

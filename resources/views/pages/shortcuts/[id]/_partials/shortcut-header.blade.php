@@ -1,5 +1,5 @@
 <!-- En-tête du raccourci -->
-<div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
+<div class="card bg-base-100 shadow-sm border border-base-300 mb-6">
     <div class="card-body">
         <div class="flex items-center gap-6">
             <!-- Icône du raccourci -->

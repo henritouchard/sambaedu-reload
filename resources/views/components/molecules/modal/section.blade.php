@@ -81,7 +81,7 @@
                     {{ $titleComplement }}
                 @endisset
             </span>
-            <hr class="flex-1 border-t border-zinc-300/90 dashed" />
+            <hr class="flex-1 border-t border-base-300 dashed" />
             @isset($headerAction)
                 <div class="shrink-0 flex items-center gap-2 flex-wrap justify-end">
                     {{ $headerAction }}

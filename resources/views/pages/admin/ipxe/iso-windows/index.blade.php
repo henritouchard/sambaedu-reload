@@ -834,7 +834,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         {{-- ============================================================
              Card "Versions Windows disponibles" — liste par nouveauté
              ============================================================ --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body space-y-2">
                 <h2 class="card-title text-lg">
                     <i class="fa-solid fa-server text-primary"></i>
@@ -1201,7 +1201,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         {{-- ============================================================
              Card "Historique" (10 derniers téléchargements)
              ============================================================ --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body space-y-3">
                 <h2 class="card-title text-lg">
                     <i class="fa-solid fa-clock-rotate-left text-primary"></i>

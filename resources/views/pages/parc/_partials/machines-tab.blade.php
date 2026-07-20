@@ -9,46 +9,44 @@
     @include('pages.parc._partials.stats-cards')
 
     <!-- Filtres -->
-    <div class="card bg-base-100 shadow-sm">
-        <div class="card-body py-3">
-            <div class="flex flex-wrap items-center gap-3">
-                <div class="form-control flex-1 min-w-[200px]">
-                    <input type="text" wire:model.live.debounce.300ms="machineSearch"
-                        placeholder="Rechercher un poste..." class="input input-bordered w-full" />
-                </div>
-                <div class="form-control w-40">
-                    <select wire:model.live="osFilter" class="select select-bordered">
-                        <option value="">Tous les OS</option>
-                        @foreach ($availableOs as $os)
-                            <option value="{{ $os }}">{{ $os }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="form-control w-48">
-                    <select wire:model.live="groupFilter" class="select select-bordered">
-                        <option value="">Tous les groupes</option>
-                        @foreach ($availableGroups as $group)
-                            <option value="{{ $group->id }}">{{ $group->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                {{-- Migration + conformité sont désormais des cartes-filtres
-                     cliquables (voir stats-cards) : le clic sur une tuile
-                     restreint le tableau à cette catégorie. --}}
-                {{-- Filtre par état de présence (allumé / éteint), dérivé du canal agent --}}
-                <div class="form-control w-40">
-                    <select wire:model.live="presenceFilter" class="select select-bordered" aria-label="État du poste">
-                        <option value="">État : tous</option>
-                        <option value="online">Allumés</option>
-                        <option value="off">Éteints</option>
-                    </select>
-                </div>
-                @if ($machineSearch || $osFilter || $groupFilter || $cardFilter || $presenceFilter)
-                    <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
-                        <i class="fa-solid fa-eraser"></i>
-                    </button>
-                @endif
+    <div class="border-b border-base-300 pb-3">
+        <div class="flex flex-wrap items-center gap-3">
+            <div class="form-control flex-1 min-w-[200px]">
+                <input type="text" wire:model.live.debounce.300ms="machineSearch"
+                    placeholder="Rechercher un poste..." class="input input-bordered w-full" />
             </div>
+            <div class="form-control w-40">
+                <select wire:model.live="osFilter" class="select select-bordered">
+                    <option value="">Tous les OS</option>
+                    @foreach ($availableOs as $os)
+                        <option value="{{ $os }}">{{ $os }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="form-control w-48">
+                <select wire:model.live="groupFilter" class="select select-bordered">
+                    <option value="">Tous les groupes</option>
+                    @foreach ($availableGroups as $group)
+                        <option value="{{ $group->id }}">{{ $group->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            {{-- Migration + conformité sont désormais des cartes-filtres
+                 cliquables (voir stats-cards) : le clic sur une tuile
+                 restreint le tableau à cette catégorie. --}}
+            {{-- Filtre par état de présence (allumé / éteint), dérivé du canal agent --}}
+            <div class="form-control w-40">
+                <select wire:model.live="presenceFilter" class="select select-bordered" aria-label="État du poste">
+                    <option value="">État : tous</option>
+                    <option value="online">Allumés</option>
+                    <option value="off">Éteints</option>
+                </select>
+            </div>
+            @if ($machineSearch || $osFilter || $groupFilter || $cardFilter || $presenceFilter)
+                <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
+                    <i class="fa-solid fa-eraser"></i>
+                </button>
+            @endif
         </div>
     </div>
 
@@ -242,7 +240,7 @@
                     <div class="dropdown dropdown-top">
                         <label tabindex="0" class="btn btn-primary btn-sm">
                             <i class="fa-solid fa-bolt"></i>
-                            Actions machine
+                            Actions machines
                             <i class="fa-solid fa-chevron-up ml-1"></i>
                         </label>
                         <ul tabindex="0"
@@ -264,18 +262,21 @@
                                     </button>
                                 </li>
                             @endforeach
+                            @can('computer.install')
+                                <li class="menu-title px-0 pt-1"><div class="divider m-0"></div></li>
+                                <li>
+                                    <button type="button" class="text-error" wire:click="openReinstallModal">
+                                        <i class="fa-solid fa-arrows-rotate"></i>
+                                        Réinstaller la sélection
+                                    </button>
+                                </li>
+                            @endcan
                         </ul>
                     </div>
                     <button type="button" class="btn btn-primary btn-sm" wire:click="$set('showGroupModal', true)">
                         <i class="fa-solid fa-folder-plus"></i>
                         Ajouter aux groupes
                     </button>
-                    @can('computer.install')
-                        <button type="button" class="btn btn-error btn-sm" wire:click="openReinstallModal">
-                            <i class="fa-solid fa-arrows-rotate"></i>
-                            Réinstaller la sélection
-                        </button>
-                    @endcan
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="$set('selectedMachines', [])">
                         <i class="fa-solid fa-xmark"></i>
                     </button>

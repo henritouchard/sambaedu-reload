@@ -97,7 +97,7 @@ new #[Title('Détail log exécution - SE4FS')] class extends Component {
         @copy-to-clipboard.window="copy($event.detail.text)">
 
         {{-- Header status --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body py-4">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                     <h2 class="card-title flex items-center gap-2">
@@ -114,7 +114,7 @@ new #[Title('Détail log exécution - SE4FS')] class extends Component {
 
         {{-- Métadonnées 2 colonnes --}}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body py-4">
                     <h3 class="card-title text-sm flex items-center gap-2">
                         <i class="fa-solid fa-tags"></i>
@@ -151,7 +151,7 @@ new #[Title('Détail log exécution - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body py-4">
                     <h3 class="card-title text-sm flex items-center gap-2">
                         <i class="fa-solid fa-stopwatch"></i>
@@ -191,7 +191,7 @@ new #[Title('Détail log exécution - SE4FS')] class extends Component {
         </div>
 
         {{-- stdout --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body py-4">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                     <h3 class="card-title text-sm flex items-center gap-2">
@@ -212,7 +212,7 @@ new #[Title('Détail log exécution - SE4FS')] class extends Component {
         </div>
 
         {{-- stderr --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body py-4">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                     <h3 class="card-title text-sm flex items-center gap-2">

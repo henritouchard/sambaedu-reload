@@ -22,7 +22,7 @@
                 placeholder="Rechercher un poste..." />
         </div>
 
-        <div class="max-h-80 overflow-y-auto border border-base-200 rounded-lg">
+        <div class="max-h-80 overflow-y-auto border border-base-300 rounded-lg">
             @if (count($items) === 0)
                 <div class="p-8 text-center text-base-content/60">
                     <i class="fa-solid fa-computer text-3xl mb-2 opacity-30"></i>

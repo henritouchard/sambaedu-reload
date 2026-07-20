@@ -577,7 +577,7 @@ new class extends Component {
                 </x-slot:headerAction>
             @endif
 
-            <div class="border border-base-200 rounded-lg bg-base-100 shadow-sm">
+            <div class="border border-base-300 rounded-lg bg-base-100 shadow-sm">
                 @if (count($summaries) === 0)
                     <div class="p-8 text-center text-sm text-base-content/50">
                         <i class="fa-solid fa-user-slash text-3xl mb-2 opacity-20 block"></i>

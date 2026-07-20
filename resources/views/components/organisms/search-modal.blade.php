@@ -226,7 +226,7 @@ new class extends Component {
         x-init="$watch('searchOpen', value => { if (value) $nextTick(() => $refs.searchInput?.focus()) })"
         style="display: none;">
         <div class="fixed inset-0 bg-black/50" @click="searchOpen = false; $wire.set('query', '')"></div>
-        <div class="relative w-full max-w-2xl bg-base-100 rounded-lg shadow-xl border border-base-200" @click.stop>
+        <div class="relative w-full max-w-2xl bg-base-100 rounded-lg shadow-xl border border-base-300" @click.stop>
             <div class="p-4">
                 <div class="relative">
                     <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/60"
@@ -292,7 +292,7 @@ new class extends Component {
             </div>
 
             <!-- Pied -->
-            <div class="px-4 py-3 bg-base-200/50 rounded-b-lg border-t border-base-200">
+            <div class="px-4 py-3 bg-base-200/50 rounded-b-lg border-t border-base-300">
                 <div class="flex items-center justify-between text-xs text-base-content/60">
                     <div>
                         @if ($this->totalResults > 0)

@@ -1,7 +1,7 @@
 <!-- Classes (conditionnelle) -->
 @if ($categorie === 'Eleves' || $categorie === 'Profs')
     <div
-        class="bg-gradient-to-br from-secondary/10 via-accent/5 to-primary/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm overflow-hidden">
+        class="bg-gradient-to-br from-secondary/10 via-accent/5 to-primary/10 rounded-3xl border border-base-300 shadow-xl backdrop-blur-sm overflow-hidden">
         <div class="p-8">
             <div class="flex items-center gap-4 mb-8">
                 <div
@@ -51,7 +51,7 @@
                         class="border border-base-300 rounded-xl max-h-48 overflow-y-auto bg-base-100 @error('classes') border-error @enderror">
                         @forelse ($this->filteredClasses as $classe)
                             <button type="button" wire:click="selectClass('{{ $classe }}')"
-                                class="flex items-center gap-3 px-4 py-2 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0 w-full text-left {{ in_array($classe, $classes) ? 'bg-primary/10' : '' }}">
+                                class="flex items-center gap-3 px-4 py-2 hover:bg-base-200 cursor-pointer border-b border-base-300 last:border-b-0 w-full text-left {{ in_array($classe, $classes) ? 'bg-primary/10' : '' }}">
                                 <span
                                     class="w-4 h-4 rounded-full border-2 {{ in_array($classe, $classes) ? 'border-primary bg-primary' : 'border-base-300' }} flex items-center justify-center">
                                     @if (in_array($classe, $classes))
@@ -102,7 +102,7 @@
                     <div class="border border-base-300 rounded-xl max-h-48 overflow-y-auto bg-base-100">
                         @forelse ($this->filteredClasses as $classe)
                             <button type="button" wire:click="toggleClass('{{ $classe }}')"
-                                class="flex items-center gap-3 px-4 py-2 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0 w-full text-left {{ in_array($classe, $classes) ? 'bg-primary/10' : '' }}">
+                                class="flex items-center gap-3 px-4 py-2 hover:bg-base-200 cursor-pointer border-b border-base-300 last:border-b-0 w-full text-left {{ in_array($classe, $classes) ? 'bg-primary/10' : '' }}">
                                 <span
                                     class="w-4 h-4 rounded border {{ in_array($classe, $classes) ? 'border-primary bg-primary' : 'border-base-300' }} flex items-center justify-center">
                                     @if (in_array($classe, $classes))

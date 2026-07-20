@@ -43,7 +43,7 @@
 @endphp
 
 @if ($lastPage > 1 || $showPerPage)
-    <div class="flex flex-wrap justify-between items-center gap-4 py-3 px-4 border-t border-base-200 bg-base-100">
+    <div class="flex flex-wrap justify-between items-center gap-4 py-3 px-4 border-t border-base-300 bg-base-100">
         {{-- Sélecteur nombre par page --}}
         @if ($showPerPage)
             <div class="flex items-center gap-2">

@@ -84,7 +84,7 @@ new #[Title("Historique d'exécution — SE4FS")] class extends Component {
         @endphp
 
         {{-- Métadonnées du schedule --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200 mb-4">
+        <div class="card bg-base-100 shadow-sm border border-base-300 mb-4">
             <div class="card-body py-4">
                 <div class="flex items-center justify-between flex-wrap gap-3">
                     <div>
@@ -151,7 +151,7 @@ new #[Title("Historique d'exécution — SE4FS")] class extends Component {
         </div>
 
         {{-- Liste des runs --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h3 class="font-semibold text-lg mb-3 flex items-center gap-2">
                     <i class="fa-regular fa-clock-rotate-left text-primary"></i>

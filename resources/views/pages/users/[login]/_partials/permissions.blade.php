@@ -11,7 +11,7 @@
 --}}
 
 <div
-    class="bg-gradient-to-br from-warning/10 via-warning/5 to-error/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm overflow-hidden flex flex-col h-full">
+    class="bg-gradient-to-br from-warning/10 via-warning/5 to-error/10 rounded-3xl border border-base-300 shadow-xl backdrop-blur-sm overflow-hidden flex flex-col h-full">
     <div class="p-6 flex flex-col flex-1 min-h-0">
         <div class="flex items-center gap-4 mb-6">
             <div

@@ -373,7 +373,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                             </svg>
                         </label>
                         <ul tabindex="0"
-                            class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-200">
+                            class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-300">
                             @can('resetPassword-user', $sqlUserModel)
                                 <li>
                                     <button type="button" class="flex items-center gap-3 w-full"

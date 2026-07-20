@@ -1259,24 +1259,22 @@ new class extends Component {
     @endunless
 
     <!-- Filtres + bouton ajout -->
-    <div class="flex-shrink-0 card bg-base-100 shadow-sm">
-        <div class="card-body py-3">
-            <div class="flex flex-wrap items-center gap-3 justify-between">
-                @if ($isAdmin)
-                    <div role="tablist" class="tabs tabs-boxed bg-base-200">
-                        <button type="button" role="tab" class="tab {{ $filter === 'all' ? 'tab-active' : '' }}"
-                            wire:click="$set('filter', 'all')">Toutes</button>
-                        <button type="button" role="tab" class="tab {{ $filter === 'attached' ? 'tab-active' : '' }}"
-                            wire:click="$set('filter', 'attached')">Rattachées</button>
-                        <button type="button" role="tab" class="tab {{ $filter === 'unattached' ? 'tab-active' : '' }}"
-                            wire:click="$set('filter', 'unattached')">Non rattachées</button>
-                        <button type="button" role="tab" class="tab {{ $filter === 'orphans' ? 'tab-active' : '' }}"
-                            wire:click="$set('filter', 'orphans')">Orphelines</button>
-                    </div>
-                @else
-                    <div></div>
-                @endif
-            </div>
+    <div class="flex-shrink-0 border-b border-base-300 pb-3">
+        <div class="flex flex-wrap items-center gap-3 justify-between">
+            @if ($isAdmin)
+                <div role="tablist" class="tabs tabs-boxed bg-base-200">
+                    <button type="button" role="tab" class="tab {{ $filter === 'all' ? 'tab-active' : '' }}"
+                        wire:click="$set('filter', 'all')">Toutes</button>
+                    <button type="button" role="tab" class="tab {{ $filter === 'attached' ? 'tab-active' : '' }}"
+                        wire:click="$set('filter', 'attached')">Rattachées</button>
+                    <button type="button" role="tab" class="tab {{ $filter === 'unattached' ? 'tab-active' : '' }}"
+                        wire:click="$set('filter', 'unattached')">Non rattachées</button>
+                    <button type="button" role="tab" class="tab {{ $filter === 'orphans' ? 'tab-active' : '' }}"
+                        wire:click="$set('filter', 'orphans')">Orphelines</button>
+                </div>
+            @else
+                <div></div>
+            @endif
         </div>
     </div>
 

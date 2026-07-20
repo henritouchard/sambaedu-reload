@@ -104,7 +104,7 @@ new class extends Component {
         <div class="w-full flex flex-col gap-6 col-span-full">
 
             {{-- Liste des apps déjà en défaut parc --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200 w-full">
+            <div class="card bg-base-100 shadow-sm border border-base-300 w-full">
                 <div class="card-body">
                     <h3 class="card-title text-base">Applications par défaut actives</h3>
                     <div class="overflow-x-auto">

@@ -353,7 +353,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         @endif
 
         {{-- Métadonnées principales --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h2 class="card-title text-2xl flex items-center gap-3">
                     <i class="fa-solid fa-file-code text-primary"></i>
@@ -409,7 +409,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
              avec l'extinction du canal de config legacy. --}}
 
         {{-- Encart "Impact" — Story 16.5 / AC3.2 / D5 --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="impact-card">
+        <div class="card bg-base-100 shadow-sm border border-base-300" data-testid="impact-card">
             <div class="card-body">
                 <h3 class="card-title text-lg flex items-center gap-2">
                     <i class="fa-solid fa-bullseye text-warning"></i>
@@ -455,7 +455,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         </div>
 
         {{-- Containers liés --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h3 class="card-title text-lg flex items-center gap-2">
                     <i class="fa-solid fa-diagram-project text-secondary"></i>

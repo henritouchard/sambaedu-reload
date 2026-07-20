@@ -17,7 +17,7 @@
     @if (empty($availableGroups))
         <p class="text-sm text-base-content/60">Aucun parc disponible.</p>
     @else
-        <div class="border border-base-200 rounded-lg overflow-hidden">
+        <div class="border border-base-300 rounded-lg overflow-hidden">
             <div class="max-h-64 overflow-y-auto">
                 <table class="table table-sm table-pin-rows">
                     <thead>

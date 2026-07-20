@@ -473,6 +473,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Gestion des droits" :scrollable="false"
+    icon="fa-solid fa-shield-halved"
     description="Gérez les rôles, permissions et délégations des utilisateurs">
 
     @if (in_array($activeTab, ['profiles', 'delegations'], true))
@@ -531,13 +532,12 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         @php
             $rightsTabs = [
                 'profiles' => ['label' => 'Profils', 'icon' => 'fa-solid fa-id-card-clip'],
-                'user-lookup' => ['label' => "Droits d'un utilisateur", 'icon' => 'fa-solid fa-user-magnifying-glass'],
+                'user-lookup' => ['label' => "Droits d'un utilisateur", 'icon' => 'fa-solid fa-user-shield'],
                 'delegations' => ['label' => 'Délégations actives', 'icon' => 'fa-solid fa-building'],
                 'history' => ['label' => 'Historique', 'icon' => 'fa-solid fa-clock-rotate-left'],
             ];
         @endphp
-        <x-molecules.tabs :tabs="$rightsTabs" :active="$activeTab" variant="bordered" size="tab-lg"
-            class="flex-shrink-0 mb-4" />
+        <x-molecules.tabs :tabs="$rightsTabs" :active="$activeTab" class="flex-shrink-0 mb-4" />
 
         {{-- ============================================================ --}}
         {{-- ONGLET DROITS D'UN UTILISATEUR --}}
@@ -749,7 +749,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                         </div>
                     @elseif (!$selectedUserLogin && empty($foundUsers))
                         <div class="text-center py-8">
-                            <div class="text-4xl mb-4 opacity-20"><i class="fa-solid fa-user-magnifying-glass"></i></div>
+                            <div class="text-4xl mb-4 opacity-20"><i class="fa-solid fa-user-shield"></i></div>
                             <p class="text-base-content/60">Recherchez un utilisateur pour voir ses droits détaillés.</p>
                         </div>
                     @endif

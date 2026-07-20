@@ -92,7 +92,9 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                          est imposé par l'autorité amont) ; la SYNCHRONISATION reste
                          accessible (AC8 : syncCurrentDepot reste fonctionnel). Les gardes
                          serveur du SFC depot-tab restent la vraie barrière. --}}
-                    @php($upstreamManaged = \App\Models\ControlHubContract::active() !== null)
+                    @php
+                        $upstreamManaged = \App\Models\ControlHubContract::active() !== null;
+                    @endphp
                     @if ($upstreamManaged)
                         <li class="menu-title">
                             <span>

@@ -122,7 +122,7 @@ new class extends Component {
 ?>
 
 <div
-    class="bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm h-full overflow-hidden mt-6">
+    class="bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10 rounded-3xl border border-base-300 shadow-xl backdrop-blur-sm h-full overflow-hidden mt-6">
     <div class="p-8">
         <div class="flex items-center justify-between mb-8">
             <div class="flex items-center gap-4">

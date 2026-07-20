@@ -29,8 +29,8 @@
                 </div>
             </div>
             <div tabindex="0"
-                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-80 p-2 shadow-lg border border-base-200">
-                <div class="p-3 border-b border-base-200">
+                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-80 p-2 shadow-lg border border-base-300">
+                <div class="p-3 border-b border-base-300">
                     <h3 class="font-semibold">Notifications</h3>
                 </div>
                 <div class="p-2">
@@ -56,7 +56,7 @@
                 <x-atoms.avatar-placeholder :initials="$userInitials" :color="'primary'" size="w-8" />
             </div>
             <ul tabindex="0"
-                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200">
+                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-300">
                 <li><a class="flex items-center gap-2" href="{{ route('app.user.show', $currentLogin) }}">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

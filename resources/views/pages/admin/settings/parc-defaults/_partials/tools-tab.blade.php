@@ -125,7 +125,7 @@ new class extends Component {
             </div>
 
             {{-- Catalogue : l'outil de rendu Rainmeter (mono-version, D5) --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200 w-full">
+            <div class="card bg-base-100 shadow-sm border border-base-300 w-full">
                 <div class="card-body">
                     <h3 class="card-title text-base">Outil de rendu (overlay)</h3>
                     <div class="overflow-x-auto">

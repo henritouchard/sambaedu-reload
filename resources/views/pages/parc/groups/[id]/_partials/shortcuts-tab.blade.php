@@ -8,7 +8,7 @@
 @endphp
 
 <div class="space-y-4">
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <div class="flex items-center justify-between mb-3">
                 <h3 class="card-title text-base">

@@ -1,5 +1,5 @@
 <!-- Configuration Windows -->
-<div class="card bg-base-100 shadow-sm border border-base-200">
+<div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <h3 class="card-title mb-4 flex items-center gap-4">
             <svg class="size-8" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">

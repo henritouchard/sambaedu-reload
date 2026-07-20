@@ -454,7 +454,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
                         <i class="fa-solid fa-chevron-down text-xs"></i>
                     </label>
                     <ul tabindex="0"
-                        class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-200">
+                        class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-300">
                         <li>
                             <button type="button" class="flex items-center gap-3 w-full" wire:click="startEditing"
                                 @click="document.activeElement.blur()">

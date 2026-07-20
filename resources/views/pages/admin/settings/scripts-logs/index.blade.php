@@ -197,7 +197,7 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
         {{-- ================ Bandeau d'indicateurs ================ --}}
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4" data-testid="dashboard-banner">
             {{-- Jauge taux d'échec 24h --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body py-4">
                     <h3 class="card-title text-sm flex items-center gap-2">
                         <i class="fa-solid fa-gauge text-primary"></i>
@@ -222,7 +222,7 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
             </div>
 
             {{-- Top 5 postes en échec --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body py-4">
                     <h3 class="card-title text-sm flex items-center gap-2">
                         <i class="fa-solid fa-desktop text-secondary"></i>
@@ -248,7 +248,7 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
             </div>
 
             {{-- Top 5 scripts en échec --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body py-4">
                     <h3 class="card-title text-sm flex items-center gap-2">
                         <i class="fa-solid fa-code text-accent"></i>
@@ -275,80 +275,78 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
         </div>
 
         {{-- ================ Filtres ================ --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="filters-panel">
-            <div class="card-body py-4">
-                <h3 class="card-title text-sm flex items-center gap-2">
-                    <i class="fa-solid fa-filter"></i>
-                    Filtres
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <label class="form-control">
-                        <span class="label-text text-xs">Poste (UUID)</span>
-                        <input type="text" class="input input-bordered input-sm font-mono"
-                            placeholder="UUID complet ou partiel"
-                            wire:model.live.debounce.400ms="filterWorkstationUuid"
-                            data-testid="filter-workstation-uuid">
-                    </label>
+        <div class="border-b border-base-300 pb-3" data-testid="filters-panel">
+            <h3 class="card-title text-sm flex items-center gap-2">
+                <i class="fa-solid fa-filter"></i>
+                Filtres
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <label class="form-control">
+                    <span class="label-text text-xs">Poste (UUID)</span>
+                    <input type="text" class="input input-bordered input-sm font-mono"
+                        placeholder="UUID complet ou partiel"
+                        wire:model.live.debounce.400ms="filterWorkstationUuid"
+                        data-testid="filter-workstation-uuid">
+                </label>
 
-                    <label class="form-control">
-                        <span class="label-text text-xs">Script ID</span>
-                        <input type="number" class="input input-bordered input-sm"
-                            placeholder="(any)"
-                            wire:model.live.debounce.400ms="filterScriptId"
-                            data-testid="filter-script-id">
-                    </label>
+                <label class="form-control">
+                    <span class="label-text text-xs">Script ID</span>
+                    <input type="number" class="input input-bordered input-sm"
+                        placeholder="(any)"
+                        wire:model.live.debounce.400ms="filterScriptId"
+                        data-testid="filter-script-id">
+                </label>
 
-                    <label class="form-control">
-                        <span class="label-text text-xs">Actions</span>
-                        <select class="select select-bordered select-sm" multiple
-                            wire:model.live="filterActions"
-                            data-testid="filter-actions">
-                            @foreach ($availableActions as $action)
-                                <option value="{{ $action }}">{{ $action }}</option>
-                            @endforeach
-                        </select>
-                    </label>
+                <label class="form-control">
+                    <span class="label-text text-xs">Actions</span>
+                    <select class="select select-bordered select-sm" multiple
+                        wire:model.live="filterActions"
+                        data-testid="filter-actions">
+                        @foreach ($availableActions as $action)
+                            <option value="{{ $action }}">{{ $action }}</option>
+                        @endforeach
+                    </select>
+                </label>
 
-                    <label class="form-control">
-                        <span class="label-text text-xs">OS</span>
-                        <select class="select select-bordered select-sm"
-                            wire:model.live="filterOs"
-                            data-testid="filter-os">
-                            <option value="">(any)</option>
-                            @foreach ($availableOs as $os)
-                                <option value="{{ $os }}">{{ $os }}</option>
-                            @endforeach
-                        </select>
-                    </label>
+                <label class="form-control">
+                    <span class="label-text text-xs">OS</span>
+                    <select class="select select-bordered select-sm"
+                        wire:model.live="filterOs"
+                        data-testid="filter-os">
+                        <option value="">(any)</option>
+                        @foreach ($availableOs as $os)
+                            <option value="{{ $os }}">{{ $os }}</option>
+                        @endforeach
+                    </select>
+                </label>
 
-                    <label class="form-control">
-                        <span class="label-text text-xs">Statut</span>
-                        <select class="select select-bordered select-sm"
-                            wire:model.live="filterStatus"
-                            data-testid="filter-status">
-                            <option value="">(any)</option>
-                            @foreach ($availableStatuses as $status)
-                                <option value="{{ $status }}">{{ $status }}</option>
-                            @endforeach
-                        </select>
-                    </label>
+                <label class="form-control">
+                    <span class="label-text text-xs">Statut</span>
+                    <select class="select select-bordered select-sm"
+                        wire:model.live="filterStatus"
+                        data-testid="filter-status">
+                        <option value="">(any)</option>
+                        @foreach ($availableStatuses as $status)
+                            <option value="{{ $status }}">{{ $status }}</option>
+                        @endforeach
+                    </select>
+                </label>
 
-                    <label class="form-control">
-                        <span class="label-text text-xs">Date début</span>
-                        <input type="date" class="input input-bordered input-sm"
-                            wire:model.live="filterDateFrom"
-                            data-testid="filter-date-from">
-                    </label>
+                <label class="form-control">
+                    <span class="label-text text-xs">Date début</span>
+                    <input type="date" class="input input-bordered input-sm"
+                        wire:model.live="filterDateFrom"
+                        data-testid="filter-date-from">
+                </label>
 
-                    <label class="form-control">
-                        <span class="label-text text-xs">Date fin</span>
-                        <input type="date" class="input input-bordered input-sm"
-                            wire:model.live="filterDateTo"
-                            data-testid="filter-date-to">
-                    </label>
-                </div>
+                <label class="form-control">
+                    <span class="label-text text-xs">Date fin</span>
+                    <input type="date" class="input input-bordered input-sm"
+                        wire:model.live="filterDateTo"
+                        data-testid="filter-date-to">
+                </label>
             </div>
-        </div>
+    </div>
 
         {{-- ================ Tableau ================ --}}
         <div class="card bg-base-100 shadow-sm overflow-hidden">

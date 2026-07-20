@@ -4,7 +4,7 @@
     <div class="min-h-screen hero bg-base-200">
         <div class="hero-content flex-col lg:flex-row-reverse">
             <div class="text-center lg:text-left">
-                <img src="{{ asset('img/LogoSambaEdu.png') }}" alt="Logo SambaEdu" class="mx-auto mb-6 max-w-xs">
+                <x-atoms.logo class="mx-auto mb-6 max-w-xs" />
                 <h1 class="text-2xl w-full text-center font-bold text-primary">Changement de mot de passe</h1>
             </div>
             <div class="card flex-shrink-0 w-full max-w-sm shadow-2xl bg-base-100 overflow-hidden break-words">

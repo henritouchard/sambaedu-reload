@@ -580,7 +580,7 @@ new class extends Component {
         </div>
     </div>
 
-    <div class="card bg-base-100 shadow-sm border border-base-200">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <h2 class="card-title text-base">Capacités assignables à ce groupe</h2>
 

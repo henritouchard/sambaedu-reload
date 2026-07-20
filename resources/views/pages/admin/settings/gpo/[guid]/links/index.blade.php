@@ -580,7 +580,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         @endif
 
         {{-- Header GPO --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body py-4">
                 <h2 class="card-title flex items-center gap-3">
                     <i class="fa-solid fa-link text-primary"></i>
@@ -595,7 +595,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         </div>
 
         {{-- Liens actuels --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                     <h3 class="card-title text-lg flex items-center gap-2">

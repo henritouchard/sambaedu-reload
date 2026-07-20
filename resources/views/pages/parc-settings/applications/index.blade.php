@@ -145,7 +145,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
         <div class="space-y-6">
 
         {{-- Card header : identité + statut + infos techniques --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 {{-- En-tête identité --}}
                 <div class="flex items-start gap-4 mb-6">
@@ -225,7 +225,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
         </div>
 
         {{-- Card profils applicatifs --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h3 class="card-title text-lg mb-4">
                     <i class="fa-solid fa-layer-group mr-2"></i>
@@ -257,7 +257,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
                     $deployRate       = $deployFinished > 0 ? round(($deploySuccess->count() / $deployFinished) * 100) : 0;
                 @endphp
                 @if ($deployments->isNotEmpty())
-                <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card bg-base-100 shadow-sm border border-base-300">
                     <div class="card-body">
                         <h3 class="card-title text-base mb-3">
                             <i class="fa-solid fa-computer mr-2"></i>
