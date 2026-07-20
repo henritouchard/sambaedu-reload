@@ -378,7 +378,7 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
                         <th>Cibles</th>
                     </x-slot:header>
                     @foreach ($shortcuts as $shortcut)
-                        <tr wire:key="shortcut-{{ $shortcut->key }}" class="hover:bg-sky-50 cursor-pointer"
+                        <tr wire:key="shortcut-{{ $shortcut->key }}" class="cursor-pointer"
                             onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.shortcuts.show', $shortcut->key) }}'">
                             <td class="checkbox-cell p-0">
                                 <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">

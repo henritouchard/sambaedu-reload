@@ -97,7 +97,7 @@
                     <div class="space-y-2">
                         <div class="font-medium text-base-content/70">Actions récentes</div>
                         @foreach ($activity->recent_actions as $action)
-                            <div class="flex items-start gap-3 p-2 rounded-lg hover:bg-base-50 transition-colors">
+                            <div class="flex items-start gap-3 p-2 rounded-lg hover:bg-base-200 transition-colors">
                                 <div
                                     class="w-6 h-6 bg-warning/10 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                                     @php

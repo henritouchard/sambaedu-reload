@@ -297,7 +297,7 @@
                         </th>
                     </x-slot:header>
                     @foreach ($userResults?->items ?? [] as $user)
-                        <tr class="hover:bg-sky-50 cursor-pointer"
+                        <tr class="cursor-pointer"
                             onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.user.show', $user->login) }}'">
                             <td class="checkbox-cell p-0">
                                 <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">

@@ -540,6 +540,13 @@ return new class extends Component {
                                              entière toggle côté serveur via wire:click sur le <tr>. --}}
                                         <input type="checkbox" class="checkbox checkbox-sm"
                                             x-effect="$el.checked = ($wire.selectedDepotInstallApps ?? []).map(String).includes('{{ $app->id }}')" />
+                                    @else
+                                        {{-- Déjà installée : case présente mais inerte, pour que la colonne
+                                             reste lisible (une cellule vide se lit comme un bug d'affichage). --}}
+                                        <span class="tooltip tooltip-right" data-tip="Déjà installée">
+                                            <input type="checkbox" class="checkbox checkbox-sm" disabled checked
+                                                aria-label="Application déjà installée" />
+                                        </span>
                                     @endif
                                 </td>
                                 <td>

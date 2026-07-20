@@ -378,7 +378,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
                     <th>Statut</th>
                 </x-slot:header>
                 @foreach ($rules as $rule)
-                    <tr class="hover:bg-sky-50 cursor-pointer"
+                    <tr class="cursor-pointer"
                         onclick="window.location.href='{{ route('app.folder-rules.show', $rule['id']) }}'">
                         <td class="font-bold">{{ $rule['label'] }}</td>
                         <td><span class="font-mono text-sm">{{ $rule['path'] }}</span></td>

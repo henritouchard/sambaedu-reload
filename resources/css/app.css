@@ -60,6 +60,8 @@
     /* Custom : bordure hairline et texte secondaire */
     --color-border: oklch(90.5% 0.008 250);
     --color-muted: oklch(50% 0.022 258);
+    /* Liseré de survol des lignes de tableau : plus soutenu que la hairline */
+    --color-row-ring: oklch(72% 0.045 250);
 
     --radius-selector: 0.5rem;
     --radius-field: 0.625rem;
@@ -104,6 +106,8 @@
 
     --color-border: oklch(30.5% 0.022 258);
     --color-muted: oklch(68% 0.018 252);
+    /* Liseré de survol des lignes de tableau : plus soutenu que la hairline */
+    --color-row-ring: oklch(52% 0.035 252);
 
     --radius-selector: 0.5rem;
     --radius-field: 0.625rem;
@@ -216,6 +220,38 @@
     &:hover {
         box-shadow: var(--shadow-pop);
     }
+}
+
+/* Survol de ligne : un liseré, pas un aplat de fond — l'aplat écrasait le
+   contraste du texte en thème sombre. `box-shadow` et `outline` ne sont pas
+   peints sur un <tr> (preflight force border-collapse: collapse), le liseré est
+   donc tracé en inset sur les <td> : haut/bas partout, plus le côté sur les
+   cellules d'extrémité pour fermer le rectangle. */
+.table tbody tr:hover > td {
+    box-shadow:
+        inset 0 1px 0 0 var(--color-row-ring),
+        inset 0 -1px 0 0 var(--color-row-ring);
+}
+
+.table tbody tr:hover > td:first-child {
+    box-shadow:
+        inset 0 1px 0 0 var(--color-row-ring),
+        inset 0 -1px 0 0 var(--color-row-ring),
+        inset 1px 0 0 0 var(--color-row-ring);
+}
+
+.table tbody tr:hover > td:last-child {
+    box-shadow:
+        inset 0 1px 0 0 var(--color-row-ring),
+        inset 0 -1px 0 0 var(--color-row-ring),
+        inset -1px 0 0 0 var(--color-row-ring);
+}
+
+/* Neutralise l'aplat du modificateur DaisyUI `.hover` (onglets parc-settings)
+   pour que toutes les lignes partagent le même liseré. */
+.table tr.hover:hover,
+.table tr.hover:nth-child(2n):hover {
+    background-color: transparent;
 }
 
 .table thead th {

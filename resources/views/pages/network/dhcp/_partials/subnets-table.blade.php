@@ -80,7 +80,7 @@
                     </thead>
                     <tbody>
                         @foreach ($subnets as $subnet)
-                            <tr class="hover:bg-sky-50">
+                            <tr>
                                 <td class="font-mono font-semibold">{{ $subnet->vlan_id }}</td>
                                 <td class="font-mono">{{ $subnet->network }}</td>
                                 <td class="font-mono">{{ $subnet->gateway }}</td>

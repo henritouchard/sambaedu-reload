@@ -804,7 +804,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                         </x-slot:header>
 
                         @foreach ($delegationsOverview as $d)
-                            <tr class="hover:bg-sky-50 cursor-pointer"
+                            <tr class="cursor-pointer"
                                 onclick="
                                     if (event.target.closest('.checkbox-cell')) return;
                                     Livewire.dispatch('open-delegation-modal', {

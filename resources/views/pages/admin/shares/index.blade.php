@@ -724,7 +724,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         </thead>
                         <tbody>
                             @foreach ($shares as $share)
-                                <tr wire:key="share-row-{{ $share['id'] }}" class="hover:bg-sky-50 cursor-pointer"
+                                <tr wire:key="share-row-{{ $share['id'] }}" class="cursor-pointer"
                                     onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('admin.shares.show', $share['id']) }}'">
                                     @can('manage-networkshare')
                                         <td class="checkbox-cell p-0">

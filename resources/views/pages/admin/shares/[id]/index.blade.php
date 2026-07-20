@@ -459,11 +459,9 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     }
 }; ?>
 
-<x-organisms.page title="Lecteur réseau géré" :scrollable="true">
+<x-organisms.page title="Lecteur réseau géré" :scrollable="true" :back="route('admin.shares')"
+    back-text="Retour aux lecteurs réseau">
     <x-slot:actions>
-        <a href="{{ route('admin.shares') }}" class="btn btn-ghost btn-sm">
-            <i class="fa-solid fa-arrow-left"></i> Retour
-        </a>
         @can('manage-networkshare')
             <button type="button" class="btn btn-error btn-sm" wire:click="deleteShare"
                 wire:confirm="Supprimer ce répertoire ? Les assignations seront retirées (le dossier serveur est conservé).">
@@ -666,7 +664,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                             </thead>
                             <tbody>
                                 @foreach ($this->assignments() as $a)
-                                    <tr wire:key="assign-{{ $a['id'] }}" class="hover:bg-sky-50">
+                                    <tr wire:key="assign-{{ $a['id'] }}">
                                         <td class="font-medium">
                                             <i class="fa-solid {{ $a['icon'] }} mr-1.5 opacity-60"></i>{{ $a['label'] }}
                                         </td>

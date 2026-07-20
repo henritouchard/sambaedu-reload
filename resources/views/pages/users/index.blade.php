@@ -570,7 +570,7 @@ new class extends Component {
                     </thead>
                     <tbody>
                         @forelse ($this->users as $user)
-                            <tr wire:key="user-row-{{ $user->login }}" class="hover:bg-sky-50 cursor-pointer"
+                            <tr wire:key="user-row-{{ $user->login }}" class="cursor-pointer"
                                 onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.user.show', ['login' => $user->login, 'from' => route('app.users', ['tab' => 'users'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">

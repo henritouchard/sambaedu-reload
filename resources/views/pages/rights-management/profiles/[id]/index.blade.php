@@ -246,7 +246,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
                             </thead>
                             <tbody>
                                 @foreach ($assignedUsers as $u)
-                                    <tr class="hover:bg-sky-50 cursor-pointer"
+                                    <tr class="cursor-pointer"
                                         onclick="window.location.href='{{ route('app.user.show', $u['login']) }}'">
                                         <td class="font-medium">{{ $u['fullname'] }}</td>
                                         <td><span class="font-mono text-xs">{{ $u['login'] }}</span></td>

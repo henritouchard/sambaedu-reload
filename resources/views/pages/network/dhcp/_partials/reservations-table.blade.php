@@ -34,7 +34,7 @@
                 </thead>
                 <tbody>
                     @foreach ($reservations as $reservation)
-                        <tr class="hover:bg-sky-50">
+                        <tr>
                             <td class="font-mono">{{ $reservation->name }}</td>
                             <td class="font-mono text-xs">{{ $reservation->mac }}</td>
                             <td class="font-mono">{{ $reservation->ip }}</td>

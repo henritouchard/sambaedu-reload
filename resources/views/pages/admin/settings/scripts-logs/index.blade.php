@@ -355,7 +355,7 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
                                         default => 'badge-ghost',
                                     };
                                 @endphp
-                                <tr class="hover:bg-sky-50 cursor-pointer"
+                                <tr class="cursor-pointer"
                                     onclick="window.location.href='{{ route('admin.scripts-logs.show', ['id' => $log->id]) }}'"
                                     data-testid="log-row">
                                     <td class="font-mono text-xs whitespace-nowrap"

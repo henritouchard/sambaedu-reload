@@ -36,7 +36,7 @@
                 </thead>
                 <tbody>
                     @foreach ($leases as $lease)
-                        <tr class="hover:bg-sky-50">
+                        <tr>
                             <td class="font-mono text-xs">{{ $lease['hostname'] ?? '—' }}</td>
                             <td class="font-mono text-xs">{{ $lease['mac'] }}</td>
                             <td class="font-mono">{{ $lease['ip'] }}</td>

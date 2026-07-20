@@ -212,10 +212,11 @@ new class extends Component {
 
     <!-- Déclencheur : bouton stylé « faux champ » (n'accepte pas la frappe) -->
     <button type="button" @click="searchOpen = true"
-        class="bg-sky-100 p-2 rounded-full flex items-center gap-2 w-full max-w-xs text-left text-base-content/60 hover:bg-sky-200 transition-colors">
-        <i class="fa-solid fa-magnifying-glass"></i>
-        <span class="flex-1 text-sm">Rechercher...</span>
-        <kbd class="hidden sm:inline-block text-xs px-1.5 py-0.5 rounded border border-base-300 bg-base-100/60">Ctrl K</kbd>
+        class="input input-sm h-9 w-full max-w-xs flex items-center gap-2 text-left
+               text-base-content/60 hover:border-base-content/30 transition-colors">
+        <i class="fa-solid fa-magnifying-glass shrink-0 text-base-content/50"></i>
+        <span class="flex-1 truncate text-sm">Rechercher...</span>
+        <kbd class="kbd shrink-0 text-xs hidden sm:inline-block">Ctrl K</kbd>
     </button>
 
     <!-- Modale -->
