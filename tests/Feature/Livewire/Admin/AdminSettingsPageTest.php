@@ -159,7 +159,9 @@ class AdminSettingsPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.index')
             ->assertSee('Système')
-            ->assertSee('GPO Active Directory')
+            // Section « GPO Active Directory » démantelée : SE5 ne gère plus
+            // aucune GPO (seule SE_agent_bootstrap subsiste, publiée sans UI).
+            ->assertDontSee('GPO Active Directory')
             ->assertSee('Migration')
             ->assertSee('Réseau')
             ->assertDontSee('coming soon')
@@ -178,8 +180,15 @@ class AdminSettingsPageTest extends TestCase
         Livewire::test('pages::admin.settings.index')
             ->assertSee('État du système')
             ->assertSee('OS')
-            ->assertSee('Toutes les GPOs')
-            ->assertSee('Vue par OU')
+            // La section « GPO Active Directory » a été démantelée : l'inventaire
+            // est une carte de la section Migration, « Vue par OU » a été
+            // supprimée, et Wine/WPKG (qui ne sont pas des GPO) ont rejoint la
+            // section Système.
+            ->assertSee('GPO — Inventaire &amp; effectivité', false)
+            ->assertDontSee('Vue par OU')
+            ->assertDontSee('GPO Active Directory')
+            ->assertSee('Wine — Apps Linux')
+            ->assertSee('WPKG — Déploiement')
             ->assertSee('Migration SE4 → SE5')
             ->assertSee('Gestion des fichiers')
             ->assertSee('ControlHub');

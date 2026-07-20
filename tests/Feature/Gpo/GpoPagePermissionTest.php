@@ -75,24 +75,27 @@ class GpoPagePermissionTest extends TestCase
     // AC4.1 — Permission server.admin
     // =========================================================================
 
+    // Le listing `pages::admin.settings.gpo.index` a été remplacé par l'onglet
+    // « GPO » de /admin/settings/migration (effectivité réelle au lieu du badge
+    // « Active » = versionNumber > 0). La couverture de permission suit l'écran.
+
     #[Test]
-    public function it_grants_200_on_listing_page_with_server_admin(): void
+    public function it_grants_200_on_gpos_tab_with_server_admin(): void
     {
         $admin = $this->makeAdmin('perm-admin-listing-200');
         $this->actingAs($admin);
-        $this->bindMockService();
 
-        Livewire::test('pages::admin.settings.gpo.index')
+        Livewire::test('pages::admin.settings.migration._partials.gpos-tab')
             ->assertStatus(200);
     }
 
     #[Test]
-    public function it_grants_403_on_listing_page_without_server_admin(): void
+    public function it_grants_403_on_gpos_tab_without_server_admin(): void
     {
         $user = $this->makeUser('perm-user-listing-403');
         $this->actingAs($user);
 
-        Livewire::test('pages::admin.settings.gpo.index')
+        Livewire::test('pages::admin.settings.migration._partials.gpos-tab')
             ->assertStatus(403);
     }
 

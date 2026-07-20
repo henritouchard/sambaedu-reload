@@ -547,15 +547,15 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
             ->name('wpkg-deployment');
 
         // ============================================================
-        // Story 16.14 — Nouvelles routes statiques AVANT /{guid}.
-        // Ordre critique (anti-régression piège 1 de 16.9) :
-        // les routes statiques DOIVENT précéder la route paramétrée.
+        // Ordre critique (anti-régression piège 1 de 16.9) : les routes
+        // statiques DOIVENT précéder la route paramétrée `/{guid}`.
+        //
+        // La vue inverse OU → GPOs (`/by-ou`, Story 16.14) a été supprimée :
+        // les deux seuls périmètres qui comptent (postes ET comptes) sont
+        // désormais évalués en permanence par l'onglet « GPO » de
+        // /admin/settings/migration, tandis que `by-ou` demandait de savoir
+        // quelle OU inspecter et calculait faux sur les liens ENFORCED.
         // ============================================================
-
-        // C — Vue inverse OU → GPOs (AC3.1).
-        Route::livewire('/by-ou', 'pages::admin.settings.gpo.by-ou.index')
-            ->middleware('can:server.admin')
-            ->name('by-ou');
 
         // Route détail paramétrée {guid} (regex Microsoft GUID, accolades
         // optionnelles — iso-pattern Story 16.2 fix #9 anti open-redirect).
@@ -571,10 +571,19 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
             ->middleware('can:server.admin')
             ->name('links');
 
-        // Route listing (collection — déclarée en dernier, le préfixe `/`
-        // ne matche pas les segments statiques au-dessus).
-        Route::livewire('/', 'pages::admin.settings.gpo.index')
-            ->middleware('can:server.admin')
+        // Le LISTING est désormais l'onglet « GPO » de /admin/settings/migration
+        // (iso-pattern `scripts-logs` / `legacy-monitor`) : `/admin/settings/gpo`
+        // y redirige et le nom `admin.gpo.index` reste stable (back-links,
+        // cartes de réglages, retours des sous-pages).
+        //
+        // Motif : le listing badgeait « Active » sur `versionNumber > 0`, soit
+        // « éditée au moins une fois » — sans rapport avec le fait d'être
+        // appliquée. Sur un parc neutralisé par blocage d'héritage, il affichait
+        // en vert des GPO totalement inertes. L'onglet calcule l'effectivité
+        // RÉELLE sur le périmètre de l'instance (App\Services\Gpo\GpoEffectivenessResolver).
+        //
+        // Le DÉTAIL d'une GPO (`/{guid}`) et ses liaisons restent des sous-pages.
+        Route::redirect('/', '/admin/settings/migration?tab=gpos')
             ->name('index');
     });
 

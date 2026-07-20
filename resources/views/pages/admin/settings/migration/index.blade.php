@@ -19,6 +19,12 @@ use Livewire\Component;
  *     log reste une sous-page (`/admin/settings/scripts-logs/{id}`).
  *   - « Legacy Monitor »  : appels catchall en temps réel — routes legacy encore
  *     actives (`pages::admin.legacy-monitor.index`).
+ *   - « GPO »             : inventaire des GPO du domaine et de leur EFFECTIVITÉ
+ *     réelle sur le périmètre de l'instance (`_partials/gpos-tab`). Remplace le
+ *     listing `/admin/settings/gpo`, dont le badge « Active » valait
+ *     `versionNumber > 0` (= « éditée un jour ») et affichait donc en vert des
+ *     GPO totalement neutralisées. Cible d'extinction : une seule GPO effective,
+ *     `SE_agent_bootstrap`.
  *
  * NB : l'Error Logger n'est PAS ici — il capte aussi les exceptions Laravel
  * (diagnostic runtime SE5), il vit donc dans l'onglet « Logs » de
@@ -34,7 +40,7 @@ new #[Title('Migration SE4 → SE5')] class extends Component {
     #[Url(keep: true)]
     public string $tab = 'sync-from-ad';
 
-    private const TABS = ['sync-from-ad', 'logs-scripts', 'legacy-monitor'];
+    private const TABS = ['sync-from-ad', 'logs-scripts', 'legacy-monitor', 'gpos'];
 
     public function mount(): void
     {
@@ -68,6 +74,7 @@ new #[Title('Migration SE4 → SE5')] class extends Component {
                 'sync-from-ad' => ['label' => 'Sync from AD', 'icon' => 'fa-solid fa-rotate'],
                 'logs-scripts' => ['label' => 'Logs scripts', 'icon' => 'fa-solid fa-scroll'],
                 'legacy-monitor' => ['label' => 'Legacy Monitor', 'icon' => 'fa-solid fa-eye'],
+                'gpos' => ['label' => 'GPO', 'icon' => 'fa-solid fa-sitemap'],
             ];
         @endphp
         <x-molecules.tabs :tabs="$migrationTabs" :active="$tab" />
@@ -79,6 +86,8 @@ new #[Title('Migration SE4 → SE5')] class extends Component {
                 <livewire:pages::admin.settings.scripts-logs.index />
             @elseif ($tab === 'legacy-monitor')
                 <livewire:pages::admin.legacy-monitor.index />
+            @elseif ($tab === 'gpos')
+                <livewire:pages::admin.settings.migration._partials.gpos-tab />
             @endif
         </div>
 

@@ -76,53 +76,12 @@ class GpoNativeSectionLinksTest extends TestCase
         return collect([$this->makeGpoSummary($displayName, $name)]);
     }
 
-    // =========================================================================
-    // AC4.4 — Test 1 : chip success visible en listing quand match
-    // =========================================================================
-
-    #[Test]
-    public function it_displays_native_chip_on_listing_when_displayname_matches(): void
-    {
-        $admin = $this->makeAdmin('admin-chip-match');
-        $this->actingAs($admin);
-
-        // GPO avec displayName matchant 'app-customizations' via 'firefox'
-        FakesGpoService::make()
-            ->withGpos($this->makeGpoCollection('firefox-policy'))
-            ->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.index')
-            ->assertStatus(200)
-            // Cible spécifiquement le chip natif via data-testid (review 16.3a #6).
-            ->assertSee('data-testid="native-chip-single"', false)
-            ->assertSee('1 section', false)
-            // Et NON une cellule vide.
-            ->assertDontSee('data-testid="native-empty"', false);
-    }
-
-    // =========================================================================
-    // AC4.4 — Test 2 : cellule vide en listing quand pas de match
-    // =========================================================================
-
-    #[Test]
-    public function it_does_not_display_native_chip_when_no_match(): void
-    {
-        $admin = $this->makeAdmin('admin-chip-no-match');
-        $this->actingAs($admin);
-
-        // GPO sans match heuristique
-        FakesGpoService::make()
-            ->withGpos($this->makeGpoCollection('gpo-custom-foo'))
-            ->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.index')
-            ->assertStatus(200)
-            ->assertSee('Édition native', false)
-            // Cellule vide pour cette ligne (review 16.3a #6) — pas de chip natif.
-            ->assertSee('data-testid="native-empty"', false)
-            ->assertDontSee('data-testid="native-chip-single"', false)
-            ->assertDontSee('data-testid="native-chip-multi"', false);
-    }
+    // Les tests 1 et 2 (chip natif / cellule vide dans le LISTING) ont été
+    // retirés avec `pages::admin.settings.gpo.index`, remplacé par l'onglet
+    // « GPO » de /admin/settings/migration — lequel affiche l'effectivité réelle
+    // et non la colonne « Édition native ». La résolution des sections natives
+    // reste couverte par les tests de la page DÉTAIL ci-dessous et par
+    // tests/Unit/Gpo/NativeSectionResolverTest.
 
     // =========================================================================
     // AC4.4 — Test 3 : CTA natif primaire sur page détail quand match
@@ -207,41 +166,8 @@ class GpoNativeSectionLinksTest extends TestCase
     }
 
     // =========================================================================
-    // Bonus — Colonne "Édition native" visible dans l'en-tête du tableau listing
+    // Bonus — les deux tests d'en-tête de colonne et de chip multi-match dans le
+    // LISTING sont retirés pour la même raison (écran remplacé par l'onglet
+    // « GPO » de la page Migration).
     // =========================================================================
-
-    #[Test]
-    public function it_shows_native_edit_column_header_in_listing(): void
-    {
-        $admin = $this->makeAdmin('admin-native-col-header');
-        $this->actingAs($admin);
-
-        FakesGpoService::make()
-            ->withGpos($this->makeGpoCollection('firefox-policy'))
-            ->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.index')
-            ->assertStatus(200)
-            ->assertSee('Édition native', false);
-    }
-
-    // =========================================================================
-    // Bonus — Multi-match en listing : chip "N sections" visible
-    // =========================================================================
-
-    #[Test]
-    public function it_shows_multi_count_chip_for_multi_match_gpo_in_listing(): void
-    {
-        $admin = $this->makeAdmin('admin-multi-chip');
-        $this->actingAs($admin);
-
-        // GPO matchant firefox (app-customizations) + wallpaper → 2 sections
-        FakesGpoService::make()
-            ->withGpos($this->makeGpoCollection('firefox-wallpaper-conf'))
-            ->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.index')
-            ->assertStatus(200)
-            ->assertSee('sections', false);
-    }
 }

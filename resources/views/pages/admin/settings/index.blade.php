@@ -63,6 +63,29 @@ new #[Title('Réglages')] class extends Component {
                 description="Déconnexion automatique de l'interface sur inactivité (durée de session)."
                 badge="Sécurité"
                 testid="card-security" />
+
+            {{-- Wine et WPKG étaient rangés sous « GPO Active Directory » par
+                 héritage d'URL, mais ne manipulent AUCUNE GPO : Wine scanne un
+                 filesystem et génère des images via un job, WPKG écrit deux clés
+                 `system_settings` qui gouvernent WingetOutController et
+                 EnsureLocalRequest. Ce sont des réglages système. --}}
+            <x-molecules.settings-card
+                href="{{ route('admin.gpo.wine') }}"
+                icon="fa-solid fa-wine-bottle"
+                iconColor="primary"
+                title="Wine — Apps Linux"
+                description="Préfixes Wine disponibles et génération des images d'applications déployées sur les postes Linux."
+                badge="Linux"
+                testid="card-gpo-wine" />
+
+            <x-molecules.settings-card
+                href="{{ route('admin.gpo.wpkg-deployment') }}"
+                icon="fa-solid fa-box-archive"
+                iconColor="primary"
+                title="WPKG — Déploiement"
+                description="Activation de winget et allowlist IP des endpoints de déploiement WPKG."
+                badge="WPKG"
+                testid="card-gpo-wpkg" />
         </x-molecules.settings-section>
 
         {{-- ============================================================
@@ -103,53 +126,13 @@ new #[Title('Réglages')] class extends Component {
         </x-molecules.settings-section>
 
         {{-- ============================================================
-             Section GPO
-             ============================================================ --}}
-        <x-molecules.settings-section
-            title="GPO Active Directory"
-            icon="fa-solid fa-file-code"
-            color="secondary"
-            description="Gestion native des Group Policy Objects et de leurs sections.">
-
-            <x-molecules.settings-card
-                href="{{ route('admin.gpo.index') }}"
-                icon="fa-solid fa-folder-tree"
-                iconColor="secondary"
-                title="Toutes les GPOs"
-                description="Listing global avec filtres avancés et détails par GUID."
-                badge="Catalogue"
-                testid="card-gpo-index" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.gpo.by-ou') }}"
-                icon="fa-solid fa-sitemap"
-                iconColor="secondary"
-                title="Vue par OU"
-                description="Vue inverse : OUs Active Directory → GPOs liées + héritage."
-                badge="Hiérarchie"
-                testid="card-gpo-by-ou" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.gpo.wine') }}"
-                icon="fa-solid fa-wine-bottle"
-                iconColor="secondary"
-                title="Wine — Apps Linux"
-                description="Configuration des applications Wine déployées sur les postes Linux."
-                badge="Wine"
-                testid="card-gpo-wine" />
-
-            <x-molecules.settings-card
-                href="{{ route('admin.gpo.wpkg-deployment') }}"
-                icon="fa-solid fa-box-archive"
-                iconColor="secondary"
-                title="WPKG — Pipeline"
-                description="Pipeline de déploiement WPKG : étapes, statuts et historique."
-                badge="WPKG"
-                testid="card-gpo-wpkg" />
-        </x-molecules.settings-section>
-
-        {{-- ============================================================
              Section Migration
+
+             La section « GPO Active Directory » a disparu : SE5 ne gère plus
+             aucune GPO. Il n'en reste qu'une, SE_agent_bootstrap, publiée sans
+             UI par `gpo:deploy-agent-bootstrap` depuis update.sh. Ce qui subsiste
+             est une question d'extinction — « lesquelles s'appliquent encore ? » —
+             donc un onglet de la page Migration.
              ============================================================ --}}
         <x-molecules.settings-section
             title="Migration"
@@ -166,6 +149,16 @@ new #[Title('Réglages')] class extends Component {
                 badge="Migration"
                 badgeColor="warning"
                 testid="card-migration" />
+
+            <x-molecules.settings-card
+                href="{{ route('admin.settings.migration') }}?tab=gpos"
+                icon="fa-solid fa-folder-tree"
+                iconColor="warning"
+                title="GPO — Inventaire & effectivité"
+                description="Quelles GPO s'appliquent réellement aux postes et aux comptes de cet établissement, et lesquelles sont neutralisées."
+                badge="GPO"
+                badgeColor="warning"
+                testid="card-gpo-index" />
         </x-molecules.settings-section>
 
         {{-- ============================================================
