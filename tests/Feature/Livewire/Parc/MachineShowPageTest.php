@@ -356,6 +356,19 @@ class MachineShowPageTest extends TestCase
     // Les tests assertent donc sur l'état DB + Queue::fake() plutôt que sur le
     // mock du service.
 
+    public function test_unknown_machine_redirects_to_parc_index(): void
+    {
+        // Machine introuvable : `loadMachine()` pose le redirect et rend false,
+        // `mount()` s'interrompt avant loadAvailableGroups / initDeploymentTab /
+        // loadWpkgOptionsState.
+        //
+        // Le composant ne porte plus de gardes `if (!$this->workstation)` : ce test
+        // garde donc réellement le court-circuit, pas seulement le redirect. Retirer
+        // le `return` du mount fait échouer ce test sur une ViewException.
+        Livewire::test('pages::parc.machines.[id].index', ['id' => 999999])
+            ->assertRedirect(route('app.parc.index'));
+    }
+
     public function test_wake_action_emits_toast_and_starts_polling(): void
     {
         // AC2 — statusRunning doit passer à true immédiatement, un toast succès
