@@ -1258,25 +1258,20 @@ new class extends Component {
         </div>
     @endunless
 
-    <!-- Filtres + bouton ajout -->
-    <div class="flex-shrink-0 border-b border-base-300 pb-3">
-        <div class="flex flex-wrap items-center gap-3 justify-between">
-            @if ($isAdmin)
-                <div role="tablist" class="tabs tabs-boxed bg-base-200">
-                    <button type="button" role="tab" class="tab {{ $filter === 'all' ? 'tab-active' : '' }}"
-                        wire:click="$set('filter', 'all')">Toutes</button>
-                    <button type="button" role="tab" class="tab {{ $filter === 'attached' ? 'tab-active' : '' }}"
-                        wire:click="$set('filter', 'attached')">Rattachées</button>
-                    <button type="button" role="tab" class="tab {{ $filter === 'unattached' ? 'tab-active' : '' }}"
-                        wire:click="$set('filter', 'unattached')">Non rattachées</button>
-                    <button type="button" role="tab" class="tab {{ $filter === 'orphans' ? 'tab-active' : '' }}"
-                        wire:click="$set('filter', 'orphans')">Orphelines</button>
-                </div>
-            @else
-                <div></div>
-            @endif
-        </div>
-    </div>
+    <!-- Filtres -->
+    @if ($isAdmin)
+        <x-molecules.filter-bar>
+            {{-- 4 options : segmenté (remplace l'ancien tabs-boxed, qui donnait à un
+                 filtre l'apparence d'une navigation par onglets). --}}
+            <x-molecules.filter-toggle name="filter" :active="$filter"
+                :options="[
+                    'all' => 'Toutes',
+                    'attached' => 'Rattachées',
+                    'unattached' => 'Non rattachées',
+                    'orphans' => 'Orphelines',
+                ]" />
+        </x-molecules.filter-bar>
+    @endif
 
     <!-- Tableau imprimantes -->
     <div class="card bg-base-100 shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">

@@ -176,22 +176,10 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
 
 {{-- Corps seul (sans chrome de page) : embarqué comme onglet « Logs scripts »
      de /admin/settings/migration. --}}
+{{-- Réinitialisation et raccourci « échecs seuls » ont rejoint la barre de filtre
+     (convention projet : les contrôles de filtrage vivent dans la barre, le reset
+     aligné à droite) — cette rangée d'actions n'a plus lieu d'être. --}}
 <div class="flex flex-col gap-6">
-    <div class="flex flex-wrap gap-2 items-center justify-end">
-        <button type="button" class="btn btn-outline btn-sm" wire:click="clearFilters"
-            data-testid="clear-filters">
-            <i class="fa-solid fa-eraser"></i>
-            Réinitialiser filtres
-        </button>
-        <button type="button"
-            class="btn btn-sm {{ $filterFailuresOnly ? 'btn-error' : 'btn-outline btn-error' }}"
-            wire:click="toggleFailuresOnly"
-            data-testid="toggle-failures-only">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-            {{ $filterFailuresOnly ? 'Tous les logs' : 'Voir uniquement les échecs' }}
-        </button>
-    </div>
-
     <div class="space-y-6">
 
         {{-- ================ Bandeau d'indicateurs ================ --}}
@@ -273,80 +261,56 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
                 </div>
             </div>
         </div>
-
         {{-- ================ Filtres ================ --}}
-        <div class="border-b border-base-300 pb-3" data-testid="filters-panel">
-            <h3 class="card-title text-sm flex items-center gap-2">
-                <i class="fa-solid fa-filter"></i>
-                Filtres
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                <label class="form-control">
-                    <span class="label-text text-xs">Poste (UUID)</span>
-                    <input type="text" class="input input-bordered input-sm font-mono"
-                        placeholder="UUID complet ou partiel"
-                        wire:model.live.debounce.400ms="filterWorkstationUuid"
-                        data-testid="filter-workstation-uuid">
-                </label>
-
-                <label class="form-control">
-                    <span class="label-text text-xs">Script ID</span>
-                    <input type="number" class="input input-bordered input-sm"
-                        placeholder="(any)"
-                        wire:model.live.debounce.400ms="filterScriptId"
-                        data-testid="filter-script-id">
-                </label>
-
-                <label class="form-control">
-                    <span class="label-text text-xs">Actions</span>
-                    <select class="select select-bordered select-sm" multiple
-                        wire:model.live="filterActions"
-                        data-testid="filter-actions">
-                        @foreach ($availableActions as $action)
-                            <option value="{{ $action }}">{{ $action }}</option>
-                        @endforeach
-                    </select>
-                </label>
-
-                <label class="form-control">
-                    <span class="label-text text-xs">OS</span>
-                    <select class="select select-bordered select-sm"
-                        wire:model.live="filterOs"
-                        data-testid="filter-os">
-                        <option value="">(any)</option>
-                        @foreach ($availableOs as $os)
-                            <option value="{{ $os }}">{{ $os }}</option>
-                        @endforeach
-                    </select>
-                </label>
-
-                <label class="form-control">
-                    <span class="label-text text-xs">Statut</span>
-                    <select class="select select-bordered select-sm"
-                        wire:model.live="filterStatus"
-                        data-testid="filter-status">
-                        <option value="">(any)</option>
-                        @foreach ($availableStatuses as $status)
-                            <option value="{{ $status }}">{{ $status }}</option>
-                        @endforeach
-                    </select>
-                </label>
-
-                <label class="form-control">
-                    <span class="label-text text-xs">Date début</span>
-                    <input type="date" class="input input-bordered input-sm"
-                        wire:model.live="filterDateFrom"
-                        data-testid="filter-date-from">
-                </label>
-
-                <label class="form-control">
-                    <span class="label-text text-xs">Date fin</span>
-                    <input type="date" class="input input-bordered input-sm"
-                        wire:model.live="filterDateTo"
-                        data-testid="filter-date-to">
-                </label>
+        {{-- 7 filtres : au-delà de ce qu'une rangée peut porter, la barre laisse
+             les contrôles passer à la ligne (flex-wrap) plutôt que de les enfermer
+             dans une modale — ces filtres se combinent, on veut les voir ensemble. --}}
+        <x-molecules.filter-bar data-testid="filters-panel" reset="clearFilters">
+            <div class="flex-1 min-w-[240px]">
+                <x-atoms.search-input model="filterWorkstationUuid" placeholder="Poste (UUID complet ou partiel)"
+                    testid="filter-workstation-uuid" class="font-mono" />
             </div>
-    </div>
+
+            <input type="number" class="input input-bordered input-sm w-32" placeholder="Script ID"
+                wire:model.live.debounce.400ms="filterScriptId" aria-label="Script ID"
+                data-testid="filter-script-id">
+
+            {{-- Sélection multiple : reste un <select multiple>, aucun dropdown simple
+                 ne rend ce cas. --}}
+            <select class="select select-bordered select-sm w-40" multiple wire:model.live="filterActions"
+                aria-label="Actions" data-testid="filter-actions">
+                @foreach ($availableActions as $action)
+                    <option value="{{ $action }}">{{ $action }}</option>
+                @endforeach
+            </select>
+
+            <x-molecules.filter-select model="filterOs" :options="$availableOs" placeholder="Tous les OS"
+                width="w-36" data-testid="filter-os" />
+
+            <x-molecules.filter-select model="filterStatus" :options="$availableStatuses"
+                placeholder="Tous les statuts" width="w-40" data-testid="filter-status" />
+
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-base-content/60 shrink-0">Du</span>
+                <input type="date" class="input input-bordered input-sm w-36" wire:model.live="filterDateFrom"
+                    aria-label="Date de début" data-testid="filter-date-from">
+                <span class="text-xs text-base-content/60 shrink-0">au</span>
+                <input type="date" class="input input-bordered input-sm w-36" wire:model.live="filterDateTo"
+                    aria-label="Date de fin" data-testid="filter-date-to">
+            </div>
+
+            <x-slot:actions>
+                {{-- Raccourci « échecs seuls » : c'est un filtre, sa place est dans la
+                     barre et non dans la rangée d'actions de la page. --}}
+                <button type="button"
+                    class="btn btn-sm {{ $filterFailuresOnly ? 'btn-error' : 'btn-outline btn-error' }}"
+                    wire:click="toggleFailuresOnly" aria-pressed="{{ $filterFailuresOnly ? 'true' : 'false' }}"
+                    data-testid="toggle-failures-only">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    {{ $filterFailuresOnly ? 'Tous les logs' : 'Échecs seuls' }}
+                </button>
+            </x-slot:actions>
+        </x-molecules.filter-bar>
 
         {{-- ================ Tableau ================ --}}
         <div class="card bg-base-100 shadow-sm overflow-hidden">

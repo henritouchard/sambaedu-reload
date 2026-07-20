@@ -1,44 +1,19 @@
 <!-- Onglet Groupes -->
 <div class="flex-1 min-h-0 flex flex-col gap-4">
     <!-- Filtres -->
-    <div class="flex-shrink-0 border-b border-base-300 pb-3">
-        <div class="flex flex-wrap items-center gap-3">
-            <!-- Recherche -->
-            <div class="form-control">
-                <input type="text" wire:model.live.debounce.300ms="groupSearch"
-                    placeholder="Rechercher un groupe..." class="input input-bordered w-48" />
-            </div>
-
-            <!-- Filtre type de groupes : tous / physiques / logiques -->
-            <div class="flex items-center gap-2">
-                <label class="label-text text-xs">Groupes</label>
-                <div class="join">
-                    <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'all' ? 'btn-active' : '' }}"
-                        wire:click="$set('groupTypeFilter', 'all')">
-                        <i class="fa-solid fa-layer-group text-xs"></i>
-                        Tous
-                    </button>
-                    <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'physical' ? 'btn-active' : '' }}"
-                        wire:click="$set('groupTypeFilter', 'physical')">
-                        <i class="fa-solid fa-building text-xs"></i>
-                        Physiques
-                    </button>
-                    <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'logical' ? 'btn-active' : '' }}"
-                        wire:click="$set('groupTypeFilter', 'logical')">
-                        <i class="fa-solid fa-network-wired text-xs"></i>
-                        Logiques
-                    </button>
-                </div>
-            </div>
-
-            <!-- Bouton reset -->
-            @if ($groupSearch)
-                <button type="button" class="btn btn-ghost btn-sm" wire:click="resetGroupFilters">
-                    <i class="fa-solid fa-eraser"></i>
-                </button>
-            @endif
+    <x-molecules.filter-bar reset="resetGroupFilters" :reset-disabled="!$groupSearch && $groupTypeFilter === 'all'">
+        <div class="flex-1 min-w-[200px]">
+            <x-atoms.search-input model="groupSearch" placeholder="Rechercher un groupe..." />
         </div>
-    </div>
+
+        {{-- 3 options : segmenté. --}}
+        <x-molecules.filter-toggle name="groupTypeFilter" :active="$groupTypeFilter" label="Groupes"
+            :options="[
+                'all' => ['label' => 'Tous', 'icon' => 'fa-solid fa-layer-group'],
+                'physical' => ['label' => 'Physiques', 'icon' => 'fa-solid fa-building'],
+                'logical' => ['label' => 'Logiques', 'icon' => 'fa-solid fa-network-wired'],
+            ]" />
+    </x-molecules.filter-bar>
 
     <!-- Tableau des groupes -->
     <div class="card bg-base-100 shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">

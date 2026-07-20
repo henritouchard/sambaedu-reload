@@ -79,7 +79,9 @@ class ScriptLogsIndexTest extends TestCase
             ->assertSet('sortDir', 'desc')
             // Le titre de page est désormais porté par la page hôte à onglets
             // (/admin/settings/migration) ; le corps embarqué expose ses libellés.
-            ->assertSee('Réinitialiser filtres')
+            // Le bouton de réinitialisation vit désormais dans x-molecules.filter-bar,
+            // qui porte un libellé uniforme ; on ancre sur le testid, pas sur le texte.
+            ->assertSeeHtml('data-testid="filter-reset"')
             // Post review Opus-D — vérifier rendu HTML effectif (et pas seulement state).
             ->assertSeeHtml('data-testid="logs-table"')
             ->assertSeeHtml('data-testid="dashboard-banner"')

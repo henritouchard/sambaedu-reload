@@ -466,84 +466,49 @@ return new class extends Component {
             </div>
         </div>
     @endif
-
     <!-- Résumé dépôt + Sélecteur -->
-    <div class="flex-shrink-0 border-b border-base-300 pb-3">
-        <div class="flex flex-wrap gap-x-3 gap-y-2 items-end">
-            <!-- Sélection du dépôt -->
-            <div class="form-control min-w-[250px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Dépôt</span>
-                </label>
-                <select wire:model.live="depotId" class="select select-bordered select-sm">
-                    @foreach ($this->depots as $depot)
-                        <option value="{{ $depot->id }}">
-                            {{ $depot->name }}
-                            @if ($depot->is_imposed)
-                                (imposé par l'autorité amont)
-                            @elseif ($depot->is_primary)
-                                (principal)
-                            @endif
-                        </option>
-                    @endforeach
-                </select>
-            </div>
+    <x-molecules.filter-bar reset="resetDepotFilters">
+        {{-- Sélecteur de dépôt : options composées (mention « imposé »/« principal »),
+             donc select brut plutôt que x-molecules.filter-select. C'est un choix de
+             CONTEXTE, pas un filtre — d'où l'absence d'option vide. --}}
+        <select wire:model.live="depotId" class="select select-bordered select-sm w-64">
+            @foreach ($this->depots as $depot)
+                <option value="{{ $depot->id }}">
+                    {{ $depot->name }}
+                    @if ($depot->is_imposed)
+                        (imposé par l'autorité amont)
+                    @elseif ($depot->is_primary)
+                        (principal)
+                    @endif
+                </option>
+            @endforeach
+        </select>
 
-            <!-- Recherche -->
-            <div class="form-control flex-1 min-w-[200px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Rechercher</span>
-                </label>
-                <input type="text" wire:model.live.debounce.300ms="depotSearch"
-                    class="input input-bordered input-sm" placeholder="Nom, identifiant..." />
-            </div>
-
-            <!-- Filtre catégorie -->
-            <div class="form-control min-w-[180px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Catégorie</span>
-                </label>
-                <select wire:model.live="depotCategoryFilter" class="select select-bordered select-sm">
-                    <option value="">Toutes les catégories</option>
-                    @foreach ($this->depotCategories as $category)
-                        <option value="{{ $category }}">{{ $category }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <!-- Filtre branche -->
-            <div class="form-control min-w-[150px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Branche</span>
-                </label>
-                <select wire:model.live="depotBranchFilter" class="select select-bordered select-sm">
-                    <option value="">Toutes</option>
-                    @foreach ($this->depotBranches as $branch)
-                        <option value="{{ $branch }}">{{ ucfirst($branch) }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <!-- Bouton reset -->
-            <button type="button" class="btn btn-ghost btn-sm" wire:click="resetDepotFilters"
-                title="Réinitialiser les filtres">
-                <i class="fa-solid fa-rotate-left"></i>
-            </button>
-
+        <div class="flex-1 min-w-[200px]">
+            <x-atoms.search-input model="depotSearch" placeholder="Nom, identifiant..." />
         </div>
 
-        <div wire:loading wire:target="syncCurrentDepot" class="alert alert-info alert-sm mt-3">
-            <i class="fa-solid fa-spinner fa-spin"></i>
-            <span>Synchronisation en cours...</span>
-        </div>
+        <x-molecules.filter-select model="depotCategoryFilter" :options="$this->depotCategories"
+            placeholder="Toutes les catégories" width="w-56" />
 
-        @if ($depotSyncMessage)
-            <div wire:loading.remove wire:target="syncCurrentDepot" class="alert alert-info alert-sm mt-3">
-                <i class="fa-solid fa-info-circle"></i>
-                <span>{{ $depotSyncMessage }}</span>
+        <x-molecules.filter-select model="depotBranchFilter"
+            :options="collect($this->depotBranches)->mapWithKeys(fn($b) => [$b => ucfirst($b)])->all()"
+            placeholder="Toutes les branches" width="w-44" />
+
+        <x-slot:footer>
+            <div wire:loading wire:target="syncCurrentDepot" class="alert alert-info alert-sm">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Synchronisation en cours...</span>
             </div>
-        @endif
-    </div>
+
+            @if ($depotSyncMessage)
+                <div wire:loading.remove wire:target="syncCurrentDepot" class="alert alert-info alert-sm">
+                    <i class="fa-solid fa-info-circle"></i>
+                    <span>{{ $depotSyncMessage }}</span>
+                </div>
+            @endif
+        </x-slot:footer>
+    </x-molecules.filter-bar>
 
     <!-- Tableau des applications du dépôt -->
     <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0 flex flex-col overflow-hidden">

@@ -9,46 +9,25 @@
     @include('pages.parc._partials.stats-cards')
 
     <!-- Filtres -->
-    <div class="border-b border-base-300 pb-3">
-        <div class="flex flex-wrap items-center gap-3">
-            <div class="form-control flex-1 min-w-[200px]">
-                <input type="text" wire:model.live.debounce.300ms="machineSearch"
-                    placeholder="Rechercher un poste..." class="input input-bordered w-full" />
-            </div>
-            <div class="form-control w-40">
-                <select wire:model.live="osFilter" class="select select-bordered">
-                    <option value="">Tous les OS</option>
-                    @foreach ($availableOs as $os)
-                        <option value="{{ $os }}">{{ $os }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="form-control w-48">
-                <select wire:model.live="groupFilter" class="select select-bordered">
-                    <option value="">Tous les groupes</option>
-                    @foreach ($availableGroups as $group)
-                        <option value="{{ $group->id }}">{{ $group->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            {{-- Migration + conformité sont désormais des cartes-filtres
-                 cliquables (voir stats-cards) : le clic sur une tuile
-                 restreint le tableau à cette catégorie. --}}
-            {{-- Filtre par état de présence (allumé / éteint), dérivé du canal agent --}}
-            <div class="form-control w-40">
-                <select wire:model.live="presenceFilter" class="select select-bordered" aria-label="État du poste">
-                    <option value="">État : tous</option>
-                    <option value="online">Allumés</option>
-                    <option value="off">Éteints</option>
-                </select>
-            </div>
-            @if ($machineSearch || $osFilter || $groupFilter || $cardFilter || $presenceFilter)
-                <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
-                    <i class="fa-solid fa-eraser"></i>
-                </button>
-            @endif
+    <x-molecules.filter-bar reset="resetMachineFilters"
+        :reset-disabled="!$machineSearch && !$osFilter && !$groupFilter && !$cardFilter && !$presenceFilter">
+        <div class="flex-1 min-w-[200px]">
+            <x-atoms.search-input model="machineSearch" placeholder="Rechercher un poste..." />
         </div>
-    </div>
+
+        {{-- OS et groupes : nombre variable venant de la base → dropdown. --}}
+        <x-molecules.filter-select model="osFilter" :options="$availableOs" placeholder="Tous les OS"
+            width="w-44" />
+
+        <x-molecules.filter-select model="groupFilter"
+            :options="$availableGroups->pluck('name', 'id')->all()" placeholder="Tous les groupes"
+            width="w-52" />
+
+        {{-- 3 options : segmenté. Migration et conformité restent pilotées par les
+             tuiles cliquables de stats-cards, pas par cette barre. --}}
+        <x-molecules.filter-toggle name="presenceFilter" :active="$presenceFilter" label="État"
+            :options="['' => 'Tous', 'online' => 'Allumés', 'off' => 'Éteints']" />
+    </x-molecules.filter-bar>
 
     <!-- Tableau des machines -->
     <div class="card bg-base-100 shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">

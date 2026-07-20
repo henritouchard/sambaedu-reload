@@ -535,37 +535,15 @@ new class extends Component
 
 <div class="flex flex-col gap-3 flex-1 min-h-0">
     <!-- Filtres -->
-    <div class="flex-shrink-0 border-b border-base-300 pb-3">
-        <div class="flex flex-wrap gap-x-3 gap-y-2 items-end">
-            <!-- Recherche -->
-            <div class="form-control flex-1 min-w-[200px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Rechercher</span>
-                </label>
-                <input type="text" wire:model.live.debounce.300ms="appSearch" class="input input-bordered input-sm"
-                    placeholder="Nom, identifiant..." />
-            </div>
-
-            <!-- Filtre catégorie -->
-            <div class="form-control min-w-[180px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Catégorie</span>
-                </label>
-                <select wire:model.live="categoryFilter" class="select select-bordered select-sm">
-                    <option value="">Toutes les catégories</option>
-                    @foreach ($categories as $category)
-                        <option value="{{ $category }}">{{ $category }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <!-- Bouton reset -->
-            <button type="button" class="btn btn-ghost btn-sm" wire:click="resetAppFilters"
-                title="Réinitialiser les filtres">
-                <i class="fa-solid fa-rotate-left"></i>
-            </button>
+    <x-molecules.filter-bar reset="resetAppFilters">
+        <div class="flex-1 min-w-[200px]">
+            <x-atoms.search-input model="appSearch" placeholder="Nom, identifiant..." />
         </div>
-    </div>
+
+        {{-- Catégories : nombre variable venant du catalogue → dropdown. --}}
+        <x-molecules.filter-select model="categoryFilter" :options="$categories"
+            placeholder="Toutes les catégories" width="w-56" />
+    </x-molecules.filter-bar>
 
     <!-- Tableau des applications -->
     <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0 flex flex-col overflow-hidden">

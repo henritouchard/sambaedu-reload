@@ -2,45 +2,27 @@
 <div class="space-y-4">
 
     {{-- Filtres --}}
-    <div class="border-b border-base-300 pb-3">
-        <div class="flex flex-wrap gap-3 items-end">
-            <div class="flex-1 min-w-[180px]">
-                <label class="text-xs font-medium text-base-content/60 mb-1 block">Action</label>
-                <select wire:model.live="historyActionFilter"
-                    class="select select-sm select-bordered w-full">
-                    <option value="">Toutes</option>
-                    <option value="grant">grant</option>
-                    <option value="revoke">revoke</option>
-                    <option value="negate">negate</option>
-                    <option value="expire">expire</option>
-                </select>
-            </div>
-            <div class="flex-1 min-w-[200px]">
-                <label class="text-xs font-medium text-base-content/60 mb-1 block">Utilisateur cible</label>
-                <label class="input input-sm w-full">
-                    <i class="fa-solid fa-user opacity-50"></i>
-                    <input type="text" wire:model.live.debounce.300ms="historyTargetFilter"
-                        placeholder="login..." class="grow" />
-                </label>
-            </div>
-            <div class="flex-1 min-w-[140px]">
-                <label class="text-xs font-medium text-base-content/60 mb-1 block">Du</label>
-                <input type="date" wire:model.live="historyFromFilter"
-                    class="input input-sm input-bordered w-full" />
-            </div>
-            <div class="flex-1 min-w-[140px]">
-                <label class="text-xs font-medium text-base-content/60 mb-1 block">Au</label>
-                <input type="date" wire:model.live="historyToFilter"
-                    class="input input-sm input-bordered w-full" />
-            </div>
-            <div class="shrink-0">
-                <button type="button" wire:click="resetHistoryFilters" class="btn btn-ghost btn-sm">
-                    <i class="fa-solid fa-xmark"></i>
-                    Effacer
-                </button>
-            </div>
+    <x-molecules.filter-bar reset="resetHistoryFilters" reset-label="Effacer">
+        <div class="flex-1 min-w-[200px]">
+            <x-atoms.search-input model="historyTargetFilter" placeholder="Utilisateur cible (login)..." />
         </div>
-    </div>
+
+        {{-- 5 options → dropdown. --}}
+        <x-molecules.filter-select model="historyActionFilter" placeholder="Toutes les actions"
+            width="w-48"
+            :options="['grant' => 'grant', 'revoke' => 'revoke', 'negate' => 'negate', 'expire' => 'expire']" />
+
+        {{-- Bornes de date : libellés en ligne plutôt qu'au-dessus, pour rester sur
+             la ligne unique de la barre. Deux champs date nus seraient ambigus. --}}
+        <div class="flex items-center gap-2">
+            <span class="text-xs text-base-content/60 shrink-0">Du</span>
+            <input type="date" wire:model.live="historyFromFilter"
+                class="input input-bordered input-sm w-36" aria-label="Date de début" />
+            <span class="text-xs text-base-content/60 shrink-0">au</span>
+            <input type="date" wire:model.live="historyToFilter"
+                class="input input-bordered input-sm w-36" aria-label="Date de fin" />
+        </div>
+    </x-molecules.filter-bar>
 
     {{-- Table paginée --}}
     @php

@@ -399,92 +399,101 @@ new class extends Component {
     <x-molecules.tabs :tabs="$usersTabs" :active="$activeTab" action="switchTab"
         class="mb-4" />
 
-    <div class="border-b border-base-300 pb-3 mb-4">
-        @if ($activeTab === 'users')
-            <label class="label">
-                <span class="label-text font-medium">Recherche utilisateur</span>
-            </label>
+    {{-- Deux barres distinctes plutôt qu'une seule à contenu conditionnel : les
+         onglets « Utilisateurs » et « Groupes » n'ont ni les mêmes filtres, ni la
+         même méthode de reset. --}}
+    @if ($activeTab === 'users')
+        @php
+            $hasActiveFilters = !empty($role) || !empty($status) || !empty($group) || $quotaOverflow || $passwordDefault;
+        @endphp
+        <x-molecules.filter-bar class="mb-4" reset="resetFilters" reset-label="Tout effacer"
+            :reset-disabled="!$hasActiveFilters">
+            <div class="flex-1 min-w-[240px]">
+                <x-atoms.search-input model="search" placeholder="Nom, prénom ou login..."
+                    wire:model.live.debounce.350ms="search" />
+            </div>
 
-            <div class="flex gap-2">
-                <input type="text" wire:model.live.debounce.350ms="search" class="input input-bordered w-full"
-                    placeholder="Nom, prénom ou login..." />
-                <select wire:model.live="perPage" class="select select-bordered w-auto" title="Lignes par page">
-                    @foreach (self::PER_PAGE_OPTIONS as $option)
-                        <option value="{{ $option }}">{{ $option }} / page</option>
-                    @endforeach
-                </select>
-                <button type="button" class="btn btn-outline" wire:click="$dispatch('toggle-users-filters-modal')">
+            <x-slot:actions>
+                {{-- Beaucoup de filtres (rôles, statuts, groupes, audit) : ils vivent
+                     dans une modale dédiée, le déclencheur reste dans la barre. --}}
+                <button type="button" class="btn btn-outline btn-sm"
+                    wire:click="$dispatch('toggle-users-filters-modal')">
                     <i class="fa-solid fa-filter"></i>
                     Filtres
                 </button>
-            </div>
-
-            @if (!empty($role) || !empty($status) || !empty($group) || $quotaOverflow || $passwordDefault)
-                <div class="mt-3 flex flex-wrap items-center gap-2">
-                    <span class="text-xs text-base-content/60">Filtres actifs :</span>
-
-                    @foreach ($role as $roleItem)
-                        <button type="button" class="badge badge-outline gap-1"
-                            wire:click="removeRoleFilter('{{ $roleItem }}')">
-                            role: {{ $roleItem }}
-                            <i class="fa-solid fa-xmark text-[10px]"></i>
-                        </button>
-                    @endforeach
-
-                    @foreach ($status as $statusItem)
-                        <button type="button" class="badge badge-outline gap-1"
-                            wire:click="removeStatusFilter('{{ $statusItem }}')">
-                            statut: {{ $statusItem }}
-                            <i class="fa-solid fa-xmark text-[10px]"></i>
-                        </button>
-                    @endforeach
-
-                    @foreach ($group as $groupItem)
-                        <button type="button" class="badge badge-outline gap-1"
-                            wire:click="removeGroupFilter('{{ $groupItem }}')">
-                            groupe: {{ $groupItem }}
-                            <i class="fa-solid fa-xmark text-[10px]"></i>
-                        </button>
-                    @endforeach
-
-                    {{-- Story 14.4 — Tâche 5.6 : chips actifs filtres audit --}}
-                    @if ($quotaOverflow)
-                        <button type="button" class="badge badge-outline gap-1"
-                            wire:click="removeQuotaOverflowFilter">
-                            audit: quota dépassé
-                            <i class="fa-solid fa-xmark text-[10px]"></i>
-                        </button>
-                    @endif
-
-                    @if ($passwordDefault)
-                        <button type="button" class="badge badge-outline gap-1"
-                            wire:click="removePasswordDefaultFilter">
-                            audit: mdp par défaut
-                            <i class="fa-solid fa-xmark text-[10px]"></i>
-                        </button>
-                    @endif
-
-                    <button type="button" class="btn btn-ghost btn-xs" wire:click="resetFilters">
-                        Tout effacer
-                    </button>
-                </div>
-            @endif
-        @else
-            <label class="label">
-                <span class="label-text font-medium">Recherche groupe</span>
-            </label>
-
-            <div class="flex gap-2">
-                <input type="text" wire:model.live.debounce.300ms="groupsSearch"
-                    class="input input-bordered w-full" placeholder="Nom, nom affiché ou type..." />
-                <select wire:model.live="perPage" class="select select-bordered w-auto" title="Lignes par page">
+                <select wire:model.live="perPage" class="select select-bordered select-sm w-auto"
+                    title="Lignes par page">
                     @foreach (self::PER_PAGE_OPTIONS as $option)
                         <option value="{{ $option }}">{{ $option }} / page</option>
                     @endforeach
                 </select>
+            </x-slot:actions>
+
+            @if ($hasActiveFilters)
+                <x-slot:footer>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs text-base-content/60">Filtres actifs :</span>
+
+                        @foreach ($role as $roleItem)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removeRoleFilter('{{ $roleItem }}')">
+                                role: {{ $roleItem }}
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endforeach
+
+                        @foreach ($status as $statusItem)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removeStatusFilter('{{ $statusItem }}')">
+                                statut: {{ $statusItem }}
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endforeach
+
+                        @foreach ($group as $groupItem)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removeGroupFilter('{{ $groupItem }}')">
+                                groupe: {{ $groupItem }}
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endforeach
+
+                        {{-- Story 14.4 — Tâche 5.6 : chips actifs filtres audit --}}
+                        @if ($quotaOverflow)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removeQuotaOverflowFilter">
+                                audit: quota dépassé
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endif
+
+                        @if ($passwordDefault)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removePasswordDefaultFilter">
+                                audit: mdp par défaut
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endif
+                    </div>
+                </x-slot:footer>
+            @endif
+        </x-molecules.filter-bar>
+    @else
+        <x-molecules.filter-bar class="mb-4">
+            <div class="flex-1 min-w-[240px]">
+                <x-atoms.search-input model="groupsSearch" placeholder="Nom, nom affiché ou type..." />
             </div>
-        @endif
-    </div>
+
+            <x-slot:actions>
+                <select wire:model.live="perPage" class="select select-bordered select-sm w-auto"
+                    title="Lignes par page">
+                    @foreach (self::PER_PAGE_OPTIONS as $option)
+                        <option value="{{ $option }}">{{ $option }} / page</option>
+                    @endforeach
+                </select>
+            </x-slot:actions>
+        </x-molecules.filter-bar>
+    @endif
 
     @if ($activeTab === 'users')
         <x-molecules.modal wire:model="isFiltersModalOpen" size="max-w-2xl" height="h-auto max-h-[85vh]"
@@ -555,7 +564,7 @@ new class extends Component {
                             <th>Nom</th>
                             <th>Prénom</th>
                             <th>Login</th>
-                            <th>Utilisation</th>
+                            <th>Quotas</th>
                             <th>Statut</th>
                         </tr>
                     </thead>

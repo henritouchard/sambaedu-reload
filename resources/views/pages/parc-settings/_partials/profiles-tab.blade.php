@@ -20,8 +20,11 @@ new class extends Component
     #[Url]
     public string $profileSearch = '';
 
+    // Chaîne et non ?bool : filter-toggle pose la valeur via $set('activeOnly', ''),
+    // et Livewire coerce '' en false sur une propriété bool — « Tous » basculerait
+    // alors sur « Inactifs ». '' = pas de filtre, '1' = actifs, '0' = inactifs.
     #[Url]
-    public ?bool $activeOnly = null;
+    public string $activeOnly = '';
 
     public array $selectedProfiles = [];
 
@@ -51,7 +54,7 @@ new class extends Component
             return $this->appProfileService->listProfiles(
                 perPage: $this->profilesPerPage,
                 search: $this->profileSearch ?: null,
-                activeOnly: $this->activeOnly,
+                activeOnly: $this->activeOnly === '' ? null : $this->activeOnly === '1',
             );
         } catch (\Exception $e) {
             Log::error('[ProfilesTab] Erreur chargement profils: '.$e->getMessage());
@@ -63,7 +66,7 @@ new class extends Component
     public function resetProfileFilters(): void
     {
         $this->profileSearch = '';
-        $this->activeOnly = null;
+        $this->activeOnly = '';
         $this->selectedProfiles = [];
         $this->resetPage();
     }
@@ -167,36 +170,15 @@ new class extends Component
     </div>
 
     <!-- Filtres -->
-    <div class="flex-shrink-0 border-b border-base-300 pb-3">
-        <div class="flex flex-wrap gap-x-3 gap-y-2 items-end">
-            <!-- Recherche -->
-            <div class="form-control flex-1 min-w-[200px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Rechercher</span>
-                </label>
-                <input type="text" wire:model.live.debounce.300ms="profileSearch"
-                    class="input input-bordered input-sm" placeholder="Nom, description..." />
-            </div>
-
-            <!-- Filtre actif -->
-            <div class="form-control min-w-[150px]">
-                <label class="label py-0">
-                    <span class="label-text text-xs">Statut</span>
-                </label>
-                <select wire:model.live="activeOnly" class="select select-bordered select-sm">
-                    <option value="">Tous</option>
-                    <option value="1">Actifs uniquement</option>
-                    <option value="0">Inactifs uniquement</option>
-                </select>
-            </div>
-
-            <!-- Bouton reset -->
-            <button type="button" class="btn btn-ghost btn-sm" wire:click="resetProfileFilters"
-                title="Réinitialiser les filtres">
-                <i class="fa-solid fa-rotate-left"></i>
-            </button>
+    <x-molecules.filter-bar reset="resetProfileFilters">
+        <div class="flex-1 min-w-[200px]">
+            <x-atoms.search-input model="profileSearch" placeholder="Nom, description..." />
         </div>
-    </div>
+
+        {{-- 3 options : boutons segmentés (seuil projet : dropdown au-delà de 4). --}}
+        <x-molecules.filter-toggle name="activeOnly" :active="$activeOnly" label="Statut"
+            :options="['' => 'Tous', '1' => 'Actifs', '0' => 'Inactifs']" />
+    </x-molecules.filter-bar>
 
     <!-- Tableau des profils -->
     <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0 flex flex-col overflow-hidden">

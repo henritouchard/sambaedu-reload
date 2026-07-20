@@ -284,7 +284,7 @@ new class extends Component {
 };
 ?>
 
-<div wire:poll.300s="checkSync">
+<div wire:poll.300s="checkSync" class="mb-4">
     @if (isset($status['error']) && $status['error'])
         {{-- Erreur de connexion AD --}}
         <div class="alert alert-error shadow-sm">
