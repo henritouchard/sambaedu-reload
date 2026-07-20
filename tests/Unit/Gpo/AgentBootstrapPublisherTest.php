@@ -251,19 +251,191 @@ final class AgentBootstrapPublisherTest extends TestCase
     }
 
     // -----------------------------------------------------------------------
+    // Blocage d'héritage sur l'OU des COMPTES (moitié UTILISATEUR des GPO).
+    //
+    // Les deux moitiés d'une GPO héritent par des chemins distincts : bloquer
+    // l'OU des postes ne neutralisait QUE la moitié machine, laissant passer
+    // lecteurs réseau, redirections, imprimantes et scripts de logon — en
+    // concurrence directe avec les capacités natives de l'agent.
+    // -----------------------------------------------------------------------
+
+    #[Test]
+    public function it_resolves_establishment_layer_users_ou_when_present(): void
+    {
+        config(['sambaedu.ldap_base_dn' => 'DC=lab1,DC=fr']);
+
+        $publisher = $this->testablePublisher('0991229y', [
+            'OU=0991229y,ou=Utilisateurs,DC=lab1,DC=fr',
+            'ou=Utilisateurs,DC=lab1,DC=fr',
+        ]);
+
+        // La couche établissement PRIME : on neutralise chez nous, jamais au-dessus.
+        self::assertSame('OU=0991229y,ou=Utilisateurs,DC=lab1,DC=fr', $this->resolveUsersOu($publisher));
+    }
+
+    #[Test]
+    public function it_resolves_flat_users_ou_when_no_establishment_layer(): void
+    {
+        config(['sambaedu.ldap_base_dn' => 'dc=localdev,dc=fr']);
+
+        // Topologie plate (/vm) : etabCode '0' → pas de couche établissement.
+        $publisher = $this->testablePublisher('', ['ou=Utilisateurs,dc=localdev,dc=fr']);
+
+        self::assertSame('ou=Utilisateurs,dc=localdev,dc=fr', $this->resolveUsersOu($publisher));
+    }
+
+    #[Test]
+    public function it_returns_null_when_no_users_ou_candidate_exists(): void
+    {
+        config(['sambaedu.ldap_base_dn' => 'DC=lab1,DC=fr']);
+
+        $publisher = $this->testablePublisher('0991229y', []);
+
+        self::assertNull($this->resolveUsersOu($publisher));
+    }
+
+    #[Test]
+    public function it_never_falls_back_to_the_shared_users_container_when_federated(): void
+    {
+        // LE test de sûreté. AD mutualisé ~75 collèges : si l'OU comptes de NOTRE
+        // établissement est absente, le conteneur partagé `ou=Utilisateurs,<base>`
+        // existe quand même — y bloquer l'héritage couperait les stratégies
+        // utilisateur de TOUS les collèges. On préfère ne rien bloquer.
+        config(['sambaedu.ldap_base_dn' => 'DC=lab1,DC=fr']);
+
+        $publisher = $this->testablePublisher('0991229y', [
+            // Seul le conteneur PARTAGÉ existe — pas la couche établissement.
+            'ou=Utilisateurs,DC=lab1,DC=fr',
+        ]);
+
+        self::assertNull(
+            $this->resolveUsersOu($publisher),
+            'Un établissement identifié ne doit JAMAIS retomber sur le conteneur des comptes du domaine.',
+        );
+    }
+
+    #[Test]
+    public function isolation_blocks_nothing_when_only_the_shared_users_container_exists(): void
+    {
+        // Même garde, vue depuis la séquence d'isolation complète : aucun
+        // setInheritance ne doit partir vers le conteneur partagé.
+        $baseDn = 'DC=lab1,DC=fr';
+        $ouDn = 'OU=0991229y,OU=computers,DC=lab1,DC=fr';
+        $sharedUsersDn = 'ou=Utilisateurs,DC=lab1,DC=fr';
+        $guid = '{11111111-2222-3333-4444-555555555555}';
+        config(['sambaedu.ldap_base_dn' => $baseDn]);
+
+        $gpo = Mockery::mock(GpoService::class);
+        $gpo->shouldReceive('removeLink')->once()->with($baseDn, $guid)->andReturn(true);
+        $gpo->shouldReceive('setInheritance')->once()->with($ouDn, false)->andReturn(true);
+        $gpo->shouldReceive('setLink')->once()->with($ouDn, $guid)->andReturn(true);
+        $gpo->shouldNotReceive('setInheritance')->with($sharedUsersDn, Mockery::any());
+
+        $publisher = $this->testablePublisher('0991229y', [$ouDn, $sharedUsersDn], $gpo);
+
+        $result = $this->invokeIsolate($publisher, $guid, $ouDn);
+
+        self::assertSame(AgentBootstrapDeployResult::KIND_DEPLOYED, $result->kind);
+    }
+
+    #[Test]
+    public function it_returns_null_when_people_rdn_is_unavailable(): void
+    {
+        config(['sambaedu.ldap_base_dn' => 'DC=lab1,DC=fr']);
+
+        $publisher = $this->testablePublisher('0991229y', ['ou=Utilisateurs,DC=lab1,DC=fr'], peopleRdn: '');
+
+        self::assertNull($this->resolveUsersOu($publisher));
+    }
+
+    #[Test]
+    public function isolation_blocks_inheritance_on_both_computers_and_users_ous(): void
+    {
+        $baseDn = 'DC=lab1,DC=fr';
+        $ouDn = 'OU=0991229y,OU=computers,DC=lab1,DC=fr';
+        $usersOuDn = 'OU=0991229y,ou=Utilisateurs,DC=lab1,DC=fr';
+        $guid = '{11111111-2222-3333-4444-555555555555}';
+        config(['sambaedu.ldap_base_dn' => $baseDn]);
+
+        $gpo = Mockery::mock(GpoService::class);
+        $gpo->shouldReceive('removeLink')->once()->with($baseDn, $guid)->andReturn(true);
+        $gpo->shouldReceive('setInheritance')->once()->with($ouDn, false)->andReturn(true);
+        // Le blocage symétrique côté comptes — c'est lui qui éteint les
+        // stratégies utilisateur des GPO de domaine.
+        $gpo->shouldReceive('setInheritance')->once()->with($usersOuDn, false)->andReturn(true);
+        $gpo->shouldReceive('setLink')->once()->with($ouDn, $guid)->andReturn(true);
+        // JAMAIS de lien sur l'OU des comptes : on bloque, on ne lie pas.
+        $gpo->shouldNotReceive('setLink')->with($usersOuDn, Mockery::any());
+
+        $publisher = $this->testablePublisher('0991229y', [$ouDn, $usersOuDn], $gpo);
+
+        $result = $this->invokeIsolate($publisher, $guid, $ouDn);
+
+        self::assertSame(AgentBootstrapDeployResult::KIND_DEPLOYED, $result->kind);
+    }
+
+    #[Test]
+    public function isolation_survives_a_users_ou_block_failure(): void
+    {
+        $baseDn = 'DC=lab1,DC=fr';
+        $ouDn = 'OU=computers,DC=lab1,DC=fr';
+        $usersOuDn = 'ou=Utilisateurs,DC=lab1,DC=fr';
+        $guid = '{11111111-2222-3333-4444-555555555555}';
+        config(['sambaedu.ldap_base_dn' => $baseDn]);
+
+        $gpo = Mockery::mock(GpoService::class);
+        $gpo->shouldReceive('removeLink')->once()->with($baseDn, $guid)->andReturn(true);
+        $gpo->shouldReceive('setInheritance')->once()->with($ouDn, false)->andReturn(true);
+        // Droits refusés sur l'OU des comptes → journalisé, PAS propagé :
+        // l'amorçage de l'agent reste l'objectif critique.
+        $gpo->shouldReceive('setInheritance')->once()->with($usersOuDn, false)
+            ->andThrow(new RuntimeException('insufficient access rights'));
+        $gpo->shouldReceive('setLink')->once()->with($ouDn, $guid)->andReturn(true);
+
+        $publisher = $this->testablePublisher('', [$ouDn, $usersOuDn], $gpo);
+
+        $result = $this->invokeIsolate($publisher, $guid, $ouDn);
+
+        self::assertSame(AgentBootstrapDeployResult::KIND_DEPLOYED, $result->kind);
+    }
+
+    #[Test]
+    public function isolation_skips_users_block_when_no_users_ou_exists(): void
+    {
+        $baseDn = 'DC=lab1,DC=fr';
+        $ouDn = 'OU=computers,DC=lab1,DC=fr';
+        $guid = '{11111111-2222-3333-4444-555555555555}';
+        config(['sambaedu.ldap_base_dn' => $baseDn]);
+
+        $gpo = Mockery::mock(GpoService::class);
+        $gpo->shouldReceive('removeLink')->once()->with($baseDn, $guid)->andReturn(true);
+        $gpo->shouldReceive('setInheritance')->once()->with($ouDn, false)->andReturn(true);
+        $gpo->shouldReceive('setLink')->once()->with($ouDn, $guid)->andReturn(true);
+        // Aucune OU comptes → aucun appel supplémentaire (pas de DN deviné).
+        $gpo->shouldNotReceive('setInheritance')->with(Mockery::not($ouDn), Mockery::any());
+
+        $publisher = $this->testablePublisher('', [$ouDn], $gpo);
+
+        $result = $this->invokeIsolate($publisher, $guid, $ouDn);
+
+        self::assertSame(AgentBootstrapDeployResult::KIND_DEPLOYED, $result->kind);
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers de test (réflexion sur les méthodes protected).
     // -----------------------------------------------------------------------
 
-    private function testablePublisher(string $establishmentCode, array $existingOus): AgentBootstrapPublisher
+    private function testablePublisher(string $establishmentCode, array $existingOus, ?GpoService $gpo = null, string $peopleRdn = 'ou=Utilisateurs'): AgentBootstrapPublisher
     {
-        $gpo = Mockery::mock(GpoService::class);
+        $gpo ??= Mockery::mock(GpoService::class);
 
-        return new class($gpo, new GpoTemplateRegistry(), $establishmentCode, $existingOus) extends AgentBootstrapPublisher {
+        return new class($gpo, new GpoTemplateRegistry(), $establishmentCode, $existingOus, $peopleRdn) extends AgentBootstrapPublisher {
             public function __construct(
                 GpoService $gpo,
                 GpoTemplateRegistry $registry,
                 private readonly string $code,
                 private readonly array $ous,
+                private readonly string $rdn,
             ) {
                 parent::__construct($gpo, $registry);
             }
@@ -277,7 +449,21 @@ final class AgentBootstrapPublisherTest extends TestCase
             {
                 return in_array($dn, $this->ous, true);
             }
+
+            protected function peopleRdn(): string
+            {
+                return $this->rdn;
+            }
         };
+    }
+
+    private function resolveUsersOu(AgentBootstrapPublisher $publisher): ?string
+    {
+        $log = \App\Gpo\Support\GpoLogger::action('gpo.create');
+        $m = new \ReflectionMethod($publisher, 'resolveTargetUsersOuDn');
+        $m->setAccessible(true);
+
+        return $m->invoke($publisher, $log);
     }
 
     private function resolveOu(AgentBootstrapPublisher $publisher): ?string

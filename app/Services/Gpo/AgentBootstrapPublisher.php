@@ -36,7 +36,14 @@ use RuntimeException;
  *     masqué en exit 0 devient un échec EXPLICITE ;
  *  6. **isole** : neutralise tout lien racine, bloque l'héritage sur l'OU
  *     computers de NOTRE établissement + lie `SE_agent_bootstrap` à cette même
- *     OU (JAMAIS la racine — AD mutualisé entre ~75 collèges) via {@see GpoService}.
+ *     OU (JAMAIS la racine — AD mutualisé entre ~75 collèges) via {@see GpoService} ;
+ *  7. **bloque symétriquement l'OU des comptes** ({@see blockUsersOuInheritance},
+ *     fail-soft) : les deux moitiés d'une GPO (machine / utilisateur) héritent
+ *     par des chemins distincts, si bien qu'un blocage côté postes laissait
+ *     passer TOUTES les stratégies utilisateur des GPO de domaine (lecteurs
+ *     réseau, redirections, imprimantes, scripts de logon), en concurrence avec
+ *     les capacités natives de l'agent. Là encore : neutralisation CHEZ NOUS,
+ *     jamais de modification de la GPO partagée.
  *
  * Garde-fou archi : ce service vit sous `App\Services\Gpo`, PAS `App\Gpo`. Les
  * écritures GPO natives (lien + héritage) passent exclusivement par
@@ -168,10 +175,26 @@ class AgentBootstrapPublisher
             return AgentBootstrapDeployResult::publishedWithoutLink($guid, $operationId);
         }
 
-        // (2) Blocage d'héritage sur l'OU établissement.
+        // (2) Blocage d'héritage sur l'OU établissement (côté MACHINE).
         $blockLog = \App\Gpo\Support\GpoLogger::action('gpo.inheritance.set', $operationId, ['target_dn' => $ouDn]);
         $this->gpoService->setInheritance($ouDn, false); // false = block
         $blockLog->success(['blocked' => true]);
+
+        // (2 bis) Blocage symétrique sur l'OU des COMPTES.
+        //
+        // Une GPO porte deux moitiés — Computer Configuration et User
+        // Configuration — qui héritent par des chemins DISTINCTS. Bloquer l'OU
+        // des postes ne neutralise que la première : les stratégies utilisateur
+        // des GPO de domaine (lecteurs réseau, redirections, imprimantes,
+        // scripts de logon…) continuaient de s'appliquer à CHAQUE ouverture de
+        // session, en concurrence directe avec les capacités que l'agent pilote
+        // désormais nativement — au point de fausser toute validation du travail
+        // agent (une GPO peut faire passer pour fonctionnelle une capacité
+        // cassée, ou écraser une capacité correcte).
+        //
+        // Comme pour les postes : on ne délie et ne vide JAMAIS la GPO partagée
+        // (les collèges encore en SE4 la consomment) — on neutralise CHEZ NOUS.
+        $this->blockUsersOuInheritance($operationId, $log);
 
         // (3) Lien sur l'OU établissement (JAMAIS la racine).
         $linkLog = \App\Gpo\Support\GpoLogger::action('gpo.link.add', $operationId, ['target_dn' => $ouDn, 'gpo_name' => $guid]);
@@ -397,6 +420,116 @@ class AgentBootstrapPublisher
     }
 
     /**
+     * Bloque l'héritage sur l'OU des COMPTES de notre établissement.
+     *
+     * FAIL-SOFT par construction : l'amorçage de l'agent (publication + lien sur
+     * l'OU des postes) est l'objectif critique de ce service et ne doit jamais
+     * échouer parce que l'OU des comptes est introuvable ou en écriture refusée.
+     * L'échec est journalisé, pas propagé.
+     *
+     * Idempotent : `setInheritance(dn, false)` sur une OU déjà bloquée est un
+     * no-op côté AD.
+     */
+    protected function blockUsersOuInheritance(string $operationId, \App\Gpo\Support\GpoActionLog $log): void
+    {
+        $usersOuDn = $this->resolveTargetUsersOuDn($log);
+
+        if ($usersOuDn === null) {
+            $log->step('warn: aucune OU comptes détectée — héritage utilisateur NON bloqué (les stratégies utilisateur des GPO de domaine restent actives)');
+
+            return;
+        }
+
+        $blockLog = \App\Gpo\Support\GpoLogger::action('gpo.inheritance.set', $operationId, [
+            'target_dn' => $usersOuDn,
+            'scope' => 'users',
+        ]);
+
+        try {
+            $this->gpoService->setInheritance($usersOuDn, false); // false = block
+            $blockLog->success(['blocked' => true, 'scope' => 'users']);
+        } catch (\Throwable $e) {
+            $blockLog->failure($e);
+            $log->step('warn: blocage héritage OU comptes échoué (fail-soft) — l\'amorçage agent se poursuit', [
+                'target_dn' => $usersOuDn,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Dérive le DN de l'OU des comptes cible, pour les deux topologies :
+     *  - couche établissement (prod/lab1) : `OU=<code>,<peopleRdn>,<base>` ;
+     *  - plate (localdev /vm)              : `<peopleRdn>,<base>`.
+     *
+     * ⚠️ GARDE ANTI-FÉDÉRATION — asymétrie DÉLIBÉRÉE avec
+     * {@see resolveTargetOuDn} : dès qu'un code établissement existe, SEULE la
+     * couche établissement est acceptable. On ne retombe JAMAIS sur
+     * `<peopleRdn>,<base>`, qui est le conteneur des comptes de TOUT le domaine —
+     * y bloquer l'héritage neutraliserait les stratégies utilisateur des ~75
+     * collèges d'un coup, alors que l'objectif est de neutraliser CHEZ NOUS.
+     *
+     * Le repli plat n'est donc autorisé que lorsqu'il n'y a AUCUN code
+     * établissement — cas non fédéré (VM de dev), où ce conteneur EST celui de
+     * l'instance. Dans le doute on ne bloque rien : ne pas neutraliser est un
+     * défaut réparable, neutraliser les autres collèges ne l'est pas.
+     *
+     * Le RDN vient de la conf système (`peopleRdn`, ex. `ou=Utilisateurs`), pas
+     * d'une constante : il diffère selon les installations. Fail-soft → null.
+     */
+    protected function resolveTargetUsersOuDn(\App\Gpo\Support\GpoActionLog $log): ?string
+    {
+        $baseDn = (string) config('sambaedu.ldap_base_dn', '');
+        if ($baseDn === '') {
+            $log->step('résolution OU comptes : ldap_base_dn vide — aucune OU dérivable');
+
+            return null;
+        }
+
+        $peopleRdn = $this->peopleRdn();
+
+        if ($peopleRdn === '') {
+            $log->step('résolution OU comptes : peopleRdn indisponible — aucune OU dérivable');
+
+            return null;
+        }
+
+        $peopleDn = $peopleRdn . ',' . $baseDn;
+        $code = $this->establishmentCode();
+
+        if ($code !== '') {
+            $scopedDn = 'OU=' . $code . ',' . $peopleDn;
+
+            if ($this->ouExists($scopedDn)) {
+                $log->step('OU comptes cible résolue (couche établissement)', ['ou_dn' => $scopedDn]);
+
+                return $scopedDn;
+            }
+
+            // Volontairement AUCUN repli : le conteneur partagé est hors limites.
+            $log->step(
+                'warn: OU comptes de l\'établissement absente — héritage utilisateur NON bloqué '
+                . '(repli sur le conteneur partagé REFUSÉ : il neutraliserait les autres collèges)',
+                ['expected_dn' => $scopedDn, 'shared_dn_refused' => $peopleDn],
+            );
+
+            return null;
+        }
+
+        // Aucun code établissement → instance non fédérée : le conteneur plat
+        // est bien le nôtre.
+        if ($this->ouExists($peopleDn)) {
+            $log->step('OU comptes cible résolue (topologie plate, hors fédération)', ['ou_dn' => $peopleDn]);
+
+            return $peopleDn;
+        }
+
+        $log->step('aucune OU comptes candidate n\'existe (fail-soft)', ['candidates' => [$peopleDn]]);
+
+        return null;
+    }
+
+    /**
      * Dérive le DN de l'OU computers cible, en gérant les DEUX topologies :
      *  - couche établissement (prod/lab1) : `OU=<code>,OU=computers,<base>` ;
      *  - plate (localdev /vm)              : `OU=computers,<base>`.
@@ -431,6 +564,20 @@ class AgentBootstrapPublisher
         $log->step('aucune OU computers candidate n\'existe (fail-soft)', ['candidates' => $candidates]);
 
         return null;
+    }
+
+    /**
+     * RDN du conteneur des comptes (ex. `ou=Utilisateurs`), issu de la conf
+     * système : il varie selon les installations, ce n'est pas une constante.
+     * Chaîne vide si indisponible (→ résolution fail-soft).
+     */
+    protected function peopleRdn(): string
+    {
+        try {
+            return (string) app(\App\Config\SambaEduConfig::class)->ldap()->peopleRdn;
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**
