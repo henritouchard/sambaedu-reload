@@ -87,10 +87,10 @@ new class extends Component {
 };
 ?>
 
-<div class="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6 items-start">
+<div class="flex flex-col gap-6">
 
-    {{-- Colonne principale : les trois capacités, côte à côte (réglages
-         indépendants et symétriques ⇒ lecture horizontale). --}}
+    {{-- Les trois capacités, côte à côte (réglages indépendants et symétriques
+         ⇒ lecture horizontale), puis le récapitulatif en pleine largeur. --}}
     <div class="flex flex-col gap-5">
 
         <div class="flex items-start justify-between gap-4">
@@ -155,7 +155,7 @@ new class extends Component {
                             {{ $nextcloud ? 'bg-primary/10 text-primary' : 'bg-base-200 text-base-content/40' }}">
                             <i class="fa-solid fa-cloud text-lg"></i>
                         </div>
-                        <input type="checkbox" wire:model.live="nextcloud" class="toggle toggle-primary"
+                        <input disabled title="Nextcloud natif n'est pas encore disponible" type="checkbox" wire:model.live="nextcloud" class="toggle toggle-primary"
                             aria-label="Activer Nextcloud natif" />
                     </div>
                     <span class="font-medium">Nextcloud natif</span>
@@ -185,7 +185,7 @@ new class extends Component {
         @endif
     </div>
 
-    {{-- Colonne latérale : traduction de la config en ce que l'utilisateur verra
+    {{-- Récapitulatif : traduction de la config en ce que l'utilisateur verra
          réellement sur son poste. Réactif (toggles en wire:model.live). --}}
     <aside class="card bg-base-100 border border-base-300">
         <div class="card-body p-5 gap-3">
@@ -205,7 +205,9 @@ new class extends Component {
             @else
                 <p class="text-xs text-base-content/60">Au prochain logon, <strong>tout utilisateur</strong> voit :</p>
 
-                <ul class="flex flex-col gap-2">
+                {{-- En pleine largeur, on reprend la grille à 3 colonnes des cartes
+                     ci-dessus : chaque effet se lit sous la capacité qui le produit. --}}
+                <ul class="grid grid-cols-1 md:grid-cols-3 gap-2 items-start">
                     @if ($home)
                         <li class="flex items-center gap-3 rounded-lg bg-base-200 px-3 py-2">
                             <span class="badge badge-primary badge-sm font-mono shrink-0">K:</span>
