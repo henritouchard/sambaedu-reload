@@ -137,4 +137,90 @@ class MachineReinstallTest extends TestCase
 
         $this->assertSame(0, WorkstationReinstallRequest::where('workstation_id', $ws->id)->count());
     }
+
+    /**
+     * Une fois l'installeur lancé, annuler côté serveur n'arrêterait pas la
+     * machine : la garde refuse et la requête reste `installing`.
+     */
+    public function test_installing_request_cannot_be_canceled(): void
+    {
+        $this->grantInstall();
+        $ws = Workstation::factory()->create();
+        $req = WorkstationReinstallRequest::factory()->armed()->create([
+            'workstation_id' => $ws->id,
+            'status' => WorkstationReinstallRequest::STATUS_INSTALLING,
+        ]);
+
+        Livewire::test(self::COMPONENT, ['id' => $ws->id])
+            ->call('cancelReinstall');
+
+        $this->assertSame(
+            WorkstationReinstallRequest::STATUS_INSTALLING,
+            $req->fresh()->status,
+        );
+    }
+
+    /**
+     * Sortie de secours d'une install qui n'aboutit pas : la tentative bloquée
+     * en `installing` passe `failed` et une neuve est armée sur le même OS,
+     * sans attendre l'expiration du TTL.
+     */
+    public function test_relaunch_fails_current_and_arms_a_fresh_one(): void
+    {
+        $this->grantInstall();
+        $ws = Workstation::factory()->create();
+        $stuck = WorkstationReinstallRequest::factory()->armed()->create([
+            'workstation_id' => $ws->id,
+            'target_action' => 'install_win11',
+            'status' => WorkstationReinstallRequest::STATUS_INSTALLING,
+            'boot_served_count' => 3,
+        ]);
+
+        Livewire::test(self::COMPONENT, ['id' => $ws->id])
+            ->call('relaunchReinstall');
+
+        $this->assertSame(WorkstationReinstallRequest::STATUS_FAILED, $stuck->fresh()->status);
+
+        $fresh = WorkstationReinstallRequest::where('workstation_id', $ws->id)
+            ->where('id', '!=', $stuck->id)
+            ->first();
+
+        $this->assertNotNull($fresh);
+        $this->assertSame(WorkstationReinstallRequest::STATUS_ARMED, $fresh->status);
+        $this->assertSame('install_win11', $fresh->target_action);
+        // Compteur remis à zéro : la nouvelle tentative a droit à son quota.
+        $this->assertSame(0, $fresh->boot_served_count);
+        $this->assertNull($fresh->triggered_at);
+    }
+
+    public function test_relaunch_requires_permission(): void
+    {
+        $this->grantInstall(false);
+        $ws = Workstation::factory()->create();
+        $stuck = WorkstationReinstallRequest::factory()->armed()->create([
+            'workstation_id' => $ws->id,
+            'status' => WorkstationReinstallRequest::STATUS_INSTALLING,
+        ]);
+
+        Livewire::test(self::COMPONENT, ['id' => $ws->id])
+            ->call('relaunchReinstall');
+
+        $this->assertSame(WorkstationReinstallRequest::STATUS_INSTALLING, $stuck->fresh()->status);
+        $this->assertSame(1, WorkstationReinstallRequest::where('workstation_id', $ws->id)->count());
+    }
+
+    /** Le statut brut ne doit jamais s'afficher : le badge est en français. */
+    public function test_status_badge_is_rendered_in_french(): void
+    {
+        $this->grantInstall();
+        $ws = Workstation::factory()->create();
+        WorkstationReinstallRequest::factory()->armed()->create([
+            'workstation_id' => $ws->id,
+            'status' => WorkstationReinstallRequest::STATUS_INSTALLING,
+        ]);
+
+        Livewire::test(self::COMPONENT, ['id' => $ws->id])
+            ->assertSee('Installation en cours')
+            ->assertDontSee('Réinstallation installing');
+    }
 }

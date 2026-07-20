@@ -111,6 +111,46 @@ class WorkstationReinstallRequest extends Model
         self::STATUS_INSTALLING,
     ];
 
+    /**
+     * Libellés français des statuts, pour affichage. Le statut brut ne doit
+     * jamais remonter dans l'UI.
+     *
+     * Ils sont rédigés pour **se suffire à eux-mêmes** : le badge de la fiche
+     * poste les affiche seuls, sans préfixe « Réinstallation — » qui ferait
+     * doublon (« Réinstallation — Installation en cours »).
+     *
+     * @var array<string, string>
+     */
+    public const STATUS_LABELS = [
+        self::STATUS_ARMED => 'Réinstallation programmée',
+        self::STATUS_SERVING => 'Réinstallation démarrée',
+        self::STATUS_INSTALLING => 'Installation en cours',
+        self::STATUS_DONE => 'Réinstallation terminée',
+        self::STATUS_FAILED => 'Réinstallation échouée',
+        self::STATUS_CANCELED => 'Réinstallation annulée',
+    ];
+
+    /**
+     * Libellé français du statut courant (fallback sur le statut brut si une
+     * valeur inattendue traîne en base).
+     */
+    public function statusLabel(): string
+    {
+        return self::STATUS_LABELS[$this->status] ?? $this->status;
+    }
+
+    /**
+     * Une requête n'est annulable que tant que l'installeur n'a pas la main :
+     * une fois en `installing`, le payload est délivré et la machine installe
+     * — annuler côté serveur ne l'arrêterait pas, le bouton mentirait donc à
+     * l'admin. Le sweep TTL reste le filet pour une install qui ne rapporte
+     * jamais son OOBE.
+     */
+    public function isCancelable(): bool
+    {
+        return ! $this->isTerminal() && $this->status !== self::STATUS_INSTALLING;
+    }
+
     public function workstation(): BelongsTo
     {
         return $this->belongsTo(Workstation::class);

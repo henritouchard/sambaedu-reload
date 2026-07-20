@@ -666,6 +666,17 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         return app(WorkstationReinstallService::class)->osCatalog();
     }
 
+    /** Libellé de l'OS ciblé par la réinstallation active (tooltip du badge). */
+    #[Computed]
+    public function reinstallTargetLabel(): string
+    {
+        $active = $this->activeReinstall;
+
+        return $active
+            ? app(WorkstationReinstallService::class)->labelFor($active->target_action)
+            : '';
+    }
+
     public function openReinstallModal(): void
     {
         if (!Gate::allows('computer.install')) {
@@ -735,6 +746,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $label = $service->labelFor($this->reinstallTarget);
             $this->reinstallModalOpen = false;
             unset($this->activeReinstall);
+            unset($this->reinstallTargetLabel);
 
             if ($scheduledAt) {
                 $this->toastSuccess("Réinstallation ({$label}) planifiée le {$scheduledAt->format('d/m/Y H:i')}.");
@@ -763,10 +775,55 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $this->toastWarning('Aucune réinstallation à annuler.');
             return;
         }
+        // L'installeur a déjà la main : annuler côté serveur n'arrêterait pas la
+        // machine. On refuse plutôt que de laisser croire le contraire.
+        if (!$req->isCancelable()) {
+            $this->toastWarning("L'installation a déjà démarré sur le poste : elle ne peut plus être annulée.");
+            return;
+        }
 
         app(WorkstationReinstallService::class)->cancel($req);
         unset($this->activeReinstall);
+        unset($this->reinstallTargetLabel);
         $this->toastSuccess('Réinstallation annulée.');
+    }
+
+    /**
+     * Abandonne la tentative en cours et en réarme une neuve sur le même OS.
+     * Sortie de secours pour une installation qui n'aboutit pas (le poste
+     * resterait sinon bloqué jusqu'à l'expiration du TTL).
+     */
+    public function relaunchReinstall(): void
+    {
+        if (!Gate::allows('computer.install')) {
+            $this->toastError("Vous n'avez pas le droit de réinstaller ce poste.");
+            return;
+        }
+        if (!$this->workstation) {
+            return;
+        }
+
+        try {
+            $new = app(WorkstationReinstallService::class)->relaunchForWorkstation(
+                $this->workstation,
+                'user:' . auth()->id(),
+                auth()->id(),
+            );
+
+            if ($new === null) {
+                $this->toastWarning('Aucune réinstallation à relancer.');
+                return;
+            }
+
+            unset($this->activeReinstall);
+            unset($this->reinstallTargetLabel);
+            $this->toastSuccess('Réinstallation relancée : le poste redémarrera pour reprendre l\'installation.');
+        } catch (\DomainException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[MachineShow] Erreur relance réinstallation: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la relance de la réinstallation.');
+        }
     }
 
     public function getDeploymentStatusesProperty(): array
@@ -1166,19 +1223,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 @can('computer.install')
                     @php $activeReinstall = $this->activeReinstall; @endphp
                     @if ($activeReinstall)
-                        {{-- Badge état + annulation. --}}
-                        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning">
-                            <i class="fa-solid fa-arrows-rotate"></i>
-                            <span class="text-sm font-medium">
-                                Réinstallation {{ $activeReinstall->status }}
-                            </span>
-                            <button type="button"
-                                class="btn btn-xs btn-ghost"
-                                wire:click="cancelReinstall"
-                                wire:confirm="Annuler la réinstallation armée de ce poste ?">
-                                Annuler
-                            </button>
-                        </div>
+                        {{-- Réinstallation en cours : l'état ET ses actions
+                             (annuler / relancer) vivent dans la card de header,
+                             portés par le badge auquel ils se rapportent. Rien
+                             à afficher ici. --}}
                     @elseif ($workstation->isProtected())
                         <button type="button" class="btn btn-outline btn-disabled" disabled
                             title="Poste protégé — réinstallation impossible">
@@ -1253,6 +1301,57 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                                     {{ $deployErrors->count() }} échec{{ $deployErrors->count() > 1 ? 's' : '' }} de déploiement
                                 </span>
                             @endif
+                            {{-- Story 3.11 — état de la réinstallation en cours, au
+                                 même niveau que les autres badges d'état du poste. --}}
+                            @can('computer.install')
+                                @if ($this->activeReinstall)
+                                    <div class="flex items-center gap-1">
+                                        <span class="badge badge-lg badge-warning"
+                                              title="Réinstallation vers {{ $this->reinstallTargetLabel }}">
+                                            <i class="fa-solid fa-arrows-rotate mr-1"></i>
+                                            {{ $this->activeReinstall->statusLabel() }}
+                                        </span>
+                                        {{-- Actions portées par l'état lui-même plutôt que par la
+                                             barre d'actions : elles ne concernent que la
+                                             réinstallation en cours. --}}
+                                        <div class="dropdown dropdown-end">
+                                            <label tabindex="0" class="btn btn-ghost btn-xs btn-circle"
+                                                   aria-label="Actions de réinstallation"
+                                                   title="Actions de réinstallation">
+                                                <i class="fa-solid fa-ellipsis-vertical"></i>
+                                            </label>
+                                            <ul tabindex="0"
+                                                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-300">
+                                                @if ($this->activeReinstall->isCancelable())
+                                                    <li>
+                                                        <button type="button"
+                                                            class="text-sm cursor-pointer flex items-center gap-2 p-2 hover:bg-base-200 rounded"
+                                                            wire:click="cancelReinstall"
+                                                            wire:confirm="Annuler la réinstallation armée de ce poste ?">
+                                                            <i class="fa-solid fa-xmark w-4"></i>
+                                                            Annuler la réinstallation
+                                                        </button>
+                                                    </li>
+                                                @else
+                                                    {{-- Plus annulable (ça n'arrêterait pas la
+                                                         machine), mais relançable si elle
+                                                         n'aboutit pas — sinon le poste resterait
+                                                         bloqué jusqu'à l'expiration du TTL. --}}
+                                                    <li>
+                                                        <button type="button"
+                                                            class="text-sm cursor-pointer flex items-center gap-2 p-2 hover:bg-base-200 rounded"
+                                                            wire:click="relaunchReinstall"
+                                                            wire:confirm="Relancer la réinstallation de ce poste ?&#10;&#10;La tentative en cours sera abandonnée et le poste redémarrera pour repartir de zéro.">
+                                                            <i class="fa-solid fa-rotate-right w-4"></i>
+                                                            Relancer la réinstallation
+                                                        </button>
+                                                    </li>
+                                                @endif
+                                            </ul>
+                                        </div>
+                                    </div>
+                                @endif
+                            @endcan
                         </div>
                     </div>
                 </div>

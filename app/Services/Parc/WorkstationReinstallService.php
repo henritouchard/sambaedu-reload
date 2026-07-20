@@ -254,6 +254,42 @@ class WorkstationReinstallService
     }
 
     /**
+     * Abandonne la tentative en cours et en réarme une neuve sur le même OS.
+     *
+     * Sortie de secours pour une installation qui n'aboutit pas : une fois en
+     * `installing` la requête n'est plus annulable (annuler n'arrêterait pas la
+     * machine, {@see WorkstationReinstallRequest::isCancelable}), et sans ça le
+     * poste resterait bloqué jusqu'à l'expiration du TTL — 6 h par défaut —
+     * avant de pouvoir être réarmé.
+     *
+     * La tentative abandonnée est marquée `failed` et non `canceled` : elle
+     * n'a effectivement pas abouti, et l'historique doit distinguer « l'admin a
+     * renoncé avant le départ » de « la tentative a échoué, on rejoue ».
+     *
+     * Aucun reboot n'est déclenché ici : comme pour un armement normal (D2,
+     * chemin unique), c'est le tick `parc:reinstall-due` qui s'en charge.
+     *
+     * @throws \DomainException  Poste devenu `protected` entre-temps (D10).
+     */
+    public function relaunchForWorkstation(
+        Workstation $ws,
+        string $initiatedBy,
+        ?int $createdByUserId = null,
+    ): ?WorkstationReinstallRequest {
+        $current = $this->activeRequestFor($ws);
+        if ($current === null) {
+            return null;
+        }
+
+        $target = $current->target_action;
+        $this->markFailed($current);
+
+        // `markFailed` a rendu la précédente terminale : le garde anti-doublon
+        // d'`armForMachine` laisse donc passer le nouvel armement.
+        return $this->armForMachine($ws, $target, null, $initiatedBy, $createdByUserId);
+    }
+
+    /**
      * Requête active (non terminale) d'un poste. Lue par `resolveProgrammedAction`
      * au boot et par le skip-doublon de l'armement. La plus récente en cas
      * d'anomalie (ne devrait jamais y en avoir plus d'une active à la fois).

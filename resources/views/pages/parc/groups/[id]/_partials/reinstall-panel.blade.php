@@ -4,7 +4,11 @@
     `reinstallActiveRequests` (Collection<WorkstationReinstallRequest>) et la
     méthode `cancelReinstallRequest(int $id)`.
 --}}
-@php $requests = $this->reinstallActiveRequests; @endphp
+@php
+    $requests = $this->reinstallActiveRequests;
+    // Traduction des valeurs techniques (enum OS, statut) en libellés affichables.
+    $reinstallService = app(\App\Services\Parc\WorkstationReinstallService::class);
+@endphp
 @if ($requests->isNotEmpty())
     <div class="card bg-base-100 shadow-sm border border-warning/40">
         <div class="card-body">
@@ -27,14 +31,14 @@
                         @foreach ($requests as $req)
                             <tr wire:key="reinstall-req-{{ $req->id }}">
                                 <td class="font-medium">{{ $req->workstation?->name ?? '—' }}</td>
-                                <td>{{ $req->target_action }}</td>
-                                <td><span class="badge badge-warning badge-sm">{{ $req->status }}</span></td>
+                                <td>{{ $reinstallService->labelFor($req->target_action) }}</td>
+                                <td><span class="badge badge-warning badge-sm">{{ $req->statusLabel() }}</span></td>
                                 <td class="text-sm text-base-content/60">
                                     {{ $req->scheduled_at?->format('d/m/Y H:i') ?? 'immédiat' }}
                                 </td>
                                 <td class="text-right">
                                     @can('computer.install')
-                                        @if (!$req->isTerminal())
+                                        @if ($req->isCancelable())
                                             <button type="button" class="btn btn-xs btn-ghost"
                                                 wire:click="cancelReinstallRequest({{ $req->id }})"
                                                 wire:confirm="Annuler la réinstallation de ce poste ?">

@@ -1081,6 +1081,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             $this->toastWarning('Réinstallation introuvable.');
             return;
         }
+        // L'installeur a déjà la main : annuler n'arrêterait pas la machine.
+        if (!$req->isCancelable()) {
+            $this->toastWarning("L'installation a déjà démarré sur ce poste : elle ne peut plus être annulée.");
+            return;
+        }
 
         app(WorkstationReinstallService::class)->cancel($req);
         unset($this->reinstallActiveRequests);
