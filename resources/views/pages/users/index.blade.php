@@ -373,7 +373,7 @@ new class extends Component {
 };
 ?>
 
-<x-organisms.page title="Utilisateurs" :scrollable="false" description="Liste des utilisateurs synchronisés en base SQL">
+<x-organisms.page title="Utilisateurs" :scrollable="false" description="Gestion des utilisateurs et des groupes" icon="fa-solid fa-users">
     <x-slot:actions>
         @if ($activeTab === 'groups')
             @can('user.modify')

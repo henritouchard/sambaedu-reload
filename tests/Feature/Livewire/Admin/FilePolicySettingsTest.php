@@ -72,6 +72,33 @@ class FilePolicySettingsTest extends TestCase
         self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
 
+    /**
+     * Il n'y a plus de bouton « Enregistrer » : chaque bascule persiste seule via
+     * le hook `updated()`. Ce test n'appelle donc JAMAIS `save()` — c'est tout
+     * son intérêt (les autres l'appellent et masqueraient une régression).
+     */
+    #[Test]
+    public function toggling_a_capability_persists_without_calling_save(): void
+    {
+        Livewire::test(self::COMPONENT)
+            ->set('home', false)
+            ->assertHasNoErrors();
+
+        self::assertFalse(FilePolicyService::capabilities()['home']);
+    }
+
+    /** L'URL Nextcloud persiste elle aussi à la volée (`wire:model.blur`). */
+    #[Test]
+    public function editing_the_nextcloud_url_persists_without_calling_save(): void
+    {
+        Livewire::test(self::COMPONENT)
+            ->set('nextcloud', true)
+            ->set('nextcloudServerUrl', 'https://cloud.autosave.fr')
+            ->assertHasNoErrors();
+
+        self::assertSame('https://cloud.autosave.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
+    }
+
     #[Test]
     public function saving_everything_off_is_web_only(): void
     {
