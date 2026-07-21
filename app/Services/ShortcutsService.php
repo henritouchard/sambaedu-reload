@@ -714,6 +714,8 @@ class ShortcutsService
                     'linux_startupwmclass' => $data['linux']['startupwmclass'] ?? null,
                 ];
 
+                $attributes = $this->normalizeWebTarget($attributes);
+
                 $existing = Shortcut::findByKey($key);
 
                 if ($existing) {
@@ -736,6 +738,94 @@ class ShortcutsService
             'total' => count($allShortcuts),
         ]);
 
-        return compact('created', 'updated', 'errors');
+        $repaired = $this->repairWebTargets();
+
+        Log::info("ShortcutsService::importFromJson completed", [
+            'web_repaired' => $repaired,
+        ]);
+
+        return compact('created', 'updated', 'errors') + ['web_repaired' => $repaired];
+    }
+
+    /**
+     * Normalise un raccourci de type « site web » vers une cible exécutable.
+     *
+     * Le legacy stocke dans `windows.link` soit un chemin de navigateur, soit
+     * une SENTINELLE (`default`, `microsoft-edge`) qu'il ne traduisait qu'au
+     * moment de générer le `.lnk`. Importées telles quelles, ces sentinelles
+     * arrivent à `IShellLink::SetPath()` côté agent, qui n'accepte qu'un chemin
+     * de fichier : le poste affiche « l'élément auquel ce raccourci renvoie a
+     * été modifié ou déplacé ».
+     *
+     * On applique donc ici la traduction que le legacy faisait en aval, et on
+     * pose `is_url` au passage — l'import ne le renseignait pas.
+     *
+     * @param  array<string,mixed>  $attributes
+     * @return array<string,mixed>
+     */
+    private function normalizeWebTarget(array $attributes): array
+    {
+        $probe = new Shortcut($attributes);
+
+        if (! $probe->looksLikeUrlShortcut()) {
+            return $attributes;
+        }
+
+        $url = $probe->getUrl();
+        if ($url === null) {
+            return $attributes;
+        }
+
+        // `detectBrowserKey()` sait relire les sentinelles legacy comme les
+        // chemins de navigateur du catalogue.
+        return array_merge(
+            $attributes,
+            Shortcut::webTargetAttributes($url, $probe->detectBrowserKey())
+        );
+    }
+
+    /**
+     * Réécrit les raccourcis web déjà en base dont la cible n'est pas un
+     * exécutable.
+     *
+     * L'import ne couvre que les raccourcis présents dans le JSON legacy ; ceux
+     * créés directement dans SE5 avant le correctif portent la même cible
+     * invalide. Idempotent : un raccourci déjà normalisé n'est pas réécrit.
+     *
+     * @return int nombre de raccourcis réparés
+     */
+    public function repairWebTargets(): int
+    {
+        $repaired = 0;
+
+        foreach (Shortcut::query()->where('is_global', false)->cursor() as $shortcut) {
+            if (! $shortcut->isUrlShortcut()) {
+                continue;
+            }
+
+            $url = $shortcut->getUrl();
+            if ($url === null) {
+                continue;
+            }
+
+            $expected = Shortcut::webTargetAttributes($url, $shortcut->detectBrowserKey());
+
+            $alreadyCorrect = true;
+            foreach ($expected as $column => $value) {
+                if ((string) $shortcut->{$column} !== (string) $value) {
+                    $alreadyCorrect = false;
+                    break;
+                }
+            }
+
+            if ($alreadyCorrect) {
+                continue;
+            }
+
+            $shortcut->update($expected);
+            $repaired++;
+        }
+
+        return $repaired;
     }
 }

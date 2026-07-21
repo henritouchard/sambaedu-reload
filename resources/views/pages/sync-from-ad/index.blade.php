@@ -136,7 +136,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'shortcuts' => [
                 'id' => 'shortcuts',
                 'title' => '8. Importer les raccourcis',
-                'description' => 'Importe les raccourcis depuis le fichier JSON vers la base de données',
+                'description' => 'Importe les raccourcis depuis le fichier JSON vers la base de données, et normalise les raccourcis « site web » (cible exécutable)',
                 'status' => 'pending',
                 'stats' => null,
                 'error' => null,
@@ -534,6 +534,19 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         $stats = $shortcutsService->importFromJson();
 
         $this->addLog('shortcuts', 'info', "{$stats['created']} créé(s), {$stats['updated']} mis à jour, {$stats['errors']} erreur(s)");
+
+        // Les raccourcis « site web » du legacy portent une sentinelle
+        // (`default`, `microsoft-edge`) là où l'agent attend un exécutable.
+        // L'import les traduit ; cette ligne rend compte de ceux qui étaient
+        // DÉJÀ en base et ont été réécrits au passage.
+        if (($stats['web_repaired'] ?? 0) > 0) {
+            $this->addLog(
+                'shortcuts',
+                'success',
+                "{$stats['web_repaired']} raccourci(s) web réparé(s) : cible réécrite vers un exécutable"
+            );
+        }
+
         $this->steps['shortcuts']['stats'] = $stats;
     }
 
