@@ -347,6 +347,33 @@ class DnsRecordServiceTest extends TestCase
         $this->assertSame([], $this->writeCommands(), 'Aucun nom écarté ne doit être supprimé par le balayage.');
     }
 
+    /**
+     * Régression constatée en vérification réelle (2026-07-21) : un `delete`
+     * sans nom sur l'IP du DC balayait la zone, trouvait `se4ad` et supprimait
+     * son A record — le domaine cessait de résoudre. Les serveurs peuvent
+     * avoir une réservation DHCP, donc un `on expiry` réel suffit.
+     */
+    #[Test]
+    public function infrastructure_records_are_never_deleted_by_scan(): void
+    {
+        config()->set('sambaedu.se4ad_name', 'se4ad');
+        config()->set('sambaedu.se4fs_name', 'se4fs');
+        $this->fakeSambaTool(['se4ad' => ['192.168.122.60']]);
+
+        $this->assertSame(DnsUpdateOutcome::UNCHANGED, $this->service()->apply('delete', '', '192.168.122.60'));
+        $this->assertSame([], $this->writeCommands(), 'Le record du DC ne doit JAMAIS être supprimé par ce canal.');
+    }
+
+    #[Test]
+    public function infrastructure_records_are_not_touched_by_add_either(): void
+    {
+        config()->set('sambaedu.se4ad_name', 'se4ad');
+        $this->fakeSambaTool([]);
+
+        $this->assertSame(DnsUpdateOutcome::SKIPPED, $this->service()->apply('add', 'se4ad', '192.168.122.99'));
+        $this->assertSame([], $this->ran, 'Un nom d\'infrastructure ne doit même pas être interrogé.');
+    }
+
     #[Test]
     public function scanned_eligible_name_is_still_deleted(): void
     {

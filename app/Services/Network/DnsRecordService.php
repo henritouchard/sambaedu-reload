@@ -361,6 +361,10 @@ class DnsRecordService
      */
     private function isEligible(string $name): bool
     {
+        if (in_array($name, $this->protectedInfrastructureNames(), true)) {
+            return false;
+        }
+
         foreach (self::IGNORED_NAME_PREFIXES as $prefix) {
             if (str_starts_with($name, $prefix)) {
                 return false;
@@ -370,6 +374,27 @@ class DnsRecordService
         $suffix = $this->establishmentSuffix();
 
         return $suffix === '' || str_contains($name, $suffix);
+    }
+
+    /**
+     * Noms d'infrastructure INTOUCHABLES par ce canal (contrôleur de domaine,
+     * serveur de fichiers). Aucun bail DHCP n'a à décider de leur sort.
+     *
+     * Constaté en vérification 8.4 (2026-07-21) : un `delete` sans nom sur
+     * l'IP du DC balayait la zone, trouvait `se4ad` — que rien n'écartait —
+     * et supprimait son enregistrement A ; le nom du domaine cessait alors de
+     * résoudre. Les serveurs peuvent avoir une réservation DHCP
+     * (`make_dhcpd_conf.sh` en génère), donc un `on release`/`on expiry` réel
+     * suffit à déclencher le cas — ce n'est pas qu'un scénario de test.
+     *
+     * @return list<string>
+     */
+    private function protectedInfrastructureNames(): array
+    {
+        return array_values(array_filter(array_map(
+            static fn (string $key): string => strtolower(trim((string) config('sambaedu.' . $key, ''))),
+            ['se4ad_name', 'se4fs_name'],
+        )));
     }
 
     /**
