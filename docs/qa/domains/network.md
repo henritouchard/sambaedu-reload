@@ -611,4 +611,35 @@ l'appel ne vient pas du serveur : vérifier que le script cible bien `127.0.0.1`
 - [ ] Scénario 10.4 vert — libération de bail : record supprimé
 - [ ] Scénario 10.5 vert — préfixes ignorés, hors-étab, noms hostiles refusés
 - [ ] Scénario 10.6 vert — chemin `.php` servi nativement, absent du verdict `se4:status`
+- [ ] Scénario 10.7 vert — records d'infrastructure protégés
 - [ ] `se4:status` ne liste plus `dhcp/dnsupdate.php` en hit legacy (débloque le GO 38.6)
+
+## Post-correctifs & non-régressions — Story 8.4
+
+| Incident | Constat | Correctif | Non-régression |
+|---|---|---|---|
+| **#I1 — Suppression du A record du DC** (2026-07-21, vérification sur /vm) | Un `delete` **sans nom** sur l'IP du DC déclenche le balayage de zone, trouve `se4ad` — que ni les préfixes ignorés ni le suffixe d'établissement n'écartaient — et supprime son enregistrement A. `se4ad.localdev.fr` cesse de résoudre ; le DC reste joignable par IP, donc la panne est **silencieuse** jusqu'au premier service qui résout le nom. | `isEligible()` exclut désormais `se4ad_name` et `se4fs_name` sur **les deux** chemins (`add` et `delete`, balayage compris). | `infrastructure_records_are_never_deleted_by_scan`, `infrastructure_records_are_not_touched_by_add_either` |
+
+**Pourquoi ce n'est pas qu'un artefact de test** : les serveurs peuvent porter une
+réservation DHCP (`make_dhcpd_conf.sh` en génère), donc un `on release` / `on expiry`
+réel sur cette IP suffit à reproduire le cas en production.
+
+**Réparation si le cas s'est déjà produit** (le nom du DC ne résout plus, donc
+`samba-tool` doit viser l'**IP** du DC et non son FQDN) :
+
+```
+php artisan tinker --execute='
+$r = app(App\Gpo\Support\SambaToolRunner::class)->withoutDirectoryUrl()
+    ->run(["dns","add","<IP_DC>",config("sambaedu.domain"),config("sambaedu.se4ad_name"),"A","<IP_DC>"]);
+echo $r->exitCode()." ".$r->output();'
+```
+
+Vérifier ensuite `getent hosts <se4ad_name>.<domain>`.
+
+#### Scénario 10.7 — Records d'infrastructure protégés
+
+1. Relever l'IP du DC (`se4ad_ip`) et celle du serveur (`se4fs_ip`).
+2. Depuis le serveur : `curl -H "Host: <se4fs_name>" --form-string "action=delete" --form-string "ip=<IP_DC>" http://127.0.0.1/dhcp/dnsupdate`
+3. **Attendu** : réponse `unchanged`, ligne de log `"wrote": false`, et
+   `getent hosts <se4ad_name>.<domain>` résout toujours.
+4. Idem avec l'IP du serveur de fichiers.
