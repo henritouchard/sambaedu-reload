@@ -122,43 +122,55 @@ class Shortcut extends Model implements Wireable
 
     /**
      * Navigateurs proposés pour un raccourci de type « site web ».
-     * Iso-legacy (`../sambaedu/includes/shortcuts.inc.php`, tableau `$navs`) :
-     * chaque entrée porte la cible Windows, la commande Linux équivalente et
-     * d'éventuels arguments à préfixer avant l'URL.
      *
-     * La clé vide = navigateur par défaut du poste : on ne pose alors AUCUNE
-     * cible, l'URL est le `target` du raccourci et c'est le système qui choisit.
+     * `windows` est TOUJOURS un chemin d'exécutable réel : l'agent le passe à
+     * `IShellLink::SetPath()`, qui n'accepte rien d'autre. Le legacy stockait
+     * ici les sentinelles `default` et `microsoft-edge` puis les réécrivait au
+     * moment de générer le `.lnk` (`shortcuts.inc.php:181-187`) — ce sont ces
+     * deux cas qui passent par `rundll32 url.dll,FileProtocolHandler`, seule
+     * façon d'atteindre le navigateur par défaut ou de forcer Edge sans
+     * dépendre d'un chemin d'installation.
+     *
+     * `windows_args_prefix` est collé DEVANT l'URL (espace final significatif ;
+     * `microsoft-edge:` n'en prend pas, l'URL suit immédiatement le schéma).
      */
     public const BROWSERS = [
         '' => [
             'label' => 'Navigateur par défaut du poste',
-            'windows' => '',
-            'linux' => '',
-            'args' => '',
+            'windows' => 'C:\\Windows\\System32\\rundll32.exe',
+            'windows_args_prefix' => 'url.dll,FileProtocolHandler ',
+            // `xdg-open` est l'équivalent Linux du protocol handler. Le legacy
+            // posait « firefox » pour ce cas, ce qui contredisait le libellé.
+            'linux' => 'xdg-open',
+            'linux_args_prefix' => '',
         ],
         'firefox' => [
             'label' => 'Mozilla Firefox',
             'windows' => 'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+            'windows_args_prefix' => '',
             'linux' => 'firefox',
-            'args' => '',
+            'linux_args_prefix' => '',
         ],
         'chrome' => [
             'label' => 'Google Chrome',
             'windows' => 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'windows_args_prefix' => '',
             'linux' => 'chromium',
-            'args' => '',
+            'linux_args_prefix' => '',
         ],
         'edge' => [
             'label' => 'Microsoft Edge',
-            'windows' => 'microsoft-edge',
-            'linux' => 'firefox',
-            'args' => '',
+            'windows' => 'C:\\Windows\\System32\\rundll32.exe',
+            'windows_args_prefix' => 'url.dll,FileProtocolHandler microsoft-edge:',
+            'linux' => 'xdg-open',
+            'linux_args_prefix' => '',
         ],
         'firefox_drm' => [
             'label' => 'Mozilla Firefox (vidéos avec DRM)',
             'windows' => 'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+            'windows_args_prefix' => '-profile %temp%\\FFtemp -no-remote -new-instance ',
             'linux' => 'firefox',
-            'args' => '-profile %temp%\\FFtemp -no-remote -new-instance',
+            'linux_args_prefix' => '',
         ],
     ];
 
@@ -398,63 +410,61 @@ class Shortcut extends Model implements Wireable
     /**
      * Traduit un couple (URL, navigateur) en attributs de raccourci.
      *
-     * Sans navigateur imposé, l'URL EST la cible : le poste l'ouvre avec son
-     * navigateur par défaut. Avec un navigateur imposé, la cible est le binaire
-     * et l'URL passe en argument — c'est la convention historique SE4, et la
-     * seule que sait poser l'agent (`ShortcutSpec{Target, Args}`).
+     * La cible est TOUJOURS un exécutable réel et l'URL passe en arguments :
+     * c'est la seule forme que sait poser l'agent
+     * (`ShortcutSpec{Target, Args}` → `IShellLink::SetPath`). Une URL en cible
+     * produit « l'élément auquel ce raccourci renvoie a été modifié ou
+     * déplacé » sur le poste.
      */
     public static function webTargetAttributes(string $url, string $browserKey = ''): array
     {
         $browser = self::BROWSERS[$browserKey] ?? self::BROWSERS[''];
 
-        if (empty($browser['windows'])) {
-            return [
-                'is_url' => true,
-                'windows_link' => $url,
-                'windows_args' => '',
-                'linux_link' => $url,
-                'linux_args' => '',
-            ];
-        }
-
         return [
             'is_url' => true,
             'windows_link' => $browser['windows'],
-            'windows_args' => trim(($browser['args'] ?? '').' '.$url),
+            'windows_args' => ($browser['windows_args_prefix'] ?? '').$url,
             'linux_link' => $browser['linux'],
-            // Les arguments du navigateur sont spécifiques à Windows
-            // (`%temp%` pour le profil DRM) : côté Linux, seule l'URL.
-            'linux_args' => $url,
+            'linux_args' => ($browser['linux_args_prefix'] ?? '').$url,
         ];
     }
 
     /**
-     * Retrouve la clé de `BROWSERS` correspondant à la cible Windows stockée.
-     * Renvoie '' (navigateur par défaut) si la cible est l'URL elle-même ou
-     * un binaire hors catalogue.
+     * Retrouve la clé de `BROWSERS` correspondant à ce que porte le raccourci.
+     *
+     * Plusieurs navigateurs partagent une même cible — `rundll32.exe` pour le
+     * défaut et Edge, le binaire Firefox pour Firefox et son profil DRM. Ce
+     * sont les ARGUMENTS qui tranchent, d'où le tri par préfixe le plus long
+     * d'abord : `url.dll,FileProtocolHandler microsoft-edge:` doit être testé
+     * avant `url.dll,FileProtocolHandler `, dont il est une extension.
      */
     public function detectBrowserKey(): string
     {
         $link = (string) $this->windows_link;
+        $args = (string) $this->windows_args;
 
-        if ($link === '' || preg_match('/^https?:\/\//', $link)) {
+        // Anciennes formes, antérieures au passage par `rundll32` : sentinelles
+        // héritées du legacy, ou URL posée directement en cible. Sans ce
+        // rattrapage, un raccourci Edge existant serait relu « par défaut » et
+        // perdrait silencieusement son navigateur à la première réécriture.
+        if (strcasecmp($link, 'microsoft-edge') === 0) {
+            return 'edge';
+        }
+        if ($link === '' || strcasecmp($link, 'default') === 0 || preg_match('/^https?:\/\//', $link)) {
             return '';
         }
 
-        // `firefox_drm` partage sa cible avec `firefox` : il se distingue par
-        // ses arguments, donc il doit être testé AVANT.
         $keys = array_keys(self::BROWSERS);
-        usort($keys, fn ($a, $b) => empty(self::BROWSERS[$a]['args']) <=> empty(self::BROWSERS[$b]['args']));
+        usort($keys, fn ($a, $b) => strlen((string) (self::BROWSERS[$b]['windows_args_prefix'] ?? ''))
+            <=> strlen((string) (self::BROWSERS[$a]['windows_args_prefix'] ?? '')));
 
         foreach ($keys as $key) {
             $browser = self::BROWSERS[$key];
-            if (empty($browser['windows'])) {
-                continue;
-            }
             if (strcasecmp($browser['windows'], $link) !== 0) {
                 continue;
             }
-            if (!empty($browser['args']) && !str_contains((string) $this->windows_args, $browser['args'])) {
+            $prefix = (string) ($browser['windows_args_prefix'] ?? '');
+            if ($prefix !== '' && !str_starts_with($args, $prefix)) {
                 continue;
             }
 
