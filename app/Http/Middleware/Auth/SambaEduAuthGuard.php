@@ -212,7 +212,7 @@ class SambaEduAuthGuard implements AuthGuardInterface
             ]);
 
             // Si c'est l'admin, lui donner tous les droits immédiatement
-            if ($login === 'admin') {
+            if ($login === User::PROTECTED_ADMIN_LOGIN) {
                 app(UserSyncService::class)->grantAdminRights($eloquentUser);
                 Log::info('SambaEduAuth: Droits super-admin accordés automatiquement', ['login' => $login]);
             }

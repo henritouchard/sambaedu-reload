@@ -153,6 +153,7 @@ new class extends Component {
         $this->processing = true;
         $count = 0;
         $errors = 0;
+        $protectedSkipped = 0;
 
         foreach ($this->selectedUsers as $login) {
             try {
@@ -162,10 +163,17 @@ new class extends Component {
                     continue;
                 }
 
+                // Le modèle refuse le retrait sur ce compte ; écarté ici pour
+                // porter un message explicite.
+                if ($this->removeRole && $user->isProtectedAdmin()) {
+                    $protectedSkipped++;
+                    continue;
+                }
+
                 if ($this->removeRole) {
                     $user->removeRole($this->selectedRole);
                 } else {
-                    $user->syncRoles([$this->selectedRole]);
+                    $user->assignRole($this->selectedRole);
                 }
                 $count++;
             } catch (\Exception $e) {
@@ -176,8 +184,13 @@ new class extends Component {
 
         $action = $this->removeRole ? 'retiré de' : 'assigné à';
         $message = "Rôle '{$this->selectedRole}' {$action} {$count} utilisateur(s).";
+        if ($protectedSkipped > 0) {
+            $message .= " Le compte d'administration protégé a été ignoré : ses droits ne peuvent pas être retirés.";
+        }
         if ($errors > 0) {
             $message .= " ({$errors} erreur(s))";
+            $this->toastWarning($message);
+        } elseif ($protectedSkipped > 0) {
             $this->toastWarning($message);
         } else {
             $this->toastSuccess($message);
@@ -221,12 +234,20 @@ new class extends Component {
         $this->processing = true;
         $count = 0;
         $errors = 0;
+        $protectedSkipped = 0;
 
         foreach ($this->selectedUsers as $login) {
             try {
                 $user = $this->ensureEloquentUser($login);
                 if (!$user) {
                     $errors++;
+                    continue;
+                }
+
+                // Les permissions du compte protégé sont DIRECTES : révocables
+                // sans toucher à ses rôles.
+                if ($this->removePermissions && $user->isProtectedAdmin()) {
+                    $protectedSkipped++;
                     continue;
                 }
 
@@ -245,8 +266,13 @@ new class extends Component {
         $nb = count($this->selectedPermissions);
         $action = $this->removePermissions ? 'retirée(s) de' : 'accordée(s) à';
         $message = "{$nb} permission(s) {$action} {$count} utilisateur(s).";
+        if ($protectedSkipped > 0) {
+            $message .= " Le compte d'administration protégé a été ignoré : ses droits ne peuvent pas être retirés.";
+        }
         if ($errors > 0) {
             $message .= " ({$errors} erreur(s))";
+            $this->toastWarning($message);
+        } elseif ($protectedSkipped > 0) {
             $this->toastWarning($message);
         } else {
             $this->toastSuccess($message);

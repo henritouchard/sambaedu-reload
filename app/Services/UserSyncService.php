@@ -669,7 +669,7 @@ class UserSyncService
         $log('info', 'Configuration du compte administrateur (admin)...');
 
         $user = UserModel::query()->firstOrCreate(
-            ['login' => 'admin'],
+            ['login' => UserModel::PROTECTED_ADMIN_LOGIN],
             [
                 'fullname' => 'Administrateur',
                 'role' => 'admin',

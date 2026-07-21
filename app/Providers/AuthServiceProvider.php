@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Enums\SambaPermission;
 use App\Models\Delegation;
+use App\Models\User;
 use App\Models\Workstation;
 use App\Policies\AppCustomizationPolicy;
 use App\Policies\CapabilityPolicy;
@@ -17,6 +19,7 @@ use App\Policies\SharePolicy;
 use App\Policies\UserPolicy;
 use App\Policies\WorkstationGroupPolicy;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use App\Providers\LdapUserProvider;
 use App\Policies\ShortcutPolicy;
@@ -45,6 +48,27 @@ class AuthServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // ------------------------------------------------------------------
+        // Compte d'administration protégé : couverture automatique des droits.
+        //
+        // Le compte `User::PROTECTED_ADMIN_LOGIN` détient TOUS les droits
+        // déclarés dans le code. La décision ne consulte pas les lignes en base :
+        // un droit ajouté à `SambaPermission` lui est acquis immédiatement.
+        //
+        // ⚠️ Le bypass est volontairement RESTREINT aux abilities qui sont des
+        // droits (cases de `SambaPermission`). Les gates qui encodent une RÈGLE
+        // MÉTIER restent soumises au pipeline d'autorisation normal — au premier
+        // chef `modify-capability` (`CapabilityPolicy`), qui porte le verrou
+        // amont du contrat managé : l'autorité amont prime sur tout acteur
+        // local, compte protégé compris.
+        Gate::before(function ($user, string $ability) {
+            if (! $user instanceof User || ! $user->isProtectedAdmin()) {
+                return null; // laisse le pipeline d'autorisation habituel décider
+            }
+
+            return SambaPermission::tryFrom($ability) !== null ? true : null;
+        });
+
         // Enregistrer le provider LDAP SambaEdu
         Auth::provider('sambaedu', function ($app, array $config) {
             return new LdapUserProvider(

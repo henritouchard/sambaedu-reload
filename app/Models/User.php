@@ -2,7 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\SambaPermission;
+use App\Enums\SambaRole;
+use App\Exceptions\ProtectedAdminRightsException;
 use App\Models\Concerns\HasAppCustomizations;
+use Illuminate\Support\Arr;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -47,12 +51,32 @@ use Livewire\Wireable;
 class User extends Authenticatable implements Wireable
 {
     use HasFactory;
-    use HasRoles;
+    /**
+     * Les quatre écritures RETRANCHANTES de Spatie sont aliasées puis
+     * re-déclarées plus bas (une méthode de classe l'emporte sur celle du trait)
+     * afin d'y poser le verrou du compte d'administration protégé.
+     * Cf. {@see self::PROTECTED_ADMIN_LOGIN} et {@see self::isProtectedAdmin()}.
+     */
+    use HasRoles {
+        removeRole as private spatieRemoveRole;
+        syncRoles as private spatieSyncRoles;
+        revokePermissionTo as private spatieRevokePermissionTo;
+        syncPermissions as private spatieSyncPermissions;
+    }
     use HasAppCustomizations;
 
     protected $guard_name = 'web';
 
     protected $table = 'users';
+
+    /**
+     * Login du compte d'administration protégé.
+     *
+     * Ce compte porte l'INTÉGRALITÉ des droits existants, et aucun ne peut lui
+     * être retiré : c'est le seul compte dont la déchéance serait irréversible
+     * (plus personne ne détiendrait `user.assign.right` pour le restaurer).
+     */
+    public const PROTECTED_ADMIN_LOGIN = 'admin';
 
     protected $fillable = [
         'login',
@@ -391,6 +415,88 @@ class User extends Authenticatable implements Wireable
     public function isAdmin(): bool
     {
         return $this->ldapBusinessObject()?->isAdmin() ?? false;
+    }
+
+    // ========================================================================
+    // Verrou du compte d'administration protégé
+    // ========================================================================
+
+    /**
+     * Ce compte est-il le compte d'administration protégé ?
+     *
+     * À ne pas confondre avec {@see self::isAdmin()}, qui interroge l'AD
+     * (`memberOf` `Domain Admins`) et vaut pour de multiples comptes.
+     */
+    public function isProtectedAdmin(): bool
+    {
+        return $this->login === self::PROTECTED_ADMIN_LOGIN;
+    }
+
+    /**
+     * Refuse le retrait d'un rôle au compte protégé.
+     *
+     * @throws \App\Exceptions\ProtectedAdminRightsException
+     */
+    public function removeRole(...$role)
+    {
+        if ($this->isProtectedAdmin()) {
+            throw ProtectedAdminRightsException::cannotRemove($this->login);
+        }
+
+        return $this->spatieRemoveRole(...$role);
+    }
+
+    /**
+     * Refuse le retrait d'une permission directe au compte protégé.
+     *
+     * Les permissions du compte `admin` sont DIRECTES (attachées à
+     * l'utilisateur, pas héritées d'un rôle) : elles se révoquent sans toucher
+     * à ses rôles.
+     *
+     * @throws \App\Exceptions\ProtectedAdminRightsException
+     */
+    public function revokePermissionTo($permission)
+    {
+        if ($this->isProtectedAdmin()) {
+            throw ProtectedAdminRightsException::cannotRemove($this->login);
+        }
+
+        return $this->spatieRevokePermissionTo($permission);
+    }
+
+    /**
+     * `syncRoles` est retranchant : il détache tous les rôles avant de rattacher
+     * ceux demandés. Sur le compte protégé, `super-admin` est réinjecté quel que
+     * soit l'argument reçu. `collectRoles()` dédoublonne, un `super-admin` déjà
+     * présent dans l'argument est donc sans effet.
+     */
+    public function syncRoles(...$roles)
+    {
+        if ($this->isProtectedAdmin()) {
+            $roles = array_merge(Arr::flatten($roles), [SambaRole::SuperAdmin->value]);
+
+            return $this->spatieSyncRoles($roles);
+        }
+
+        return $this->spatieSyncRoles(...$roles);
+    }
+
+    /**
+     * Idem pour les permissions : sur le compte protégé, la synchronisation
+     * porte TOUJOURS sur l'intégralité des droits déclarés dans le code
+     * ({@see SambaPermission}), l'argument reçu étant ignoré. Un droit ajouté
+     * à l'enum est ainsi acquis au compte dès la synchronisation suivante —
+     * et immédiatement via le `Gate::before` d'`AuthServiceProvider`.
+     */
+    public function syncPermissions(...$permissions)
+    {
+        if ($this->isProtectedAdmin()) {
+            return $this->spatieSyncPermissions(
+                array_column(SambaPermission::cases(), 'value')
+            );
+        }
+
+        return $this->spatieSyncPermissions(...$permissions);
     }
 
     public function isProf(): bool

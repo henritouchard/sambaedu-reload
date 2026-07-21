@@ -156,6 +156,7 @@ new class extends Component {
         $this->isLoading = true;
         $added = 0;
         $removed = 0;
+        $protectedSkipped = 0;
 
         foreach ($this->rolesState as $roleName => $isAssigned) {
             $wasAssigned = $this->initialRolesState[$roleName] ?? false;
@@ -166,6 +167,10 @@ new class extends Component {
             if ($isAssigned) {
                 $user->assignRole($roleName);
                 $added++;
+            } elseif ($user->isProtectedAdmin()) {
+                // Le modèle refuse le retrait sur ce compte ; comptabilisé pour
+                // porter un message explicite.
+                $protectedSkipped++;
             } else {
                 $user->removeRole($roleName);
                 $removed++;
@@ -181,7 +186,12 @@ new class extends Component {
         $this->isLoading = false;
 
         $total = $added + $removed;
-        if ($total === 0) {
+        if ($protectedSkipped > 0) {
+            ToastMagic::warning(
+                "Le compte d'administration « {$this->targetLogin} » est protégé : "
+                . "{$protectedSkipped} retrait(s) de rôle ignoré(s)."
+            );
+        } elseif ($total === 0) {
             ToastMagic::info('Aucune modification à enregistrer');
         } else {
             ToastMagic::success("{$total} rôle(s) modifié(s) pour {$this->targetLogin}");
