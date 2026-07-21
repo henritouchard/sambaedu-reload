@@ -1237,6 +1237,49 @@ Route::match(['GET', 'POST'], '/ipxe/Win10/unattend.xml.php', [$tombstone, 'xml'
 
 /*
 |--------------------------------------------------------------------------
+| DDNS piloté par DHCP (Story 8.4) — port natif de `dhcp/dnsupdate.php`
+|--------------------------------------------------------------------------
+| Appelé par `/usr/share/sambaedu/sbin/dhcp-dyndns.sh`, déclenché par les
+| événements `on commit` / `on release` / `on expiry` de dhcpd. Maintient les
+| enregistrements A de l'AD pour les machines que le DDNS sécurisé Windows ne
+| couvre pas (clients Linux, machines en cours d'installation iPXE avant
+| jointure, appareils hors domaine).
+|
+| **ORDRE STRICT** : ces routes DOIVENT rester AVANT le catchall `{path}`
+| ci-dessous, sinon le catchall proxifie vers le vhost legacy (mort). Test
+| garde-fou : `DhcpDnsUpdateRoutesTest`.
+|
+| Le chemin `.php` est servi par le MÊME contrôleur : une instance dont le
+| script système n'a pas encore été redéployé par `update.sh` est traitée
+| nativement — et son hit sort du verdict legacy de `se4:status` (38.6).
+|
+| **Sécurité** : appel machine sans session/CSRF → `withoutMiddleware(['web'])`.
+| Garde `dhcp.server.request` (loopback + `se4fs_ip`) et NON `local.request` :
+| l'allowlist WPKG couvre « les postes du parc », or cet endpoint est une
+| primitive d'écriture ET de suppression DNS non authentifiée — ouverte au LAN,
+| n'importe quel poste pourrait supprimer l'enregistrement A du DC ou détourner
+| un nom vers son IP. Le legacy exigeait déjà `REMOTE_ADDR == se4fs_ip`.
+| **POST uniquement** : en GET, une simple balise `<img>` sur une page hostile
+| suffirait à déclencher une suppression DNS depuis un navigateur du serveur.
+| Le champ `se4_key` posté par les scripts non redéployés est ignoré.
+|
+| Limiteur `ddns` dédié (RouteServiceProvider) : toutes les requêtes viennent
+| d'UNE seule IP (le serveur), donc un `throttle:N,1` anonyme partagerait son
+| seau avec les autres routes de même IP/domaine et plafonnerait le parc entier.
+| Un 429 sur un `delete` n'est jamais rejoué (pas de renouvellement derrière).
+*/
+Route::post('/dhcp/dnsupdate', App\Http\Controllers\DhcpDnsUpdateController::class)
+    ->middleware(['dhcp.server.request', 'throttle:ddns'])
+    ->name('dhcp.dnsupdate')
+    ->withoutMiddleware(['web']);
+
+Route::post('/dhcp/dnsupdate.php', App\Http\Controllers\DhcpDnsUpdateController::class)
+    ->middleware(['dhcp.server.request', 'throttle:ddns'])
+    ->name('dhcp.dnsupdate.legacy-path')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :

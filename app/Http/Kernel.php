@@ -81,5 +81,9 @@ class Kernel extends HttpKernel
 
         // WPKG middleware — restreint aux requêtes locales
         'local.request' => EnsureLocalRequest::class,
+
+        // DDNS 8.4 — restreint au serveur lui-même (dhcpd co-localisé), plus
+        // strict que `local.request` : primitive d'écriture/suppression DNS.
+        'dhcp.server.request' => \App\Http\Middleware\EnsureDhcpServerRequest::class,
     ];
 }

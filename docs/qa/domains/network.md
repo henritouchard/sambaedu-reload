@@ -493,3 +493,122 @@ Tenter puis vérifier le refus (toast erreur, aucune écriture, transaction tout
 3. **Attendu** : le log indique « déployé » (pas « déjà à jour ») et
    `ls -l …/make_dhcpd_conf.sh` montre de nouveau le mode `755` — `sudo
    make_dhcpd_conf.sh` refonctionne (pas d'EACCES silencieux).
+
+---
+
+## Story 8.4 — DDNS piloté par DHCP (endpoint natif idempotent)
+
+> Le serveur DHCP maintient les enregistrements **A** de l'AD pour les machines
+> que le DDNS sécurisé Windows ne couvre pas : clients Linux, machines en cours
+> d'installation iPXE (avant jointure), appareils hors domaine — et il nettoie
+> les A périmés que Windows laisse derrière lui.
+>
+> Deux défauts legacy corrigés ici, à vérifier explicitement :
+> 1. **Fonction morte** — `dhcp/dnsupdate.php` répondait **500** à chaque appel,
+>    silencieusement (`curl -s -f` détaché). Plus aucun A record n'était maintenu.
+> 2. **Écritures inutiles** — `on commit` de dhcpd se déclenche à **chaque
+>    renouvellement** de bail (~toutes les 5 min avec `default-lease-time 600`),
+>    et le legacy réécrivait le record à chaque fois : ~288 écritures/jour/poste
+>    pour une IP inchangée. L'endpoint natif est **level-triggered** : il lit
+>    l'état, compare, et n'écrit que si l'état diffère.
+
+### Pré-requis spécifiques
+
+- `update.sh` a redéployé `dhcp-dyndns.sh` (`ensure_dhcp_scripts`) — vérifier
+  que `/usr/share/sambaedu/sbin/dhcp-dyndns.sh` cible bien
+  `http://127.0.0.1/dhcp/dnsupdate` et poste en `--form-string` :
+  `grep -E 'dnsupdate|form-string' /usr/share/sambaedu/sbin/dhcp-dyndns.sh`
+- Suivi en direct : `tail -f storage/logs/network/network-*.log | grep ddns`
+- État DNS de référence :
+  `samba-tool dns query <se4ad_name> <domain> <poste> A -U Administrator`
+
+**Garde d'origine (`dhcp.server.request`)** : l'endpoint n'authentifie pas
+l'appelant et sait supprimer des enregistrements DNS — il n'accepte donc QUE le
+loopback et `se4fs_ip` (`/etc/sambaedu/sambaedu.conf`), pas l'allowlist du parc.
+Un 403 dans `sambaedu-reload-access.log` sur `/dhcp/dnsupdate` signifie que
+l'appel ne vient pas du serveur : vérifier que le script cible bien `127.0.0.1`
+(un appel via le nom d'hôte présente l'IP LAN et sera refusé).
+
+### Section 10 — DDNS
+
+#### Scénario 10.1 — Renouvellement de bail : AUCUNE écriture DNS (le test clé)
+
+1. Un poste est allumé avec un bail actif et son A record correct.
+2. Attendre 2 à 3 renouvellements (≈ 5 min chacun, cf. `default-lease-time`),
+   ou forcer côté client : `ipconfig /renew` (Windows) / `dhclient -r && dhclient` (Linux).
+3. **Attendu** dans `network.log` : une ligne `[ddns] unchanged` par
+   renouvellement, avec `"wrote": false`.
+4. **Attendu** : aucune ligne `created` / `updated`. Le `serial` du record ne
+   bouge pas :
+   `samba-tool dns query … <poste> A` → `serial=` identique avant/après.
+5. **Si des `updated` apparaissent en boucle** : la lecture d'état est en échec
+   (droits samba-tool, zone/serveur mal résolus) — vérifier les lignes
+   `[ddns] exception` du log. C'est exactement le défaut que la story corrige.
+   **Exception attendue — machine bi-domiciliée** : un portable dont le Wi-Fi et
+   l'Ethernet sont actifs simultanément présente le même `client-hostname` sur
+   deux baux ; chaque renouvellement bascule alors le A record d'une interface à
+   l'autre (`updated` en boucle, ~2 écritures/5 min). Ce n'est PAS une panne de
+   lecture — c'est l'invariant « un nom = une IP », déjà celui du legacy.
+   Vérifier avec `ip a` / `ipconfig /all` côté poste avant de conclure.
+6. **Si l'état DNS devient illisible** (DC injoignable, ticket expiré), le
+   service sort en `failed` **sans écrire** : ni `add`, ni `delete`. Une panne
+   ne doit jamais produire de mutation DNS.
+
+#### Scénario 10.2 — Changement d'IP : purge puis ajout
+
+1. Changer l'IP d'un poste (réservation DHCP modifiée, ou bascule de VLAN).
+2. Relancer un bail (`ipconfig /renew`).
+3. **Attendu** : `[ddns] updated` dans le log ; `samba-tool dns query` ne
+   retourne **qu'une seule** ligne `A:` — la nouvelle IP. L'ancienne a été
+   supprimée (sinon le nom résoudrait aléatoirement vers deux adresses).
+
+#### Scénario 10.3 — Nouveau poste : création
+
+1. Enrôler/booter une machine inconnue du DNS (typiquement une installation
+   iPXE, avant jointure au domaine).
+2. **Attendu** : `[ddns] created`, puis le nom résout :
+   `host <poste>.<domain> <se4ad_ip>` renvoie l'IP du bail.
+
+#### Scénario 10.4 — Libération de bail : nettoyage
+
+1. Libérer le bail d'un poste : `ipconfig /release` (Windows), `dhclient -r`
+   (Linux), ou éteindre le poste et laisser le bail expirer.
+2. **Attendu** : `[ddns] deleted` ; le A record disparaît de la zone.
+3. **Note** : dhcpd ne transmet PAS le nom sur `on release`/`on expiry` — le
+   serveur retrouve le porteur de l'IP par balayage de zone. Le legacy s'appuyait
+   sur un `gethostbyaddr()` inopérant (aucun PTR n'est créé) : le nettoyage ne se
+   faisait **jamais**. Si des A records fantômes préexistent, ils ne seront purgés
+   qu'au prochain release de l'IP concernée.
+
+#### Scénario 10.5 — Garde-fous (noms ignorés, hors établissement, injection)
+
+1. Un client se présentant avec un `client-hostname` en `l-…`, `dhcp-…` ou
+   `iphone…` obtient un bail : **attendu** `[ddns] skipped`, aucune écriture,
+   aucun appel `samba-tool` (machines éphémères, parité legacy).
+2. Sur une instance rattachée à un établissement (`etab_ou` = UAI), un nom sans
+   le suffixe établissement (ex. `-1229y`) → `skipped`.
+3. **Sécurité** : le `client-hostname` est choisi par le client. Forcer un nom
+   hostile (`pc-01; reboot`, `pc$(id)`, nom avec espace) → `skipped`, jamais
+   d'exécution. Vérifier qu'aucune commande anormale n'apparaît dans le log et
+   que la machine n'a pas redémarré.
+
+#### Scénario 10.6 — Chemin legacy encore appelé (instance non redéployée)
+
+1. Simuler un script non mis à jour :
+   `curl -s -F "action=add" -F "name=<poste>" -F "ip=<ip>" http://<se4fs>/dhcp/dnsupdate.php`
+2. **Attendu** : réponse `text/plain` contenant l'issue (`unchanged`, `created`…),
+   **pas** du HTML ni une 500 — le chemin `.php` est servi nativement.
+3. **Attendu 38.6** : ce hit ne doit PAS apparaître comme legacy dans
+   `php artisan se4:status` (il est servi par une route native, il n'atteint
+   jamais le catchall).
+
+### Checklist rapide — Story 8.4
+
+- [ ] `dhcp-dyndns.sh` déployé pointe sur `/dhcp/dnsupdate`
+- [ ] Scénario 10.1 vert — **renouvellements = `unchanged`, zéro écriture** (le point central)
+- [ ] Scénario 10.2 vert — changement d'IP : un seul A record final
+- [ ] Scénario 10.3 vert — création pour une machine nouvelle
+- [ ] Scénario 10.4 vert — libération de bail : record supprimé
+- [ ] Scénario 10.5 vert — préfixes ignorés, hors-étab, noms hostiles refusés
+- [ ] Scénario 10.6 vert — chemin `.php` servi nativement, absent du verdict `se4:status`
+- [ ] `se4:status` ne liste plus `dhcp/dnsupdate.php` en hit legacy (débloque le GO 38.6)

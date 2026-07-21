@@ -270,4 +270,96 @@ class SambaToolRunnerTest extends TestCase
             return $hostOk && $userOk && $noPwdInArgv && $passwdInEnv;
         });
     }
+
+    /**
+     * Story 8.4 — `samba-tool dns *` prend le serveur en argument positionnel
+     * et n'embarque PAS le groupe d'options `hostopts` : `-H` y est rejeté
+     * (« no such option »). `withoutDirectoryUrl()` doit donc retirer `-H`
+     * SANS perdre les credentials (`-U` + env `PASSWD`), sinon l'appel
+     * repartirait en anonyme.
+     */
+    #[Test]
+    public function without_directory_url_drops_h_but_keeps_credentials(): void
+    {
+        $this->fakeRemoteDcConfig();
+
+        Process::fake([
+            '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+        ]);
+
+        (new SambaToolRunner())
+            ->withoutDirectoryUrl()
+            ->run(['dns', 'query', 'dc.test.fr', 'test.fr', 'pc-01', 'A']);
+
+        Process::assertRan(function ($process) {
+            $cmd = $process->command;
+            if (! is_array($cmd)) {
+                return false;
+            }
+
+            $uIdx = array_search('-U', $cmd, true);
+
+            return ! in_array('-H', $cmd, true)
+                && ! in_array('ldap://10.0.0.9', $cmd, true)
+                && $uIdx !== false && ($cmd[$uIdx + 1] ?? null) === 'Administrator'
+                && ($process->environment['PASSWD'] ?? null) === 's3cr3t-pw'
+                && in_array('--use-kerberos=required', $cmd, true);
+        });
+    }
+
+    /**
+     * L'omission de `-H` est strictement opt-in : les appelants historiques
+     * (`gpo *`, `computer *`) doivent conserver le ciblage du DC distant.
+     */
+    #[Test]
+    public function default_runner_still_targets_directory_url(): void
+    {
+        $this->fakeRemoteDcConfig();
+
+        Process::fake([
+            '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+        ]);
+
+        (new SambaToolRunner())->run(['gpo', 'listall']);
+
+        Process::assertRan(fn ($process) => is_array($process->command)
+            && in_array('-H', $process->command, true));
+    }
+
+    /**
+     * Configure un {@see SambaEduConfig} pointant sur un DC distant connu.
+     */
+    private function fakeRemoteDcConfig(): void
+    {
+        $ldap = new LdapConfig(
+            url: 'ldaps://dc.test.fr',
+            port: 636,
+            baseDn: 'dc=test,dc=fr',
+            adminName: 'Administrator',
+            adminPassword: 's3cr3t-pw',
+            domain: 'test.fr',
+            sambaDomain: 'test',
+            peopleRdn: 'ou=Utilisateurs',
+            groupsRdn: 'ou=Groups',
+            computersRdn: 'ou=computers',
+            parcsRdn: 'ou=Parcs',
+            classesRdn: 'ou=classes',
+            equipesRdn: 'ou=equipes',
+            matieresRdn: 'ou=matieres',
+            coursRdn: 'ou=cours',
+            projetsRdn: 'ou=projets',
+            otherGroupsRdn: 'ou=autres',
+            delegationsRdn: 'ou=delegations',
+            equipementsRdn: 'ou=Materiels',
+            rightsRdn: 'ou=Rights',
+            trashRdn: 'ou=Trash',
+            etablissementsRdn: 'OU=etablissements',
+            adminRdn: 'cn=Users',
+            etabServerIp: '10.0.0.9',
+        );
+
+        $config = Mockery::mock(SambaEduConfig::class);
+        $config->shouldReceive('ldap')->andReturn($ldap);
+        $this->app->instance(SambaEduConfig::class, $config);
+    }
 }
