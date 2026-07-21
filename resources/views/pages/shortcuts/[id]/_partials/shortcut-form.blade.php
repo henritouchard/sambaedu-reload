@@ -110,9 +110,30 @@
                 @endif
             </div>
 
+            <!-- Type de raccourci -->
+            @if ($editing || $creating)
+                <div class="form-control flex flex-col md:col-span-2">
+                    <label class="label py-1">
+                        <span class="label-text font-semibold">Type de raccourci <span class="text-error">*</span></span>
+                    </label>
+                    <div class="join">
+                        <button type="button" wire:click="$set('type', 'app')"
+                            class="btn btn-sm join-item {{ $type === 'app' ? 'btn-active btn-primary' : 'btn-outline' }}">
+                            <i class="fa-solid fa-desktop"></i>
+                            Application
+                        </button>
+                        <button type="button" wire:click="$set('type', 'url')"
+                            class="btn btn-sm join-item {{ $type === 'url' ? 'btn-active btn-primary' : 'btn-outline' }}">
+                            <i class="fa-solid fa-globe"></i>
+                            Site web
+                        </button>
+                    </div>
+                </div>
+            @endif
+
             <!-- Icône (seulement en édition) -->
             @if ($editing || $creating)
-                <div class="form-control md:col-span-2">
+                <div class="form-control flex flex-col md:col-span-2">
                     <x-atoms.tooltip color="" position="top" icon="true">
                         <x-slot name="label">Icône personnalisée</x-slot>
                         Formats : PNG, JPG, GIF — Image carrée, fond transparent recommandé
@@ -129,6 +150,47 @@
 
         <!-- Séparateur -->
         <div class="divider my-2"></div>
+
+        @if ($type === 'url')
+            {{-- ===== RACCOURCI WEB =====
+                 Deux champs suffisent : le modèle traduit (URL, navigateur) vers
+                 les cibles Windows/Linux via `Shortcut::webTargetAttributes()`. --}}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <div class="form-control flex flex-col md:col-span-2">
+                    <label class="label py-1">
+                        <span class="label-text font-semibold">Adresse du site <span class="text-error">*</span></span>
+                    </label>
+                    @if ($editing || $creating)
+                        <input type="url" wire:model="url" placeholder="https://www.exemple.fr"
+                            class="input input-bordered input-sm @error('url') input-error @enderror">
+                        @error('url')
+                            <span class="text-xs text-error mt-1">{{ $message }}</span>
+                        @enderror
+                    @else
+                        <span class="text-sm py-1 font-mono truncate">{{ $url ?: '—' }}</span>
+                    @endif
+                </div>
+
+                <div class="form-control flex flex-col md:col-span-2">
+                    <x-atoms.tooltip position="top" icon="true">
+                        <x-slot name="label">Navigateur</x-slot>
+                        Laissez « par défaut » pour que le poste ouvre le site avec son navigateur habituel.<br>
+                        N'imposez un navigateur que si le site l'exige.
+                    </x-atoms.tooltip>
+                    @if ($editing || $creating)
+                        <select wire:model="browser" class="select select-bordered select-sm">
+                            @foreach (\App\Models\Shortcut::BROWSERS as $value => $browserDef)
+                                <option value="{{ $value }}">{{ $browserDef['label'] }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <span class="text-sm py-1">
+                            {{ \App\Models\Shortcut::BROWSERS[$browser]['label'] ?? 'Navigateur par défaut du poste' }}
+                        </span>
+                    @endif
+                </div>
+            </div>
+        @else
 
         <!-- Configuration Windows & Linux côte à côte -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -248,5 +310,6 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
 </div>

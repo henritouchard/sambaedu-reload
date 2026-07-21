@@ -28,6 +28,11 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
     public array $assignedAdUsers = [];
     public array $assignedAdUserGroups = [];
 
+    // Type de raccourci : 'app' (cibles Windows/Linux) ou 'url' (site web).
+    public string $type = 'app';
+    public string $url = '';
+    public string $browser = '';
+
     // Champs du formulaire
     public string $name = '';
     public string $place = 'desktop';
@@ -80,6 +85,13 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             $this->linux_args = $this->shortcutModel->linux_args ?? '';
             $this->linux_path = $this->shortcutModel->linux_path ?? '';
             $this->linux_startupwmclass = $this->shortcutModel->linux_startupwmclass ?? '';
+
+            // Le type pilote le formulaire : on le relit du modèle, et pour un
+            // raccourci web on ré-extrait (URL, navigateur) des champs de cible.
+            $this->type = $this->shortcutModel->isUrlShortcut() ? 'url' : 'app';
+            $this->url = $this->shortcutModel->getUrl() ?? '';
+            $this->browser = $this->shortcutModel->detectBrowserKey();
+
             $this->loadAssignments();
         } catch (\Exception $e) {
             Log::error('ShortcutPage loadShortcut error: ' . $e->getMessage());
@@ -102,7 +114,10 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
 
         $this->validate([
             'name' => 'required|string|max:255',
+            'type' => 'required|in:app,url',
             'place' => 'required|in:desktop,startup,taskbar',
+            'url' => 'required_if:type,url|nullable|url|max:500',
+            'browser' => 'nullable|string|in:' . implode(',', array_keys(Shortcut::BROWSERS)),
             'windows_link' => 'nullable|string|max:500',
             'windows_args' => 'nullable|string|max:500',
             'windows_path' => 'nullable|string|max:500',
@@ -111,20 +126,33 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             'linux_path' => 'nullable|string|max:500',
             'linux_startupwmclass' => 'nullable|string|max:255',
             'icon_file' => 'nullable|image|max:2048',
-        ]);
+        ], [], ['url' => 'adresse du site']);
 
         try {
+            // Bascule app ↔ web : on réécrit TOUS les champs de cible, sinon un
+            // raccourci repassé en « application » garderait l'URL de l'ancien
+            // type dans `windows_link`.
+            $targetAttributes = $this->type === 'url'
+                ? Shortcut::webTargetAttributes($this->url, $this->browser) + [
+                    'windows_path' => '',
+                    'linux_path' => '',
+                    'linux_startupwmclass' => '',
+                ]
+                : [
+                    'is_url' => false,
+                    'windows_link' => $this->windows_link,
+                    'windows_args' => $this->windows_args,
+                    'windows_path' => $this->windows_path,
+                    'linux_link' => $this->linux_link,
+                    'linux_args' => $this->linux_args,
+                    'linux_path' => $this->linux_path,
+                    'linux_startupwmclass' => $this->linux_startupwmclass,
+                ];
+
             $this->shortcutModel->update([
                 'name' => $this->name,
                 'place' => $this->place,
-                'windows_link' => $this->windows_link,
-                'windows_args' => $this->windows_args,
-                'windows_path' => $this->windows_path,
-                'linux_link' => $this->linux_link,
-                'linux_args' => $this->linux_args,
-                'linux_path' => $this->linux_path,
-                'linux_startupwmclass' => $this->linux_startupwmclass,
-            ]);
+            ] + $targetAttributes);
 
             // Gérer l'icône si uploadée
             if ($this->icon_file) {

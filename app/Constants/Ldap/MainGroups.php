@@ -26,14 +26,18 @@ class MainGroups
     public const ADMINISTRATIFS = 'Administratifs';
     
     /**
-     * Comptes système à exclure des listes d'utilisateurs
-     * 
-     * Ces comptes peuvent être membres des groupes principaux mais ne doivent pas
-     * apparaître dans les listes d'utilisateurs car ce sont des comptes techniques/administrateurs
-     * 
-     * Basé sur le code legacy dans includes/ent.inc.php ligne 2200 qui marque comme "protected"
-     * les comptes contenant : admin, exam, invite, test, api-
-     * + comptes système spécifiques SambaEdu
+     * Comptes réservés : logins que SambaEdu s'attribue et qui ne désignent
+     * jamais une personne. Comparaison par ÉGALITÉ (insensible à la casse).
+     *
+     * Le legacy (`includes/ent.inc.php:2447`) détectait ces comptes par
+     * sous-chaîne non ancrée — motifs « admin », « exam », « invite »,
+     * « test ». Ces motifs capturaient de vrais patronymes :
+     * « badminton.leo » contient « admin », « examine.paul » contient « exam ».
+     * Un tel compte était alors exclu de la SYNCHRO AD→SQL
+     * (`UserSyncService`) — donc sans ligne `users`, sans rôle Spatie, cassé
+     * partout — en plus d'être invisible dans les listes.
+     *
+     * D'où la liste explicite : on ne peut réserver un login qu'en le nommant.
      */
     public const SYSTEM_ACCOUNTS = [
         'se4install',      // Compte d'installation automatique SambaEdu
@@ -41,27 +45,65 @@ class MainGroups
         'admin',           // Compte admin générique
         'krbtgt',          // Compte de service Kerberos
         'Guest',           // Compte invité Windows
+        'invite',          // Compte invité (nom francisé)
+        'exam',            // Compte de session d'examen
+        'test',            // Compte de test générique
         'www-sambaedu',    // Compte web service SambaEdu
         'Actif',           // Compte système
     ];
-    
+
     /**
-     * Patterns regex pour détecter les comptes système (basé sur le legacy)
-     * 
-     * Correspond au pattern dans includes/ent.inc.php ligne 2200
-     * qui marque comme "protected" les comptes contenant : admin, exam, invite, test, api-
+     * Préfixes réservés aux comptes techniques.
+     *
+     * ANCRÉS en début de login, contrairement aux motifs legacy : un préfixe ne
+     * peut donc pas être capturé au milieu d'un patronyme. C'est une convention
+     * de nommage assumée — tout compte créé sous ce préfixe est technique.
      */
-    private const SYSTEM_ACCOUNT_PATTERNS = [
-        '/.*admin.*/i',
-        '/.*exam.*/i',
-        '/.*invite.*/i',
-        '/.*test.*/i',
-        '/.*api-.*/i',
+    public const SYSTEM_ACCOUNT_PREFIXES = [
+        'api-',
     ];
-    
+
+    /**
+     * Comptes de service : ils n'ouvrent JAMAIS de session interactive.
+     *
+     * À ne pas confondre avec `SYSTEM_ACCOUNTS` / `isSystemAccount()`, qui
+     * traduit le flag `protected` du legacy (`includes/ent.inc.php`, classement
+     * pour la corbeille) : celui-ci protège de la SUPPRESSION, il ne dit rien de
+     * la visibilité. Un écran qui attribue quelque chose à une session
+     * (raccourci, lecteur réseau…) doit filtrer sur CETTE liste-ci : `admin` a
+     * une vraie session et doit rester attribuable, `krbtgt` non.
+     */
+    public const NON_INTERACTIVE_ACCOUNTS = [
+        'krbtgt',          // Compte de service Kerberos
+        'www-sambaedu',    // Compte web service SambaEdu
+        'Guest',           // Compte invité Windows (désactivé)
+        'Actif',           // Compte système
+    ];
+
+    /**
+     * Le compte n'ouvre jamais de session : rien ne peut lui être attribué.
+     */
+    public static function isNonInteractiveAccount(string $login): bool
+    {
+        foreach (self::NON_INTERACTIVE_ACCOUNTS as $account) {
+            if (strcasecmp($login, $account) === 0) {
+                return true;
+            }
+        }
+
+        $lowered = strtolower($login);
+        foreach (self::SYSTEM_ACCOUNT_PREFIXES as $prefix) {
+            if (str_starts_with($lowered, strtolower($prefix))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Liste de tous les groupes principaux
-     * 
+     *
      * @return array
      */
     public static function all(): array
@@ -85,27 +127,28 @@ class MainGroups
     }
     
     /**
-     * Vérifie si un login correspond à un compte système à exclure
-     * 
-     * Vérifie d'abord la liste exacte, puis les patterns regex (comme dans le legacy)
-     * 
-     * @param string $login
-     * @return bool
+     * Vérifie si un login est un compte réservé SambaEdu.
+     *
+     * Égalité insensible à la casse sur `SYSTEM_ACCOUNTS`, plus les préfixes
+     * ancrés de `SYSTEM_ACCOUNT_PREFIXES`. Aucune correspondance par
+     * sous-chaîne : un patronyme ne doit jamais être capturé par accident
+     * (cf. le commentaire de `SYSTEM_ACCOUNTS`).
      */
     public static function isSystemAccount(string $login): bool
     {
-        // Vérification exacte
-        if (in_array($login, self::SYSTEM_ACCOUNTS, true)) {
-            return true;
-        }
-        
-        // Vérification par patterns regex (comme dans le legacy)
-        foreach (self::SYSTEM_ACCOUNT_PATTERNS as $pattern) {
-            if (preg_match($pattern, $login)) {
+        foreach (self::SYSTEM_ACCOUNTS as $account) {
+            if (strcasecmp($login, $account) === 0) {
                 return true;
             }
         }
-        
+
+        $lowered = strtolower($login);
+        foreach (self::SYSTEM_ACCOUNT_PREFIXES as $prefix) {
+            if (str_starts_with($lowered, strtolower($prefix))) {
+                return true;
+            }
+        }
+
         return false;
     }
 }

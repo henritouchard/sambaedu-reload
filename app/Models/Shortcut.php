@@ -121,6 +121,48 @@ class Shortcut extends Model implements Wireable
     public const PLACE_TASKBAR = 'taskbar';
 
     /**
+     * Navigateurs proposés pour un raccourci de type « site web ».
+     * Iso-legacy (`../sambaedu/includes/shortcuts.inc.php`, tableau `$navs`) :
+     * chaque entrée porte la cible Windows, la commande Linux équivalente et
+     * d'éventuels arguments à préfixer avant l'URL.
+     *
+     * La clé vide = navigateur par défaut du poste : on ne pose alors AUCUNE
+     * cible, l'URL est le `target` du raccourci et c'est le système qui choisit.
+     */
+    public const BROWSERS = [
+        '' => [
+            'label' => 'Navigateur par défaut du poste',
+            'windows' => '',
+            'linux' => '',
+            'args' => '',
+        ],
+        'firefox' => [
+            'label' => 'Mozilla Firefox',
+            'windows' => 'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+            'linux' => 'firefox',
+            'args' => '',
+        ],
+        'chrome' => [
+            'label' => 'Google Chrome',
+            'windows' => 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'linux' => 'chromium',
+            'args' => '',
+        ],
+        'edge' => [
+            'label' => 'Microsoft Edge',
+            'windows' => 'microsoft-edge',
+            'linux' => 'firefox',
+            'args' => '',
+        ],
+        'firefox_drm' => [
+            'label' => 'Mozilla Firefox (vidéos avec DRM)',
+            'windows' => 'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+            'linux' => 'firefox',
+            'args' => '-profile %temp%\\FFtemp -no-remote -new-instance',
+        ],
+    ];
+
+    /**
      * Variables dynamiques reconnues dans les champs de raccourcis.
      * Ces variables seront substituées au moment du téléchargement par le poste client.
      */
@@ -246,11 +288,143 @@ class Shortcut extends Model implements Wireable
     }
 
     /**
-     * Vérifie si c'est un raccourci URL
+     * Vérifie si c'est un raccourci URL.
+     *
+     * La colonne `is_url` fait foi : le type est désormais CHOISI au
+     * formulaire, plus deviné. La détection historique (`^https?://`) est
+     * conservée en repli pour les lignes qui n'ont jamais été typées —
+     * typiquement celles poussées par le ControlHub, dont le payload
+     * `is_url` est optionnel.
      */
     public function isUrlShortcut(): bool
     {
-        return !empty($this->windows_args) && preg_match('/^https?:\/\//', $this->windows_args);
+        if ($this->is_url) {
+            return true;
+        }
+
+        return $this->looksLikeUrlShortcut();
+    }
+
+    /**
+     * Détection heuristique du type, sur les deux champs où une URL a pu
+     * atterrir faute de choix explicite dans l'ancien formulaire.
+     */
+    public function looksLikeUrlShortcut(): bool
+    {
+        foreach ([$this->windows_args, $this->windows_link] as $value) {
+            if (!empty($value) && preg_match('/^https?:\/\//', $value)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Scope : raccourcis de type « site web » / « application ».
+     *
+     * Filtre en SQL sur `is_url` en incluant le même repli heuristique que
+     * `isUrlShortcut()`, pour que la liste et le détail ne se contredisent pas.
+     */
+    public function scopeByType(Builder $query, string $type): Builder
+    {
+        $looksLikeUrl = fn (Builder $q) => $q
+            ->where('windows_args', 'LIKE', 'http://%')
+            ->orWhere('windows_args', 'LIKE', 'https://%')
+            ->orWhere('windows_link', 'LIKE', 'http://%')
+            ->orWhere('windows_link', 'LIKE', 'https://%');
+
+        if ($type === 'url') {
+            return $query->where(fn (Builder $q) => $q->where('is_url', true)->orWhere($looksLikeUrl));
+        }
+
+        return $query->where('is_url', false)->whereNot($looksLikeUrl);
+    }
+
+    /**
+     * URL cible d'un raccourci web, quel que soit le champ où elle est stockée
+     * (`windows_args` quand un navigateur est imposé, `windows_link` sinon).
+     */
+    public function getUrl(): ?string
+    {
+        foreach ([$this->windows_args, $this->windows_link, $this->linux_args] as $value) {
+            // `preg_match` et non `str_starts_with` : un navigateur imposé peut
+            // préfixer ses propres arguments avant l'URL (profil DRM).
+            if (!empty($value) && preg_match('/\bhttps?:\/\/\S+/', $value, $m)) {
+                return $m[0];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Traduit un couple (URL, navigateur) en attributs de raccourci.
+     *
+     * Sans navigateur imposé, l'URL EST la cible : le poste l'ouvre avec son
+     * navigateur par défaut. Avec un navigateur imposé, la cible est le binaire
+     * et l'URL passe en argument — c'est la convention historique SE4, et la
+     * seule que sait poser l'agent (`ShortcutSpec{Target, Args}`).
+     */
+    public static function webTargetAttributes(string $url, string $browserKey = ''): array
+    {
+        $browser = self::BROWSERS[$browserKey] ?? self::BROWSERS[''];
+
+        if (empty($browser['windows'])) {
+            return [
+                'is_url' => true,
+                'windows_link' => $url,
+                'windows_args' => '',
+                'linux_link' => $url,
+                'linux_args' => '',
+            ];
+        }
+
+        return [
+            'is_url' => true,
+            'windows_link' => $browser['windows'],
+            'windows_args' => trim(($browser['args'] ?? '').' '.$url),
+            'linux_link' => $browser['linux'],
+            // Les arguments du navigateur sont spécifiques à Windows
+            // (`%temp%` pour le profil DRM) : côté Linux, seule l'URL.
+            'linux_args' => $url,
+        ];
+    }
+
+    /**
+     * Retrouve la clé de `BROWSERS` correspondant à la cible Windows stockée.
+     * Renvoie '' (navigateur par défaut) si la cible est l'URL elle-même ou
+     * un binaire hors catalogue.
+     */
+    public function detectBrowserKey(): string
+    {
+        $link = (string) $this->windows_link;
+
+        if ($link === '' || preg_match('/^https?:\/\//', $link)) {
+            return '';
+        }
+
+        // `firefox_drm` partage sa cible avec `firefox` : il se distingue par
+        // ses arguments, donc il doit être testé AVANT.
+        $keys = array_keys(self::BROWSERS);
+        usort($keys, fn ($a, $b) => empty(self::BROWSERS[$a]['args']) <=> empty(self::BROWSERS[$b]['args']));
+
+        foreach ($keys as $key) {
+            $browser = self::BROWSERS[$key];
+            if (empty($browser['windows'])) {
+                continue;
+            }
+            if (strcasecmp($browser['windows'], $link) !== 0) {
+                continue;
+            }
+            if (!empty($browser['args']) && !str_contains((string) $this->windows_args, $browser['args'])) {
+                continue;
+            }
+
+            return $key;
+        }
+
+        return '';
     }
 
     /**

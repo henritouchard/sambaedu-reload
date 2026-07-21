@@ -167,11 +167,21 @@ new class extends Component {
             $users = User::query()
                 ->search($this->searchUsers)
                 ->where('is_active', true)
+                // Seuls les comptes adossés à l'AD sont assignables : un
+                // raccourci est résolu contre la session Windows du poste.
+                // Les identités `federated` (techniciens du portail ControlHub)
+                // n'ont ni `dn` ni `ad_guid` et ne correspondront JAMAIS à une
+                // session — les proposer ne peut produire qu'une assignation morte.
+                ->where('source', 'ad')
                 ->whereNotIn('login', array_merge($this->alreadyAssignedUsers, $this->selectedUsers))
                 ->orderBy('fullname')
                 ->limit(self::USERS_SEARCH_LIMIT + 1)
                 ->get()
-                ->reject(fn(User $u) => MainGroups::isSystemAccount($u->login))
+                // `isSystemAccount()` serait le mauvais filtre ici : il traduit
+                // la protection legacy contre la SUPPRESSION (patterns larges
+                // `.*admin.*`, `.*test.*`…) et masquerait `admin` — qui a une
+                // vraie session — ainsi qu'un élève nommé « Testard ».
+                ->reject(fn(User $u) => MainGroups::isNonInteractiveAccount($u->login))
                 ->values();
 
             $this->usersTruncated = $users->count() > self::USERS_SEARCH_LIMIT;
@@ -509,9 +519,11 @@ new class extends Component {
                                             <i class="fa-solid fa-user text-accent"></i>
                                         </div>
                                         <div class="flex-1 min-w-0">
-                                            <div class="font-medium truncate">{{ $user['fullname'] }}</div>
-                                            <div class="text-xs text-base-content/60">
-                                                {{ $user['cn'] }}
+                                            {{-- Le login prime sur le nom complet : deux comptes peuvent
+                                                 porter le même `fullname`, jamais le même login. --}}
+                                            <div class="font-medium font-mono truncate">{{ $user['cn'] }}</div>
+                                            <div class="text-xs text-base-content/60 truncate">
+                                                {{ $user['fullname'] }}
                                                 @if ($user['role']) • {{ $user['role'] }} @endif
                                             </div>
                                         </div>

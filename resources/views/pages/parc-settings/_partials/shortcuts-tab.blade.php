@@ -92,13 +92,10 @@ new class extends Component {
                 $query->search($this->search);
             }
 
-            if ($this->type === 'url') {
-                $query->whereNotNull('windows_args')->where('windows_args', 'LIKE', 'http%');
-            } elseif ($this->type === 'app') {
-                $query->where(function ($q) {
-                    $q->whereNull('windows_args')
-                      ->orWhere('windows_args', 'NOT LIKE', 'http%');
-                });
+            if ($this->type !== 'all') {
+                // Le typage vit dans le modèle (`is_url` + repli heuristique) :
+                // dupliquer la règle ici faisait diverger liste et détail.
+                $query->byType($this->type);
             }
 
             if ($this->place !== 'all') {
