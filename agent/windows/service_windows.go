@@ -69,6 +69,20 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 						}()
 						writeOverlayForAllSessions(agent.Store, computerName, agent.Log)
 					}()
+					// Story 36.5 (amendement final) : pose du LIEN app_profile par
+					// SYSTEM au logon (le compagnon n'a pas SeCreateSymbolicLinkPrivilege
+					// et ne peut pas poser le lien). Bloc best-effort DISTINCT de
+					// l'overlay (recover propre) : une panique de l'un ne touche pas
+					// l'autre. Idempotent (lien déjà correct = no-op) ; le compagnon
+					// écrit la paire d'ini quand il constate le lien, au cycle suivant.
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								agent.Log.Errorf("Pose du lien app_profile au logon en échec (panique rattrapée) : %v", r)
+							}
+						}()
+						applyAppProfilesForAllSessions(agent.Store, agent.Log)
+					}()
 					// Story 27.9 : réveil de la boucle de convergence — un cycle
 					// complet (RunCycle) part dès le logon au lieu d'attendre le
 					// prochain tick (jusqu'à ~1 h). Send NON-BLOQUANT (coalescé,

@@ -242,7 +242,7 @@ Identifiants prévus :
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
 (Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7), `firewall`
 (Story 36.2, cf. §7.8), `privilege` (Story 35.6, cf. §7.9), `legacy_cleanup`
-(Story 38.3, cf. §7.10).
+(Story 38.3, cf. §7.10), `app_profile` (Story 36.5, cf. §7.11).
 
 ### 7.1 Payload `registry`
 
@@ -1084,6 +1084,169 @@ POSE rien.
 > et 2.8.0 (`privilege`) n'ayant pas encore été publiées, la 2.9.0 livre les
 > QUATRE mécanismes.
 
+### 7.11 Payload `app_profile`
+
+Type `app_profile` (Story 36.5) — **redirection du profil applicatif** (Firefox,
+Thunderbird…) vers le home réseau de l'utilisateur, SIXIÈME mécanisme
+HORS-REGISTRE, le SEUL de portée **`session`** (un profil applicatif est une
+donnée d'UTILISATEUR ; le type n'existe pas côté machine). **Split
+SYSTEM-lien / COMPAGNON-reste** (amendement final, Henri 2026-07-21, voir plus
+bas) : le service SYSTEM pose le LIEN au logon (privilège), le COMPAGNON gère
+tout le reste (dossier serveur, marqueur, user.js, ini). Report FIDÈLE du
+mécanisme SE4 `Roaming→Server`
+(`applications.inc.php:538` — *« pas de copie des données, utile pour les applis
+avec des "gros" profils itinérants »*) : un LIEN DE DOSSIER pointe le profil
+local (`AppData\Roaming\…`) vers le home réseau, ACCÈS DIRECT serveur SANS copie
+(un profil Firefox à gros cache/bases sqlite ferait exploser le temps de logon
+s'il transitait par la copie d'un profil itinérant). La demande fondatrice
+« retrouver ses signets Firefox sur n'importe quel poste » est ainsi satisfaite.
+Sémantique **`aggregate`** : un item par application redirigeable.
+
+```json
+{
+  "type": "app_profile",
+  "semantics": "aggregate",
+  "payload": {
+    "app": "firefox",
+    "link": "AppData\\Roaming\\Mozilla\\Firefox\\managed.default",
+    "server": "\\\\<se4fs>\\users\\<user>\\.mozilla\\firefox\\managed.default",
+    "profile_name": "managed.default",
+    "install_hash": "308046B0AF4A39CB",
+    "cache_local": "cacheFirefox"
+  },
+  "hash": "81b4fc45…1c8bf684"
+}
+```
+
+Le payload porte **4 clés minimales** (+ 2 optionnelles) — toujours des strings,
+jamais d'id de capacité, zéro float (§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `app` | string | Identifiant d'application (`firefox`, `thunderbird`, …) — informatif/log. |
+| `link` | string | Chemin **RELATIF au profil Windows** (`AppData\Roaming\…\managed.default`) où poser le lien. L'agent le résout contre `%USERPROFILE%`. Le PARENT est le dossier des `profiles.ini`/`installs.ini`. |
+| `server` | string | **TOKEN** `\\<se4fs>\users\<user>\…` du dossier de profil sur le home réseau — JAMAIS résolu côté serveur (iso `drives`/`shortcuts`). L'agent substitue `<se4fs>`/`<user>` localement (`substituteTokens`, un SEUL helper). |
+| `profile_name` | string | Nom de profil = `Path=` de `profiles.ini` (dernier segment de `link`). **NEUF, STABLE, NON versionné, HORS radical `sambaedu`** — un `profiles.ini` produit ici n'est JAMAIS matché par la garde `referencesSambaeduProfile()` du `legacy_cleanup` (§7.10) : les deux canaux coexistent (l'un éteint le legacy, l'autre installe le natif). Un nom versionné (`profil-v2`) provoquerait une perte de signets silencieuse (Firefox créerait un profil vide, l'ancien resterait orphelin) — la porte d'évolution passe par le MARQUEUR ci-dessous. |
+| `install_hash` | string *(optionnel)* | Section Firefox `[Install<hash>]` de `profiles.ini`/`installs.ini` (hachage de l'install standard — valeurs SE4). Absent ⇒ pas de section Install (le profil reste choisi par `[Profile0] Default=1`). |
+| `cache_local` | string *(optionnel)* | Nom de dossier sous `%LOCALAPPDATA%` où épingler le cache disque (AC5, voir ci-dessous). Absent ⇒ aucun `user.js` posé. |
+
+**Marqueur de version DANS le profil (porte d'évolution).** À la création, l'agent
+écrit `.se-profile-version` (contenu `1`) dans le dossier serveur ; il est RELU à
+chaque `Apply`. Le nom de profil ne change JAMAIS — un futur changement de format
+détecte la v1 et **migre EN PLACE** au lieu d'orpheliner. Le marqueur est
+préfixé `.se-` (hors radical `sambaedu`).
+
+#### Split SYSTEM-lien / COMPAGNON-reste (conception ARRÊTÉE, Henri 2026-07-21)
+
+**Le lien de dossier vers UNC est posé par le service SYSTEM au logon.** Créer un
+lien symbolique (mklink /D iso-SE4) exige `SeCreateSymbolicLinkPrivilege` — que
+l'utilisateur standard n'a pas et qu'**AUCUN canal SE5 ne peut lui accorder** (le
+mécanisme `privilege` §7.9 est `SeDeny*`-only PAR CONCEPTION, enum FERMÉ, tout
+*grant* refusé). Le service **LocalSystem**, LUI, possède ce privilège
+NATIVEMENT. La conception retenue (arbitrage tranché — option (c), iso-SE4 qui
+posait le lien « en system ») reporte donc la pose du lien sur le service SYSTEM,
+sur le **modèle EXACT de l'overlay** (Story 27.1bis) :
+
+- **Déclencheur** : `WTS_SESSION_LOGON`, event-driven (pas de polling), comme
+  l'overlay. À chaque logon, le service ré-énumère les sessions interactives et
+  pose/répare le lien de chacune (idempotent — lien déjà correct = no-op).
+- **Résolution sous SYSTEM** : le profil de la session et son SID viennent du
+  **token WTS** (`WTSQueryUserToken` → `GetUserProfileDirectory`) ; le token
+  `<user>` est substitué depuis le **login WTS** (jamais l'environnement du
+  service, où `USERNAME` = le compte de service) ; `<se4fs>` depuis la variable
+  **MACHINE** `SE4FS` (lisible par SYSTEM — source autoritaire, posée au
+  provisioning ; le repli `LOGONSERVER` sous SYSTEM pointe le DC de la machine,
+  d'où le choix de `SE4FS` en primaire).
+- **Source INFALSIFIABLE** : la spec `app_profile` est lue dans le **cache d'état
+  per-SID** que SYSTEM a LUI-MÊME écrit au fetch
+  (`cache\sessions\<SID>\state.json`) — JAMAIS dans un artefact inscriptible par
+  l'utilisateur (le drop `<SID>:M` reste **report-only** par décision de sécurité
+  structurelle). La demande vient donc du SERVEUR, jamais du compagnon.
+- **Défense en profondeur** (obligatoire même si la source est infalsifiable) :
+  avant de poser, le chemin du LIEN doit être **strictement SOUS** le répertoire
+  de profil retourné par le token (résolution `.`/`..` par segments, comparaison
+  insensible à la casse) ET la CIBLE doit être un chemin **UNC** (`\\…`). Un
+  chemin hors-borne (spec corrompue portant `..`) ⇒ **skip + log**, jamais de
+  pose en contexte SYSTEM privilégié.
+- **Gracieux/isolé** : token indisponible, cache absent, session système, login
+  non résolu ⇒ log + on continue (jamais de blocage du service ni des autres
+  sessions). Un échec de pose sur une app n'empêche pas les autres.
+
+**Le COMPAGNON garde tout le reste et NE POSE PLUS le lien.** Dossier serveur,
+marqueur, `user.js`, paire d'ini — contexte user, non privilégié. Il se contente
+de **CONSTATER** le lien (posé par SYSTEM) :
+
+- `Test` reste inchangé : lien absent/divergent ⇒ **non-compliant**.
+- `Apply` fait tout SAUF poser le lien. **La paire d'ini n'est écrite QUE SI le
+  lien est déjà présent et correct** — ordre repensé pour le split : sinon
+  Firefox lancé entre le déploiement et le prochain logon suivrait `profiles.ini`
+  et créerait un **vrai dossier** à l'emplacement du lien (exactement le
+  scénario C1 ci-dessous). Tant que le lien manque, l'item ressort en `drift`
+  avec un `detail` explicite (« lien posé par SYSTEM au logon — en attente »).
+- **Limite assumée : réparation au PROCHAIN LOGON.** Une session déjà ouverte au
+  moment du déploiement (ou dont le lien vient d'être cassé) reste non-compliant
+  jusqu'au prochain logon, où SYSTEM (re)pose le lien ; le compagnon converge
+  ensuite (Test ⇒ compliant). Level-triggered, jamais d'erreur permanente.
+
+**Dossier réel préexistant à l'emplacement du lien : RENOMMÉ DE CÔTÉ, JAMAIS
+DÉTRUIT (C1, désormais côté SYSTEM).** Si un VRAI dossier (non-lien) occupe
+`link` — scénario plausible : le lien est effacé par un nettoyeur de profils / un
+AV, Firefox re-matérialise alors un dossier `managed.default` où l'utilisateur
+accumule des signets jamais synchronisés au serveur — le service SYSTEM **ne le
+détruit pas** (contrairement au `RD /S /Q` iso-legacy). Il le **renomme de côté**
+(`…\managed.default.pre-redirect-<horodatage>`, format `20060102-150405`, suffixe
+`-1`, `-2`… en cas de collision) pour libérer l'emplacement du lien sans perte de
+données — récupérable par l'utilisateur/l'admin, tracé dans `agent.log` (la pose
+SYSTEM au logon ne produit pas d'item de rapport, iso-overlay). **Motif : doctrine
+desired-state** ([[project_agent_desired_state_direction]]) — un canal
+desired-state converge vers l'état cible sans jamais détruire de données qu'il n'a
+pas produites.
+
+**Le cache reste LOCAL (AC5).** Firefox place par défaut son cache disque (cache2)
+sous `%LOCALAPPDATA%`, PAS dans le profil roaming — ce qui suffirait. Par sécurité
+(report du `AppData\Local\cacheFirefox` SE4, et parce que faire tourner un cache
+sqlite sur SMB est la fragilité connue de ce montage), quand `cache_local` est
+fourni l'agent pose un `user.js` dans le profil épinglant
+`browser.cache.disk.parent_directory` sur `%LOCALAPPDATA%\<cache_local>`. Les
+bases (signets `places.sqlite`, préférences) vivent, elles, sur le home réseau —
+c'est l'objet même de la redirection (accès direct serveur sans copie), et la
+contrepartie assumée du mécanisme SE4 repris. **Vérification lab à conduire** :
+confirmer sur un poste réel que le cache disque ne suit pas le profil sur le
+réseau malgré le montage (le comportement par défaut est réputé local, mais n'a
+pas été observé en lab dans le cadre de cette story — l'épinglage `user.js` est
+la ceinture-bretelles qui rend le point non bloquant).
+
+> ⚠️ **Limite connue du `user.js` partagé (fix structurel → 36.6/fast-follow).**
+> Le chemin de cache épinglé dans le `user.js` est **machine-dépendant** : il
+> pointe le dossier de profil Windows LOCAL du poste courant
+> (`%LOCALAPPDATA%` résolu contre le nom de profil local — `alice` vs
+> `alice.DOMAINE` vs `alice.000`). Comme ce `user.js` vit dans le profil
+> **partagé** (home réseau), si les noms de dossier de profil diffèrent d'un
+> poste à l'autre, chaque alternance de postes **réécrit le `user.js`** au logon,
+> et entre deux réécritures le chemin de cache épinglé peut être **invalide**
+> (dossier inexistant sur le poste courant). De plus, ce `user.js` **écrase** un
+> éventuel `user.js` posé par l'utilisateur (limite assumée d'un profil géré). Le
+> cas NOMINAL (parc à noms de profils homogènes) fonctionne. Le fix STRUCTUREL —
+> épinglage du cache par un **canal machine** (type `app_config`/registre) plutôt
+> que dans le profil partagé — est consigné pour la **story 36.6 / fast-follow**.
+
+**Réconciliation desired-state (Test/Apply, §5 STRICT).** `Test` constate SANS
+écrire : lien présent pointant le bon home + paire `profiles.ini`/`installs.ini`
+conforme + marqueur à jour (+ `user.js` si `cache_local`) ⇒ `compliant`, ZÉRO
+écriture ; idempotent (2 passes stables ⇒ la 2ᵉ est un no-op). **Home injoignable
+⇒ item `error`** (le dossier serveur est créé/sondé AVANT toute op locale — un
+réseau coupé abandonne sans JAMAIS supprimer de données locales en compensation).
+
+**Dépendance au plan fichiers (AC7).** Le provider serveur n'émet AUCUN item si la
+politique de gestion des fichiers désactive le home réseau K:
+(`FilePolicyService::capabilities()['home']`, `/admin/settings/files`) — rediriger
+un profil vers une cible non montée n'a pas de sens.
+
+> **Agents antérieurs à 2.13.0** : le type `app_profile` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme « profil non redirigé, zéro
+> erreur ». La release 2.13.0 DOIT être publiée manuellement (update.sh ne publie
+> jamais seul).
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -1167,7 +1330,13 @@ décision de contrat consommée par chaque handler côté agent.
   `state.v1.json` bumpé avec justification, `report.v1.json` INCHANGÉ (aucun
   champ de rapport nouveau — `detail` existait déjà, seule l'interface Go
   additive `DetailReporter` l'alimente sur les chemins de succès), agent bumpé
-  2.9.0 (publication qui livre les 2.6.0/2.7.0/2.8.0 jamais publiées).
+  2.9.0 (publication qui livre les 2.6.0/2.7.0/2.8.0 jamais publiées). Ex. Story
+  36.5 : type `app_profile` (§7.11, mécanisme HORS-REGISTRE — redirection du
+  profil applicatif Firefox/Thunderbird vers le home réseau, portée SESSION
+  appliquée par le COMPAGNON — c'est l'« option (b)/(c) » anticipée par la trace
+  contractuelle de Q5-a, §7.10), golden `state.v1.json` bumpé avec justification
+  (AJOUT d'UN item `app_profile` en portée session → hash recalculé, jumeau Go à
+  l'identique NFR13), `report.v1.json` INCHANGÉ, agent bumpé 2.13.0.
   ⚠️ Contrairement au champ ajouté, un agent
   ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
   aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la

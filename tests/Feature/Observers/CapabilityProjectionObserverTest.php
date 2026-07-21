@@ -258,4 +258,54 @@ class CapabilityProjectionObserverTest extends TestCase
             'mechanism' => 'fs_acl',
         ]);
     }
+
+    // ── Story 36.5 — dispatch par mécanisme : app_profile (piège n°1) ──────
+
+    #[Test]
+    public function it_refuses_to_persist_an_app_profile_projection_on_sambaedu_radical(): void
+    {
+        $cap = Capability::factory()->create(['key' => 'rogue_app_profile']);
+
+        $this->expectException(\App\Exceptions\AppProfileAuthoringException::class);
+
+        // piège n°1 (AC4) : un nom bâti sur sambaedu collisionnerait avec
+        // legacy_cleanup (referencesSambaeduProfile) — refusé à la persistance.
+        CapabilityProjection::create([
+            'capability_id' => $cap->id,
+            'os' => 'windows',
+            'mechanism' => CapabilityProjection::MECHANISM_APP_PROFILE,
+            'spec' => ['apps' => [[
+                'app' => 'firefox',
+                'link' => 'AppData\\Roaming\\Mozilla\\Firefox\\sambaedu.default',
+                'server' => '.mozilla\\firefox\\sambaedu.default',
+                'profile_name' => 'sambaedu.default',
+            ]]],
+        ]);
+    }
+
+    #[Test]
+    public function it_persists_a_valid_app_profile_projection(): void
+    {
+        $cap = Capability::factory()->create(['key' => 'valid_app_profile']);
+
+        $projection = CapabilityProjection::create([
+            'capability_id' => $cap->id,
+            'os' => 'windows',
+            'mechanism' => CapabilityProjection::MECHANISM_APP_PROFILE,
+            'spec' => ['apps' => [[
+                'app' => 'firefox',
+                'link' => 'AppData\\Roaming\\Mozilla\\Firefox\\managed.default',
+                'server' => '.mozilla\\firefox\\managed.default',
+                'profile_name' => 'managed.default',
+                'install_hash' => '308046B0AF4A39CB',
+                'cache_local' => 'cacheFirefox',
+            ]]],
+        ]);
+
+        self::assertTrue($projection->exists);
+        self::assertDatabaseHas('capability_projections', [
+            'id' => $projection->id,
+            'mechanism' => 'app_profile',
+        ]);
+    }
 }

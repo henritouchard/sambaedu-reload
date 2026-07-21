@@ -12,6 +12,7 @@ use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\AppConfigStateProvider;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
+use App\Services\Agent\Providers\AppProfileCapabilityProvider;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\FirewallCapabilityProvider;
@@ -290,6 +291,19 @@ class AgentServiceProvider extends ServiceProvider
                 // le serveur ne fait que GATER. Une ligne, zéro modif du
                 // compilateur.
                 $app->make(LegacyCleanupCapabilityProvider::class),
+                // Story 36.5 — type `app_profile` (aggregate / portée SESSION,
+                // sixième mécanisme HORS-REGISTRE mais le SEUL côté compagnon).
+                // Le provider projette le CATALOGUE des applications redirigeables
+                // (spec de la capacité `app_profile` windows) → un item concret
+                // {app, link, server, profile_name}(+ install_hash/cache_local) par
+                // app, maille User, chemin serveur en TOKEN `\\<se4fs>\users\<user>\…`
+                // (jamais résolu — AC3). Gate d'instance FilePolicyService['home']
+                // (AC7 : rediriger vers une cible non montée n'a pas de sens) et
+                // `$ctx->user === null` ⇒ VIDE (iso DrivesStateProvider). Nom de
+                // profil `managed.default` NEUF/hors radical sambaedu ⇒ jamais
+                // matché par referencesSambaeduProfile() du legacy_cleanup (38.3) :
+                // les deux canaux coexistent. Une ligne, zéro modif du compilateur.
+                $app->make(AppProfileCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées

@@ -199,8 +199,10 @@ func substituteTokens(path string) string {
 	if se4fs == "" {
 		se4fs = strings.TrimLeft(os.Getenv("LOGONSERVER"), `\`)
 	}
-	path = strings.ReplaceAll(path, "<user>", user)
-	path = strings.ReplaceAll(path, "<se4fs>", se4fs)
+	// Cœur PUR unique de la substitution `<user>`/`<se4fs>` (shared) — le MÊME
+	// helper est appelé par le service SYSTEM au logon (app_profile), avec
+	// l'identité de la SESSION au lieu de l'environnement du service (36.5).
+	path = shared.SubstituteServerTokens(path, user, se4fs)
 
 	return expandWindowsEnv(path)
 }

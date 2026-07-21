@@ -231,6 +231,10 @@ class AppServiceProvider extends ServiceProvider
         // PrivilegeAuthoringGuard, SeDeny*-only : un droit *grant* verrouillerait
         // la machine) : une projection windows/privilege fautive lève
         // PrivilegeAuthoringException.
+        // Story 36.5 — idem pour le mécanisme app_profile (app_profile →
+        // AppProfileAuthoringGuard, piège n°1 : un nom de profil bâti sur le
+        // radical « sambaedu » collisionnerait avec le nettoyage legacy_cleanup) :
+        // une projection windows/app_profile fautive lève AppProfileAuthoringException.
         // Enregistré hors environnement de test (patron Workstation ci-dessous) :
         // de nombreux tests unitaires du provider fabriquent volontairement des
         // specs fs_acl ADVERSARIALES via factory Eloquent pour prouver la

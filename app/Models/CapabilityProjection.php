@@ -108,6 +108,28 @@ class CapabilityProjection extends Model
      */
     public const MECHANISM_LEGACY_CLEANUP = 'legacy_cleanup';
 
+    /**
+     * Mécanisme HORS-REGISTRE `app_profile` (Story 36.5, contrat §7.11 — type
+     * `app_profile`) : redirection du profil applicatif (Firefox, Thunderbird…)
+     * vers le home réseau de l'utilisateur, portée **Session** (le COMPAGNON
+     * seul — un profil applicatif est une donnée d'UTILISATEUR, pas de machine ;
+     * le service SYSTEM ne le touche jamais). Report du mécanisme SE4
+     * `Roaming→Server` (lien de dossier vers le home, accès direct serveur SANS
+     * copie — `applications.inc.php:538`). La `spec` porte le CATALOGUE des
+     * applications redirigeables `{ "apps": [ {app, link, server, profile_name,
+     * install_hash?, cache_local?}, … ] }` (catalogue-first) : `link` est un
+     * chemin RELATIF au profil Windows (`AppData\Roaming\…`), `server` un chemin
+     * RELATIF au home réseau. Le provider émet un item par app, maille User,
+     * chemin serveur en TOKEN `\\<se4fs>\users\<user>\…` (substitué côté agent).
+     * Le nom de profil `managed.default` est NEUF, STABLE, NON versionné et HORS
+     * radical `sambaedu` (Q — piège n°1) : jamais matché par la garde
+     * `referencesSambaeduProfile()` du mécanisme `legacy_cleanup` (38.3), les
+     * deux canaux coexistent (l'un éteint le legacy, l'autre installe le natif).
+     * Gate d'instance : {@see \App\Services\FilePolicyService::capabilities()['home']}
+     * (rediriger vers une cible non montée n'a pas de sens) — provider Postgres pur.
+     */
+    public const MECHANISM_APP_PROFILE = 'app_profile';
+
     /** Mécanisme membership de groupe local — slice C (idem). */
     public const MECHANISM_LOCALGROUP = 'localgroup';
 

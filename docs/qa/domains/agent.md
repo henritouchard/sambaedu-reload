@@ -4452,3 +4452,137 @@ avoir corrigé sans avoir corrigé.
 - [ ] Golden `state.v1.json` bumpé AVEC justification (hashes jumeaux PHP↔Go
       recalculés — items session registry/registry_list marqués `writer`,
       hint `refresh` retiré) ; `report.v1.json` STRICTEMENT inchangé.
+
+## Story 36.5 — Redirection du profil applicatif vers le home réseau (`app_profile`)
+
+Mécanisme `app_profile` (contrat §7.11) : redirection du profil Firefox/Thunderbird
+vers le home réseau de l'utilisateur (lien de dossier vers UNC + paire
+`profiles.ini`/`installs.ini` + marqueur `.se-profile-version`), report du
+mécanisme SE4 `Roaming→Server` (accès direct serveur, sans copie). Portée
+SESSION. Nom de profil `managed.default` — neuf, hors radical `sambaedu`, jamais
+effacé par `legacy_cleanup` (38.3). Gate d'instance : politique de fichiers `home`
+(`/admin/settings/files`). Release agent **2.13.0** requise (un binaire antérieur
+ignore le type EN SILENCE).
+
+**Split SYSTEM-lien / COMPAGNON-reste (conception ARRÊTÉE, Henri 2026-07-21).** Le
+lien de dossier vers UNC exige `SeCreateSymbolicLinkPrivilege`, qu'AUCUN canal SE5
+ne peut accorder à l'utilisateur (mécanisme `privilege` 35.6 SeDeny*-only) mais que
+le service LocalSystem possède nativement. C'est donc le **service SYSTEM qui pose /
+répare le LIEN au logon** (`WTS_SESSION_LOGON`, sur le modèle EXACT de l'overlay :
+token WTS → profil, `<user>` = login WTS, `<se4fs>` = variable machine `SE4FS`,
+source = cache per-SID INFALSIFIABLE écrit par SYSTEM au fetch, validation de borne
+lien⊂profil + cible UNC). Le **COMPAGNON garde tout le reste** (dossier serveur,
+marqueur, user.js, ini) et **ne pose plus le lien** : il le CONSTATE, et n'écrit la
+paire d'ini QUE si le lien est déjà présent (sinon Firefox créerait un vrai dossier
+= C1). **Aucune GPO manuelle, aucun réglage de privilège à poser** sur le parc — le
+prérequis privilège a disparu. **Limite assumée** : une session déjà ouverte au
+déploiement (ou dont le lien vient d'être cassé) reste non-compliant jusqu'au
+**prochain logon**, où SYSTEM (re)pose le lien et le compagnon converge ensuite.
+
+### Scénario 36.5.1 — SUIVI INTER-POSTES : signet posé sur le poste A retrouvé sur le poste B (e2e lab)
+
+1. Politique de fichiers : `home` activé (`/admin/settings/files`). Capacité
+   `roaming_app_profile` active. Poste A et poste B joints au domaine, agent
+   ≥ 2.13.0. **Aucun réglage de privilège à poser** (le lien est posé par SYSTEM).
+2. Ouvrir une session **élève** sur le **poste A**. Vérifier dans `agent.log`
+   (service SYSTEM) : « Lien app_profile firefox posé par SYSTEM au logon » →
+   `%USERPROFILE%\AppData\Roaming\Mozilla\Firefox\managed.default` est un LIEN
+   pointant `\\<se4fs>\users\<login>\.mozilla\firefox\managed.default`. Puis, dans
+   `companion.log`, la convergence `app_profile` passe de `drift` (détail « lien
+   posé par SYSTEM au logon — en attente » si le compagnon a tourné AVANT la pose)
+   à `compliant` (marqueur `.se-profile-version` = `1`, `profiles.ini`
+   `Path=managed.default`, `installs.ini`, `user.js`). Note : le lien est écrit par
+   le SERVICE, la paire d'ini par le COMPAGNON une fois le lien constaté.
+3. Lancer Firefox, ajouter un **signet** distinctif, fermer Firefox.
+4. Fermer la session, ouvrir une session **avec le même élève** sur le **poste B**.
+   Lancer Firefox : **le signet est présent** (le profil vient du home réseau).
+
+**Attendu** : lien posé par SYSTEM au logon, ini par le compagnon ; signet suivi
+de A vers B ; aucun profil vierge.
+
+### Scénario 36.5.1bis — SESSION DÉJÀ OUVERTE au déploiement ⇒ attente du prochain logon
+
+1. Session élève déjà ouverte AVANT que la capacité soit armée / le lien posé
+   (ou lien cassé en cours de session par un nettoyeur/AV).
+2. Le compagnon converge : `app_profile` en `drift` avec le `detail` « lien posé
+   par SYSTEM au logon — en attente » ; la paire d'ini n'est PAS écrite tant que
+   le lien manque (gate anti-C1). Aucune erreur, aucune donnée touchée.
+3. Fermer puis rouvrir la session (nouveau logon) : le service SYSTEM pose le lien
+   au `WTS_SESSION_LOGON`, le compagnon constate le lien et écrit les ini →
+   `compliant`.
+
+**Attendu** : level-triggered, jamais d'erreur permanente ; la convergence se
+fait au prochain logon.
+
+### Scénario 36.5.2 — IDEMPOTENCE : second logon ⇒ zéro écriture
+
+1. Après 36.5.1, rouvrir une session sur le poste A (profil déjà en place).
+2. Observer `companion.log` : la convergence `app_profile` rapporte
+   **`compliant`** dès le premier `Test` — aucune re-pose de lien, aucune
+   ré-écriture d'ini, aucun re-write du marqueur.
+
+**Attendu** : `compliant` sans écriture (level-triggered, no-op).
+
+### Scénario 36.5.3 — GATE POLITIQUE FICHIERS : `home=false` ⇒ aucun item
+
+1. Sur `/admin/settings/files`, **désactiver** le home réseau (`home=false`).
+2. Recompiler l'état (`curl` `GET /state` /vm ou attendre le prochain
+   check-in). Vérifier que la portée `session` **ne contient AUCUN item
+   `app_profile`** (rediriger vers une cible non montée n'a pas de sens).
+3. Réactiver `home` → l'item réapparaît au cycle suivant.
+
+**Attendu** : `home=false` ⇒ zéro item `app_profile` ; réactivation ⇒ retour.
+
+### Scénario 36.5.4 — HOME INJOIGNABLE : item `error`, jamais de suppression locale
+
+1. Session élève ouverte, redirection en place. Simuler une coupure du home
+   réseau (serveur de fichiers inaccessible).
+2. Forcer une convergence : l'item `app_profile` rapporte **`error`** (home
+   injoignable), les AUTRES items convergent normalement.
+3. Vérifier qu'AUCUNE donnée locale n'a été supprimée (le dossier serveur est
+   sondé AVANT toute op locale). Rétablir le réseau → re-convergence `compliant`.
+
+**Attendu** : `error` isolé, données locales intactes, reprise automatique.
+
+### Scénario 36.5.5 — NON-COLLISION avec `legacy_cleanup` (revue + test)
+
+1. Confirmer que le nom `managed.default` n'est PAS matché par
+   `referencesSambaeduProfile()` (test Go `TestAppProfileIniNotMatchedByLegacyCleanupGuard`).
+2. Sur un poste où `legacy_cleanup: vanilla` est actif ET `app_profile` actif :
+   vérifier que le nettoyage legacy N'EFFACE PAS le `profiles.ini` natif
+   (`managed.default`) — les deux canaux coexistent logon après logon.
+
+**Attendu** : le profil natif survit au nettoyage legacy ; aucun combat à chaque
+logon.
+
+### Check-list
+
+- [ ] 36.5.1 — Signet posé sur A retrouvé sur B (profil au home réseau, lien +
+      ini + marqueur `1`).
+- [ ] 36.5.2 — Second logon : `compliant` sans écriture (idempotent).
+- [ ] 36.5.3 — Politique fichiers `home=false` ⇒ aucun item `app_profile` ;
+      réactivation ⇒ retour.
+- [ ] 36.5.4 — Home injoignable ⇒ item `error`, données locales intactes,
+      reprise auto.
+- [ ] 36.5.5 — `managed.default` jamais effacé par `legacy_cleanup` (coexistence
+      des deux canaux).
+- [ ] **Lien posé par SYSTEM au logon** (split arrêté) : plus AUCUN prérequis de
+      privilège à poser sur le parc ; vérifier dans `agent.log` (service) « Lien
+      app_profile … posé par SYSTEM au logon ». Session déjà ouverte au déploiement
+      ⇒ `drift` « en attente », convergence au prochain logon (36.5.1bis).
+- [ ] **Dossier réel préexistant (C1, côté SYSTEM)** : simuler un VRAI dossier
+      `managed.default` (lien effacé + Firefox re-matérialise) → au logon suivant,
+      le service SYSTEM **renomme le dossier de côté**
+      (`…\managed.default.pre-redirect-<horodatage>`), **JAMAIS détruit** ; trace
+      dans `agent.log` (la pose SYSTEM ne produit pas d'item de rapport).
+- [ ] Cache : vérifier que le cache disque reste local (`%LOCALAPPDATA%\cacheFirefox`)
+      malgré le montage réseau ; `user.js` d'épinglage présent dans le profil.
+- [ ] **Limite `user.js` machine-dépendant (C5, à surveiller en lab)** : sur des
+      postes aux noms de dossier de profil HÉTÉROGÈNES (`alice` vs `alice.DOMAINE`
+      vs `alice.000`), le chemin de cache épinglé dans le `user.js` PARTAGÉ est
+      réécrit à chaque alternance de postes et peut être invalide entre-temps ; le
+      `user.js` écrase aussi un `user.js` utilisateur. Fix structurel (épinglage par
+      canal machine) consigné pour la 36.6/fast-follow — vérifier l'ampleur réelle
+      sur un parc à noms homogènes vs hétérogènes.
+- [ ] Golden `state.v1.json` bumpé AVEC justification (hashes jumeaux PHP↔Go
+      recalculés — AJOUT item `app_profile` session) ; agent bumpé 2.13.0.

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
+use App\Exceptions\AppProfileAuthoringException;
 use App\Exceptions\FirewallAuthoringException;
 use App\Exceptions\FsAclAuthoringException;
 use App\Exceptions\PrivilegeAuthoringException;
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
+use App\Services\Agent\Providers\AppProfileAuthoringGuard;
 use App\Services\Agent\Providers\FirewallAuthoringGuard;
 use App\Services\Agent\Providers\FsAclAuthoringGuard;
 use App\Services\Agent\Providers\PrivilegeAuthoringGuard;
@@ -47,6 +49,7 @@ class CapabilityProjectionObserver
             CapabilityProjection::MECHANISM_FS_ACL => $this->guardFsAcl($projection),
             CapabilityProjection::MECHANISM_FIREWALL => $this->guardFirewall($projection),
             CapabilityProjection::MECHANISM_PRIVILEGE => $this->guardPrivilege($projection),
+            CapabilityProjection::MECHANISM_APP_PROFILE => $this->guardAppProfile($projection),
             default => null, // mécanisme non concerné.
         };
     }
@@ -93,6 +96,21 @@ class CapabilityProjectionObserver
 
         if ($violations !== []) {
             throw new PrivilegeAuthoringException($violations);
+        }
+    }
+
+    private function guardAppProfile(CapabilityProjection $projection): void
+    {
+        $capability = Capability::find($projection->capability_id);
+
+        $violations = (new AppProfileAuthoringGuard())->violations([[
+            'capability' => $capability->key ?? (string) $projection->capability_id,
+            'warning' => $capability?->warning,
+            'spec' => $projection->spec,
+        ]]);
+
+        if ($violations !== []) {
+            throw new AppProfileAuthoringException($violations);
         }
     }
 }

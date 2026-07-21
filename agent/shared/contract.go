@@ -58,6 +58,14 @@ var ResourceTypes = []string{
 	// §7.10, payload `{mozilla: "vanilla"}` (enum fermé 1 valeur, Q5-a). Ajout
 	// ADDITIF. Un agent ≤ 2.8.0 IGNORE ce type EN SILENCE (contrat §8).
 	"legacy_cleanup",
+	// Story 36.5 (D1) — mécanisme HORS-REGISTRE `app_profile` : redirection du
+	// profil applicatif (Firefox/Thunderbird) vers le home réseau, portée
+	// SESSION (le COMPAGNON seul — donnée d'utilisateur). Report du mécanisme
+	// SE4 `Roaming→Server` (lien de dossier, accès direct serveur SANS copie).
+	// Payload `{app, link, server, profile_name}` (+ install_hash/cache_local
+	// optionnels, §7.11) — `server` en TOKEN `\\<se4fs>\users\<user>\…`. Ajout
+	// ADDITIF. Un agent ≤ 2.12.4 IGNORE ce type EN SILENCE (contrat §8).
+	"app_profile",
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso

@@ -181,7 +181,10 @@ import (
 // d'appliqué) → PUBLIER la release 2.12.0 AVANT le retrofit. `report.v1.json`
 // INCHANGÉ. Hash d'état RECALCULÉ, bumpé à l'IDENTIQUE côté PHP
 // (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "af00bc8350ab453f105397f22d5d4716fe97bdf014c101e07dc0319a3703a65f"
+// Story 36.5 : +1 item `app_profile` (redirection profil Firefox → home réseau,
+// aggregate, §7.11) en portée SESSION → hash d'état RECALCULÉ, bumpé à
+// l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+const frozenStateHash = "df138f19e07222797ae0214358ebb1cdbc3a1e05a77c4ea5704afc89c0468f4d"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -311,8 +314,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 18 {
-		t.Errorf("18 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3 + registry_list session 43.2), %d vérifiés", checked)
+	if checked != 19 {
+		t.Errorf("19 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3 + registry_list session 43.2 + app_profile session 36.5), %d vérifiés", checked)
 	}
 }
 

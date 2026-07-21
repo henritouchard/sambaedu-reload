@@ -267,7 +267,16 @@ class ContractV1Test extends TestCase
     // 18 items au total (inchangé), hash d'état RECALCULÉ. Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
     // NFR13).
-    private const FROZEN_STATE_HASH = 'af00bc8350ab453f105397f22d5d4716fe97bdf014c101e07dc0319a3703a65f';
+    // Re-bumpé SCIEMMENT par la Story 36.5 (évolution MINEURE du contrat, §9) :
+    // AJOUT d'UN item `app_profile` (§7.11, mécanisme HORS-REGISTRE — redirection
+    // du profil applicatif Firefox vers le home réseau, aggregate) en portée
+    // SESSION → session = 9 items, 19 items au total, hash d'état RECALCULÉ. Type
+    // AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
+    // major : un binaire ≤ 2.12.4 IGNORE le type EN SILENCE (§8 — aucun statut au
+    // rapport), d'où publication de release 2.13.0 obligatoire. Le type entre dans
+    // ReportRequest via Rule::in(RESOURCE_TYPES). Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'df138f19e07222797ae0214358ebb1cdbc3a1e05a77c4ea5704afc89c0468f4d';
 
     private StateHasher $hasher;
 

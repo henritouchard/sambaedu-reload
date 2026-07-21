@@ -56,8 +56,11 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// clés + `refresh` optionnel additif) en portée SESSION → session = 8.
 	// L'item `registry` HideFileExt existant gagne aussi `refresh` (champ
 	// additif, ne change PAS le COMPTE d'items).
-	if len(state.Machine) != 9 || len(state.Session) != 8 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 9/8/1)",
+	// Story 36.5 : +1 item `app_profile` (redirection profil Firefox → home
+	// réseau, aggregate, payload {app, link, server, profile_name, install_hash,
+	// cache_local}) en portée SESSION → session = 9.
+	if len(state.Machine) != 9 || len(state.Session) != 9 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 9/9/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }
@@ -267,8 +270,9 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 	// Story 36.2 : +1 type `firewall` (ajout ADDITIF D1, mécanisme hors-registre) → 13.
 	// Story 35.6 : +1 type `privilege` (ajout ADDITIF D1, mécanisme hors-registre) → 14.
 	// Story 38.3 : +1 type `legacy_cleanup` (ajout ADDITIF D1, nettoyage crochets legacy) → 15.
-	if len(ResourceTypes) != 15 {
-		t.Errorf("15 identifiants de type publiés (§7), got %d", len(ResourceTypes))
+	// Story 36.5 : +1 type `app_profile` (ajout ADDITIF D1, mécanisme hors-registre — redirection profil) → 16.
+	if len(ResourceTypes) != 16 {
+		t.Errorf("16 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
 	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {

@@ -475,7 +475,31 @@ package shared
 // normalement). Toute rupture de contrat entre vN et vN+1 (format du cache
 // per-SID, du drop, nouveaux types d'items) se manifeste dans cette fenêtre.
 //
+// 2.13.0 = Story 36.5 : nouveau type `app_profile` (§7.11, mécanisme
+// HORS-REGISTRE — redirection du profil applicatif Firefox/Thunderbird vers le
+// home réseau, portée SESSION). Ajout ADDITIF de type (contrat §9) : un binaire
+// ≤ 2.12.4 IGNORE le type EN SILENCE (§8 — aucun statut, aucune erreur ; symptôme
+// « profil non redirigé »). La release 2.13.0 DOIT être publiée manuellement pour
+// armer le mécanisme.
+//
+// AMENDEMENT FINAL 36.5 (split SYSTEM-lien / COMPAGNON-reste, Henri 2026-07-21,
+// toujours en 2.13.0 — non publiée). Le lien de dossier vers UNC (mklink /D
+// iso-SE4) exige `SeCreateSymbolicLinkPrivilege`, qu'AUCUN canal SE5 ne peut
+// accorder au compagnon (mécanisme `privilege` 35.6 SeDeny*-only) mais que
+// LocalSystem possède nativement. Sur le modèle EXACT de l'overlay (27.1bis), le
+// SERVICE SYSTEM pose donc / répare le LIEN au WTS_SESSION_LOGON
+// (app_profile_logon.go pur + app_profile_logon_windows.go glue : token WTS →
+// profil, source = cache per-SID INFALSIFIABLE écrit par SYSTEM au fetch,
+// validation de borne lien⊂profil + cible UNC, mise de côté C1 déplacée ici). Le
+// COMPAGNON garde tout le reste (dossier serveur, marqueur, user.js, ini) et NE
+// POSE PLUS le lien : il le CONSTATE et n'écrit la paire d'ini QUE si le lien est
+// déjà présent (sinon Firefox lancé entre-temps créerait un vrai dossier — C1).
+// Lien manquant ⇒ item non-compliant avec detail « en attente de SYSTEM » ; au
+// prochain logon, Test ⇒ compliant (level-triggered). Contrat wire/golden
+// INCHANGÉS (aucun champ de payload nouveau — seul CHANGE l'acteur qui pose le
+// lien).
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.12.4"
+var Version = "2.13.0"

@@ -255,6 +255,18 @@ func runCompanion() error {
 					Ops: &driveOps{log: logger},
 					Log: logger,
 				},
+				// Story 36.5 — app_profile (aggregate / session) : le COMPAGNON
+				// redirige le profil applicatif (Firefox/Thunderbird) vers le home
+				// reseau (lien de dossier vers UNC + paire d'ini + marqueur de
+				// version). Donnee d'UTILISATEUR, jamais le service SYSTEM (AC2).
+				// Report SE4 Roaming->Server (acces direct serveur sans copie).
+				// Home injoignable => item error, jamais de suppression locale
+				// (AC6). Le nom de profil managed.default est neuf/hors radical
+				// sambaedu => jamais efface par legacy_cleanup (38.3).
+				"app_profile": &shared.AppProfileHandler{
+					Ops: &appProfileOps{log: logger},
+					Log: logger,
+				},
 				// Story 27.3 — registre HKCU (exclusive par cle / session) : le
 				// COMPAGNON applique les reglages de la ruche utilisateur (effet
 				// Explorer immediat). Les items HKLM (portee machine) sont

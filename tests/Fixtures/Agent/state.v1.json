@@ -197,6 +197,19 @@
                 "type": "file"
             },
             "hash": "5d4bb78870ddadb6f1eb1126ba9958ca35e4198bd69a6db954719493b358468b"
+        },
+        {
+            "type": "app_profile",
+            "semantics": "aggregate",
+            "payload": {
+                "app": "firefox",
+                "link": "AppData\\Roaming\\Mozilla\\Firefox\\managed.default",
+                "server": "\\\\<se4fs>\\users\\<user>\\.mozilla\\firefox\\managed.default",
+                "profile_name": "managed.default",
+                "install_hash": "308046B0AF4A39CB",
+                "cache_local": "cacheFirefox"
+            },
+            "hash": "81b4fc454c04ebe59ee470d412e22c0ca21fe62a875814a06a7cf2c81c8bf684"
         }
     ],
     "machine_user": [
