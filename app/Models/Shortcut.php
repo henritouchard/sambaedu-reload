@@ -208,6 +208,43 @@ class Shortcut extends Model implements Wireable
     }
 
     /**
+     * Utilisateurs (SQL) associés à ce raccourci.
+     *
+     * Le ciblage utilisateur passe par le MÊME pivot polymorphe que les postes.
+     * `ShortcutsStateProvider` sait le lire depuis 27.14 ; jusqu'ici seule
+     * l'écriture manquait — l'UI déposait des logins AD dans la colonne JSON
+     * `ad_users`, que plus aucun canal ne lit. Une assignation utilisateur
+     * n'avait donc aucun effet.
+     */
+    public function users(): MorphToMany
+    {
+        return $this->morphedByMany(
+            User::class,
+            'assignable',
+            'shortcut_assignables',
+            'shortcut_id',
+            'assignable_id'
+        )->withTimestamps();
+    }
+
+    /**
+     * Groupes d'utilisateurs (SQL) associés à ce raccourci.
+     *
+     * `user_groups`, pas des CN AD : c'est ce que résout `TargetContext`
+     * (`$user->groups()->pluck('user_groups.id')`).
+     */
+    public function userGroups(): MorphToMany
+    {
+        return $this->morphedByMany(
+            UserGroup::class,
+            'assignable',
+            'shortcut_assignables',
+            'shortcut_id',
+            'assignable_id'
+        )->withTimestamps();
+    }
+
+    /**
      * Tous les noms de groupes assignés (tous types confondus)
      */
     public function getAssignedGroupNames(): array

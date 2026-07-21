@@ -6,18 +6,24 @@ use Livewire\Attributes\Computed;
 use App\Models\WorkstationGroup;
 use App\Models\Workstation;
 use App\Models\User;
+use App\Models\UserGroup;
 use App\Constants\Ldap\MainGroups;
-use App\Repositories\GroupRepository;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 new class extends Component {
     private const USERS_SEARCH_LIMIT = 50;
 
+    /** Aperçu affiché tant qu'aucune recherche n'est saisie. */
+    private const USERS_PREVIEW_LIMIT = 20;
+
     public bool $isOpen = false;
 
-    // Vrai quand la recherche a été tronquée au plafond ci-dessus.
+    // Vrai quand la liste a été tronquée au plafond en vigueur.
     public bool $usersTruncated = false;
+
+    // Vrai quand la liste est l'aperçu par défaut, pas un résultat de recherche.
+    public bool $usersArePreview = true;
 
     // Onglet actif
     public string $activeTab = 'workstation_groups';
@@ -40,23 +46,23 @@ new class extends Component {
     public array $selectedUsers = [];
     public array $selectedUserGroups = [];
 
-    // Déjà assignés (pour les exclure)
+    // Déjà assignés (pour les exclure) — des ids SQL, comme les sélections.
     public array $alreadyAssignedWgIds = [];
     public array $alreadyAssignedWsIds = [];
-    public array $alreadyAssignedUsers = [];
-    public array $alreadyAssignedUserGroups = [];
+    public array $alreadyAssignedUserIds = [];
+    public array $alreadyAssignedUserGroupIds = [];
 
     #[On('open-shortcut-assignment-modal')]
     public function open(
         array $assignedWgIds = [],
         array $assignedWsIds = [],
-        array $assignedUsers = [],
-        array $assignedUserGroups = []
+        array $assignedUserIds = [],
+        array $assignedUserGroupIds = []
     ): void {
         $this->alreadyAssignedWgIds = $assignedWgIds;
         $this->alreadyAssignedWsIds = $assignedWsIds;
-        $this->alreadyAssignedUsers = $assignedUsers;
-        $this->alreadyAssignedUserGroups = $assignedUserGroups;
+        $this->alreadyAssignedUserIds = $assignedUserIds;
+        $this->alreadyAssignedUserGroupIds = $assignedUserGroupIds;
 
         $this->resetSelections();
         $this->loadAvailableData();
@@ -119,31 +125,32 @@ new class extends Component {
         // Groupes AD : volontairement PAS chargés dans une propriété publique —
         // voir le computed `availableUserGroups` (snapshot Livewire).
 
-        // Users : chargés à la demande via recherche (trop nombreux pour tout charger)
-        $this->availableUsers = [];
+        // Users : jamais tous chargés (trop nombreux). `searchAdUsers()` pose
+        // ici l'aperçu par défaut, puis les résultats de recherche ensuite.
+        $this->searchAdUsers();
     }
 
     /**
-     * Groupes AD de l'établissement.
+     * Groupes d'utilisateurs assignables — table SQL `user_groups`.
      *
-     * Computed et non propriété publique : sur un AD fédéré la liste dépasse
-     * 1800 entrées (~275 Ko de JSON), et une propriété publique est sérialisée
-     * dans le snapshot Livewire à CHAQUE aller-retour — y compris chaque frappe
-     * debounce de la recherche utilisateurs. `persist` évite de retaper l'annuaire
-     * à chaque render.
+     * PAS l'annuaire : `TargetContext` résout les groupes du user via
+     * `user_groups.id`, et le pivot `shortcut_assignables` stocke ces ids.
+     * Lister des CN AD ici (~1800 entrées, groupes d'autres établissements
+     * inclus) proposait des cibles que l'agent ne sait pas résoudre.
      */
-    #[Computed(persist: true, seconds: 300)]
+    #[Computed]
     public function availableUserGroups(): array
     {
-        try {
-            return app(GroupRepository::class)
-                ->getGroupsByEstablishment()
-                ->values()
-                ->toArray();
-        } catch (\Exception $e) {
-            Log::warning('ShortcutAssignmentModal: impossible de charger les groupes AD', ['error' => $e->getMessage()]);
-            return [];
-        }
+        return UserGroup::query()
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get()
+            ->map(fn(UserGroup $g) => [
+                'id' => $g->id,
+                'name' => $g->display_name ?: $g->name,
+                'type' => $g->type,
+            ])
+            ->toArray();
     }
 
     public function updatedSearchUsers(): void
@@ -155,17 +162,18 @@ new class extends Component {
     {
         $this->usersTruncated = false;
 
-        if (strlen($this->searchUsers) < 2) {
-            $this->availableUsers = [];
-            return;
-        }
+        // Sous le seuil de recherche on montre quand même un aperçu : une liste
+        // vide donne l'impression d'un écran cassé. C'est cosmétique, d'où le
+        // plafond bas — il ne s'agit pas de parcourir l'annuaire ici.
+        $isPreview = strlen($this->searchUsers) < 2;
+        $limit = $isPreview ? self::USERS_PREVIEW_LIMIT : self::USERS_SEARCH_LIMIT;
 
         try {
             // Recherche sur le cache SQL (table `users`), pas sur l'annuaire :
             // un round-trip LDAP par frappe était intenable, et la table porte
             // déjà la population synchronisée depuis l'AD.
             $users = User::query()
-                ->search($this->searchUsers)
+                ->when(!$isPreview, fn($q) => $q->search($this->searchUsers))
                 ->where('is_active', true)
                 // Seuls les comptes adossés à l'AD sont assignables : un
                 // raccourci est résolu contre la session Windows du poste.
@@ -173,9 +181,9 @@ new class extends Component {
                 // n'ont ni `dn` ni `ad_guid` et ne correspondront JAMAIS à une
                 // session — les proposer ne peut produire qu'une assignation morte.
                 ->where('source', 'ad')
-                ->whereNotIn('login', array_merge($this->alreadyAssignedUsers, $this->selectedUsers))
+                ->whereNotIn('id', array_merge($this->alreadyAssignedUserIds, $this->selectedUsers))
                 ->orderBy('fullname')
-                ->limit(self::USERS_SEARCH_LIMIT + 1)
+                ->limit($limit + 1)
                 ->get()
                 // `isSystemAccount()` serait le mauvais filtre ici : il traduit
                 // la protection legacy contre la SUPPRESSION (patterns larges
@@ -184,11 +192,15 @@ new class extends Component {
                 ->reject(fn(User $u) => MainGroups::isNonInteractiveAccount($u->login))
                 ->values();
 
-            $this->usersTruncated = $users->count() > self::USERS_SEARCH_LIMIT;
+            $this->usersTruncated = $users->count() > $limit;
+            $this->usersArePreview = $isPreview;
 
             $this->availableUsers = $users
-                ->take(self::USERS_SEARCH_LIMIT)
+                ->take($limit)
                 ->map(fn(User $u) => [
+                    // `id` : c'est LUI qui part dans le pivot. `login` reste
+                    // pour l'affichage seul.
+                    'id' => $u->id,
                     'cn' => $u->login,
                     'fullname' => $u->fullname ?: $u->login,
                     'role' => $u->role,
@@ -216,18 +228,18 @@ new class extends Component {
             : [...$this->selectedWs, $id];
     }
 
-    public function toggleUser(string $cn): void
+    public function toggleUser(int $id): void
     {
-        $this->selectedUsers = in_array($cn, $this->selectedUsers)
-            ? array_values(array_diff($this->selectedUsers, [$cn]))
-            : [...$this->selectedUsers, $cn];
+        $this->selectedUsers = in_array($id, $this->selectedUsers)
+            ? array_values(array_diff($this->selectedUsers, [$id]))
+            : [...$this->selectedUsers, $id];
     }
 
-    public function toggleUserGroup(string $cn): void
+    public function toggleUserGroup(int $id): void
     {
-        $this->selectedUserGroups = in_array($cn, $this->selectedUserGroups)
-            ? array_values(array_diff($this->selectedUserGroups, [$cn]))
-            : [...$this->selectedUserGroups, $cn];
+        $this->selectedUserGroups = in_array($id, $this->selectedUserGroups)
+            ? array_values(array_diff($this->selectedUserGroups, [$id]))
+            : [...$this->selectedUserGroups, $id];
     }
 
     #[Computed]
@@ -264,12 +276,9 @@ new class extends Component {
     #[Computed]
     public function filteredUserGroups(): array
     {
-        // L'exclusion des déjà-assignés se fait ICI et non dans
-        // `availableUserGroups` : ce dernier est persisté en cache et partagé
-        // entre raccourcis, il ne doit donc dépendre d'aucun état d'instance.
         $groups = array_filter(
             $this->availableUserGroups,
-            fn($g) => !in_array($g['cn'], $this->alreadyAssignedUserGroups)
+            fn($g) => !in_array($g['id'], $this->alreadyAssignedUserGroupIds)
         );
 
         if (empty($this->searchUserGroups)) {
@@ -277,8 +286,29 @@ new class extends Component {
         }
         $s = strtolower($this->searchUserGroups);
         return array_values(array_filter($groups, fn($g) =>
-            str_contains(strtolower($g['cn']), $s) || str_contains(strtolower($g['description'] ?? ''), $s)
+            str_contains(strtolower($g['name']), $s) || str_contains(strtolower($g['type']), $s)
         ));
+    }
+
+    /**
+     * Libellés des utilisateurs sélectionnés, indexés par id.
+     *
+     * La sélection ne porte QUE des ids (c'est eux qui vont au pivot) : un
+     * sélectionné peut donc avoir disparu de `availableUsers` après une
+     * nouvelle recherche. On relit la base plutôt que de dupliquer le login
+     * dans l'état du composant.
+     */
+    #[Computed]
+    public function selectedUserLabels(): array
+    {
+        if (empty($this->selectedUsers)) {
+            return [];
+        }
+
+        return User::query()
+            ->whereIn('id', $this->selectedUsers)
+            ->pluck('login', 'id')
+            ->all();
     }
 
     public function confirm(): void
@@ -286,8 +316,8 @@ new class extends Component {
         $this->dispatch('shortcut-assignments-confirmed',
             workstationGroupIds: $this->selectedWg,
             workstationIds: $this->selectedWs,
-            adUsers: $this->selectedUsers,
-            adUserGroups: $this->selectedUserGroups,
+            userIds: $this->selectedUsers,
+            userGroupIds: $this->selectedUserGroups,
         );
         $this->close();
     }
@@ -448,19 +478,17 @@ new class extends Component {
                         @if (count($this->filteredUserGroups) > 0)
                             <div class="divide-y divide-base-200">
                                 @foreach ($this->filteredUserGroups as $group)
-                                    <label wire:key="ug-{{ $group['cn'] }}"
+                                    <label wire:key="ug-{{ $group['id'] }}"
                                         class="flex items-center gap-3 p-3 cursor-pointer hover:bg-base-200 transition-colors">
-                                        <input type="checkbox" wire:click="toggleUserGroup('{{ $group['cn'] }}')"
-                                            @checked(in_array($group['cn'], $selectedUserGroups))
+                                        <input type="checkbox" wire:click="toggleUserGroup({{ $group['id'] }})"
+                                            @checked(in_array($group['id'], $selectedUserGroups))
                                             class="checkbox checkbox-secondary checkbox-sm" />
                                         <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-secondary/20">
                                             <i class="fa-solid fa-users text-secondary"></i>
                                         </div>
                                         <div class="flex-1 min-w-0">
-                                            <div class="font-medium truncate">{{ $group['cn'] }}</div>
-                                            @if (!empty($group['description']))
-                                                <div class="text-xs text-base-content/60">{{ Str::limit($group['description'], 50) }}</div>
-                                            @endif
+                                            <div class="font-medium truncate">{{ $group['name'] }}</div>
+                                            <div class="text-xs text-base-content/60">{{ $group['type'] }}</div>
                                         </div>
                                     </label>
                                 @endforeach
@@ -489,10 +517,10 @@ new class extends Component {
                         <div class="mb-3 shrink-0">
                             <div class="text-xs text-base-content/60 mb-1">Sélectionnés :</div>
                             <div class="flex flex-wrap gap-1">
-                                @foreach ($selectedUsers as $cn)
+                                @foreach ($this->selectedUserLabels as $id => $label)
                                     <span class="badge badge-accent gap-1">
-                                        {{ $cn }}
-                                        <button type="button" wire:click="toggleUser('{{ $cn }}')" class="btn btn-ghost btn-xs btn-circle">
+                                        {{ $label }}
+                                        <button type="button" wire:click="toggleUser({{ $id }})" class="btn btn-ghost btn-xs btn-circle">
                                             <i class="fa-solid fa-xmark text-xs"></i>
                                         </button>
                                     </span>
@@ -502,18 +530,13 @@ new class extends Component {
                     @endif
 
                     <div class="flex-1 overflow-y-auto min-h-0 border rounded-lg bg-base-100">
-                        @if (strlen($searchUsers) < 2)
-                            <div class="flex flex-col items-center justify-center h-32 text-base-content/60">
-                                <i class="fa-solid fa-magnifying-glass text-3xl mb-2"></i>
-                                <span>Saisissez au moins 2 caractères pour rechercher</span>
-                            </div>
-                        @elseif (count($availableUsers) > 0)
+                        @if (count($availableUsers) > 0)
                             <div class="divide-y divide-base-200">
                                 @foreach ($availableUsers as $user)
-                                    <label wire:key="user-{{ $user['cn'] }}"
+                                    <label wire:key="user-{{ $user['id'] }}"
                                         class="flex items-center gap-3 p-3 cursor-pointer hover:bg-base-200 transition-colors">
-                                        <input type="checkbox" wire:click="toggleUser('{{ $user['cn'] }}')"
-                                            @checked(in_array($user['cn'], $selectedUsers))
+                                        <input type="checkbox" wire:click="toggleUser({{ $user['id'] }})"
+                                            @checked(in_array($user['id'], $selectedUsers))
                                             class="checkbox checkbox-accent checkbox-sm" />
                                         <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-accent/20">
                                             <i class="fa-solid fa-user text-accent"></i>
@@ -533,7 +556,11 @@ new class extends Component {
                             @if ($usersTruncated)
                                 <div class="p-3 text-xs text-center text-base-content/60 border-t border-base-200">
                                     <i class="fa-solid fa-circle-info mr-1"></i>
-                                    50 premiers résultats affichés — affinez la recherche
+                                    @if ($usersArePreview)
+                                        Saisissez au moins 2 caractères pour rechercher parmi tous les comptes
+                                    @else
+                                        50 premiers résultats affichés — affinez la recherche
+                                    @endif
                                 </div>
                             @endif
                         @else

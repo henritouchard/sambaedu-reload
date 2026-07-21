@@ -108,7 +108,7 @@ new class extends Component {
             $this->currentPage = min($this->currentPage, $lastPage);
             $offset = ($this->currentPage - 1) * $this->perPage;
 
-            $this->shortcuts = $query->with(['workstationGroups', 'workstations'])->orderBy('name')
+            $this->shortcuts = $query->with(['workstationGroups', 'workstations', 'users', 'userGroups'])->orderBy('name')
                 ->skip($offset)
                 ->take($this->perPage)
                 ->get()
@@ -207,8 +207,8 @@ new class extends Component {
     public function onAssignmentsConfirmed(
         array $workstationGroupIds = [],
         array $workstationIds = [],
-        array $adUsers = [],
-        array $adUserGroups = []
+        array $userIds = [],
+        array $userGroupIds = []
     ): void {
         if (Gate::denies('update-shortcut')) {
             $this->toast('error', 'Accès refusé', 'Vous n\'avez pas les droits pour assigner des raccourcis');
@@ -219,7 +219,15 @@ new class extends Component {
             return;
         }
 
-        if (empty($workstationGroupIds) && empty($workstationIds) && empty($adUsers) && empty($adUserGroups)) {
+        $relations = [
+            'workstationGroups' => $workstationGroupIds,
+            'workstations' => $workstationIds,
+            'users' => $userIds,
+            'userGroups' => $userGroupIds,
+        ];
+
+        $targetCount = array_sum(array_map('count', $relations));
+        if ($targetCount === 0) {
             $this->toast('warning', 'Attention', 'Aucune cible sélectionnée');
             return;
         }
@@ -237,37 +245,14 @@ new class extends Component {
                     continue;
                 }
 
-                if (!empty($workstationGroupIds)) {
-                    $shortcut->workstationGroups()->syncWithoutDetaching($workstationGroupIds);
-                }
-
-                if (!empty($workstationIds)) {
-                    $shortcut->workstations()->syncWithoutDetaching($workstationIds);
-                }
-
-                $attributes = [];
-
-                if (!empty($adUsers)) {
-                    $attributes['ad_users'] = array_values(array_unique(
-                        array_merge($shortcut->ad_users ?? [], $adUsers)
-                    ));
-                }
-
-                if (!empty($adUserGroups)) {
-                    $attributes['ad_user_groups'] = array_values(array_unique(
-                        array_merge($shortcut->ad_user_groups ?? [], $adUserGroups)
-                    ));
-                }
-
-                if (!empty($attributes)) {
-                    $shortcut->update($attributes);
+                foreach ($relations as $relation => $ids) {
+                    if (!empty($ids)) {
+                        $shortcut->{$relation}()->syncWithoutDetaching($ids);
+                    }
                 }
 
                 $assignedCount++;
             }
-
-            $targetCount = count($workstationGroupIds) + count($workstationIds)
-                + count($adUsers) + count($adUserGroups);
 
             $message = "{$targetCount} cible(s) assignée(s) à {$assignedCount} raccourci(s)";
             if ($globalCount > 0) {
@@ -420,8 +405,8 @@ new class extends Component {
                                     @php
                                         $wgCount = $shortcut->workstationGroups->count();
                                         $wsCount = $shortcut->workstations->count();
-                                        $ugCount = count($shortcut->ad_user_groups ?? []);
-                                        $uCount = count($shortcut->ad_users ?? []);
+                                        $ugCount = $shortcut->userGroups->count();
+                                        $uCount = $shortcut->users->count();
                                         $totalTargets = $wgCount + $wsCount + $ugCount + $uCount;
                                     @endphp
 
@@ -439,14 +424,14 @@ new class extends Component {
                                                     <i class="fa-solid fa-computer text-xs mr-1"></i>{{ $ws->name }}
                                                 </span>
                                             @endforeach
-                                            @foreach ($shortcut->ad_user_groups ?? [] as $cn)
+                                            @foreach ($shortcut->userGroups as $ug)
                                                 <span class="badge badge-sm badge-secondary">
-                                                    <i class="fa-solid fa-users text-xs mr-1"></i>{{ $cn }}
+                                                    <i class="fa-solid fa-users text-xs mr-1"></i>{{ $ug->display_name ?: $ug->name }}
                                                 </span>
                                             @endforeach
-                                            @foreach ($shortcut->ad_users ?? [] as $cn)
+                                            @foreach ($shortcut->users as $usr)
                                                 <span class="badge badge-sm badge-accent">
-                                                    <i class="fa-solid fa-user text-xs mr-1"></i>{{ $cn }}
+                                                    <i class="fa-solid fa-user text-xs mr-1"></i>{{ $usr->login }}
                                                 </span>
                                             @endforeach
                                         </div>
@@ -469,13 +454,13 @@ new class extends Component {
                                                     @if ($ugCount > 0)
                                                         <div class="flex items-center gap-1">
                                                             <i class="fa-solid fa-users text-secondary"></i>
-                                                            <span>{{ $ugCount }} grp. AD</span>
+                                                            <span>{{ $ugCount }} groupe(s) util.</span>
                                                         </div>
                                                     @endif
                                                     @if ($uCount > 0)
                                                         <div class="flex items-center gap-1">
                                                             <i class="fa-solid fa-user text-accent"></i>
-                                                            <span>{{ $uCount }} util. AD</span>
+                                                            <span>{{ $uCount }} utilisateur(s)</span>
                                                         </div>
                                                     @endif
                                                 </div>
@@ -491,14 +476,14 @@ new class extends Component {
                                                         <i class="fa-solid fa-computer text-xs mr-1"></i>{{ $ws->name }}
                                                     </span>
                                                 @endforeach
-                                                @foreach ($shortcut->ad_user_groups ?? [] as $cn)
+                                                @foreach ($shortcut->userGroups as $ug)
                                                     <span class="badge badge-sm badge-secondary">
-                                                        <i class="fa-solid fa-users text-xs mr-1"></i>{{ $cn }}
+                                                        <i class="fa-solid fa-users text-xs mr-1"></i>{{ $ug->display_name ?: $ug->name }}
                                                     </span>
                                                 @endforeach
-                                                @foreach ($shortcut->ad_users ?? [] as $cn)
+                                                @foreach ($shortcut->users as $usr)
                                                     <span class="badge badge-sm badge-accent">
-                                                        <i class="fa-solid fa-user text-xs mr-1"></i>{{ $cn }}
+                                                        <i class="fa-solid fa-user text-xs mr-1"></i>{{ $usr->login }}
                                                     </span>
                                                 @endforeach
                                             </div>

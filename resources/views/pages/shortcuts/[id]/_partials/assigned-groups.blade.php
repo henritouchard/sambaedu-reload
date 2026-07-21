@@ -25,8 +25,8 @@
         @php
             $hasAny = count($assignedWorkstationGroups) > 0
                 || count($assignedWorkstations) > 0
-                || count($assignedAdUserGroups) > 0
-                || count($assignedAdUsers) > 0;
+                || count($assignedUserGroups) > 0
+                || count($assignedUsers) > 0;
         @endphp
 
         @if ($hasAny)
@@ -80,21 +80,22 @@
                     </div>
                 @endif
 
-                {{-- Groupes utilisateurs --}}
-                @if (count($assignedAdUserGroups) > 0)
+                {{-- Groupes d'utilisateurs --}}
+                @if (count($assignedUserGroups) > 0)
                     <div>
                         <h4 class="text-sm font-semibold text-base-content/70 mb-2">
-                            <i class="fa-solid fa-users mr-1"></i> Groupes utilisateurs
+                            <i class="fa-solid fa-users mr-1"></i> Groupes d'utilisateurs
                         </h4>
                         <div class="flex flex-wrap gap-2">
-                            @foreach ($assignedAdUserGroups as $cn)
+                            @foreach ($assignedUserGroups as $group)
+                                @php $label = $group->display_name ?: $group->name; @endphp
                                 <div class="badge badge-secondary gap-1">
                                     <i class="fa-solid fa-users text-xs"></i>
-                                    {{ $cn }}
+                                    {{ $label }}
                                     @if (!$isGlobal)
                                         <button type="button" class="ml-1 hover:text-error"
-                                            wire:click="detachAdUserGroup('{{ $cn }}')"
-                                            wire:confirm="Retirer le groupe utilisateur « {{ $cn }} » ?">
+                                            wire:click="detachUserGroup({{ $group->id }})"
+                                            wire:confirm="Retirer le groupe « {{ $label }} » ?">
                                             <i class="fa-solid fa-xmark text-xs"></i>
                                         </button>
                                     @endif
@@ -104,21 +105,21 @@
                     </div>
                 @endif
 
-                {{-- Utilisateurs AD --}}
-                @if (count($assignedAdUsers) > 0)
+                {{-- Utilisateurs --}}
+                @if (count($assignedUsers) > 0)
                     <div>
                         <h4 class="text-sm font-semibold text-base-content/70 mb-2">
-                            <i class="fa-solid fa-user mr-1"></i> Utilisateurs AD
+                            <i class="fa-solid fa-user mr-1"></i> Utilisateurs
                         </h4>
                         <div class="flex flex-wrap gap-2">
-                            @foreach ($assignedAdUsers as $cn)
+                            @foreach ($assignedUsers as $user)
                                 <div class="badge badge-accent gap-1">
                                     <i class="fa-solid fa-user text-xs"></i>
-                                    {{ $cn }}
+                                    {{ $user->login }}
                                     @if (!$isGlobal)
                                         <button type="button" class="ml-1 hover:text-error"
-                                            wire:click="detachAdUser('{{ $cn }}')"
-                                            wire:confirm="Retirer l'utilisateur « {{ $cn }} » ?">
+                                            wire:click="detachUser({{ $user->id }})"
+                                            wire:confirm="Retirer l'utilisateur « {{ $user->login }} » ?">
                                             <i class="fa-solid fa-xmark text-xs"></i>
                                         </button>
                                     @endif

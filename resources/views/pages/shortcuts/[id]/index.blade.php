@@ -22,11 +22,11 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
     public bool $editing = false;
     public array $filters = [];
 
-    // Assignations
+    // Assignations — toutes issues du pivot `shortcut_assignables`.
     public array $assignedWorkstationGroups = [];
     public array $assignedWorkstations = [];
-    public array $assignedAdUsers = [];
-    public array $assignedAdUserGroups = [];
+    public array $assignedUsers = [];
+    public array $assignedUserGroups = [];
 
     // Type de raccourci : 'app' (cibles Windows/Linux) ou 'url' (site web).
     public string $type = 'app';
@@ -235,8 +235,8 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         if (!$this->shortcutModel) {
             $this->assignedWorkstationGroups = [];
             $this->assignedWorkstations = [];
-            $this->assignedAdUsers = [];
-            $this->assignedAdUserGroups = [];
+            $this->assignedUsers = [];
+            $this->assignedUserGroups = [];
             return;
         }
 
@@ -246,8 +246,14 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         $this->assignedWorkstations = $this->shortcutModel
             ->workstations()->orderBy('name')->get()->all();
 
-        $this->assignedAdUsers = $this->shortcutModel->ad_users ?? [];
-        $this->assignedAdUserGroups = $this->shortcutModel->ad_user_groups ?? [];
+        // Pivot, plus les colonnes JSON `ad_users`/`ad_user_groups` : celles-ci
+        // ne sont lues par AUCUN canal — une assignation utilisateur qui y
+        // atterrissait n'avait aucun effet sur les postes.
+        $this->assignedUsers = $this->shortcutModel
+            ->users()->orderBy('login')->get()->all();
+
+        $this->assignedUserGroups = $this->shortcutModel
+            ->userGroups()->orderBy('name')->get()->all();
     }
 
     public function openAssignmentModal(): void
@@ -255,8 +261,8 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         $this->dispatch('open-shortcut-assignment-modal',
             assignedWgIds: collect($this->assignedWorkstationGroups)->pluck('id')->toArray(),
             assignedWsIds: collect($this->assignedWorkstations)->pluck('id')->toArray(),
-            assignedUsers: $this->assignedAdUsers,
-            assignedUserGroups: $this->assignedAdUserGroups,
+            assignedUserIds: collect($this->assignedUsers)->pluck('id')->toArray(),
+            assignedUserGroupIds: collect($this->assignedUserGroups)->pluck('id')->toArray(),
         );
     }
 
@@ -264,8 +270,8 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
     public function onAssignmentsConfirmed(
         array $workstationGroupIds = [],
         array $workstationIds = [],
-        array $adUsers = [],
-        array $adUserGroups = []
+        array $userIds = [],
+        array $userGroupIds = []
     ): void {
         if (!$this->shortcutModel) {
             return;
@@ -277,28 +283,17 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         try {
             $count = 0;
 
-            if (!empty($workstationGroupIds)) {
-                $this->shortcutModel->workstationGroups()->syncWithoutDetaching($workstationGroupIds);
-                $count += count($workstationGroupIds);
-            }
-
-            if (!empty($workstationIds)) {
-                $this->shortcutModel->workstations()->syncWithoutDetaching($workstationIds);
-                $count += count($workstationIds);
-            }
-
-            if (!empty($adUsers)) {
-                $current = $this->shortcutModel->ad_users ?? [];
-                $merged = array_values(array_unique(array_merge($current, $adUsers)));
-                $this->shortcutModel->update(['ad_users' => $merged]);
-                $count += count($adUsers);
-            }
-
-            if (!empty($adUserGroups)) {
-                $current = $this->shortcutModel->ad_user_groups ?? [];
-                $merged = array_values(array_unique(array_merge($current, $adUserGroups)));
-                $this->shortcutModel->update(['ad_user_groups' => $merged]);
-                $count += count($adUserGroups);
+            foreach ([
+                'workstationGroups' => $workstationGroupIds,
+                'workstations' => $workstationIds,
+                'users' => $userIds,
+                'userGroups' => $userGroupIds,
+            ] as $relation => $ids) {
+                if (empty($ids)) {
+                    continue;
+                }
+                $this->shortcutModel->{$relation}()->syncWithoutDetaching($ids);
+                $count += count($ids);
             }
 
             $this->shortcutModel->refresh();
@@ -336,36 +331,28 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         }
     }
 
-    public function detachAdUserGroup(string $cn): void
+    public function detachUserGroup(int $groupId): void
     {
         if (!$this->shortcutModel) return;
         try {
-            $current = $this->shortcutModel->ad_user_groups ?? [];
-            $this->shortcutModel->update([
-                'ad_user_groups' => array_values(array_diff($current, [$cn])),
-            ]);
-            $this->shortcutModel->refresh();
+            $this->shortcutModel->userGroups()->detach($groupId);
             $this->loadAssignments();
-            $this->toast('success', 'Retiré', "Groupe AD « {$cn} » retiré");
+            $this->toast('success', 'Retiré', 'Groupe d\'utilisateurs retiré');
         } catch (\Exception $e) {
-            Log::error('detachAdUserGroup error: ' . $e->getMessage());
+            Log::error('detachUserGroup error: ' . $e->getMessage());
             $this->toast('error', 'Erreur', 'Erreur lors du retrait');
         }
     }
 
-    public function detachAdUser(string $cn): void
+    public function detachUser(int $userId): void
     {
         if (!$this->shortcutModel) return;
         try {
-            $current = $this->shortcutModel->ad_users ?? [];
-            $this->shortcutModel->update([
-                'ad_users' => array_values(array_diff($current, [$cn])),
-            ]);
-            $this->shortcutModel->refresh();
+            $this->shortcutModel->users()->detach($userId);
             $this->loadAssignments();
-            $this->toast('success', 'Retiré', "Utilisateur « {$cn} » retiré");
+            $this->toast('success', 'Retiré', 'Utilisateur retiré');
         } catch (\Exception $e) {
-            Log::error('detachAdUser error: ' . $e->getMessage());
+            Log::error('detachUser error: ' . $e->getMessage());
             $this->toast('error', 'Erreur', 'Erreur lors du retrait');
         }
     }
