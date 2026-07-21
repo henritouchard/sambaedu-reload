@@ -37,7 +37,7 @@
             <!-- Boutons -->
             @if ($creating)
                 <div class="flex gap-2">
-                    <a href="{{ route('app.shortcuts') }}" class="btn btn-ghost btn-sm">
+                    <a href="{{ route('app.parc-settings.index', ['tab' => 'shortcuts']) }}" class="btn btn-ghost btn-sm">
                         <i class="fa-solid fa-xmark"></i>
                         Annuler
                     </a>

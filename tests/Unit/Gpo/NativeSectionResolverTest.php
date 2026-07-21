@@ -54,7 +54,7 @@ class NativeSectionResolverTest extends TestCase
         $result = NativeSectionResolver::resolve('shortcuts-eleves');
 
         self::assertArrayHasKey('shortcuts', $result);
-        self::assertSame('/app/shortcuts', $result['shortcuts']['url']);
+        self::assertSame('/app/parc-settings?tab=shortcuts', $result['shortcuts']['url']);
     }
 
     // =========================================================================
@@ -159,7 +159,7 @@ class NativeSectionResolverTest extends TestCase
     {
         $url = NativeSectionResolver::buildUrl('shortcuts', null);
 
-        self::assertSame('/app/shortcuts', $url);
+        self::assertSame('/app/parc-settings?tab=shortcuts', $url);
     }
 
     // =========================================================================

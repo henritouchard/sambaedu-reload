@@ -5,13 +5,19 @@ use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
 use App\Models\WorkstationGroup;
 use App\Models\Workstation;
+use App\Models\User;
+use App\Constants\Ldap\MainGroups;
 use App\Repositories\GroupRepository;
-use App\Repositories\UserRepository;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 new class extends Component {
+    private const USERS_SEARCH_LIMIT = 50;
+
     public bool $isOpen = false;
+
+    // Vrai quand la recherche a été tronquée au plafond ci-dessus.
+    public bool $usersTruncated = false;
 
     // Onglet actif
     public string $activeTab = 'workstation_groups';
@@ -25,8 +31,8 @@ new class extends Component {
     // Données disponibles
     public array $availableWorkstationGroups = [];
     public array $availableWorkstations = [];
-    public array $availableUserGroups = [];
     public array $availableUsers = [];
+    // NB : les groupes AD sont un #[Computed], pas une propriété publique.
 
     // Sélections
     public array $selectedWg = [];
@@ -77,6 +83,7 @@ new class extends Component {
         $this->searchWs = '';
         $this->searchUsers = '';
         $this->searchUserGroups = '';
+        $this->usersTruncated = false;
         $this->activeTab = 'workstation_groups';
     }
 
@@ -109,44 +116,77 @@ new class extends Component {
             ])
             ->toArray();
 
-        // Groupes AD (via GroupRepository)
+        // Groupes AD : volontairement PAS chargés dans une propriété publique —
+        // voir le computed `availableUserGroups` (snapshot Livewire).
+
+        // Users : chargés à la demande via recherche (trop nombreux pour tout charger)
+        $this->availableUsers = [];
+    }
+
+    /**
+     * Groupes AD de l'établissement.
+     *
+     * Computed et non propriété publique : sur un AD fédéré la liste dépasse
+     * 1800 entrées (~275 Ko de JSON), et une propriété publique est sérialisée
+     * dans le snapshot Livewire à CHAQUE aller-retour — y compris chaque frappe
+     * debounce de la recherche utilisateurs. `persist` évite de retaper l'annuaire
+     * à chaque render.
+     */
+    #[Computed(persist: true, seconds: 300)]
+    public function availableUserGroups(): array
+    {
         try {
-            $groupRepo = app(GroupRepository::class);
-            $adGroups = $groupRepo->getGroupsByEstablishment();
-            $this->availableUserGroups = $adGroups
-                ->filter(fn($g) => !in_array($g['cn'], $this->alreadyAssignedUserGroups))
+            return app(GroupRepository::class)
+                ->getGroupsByEstablishment()
                 ->values()
                 ->toArray();
         } catch (\Exception $e) {
             Log::warning('ShortcutAssignmentModal: impossible de charger les groupes AD', ['error' => $e->getMessage()]);
-            $this->availableUserGroups = [];
+            return [];
         }
+    }
 
-        // Users AD : chargés à la demande via recherche (trop nombreux pour tout charger)
-        $this->availableUsers = [];
+    public function updatedSearchUsers(): void
+    {
+        $this->searchAdUsers();
     }
 
     public function searchAdUsers(): void
     {
+        $this->usersTruncated = false;
+
         if (strlen($this->searchUsers) < 2) {
             $this->availableUsers = [];
             return;
         }
 
         try {
-            $userRepo = app(UserRepository::class);
-            $users = $userRepo->search($this->searchUsers, 50);
+            // Recherche sur le cache SQL (table `users`), pas sur l'annuaire :
+            // un round-trip LDAP par frappe était intenable, et la table porte
+            // déjà la population synchronisée depuis l'AD.
+            $users = User::query()
+                ->search($this->searchUsers)
+                ->where('is_active', true)
+                ->whereNotIn('login', array_merge($this->alreadyAssignedUsers, $this->selectedUsers))
+                ->orderBy('fullname')
+                ->limit(self::USERS_SEARCH_LIMIT + 1)
+                ->get()
+                ->reject(fn(User $u) => MainGroups::isSystemAccount($u->login))
+                ->values();
+
+            $this->usersTruncated = $users->count() > self::USERS_SEARCH_LIMIT;
+
             $this->availableUsers = $users
-                ->filter(fn($u) => !in_array($u->login, $this->alreadyAssignedUsers) && !in_array($u->login, $this->selectedUsers))
-                ->map(fn($u) => [
+                ->take(self::USERS_SEARCH_LIMIT)
+                ->map(fn(User $u) => [
                     'cn' => $u->login,
-                    'fullname' => $u->fullname,
+                    'fullname' => $u->fullname ?: $u->login,
                     'role' => $u->role,
                 ])
                 ->values()
                 ->toArray();
         } catch (\Exception $e) {
-            Log::warning('ShortcutAssignmentModal: erreur recherche utilisateurs AD', ['error' => $e->getMessage()]);
+            Log::warning('ShortcutAssignmentModal: erreur recherche utilisateurs', ['error' => $e->getMessage()]);
             $this->availableUsers = [];
         }
     }
@@ -214,11 +254,19 @@ new class extends Component {
     #[Computed]
     public function filteredUserGroups(): array
     {
+        // L'exclusion des déjà-assignés se fait ICI et non dans
+        // `availableUserGroups` : ce dernier est persisté en cache et partagé
+        // entre raccourcis, il ne doit donc dépendre d'aucun état d'instance.
+        $groups = array_filter(
+            $this->availableUserGroups,
+            fn($g) => !in_array($g['cn'], $this->alreadyAssignedUserGroups)
+        );
+
         if (empty($this->searchUserGroups)) {
-            return $this->availableUserGroups;
+            return array_values($groups);
         }
         $s = strtolower($this->searchUserGroups);
-        return array_values(array_filter($this->availableUserGroups, fn($g) =>
+        return array_values(array_filter($groups, fn($g) =>
             str_contains(strtolower($g['cn']), $s) || str_contains(strtolower($g['description'] ?? ''), $s)
         ));
     }
@@ -377,7 +425,7 @@ new class extends Component {
 
                 {{-- ===== ONGLET USER GROUPS AD ===== --}}
                 @elseif ($activeTab === 'user_groups')
-                    @if (count($availableUserGroups) > 3)
+                    @if (count($this->availableUserGroups) > 3)
                         <div class="mb-3 shrink-0">
                             <label class="input input-bordered flex items-center gap-2 w-full">
                                 <i class="fa-solid fa-magnifying-glass opacity-50"></i>
@@ -420,9 +468,9 @@ new class extends Component {
                     <div class="mb-3 shrink-0">
                         <label class="input input-bordered flex items-center gap-2 w-full">
                             <i class="fa-solid fa-magnifying-glass opacity-50"></i>
-                            <input type="text" wire:model.live.debounce.500ms="searchUsers"
-                                wire:change="searchAdUsers"
+                            <input type="text" wire:model.live.debounce.300ms="searchUsers"
                                 placeholder="Rechercher un utilisateur (min. 2 caractères)..." class="grow" />
+                            <span wire:loading wire:target="searchUsers" class="loading loading-spinner loading-xs"></span>
                         </label>
                     </div>
 
@@ -470,6 +518,12 @@ new class extends Component {
                                     </label>
                                 @endforeach
                             </div>
+                            @if ($usersTruncated)
+                                <div class="p-3 text-xs text-center text-base-content/60 border-t border-base-200">
+                                    <i class="fa-solid fa-circle-info mr-1"></i>
+                                    50 premiers résultats affichés — affinez la recherche
+                                </div>
+                            @endif
                         @else
                             <div class="flex flex-col items-center justify-center h-32 text-base-content/60">
                                 <i class="fa-solid fa-user-slash text-3xl mb-2"></i>

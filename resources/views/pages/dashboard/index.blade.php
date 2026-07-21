@@ -441,7 +441,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
             <!-- Raccourcis -->
             <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
-                    <a href="{{ route('app.shortcuts') }}" class="card-title text-info hover:underline w-fit">
+                    <a href="{{ route('app.parc-settings.index', ['tab' => 'shortcuts']) }}" class="card-title text-info hover:underline w-fit">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14">
@@ -450,17 +450,17 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                         Raccourcis
                     </a>
                     <div class="mt-2 space-y-1.5 text-sm">
-                        <a href="{{ route('app.shortcuts') }}?place=desktop"
+                        <a href="{{ route('app.parc-settings.index', ['tab' => 'shortcuts', 'place' => 'desktop']) }}"
                             class="flex items-center justify-between hover:text-info">
                             <span class="text-base-content/70">Bureau</span>
                             <span class="font-semibold">{{ $stats['shortcuts_desktop_count'] }}</span>
                         </a>
-                        <a href="{{ route('app.shortcuts') }}?place=startup"
+                        <a href="{{ route('app.parc-settings.index', ['tab' => 'shortcuts', 'place' => 'startup']) }}"
                             class="flex items-center justify-between hover:text-info">
                             <span class="text-base-content/70">Démarrage</span>
                             <span class="font-semibold">{{ $stats['shortcuts_startup_count'] }}</span>
                         </a>
-                        <a href="{{ route('app.shortcuts') }}?place=taskbar"
+                        <a href="{{ route('app.parc-settings.index', ['tab' => 'shortcuts', 'place' => 'taskbar']) }}"
                             class="flex items-center justify-between hover:text-info">
                             <span class="text-base-content/70">Barre des tâches</span>
                             <span class="font-semibold">{{ $stats['shortcuts_taskbar_count'] }}</span>

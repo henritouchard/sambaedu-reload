@@ -52,7 +52,7 @@ final class NativeSectionResolver
         ],
         'shortcuts' => [
             'patterns' => ['shortcut', 'raccourci'],
-            'url' => '/app/shortcuts',
+            'url' => '/app/parc-settings?tab=shortcuts',
             'label' => 'Gérer les raccourcis',
             'icon' => 'fa-link',
         ],

@@ -1,6 +1,8 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Models\Depot;
+use App\Models\Shortcut;
 use App\Services\AppProfile\AppProfileService;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Title;
@@ -44,7 +46,13 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
         }
 
         try {
-            $this->stats = $this->appProfileService->getStats();
+            // Les badges « Dépôt » et « Raccourcis » sont comptés ici plutôt que
+            // dans AppProfileService::getStats() : ces deux domaines ne relèvent
+            // pas du service des profils applicatifs.
+            $this->stats = $this->appProfileService->getStats() + [
+                'depots_count' => Depot::count(),
+                'shortcuts_count' => Shortcut::count(),
+            ];
             $this->statsLoaded = true;
         } catch (\Exception $e) {
             Log::error('[ParcSettings] Erreur chargement stats: '.$e->getMessage());
@@ -155,8 +163,16 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                     'icon' => 'fa-solid fa-cube',
                     'badge' => $statsLoaded ? ($stats['applications_count'] ?? null) : null,
                 ],
-                'depot' => ['label' => 'Dépôt', 'icon' => 'fa-solid fa-warehouse'],
-                'shortcuts' => ['label' => 'Raccourcis', 'icon' => 'fa-solid fa-arrow-up-right-from-square'],
+                'depot' => [
+                    'label' => 'Dépôt',
+                    'icon' => 'fa-solid fa-warehouse',
+                    'badge' => $statsLoaded ? ($stats['depots_count'] ?? null) : null,
+                ],
+                'shortcuts' => [
+                    'label' => 'Raccourcis',
+                    'icon' => 'fa-solid fa-arrow-up-right-from-square',
+                    'badge' => $statsLoaded ? ($stats['shortcuts_count'] ?? null) : null,
+                ],
             ];
         @endphp
         <x-molecules.tabs :tabs="$parcSettingsTabs" :active="$tab" />

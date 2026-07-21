@@ -2,6 +2,7 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Url;
+use Livewire\Attributes\On;
 use App\Models\Shortcut;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
@@ -184,6 +185,104 @@ new class extends Component {
         } catch (\Exception $e) {
             Log::error('ShortcutsTab bulkDelete error: ' . $e->getMessage());
             $this->toast('error', 'Erreur', 'Erreur lors de la suppression des raccourcis');
+        }
+    }
+
+    public function openBulkAssignmentModal(): void
+    {
+        if (Gate::denies('update-shortcut')) {
+            $this->toast('error', 'Accès refusé', 'Vous n\'avez pas les droits pour assigner des raccourcis');
+            return;
+        }
+
+        if (empty($this->selectedShortcuts)) {
+            $this->toast('warning', 'Attention', 'Aucun raccourci sélectionné');
+            return;
+        }
+
+        // Assignation groupée : les cibles déjà assignées diffèrent d'un raccourci
+        // à l'autre, il n'y a donc pas de socle commun à exclure — la modale
+        // propose tout, et `syncWithoutDetaching` rend l'ajout idempotent.
+        $this->dispatch('open-shortcut-assignment-modal');
+    }
+
+    #[On('shortcut-assignments-confirmed')]
+    public function onAssignmentsConfirmed(
+        array $workstationGroupIds = [],
+        array $workstationIds = [],
+        array $adUsers = [],
+        array $adUserGroups = []
+    ): void {
+        if (Gate::denies('update-shortcut')) {
+            $this->toast('error', 'Accès refusé', 'Vous n\'avez pas les droits pour assigner des raccourcis');
+            return;
+        }
+
+        if (empty($this->selectedShortcuts)) {
+            return;
+        }
+
+        if (empty($workstationGroupIds) && empty($workstationIds) && empty($adUsers) && empty($adUserGroups)) {
+            $this->toast('warning', 'Attention', 'Aucune cible sélectionnée');
+            return;
+        }
+
+        try {
+            $shortcuts = Shortcut::whereIn('key', $this->selectedShortcuts)->get();
+            $assignedCount = 0;
+            $globalCount = 0;
+
+            foreach ($shortcuts as $shortcut) {
+                // Les raccourcis ControlHub sont pilotés en amont : on les ignore
+                // silencieusement plutôt que de faire échouer le lot.
+                if ($shortcut->is_global) {
+                    $globalCount++;
+                    continue;
+                }
+
+                if (!empty($workstationGroupIds)) {
+                    $shortcut->workstationGroups()->syncWithoutDetaching($workstationGroupIds);
+                }
+
+                if (!empty($workstationIds)) {
+                    $shortcut->workstations()->syncWithoutDetaching($workstationIds);
+                }
+
+                $attributes = [];
+
+                if (!empty($adUsers)) {
+                    $attributes['ad_users'] = array_values(array_unique(
+                        array_merge($shortcut->ad_users ?? [], $adUsers)
+                    ));
+                }
+
+                if (!empty($adUserGroups)) {
+                    $attributes['ad_user_groups'] = array_values(array_unique(
+                        array_merge($shortcut->ad_user_groups ?? [], $adUserGroups)
+                    ));
+                }
+
+                if (!empty($attributes)) {
+                    $shortcut->update($attributes);
+                }
+
+                $assignedCount++;
+            }
+
+            $targetCount = count($workstationGroupIds) + count($workstationIds)
+                + count($adUsers) + count($adUserGroups);
+
+            $message = "{$targetCount} cible(s) assignée(s) à {$assignedCount} raccourci(s)";
+            if ($globalCount > 0) {
+                $message .= ". {$globalCount} raccourci(s) ControlHub ignoré(s).";
+            }
+
+            $this->toast('success', 'Assignations ajoutées', $message);
+            $this->selectedShortcuts = [];
+            $this->loadShortcuts();
+        } catch (\Exception $e) {
+            Log::error('ShortcutsTab onAssignmentsConfirmed error: ' . $e->getMessage());
+            $this->toast('error', 'Erreur', 'Erreur lors de l\'assignation des raccourcis');
         }
     }
 
@@ -443,26 +542,55 @@ new class extends Component {
     </div>
 
     <!-- Actions groupées -->
-    @can('bulkDelete-shortcut')
-        @if (count($selectedShortcuts) > 0)
-            <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
-                <div class="card bg-base-100 shadow-xl border border-base-300">
-                    <div class="card-body py-3 px-4 flex-row items-center gap-4">
-                        <span class="text-sm font-medium">
-                            {{ count($selectedShortcuts) }} raccourci(s) sélectionné(s)
-                        </span>
-                        <div class="divider divider-horizontal m-0"></div>
-                        <button type="button" class="btn btn-error btn-sm" wire:click="bulkDelete"
-                            wire:confirm="Êtes-vous sûr de vouloir supprimer les raccourcis sélectionnés ?">
-                            <i class="fa-regular fa-trash-can"></i>
-                            Supprimer
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm" wire:click="$set('selectedShortcuts', [])">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
+    @php
+        $canBulkAssign = \Illuminate\Support\Facades\Gate::allows('update-shortcut');
+        $canBulkDelete = \Illuminate\Support\Facades\Gate::allows('bulkDelete-shortcut');
+    @endphp
+
+    @if (count($selectedShortcuts) > 0 && ($canBulkAssign || $canBulkDelete))
+        <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+            <div class="card bg-base-100 shadow-xl border border-base-300">
+                <div class="card-body py-3 px-4 flex-row items-center gap-4">
+                    <span class="text-sm font-medium">
+                        {{ count($selectedShortcuts) }} raccourci(s) sélectionné(s)
+                    </span>
+                    <div class="divider divider-horizontal m-0"></div>
+                    <div class="dropdown dropdown-top dropdown-end">
+                        <div tabindex="0" role="button" class="btn btn-primary btn-sm">
+                            <i class="fa-solid fa-bolt"></i>
+                            Actions
+                            <i class="fa-solid fa-chevron-down text-xs"></i>
+                        </div>
+                        <ul tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow-lg border border-base-300">
+                            @if ($canBulkAssign)
+                                <li>
+                                    <button type="button"
+                                        @click="$wire.openBulkAssignmentModal(); document.activeElement.blur();">
+                                        <i class="fa-solid fa-bullseye"></i>
+                                        Assigner des cibles
+                                    </button>
+                                </li>
+                            @endif
+                            @if ($canBulkDelete)
+                                <li @class(['border-t border-base-300 mt-1 pt-1' => $canBulkAssign])>
+                                    <button type="button" class="text-error" wire:click="bulkDelete"
+                                        wire:confirm="Êtes-vous sûr de vouloir supprimer les raccourcis sélectionnés ?">
+                                        <i class="fa-regular fa-trash-can"></i>
+                                        Supprimer
+                                    </button>
+                                </li>
+                            @endif
+                        </ul>
                     </div>
+                    <button type="button" class="btn btn-ghost btn-sm" wire:click="$set('selectedShortcuts', [])">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </div>
             </div>
-        @endif
-    @endcan
+        </div>
+    @endif
+
+    <!-- Modale d'assignation réutilisée depuis la page raccourci -->
+    <livewire:organisms.shortcut-assignment-modal />
 </div>

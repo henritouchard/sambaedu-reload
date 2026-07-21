@@ -116,7 +116,7 @@ new #[Title('Nouveau raccourci - Instance SE4FS')] class extends Component {
     ];
 @endphp
 
-<x-organisms.page :backUrl="route('app.shortcuts')" title="Nouveau raccourci" backText="Retour à la liste">
+<x-organisms.page :backUrl="route('app.parc-settings.index', ['tab' => 'shortcuts'])" title="Nouveau raccourci" backText="Retour à la liste">
     <form wire:submit="save" class="space-y-6">
         @include('pages.shortcuts.[id]._partials.shortcut-form', ['creating' => true])
     </form>

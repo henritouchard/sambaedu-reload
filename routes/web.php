@@ -137,8 +137,10 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->middleware('can:user.read')
         ->name('user.show');
 
-    // Routes Livewire pour les raccourcis
-    Route::livewire('/shortcuts', 'pages::shortcuts.index')->name('shortcuts');
+    // Routes Livewire pour les raccourcis.
+    // La liste a été remplacée par l'onglet `/app/parc-settings?tab=shortcuts` ;
+    // `/app/shortcuts` ne subsiste que comme redirection pour les liens externes.
+    Route::permanentRedirect('/shortcuts', '/app/parc-settings?tab=shortcuts')->name('shortcuts');
     Route::livewire('/shortcuts/new', 'pages::shortcuts.new.index')->name('shortcuts.new');
     Route::livewire('/shortcuts/{id}', 'pages::shortcuts.[id].index')->name('shortcuts.show');
 

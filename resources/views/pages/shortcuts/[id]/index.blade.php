@@ -64,7 +64,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
 
             if (!$this->shortcutModel) {
                 $this->toast('error', 'Erreur', 'Raccourci non trouvé');
-                return $this->redirect(route('app.shortcuts'));
+                return $this->redirect(route('app.parc-settings.index', ['tab' => 'shortcuts']));
             }
 
             $this->isGlobal = $this->shortcutModel->is_global;
@@ -84,7 +84,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         } catch (\Exception $e) {
             Log::error('ShortcutPage loadShortcut error: ' . $e->getMessage());
             $this->toast('error', 'Erreur', 'Erreur lors du chargement du raccourci');
-            return $this->redirect(route('app.shortcuts'));
+            return $this->redirect(route('app.parc-settings.index', ['tab' => 'shortcuts']));
         }
     }
 
@@ -181,7 +181,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         try {
             $this->shortcutModel->delete();
             $this->toast('success', 'Suppression réussie', 'Raccourci supprimé avec succès');
-            return $this->redirect(route('app.shortcuts'));
+            return $this->redirect(route('app.parc-settings.index', ['tab' => 'shortcuts']));
         } catch (\Exception $e) {
             Log::error('ShortcutPage delete error: ' . $e->getMessage());
             $this->toast('error', 'Erreur', 'Erreur lors de la suppression du raccourci');
@@ -352,7 +352,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
     ];
 @endphp
 
-<x-organisms.page :backUrl="route('app.shortcuts')" title="Modifier le raccourci" backText="Retour à la liste">
+<x-organisms.page :backUrl="route('app.parc-settings.index', ['tab' => 'shortcuts'])" title="Modifier le raccourci" backText="Retour à la liste">
     <x-slot:actions>
         <div class="flex gap-2">
             <div class="dropdown dropdown-end">
