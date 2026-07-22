@@ -110,10 +110,43 @@ class CapabilityAppProfileSeedTest extends TestCase
     }
 
     #[Test]
-    public function seeded_capability_is_gated_by_file_policy_home(): void
+    public function seeded_capability_ignores_file_policy_home(): void
     {
+        // Story 36.7 (AC3) — le gate K: est SUPPRIMÉ : home coupé ⇒ items émis.
         FilePolicyService::setGlobal(false, true, false); // home coupé
-        self::assertCount(0, $this->items(), 'home coupé (AC7) ⇒ aucun item');
+        self::assertCount(2, $this->items(), 'AC3 : home coupé ⇒ items TOUJOURS émis');
+    }
+
+    #[Test]
+    public function upgrade_migration_adds_enabled_options_and_decorrelates_warning(): void
+    {
+        // Story 36.7 — la migration d'upgrade (jouée par RefreshDatabase) : chaque
+        // entrée porte `enabled:true` (AC2), la capacité gagne ses options on/off
+        // (AC4) et son warning ne mentionne PLUS la dépendance au home K: (AC3).
+        $cap = $this->capabilityRow();
+
+        $options = json_decode((string) $cap->options, true);
+        self::assertSame(
+            ['on', 'off'],
+            array_column($options, 'value'),
+            'AC4 : options toggle on/off ajoutées',
+        );
+        self::assertStringNotContainsStringIgnoringCase(
+            'si le home est désactivé',
+            (string) $cap->warning,
+            'AC3 : warning décorrélé du gate K:',
+        );
+        self::assertLessThanOrEqual(255, mb_strlen((string) $cap->warning));
+
+        $projection = DB::table('capability_projections')
+            ->where('capability_id', $cap->id)
+            ->where('mechanism', 'app_profile')
+            ->first();
+        $spec = json_decode((string) $projection->spec, true, 512, JSON_THROW_ON_ERROR);
+        foreach ($spec['apps'] as $app) {
+            self::assertTrue($app['enabled'], 'AC2 : chaque entrée porte enabled:true');
+            self::assertIsBool($app['enabled'], 'AC2 : enabled est un booléen strict');
+        }
     }
 
     #[Test]

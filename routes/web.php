@@ -444,6 +444,17 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.files');
 
+    // /admin/settings/app-profiles — Story 36.7 : catalogue des profils applicatifs
+    // itinérants (Firefox/Thunderbird…) redirigés vers le home réseau. Édition du
+    // `spec` de la projection `app_profile` de la capacité `roaming_app_profile`
+    // (ajout / modification / activation-désactivation par entrée), chaque écriture
+    // validée par l'AppProfileAuthoringGuard via l'observer. Gate `server.admin`
+    // (cohérent avec les autres /admin/settings/*). L'ACTIVATION par utilisateur se
+    // fait ailleurs (section « Capacités » des pages groupes d'utilisateurs, AC4).
+    Route::livewire('/settings/app-profiles', 'pages::admin.settings.app-profiles.index')
+        ->middleware('can:server.admin')
+        ->name('settings.app-profiles');
+
     // /admin/settings/migration — « Migration SE4 → SE5 » : page HÔTE à onglets
     // regroupant les outils de migration / observabilité du canal legacy (Sync
     // from AD, Logs scripts, Error Logger, Legacy Monitor), tous voués à

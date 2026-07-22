@@ -27,10 +27,14 @@ namespace App\Services\Agent\Providers;
  *      `profile_name` (c'est le `Path=` de `profiles.ini`, relatif au dossier
  *      des ini = parent de `link`) — sinon Firefox ouvre un profil vide ;
  *   5. `install_hash` présent mais non hexadécimal (8–16 hex — sinon Firefox
- *      ignore la section Install).
+ *      ignore la section Install) ;
+ *   6. `enabled` présent mais NON booléen STRICT (Story 36.7, AC2) — le champ
+ *      d'activation par entrée doit être un vrai booléen JSON (`true`/`false`),
+ *      jamais `"on"`/`0`/`1`/`null` : une valeur ambiguë ferait diverger le
+ *      filtre du provider (`enabled === false`) de l'intention de l'admin.
  *
- * Conçu pour être RÉUTILISÉ TEL QUEL par un futur formulaire d'assignation
- * (mêmes messages FR, mêmes constantes publiques).
+ * Conçu pour être RÉUTILISÉ TEL QUEL par le formulaire de catalogue de la
+ * Story 36.7 (mêmes messages FR, mêmes constantes publiques).
  */
 final class AppProfileAuthoringGuard
 {
@@ -133,6 +137,18 @@ final class AppProfileAuthoringGuard
                     $violations[] = sprintf(
                         "app_profile [%s] app '%s' : `install_hash` '%s' non hexadécimal (8 à 16 chiffres hex attendus).",
                         $capability, $label, $installHash,
+                    );
+                }
+
+                // (7) `enabled` booléen STRICT si présent (Story 36.7, AC2). ABSENT
+                // = vaut `true` (défaut — comportement 36.5 préservé, le provider ne
+                // filtre QUE `enabled === false`). Présent mais non-booléen refusé :
+                // `array_key_exists` distingue « clé absente » (toléré) de « clé
+                // présente à une valeur ambiguë » (refusé).
+                if (array_key_exists('enabled', $app) && ! is_bool($app['enabled'])) {
+                    $violations[] = sprintf(
+                        "app_profile [%s] app '%s' : `enabled` doit être un booléen strict (true/false), pas '%s'.",
+                        $capability, $label, is_scalar($app['enabled']) ? (string) $app['enabled'] : gettype($app['enabled']),
                     );
                 }
 

@@ -111,6 +111,11 @@ new class extends Component {
                     ->whereIn('mechanism', [
                         CapabilityProjection::MECHANISM_REGISTRY,
                         CapabilityProjection::MECHANISM_REGISTRY_LIST,
+                        // Story 36.7 (AC4) — le mécanisme `app_profile` (redirection
+                        // du profil applicatif, portée SESSION/maille User) est
+                        // assignable par groupe d'utilisateurs : son provider résout
+                        // désormais les assignations UserGroup (sortie du socle 36.5).
+                        CapabilityProjection::MECHANISM_APP_PROFILE,
                     ]);
             }])
             ->orderBy('label')
@@ -443,6 +448,18 @@ new class extends Component {
      */
     private function isAssignableByUserGroup(Capability $capability): bool
     {
+        // Story 36.7 (AC4) — le mécanisme `app_profile` est assignable par groupe
+        // d'utilisateurs SANS clé HKCU : sa portée est Session/maille User et son
+        // provider ({@see \App\Services\Agent\Providers\AppProfileCapabilityProvider})
+        // résout les assignations UserGroup (un override UserGroup MORD donc). Une
+        // seule projection `app_profile` windows suffit à le rendre assignable.
+        foreach ($capability->projections as $projection) {
+            if ($projection->mechanism === CapabilityProjection::MECHANISM_APP_PROFILE
+                && strcasecmp((string) $projection->os, Capability::OS_WINDOWS) === 0) {
+                return true;
+            }
+        }
+
         // Seul le mécanisme registry définit l'assignabilité par groupe-user
         // (inchangé) — l'eager-load charge aussi registry_list pour le badge de
         // temporalité, d'où le filtre explicite ici (review 43.2 #1).

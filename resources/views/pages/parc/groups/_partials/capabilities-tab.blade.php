@@ -3,6 +3,7 @@
 use App\Components\Traits\WithToasts;
 use App\Models\Capability;
 use App\Models\CapabilityOverrideAuditLog;
+use App\Models\CapabilityProjection;
 use App\Models\User;
 use App\Models\WorkstationGroup;
 use App\Services\ControlHub\UpstreamLockResolver;
@@ -166,6 +167,12 @@ new class extends Component {
             // d'override serait défait au compilé ET refusé au serveur). Une capacité
             // PERMISSIVE reste proposée : son override par WG mord au compilé (29.3).
             ->reject(fn (Capability $c): bool => $lock->isCapabilityLocked($c))
+            // Story 36.7 (AC4) — le mécanisme `app_profile` suit l'UTILISATEUR
+            // (maille User, résolu par assignation UserGroup), jamais le poste : un
+            // override par PARC serait INERTE (anti-pattern « override qui ne mord
+            // pas », leçon review 35.4 #1). Il s'assigne sur les pages GROUPES
+            // D'UTILISATEURS, pas ici.
+            ->reject(fn (Capability $c): bool => $this->isAppProfileOnly($c))
             ->map(fn (Capability $c): array => [
                 'id' => (int) $c->id,
                 'label' => (string) $c->label,
@@ -217,6 +224,16 @@ new class extends Component {
             ->findOrFail($capabilityId);
 
         if (! $this->authorizeUpstream($capability)) {
+            return;
+        }
+
+        // Story 36.7 (defense-in-depth, leçon 35.4 #1) : `app_profile` suit
+        // l'utilisateur, pas la machine — la maille poste/parc est IGNORÉE par
+        // AppProfileCapabilityProvider::isEnabledForUser(). Le refus ne peut donc
+        // PAS vivre seulement dans addableCapabilities() (listing) : un rejeu
+        // Livewire de openAdd() poserait un override parc SILENCIEUSEMENT inerte.
+        if ($this->isAppProfileOnly($capability)) {
+            $this->toastError('Cette capacité suit l\'utilisateur : elle se règle par groupe d\'utilisateurs, pas par parc.');
             return;
         }
 
@@ -302,6 +319,14 @@ new class extends Component {
 
         if ($capability->overrides_locked && ! $hasExistingOverride) {
             $this->toastError('Cette capacité est gelée : aucun nouvel override par parc n\'est autorisé.');
+            return;
+        }
+
+        // Story 36.7 (defense-in-depth, leçon 35.4 #1) : `app_profile` n'est pas
+        // ciblable par parc (maille poste ignorée par le provider) — refus SERVEUR
+        // même si openAdd() est contourné par rejeu Livewire.
+        if ($this->isAppProfileOnly($capability)) {
+            $this->toastError('Cette capacité suit l\'utilisateur : elle se règle par groupe d\'utilisateurs, pas par parc.');
             return;
         }
 
@@ -449,6 +474,27 @@ new class extends Component {
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    /**
+     * Story 36.7 (AC4) — la capacité porte-t-elle EXCLUSIVEMENT un mécanisme
+     * `app_profile` (aucune projection registry/machine) ? Une telle capacité
+     * suit l'UTILISATEUR (maille User, résolue par assignation UserGroup) : un
+     * override par PARC (WorkstationGroup) serait inerte → on ne la propose PAS
+     * ici (elle s'assigne sur les pages groupes d'utilisateurs).
+     */
+    private function isAppProfileOnly(Capability $capability): bool
+    {
+        $hasAppProfile = false;
+        foreach ($capability->projections as $projection) {
+            if ($projection->mechanism === CapabilityProjection::MECHANISM_APP_PROFILE) {
+                $hasAppProfile = true;
+            } else {
+                return false; // au moins un autre mécanisme → mord par parc.
+            }
+        }
+
+        return $hasAppProfile;
+    }
 
     /**
      * Story 29.5 (NFR5) — acteur de l'audit : id (FK) + login DÉNORMALISÉ.

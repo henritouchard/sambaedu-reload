@@ -174,4 +174,40 @@ class AppProfileAuthoringGuardTest extends TestCase
         self::assertStringContainsString('`link`', implode("\n", $v));
         self::assertStringContainsString('DOUBLON', implode("\n", $v));
     }
+
+    #[Test]
+    public function enabled_boolean_is_accepted(): void
+    {
+        // Story 36.7 (AC2) — `enabled` booléen strict (true/false) accepté.
+        $on = $this->validFirefox();
+        $on['enabled'] = true;
+        self::assertSame([], $this->violationsFor([$on]));
+
+        $off = $this->validFirefox();
+        $off['enabled'] = false;
+        self::assertSame([], $this->violationsFor([$off]));
+    }
+
+    #[Test]
+    public function enabled_absent_is_accepted(): void
+    {
+        // Story 36.7 (AC2) — `enabled` ABSENT vaut `true` (défaut, 36.5 préservé).
+        $app = $this->validFirefox();
+        unset($app['enabled']);
+        self::assertSame([], $this->violationsFor([$app]));
+    }
+
+    #[Test]
+    public function non_boolean_enabled_is_refused(): void
+    {
+        // Story 36.7 (AC2) — `enabled` non-booléen (ex. "on", 1, null) refusé :
+        // le filtre du provider (`enabled === false`) exige un vrai booléen.
+        foreach (['on', 1, 0, 'true', null] as $bad) {
+            $app = $this->validFirefox();
+            $app['enabled'] = $bad;
+            $v = $this->violationsFor([$app]);
+            self::assertStringContainsString('`enabled` doit être un booléen strict', implode("\n", $v),
+                'valeur refusée : '.var_export($bad, true));
+        }
+    }
 }

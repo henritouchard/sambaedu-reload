@@ -10,6 +10,7 @@ use App\Enums\StateScope;
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
 use App\Models\User;
+use App\Models\UserGroup;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
@@ -75,9 +76,18 @@ class AppProfileCapabilityProviderTest extends TestCase
     /**
      * @param  list<array<string,mixed>>  $apps
      */
-    private function seedCatalog(array $apps, bool $active = true, string $key = 'roaming_app_profile'): Capability
-    {
-        $cap = Capability::factory()->create(['key' => $key, 'is_active' => $active]);
+    private function seedCatalog(
+        array $apps,
+        bool $active = true,
+        string $key = 'roaming_app_profile',
+        string $defaultValue = 'on',
+    ): Capability {
+        $cap = Capability::factory()->create([
+            'key' => $key,
+            'is_active' => $active,
+            'value_type' => 'toggle',
+            'default_value' => $defaultValue,
+        ]);
         CapabilityProjection::factory()->for($cap)->create([
             'os' => 'windows',
             'mechanism' => CapabilityProjection::MECHANISM_APP_PROFILE,
@@ -85,6 +95,19 @@ class AppProfileCapabilityProviderTest extends TestCase
         ]);
 
         return $cap;
+    }
+
+    /** Insère une assignation de capacité (pivot polymorphe). */
+    private function assign(int $capabilityId, string $assignableType, int $assignableId, ?string $value): void
+    {
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $capabilityId,
+            'assignable_type' => $assignableType,
+            'assignable_id' => $assignableId,
+            'value' => $value,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function firefoxThunderbird(): array
@@ -182,24 +205,110 @@ class AppProfileCapabilityProviderTest extends TestCase
     }
 
     #[Test]
-    public function home_policy_disabled_suppresses_all_items(): void
+    public function home_policy_disabled_still_emits_items(): void
     {
+        // Story 36.7 (AC3) — DÉCORRÉLATION du gate K: : le lien pointe l'UNC
+        // direct (K: cosmétique), couper le home ne coupe plus la redirection.
         $this->seedCatalog($this->firefoxThunderbird());
 
-        // Home coupé (AC7) : rediriger vers une cible non montée n'a pas de sens.
-        FilePolicyService::setGlobal(false, true, false);
+        FilePolicyService::setGlobal(false, true, false); // home coupé
+
+        self::assertCount(2, $this->provider()->itemsFor($this->ctx()),
+            'AC3 : home coupé ⇒ items TOUJOURS émis (gate K: supprimé)');
+    }
+
+    #[Test]
+    public function default_instance_value_on_emits_items_without_any_assignment(): void
+    {
+        // Story 36.7 (AC4) — défaut d'instance = default_value `on` : un
+        // utilisateur couvert par AUCUNE assignation reçoit les items.
+        $this->seedCatalog($this->firefoxThunderbird(), defaultValue: 'on');
+
+        self::assertCount(2, $this->provider()->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function disabled_catalog_entry_is_filtered(): void
+    {
+        // Story 36.7 (AC2) — « off réel » par entrée : `enabled:false` n'émet plus.
+        $apps = $this->firefoxThunderbird();
+        $apps[1]['enabled'] = false; // thunderbird désactivé.
+        $apps[0]['enabled'] = true;
+        $this->seedCatalog($apps);
+
+        $items = $this->provider()->itemsFor($this->ctx());
+        self::assertCount(1, $items);
+        self::assertSame('firefox', $items->first()->payload['app']);
+    }
+
+    #[Test]
+    public function default_instance_value_off_suppresses_without_assignment(): void
+    {
+        // Story 36.7 (AC4) — basculer default_value à `off` inverse la politique
+        // sans code : aucune assignation ⇒ aucun item.
+        $this->seedCatalog($this->firefoxThunderbird(), defaultValue: 'off');
 
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
     #[Test]
-    public function default_policy_home_on_emits_items(): void
+    public function user_group_assignment_on_emits_items(): void
     {
-        $this->seedCatalog($this->firefoxThunderbird());
+        // Story 36.7 (AC4) — défaut off, mais un groupe d'utilisateurs assigné `on`
+        // active la redirection pour ses membres.
+        $cap = $this->seedCatalog($this->firefoxThunderbird(), defaultValue: 'off');
 
-        // Défaut home✓ (aucune politique persistée).
-        self::assertNull(\App\Models\SystemSetting::get(FilePolicyService::SETTING_KEY));
+        $group = UserGroup::create(['name' => 'classe-a', 'type' => 'classe']);
+        $this->user->groups()->attach($group->id);
+        $this->assign($cap->id, UserGroup::class, $group->id, 'on');
+
         self::assertCount(2, $this->provider()->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function user_group_assignment_off_suppresses_items(): void
+    {
+        // Story 36.7 (AC4) — défaut on, mais le groupe est assigné `off` : couvert
+        // UNIQUEMENT par du off ⇒ exclu.
+        $cap = $this->seedCatalog($this->firefoxThunderbird(), defaultValue: 'on');
+
+        $group = UserGroup::create(['name' => 'classe-b', 'type' => 'classe']);
+        $this->user->groups()->attach($group->id);
+        $this->assign($cap->id, UserGroup::class, $group->id, 'off');
+
+        self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function any_user_group_on_wins_over_off_or_semantics(): void
+    {
+        // Story 36.7 (AC4) — sémantique OR : couvert par au moins UNE assignation
+        // `on` ⇒ items émis, même si un autre groupe est `off`.
+        $cap = $this->seedCatalog($this->firefoxThunderbird(), defaultValue: 'off');
+
+        $groupOff = UserGroup::create(['name' => 'groupe-off', 'type' => 'classe']);
+        $groupOn = UserGroup::create(['name' => 'groupe-on', 'type' => 'classe']);
+        $this->user->groups()->attach([$groupOff->id, $groupOn->id]);
+        $this->assign($cap->id, UserGroup::class, $groupOff->id, 'off');
+        $this->assign($cap->id, UserGroup::class, $groupOn->id, 'on');
+
+        self::assertCount(2, $this->provider()->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function user_maille_assignment_decides_over_group_precedence(): void
+    {
+        // Story 36.7 (AC4) — précédence specificity() : une assignation User (rang 0)
+        // décide seule, même si le groupe dit l'inverse.
+        $cap = $this->seedCatalog($this->firefoxThunderbird(), defaultValue: 'off');
+
+        $group = UserGroup::create(['name' => 'classe-c', 'type' => 'classe']);
+        $this->user->groups()->attach($group->id);
+        $this->assign($cap->id, UserGroup::class, $group->id, 'off');
+        $this->assign($cap->id, User::class, $this->user->id, 'on');
+
+        self::assertCount(2, $this->provider()->itemsFor($this->ctx()),
+            'User `on` bat le groupe `off` (rang 0 > rang 1)');
     }
 
     #[Test]

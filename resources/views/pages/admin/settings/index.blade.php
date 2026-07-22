@@ -190,6 +190,15 @@ new #[Title('Réglages')] class extends Component {
                     description="Politique d'accès aux fichiers (partages réseau / Nextcloud), quotas &amp; FS, lecteurs réseau gérés et profils itinérants."
                     badge="Fichiers"
                     testid="card-files" />
+
+                <x-molecules.settings-card
+                    href="{{ route('admin.settings.app-profiles') }}"
+                    icon="fa-solid fa-compass"
+                    iconColor="info"
+                    title="Profils applicatifs itinérants"
+                    description="Catalogue des applications (Firefox, Thunderbird…) dont le profil suit l'utilisateur d'un poste à l'autre via son home réseau."
+                    badge="Bureau"
+                    testid="card-app-profiles" />
             @endcan
 
             <x-molecules.settings-card

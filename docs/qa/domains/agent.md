@@ -4523,15 +4523,21 @@ fait au prochain logon.
 
 **Attendu** : `compliant` sans écriture (level-triggered, no-op).
 
-### Scénario 36.5.3 — GATE POLITIQUE FICHIERS : `home=false` ⇒ aucun item
+### Scénario 36.5.3 — ~~GATE POLITIQUE FICHIERS~~ DÉCORRÉLÉ (Story 36.7, AC3) : `home=false` ⇒ items TOUJOURS émis
+
+> **Amendé par la Story 36.7 (AC3).** Le gate K: de la 36.5 (AC7) est SUPPRIMÉ :
+> le lien pointe l'UNC direct (K: cosmétique). Le scénario s'INVERSE.
 
 1. Sur `/admin/settings/files`, **désactiver** le home réseau (`home=false`).
 2. Recompiler l'état (`curl` `GET /state` /vm ou attendre le prochain
-   check-in). Vérifier que la portée `session` **ne contient AUCUN item
-   `app_profile`** (rediriger vers une cible non montée n'a pas de sens).
-3. Réactiver `home` → l'item réapparaît au cycle suivant.
+   check-in). Vérifier que la portée `session` **CONTIENT TOUJOURS les items
+   `app_profile`** — la redirection fonctionne même home masqué (cas d'usage
+   explicite : profils suivis, home invisible dans l'Explorateur).
+3. Vérifier sur poste réel que la redirection est fonctionnelle **sans lecteur K:
+   visible** (le lien traverse l'UNC avec les credentials de session).
 
-**Attendu** : `home=false` ⇒ zéro item `app_profile` ; réactivation ⇒ retour.
+**Attendu** : `home=false` ⇒ items `app_profile` TOUJOURS émis, redirection
+fonctionnelle sans lecteur visible.
 
 ### Scénario 36.5.4 — HOME INJOIGNABLE : item `error`, jamais de suppression locale
 
@@ -4560,8 +4566,9 @@ logon.
 - [ ] 36.5.1 — Signet posé sur A retrouvé sur B (profil au home réseau, lien +
       ini + marqueur `1`).
 - [ ] 36.5.2 — Second logon : `compliant` sans écriture (idempotent).
-- [ ] 36.5.3 — Politique fichiers `home=false` ⇒ aucun item `app_profile` ;
-      réactivation ⇒ retour.
+- [ ] 36.5.3 — **(inversé par 36.7/AC3)** Politique fichiers `home=false` ⇒ items
+      `app_profile` **TOUJOURS émis** (gate K: supprimé), redirection fonctionnelle
+      sans lecteur visible.
 - [ ] 36.5.4 — Home injoignable ⇒ item `error`, données locales intactes,
       reprise auto.
 - [ ] 36.5.5 — `managed.default` jamais effacé par `legacy_cleanup` (coexistence
@@ -4586,3 +4593,87 @@ logon.
       sur un parc à noms homogènes vs hétérogènes.
 - [ ] Golden `state.v1.json` bumpé AVEC justification (hashes jumeaux PHP↔Go
       recalculés — AJOUT item `app_profile` session) ; agent bumpé 2.13.0.
+
+## Story 36.7 — Catalogue `app_profile` : UI admin, décorrélation K:, activation par groupe (`app_profile`)
+
+Mécanisme `app_profile` (contrat §7.11), suite de la 36.5. Cette story livre :
+l'**UI de catalogue** (`/admin/settings/app-profiles`), la **décorrélation du gate
+K:** (AC3, cf. 36.5.3 inversé ci-dessus), et l'**activation par groupe
+d'utilisateurs** (AC4, sortie du socle). **Aucun changement de contrat wire ni de
+code agent** : le champ `enabled` et le filtrage d'assignations sont consommés
+**côté serveur** — golden `state.v1.json`/`FROZEN_STATE_HASH` (PHP + Go) INCHANGÉS,
+pas de bump de version d'agent.
+
+### Scénario 36.7.1 — UI CATALOGUE : ajout d'une application ⇒ item émis au prochain état compilé
+
+1. Sur `/admin/settings/app-profiles` (admin `server.admin`), **Ajouter une
+   application** : renseigner `app`, `link` (relatif profil Windows), `server`
+   (relatif home), `profile_name` (= dernier segment de `link`), `enabled` coché.
+2. Enregistrer → toast de succès, l'entrée apparaît dans la table.
+3. Recompiler l'état pour un utilisateur activé : la portée `session` contient un
+   item `app_profile` de plus (la nouvelle application).
+
+**Attendu** : le catalogue s'édite sans SQL ; l'entrée valide émet un item.
+
+### Scénario 36.7.2 — GARDE-FOU : violation ⇒ erreur lisible, jamais un 500
+
+1. Ajouter une entrée avec un `profile_name`/`link`/`server` portant le radical
+   `sambaedu`, OU un chemin absolu, OU un `profile_name` ≠ dernier segment de
+   `link`, OU un doublon `app`/`link`, OU un `enabled` non booléen.
+2. Enregistrer.
+
+**Attendu** : la modale reste ouverte, chaque violation remonte en TOAST FR
+explicite (garde-fou d'authoring), rien n'est persisté, aucune 500.
+
+### Scénario 36.7.3 — OFF RÉEL : désactivation d'une entrée ⇒ item disparu SANS nettoyage
+
+1. Sur une entrée active du catalogue, cliquer **Désactiver** (`enabled=false`).
+   L'entrée reste dans la table (badge « Désactivée ») — jamais supprimée.
+2. Recompiler l'état : l'item `app_profile` de cette application **disparaît** de la
+   portée `session`.
+3. Sur un poste où le profil était déjà posé : vérifier que le lien et les ini
+   **restent en place** (l'agent ne fait RIEN — « type absent = pas d'action »,
+   §8). Réactiver ⇒ l'item réapparaît, reconvergence à l'identique.
+
+**Attendu** : désactivation = item non émis ; aucune donnée détruite ; réversible.
+
+### Scénario 36.7.4 — ACTIVATION PAR GROUPE : `off` sur un groupe ⇒ utilisateur exclu
+
+1. Sur `/admin/settings/app-profiles`, laisser le défaut d'instance `on`
+   (`roaming_app_profile.default_value = on`).
+2. Sur la page d'un **groupe d'utilisateurs** (élèves), section « Capacités » :
+   **dévier** `Profil applicatif itinérant` à `Désactivé` (`off`).
+3. Recompiler l'état pour un utilisateur membre de CE groupe uniquement : **aucun
+   item `app_profile`** (couvert uniquement par du `off`, AC4).
+4. Un utilisateur d'un AUTRE groupe (ou sans assignation) reçoit les items (défaut
+   `on`). Un utilisateur membre d'un groupe `off` ET d'un groupe `on` reçoit les
+   items (sémantique OR — au moins une assignation `on`).
+
+**Attendu** : ciblage par groupe d'utilisateurs effectif ; OR au sein des groupes ;
+défaut d'instance appliqué en l'absence d'assignation. La capacité N'apparaît PAS
+sur la surface parc (override poste inerte — un profil suit l'utilisateur).
+
+### Scénario 36.7.5 — DÉFAUT D'INSTANCE inversable : `default_value=off` ⇒ opt-in
+
+1. Basculer `roaming_app_profile.default_value` à `off` (migration/edit).
+2. Recompiler pour un utilisateur sans assignation : **aucun item** (opt-out par
+   défaut). Assigner `on` à son groupe ⇒ les items réapparaissent.
+
+**Attendu** : la politique s'inverse sans code (défaut d'instance = `default_value`).
+
+### Check-list
+
+- [ ] 36.7.1 — Ajout d'une appli via l'UI ⇒ item émis au prochain état compilé.
+- [ ] 36.7.2 — Violation du guard ⇒ toast FR lisible, modale ouverte, aucune 500.
+- [ ] 36.7.3 — Désactivation d'entrée ⇒ item disparu, lien/ini conservés (pas de
+      nettoyage), réactivation reconverge.
+- [ ] 36.7.4 — `off` sur le groupe ⇒ membre exclu ; OR (un `on` suffit) ; défaut
+      d'instance en l'absence d'assignation ; capacité absente de la surface parc.
+- [ ] 36.7.5 — `default_value=off` ⇒ opt-in (aucun item sans assignation `on`).
+- [ ] **Décorrélation K: (AC3)** : cf. 36.5.3 INVERSÉ — `home=false` ⇒ items
+      TOUJOURS émis, redirection OK sans lecteur visible.
+- [ ] **Limite d'honnêteté** : « rien dans l'Explorateur » ≠ inaccessible — un
+      utilisateur qui tape l'UNC de son home le voit toujours (Firefox EST
+      l'utilisateur). Masquage serveur (`users$`/ABE) = chantier distinct, hors story.
+- [ ] Contrat wire INCHANGÉ : golden `state.v1.json`/`FROZEN_STATE_HASH` (PHP + Go)
+      intacts, AUCUN bump de version d'agent (`enabled` + assignations = serveur seul).

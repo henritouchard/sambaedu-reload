@@ -1237,10 +1237,63 @@ conforme + marqueur à jour (+ `user.js` si `cache_local`) ⇒ `compliant`, ZÉR
 ⇒ item `error`** (le dossier serveur est créé/sondé AVANT toute op locale — un
 réseau coupé abandonne sans JAMAIS supprimer de données locales en compensation).
 
-**Dépendance au plan fichiers (AC7).** Le provider serveur n'émet AUCUN item si la
-politique de gestion des fichiers désactive le home réseau K:
-(`FilePolicyService::capabilities()['home']`, `/admin/settings/files`) — rediriger
-un profil vers une cible non montée n'a pas de sens.
+**~~Dépendance au plan fichiers (AC7)~~ — DÉCORRÉLÉE (Story 36.7, AC3).** L'AC7 de la
+36.5 gatait l'émission sur `FilePolicyService::capabilities()['home']` (home K:
+monté). **Ce gate est SUPPRIMÉ** : le lien de dossier pointe **directement l'UNC**
+(`\\<se4fs>\users\<user>\…`), Firefox le traverse avec les credentials de session —
+la **lettre K: est purement cosmétique**. Désactiver K: (home invisible dans
+l'Explorateur) NE désactive PLUS la redirection de profil — cas d'usage explicite
+(Henri, 2026-07-21) : *profils suivis, home masqué*. La politique fichiers reste un
+gating **CLIENT** (ce que l'agent MONTE), jamais une ACL serveur ; elle ne gouverne
+plus ce mécanisme. Le pilotage passe désormais par l'**activation par utilisateur**
+(ci-dessous).
+
+**Activation par groupe d'utilisateurs (Story 36.7, AC4 — sortie du socle).** La
+36.5 était un SOCLE (le provider ne consommait que `is_active` : tout-ou-rien à
+l'instance). Le provider résout désormais les **assignations** de la capacité
+`roaming_app_profile` (pivot `capability_assignments`), sur les mailles
+d'**identité d'utilisateur** UNIQUEMENT — `User` (rang 0) puis `UserGroup`
+(rang 1), iso `StateCompiler::specificity()` ; les mailles `Workstation`/
+`WorkstationGroup` sont **ignorées** (un profil applicatif suit l'UTILISATEUR
+inter-postes — le gater par machine contredirait la finalité). Sémantique : un
+utilisateur couvert par au moins une assignation `on` reçoit les items ; couvert
+uniquement par du `off` ⇒ exclu ; **couvert par rien = défaut d'instance
+`default_value`** (aujourd'hui `on` — comportement 36.5 préservé au déploiement ;
+basculer à `off` inverse la politique sans code). L'UI d'assignation est la section
+« Capacités » des pages **groupes d'utilisateurs** (pas la surface parc, où
+l'override serait inerte).
+
+**« Off réel » par entrée de catalogue (Story 36.7, AC2).** Chaque entrée du
+catalogue porte un booléen `enabled` (défaut `true`, consommé **côté serveur** —
+l'agent ne voit JAMAIS ce champ, contrat wire INCHANGÉ). Une entrée `enabled:false`
+n'émet plus d'item ; on ne SUPPRIME PAS physiquement l'entrée dans l'UI (des profils
+peuvent déjà exister sur les homes — les orpheliner serait une perte de données).
+
+**Rupture de redirection sans perte (Story 36.7, AC5).** Quand un utilisateur passe
+`off` (retrait d'assignation, entrée désactivée, défaut basculé), les items ne sont
+plus émis : par la sémantique « type absent = pas d'action » (§8), l'agent **ne fait
+RIEN** — pas de tombstone, pas de nettoyage du lien ni des ini. Conséquence pratique :
+le lien et les ini déjà posés **restent en place** jusqu'à intervention, le profil
+serveur n'est jamais supprimé, un retour `on` reconverge à l'identique. Le nettoyage
+ACTIF d'une redirection retirée (mécanisme de tombstone type §7.10) est un **point
+ouvert**, hors de cette story.
+
+> **Limite d'honnêteté (Henri, 2026-07-21).** « L'utilisateur ne voit rien » = rien
+> dans l'**Explorateur** (pas de K:, profil sous `AppData` masqué). Un « accès
+> réservé à l'agent » est **impossible au sens strict** : Firefox tourne avec le
+> compte de l'utilisateur, les I/O SMB sont les SIENNES — un utilisateur qui tape
+> l'UNC de son home le verra toujours. Le masquage renforcé (partage caché
+> `users$`, ABE Samba) est un **chantier serveur distinct**, hors périmètre.
+
+> **Corollaire — ne JAMAIS invoquer la fermeture de K: comme frontière de
+> sécurité (Henri, 2026-07-22).** Retirer K: masque, ne verrouille pas : le home
+> reste joignable par UNC avec les credentials de session. Dans un contexte qui
+> DEMANDE une vraie interdiction d'accès aux données — **mode examen (Epic 41)**,
+> poste kiosque, session bridée — s'appuyer sur le retrait de lettre serait de la
+> sécurité de façade. Ce risque **préexiste** à `app_profile` (il est inhérent à
+> SMB + au caractère client de `FilePolicyService`) ; la décorrélation ne
+> l'introduit pas, elle le nomme. Une vraie fermeture = le chantier serveur
+> ci-dessus (ACL de partage / ABE / `users$`).
 
 > **Agents antérieurs à 2.13.0** : le type `app_profile` est **ignoré EN SILENCE**
 > (§8 — aucun statut, aucune erreur). Symptôme « profil non redirigé, zéro
