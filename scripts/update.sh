@@ -21,6 +21,13 @@ AUTH_V1_PKI_REGENERATED=false
 # Configuration
 APACHE_CONF_SOURCE="$APP_DIR/config/apache/sambaedu.conf"
 APACHE_CONF_TARGET="/etc/apache2/sites-available/sambaedu.conf"
+# Fichier réellement servi par Apache. Peut être un symlink vers
+# sites-available OU un fichier régulier diverged (setupApache.sh gère les deux,
+# setupXsendfile.sh ne patche QUE celui-ci) — les sentinelles doivent donc
+# inspecter les DEUX, pas seulement sites-available.
+APACHE_CONF_ENABLED="/etc/apache2/sites-enabled/sambaedu.conf"
+# Racine du FS legacy SE4 (miroir de config('sambaedu.legacy_path')).
+LEGACY_ROOT="/var/www/sambaedu"
 SYSTEMD_SOURCE_DIR="$APP_DIR/scripts/config"
 SYSTEMD_TARGET_DIR="/etc/systemd/system"
 
@@ -395,10 +402,45 @@ reload_apache_after_pki_renewal() {
 # Mise à jour Apache
 # ============================================================================
 
+# Directives du vhost SER qui pointent encore DANS l'arbre legacy.
+#
+# Pourquoi c'est une sentinelle et pas un détail : jusqu'à la Story 38.1 le
+# vhost SER portait `Alias /ipxe /var/www/sambaedu/ipxe`. Sur une instance dont
+# le vhost date d'avant, éteindre le legacy (`se4:unplug`, ou un simple `mv`)
+# fait disparaître la cible de l'Alias ET le bloc <Directory> qui portait le
+# `FallbackResource /index.php` : ce ne sont pas seulement les statiques iPXE
+# qui tombent, ce sont TOUTES les routes Laravel `/ipxe/*` (boot, admin,
+# enrollment), parce que l'Alias court-circuite le DocumentRoot avant que
+# Laravel soit atteint. Plus aucun poste ne démarre en PXE.
+#
+# Piège de la regex : `sambaedu-reload` commence par la même chaîne que
+# `sambaedu`. La classe finale exclut `-` (et `.`, `_`, alphanum) pour ne
+# matcher que l'arbre legacy. Les lignes commentées sont ignorées — les
+# vhosts générés commentent abondamment les anciens chemins.
+ser_vhost_legacy_directives() {
+    local file="$1"
+
+    [[ -f "$file" ]] || return 0
+
+    grep -nE "^[[:space:]]*(Alias|AliasMatch|ScriptAlias|ScriptAliasMatch|DocumentRoot|<Directory)[[:space:]].*${LEGACY_ROOT}([^[:alnum:]_.-]|\$)" "$file" 2>/dev/null || true
+}
+
+# Agrège les deux fichiers (sites-available + sites-enabled), préfixés du nom.
+ser_vhost_legacy_report() {
+    local file
+    for file in "$APACHE_CONF_TARGET" "$APACHE_CONF_ENABLED"; do
+        ser_vhost_legacy_directives "$file" | while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "$file:$line"
+        done
+    done
+}
+
 update_apache() {
     log "Vérification configuration Apache..."
 
     local SETUP_APACHE_SCRIPT="$APP_DIR/scripts/setupApache.sh"
+    local LEGACY_DIRECTIVES
+    LEGACY_DIRECTIVES="$(ser_vhost_legacy_report)"
 
     # Vérifier si le vhost SER est en place (setupApache.sh déjà exécuté)
     if [[ -f "$APACHE_CONF_TARGET" ]] && grep -q "sambaedu-reload/public" "$APACHE_CONF_TARGET"; then
@@ -408,7 +450,8 @@ update_apache() {
            && [[ -f "/etc/apache2/sites-available/sambaedu-legacy.conf" ]] \
            && grep -q "Alias /wpkg/bundle" "$APACHE_CONF_TARGET" \
            && grep -q "Alias /wpkg/files" "$APACHE_CONF_TARGET" \
-           && grep -q "Alias /wpkg/tools" "$APACHE_CONF_TARGET"; then
+           && grep -q "Alias /wpkg/tools" "$APACHE_CONF_TARGET" \
+           && [[ -z "$LEGACY_DIRECTIVES" ]]; then
             log_success "Apache déjà configuré pour SER (setupApache.sh)"
             return
         else
@@ -416,9 +459,17 @@ update_apache() {
             # (vhost antérieur à la Story 27.5) OU alias /wpkg/files absent (vhost
             # antérieur à la Story 27.19 — livraison HTTP des payloads WPKG) OU
             # alias /wpkg/tools absent (vhost antérieur à la Story 27.20 — outils
-            # partagés WPKG) → relancer setupApache.sh pour (re)poser les aliases.
-            # Idempotent.
-            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files ou /wpkg/tools manquant) — relance de setupApache.sh"
+            # partagés WPKG) OU une directive pointe encore dans l'arbre legacy
+            # (vhost antérieur à la Story 38.1 — `Alias /ipxe /var/www/sambaedu/ipxe`,
+            # qui casse TOUT `/ipxe/*` dès que le legacy est éteint) → relancer
+            # setupApache.sh pour (re)poser les aliases. Idempotent.
+            if [[ -n "$LEGACY_DIRECTIVES" ]]; then
+                log_warning "Vhost SER antérieur à la Story 38.1 : des directives pointent encore dans $LEGACY_ROOT"
+                while IFS= read -r line; do
+                    [[ -n "$line" ]] && log_warning "  $line"
+                done <<< "$LEGACY_DIRECTIVES"
+            fi
+            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files ou /wpkg/tools manquant, ou directive legacy résiduelle) — relance de setupApache.sh"
             if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
                 bash "$SETUP_APACHE_SCRIPT"
                 log_success "Apache reconfiguré via setupApache.sh"

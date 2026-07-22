@@ -228,10 +228,36 @@ converge toujours (y compris la branche « rien à faire », qui recharge par s�
 `a2query` absent (exit 127) → abort explicite, jamais un « vhost inactif » silencieux ;
 `sambaedu.legacy_path` vide ou non absolu → abort.
 
+#### Préflight vhost — le legacy servi par le vhost SER
+
+`se4:unplug` refuse aussi de partir si une directive du **vhost SER** pointe encore
+dans `/var/www/sambaedu` (`Alias`, `ScriptAlias`, `DocumentRoot`, `<Directory>`),
+dans `sites-enabled` **ou** `sites-available` (les deux peuvent diverger : c'est le
+fichier *enabled* qu'Apache sert, et `setupXsendfile.sh` ne patche que celui-là).
+
+Le cas est concret : jusqu'à la Story 38.1 le vhost SER portait
+`Alias /ipxe /var/www/sambaedu/ipxe`. Sur une instance dont le vhost date d'avant,
+déplacer le FS legacy fait disparaître la cible de l'Alias **et** le bloc
+`<Directory>` qui portait le `FallbackResource /index.php` : ce ne sont pas
+seulement les statiques iPXE qui tombent (`boot.ipxe`, `undionly.kpxe`,
+`snponly_x64.efi`), ce sont **toutes** les routes Laravel `/ipxe/*` — boot, admin,
+maintenance, enrollment — l'Alias court-circuitant le `DocumentRoot` avant que
+Laravel soit atteint. Plus aucun poste du parc ne démarre en PXE, sans le moindre
+signal ; et `se4:replug` répare « par accident », ce qui masque la cause.
+
+Réparation : `bash scripts/setupApache.sh` (idempotent — régénère le vhost sur
+`storage/ipxe/static`, repose XSendFile, reload Apache). `se4:status` affiche l'état
+de ce check dans les **checks pré-GO** et liste les directives fautives avec leur
+fichier et leur ligne. `update.sh` porte la même sentinelle : un vhost déployé
+antérieur à la 38.1 est désormais compté comme *incomplet* et régénéré au
+prochain update — avant, seuls le `DocumentRoot` et les alias `/wpkg/*` étaient
+vérifiés, si bien qu'un tel vhost passait pour « déjà configuré » indéfiniment.
+
 ### Séquence type par instance
 
 1. `se4:status` — vérifier le NO-GO résiduel ; traiter chaque hit legacy (fix/story).
-   Le rapport inclut les **checks pré-GO** : migrations en attente, scorie `.env`
+   Le rapport inclut les **checks pré-GO** : migrations en attente, directives du
+   vhost SER pointant encore dans le legacy, scorie `.env`
    `LEGACY_CONFIG_CHANNEL_ENABLED`, et neutralisation de la GPO de domaine
    « applications » pour ce collège (`LegacyGpoNeutralizationInspector`, lecture
    seule AD).
@@ -240,9 +266,10 @@ converge toujours (y compris la branche « rien à faire », qui recharge par s�
    Neutralisation = **blocage d'héritage côté collège** (`gPOptions=1` sur l'OU des
    postes, cf. dev `OU=computers` et lab1 `OU=0991229y,OU=computers`). Si le check
    la dit encore appliquée : poser le blocage sur l'OU des postes, rien d'autre.
-3. `se4:unplug` — extinction à blanc (le préflight refuse si hits récents OU si la
-   GPO « applications » s'applique encore, sauf `--force` ; retire lui-même la
-   scorie `.env` + config recache).
+3. `se4:unplug` — extinction à blanc (le préflight refuse si hits récents, si le
+   vhost SER pointe encore dans le legacy, OU si la GPO « applications »
+   s'applique encore, sauf `--force` ; retire lui-même la scorie `.env` + config
+   recache).
 4. E2e parc : boot PXE, install Windows native, logon avec agent, WPKG natif,
    Guacamole, GPO bootstrap (runbooks des domaines concernés, `docs/qa/README.md`).
 5. Observation **N=7 jours** : `se4:status --days=7` en fin de fenêtre ; tout hit

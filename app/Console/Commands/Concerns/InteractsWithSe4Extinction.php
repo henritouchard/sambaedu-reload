@@ -54,6 +54,31 @@ trait InteractsWithSe4Extinction
      */
     public static ?string $envPath = null;
 
+    /**
+     * Seam de test : fichiers du vhost SER inspectés par le préflight
+     * (null = les chemins système). Voir {@see serVhostPaths()}.
+     *
+     * @var list<string>|null
+     */
+    public static ?array $serVhostPaths = null;
+
+    /**
+     * Vhost SER, dans les DEUX emplacements. `sites-enabled/sambaedu.conf`
+     * n'est pas toujours un symlink vers `sites-available` : setupApache.sh
+     * gère les deux cas et setupXsendfile.sh ne patche que le fichier
+     * *enabled*. Les deux peuvent donc diverger, et c'est le *enabled* qu'Apache
+     * sert réellement — inspecter l'un sans l'autre laisse passer le cas.
+     *
+     * @return list<string>
+     */
+    protected function serVhostPaths(): array
+    {
+        return static::$serVhostPaths ?? [
+            '/etc/apache2/sites-enabled/sambaedu.conf',
+            '/etc/apache2/sites-available/sambaedu.conf',
+        ];
+    }
+
     protected function ensureRoot(): bool
     {
         $isRoot = static::$assumeRoot
@@ -128,6 +153,57 @@ trait InteractsWithSe4Extinction
         }
 
         return true;
+    }
+
+    /**
+     * Directives du vhost SER qui pointent ENCORE dans l'arbre legacy.
+     *
+     * C'est le garde-fou qui manquait : jusqu'à la Story 38.1 le vhost SER
+     * portait `Alias /ipxe <legacy>/ipxe`. Sur une instance dont le vhost date
+     * d'avant, déplacer le FS legacy fait disparaître la cible de l'Alias ET le
+     * bloc `<Directory>` qui portait le `FallbackResource /index.php` : ce ne
+     * sont pas seulement les statiques iPXE qui tombent, ce sont TOUTES les
+     * routes Laravel `/ipxe/*` (boot, admin, enrollment), l'Alias
+     * court-circuitant le DocumentRoot avant que Laravel soit atteint. Résultat
+     * silencieux et maximal : plus aucun poste du parc ne démarre en PXE, et
+     * `se4:replug` répare « par accident », ce qui masque la cause.
+     *
+     * Piège de la regex : `sambaedu-reload` a le même préfixe que `sambaedu`.
+     * Le `(?![\w.-])` refuse le `-` (et `.`, `_`, alphanum) pour ne matcher que
+     * l'arbre legacy. Lignes commentées ignorées : les vhosts générés
+     * commentent abondamment les anciens chemins.
+     *
+     * @return list<string> Lignes « fichier:numéro: directive », vide si sain.
+     */
+    protected function serVhostLegacyDirectives(): array
+    {
+        $legacyPath = $this->legacyPath();
+
+        if ($legacyPath === '') {
+            return [];
+        }
+
+        $pattern = '#^\s*(?:Alias|AliasMatch|ScriptAlias|ScriptAliasMatch|DocumentRoot|<Directory)\s.*'
+            . preg_quote($legacyPath, '#')
+            . '(?![\w.-])#i';
+
+        $found = [];
+
+        foreach ($this->serVhostPaths() as $path) {
+            if (! File::exists($path) || ! is_file($path)) {
+                continue;
+            }
+
+            $lines = preg_split('/\r\n|\r|\n/', File::get($path)) ?: [];
+
+            foreach ($lines as $index => $line) {
+                if (preg_match($pattern, $line) === 1) {
+                    $found[] = sprintf('%s:%d: %s', $path, $index + 1, trim($line));
+                }
+            }
+        }
+
+        return $found;
     }
 
     protected function envFilePath(): string
@@ -271,8 +347,25 @@ trait InteractsWithSe4Extinction
 
         $pending = $this->pendingMigrations();
 
+        $vhostLegacyDirectives = $this->serVhostLegacyDirectives();
+
         $this->line('Checks pré-GO :');
         $this->line(sprintf('  migrations en attente : %s', $pending === [] ? 'aucune' : count($pending) . ' — lancer php artisan migrate'));
+        $this->line(sprintf(
+            '  vhost SER pointant dans le legacy : %s',
+            $vhostLegacyDirectives === []
+                ? 'aucune directive'
+                : count($vhostLegacyDirectives) . ' — vhost antérieur à la Story 38.1',
+        ));
+
+        foreach ($vhostLegacyDirectives as $directive) {
+            $this->line('    ' . $directive);
+        }
+
+        if ($vhostLegacyDirectives !== []) {
+            $this->line(sprintf('    Réparer : bash %s', base_path('scripts/setupApache.sh')));
+        }
+
         $this->line(sprintf('  scorie .env %s : %s', self::LEGACY_ENV_SCORIE_KEY, $this->legacyEnvScoriePresent() ? 'PRÉSENTE (retirée par se4:unplug)' : 'absente'));
         $this->line(sprintf('  GPO domaine « applications » : %s — %s', match ($gpo['status']) {
             LegacyGpoNeutralizationInspector::STATUS_NEUTRALIZED => 'neutralisée pour ce collège',

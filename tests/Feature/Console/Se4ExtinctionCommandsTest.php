@@ -60,6 +60,12 @@ class Se4ExtinctionCommandsTest extends TestCase
         Se4UnplugCommand::$envPath = $this->envFixture();
         Se4ReplugCommand::$envPath = $this->envFixture();
         Se4PurgeCommand::$envPath = $this->envFixture();
+
+        // JAMAIS les vhosts système : fixture isolée (absente par défaut, donc
+        // préflight vhost vert). Sans ce seam, un poste de dev portant un
+        // /etc/apache2/sites-enabled/sambaedu.conf ferait diverger la suite.
+        Se4StatusCommand::$serVhostPaths = [$this->vhostFixture()];
+        Se4UnplugCommand::$serVhostPaths = [$this->vhostFixture()];
     }
 
     protected function tearDown(): void
@@ -74,7 +80,10 @@ class Se4ExtinctionCommandsTest extends TestCase
         Se4UnplugCommand::$envPath = null;
         Se4ReplugCommand::$envPath = null;
         Se4PurgeCommand::$envPath = null;
+        Se4StatusCommand::$serVhostPaths = null;
+        Se4UnplugCommand::$serVhostPaths = null;
 
+        @unlink($this->vhostFixture());
         @unlink($this->envFixture());
         @rmdir($this->legacyDir());
         @rmdir($this->offDir());
@@ -91,6 +100,51 @@ class Se4ExtinctionCommandsTest extends TestCase
     private function legacyDir(): string
     {
         return $this->tmpBase . '/sambaedu';
+    }
+
+    private function vhostFixture(): string
+    {
+        return $this->tmpBase . '/sambaedu.conf';
+    }
+
+    /**
+     * Vhost SER antérieur à la Story 38.1 : `/ipxe` aliasé DANS l'arbre legacy.
+     * Contient aussi les pièges que la détection ne doit PAS relever : la ligne
+     * commentée, et les chemins `sambaedu-reload` (même préfixe que le legacy).
+     */
+    private function writeStaleVhost(): void
+    {
+        $legacy = $this->legacyDir();
+
+        file_put_contents($this->vhostFixture(), <<<CONF
+        <VirtualHost *:80>
+            DocumentRoot {$legacy}-reload/public
+            # ancien chemin, purement documentaire : Alias /os {$legacy}/os
+            Alias /ipxe {$legacy}/ipxe
+            <Directory {$legacy}/ipxe>
+                FallbackResource /index.php
+            </Directory>
+            Alias /assets/wallpaper {$legacy}-reload/storage/app/wallpaper
+        </VirtualHost>
+        CONF);
+    }
+
+    /**
+     * Vhost SER courant (38.1) : `/ipxe` servi depuis storage/ipxe/static.
+     */
+    private function writeCurrentVhost(): void
+    {
+        $legacy = $this->legacyDir();
+
+        file_put_contents($this->vhostFixture(), <<<CONF
+        <VirtualHost *:80>
+            DocumentRoot {$legacy}-reload/public
+            Alias /ipxe {$legacy}-reload/storage/ipxe/static
+            <Directory {$legacy}-reload/storage/ipxe/static>
+                FallbackResource /index.php
+            </Directory>
+        </VirtualHost>
+        CONF);
     }
 
     private function offDir(): string
@@ -263,6 +317,30 @@ class Se4ExtinctionCommandsTest extends TestCase
             ->assertExitCode(0);
     }
 
+    public function test_status_flags_a_ser_vhost_still_pointing_into_the_legacy_tree(): void
+    {
+        $this->fakeVhostDisabled();
+        $this->mockGpo(LegacyGpoNeutralizationInspector::STATUS_ABSENT);
+        $this->writeStaleVhost();
+
+        $this->artisan('se4:status')
+            ->expectsOutputToContain('vhost SER pointant dans le legacy : 2')
+            ->expectsOutputToContain('setupApache.sh')
+            ->expectsOutputToContain('Alias /ipxe')
+            ->assertExitCode(0);
+    }
+
+    public function test_status_vhost_check_ignores_reload_paths_and_comments(): void
+    {
+        $this->fakeVhostDisabled();
+        $this->mockGpo(LegacyGpoNeutralizationInspector::STATUS_ABSENT);
+        $this->writeCurrentVhost();
+
+        $this->artisan('se4:status')
+            ->expectsOutputToContain('vhost SER pointant dans le legacy : aucune directive')
+            ->assertExitCode(0);
+    }
+
     private function mockGpo(string $status, string $detail = ''): void
     {
         $this->mock(LegacyGpoNeutralizationInspector::class, function ($mock) use ($status, $detail) {
@@ -329,6 +407,61 @@ class Se4ExtinctionCommandsTest extends TestCase
         $this->seedHit();
 
         $this->artisan('se4:unplug', ['--force' => true])
+            ->assertExitCode(0);
+
+        Process::assertRan('a2dissite sambaedu-legacy');
+    }
+
+    /**
+     * Le cas qui a mordu : vhost antérieur à la 38.1, `Alias /ipxe` dans
+     * l'arbre legacy. Déplacer le FS ferait tomber l'Alias ET le <Directory>
+     * porteur du FallbackResource — donc TOUT `/ipxe/*`, y compris les routes
+     * Laravel. L'extinction doit refuser AVANT de toucher quoi que ce soit.
+     */
+    public function test_unplug_aborts_when_ser_vhost_still_points_into_legacy(): void
+    {
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+        $this->writeStaleVhost();
+
+        $this->artisan('se4:unplug')
+            ->expectsOutputToContain('le vhost SER pointe encore dans l\'arbre legacy')
+            ->expectsOutputToContain('Alias /ipxe')
+            ->expectsOutputToContain('setupApache.sh')
+            ->assertExitCode(1);
+
+        Process::assertDidntRun('a2dissite sambaedu-legacy');
+        Process::assertDidntRun('systemctl reload apache2');
+        $this->assertDirectoryExists($this->legacyDir());
+        $this->assertDirectoryDoesNotExist($this->offDir());
+    }
+
+    public function test_unplug_proceeds_when_ser_vhost_is_current(): void
+    {
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+        $this->writeCurrentVhost();
+
+        $this->artisan('se4:unplug')->assertExitCode(0);
+
+        $this->assertRanInOrder([
+            'a2dissite sambaedu-legacy',
+            'systemctl reload apache2',
+            'mv ',
+        ]);
+    }
+
+    public function test_unplug_force_overrides_vhost_preflight_with_a_warning(): void
+    {
+        $this->fakeProcesses();
+        Se4UnplugCommand::$assumeRoot = true;
+        @mkdir($this->legacyDir(), 0755, true);
+        $this->writeStaleVhost();
+
+        $this->artisan('se4:unplug', ['--force' => true])
+            ->expectsOutputToContain('/ipxe/* va tomber')
             ->assertExitCode(0);
 
         Process::assertRan('a2dissite sambaedu-legacy');

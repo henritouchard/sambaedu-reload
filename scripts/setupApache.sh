@@ -408,6 +408,13 @@ cd "$SER_ROOT"
 php artisan config:cache 2>/dev/null && echo "   Config Laravel cachée"
 php artisan route:cache 2>/dev/null && echo "   Routes Laravel cachées"
 
+# Ce script tourne en root : les caches viennent d'être écrits root:root, alors
+# que PHP-FPM tourne en www-admin. La lecture passe (664) mais toute réécriture
+# ultérieure par FPM échoue. Restituer la propriété, sinon la panne arrive plus
+# tard et sans lien apparent avec ce script.
+chown -R www-admin:www-admin "$SER_ROOT/bootstrap/cache" 2>/dev/null \
+    && echo "   Caches rendus à www-admin"
+
 echo ""
 echo "=== Terminé ==="
 echo ""
