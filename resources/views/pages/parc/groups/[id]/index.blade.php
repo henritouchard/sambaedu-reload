@@ -1519,14 +1519,10 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         // pour le sous-texte « N application(s) » de attach-profiles-modal
         // (évite le N+1).
         $query = AppProfile::query()
-            ->where('is_active', true)
             ->whereNotIn('id', $existing)
             ->with('applications:id');
         if ($this->wpkgProfileSearch !== '') {
-            $query->where(function ($q) {
-                $q->where('name', 'LIKE', "%{$this->wpkgProfileSearch}%")
-                    ->orWhere('display_name', 'LIKE', "%{$this->wpkgProfileSearch}%");
-            });
+            $query->where('name', 'LIKE', "%{$this->wpkgProfileSearch}%");
         }
 
         return $query->orderBy('name')->limit(50)->get();
@@ -1583,9 +1579,8 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public function getBulkProfileOptionsProperty(): Collection
     {
         return AppProfile::query()
-            ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name', 'display_name']);
+            ->get(['id', 'name']);
     }
 
     // Modales — open/close
@@ -1845,9 +1840,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     $name = trim($this->bulkNewProfileName) ?: ('Categorie-'.$this->bulkCategory);
                     $profile = $appProfileService->createProfile([
                         'name' => $name,
-                        'display_name' => $name,
                         'description' => "Profil créé automatiquement (bulk catégorie {$this->bulkCategory})",
-                        'is_active' => true,
                     ]);
                 } else {
                     $profile = AppProfile::find($this->bulkExistingProfileId);
@@ -1871,7 +1864,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 '%d application(s) de la catégorie "%s" assignées au profil "%s".',
                 count($this->bulkPreviewAppIds),
                 $this->bulkCategory,
-                $profile->display_name ?? $profile->name,
+                $profile->name,
             ));
             $this->closeBulkCategoryModal();
             $this->loadGroup();
@@ -2252,51 +2245,25 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg). --}}
-            <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'general' ? 'tab-active' : '' }}"
-                    wire:click="setTab('general')">
-                    <i class="fa-solid fa-circle-info mr-2"></i>
-                    Général
-                </button>
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'wpkg' ? 'tab-active' : '' }}"
-                    wire:click="setTab('wpkg')">
-                    <i class="fa-solid fa-cube mr-2"></i>
-                    Applications
-                </button>
-                {{-- Onglet Raccourcis — assignation raccourci ↔ groupe de postes. --}}
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'shortcuts' ? 'tab-active' : '' }}"
-                    wire:click="setTab('shortcuts')">
-                    <i class="fa-solid fa-link mr-2"></i>
-                    Raccourcis
-                </button>
-                {{-- Story 37.1 — État cible (contribution du parc + planchers). --}}
-                <button type="button" role="tab"
-                    class="tab {{ $tab === 'state' ? 'tab-active' : '' }}"
-                    wire:click="setTab('state')">
-                    <i class="fa-solid fa-bullseye mr-2"></i>
-                    État cible
-                </button>
-                @can('app.customize')
-                    {{-- Story 27.12 — Options/Capacités par parc (registre = mécanisme caché). --}}
-                    <button type="button" role="tab"
-                        class="tab {{ $tab === 'capabilities' ? 'tab-active' : '' }}"
-                        wire:click="setTab('capabilities')">
-                        <i class="fa-solid fa-sliders mr-2"></i>
-                        Options / Capacités
-                    </button>
-                    {{-- Story 27.3bis — Associations par défaut par parc (successeur natif SFTA). --}}
-                    <button type="button" role="tab"
-                        class="tab {{ $tab === 'associations' ? 'tab-active' : '' }}"
-                        wire:click="setTab('associations')">
-                        <i class="fa-solid fa-file-circle-check mr-2"></i>
-                        Associations
-                    </button>
-                @endcan
-            </div>
+            {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg).
+                 Story 27.12 / 27.3bis — Options/Capacités et Associations, réservés
+                 à app.customize : la visibilité conditionnelle se gère en amont en
+                 n'ajoutant pas l'onglet au tableau (convention x-molecules.tabs). --}}
+            @php
+                $groupTabs = [
+                    'general' => ['label' => 'Général', 'icon' => 'fa-solid fa-circle-info'],
+                    'wpkg' => ['label' => 'Applications', 'icon' => 'fa-solid fa-cube'],
+                    'shortcuts' => ['label' => 'Raccourcis', 'icon' => 'fa-solid fa-link'],
+                    'state' => ['label' => 'État cible', 'icon' => 'fa-solid fa-bullseye'],
+                ];
+
+                if (\Illuminate\Support\Facades\Gate::allows('app.customize')) {
+                    $groupTabs['capabilities'] = ['label' => 'Options / Capacités', 'icon' => 'fa-solid fa-sliders'];
+                    $groupTabs['associations'] = ['label' => 'Associations', 'icon' => 'fa-solid fa-file-circle-check'];
+                }
+            @endphp
+
+            <x-molecules.tabs :tabs="$groupTabs" :active="$tab" />
 
             @if ($tab === 'wpkg')
                 @include('pages.parc.groups.[id]._partials.wpkg-assignment-tab')

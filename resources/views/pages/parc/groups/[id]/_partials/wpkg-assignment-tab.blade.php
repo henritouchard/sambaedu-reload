@@ -52,17 +52,9 @@
                             <li wire:key="grp-attached-profile-{{ $profile->id }}"
                                 class="flex items-center justify-between py-2">
                                 <div>
-                                    <div class="font-medium">
-                                        {{ $profile->display_name ?? $profile->name }}
-                                        @if ($profile->is_active)
-                                            <span class="badge badge-success badge-sm ml-1">actif</span>
-                                        @else
-                                            <span class="badge badge-warning badge-sm ml-1">inactif</span>
-                                        @endif
-                                    </div>
+                                    <div class="font-medium">{{ $profile->name }}</div>
                                     <div class="text-xs text-base-content/60">
-                                        <code>{{ $profile->name }}</code>
-                                        • {{ $profile->applications_count ?? $profile->applications->count() }} app(s)
+                                        {{ $profile->applications_count ?? $profile->applications->count() }} app(s)
                                     </div>
                                 </div>
                                 @can('assign-wpkg-workstationGroup', $group)

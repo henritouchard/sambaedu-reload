@@ -71,7 +71,7 @@
                              $this reste accessible) — supprime la query
                              Eloquent inline anti-pattern. --}}
                         @foreach ($this->bulkProfileOptions as $p)
-                            <option value="{{ $p->id }}">{{ $p->display_name ?? $p->name }}</option>
+                            <option value="{{ $p->id }}">{{ $p->name }}</option>
                         @endforeach
                     </select>
                 </div>

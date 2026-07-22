@@ -24,11 +24,9 @@ use App\Models\Workstation;
  * @property int $id
  * @property string|null $controlhub_id UUID universel généré par le ControlHub
  * @property string $name
- * @property string|null $display_name
  * @property string|null $description
  * @property string|null $ad_guid GUID dans AD (après synchronisation)
  * @property string|null $ad_dn Distinguished Name dans AD (Story 15.3)
- * @property bool $is_active
  * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
@@ -47,11 +45,9 @@ class AppProfile extends Model implements Wireable
         'controlhub_id',
         'controlhub_version',
         'name',
-        'display_name',
         'description',
         'ad_guid',
         'ad_dn',
-        'is_active',
         'archived_at',
     ];
 
@@ -61,7 +57,6 @@ class AppProfile extends Model implements Wireable
     protected $casts = [
         'controlhub_id' => 'string',
         'controlhub_version' => 'datetime',
-        'is_active' => 'boolean',
         'archived_at' => 'datetime',
     ];
 
@@ -105,31 +100,14 @@ class AppProfile extends Model implements Wireable
     }
 
     /**
-     * Scope pour les profils actifs
-     */
-    public function scopeActive(Builder $query): Builder
-    {
-        return $query->where('is_active', true);
-    }
-
-    /**
      * Scope pour rechercher par nom
      */
     public function scopeSearch(Builder $query, string $search): Builder
     {
         return $query->where(function ($q) use ($search) {
             $q->where('name', 'ILIKE', "%{$search}%")
-                ->orWhere('display_name', 'ILIKE', "%{$search}%")
                 ->orWhere('description', 'ILIKE', "%{$search}%");
         });
-    }
-
-    /**
-     * Retourne le nom d'affichage ou le nom technique
-     */
-    public function getDisplayNameOrNameAttribute(): string
-    {
-        return $this->display_name ?? $this->name;
     }
 
     /**

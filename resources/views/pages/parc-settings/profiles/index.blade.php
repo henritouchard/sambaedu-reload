@@ -68,7 +68,6 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
     // Édition
     public bool $isEditing = false;
     public string $editName = '';
-    public string $editDisplayName = '';
     public string $editDescription = '';
 
     public function boot(AppProfileService $appProfileService): void
@@ -106,7 +105,6 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
     public function startEditing(): void
     {
         $this->editName = $this->profile->name;
-        $this->editDisplayName = $this->profile->display_name ?? '';
         $this->editDescription = $this->profile->description ?? '';
         $this->isEditing = true;
     }
@@ -120,14 +118,12 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
     {
         $this->validate([
             'editName' => 'required|string|max:100|unique:app_profiles,name,' . $this->profileId,
-            'editDisplayName' => 'nullable|string|max:255',
             'editDescription' => 'nullable|string',
         ]);
 
         try {
             $this->appProfileService->updateProfile($this->profileId, [
                 'name' => $this->editName,
-                'display_name' => $this->editDisplayName ?: null,
                 'description' => $this->editDescription ?: null,
             ]);
 
@@ -433,6 +429,34 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
             $this->toastError('Erreur lors du retrait du poste');
         }
     }
+
+    /**
+     * Suppression DÉFINITIVE du profil. Les pivots parcs/postes/applications
+     * partent en cascade et l'AppProfileObserver propage la suppression du
+     * groupe CN dans l'AD : les applications que ce profil portait cessent
+     * d'être déployées sur les cibles qui en dépendaient.
+     */
+    public function deleteProfile()
+    {
+        $name = $this->profile?->name ?? '';
+
+        try {
+            $this->appProfileService->deleteProfile($this->profileId);
+        } catch (\Exception $e) {
+            Log::error('[ProfileDetail] Erreur suppression profil: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la suppression du profil');
+
+            return null;
+        }
+
+        session()->flash('toast', [
+            'type' => 'success',
+            'title' => 'Profil supprimé',
+            'message' => "Le profil « {$name} » a été supprimé définitivement.",
+        ]);
+
+        return $this->redirect($this->backUrl(), navigate: true);
+    }
 };
 ?>
 
@@ -446,6 +470,11 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                     <i class="fa-solid fa-pen"></i>
                     Modifier
                 </button>
+                <button type="button" class="btn btn-outline btn-error btn-sm" wire:click="deleteProfile"
+                    wire:confirm="Supprimer définitivement ce profil ? Les applications qu'il porte ne seront plus déployées sur les parcs et postes rattachés.">
+                    <i class="fa-solid fa-trash"></i>
+                    Supprimer
+                </button>
             @endif
         </div>
     </x-slot:actions>
@@ -457,24 +486,16 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                 <div class="card-body">
                     @if ($isEditing)
                         <form wire:submit="saveProfile" class="space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="form-control">
+                            <div class="form-control">
+                                <label class="label">
+                                    <span class="label-text">Nom *</span>
+                                </label>
+                                <input type="text" wire:model="editName" class="input input-bordered" required />
+                                @error('editName')
                                     <label class="label">
-                                        <span class="label-text">Nom technique *</span>
+                                        <span class="label-text-alt text-error">{{ $message }}</span>
                                     </label>
-                                    <input type="text" wire:model="editName" class="input input-bordered" required />
-                                    @error('editName')
-                                        <label class="label">
-                                            <span class="label-text-alt text-error">{{ $message }}</span>
-                                        </label>
-                                    @enderror
-                                </div>
-                                <div class="form-control">
-                                    <label class="label">
-                                        <span class="label-text">Nom d'affichage</span>
-                                    </label>
-                                    <input type="text" wire:model="editDisplayName" class="input input-bordered" />
-                                </div>
+                                @enderror
                             </div>
                             <div class="form-control">
                                 <label class="label">
@@ -497,35 +518,25 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                                     <div class="bg-primary/10 text-primary rounded-xl w-16 h-16 flex items-center justify-center">
                                         <i class="fa-solid fa-layer-group text-2xl"></i>
                                     </div>
-                                    <h2 class="text-xl font-bold">{{ $profile->display_name ?? $profile->name }}</h2>
-                                    @if ($profile->display_name)
-                                        <p class="text-sm text-base-content/60">
-                                            <code class="bg-base-200 px-2 py-0.5 rounded">{{ $profile->name }}</code>
-                                        </p>
-                                    @endif
+                                    <h2 class="text-xl font-bold">{{ $profile->name }}</h2>
                                 </div>
                                 @if ($profile->description)
                                     <p class="mt-2 text-base-content/70">{{ $profile->description }}</p>
                                 @endif
                             </div>
-                            <div class="flex items-center gap-4">
-                                <div class="stat p-0">
-                                    <div class="stat-title text-xs">Applications</div>
-                                    <div class="stat-value text-2xl">{{ $profile->applications->count() }}</div>
+                            <div class="flex items-center gap-6">
+                                <div class="text-right">
+                                    <div class="text-xs text-base-content/60">Applications</div>
+                                    <div class="text-2xl font-extrabold leading-tight">{{ $profile->applications->count() }}</div>
                                 </div>
-                                <div class="stat p-0">
-                                    <div class="stat-title text-xs">Groupes</div>
-                                    <div class="stat-value text-2xl">{{ $profile->workstationGroups->count() }}</div>
+                                <div class="text-right">
+                                    <div class="text-xs text-base-content/60">Groupes</div>
+                                    <div class="text-2xl font-extrabold leading-tight">{{ $profile->workstationGroups->count() }}</div>
                                 </div>
-                                <div class="stat p-0">
-                                    <div class="stat-title text-xs">Postes</div>
-                                    <div class="stat-value text-2xl">{{ $profile->workstations->count() }}</div>
+                                <div class="text-right">
+                                    <div class="text-xs text-base-content/60">Postes</div>
+                                    <div class="text-2xl font-extrabold leading-tight">{{ $profile->workstations->count() }}</div>
                                 </div>
-                                @if ($profile->is_active)
-                                    <span class="badge badge-success">Actif</span>
-                                @else
-                                    <span class="badge badge-warning">Inactif</span>
-                                @endif
                             </div>
                         </div>
                     @endif

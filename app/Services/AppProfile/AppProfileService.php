@@ -35,18 +35,13 @@ final class AppProfileService
      */
     public function listProfiles(
         int $perPage = 20,
-        ?string $search = null,
-        ?bool $activeOnly = null
+        ?string $search = null
     ): LengthAwarePaginator {
         $query = AppProfile::query()
             ->withCount(['applications', 'workstationGroups']);
 
         if ($search) {
             $query->search($search);
-        }
-
-        if ($activeOnly !== null) {
-            $query->where('is_active', $activeOnly);
         }
 
         return $query->orderBy('name')->paginate($perPage);
@@ -57,9 +52,9 @@ final class AppProfileService
      */
     public function listProfilesForSelect(): Collection
     {
-        return AppProfile::active()
+        return AppProfile::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'display_name']);
+            ->get(['id', 'name']);
     }
 
     /**
@@ -94,9 +89,7 @@ final class AppProfileService
         return DB::transaction(function () use ($data) {
             $profile = AppProfile::create([
                 'name' => $data['name'],
-                'display_name' => $data['display_name'] ?? null,
                 'description' => $data['description'] ?? null,
-                'is_active' => $data['is_active'] ?? true,
             ]);
 
             if (!empty($data['application_ids'])) {
@@ -130,9 +123,7 @@ final class AppProfileService
 
             $profile->update([
                 'name' => $data['name'] ?? $profile->name,
-                'display_name' => $data['display_name'] ?? $profile->display_name,
                 'description' => $data['description'] ?? $profile->description,
-                'is_active' => $data['is_active'] ?? $profile->is_active,
             ]);
 
             if (array_key_exists('application_ids', $data)) {
@@ -801,7 +792,6 @@ final class AppProfileService
     {
         return [
             'profiles_count' => AppProfile::count(),
-            'active_profiles_count' => AppProfile::active()->count(),
             'applications_count' => Application::count(),
             'workstation_groups_count' => WorkstationGroup::count(),
         ];

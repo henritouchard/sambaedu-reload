@@ -150,6 +150,12 @@ Les relations retournées incluent uniquement les entités ControlHub (ayant un 
 
 ### `GET /api/v1/app-profiles/{controlhub_id}`
 
+> Un profil applicatif SE5 ne porte que `name` et `description` : les colonnes
+> `display_name` et `is_active` ont été supprimées. `is_active` ne conditionnait
+> aucun déploiement (le resolver ne filtre que `archived_at`) — un profil qui ne
+> doit plus rien produire se supprime. Ces deux clés envoyées par le ControlHub
+> dans un payload entrant sont simplement ignorées (aucune erreur de validation).
+
 **Réponse :**
 
 ```json
@@ -159,9 +165,7 @@ Les relations retournées incluent uniquement les entités ControlHub (ayant un 
     "controlhub_id": "uuid-profile-1",
     "controlhub_version": "2026-02-10T18:00:00Z",
     "name": "profil-bureautique",
-    "display_name": "Bureautique Standard",
     "description": "Applications bureautiques de base",
-    "is_active": true,
     "applications": [
       { "app_id": "libreoffice", "name": "LibreOffice" },
       { "app_id": "firefox-esr", "name": "Firefox ESR" }
@@ -367,7 +371,6 @@ Envoie l'état souhaité complet. L'instance converge en 3 passes :
         "controlhub_id": "uuid-profile-1",
         "controlhub_version": "2026-02-11T13:00:00Z",
         "name": "profil-bureautique",
-        "display_name": "Bureautique Standard",
         "description": "Applications bureautiques de base",
         "applications": [
           { "app_id": "libreoffice" },

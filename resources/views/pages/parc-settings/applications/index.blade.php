@@ -237,7 +237,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
                             <a href="{{ route('app.parc-settings.profiles.show', $profile->id) }}"
                                 class="flex items-center gap-2 px-3 py-2 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
                                 <i class="fa-solid fa-layer-group text-secondary text-sm"></i>
-                                <span class="font-medium text-sm">{{ $profile->display_name ?? $profile->name }}</span>
+                                <span class="font-medium text-sm">{{ $profile->name }}</span>
                             </a>
                         @endforeach
                     </div>

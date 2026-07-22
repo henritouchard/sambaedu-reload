@@ -945,14 +945,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         // pour le sous-texte « N application(s) » de attach-profiles-modal
         // (évite le N+1).
         $query = AppProfile::query()
-            ->where('is_active', true)
             ->whereNotIn('id', $existing)
             ->with('applications:id');
         if ($this->wpkgProfileSearch !== '') {
-            $query->where(function ($q) {
-                $q->where('name', 'LIKE', "%{$this->wpkgProfileSearch}%")
-                    ->orWhere('display_name', 'LIKE', "%{$this->wpkgProfileSearch}%");
-            });
+            $query->where('name', 'LIKE', "%{$this->wpkgProfileSearch}%");
         }
 
         return $query->orderBy('name')->limit(50)->get();

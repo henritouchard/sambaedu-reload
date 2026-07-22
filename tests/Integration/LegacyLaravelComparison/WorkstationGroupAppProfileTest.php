@@ -435,7 +435,6 @@ class WorkstationGroupAppProfileTest extends TestCase
         $appProfile = AppProfile::create([
             'name' => $groupName,
             'description' => 'AppProfile indépendant',
-            'is_active' => true,
         ]);
         echo "✓ AppProfile créé manuellement (ID: {$appProfile->id})\n";
         

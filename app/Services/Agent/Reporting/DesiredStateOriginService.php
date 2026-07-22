@@ -278,7 +278,7 @@ class DesiredStateOriginService
 
         // Apps via profils du parc → « via profil X ».
         foreach ($group->appProfiles as $profile) {
-            $profileLabel = (string) ($profile->display_name ?? $profile->name);
+            $profileLabel = (string) $profile->name;
             foreach ($profile->applications as $app) {
                 $appId = $remember($app);
                 if ($appId !== '') {

@@ -45,14 +45,10 @@
                     <x-atoms.icon-avatar icon="fa-cubes" bgColor="bg-primary/10" textColor="text-primary"
                         size="w-8 h-8" iconSize="text-sm" />
                     <div class="flex-1">
-                        <div class="font-medium">{{ $profile->display_name ?? $profile->name }}</div>
+                        <div class="font-medium">{{ $profile->name }}</div>
                         <div class="text-xs text-base-content/60">
                             {{-- Eager-loading attendu : cf. @props ci-dessus. --}}
                             {{ $profile->applications->count() }} application(s)
-                            @if (! $profile->is_active)
-                                <span class="mx-1">•</span>
-                                <span class="text-warning">inactif</span>
-                            @endif
                         </div>
                     </div>
                 </label>

@@ -1,7 +1,6 @@
 <?php
 
 use App\Components\Traits\WithToasts;
-use App\Models\AppProfile;
 use App\Services\AppProfile\AppProfileService;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
@@ -20,12 +19,6 @@ new class extends Component
     #[Url]
     public string $profileSearch = '';
 
-    // Chaîne et non ?bool : filter-toggle pose la valeur via $set('activeOnly', ''),
-    // et Livewire coerce '' en false sur une propriété bool — « Tous » basculerait
-    // alors sur « Inactifs ». '' = pas de filtre, '1' = actifs, '0' = inactifs.
-    #[Url]
-    public string $activeOnly = '';
-
     public array $selectedProfiles = [];
 
     #[Url]
@@ -37,8 +30,6 @@ new class extends Component
     public bool $showCreateModal = false;
 
     public string $newProfileName = '';
-
-    public string $newProfileDisplayName = '';
 
     public string $newProfileDescription = '';
 
@@ -54,7 +45,6 @@ new class extends Component
             return $this->appProfileService->listProfiles(
                 perPage: $this->profilesPerPage,
                 search: $this->profileSearch ?: null,
-                activeOnly: $this->activeOnly === '' ? null : $this->activeOnly === '1',
             );
         } catch (\Exception $e) {
             Log::error('[ProfilesTab] Erreur chargement profils: '.$e->getMessage());
@@ -66,7 +56,6 @@ new class extends Component
     public function resetProfileFilters(): void
     {
         $this->profileSearch = '';
-        $this->activeOnly = '';
         $this->selectedProfiles = [];
         $this->resetPage();
     }
@@ -86,7 +75,6 @@ new class extends Component
     public function openCreateModal(): void
     {
         $this->newProfileName = '';
-        $this->newProfileDisplayName = '';
         $this->newProfileDescription = '';
         $this->showCreateModal = true;
     }
@@ -100,16 +88,13 @@ new class extends Component
     {
         $this->validate([
             'newProfileName' => 'required|string|max:100|unique:app_profiles,name',
-            'newProfileDisplayName' => 'nullable|string|max:255',
             'newProfileDescription' => 'nullable|string',
         ]);
 
         try {
             $profile = $this->appProfileService->createProfile([
                 'name' => $this->newProfileName,
-                'display_name' => $this->newProfileDisplayName ?: null,
                 'description' => $this->newProfileDescription ?: null,
-                'is_active' => true,
             ]);
 
             $this->toastSuccess("Profil '{$profile->name}' créé avec succès");
@@ -120,45 +105,43 @@ new class extends Component
         }
     }
 
-    public function deleteProfile(int $profileId): void
+    /**
+     * Suppression groupée DÉFINITIVE. Le profil disparaît du catalogue et de
+     * tous les parcs/postes auxquels il était rattaché : les applications qu'il
+     * portait ne sont plus déployées. C'est le geste que l'ancien drapeau
+     * « inactif » laissait croire qu'il faisait, sans jamais le faire.
+     */
+    public function deleteProfiles(): void
     {
-        try {
-            $profile = AppProfile::find($profileId);
-            if (! $profile) {
-                $this->toastError('Profil non trouvé');
+        $ids = array_map('intval', $this->selectedProfiles);
 
-                return;
-            }
-
-            $name = $profile->name;
-            $this->appProfileService->deleteProfile($profileId);
-            $this->toastSuccess("Profil '{$name}' supprimé avec succès");
-        } catch (\Exception $e) {
-            Log::error('[ProfilesTab] Erreur suppression profil: '.$e->getMessage());
-            $this->toastError($e->getMessage());
+        if ($ids === []) {
+            return;
         }
-    }
 
-    public function toggleProfileActive(int $profileId): void
-    {
-        try {
-            $profile = AppProfile::find($profileId);
-            if (! $profile) {
-                $this->toastError('Profil non trouvé');
+        $deleted = 0;
 
-                return;
+        foreach ($ids as $profileId) {
+            try {
+                if ($this->appProfileService->deleteProfile($profileId)) {
+                    $deleted++;
+                }
+            } catch (\Exception $e) {
+                Log::error('[ProfilesTab] Erreur suppression profil: '.$e->getMessage(), [
+                    'profile_id' => $profileId,
+                ]);
             }
-
-            $this->appProfileService->updateProfile($profileId, [
-                'is_active' => ! $profile->is_active,
-            ]);
-
-            $status = ! $profile->is_active ? 'activé' : 'désactivé';
-            $this->toastSuccess("Profil '{$profile->name}' {$status}");
-        } catch (\Exception $e) {
-            Log::error('[ProfilesTab] Erreur toggle profil: '.$e->getMessage());
-            $this->toastError('Erreur lors de la modification du profil');
         }
+
+        $this->selectedProfiles = [];
+
+        if ($deleted === 0) {
+            $this->toastError('Aucun profil supprimé');
+
+            return;
+        }
+
+        $this->toastSuccess($deleted.' profil(s) supprimé(s) définitivement');
     }
 };
 ?>
@@ -174,10 +157,6 @@ new class extends Component
         <div class="flex-1 min-w-[200px]">
             <x-atoms.search-input model="profileSearch" placeholder="Nom, description..." />
         </div>
-
-        {{-- 3 options : boutons segmentés (seuil projet : dropdown au-delà de 4). --}}
-        <x-molecules.filter-toggle name="activeOnly" :active="$activeOnly" label="Statut"
-            :options="['' => 'Tous', '1' => 'Actifs', '0' => 'Inactifs']" />
     </x-molecules.filter-bar>
 
     <!-- Tableau des profils -->
@@ -188,13 +167,14 @@ new class extends Component
                     <thead>
                         <tr>
                             <th class="w-12">
-                                <input type="checkbox" class="checkbox checkbox-sm" />
+                                {{-- Sans binding, cette case ne sélectionnait rien : composant canonique. --}}
+                                <x-molecules.select-all-checkbox class="checkbox-sm"
+                                    :ids="$this->profiles->pluck('id')" model="selectedProfiles" />
                             </th>
                             <th>Nom</th>
                             <th>Description</th>
                             <th class="text-center">Applications</th>
                             <th class="text-center">Groupes</th>
-                            <th class="text-center">Statut</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -208,14 +188,7 @@ new class extends Component
                                     </label>
                                 </td>
                                 <td>
-                                    <div class="flex flex-col">
-                                        <span class="font-medium">
-                                            {{ $profile->display_name ?? $profile->name }}
-                                        </span>
-                                        @if ($profile->display_name)
-                                            <span class="text-xs text-base-content/60">{{ $profile->name }}</span>
-                                        @endif
-                                    </div>
+                                    <span class="font-medium">{{ $profile->name }}</span>
                                 </td>
                                 <td>
                                     <span class="text-sm text-base-content/70 line-clamp-2">
@@ -232,20 +205,13 @@ new class extends Component
                                         {{ $profile->workstation_groups_count ?? 0 }}
                                     </span>
                                 </td>
-                                <td class="text-center">
-                                    @if ($profile->is_active)
-                                        <span class="badge badge-success badge-sm">Actif</span>
-                                    @else
-                                        <span class="badge badge-warning badge-sm">Inactif</span>
-                                    @endif
-                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-center py-8 text-base-content/60">
+                                <td colspan="5" class="text-center py-8 text-base-content/60">
                                     <i class="fa-solid fa-cubes text-4xl mb-2 opacity-30"></i>
                                     <p>Aucun profil applicatif trouvé</p>
-                                    @if ($profileSearch || $activeOnly !== null)
+                                    @if ($profileSearch)
                                         <button type="button" class="btn btn-ghost btn-sm mt-2"
                                             wire:click="resetProfileFilters">
                                             Réinitialiser les filtres
@@ -281,42 +247,11 @@ new class extends Component
                         {{ count($selectedProfiles) }} profil(s) sélectionné(s)
                     </span>
                     <div class="divider divider-horizontal m-0"></div>
-                    <div class="dropdown dropdown-top">
-                        <label tabindex="0" class="btn btn-primary btn-sm">
-                            <i class="fa-solid fa-cog"></i>
-                            Actions
-                            <i class="fa-solid fa-chevron-up ml-1"></i>
-                        </label>
-                        <ul tabindex="0"
-                            class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-300 mb-2">
-                            <li>
-                                <button type="button" wire:click="activateProfiles">
-                                    <i class="fa-solid fa-toggle-on text-success"></i>
-                                    Activer
-                                </button>
-                            </li>
-                            <li>
-                                <button type="button" wire:click="deactivateProfiles">
-                                    <i class="fa-solid fa-toggle-off text-warning"></i>
-                                    Désactiver
-                                </button>
-                            </li>
-                            <li>
-                                <button type="button" wire:click="duplicateProfiles">
-                                    <i class="fa-solid fa-copy"></i>
-                                    Dupliquer
-                                </button>
-                            </li>
-                            <div class="divider my-1"></div>
-                            <li>
-                                <button type="button" class="text-error" wire:click="deleteProfiles"
-                                    wire:confirm="Êtes-vous sûr de vouloir supprimer ces profils ?">
-                                    <i class="fa-solid fa-trash"></i>
-                                    Supprimer
-                                </button>
-                            </li>
-                        </ul>
-                    </div>
+                    <button type="button" class="btn btn-error btn-sm" wire:click="deleteProfiles"
+                        wire:confirm="Supprimer définitivement ces profils ? Les applications qu'ils portent ne seront plus déployées sur les parcs et postes rattachés.">
+                        <i class="fa-solid fa-trash"></i>
+                        Supprimer définitivement
+                    </button>
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="$set('selectedProfiles', [])">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
@@ -333,7 +268,7 @@ new class extends Component
                 <form wire:submit="createProfile">
                     <div class="form-control mb-4">
                         <label class="label">
-                            <span class="label-text">Nom technique *</span>
+                            <span class="label-text">Nom *</span>
                         </label>
                         <input type="text" wire:model="newProfileName" class="input input-bordered"
                             placeholder="ex: salle-info-101" required />
@@ -342,13 +277,6 @@ new class extends Component
                                 <span class="label-text-alt text-error">{{ $message }}</span>
                             </label>
                         @enderror
-                    </div>
-                    <div class="form-control mb-4">
-                        <label class="label">
-                            <span class="label-text">Nom d'affichage</span>
-                        </label>
-                        <input type="text" wire:model="newProfileDisplayName" class="input input-bordered"
-                            placeholder="ex: Salle Informatique 101" />
                     </div>
                     <div class="form-control mb-4">
                         <label class="label">

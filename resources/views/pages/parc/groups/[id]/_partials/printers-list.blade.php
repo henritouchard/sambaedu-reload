@@ -5,7 +5,7 @@
         Imprimantes du groupe
         <span class="badge badge-ghost">{{ $group->printers->count() }}</span>
     </h3>
-    <a href="{{ route('app.parc.index') }}#printers" class="btn btn-ghost btn-sm">
+    <a href="{{ route('app.parc.index') }}?tab=printers" class="btn btn-ghost btn-sm">
         <i class="fa-solid fa-gear"></i>
         Gérer toutes les imprimantes
     </a>

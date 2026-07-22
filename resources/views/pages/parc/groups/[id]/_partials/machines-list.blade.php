@@ -2,19 +2,45 @@
 <div x-data="{ tab: 'postes' }">
     <div class="card bg-base-100 shadow-sm">
         <div class="card-body">
-            <div role="tablist" class="tabs tabs-bordered mb-4">
-                <a role="tab" class="tab" :class="{ 'tab-active': tab === 'postes' }"
-                    @click="tab = 'postes'">
-                    <i class="fa-solid fa-computer mr-2"></i>
-                    Postes
-                    <span class="badge badge-ghost badge-sm ml-2">{{ $group->members->count() }}</span>
-                </a>
-                <a role="tab" class="tab" :class="{ 'tab-active': tab === 'imprimantes' }"
-                    @click="tab = 'imprimantes'">
-                    <i class="fa-solid fa-print mr-2"></i>
-                    Imprimantes
-                    <span class="badge badge-ghost badge-sm ml-2">{{ $group->printers->count() }}</span>
-                </a>
+            {{-- Onglets SECONDAIRES — rendu « cartes » aligné sur x-molecules.secondary-tabs.
+                 Le composant est piloté par wire:click ; ici l'état reste local à Alpine
+                 (bascule instantanée, aucun aller-retour serveur), d'où le balisage inline. --}}
+            <div role="tablist" class="flex flex-wrap items-stretch gap-2 xl:gap-3 mb-4">
+                @foreach ([
+                    ['key' => 'postes', 'label' => 'Postes', 'icon' => 'fa-solid fa-computer', 'badge' => $group->members->count()],
+                    ['key' => 'imprimantes', 'label' => 'Imprimantes', 'icon' => 'fa-solid fa-print', 'badge' => $group->printers->count()],
+                ] as $secondaryTab)
+                    <button type="button" role="tab"
+                        :aria-selected="tab === '{{ $secondaryTab['key'] }}' ? 'true' : 'false'"
+                        @click="tab = '{{ $secondaryTab['key'] }}'"
+                        data-testid="secondary-tab-{{ $secondaryTab['key'] }}"
+                        class="card flex-1 min-w-[9rem] bg-base-100 border shadow-sm text-left
+                            cursor-pointer transition duration-150 focus:outline-none
+                            focus-visible:ring-2 focus-visible:ring-primary/50"
+                        :class="tab === '{{ $secondaryTab['key'] }}'
+                            ? 'border-primary/30 ring-2 ring-primary ring-offset-1 ring-offset-base-100 bg-primary/5'
+                            : 'border-base-300 hover:shadow-md hover:-translate-y-0.5'">
+                        <div class="card-body flex-row items-center gap-3 py-2.5 px-3">
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                                :class="tab === '{{ $secondaryTab['key'] }}' ? 'bg-primary/15' : 'bg-base-200'">
+                                <i class="{{ $secondaryTab['icon'] }}"
+                                    :class="tab === '{{ $secondaryTab['key'] }}' ? 'text-primary' : 'text-base-content/50'"></i>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-sm font-semibold leading-tight truncate"
+                                    :class="tab === '{{ $secondaryTab['key'] }}' ? 'text-primary' : 'text-base-content'">
+                                    {{ $secondaryTab['label'] }}
+                                </div>
+                            </div>
+                            @if ($secondaryTab['badge'])
+                                <span class="badge badge-sm shrink-0"
+                                    :class="tab === '{{ $secondaryTab['key'] }}' ? 'badge-primary' : 'badge-ghost'">
+                                    {{ $secondaryTab['badge'] }}
+                                </span>
+                            @endif
+                        </div>
+                    </button>
+                @endforeach
             </div>
 
             {{-- Onglet Postes --}}

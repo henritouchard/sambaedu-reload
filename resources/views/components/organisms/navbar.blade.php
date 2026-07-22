@@ -8,13 +8,8 @@
     </label>
 
     <livewire:organisms.search-modal />
-    <div class="gap-y-2">
-        <!-- Theme toggle button -->
-        <a href="/blank.php" target="_blank" title="Accès à l'ancienne interface">
-            <i class="fa-solid fa-clock-rotate-left"></i>
-        </a>
-
-        <x-atoms.theme-toggle position="relative" size="md" />
+    <div class="gap-2  flex items-center justify-beetween w-36">
+        <x-atoms.theme-toggle size="md" position="relative" />
 
         <!-- Notifications -->
         <div class="dropdown dropdown-end">
@@ -40,19 +35,18 @@
                                 d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
                                 clip-rule="evenodd"></path>
                         </svg>
-                        <span>Nouvelle mise à jour disponible</span>
+                        <span>Les notifications n'existent pas encore</span>
                     </div>
                 </div>
             </div>
         </div>
-
         <!-- User menu -->
-        <div class="dropdown dropdown-end">
+        <div class="dropdown dropdown-end cursor-pointer">
             @php
                 $currentLogin = $_SESSION['login'] ?? (session('login') ?? 'admin');
                 $userInitials = strtoupper(substr($currentLogin, 0, 2));
             @endphp
-            <div tabindex="0" role="button">
+            <div tabindex="0" class="ml-4" role="button">
                 <x-atoms.avatar-placeholder :initials="$userInitials" :color="'primary'" size="w-8" />
             </div>
             <ul tabindex="0"
@@ -87,5 +81,7 @@
                     </a></li>
             </ul>
         </div>
+
+
     </div>
 </div>

@@ -586,7 +586,6 @@ Route::prefix('app-profiles')->name('app-profile.')->group(function () {
     "task_type": "create_app_profile",
     "payload": {
         "name": "profil-bureautique",
-        "display_name": "Profil Bureautique",
         "description": "LibreOffice + Firefox + VLC",
         "application_names": ["libreoffice", "firefox", "vlc"],
         "workstation_group_names": ["salle-b12"]
@@ -610,7 +609,6 @@ Le job `CreateAppProfileJob` doit :
     "payload": {
         "name": "profil-bureautique",
         "new_name": "profil-bureautique-v2",
-        "display_name": "Profil Bureautique v2",
         "description": "LibreOffice + Firefox + VLC + Thunderbird",
         "application_names": ["libreoffice", "firefox", "vlc", "thunderbird"],
         "workstation_group_names": ["salle-b12", "salle-c03"]

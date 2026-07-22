@@ -230,7 +230,7 @@ final class WpkgReportIngestionServiceTotalTargetsTest extends TestCase
     public function profile_targets_via_groups_are_fanned_out(): void
     {
         // Profil avec 1 groupe direct (3 postes) + 1 lien direct (2 postes).
-        $profile = AppProfile::create(['name' => 'profile-fanout', 'is_active' => true]);
+        $profile = AppProfile::create(['name' => 'profile-fanout']);
         $group = WorkstationGroup::create(['name' => 'parc-via-profile', 'is_active' => true]);
         DB::table('app_profile_workstation_group')->insert([
             'app_profile_id' => $profile->id,

@@ -62,7 +62,6 @@ class AppProfileLegacyApplicationLinkerTest extends TestCase
             Schema::create('app_profiles', function (Blueprint $table) {
                 $table->id();
                 $table->string('name', 100)->unique();
-                $table->string('display_name')->nullable();
                 $table->text('description')->nullable();
                 $table->string('ad_guid', 36)->nullable();
                 $table->string('ad_dn', 512)->nullable();

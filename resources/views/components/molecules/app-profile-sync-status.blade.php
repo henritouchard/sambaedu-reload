@@ -199,8 +199,8 @@ new class extends Component {
                                                 <span class="badge badge-warning badge-xs">renommage ?</span>
                                             @endif
                                         </div>
-                                        @if (!empty($item['display_name']))
-                                            <div class="text-xs opacity-70">{{ $item['display_name'] }}</div>
+                                        @if (!empty($item['description']))
+                                            <div class="text-xs opacity-70">{{ $item['description'] }}</div>
                                         @endif
                                     </div>
                                 @endforeach

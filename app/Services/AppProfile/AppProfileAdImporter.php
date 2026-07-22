@@ -124,10 +124,8 @@ final class AppProfileAdImporter
                         } else {
                             $profile = AppProfile::create([
                                 'name' => $name,
-                                'display_name' => $description ?? $name,
                                 'description' => $description,
                                 'ad_guid' => $uuid,
-                                'is_active' => true,
                             ]);
 
                             if ($groups->has(strtolower($name))) {

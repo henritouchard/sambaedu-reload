@@ -92,31 +92,23 @@ class AppProfileRepository
      */
     public function getAll(
         int $perPage = 20,
-        ?string $search = null,
-        bool $activeOnly = true
+        ?string $search = null
     ): LengthAwarePaginator {
         $query = AppProfile::query();
 
-        if ($activeOnly) {
-            $query->where('is_active', true);
-        }
-
         if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('display_name', 'like', "%{$search}%");
-            });
+            $query->where('name', 'like', "%{$search}%");
         }
 
         return $query->orderBy('name')->paginate($perPage);
     }
 
     /**
-     * Récupère tous les profils actifs
+     * Récupère tous les profils
      */
     public function getAllActive(): Collection
     {
-        return AppProfile::where('is_active', true)->orderBy('name')->get();
+        return AppProfile::orderBy('name')->get();
     }
 
     /**
@@ -174,15 +166,9 @@ class AppProfileRepository
     /**
      * Compte le nombre de profils
      */
-    public function count(bool $activeOnly = true): int
+    public function count(): int
     {
-        $query = AppProfile::query();
-
-        if ($activeOnly) {
-            $query->where('is_active', true);
-        }
-
-        return $query->count();
+        return AppProfile::count();
     }
 
     // ========================================

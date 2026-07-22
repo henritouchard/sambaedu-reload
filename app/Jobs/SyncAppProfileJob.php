@@ -104,9 +104,7 @@ class SyncAppProfileJob extends BaseControlHubJob
     private function applyPayloadToProfile(AppProfile $profile, array $payload): void
     {
         $profile->name = (string) $payload['name'];
-        $profile->display_name = $payload['display_name'] ?? $profile->display_name;
         $profile->description = $payload['description'] ?? $profile->description;
-        $profile->is_active = $payload['is_active'] ?? $profile->is_active ?? true;
 
         if (array_key_exists('controlhub_version', $payload)) {
             $profile->controlhub_version = $payload['controlhub_version'];

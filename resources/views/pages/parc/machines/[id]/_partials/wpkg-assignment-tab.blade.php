@@ -53,12 +53,11 @@
                                     class="flex items-center justify-between py-2">
                                     <div>
                                         <div class="font-medium">
-                                            {{ $profile->display_name ?? $profile->name }}
+                                            {{ $profile->name }}
                                             <span class="badge badge-success badge-sm ml-2">direct</span>
                                         </div>
                                         <div class="text-xs text-base-content/60">
-                                            <code>{{ $profile->name }}</code>
-                                            • {{ $profile->applications->count() ?? 0 }} app(s)
+                                            {{ $profile->applications->count() ?? 0 }} app(s)
                                         </div>
                                     </div>
                                     @can('assign-wpkg-workstationGroup', $wpkgScope)
@@ -76,16 +75,13 @@
                                     class="flex items-center justify-between py-2">
                                     <div>
                                         <div class="font-medium">
-                                            {{ $profile->display_name ?? $profile->name }}
+                                            {{ $profile->name }}
                                             <span class="badge badge-info badge-sm ml-2">
                                                 hérité @if ($sourceGroup) (via
                                                     <a href="{{ route('app.parc.groups.show', $sourceGroup->id) }}"
                                                         class="link">{{ $sourceGroup->name }}</a>)
                                                 @endif
                                             </span>
-                                        </div>
-                                        <div class="text-xs text-base-content/60">
-                                            <code>{{ $profile->name }}</code>
                                         </div>
                                     </div>
                                 </li>

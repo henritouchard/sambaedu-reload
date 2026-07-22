@@ -27,35 +27,30 @@ class AppProfileSeeder extends Seeder
         $profiles = [
             [
                 'name' => 'base-windows',
-                'display_name' => 'Applications de base Windows',
                 'description' => 'Suite logicielle standard pour tous les postes Windows',
                 'apps' => $seedApps,
                 'groups' => ['windows-all'],
             ],
             [
                 'name' => 'dev-tools',
-                'display_name' => 'Outils de développement',
                 'description' => 'IDE et outils pour les cours de programmation',
                 'apps' => $seedApps,
                 'groups' => ['info1', 'info2'],
             ],
             [
                 'name' => 'multimedia',
-                'display_name' => 'Suite multimédia',
                 'description' => 'Logiciels audio/vidéo',
                 'apps' => $seedApps,
                 'groups' => ['info3'],
             ],
             [
                 'name' => 'graphisme',
-                'display_name' => 'Suite graphisme',
                 'description' => 'Logiciels de création graphique',
                 'apps' => $seedApps,
                 'groups' => ['techno'],
             ],
             [
                 'name' => 'education',
-                'display_name' => 'Logiciels éducatifs',
                 'description' => 'Applications pédagogiques',
                 'apps' => $seedApps,
                 'groups' => ['cdi', 'physique', 'svt'],
@@ -65,9 +60,7 @@ class AppProfileSeeder extends Seeder
         foreach ($profiles as $profileData) {
             $profile = AppProfile::create([
                 'name' => $profileData['name'],
-                'display_name' => $profileData['display_name'],
                 'description' => $profileData['description'],
-                'is_active' => true,
             ]);
 
             // Associer les applications

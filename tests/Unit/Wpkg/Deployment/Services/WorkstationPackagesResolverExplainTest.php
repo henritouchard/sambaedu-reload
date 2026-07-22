@@ -66,12 +66,12 @@ class WorkstationPackagesResolverExplainTest extends TestCase
 
         $ws->applications()->attach([$direct->id]);
 
-        $profilePoste = AppProfile::create(['name' => 'profile-poste-'.$name, 'is_active' => true]);
+        $profilePoste = AppProfile::create(['name' => 'profile-poste-'.$name]);
         $profilePoste->applications()->attach([$viaProfilePoste->id]);
         $ws->appProfiles()->attach([$profilePoste->id]);
 
         $group->applications()->attach([$groupApp->id]);
-        $profileParc = AppProfile::create(['name' => 'profile-parc-'.$name, 'is_active' => true]);
+        $profileParc = AppProfile::create(['name' => 'profile-parc-'.$name]);
         $profileParc->applications()->attach([$groupProfileApp->id]);
         $group->appProfiles()->attach([$profileParc->id]);
 

@@ -407,7 +407,7 @@ php tests/Integration/LegacyLaravelComparison/compare_remove_machine_from_parc.p
 
 #### A1 - Créer un profil applicatif
 **Laravel:**
-- INSERT dans table `app_profiles` (name, display_name, description, is_active)
+- INSERT dans table `app_profiles` (name, description)
 - Note: Le profil est aussi créé automatiquement via Observer quand on crée un WorkstationGroup
 
 **Legacy:**

@@ -42,7 +42,7 @@
 
 
             <!-- Icône personnalisée -->
-            <div class="form-control md:col-span-2">
+            <div class="form-control">
                 <x-atoms.tooltip color="" position="top" icon="true">
                     <x-slot name="label">
                         <span class="label-text font-semibold">Icône personnalisée</span>

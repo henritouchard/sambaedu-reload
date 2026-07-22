@@ -176,14 +176,13 @@ class AdSyncChecker
             ])->filter(fn($p) => !empty($p['name']) && !in_array($p['name'], $systemGroups));
             $adNames = $adData->pluck('name')->unique();
 
-            $sqlProfiles = AppProfile::where('is_active', true)
-                ->whereNotIn('name', $systemGroups)
+            $sqlProfiles = AppProfile::whereNotIn('name', $systemGroups)
                 ->get();
             $sqlData = $sqlProfiles->map(fn($p) => [
                 'id' => $p->id,
                 'name' => strtolower($p->name),
                 'original_name' => $p->name,
-                'display_name' => $p->display_name,
+                'description' => $p->description,
                 'uuid' => $p->ad_guid,
             ]);
             $sqlNames = $sqlData->pluck('name')->unique();
@@ -237,7 +236,7 @@ class AdSyncChecker
             $missingInAd = $missingInAdRaw->map(fn($p) => [
                 'id' => $p['id'],
                 'name' => $p['original_name'],
-                'display_name' => $p['display_name'],
+                'description' => $p['description'],
                 'uuid' => $p['uuid'],
                 'has_recommendation' => !empty($p['uuid']) && $detectedUuids->contains($p['uuid']),
             ])->values();

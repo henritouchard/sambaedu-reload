@@ -39,7 +39,6 @@ class SyncManifestController extends Controller
                 'payload.app_profiles.*.controlhub_id' => 'required|uuid',
                 'payload.app_profiles.*.controlhub_version' => 'nullable|date',
                 'payload.app_profiles.*.name' => 'required|string|max:255',
-                'payload.app_profiles.*.display_name' => 'nullable|string|max:255',
                 'payload.app_profiles.*.description' => 'nullable|string|max:1000',
                 'payload.app_profiles.*.applications' => 'nullable|array',
                 'payload.app_profiles.*.applications.*.controlhub_id' => 'nullable|uuid',

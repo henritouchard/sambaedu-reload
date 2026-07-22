@@ -261,7 +261,6 @@ class MachineShowPageTest extends TestCase
             Schema::create('app_profiles', function (Blueprint $table) {
                 $table->id();
                 $table->string('name');
-                $table->string('display_name')->nullable();
                 $table->timestamps();
             });
             $this->createdTables = true;

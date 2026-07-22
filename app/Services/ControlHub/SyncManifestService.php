@@ -197,9 +197,7 @@ class SyncManifestService
                 'controlhub_id' => $controlhubId,
                 'controlhub_version' => $data['controlhub_version'] ?? null,
                 'name' => $data['name'] ?? $existing?->name ?? 'unnamed',
-                'display_name' => $data['display_name'] ?? $existing?->display_name,
                 'description' => $data['description'] ?? $existing?->description,
-                'is_active' => $data['is_active'] ?? $existing?->is_active ?? true,
             ];
 
             if ($existing) {

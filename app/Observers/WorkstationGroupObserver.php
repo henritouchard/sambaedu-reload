@@ -183,9 +183,7 @@ class WorkstationGroupObserver
         // Créer le AppProfile (l'AppProfileObserver gère la sync AD)
         $appProfile = AppProfile::create([
             'name' => $profileName,
-            'display_name' => $profileName,
             'description' => "Profil applicatif créé pour le groupe {$group->name}",
-            'is_active' => true,
         ]);
 
         // Créer le lien dans la table pivot
@@ -223,9 +221,7 @@ class WorkstationGroupObserver
         // Créer le AppProfile (l'AppProfileObserver gère la sync AD)
         $appProfile = AppProfile::create([
             'name' => $profileName,
-            'display_name' => $profileName,
             'description' => "Profil applicatif créé pour le groupe {$group->name}",
-            'is_active' => true,
         ]);
 
         // Créer le lien dans la table pivot
@@ -269,7 +265,6 @@ class WorkstationGroupObserver
         // Renommer le AppProfile (l'AppProfileObserver gère la sync AD)
         $appProfile->update([
             'name' => $newName,
-            'display_name' => $newName,
         ]);
 
         Log::info('[WorkstationGroupObserver] AppProfile renommé', [

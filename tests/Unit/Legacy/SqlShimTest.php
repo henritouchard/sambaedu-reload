@@ -188,7 +188,6 @@ class SqlShimTest extends TestCase
                 $table->id();
                 $table->string('controlhub_id')->nullable();
                 $table->string('name');
-                $table->string('display_name')->nullable();
                 $table->text('description')->nullable();
                 $table->string('ad_guid')->nullable();
                 $table->boolean('is_active')->default(true);

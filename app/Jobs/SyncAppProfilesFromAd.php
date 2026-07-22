@@ -223,10 +223,8 @@ class SyncAppProfilesFromAd implements ShouldQueue
             // Préparer les données du profil
             $data = [
                 'name' => $name,
-                'display_name' => $ouAd['description'] ?? $name,
                 'description' => $ouAd['description'] ?? null,
                 'ad_guid' => $ouAd['uuid'] ?? null,
-                'is_active' => true,
             ];
 
             // Créer le profil

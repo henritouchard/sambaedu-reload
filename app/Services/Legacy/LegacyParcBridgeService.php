@@ -281,9 +281,7 @@ class LegacyParcBridgeService
             // Créer un profil par défaut pour ce groupe
             $profile = AppProfile::create([
                 'name' => 'profile_' . $group->name,
-                'display_name' => 'Profil ' . $group->display_name,
                 'description' => 'Profil applicatif auto-généré pour ' . $group->name,
-                'is_active' => true,
             ]);
             $group->appProfiles()->attach($profile->id);
         }
@@ -324,8 +322,7 @@ class LegacyParcBridgeService
         if (!$profile) {
             $profile = AppProfile::create([
                 'name' => 'profile_' . $group->name,
-                'display_name' => 'Profil ' . $group->display_name,
-                'is_active' => true,
+                'description' => 'Profil applicatif auto-généré pour ' . $group->name,
             ]);
             $group->appProfiles()->attach($profile->id);
         }

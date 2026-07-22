@@ -55,7 +55,6 @@ class CreateParcComparisonTest extends TestCase
         // 1. Créer l'AppProfile via le service
         $appProfile = $this->appProfileService->createProfile([
             'name' => $profileName,
-            'display_name' => $profileName,
             'description' => $profileDescription,
             'is_active' => true,
         ]);
