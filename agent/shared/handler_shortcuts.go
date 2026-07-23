@@ -49,6 +49,19 @@ const (
 	shortcutPlaceTaskbar = "taskbar"
 )
 
+// NetworkDesktopPathTemplate : gabarit TOKENISÉ du Bureau RÉSEAU, JUMEAU du
+// `ShortcutsStateProvider::DESKTOP_PATH_NETWORK` serveur (Story 27.21).
+//
+// Il n'introduit AUCUN champ de contrat : le `desktop_path` du payload reste la
+// seule autorité de PLACEMENT (le serveur décide réseau-vs-local selon
+// l'environnement du parc ET la politique home). Ce gabarit ne sert qu'au
+// BALAYAGE : pour supprimer un `.lnk` géré resté sur le Bureau réseau après une
+// bascule (`home` coupé ⇒ `desktop_path` local), l'agent doit encore savoir
+// atteindre l'emplacement DEVENU inactif — que le serveur ne lui envoie plus.
+// La résolution passe par le MÊME SubstituteServerTokens que les chemins
+// serveur (jamais une 2ᵉ implémentation, contrainte de réutilisation 27.21).
+const NetworkDesktopPathTemplate = `\\<se4fs>\users\<user>\Bureau\`
+
 // ShortcutSpec : un raccourci cible résolu (un item du payload `shortcuts`).
 // Tous les champs sont des strings (contrat §4.1, jamais de float).
 type ShortcutSpec struct {
@@ -130,6 +143,31 @@ func ResolveUploadedIconLocation(iconAsset, iconsDir string) string {
 	}
 
 	return local
+}
+
+// UsableShortcutDir : le répertoire résolu est-il exploitable pour un balayage
+// ou une pose ? (Story 27.21, fail-soft.)
+//
+// Un chemin vide, ou un UNC dont le SERVEUR est vide (`\\\users\bob\Bureau\` —
+// symptôme d'un `<se4fs>` non substituable : poste hors-domaine, ni SE4FS ni
+// LOGONSERVER), n'est PAS exploitable. On préfère IGNORER la probe plutôt que de
+// balayer un chemin bancal. Fonction PURE (aucun accès disque) : l'impl OS
+// l'appelle après substitution des tokens.
+func UsableShortcutDir(dir string) bool {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return false
+	}
+	if strings.HasPrefix(dir, `\\`) {
+		// On retire EXACTEMENT le préfixe UNC (2 backslashes) — surtout pas un
+		// TrimLeft, qui avalerait aussi le serveur vide de `\\\users\…` et ferait
+		// passer `users` pour un nom de serveur.
+		server, _, _ := strings.Cut(dir[2:], `\`)
+
+		return strings.TrimSpace(server) != ""
+	}
+
+	return true
 }
 
 // ShortcutOps : opérations `.lnk` spécifiques à l'OS, injectées (testable
@@ -223,30 +261,53 @@ func (h *ShortcutsHandler) desiredSet(items []StateItem) (map[string]ShortcutSpe
 // (marqueur) supprimés au passage suivant — jamais les fichiers utilisateur
 // (ListManaged ne liste que les `.lnk` marqués).
 //
-// Le Bureau a besoin d'un `desktop_path` (Bug C) : on réutilise celui d'une cible
-// desktop courante si présente ; SINON on émet quand même une probe desktop sans
-// desktop_path → l'impl OS résout alors le bureau STANDARD (local
-// `%USERPROFILE%\Desktop`) pour le seul balayage des orphelins. Un Bureau vidé de
-// toutes ses règles voit ainsi ses `.lnk` gérés nettoyés (review #2 — sinon ils
-// restaient orphelins à jamais). Jamais de suppression d'un fichier user : seuls
-// les `.lnk` marqués sont listés.
+// **Story 27.21 — le Bureau a DEUX emplacements candidats, balayés à CHAQUE
+// passe** : le Bureau RÉSEAU (`NetworkDesktopPathTemplate`, dérivé localement de
+// l'env) et le Bureau LOCAL (`%USERPROFILE%\Desktop`, probe sans desktop_path).
+// Le serveur ne désigne que l'emplacement ACTIF (`desktop_path`) — c'est le seul
+// où l'on POSE. Mais quand la politique home bascule (K: coupé ⇒ bureau local),
+// les `.lnk` gérés restés sur l'ancien emplacement ne sont plus jamais nommés par
+// le serveur : sans balayage des deux, ils resteraient orphelins à vie (AC2/AC3).
+// On balaie donc toujours les deux, plus le `desktop_path` courant s'il diffère
+// (forward-compatible : un futur troisième chemin serveur reste balayé).
+//
+// L'UNC réseau reste JOIGNABLE même quand K: n'est pas monté (le montage client
+// ≠ l'accès UNC — même principe que la décorrélation 36.7). Si l'emplacement
+// n'est PAS résoluble sur ce poste (hors-domaine, SE4FS absent), PlaceDir
+// retourne une erreur et la probe est simplement IGNORÉE : fail-soft, jamais
+// fatal — les autres emplacements convergent quand même.
+//
+// Jamais de suppression d'un fichier user : seuls les `.lnk` marqués sont listés
+// (ListManaged / ShortcutManagedMarker).
 func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec) ([]string, error) {
 	// Probes : un spec par emplacement gérable CONNU (union, pas seulement le
-	// desired courant). startup/taskbar se résolvent toujours (env). Pour desktop,
-	// on réutilise le desktop_path d'une cible desktop courante ; à défaut, probe
-	// sans desktop_path → bureau standard résolu par l'OS pour le balayage.
-	desktopProbe := ShortcutSpec{Place: shortcutPlaceDesktop}
-	for _, spec := range desired {
-		if spec.Place == shortcutPlaceDesktop && spec.DesktopPath != "" {
-			desktopProbe.DesktopPath = spec.DesktopPath
-
-			break
-		}
-	}
+	// desired courant). startup/taskbar se résolvent toujours (env). Pour le
+	// Bureau : réseau + local SYSTÉMATIQUEMENT (27.21), plus le desktop_path
+	// courant s'il désigne un troisième chemin (dédoublonné plus bas).
 	probes := []ShortcutSpec{
-		desktopProbe,
+		// Bureau RÉSEAU (emplacement actif quand home=on & parc partagé, sinon
+		// emplacement à NETTOYER).
+		{Place: shortcutPlaceDesktop, DesktopPath: NetworkDesktopPathTemplate},
+		// Bureau LOCAL standard (desktop_path vide → l'impl OS résout
+		// `%USERPROFILE%\Desktop`).
+		{Place: shortcutPlaceDesktop},
 		{Place: shortcutPlaceStartup},
 		{Place: shortcutPlaceTaskbar},
+	}
+	seenDesktopPath := map[string]bool{NetworkDesktopPathTemplate: true}
+	extra := []string{}
+	for _, spec := range desired {
+		if spec.Place == shortcutPlaceDesktop && spec.DesktopPath != "" && !seenDesktopPath[spec.DesktopPath] {
+			seenDesktopPath[spec.DesktopPath] = true
+			extra = append(extra, spec.DesktopPath)
+		}
+	}
+	// Tri : l'itération d'une map Go est aléatoire — sans tri, la LISTE des
+	// probes varierait d'une passe à l'autre (les dirs finaux sont triés, mais
+	// autant garder la construction déterministe).
+	sort.Strings(extra)
+	for _, path := range extra {
+		probes = append(probes, ShortcutSpec{Place: shortcutPlaceDesktop, DesktopPath: path})
 	}
 
 	seen := map[string]bool{}
@@ -256,10 +317,20 @@ func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec) ([]strin
 		if err != nil {
 			// Emplacement non résoluble pour CE passage : on l'ignore — pas une
 			// erreur fatale (les autres emplacements convergent quand même).
+			//
+			// TRACÉ (review 27.21 #4) : un balayage sauté en SILENCE rend le
+			// level-triggered malhonnête — `Test` rapporterait `compliant` alors
+			// que des `.lnk` gérés fantômes subsistent à l'emplacement non
+			// balayé. On veut qu'un opérateur puisse le constater dans le log.
+			logInfo(h.Log, "Emplacement de balayage ignoré (%s, desktop_path=%q non résoluble) : %v — les raccourcis gérés qui s'y trouveraient ne seront PAS nettoyés à cette passe", spec.Place, spec.DesktopPath, err)
+
 			continue
 		}
 		if strings.TrimRight(dir, `\/`) == "" {
-			continue // chemin vide (ex. bureau non résoluble) : rien à balayer
+			// Idem : chemin vide (bureau non résoluble) = emplacement non balayé.
+			logInfo(h.Log, "Emplacement de balayage ignoré (%s, desktop_path=%q) : chemin résolu vide — les raccourcis gérés qui s'y trouveraient ne seront PAS nettoyés à cette passe", spec.Place, spec.DesktopPath)
+
+			continue
 		}
 		key := strings.TrimRight(dir, `\/`)
 		if !seen[key] {

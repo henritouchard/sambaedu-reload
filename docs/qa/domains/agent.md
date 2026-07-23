@@ -4677,3 +4677,135 @@ sur la surface parc (override poste inerte — un profil suit l'utilisateur).
       l'utilisateur). Masquage serveur (`users$`/ABE) = chantier distinct, hors story.
 - [ ] Contrat wire INCHANGÉ : golden `state.v1.json`/`FROZEN_STATE_HASH` (PHP + Go)
       intacts, AUCUN bump de version d'agent (`enabled` + assignations = serveur seul).
+
+---
+
+## Story 27.21 — Emplacement du Bureau des raccourcis conscient de la politique home (K:)
+
+Constat terrain 2026-07-22 (`/vm`, poste `testenrol`, user `test.create`, parc
+`info2` = `shared_local`) : les `.lnk` étaient **bien posés** sur
+`\\se4fs\users\test.create\Bureau\` — mais **invisibles**, l'accès au home étant
+coupé (`/admin/settings/files`, capacité `home`) donc la session affichant le
+Bureau **local**.
+
+Deux moitiés indissociables :
+- **Serveur** — `ShortcutsStateProvider::desktopPathFor()` croise désormais
+  l'environnement du parc ET `FilePolicyService::capabilities()['home']` : Bureau
+  RÉSEAU **seulement si** `shared_local` **ET** `home=true` ; sinon
+  `%USERPROFILE%\Desktop\`. `desktop_path` reste la seule autorité de placement.
+- **Agent (≥ 2.14.0)** — `ShortcutsHandler.managedDirs` balaie les **DEUX**
+  Bureaux à chaque passe (réseau `\\<se4fs>\users\<user>\Bureau\` dérivé
+  localement + local), pour supprimer les `.lnk` **gérés** restés sur
+  l'emplacement devenu inactif. Contrat wire INCHANGÉ (aucun champ nouveau,
+  golden `state.v1.json`/`FROZEN_STATE_HASH` PHP+Go intacts) mais **bump de
+  version obligatoire** : le nettoyage vit entièrement dans le binaire — un agent
+  ≤ 2.13.0 pose au bon endroit et laisse des fantômes à l'ancien.
+
+**Pré-requis spécifiques** : poste enrôlé d'un parc `shared_local`, agent
+**2.14.0 ou plus** déployé (`agent.exe version`), un raccourci `place=desktop`
+assigné au poste/parc, et un `.lnk` **créé à la main par l'utilisateur** sur
+CHACUN des deux Bureaux (témoin anti-suppression).
+
+### Scénario 27.21.1 — K: ACTIF : raccourci sur le Bureau RÉSEAU
+
+1. `/admin/settings/files` : capacité **Home (K:)** cochée. Enregistrer.
+2. Recompiler l'état du couple (poste, user) : le payload `shortcuts` porte
+   `"desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\"`.
+3. Ouvrir une session sur le poste, laisser une passe d'agent.
+
+**Attendu** : le `.lnk` est présent dans `\\se4fs\users\<login>\Bureau\`, VISIBLE
+sur le bureau de la session (K: monté ⇒ bureau redirigé), et ABSENT de
+`C:\Users\<login>\Desktop`. Item `shortcuts` = `compliant`.
+
+### Scénario 27.21.2 — K: COUPÉ : raccourci sur le Bureau LOCAL
+
+1. `/admin/settings/files` : **décocher** Home (K:). Enregistrer.
+2. Recompiler : le payload porte `"desktop_path": "%USERPROFILE%\\Desktop\\"`
+   — pour le MÊME poste `shared_local` (c'est le seul basculement de la story).
+3. Nouvelle session, une passe d'agent.
+
+**Attendu** : le `.lnk` est posé dans `C:\Users\<login>\Desktop` et **visible**.
+Aucun raccourci n'est poussé vers un emplacement que l'utilisateur ne peut pas
+atteindre.
+
+### Scénario 27.21.3 — BASCULE : l'ancien emplacement est nettoyé, zéro orphelin
+
+1. Partir de l'état du 27.21.1 (K: actif, `.lnk` géré sur le Bureau réseau).
+2. Couper K:, relogon, laisser une passe.
+3. Depuis le serveur, inspecter le home : `ls -l /home/users/<login>/Bureau/`
+   (ou l'UNC depuis un poste admin).
+
+**Attendu** : le `.lnk` **géré** a DISPARU du Bureau réseau et est présent sur le
+Bureau local — un seul exemplaire, aucun fantôme. `Test` ne rapporte `compliant`
+qu'une fois l'ancien emplacement vidé de ses `.lnk` gérés (level-triggered).
+4. Chemin INVERSE : recocher Home (K:), relogon, une passe ⇒ le `.lnk` repart en
+   réseau et disparaît du Bureau local. Symétrie exigée.
+
+### Scénario 27.21.4 — Raccourci UTILISATEUR intact dans les deux emplacements
+
+1. Avant la bascule, poser à la main `MesNotes.lnk` sur le Bureau réseau ET sur
+   `C:\Users\<login>\Desktop` (créés par l'utilisateur, donc SANS le marqueur
+   `SambaEdu desired-state managed shortcut`).
+2. Rejouer la bascule complète du 27.21.3 (K: on → off → on).
+
+**Attendu** : les DEUX `MesNotes.lnk` sont toujours là, inchangés, à chaque
+étape. L'élargissement du balayage n'élargit PAS le périmètre de suppression :
+seuls les `.lnk` porteurs du marqueur sont listés (`ListManaged`) donc
+supprimables. Un homonyme utilisateur au chemin exact d'une cible n'est ni
+écrasé, ni supprimé, et n'empêche pas les autres raccourcis de converger.
+
+### Scénario 27.21.5 — Poste hors-domaine / `SE4FS` absent : fail-soft
+
+1. Sur un poste où ni `SE4FS` ni `LOGONSERVER` ne sont résolubles (ou en
+   simulant l'absence de la variable), lancer une passe avec un raccourci
+   `place=desktop` local.
+
+**Attendu** : la probe du Bureau réseau est **ignorée** — pas d'erreur d'item, pas
+de passe en échec ; le raccourci local converge normalement. Aucun balayage d'un
+chemin bancal type `\\\users\<login>\Bureau\`.
+
+> ⚠️ **Portée réelle de la garde — à lire avant de conclure** (review 27.21 #5).
+> La garde `UsableShortcutDir` ne rejette le chemin que si `SE4FS` **ET**
+> `LOGONSERVER` sont tous deux vides. Or une session interactive Windows a quasi
+> toujours un `LOGONSERVER` : poste en workgroup ou logon caché hors réseau →
+> `\\<COMPUTERNAME>` ; poste en domaine sans `SE4FS` → `\\<DC>`.
+>
+> **Dans ces cas — qui sont le cas nominal hors-domaine —** `<se4fs>` se
+> substitue en un nom NON vide, la garde ne joue PAS, et la probe part vers un
+> partage inexistant (typiquement auto-référent, `\\MONPOSTE\users\...`). Le
+> résultat observable reste correct (échec `ReadDir` → fail-soft, passe non
+> fatale, désormais tracé dans le log), mais **le chemin de code emprunté n'est
+> pas la garde** : c'est le fail-soft de `ListManaged`.
+>
+> Pour valider spécifiquement la garde `\\\users\…`, il faut un environnement
+> **doublement vide** (ni `SE4FS` ni `LOGONSERVER`) — situation rare en session
+> interactive réelle. Ne pas conclure « la garde fonctionne » à partir d'un
+> simple poste hors-domaine.
+
+### Scénario 27.21.6 — BINAIRE ANTÉRIEUR (≤ 2.13.0) : pose OK, nettoyage absent
+
+1. Sur un poste resté en 2.13.0, appliquer la bascule du 27.21.3.
+
+**Attendu** : le raccourci apparaît bien sur le Bureau local (le serveur pilote
+le placement, aucune dépendance au binaire) MAIS le `.lnk` géré reste sur le
+Bureau réseau — **c'est le symptôme attendu du non-déploiement**, pas une
+régression. Il disparaît à la première passe après montée en 2.14.0.
+
+### Check-list
+
+- [ ] 27.21.1 — K: actif ⇒ `desktop_path` réseau, `.lnk` visible sur le Bureau
+      redirigé, absent du Bureau local.
+- [ ] 27.21.2 — K: coupé ⇒ `desktop_path` local sur le MÊME poste `shared_local`,
+      `.lnk` visible localement.
+- [ ] 27.21.3 — Bascule dans les DEUX sens ⇒ l'ancien emplacement est nettoyé de
+      ses `.lnk` gérés, un seul exemplaire vivant, aucun orphelin.
+- [ ] 27.21.4 — `.lnk` utilisateur (sans marqueur) intact sur les DEUX Bureaux à
+      toutes les étapes.
+- [ ] 27.21.5 — Bureau réseau non résoluble ⇒ probe ignorée, passe non fatale.
+- [ ] 27.21.6 — Agent ≤ 2.13.0 ⇒ placement correct mais fantôme à l'ancien
+      emplacement (motive la publication de la 2.14.0).
+- [ ] Contrat wire INCHANGÉ : golden `state.v1.json`/`FROZEN_STATE_HASH` (PHP +
+      Go) intacts — le fixture est un scénario `home=on`, donc byte-identique.
+- [ ] Symétrie assumée avec 36.7 : `app_profile` DÉCORRÉLÉ de K: (le profil suit
+      toujours), Bureau ASSERVI à K: (un bureau réseau invisible est inutile).
+      Dans les deux cas : la donnée va là où l'utilisateur peut l'atteindre.

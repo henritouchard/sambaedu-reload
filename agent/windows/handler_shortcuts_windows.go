@@ -144,9 +144,22 @@ func (o *shortcutOps) PlaceDir(spec shared.ShortcutSpec) (string, error) {
 		// desktop) : desktop_path vide → on résout le bureau STANDARD local pour
 		// nettoyer les orphelins gérés. Ne JAMAIS poser un `.lnk` sur cette probe
 		// (desiredSet n'émet que des specs avec desktop_path non vide).
+		//
+		// Story 27.21 : la MÊME porte sert au Bureau RÉSEAU tokenisé
+		// (shared.NetworkDesktopPathTemplate, probe de nettoyage de
+		// l'emplacement inactif) — d'où la substitution de tokens UNIQUE ici
+		// (SubstituteServerTokens), jamais une 2ᵉ implémentation.
 		dir := substituteTokens(spec.DesktopPath)
 		if dir == "" {
 			return standardDesktopDir()
+		}
+		// Fail-soft (27.21) : un UNC dont `<se4fs>` n'a pas pu être substitué
+		// (poste hors-domaine, ni SE4FS ni LOGONSERVER) donnerait `\\\users\…` —
+		// on refuse l'emplacement. managedDirs IGNORE la probe non résoluble
+		// (aucune erreur fatale, les autres emplacements convergent) ; une vraie
+		// cible desktop, elle, remonte l'erreur d'item comme avant.
+		if !shared.UsableShortcutDir(dir) {
+			return "", fmt.Errorf("bureau %q non résoluble localement (tokens non substituables)", spec.DesktopPath)
 		}
 
 		return dir, nil
@@ -232,7 +245,18 @@ func (o *shortcutOps) ListManaged(dirs []string) ([]string, error) {
 	for _, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			continue // répertoire absent = aucun fichier (jamais une erreur)
+			// Répertoire ABSENT = aucun fichier : silence légitime (un Bureau
+			// réseau qui n'existe pas n'a pas de raccourci à nettoyer).
+			//
+			// Toute AUTRE erreur (partage injoignable, ACL, DNS, pare-feu) est
+			// une chose différente : le balayage n'a PAS eu lieu alors que des
+			// `.lnk` gérés y subsistent peut-être. Sans trace, `Test` rapporte
+			// `compliant` et les fantômes persistent invisibles (review 27.21 #4).
+			if !os.IsNotExist(err) {
+				o.logf("Emplacement %s non balayé (%v) : les raccourcis gérés qui s'y trouveraient ne seront PAS nettoyés à cette passe", dir, err)
+			}
+
+			continue
 		}
 		for _, entry := range entries {
 			if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".lnk") {

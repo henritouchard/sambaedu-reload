@@ -17,6 +17,7 @@ use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
+use App\Services\FilePolicyService;
 use Illuminate\Support\Collection;
 
 /**
@@ -31,6 +32,11 @@ use Illuminate\Support\Collection;
  * `shared_local`, bureau LOCAL si `personal_local`/`nomade`. L'agent reste
  * bête : il pose le `.lnk` au `desktop_path` reçu (tokens `<se4fs>`/`<user>`
  * substitués localement).
+ *
+ * **Story 27.21** : le bureau RÉSEAU exige EN PLUS que le home soit accessible
+ * ({@see FilePolicyService::capabilities()} clé `home`) — un
+ * bureau réseau posé alors que K: est coupé n'est jamais vu par l'utilisateur.
+ * Voir {@see self::desktopPathFor()}.
  *
  * **Lecture Postgres PURE** (NFR7, critère Keycloak) : l'ancien canal legacy
  * (supprimé en 27.14) lisait `ad_users`/`ad_user_groups` (CN AD) via
@@ -58,6 +64,18 @@ use Illuminate\Support\Collection;
  */
 final class ShortcutsStateProvider implements StateProvider
 {
+    /**
+     * Bureau RÉSEAU (redirigé sur le home de l'utilisateur). Tokens `<se4fs>` /
+     * `<user>` substitués LOCALEMENT par l'agent. Backslash final = convention
+     * legacy. Le MÊME gabarit est connu de l'agent
+     * (`shared.NetworkDesktopPathTemplate`) pour BALAYER cet emplacement même
+     * quand il n'est plus l'emplacement actif (Story 27.21, AC2).
+     */
+    private const DESKTOP_PATH_NETWORK = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
+
+    /** Bureau LOCAL du profil Windows (jamais de dépendance réseau). */
+    private const DESKTOP_PATH_LOCAL = '%USERPROFILE%\\Desktop\\';
+
     public function __construct(
         private readonly WorkstationEnvironmentResolver $environmentResolver,
     ) {}
@@ -146,20 +164,42 @@ final class ShortcutsStateProvider implements StateProvider
      * aucune dépendance réseau au calcul). Backslash final = convention legacy.
      *
      * Le mapping environnement→chemin vit ici (pas dans l'enum, pas dans
-     * l'agent) — l'agent reste bête.
+     * l'agent) — l'agent reste bête. **SEULE porte** de résolution du bureau :
+     * aucune autre branche réseau/local n'existe côté serveur (Story 27.21).
+     *
+     * **Story 27.21 — UN facteur ajouté : la politique home (K:).** Le bureau
+     * RÉSEAU vit dans le home de l'utilisateur (`\\<se4fs>\users\<user>\`) :
+     * quand l'admin coupe l'accès au home (`/admin/settings/files`,
+     * {@see FilePolicyService::capabilities()} clé `home`), la session affiche
+     * le bureau LOCAL et des `.lnk` posés en réseau seraient INVISIBLES (constat
+     * terrain 2026-07-22). On ne pousse jamais une donnée vers un emplacement
+     * que l'utilisateur ne peut pas atteindre : `home=false` ⇒ bureau LOCAL,
+     * quel que soit l'environnement du parc.
+     *
+     * Symétrie assumée avec `app_profile` (36.7) : là la redirection de profil a
+     * été DÉCORRÉLÉE de K: (le profil suit toujours, l'UNC reste joignable sans
+     * montage) ; ici le bureau SUIT K: — dans les deux cas on place la donnée là
+     * où l'utilisateur peut effectivement la voir.
+     *
+     * Lecture canonique iso {@see DrivesStateProvider}
+     * (appel statique direct, aucun cache — le réglage est global d'instance).
      */
     private function desktopPathFor(TargetContext $ctx): string
     {
         $environment = $this->environmentResolver->resolveForGroupIds($ctx->workstationGroupIds());
+        $homeEnabled = FilePolicyService::capabilities()['home'];
 
         return match ($environment) {
             // Poste partagé : bureau redirigé RÉSEAU (le défaut du pansement Bug
-            // C, mais désormais PARAMÉTRABLE par parc et non figé).
-            WorkstationEnvironment::SharedLocal => '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+            // C, mais désormais PARAMÉTRABLE par parc et non figé) — SEULEMENT
+            // si le home est accessible, sinon le bureau réseau est invisible.
+            WorkstationEnvironment::SharedLocal => $homeEnabled
+                ? self::DESKTOP_PATH_NETWORK
+                : self::DESKTOP_PATH_LOCAL,
             // Perdir / nomade : bureau LOCAL du profil — le `.lnk` est posé
             // dans le profil de l'utilisateur, pas sur le partage réseau.
             WorkstationEnvironment::PersonalLocal,
-            WorkstationEnvironment::Nomade => '%USERPROFILE%\\Desktop\\',
+            WorkstationEnvironment::Nomade => self::DESKTOP_PATH_LOCAL,
         };
     }
 

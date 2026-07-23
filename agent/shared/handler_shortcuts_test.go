@@ -19,13 +19,18 @@ type fakeShortcutOps struct {
 	createCalls int
 	removeCalls int
 	placeErr    map[string]error // place → erreur de résolution (test error path)
+	// desktopPathErr : desktop_path → erreur de résolution (Story 27.21 —
+	// simule un Bureau RÉSEAU non résoluble sur CE poste, hors-domaine, sans
+	// casser la résolution du Bureau local).
+	desktopPathErr map[string]error
 }
 
 func newFakeOps() *fakeShortcutOps {
 	return &fakeShortcutOps{
-		files:    map[string]ShortcutSpec{},
-		userLnks: map[string]bool{},
-		placeErr: map[string]error{},
+		files:          map[string]ShortcutSpec{},
+		userLnks:       map[string]bool{},
+		placeErr:       map[string]error{},
+		desktopPathErr: map[string]error{},
 	}
 }
 
@@ -38,6 +43,9 @@ func (o *fakeShortcutOps) PlaceDir(spec ShortcutSpec) (string, error) {
 	}
 	switch spec.Place {
 	case shortcutPlaceDesktop:
+		if err := o.desktopPathErr[spec.DesktopPath]; err != nil {
+			return "", err
+		}
 		if spec.DesktopPath == "" {
 			// Probe desktop sans desktop_path (balayage des orphelins, review #2) :
 			// l'OS résout le bureau STANDARD. Le fake renvoie le bureau local.
@@ -327,6 +335,214 @@ func TestShortcutsCrossPlacementOrphanRemoved(t *testing.T) {
 	if _, exists := ops.files[startupLnk]; !exists {
 		t.Fatalf("le raccourci startup aurait dû rester")
 	}
+}
+
+// --- Story 27.21 : DOUBLE Bureau (réseau + local) balayé à chaque passe ------
+//
+// Le serveur ne désigne que l'emplacement ACTIF via `desktop_path` (réseau si
+// parc partagé ET home accessible, local sinon). L'agent doit néanmoins balayer
+// les DEUX Bureaux pour supprimer les `.lnk` GÉRÉS restés sur l'emplacement
+// devenu inactif après une bascule de la politique home (AC2/AC3).
+
+// Le gabarit réseau de l'agent est le JUMEAU du chemin serveur (à la convention
+// de backslash final près, normalisée par PlaceDir).
+func TestNetworkDesktopTemplateMatchesServerPath(t *testing.T) {
+	if got := strings.TrimRight(NetworkDesktopPathTemplate, `\/`); got != netDesktop {
+		t.Fatalf("gabarit réseau agent %q ≠ chemin serveur %q", got, netDesktop)
+	}
+}
+
+func TestShortcutsManagedDirsSweepBothDesktops(t *testing.T) {
+	cases := []struct {
+		name    string
+		desired []StateItem
+	}{
+		{"aucune règle desktop", []StateItem{shortcutItem("N", `C:\n.exe`, shortcutPlaceStartup, "")}},
+		{"règle desktop RÉSEAU (home on)", []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}},
+		{"règle desktop LOCALE (home off)", []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ops := newFakeOps()
+			h := &ShortcutsHandler{Ops: ops}
+			desired, err := h.desiredSet(tc.desired)
+			if err != nil {
+				t.Fatalf("desiredSet: %v", err)
+			}
+
+			dirs, err := h.managedDirs(desired)
+			if err != nil {
+				t.Fatalf("managedDirs: %v", err)
+			}
+
+			// Les DEUX Bureaux sont balayés quel que soit le desired courant.
+			for _, want := range []string{netDesktop, strings.TrimRight(localDesktop, `\/`)} {
+				if !containsDir(dirs, want) {
+					t.Fatalf("le Bureau %q doit être balayé (dirs=%v)", want, dirs)
+				}
+			}
+			// …sans perdre les autres emplacements gérables.
+			for _, want := range []string{`C:\Users\test\Startup`, `C:\Users\test\TaskBar`} {
+				if !containsDir(dirs, want) {
+					t.Fatalf("l'emplacement %q doit rester balayé (dirs=%v)", want, dirs)
+				}
+			}
+			if len(dirs) != 4 {
+				t.Fatalf("4 répertoires distincts attendus (2 Bureaux + startup + taskbar), obtenu %v", dirs)
+			}
+		})
+	}
+}
+
+// Bascule de la politique home dans les DEUX sens : le `.lnk` géré de
+// l'emplacement devenu inactif est supprimé au passage suivant, celui de
+// l'emplacement actif est posé. Zéro orphelin (AC3).
+func TestShortcutsHomePolicySwitchLeavesNoOrphan(t *testing.T) {
+	cases := []struct {
+		name     string
+		fromPath string
+		toPath   string
+	}{
+		{"K: coupé : réseau → local", netDesktop, localDesktop},
+		{"K: réactivé : local → réseau", localDesktop, netDesktop},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ops := newFakeOps()
+			h := &ShortcutsHandler{Ops: ops}
+			fromLnk := strings.TrimRight(tc.fromPath, `\/`) + `\Intranet.lnk`
+			toLnk := strings.TrimRight(tc.toPath, `\/`) + `\Intranet.lnk`
+
+			// Passage 1 : la politique en vigueur pose le raccourci ici.
+			before := []StateItem{shortcutItem("Intranet", "https://intranet", shortcutPlaceDesktop, tc.fromPath)}
+			if err := h.Apply(before); err != nil {
+				t.Fatalf("apply 1: %v", err)
+			}
+			if _, ok := ops.files[fromLnk]; !ok {
+				t.Fatalf("raccourci attendu à %q après le 1er passage, posés=%v", fromLnk, ops.files)
+			}
+
+			// L'admin bascule la politique home ⇒ le serveur émet l'AUTRE Bureau.
+			after := []StateItem{shortcutItem("Intranet", "https://intranet", shortcutPlaceDesktop, tc.toPath)}
+
+			// Test doit être NON conforme AVANT la convergence : le résidu géré de
+			// l'emplacement inactif compte comme une dérive (level-triggered honnête).
+			ok, err := h.Test(after)
+			if err != nil {
+				t.Fatalf("test: %v", err)
+			}
+			if ok {
+				t.Fatalf("test devait être NON conforme (résidu géré sur l'ancien Bureau)")
+			}
+
+			if err := h.Apply(after); err != nil {
+				t.Fatalf("apply 2: %v", err)
+			}
+			if _, exists := ops.files[fromLnk]; exists {
+				t.Fatalf("le `.lnk` géré de l'emplacement INACTIF devait être supprimé : %v", ops.files)
+			}
+			if _, ok := ops.files[toLnk]; !ok {
+				t.Fatalf("le raccourci devait être posé à %q, posés=%v", toLnk, ops.files)
+			}
+
+			// Convergence atteinte + idempotence.
+			ok, err = h.Test(after)
+			if err != nil || !ok {
+				t.Fatalf("test après bascule : ok=%v err=%v (attendu conforme)", ok, err)
+			}
+			removes := ops.removeCalls
+			creates := ops.createCalls
+			if err := h.Apply(after); err != nil {
+				t.Fatalf("apply 3: %v", err)
+			}
+			if ops.removeCalls != removes || ops.createCalls != creates {
+				t.Fatalf("passe stable non idempotente (removes %d→%d, creates %d→%d)",
+					removes, ops.removeCalls, creates, ops.createCalls)
+			}
+		})
+	}
+}
+
+// Un `.lnk` NON marqué (créé par l'utilisateur) présent dans CHACUN des deux
+// Bureaux n'est jamais supprimé — l'élargissement du balayage n'élargit PAS le
+// périmètre de suppression (garantie ListManaged/marqueur, AC2).
+func TestShortcutsNeverDeletesUserLnkInEitherDesktop(t *testing.T) {
+	ops := newFakeOps()
+	ops.userLnks[netDesktop+`\MesNotes.lnk`] = true
+	ops.userLnks[strings.TrimRight(localDesktop, `\/`)+`\MesNotes.lnk`] = true
+	h := &ShortcutsHandler{Ops: ops}
+
+	// Bascule complète (réseau → local) avec des fichiers user dans les deux.
+	if err := h.Apply([]StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}); err != nil {
+		t.Fatalf("apply 1: %v", err)
+	}
+	if err := h.Apply([]StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)}); err != nil {
+		t.Fatalf("apply 2: %v", err)
+	}
+
+	// Le résidu GÉRÉ du réseau est parti ; les deux fichiers USER sont intacts.
+	if _, exists := ops.files[netDesktop+`\A.lnk`]; exists {
+		t.Fatalf("le raccourci géré de l'ancien Bureau devait partir")
+	}
+	if ops.removeCalls != 1 {
+		t.Fatalf("exactement 1 suppression attendue (le seul géré orphelin), obtenu %d", ops.removeCalls)
+	}
+	for path := range ops.userLnks {
+		if _, wiped := ops.files[path]; wiped {
+			t.Fatalf("le raccourci utilisateur %q ne doit jamais être écrasé", path)
+		}
+	}
+}
+
+// Fail-soft : un Bureau non résoluble sur CE poste (hors-domaine — `<se4fs>`
+// sans valeur) n'est PAS fatal. La probe est ignorée, les autres emplacements
+// convergent (AC2).
+func TestShortcutsUnresolvableNetworkDesktopIsNotFatal(t *testing.T) {
+	ops := newFakeOps()
+	ops.desktopPathErr[NetworkDesktopPathTemplate] = fmt.Errorf("SE4FS non défini")
+	h := &ShortcutsHandler{Ops: ops}
+
+	items := []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)}
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("un Bureau réseau non résoluble ne doit pas faire échouer la passe : %v", err)
+	}
+	localLnk := strings.TrimRight(localDesktop, `\/`) + `\A.lnk`
+	if _, ok := ops.files[localLnk]; !ok {
+		t.Fatalf("le raccourci local devait converger malgré la probe réseau ignorée, posés=%v", ops.files)
+	}
+	ok, err := h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("test : ok=%v err=%v (attendu conforme)", ok, err)
+	}
+}
+
+func TestUsableShortcutDir(t *testing.T) {
+	cases := []struct {
+		dir  string
+		want bool
+	}{
+		{`\\se4fs\users\bob\Bureau\`, true},
+		{`C:\Users\bob\Desktop`, true},
+		{"", false},
+		{"   ", false},
+		{`\\\users\bob\Bureau\`, false}, // `<se4fs>` non substitué → serveur vide
+		{`\\`, false},
+	}
+	for _, tc := range cases {
+		if got := UsableShortcutDir(tc.dir); got != tc.want {
+			t.Fatalf("UsableShortcutDir(%q) = %v, attendu %v", tc.dir, got, tc.want)
+		}
+	}
+}
+
+func containsDir(dirs []string, want string) bool {
+	for _, d := range dirs {
+		if strings.TrimRight(d, `\/`) == strings.TrimRight(want, `\/`) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // --- Payload invalide → error (enveloppe) ------------------------------------

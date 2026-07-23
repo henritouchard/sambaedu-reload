@@ -499,7 +499,35 @@ package shared
 // INCHANGÉS (aucun champ de payload nouveau — seul CHANGE l'acteur qui pose le
 // lien).
 //
+// 2.14.0 = Story 27.21 : le handler `shortcuts` balaie les DEUX Bureaux
+// candidats à chaque passe — le Bureau RÉSEAU (`\\<se4fs>\users\<user>\Bureau\`,
+// gabarit `NetworkDesktopPathTemplate` dérivé LOCALEMENT via
+// SubstituteServerTokens) ET le Bureau LOCAL (`%USERPROFILE%\Desktop`) — au lieu
+// du seul emplacement porté par le `desktop_path` du desired courant.
+//
+// Pourquoi : le serveur choisit désormais l'emplacement du bureau en croisant
+// l'environnement du parc ET la politique home (`FilePolicyService['home']`). Un
+// admin qui coupe K: fait basculer `desktop_path` de réseau à local — mais le
+// serveur ne NOMME plus jamais l'ancien emplacement, dont les `.lnk` gérés
+// resteraient orphelins à vie. En balayant systématiquement les deux, la bascule
+// (dans les deux sens) nettoie l'emplacement devenu inactif au passage suivant.
+//
+// CONTRAT WIRE INCHANGÉ (aucun champ de payload nouveau — `desktop_path` reste
+// un token et la seule autorité de PLACEMENT ; le gabarit réseau est dérivable
+// localement de l'env, donc rien à envoyer). Golden `state.v1.json` /
+// `FROZEN_STATE_HASH` (PHP + Go) INTACTS.
+//
+// ⚠️ Le bump est OBLIGATOIRE malgré le contrat identique : le comportement vit
+// ENTIÈREMENT dans le binaire. Un agent ≤ 2.13.0 continue de poser au bon
+// endroit (il obéit au `desktop_path` serveur, déjà policy-aware) mais NE NETTOIE
+// PAS l'ancien emplacement — symptôme : des raccourcis fantômes sur le Bureau
+// réseau après avoir coupé K:. Publication requise pour armer le nettoyage.
+//
+// Fail-soft associé (`UsableShortcutDir`) : sur un poste où `<se4fs>` n'est pas
+// substituable (hors-domaine, ni SE4FS ni LOGONSERVER), la probe réseau est
+// IGNORÉE — jamais une passe en erreur, les autres emplacements convergent.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.13.0"
+var Version = "2.14.0"

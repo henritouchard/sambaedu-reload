@@ -218,15 +218,30 @@ mailles, dédoublonnée par contenu au compilateur :
   `TargetContext`). Le ciblage AD-CN legacy (`ad_users`/`ad_user_groups`, cache
   APCu) n'est **JAMAIS** lu (condition Keycloak). Raccourci `is_active = false`
   = exclu.
-- **`desktop_path` résolu côté serveur** via
-  `WorkstationEnvironmentResolver::resolveForGroupIds()` — bureau **réseau** si
-  le parc est `shared_local` (`\\<se4fs>\users\<user>\Bureau\`), bureau **local**
-  si `personal_local`/`nomade` (`%USERPROFILE%\Desktop\`). C'est la donnée du
+- **`desktop_path` résolu côté serveur** par croisement de DEUX facteurs :
+  l'environnement du parc (`WorkstationEnvironmentResolver::resolveForGroupIds()`)
+  **et** la politique de gestion des fichiers
+  (`FilePolicyService::capabilities()['home']`). Bureau **réseau**
+  (`\\<se4fs>\users\<user>\Bureau\`) **seulement si** le parc est `shared_local`
+  **ET** que l'accès au home (K:) est activé ; bureau **local**
+  (`%USERPROFILE%\Desktop\`) dans tous les autres cas — `personal_local`/`nomade`,
+  ou home coupé. Rationnel : le bureau réseau VIT dans le home ; avec K: coupé, la
+  session affiche le bureau local et des `.lnk` posés en réseau seraient
+  invisibles. On ne pousse jamais une donnée vers un emplacement inatteignable
+  (symétrie assumée avec `app_profile`, DÉCORRÉLÉ de K: en 36.7 : dans les deux
+  cas la donnée va là où l'utilisateur peut l'atteindre). C'est la donnée du
   domaine qui dicte le chemin. Les tokens `<se4fs>` / `<user>` (et les `%VAR%`
   Windows) restent dans le payload : l'agent les substitue **localement** (login
   courant, nom serveur) — aucune fuite de secret, aucune dépendance réseau au
   calcul. `desktop_path` n'est présent **que** pour `place=desktop`
   (startup/taskbar = chemins standards résolus par l'agent).
+- **Nettoyage du DOUBLE bureau côté agent** (≥ 2.14.0) : `desktop_path` désigne
+  le seul emplacement où l'agent **pose**, mais le handler **balaie** à chaque
+  passe le bureau réseau ET le bureau local, pour supprimer les `.lnk` **gérés**
+  (marqueur) restés sur l'emplacement devenu inactif après une bascule de la
+  politique home. Le gabarit réseau est une constante de l'agent
+  (`shared.NetworkDesktopPathTemplate`, jumelle du chemin serveur) résolue par la
+  même substitution de tokens — **aucun champ de contrat n'a été ajouté**.
 - **`scope=machine_user`** : le set dépend du user, le chemin du poste — le
   calcul est un croisement (poste, user). **`semantics=aggregate`** : le poste
   reçoit l'union de toutes ses mailles, sans précédence.

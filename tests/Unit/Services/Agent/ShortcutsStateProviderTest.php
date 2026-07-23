@@ -20,7 +20,9 @@ use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
+use App\Services\FilePolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -174,6 +176,67 @@ class ShortcutsStateProviderTest extends TestCase
         $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
 
         self::assertSame('%USERPROFILE%\\Desktop\\', $payload['desktop_path']);
+    }
+
+    // --- Story 27.21 : le bureau RÉSEAU suit la politique home (K:) -----------
+
+    /**
+     * Matrice complète {SharedLocal, PersonalLocal, Nomade} × {home on, home off}
+     * (AC1, 6 cas). Le SEUL basculement introduit par la story est
+     * `SharedLocal` + `home=false` → bureau LOCAL : un bureau réseau posé alors
+     * que le home est coupé serait invisible pour l'utilisateur (constat terrain
+     * 2026-07-22). Les cinq autres cas sont inchangés.
+     *
+     * @return iterable<string, array{WorkstationEnvironment, bool, string}>
+     */
+    public static function desktopPathMatrix(): iterable
+    {
+        $network = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
+        $local = '%USERPROFILE%\\Desktop\\';
+
+        yield 'shared_local + home on → réseau' => [WorkstationEnvironment::SharedLocal, true, $network];
+        yield 'shared_local + home off → local (LE basculement)' => [WorkstationEnvironment::SharedLocal, false, $local];
+        yield 'personal_local + home on → local' => [WorkstationEnvironment::PersonalLocal, true, $local];
+        yield 'personal_local + home off → local' => [WorkstationEnvironment::PersonalLocal, false, $local];
+        yield 'nomade + home on → local' => [WorkstationEnvironment::Nomade, true, $local];
+        yield 'nomade + home off → local' => [WorkstationEnvironment::Nomade, false, $local];
+    }
+
+    #[Test]
+    #[DataProvider('desktopPathMatrix')]
+    public function desktop_path_crosses_environment_and_home_policy(
+        WorkstationEnvironment $environment,
+        bool $home,
+        string $expected,
+    ): void {
+        $this->parc->update(['environment' => $environment]);
+        // `shares`/`nextcloud` sont hors sujet ici : seule la capacité `home`
+        // gouverne le bureau (capacités INDÉPENDANTES, pas un mode exclusif).
+        FilePolicyService::setGlobal($home, true, false);
+
+        $sc = $this->shortcut('intranet', [
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'https://intranet.edu',
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame($expected, $payload['desktop_path']);
+    }
+
+    #[Test]
+    public function home_policy_never_creates_a_desktop_path_on_non_desktop_places(): void
+    {
+        // Garde-fou : couper le home ne doit RIEN changer aux emplacements
+        // startup/taskbar (toujours locaux, jamais de `desktop_path`).
+        FilePolicyService::setGlobal(false, true, false);
+        $sc = $this->shortcut('boot', ['place' => Shortcut::PLACE_STARTUP, 'windows_link' => 'C:\\b.exe']);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertArrayNotHasKey('desktop_path', $payload);
     }
 
     #[Test]
