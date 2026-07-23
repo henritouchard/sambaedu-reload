@@ -224,6 +224,44 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all denied
     </Directory>
 
+    # /doc : documentation publique SE5 (Story 52.1) — site statique VitePress
+    # SANS authentification, deux parcours (« J'administre SE5 » / « J'utilise
+    # mon poste »), généré depuis userDoc/ (chaîne npm ISOLÉE de l'application,
+    # jamais de package.json/vite.config.js partagés) et publié dans
+    # userDoc/dist/ par ensure_user_doc (update.sh — miroir/purge, PAS de build
+    # direct dans ce dossier). Servi EN STATIQUE, zéro charge Laravel.
+    #
+    # GARDE-FOU SÉCURITÉ : l'Alias pointe EXACTEMENT sur le sous-dossier de
+    # SORTIE PUBLIÉ userDoc/dist, JAMAIS sur userDoc/ entier (sources +
+    # node_modules + package-lock.json) ni sur la racine du dépôt (.env,
+    # storage/keys/pki/ = PFX code-signing + clés CA). -Indexes (pas de
+    # listing), PAS de FallbackResource (un 404 reste un 404, ne retombe pas
+    # sur Laravel). À chown www-admin (lisible Apache) — sinon 404 silencieux.
+    #
+    # Neutralisation PHP PAR RÉPERTOIRE : le <FilesMatch "\.php$"> du haut de
+    # ce vhost (SetHandler proxy:fcgi) est GLOBAL et s'appliquerait sinon À CE
+    # DOSSIER AUSSI — un .php déposé dans userDoc/dist serait routé vers FPM et
+    # EXÉCUTÉ. SetHandler none désarme le handler hérité, Require all denied
+    # referme le tir (défense en profondeur : même si SetHandler none était un
+    # jour ignoré par une future version d'Apache, l'accès resterait refusé).
+    #
+    # ErrorDocument 404 : sert la page 404 STATIQUE générée par VitePress
+    # (français, thème du site) plutôt que la page 404 générique d'Apache —
+    # reste un 404 réel (PAS de FallbackResource, PAS de redirection vers
+    # Laravel), simplement avec le contenu du site déjà présent dans le
+    # dossier publié.
+    Alias /doc $SER_ROOT/userDoc/dist
+    <Directory $SER_ROOT/userDoc/dist>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+        ErrorDocument 404 /doc/404.html
+        <FilesMatch "\.php$">
+            SetHandler none
+            Require all denied
+        </FilesMatch>
+    </Directory>
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>

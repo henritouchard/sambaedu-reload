@@ -122,6 +122,93 @@ update_npm() {
 }
 
 # ============================================================================
+# Documentation utilisateur publique (Story 52.1) — build+publication FAIL-SOFT
+# ============================================================================
+# Chaîne npm ISOLÉE de l'application : userDoc/package.json est un projet
+# npm à part entière (vitepress + @fontsource/*), jamais touché par
+# update_npm ci-dessus, et qui ne touche jamais aux assets de l'app
+# (NFR-D3). Patrons réutilisés MOT POUR MOT : fail-soft `ensure_agent_build`
+# (chaque étape risquée dans un `if !`, jamais de propagation vers main()) +
+# miroir/purge `ensure_ipxe_statics` (cp -a puis purge fichier par fichier,
+# jamais rm -rf, chown www-admin + chmod parent traversable).
+
+ensure_user_doc() {
+    log "Build documentation utilisateur publique (Story 52.1)..."
+
+    local doc_dir="$APP_DIR/userDoc"
+    local build_out="$doc_dir/.vitepress/dist"
+    local publish_dir="$doc_dir/dist"
+
+    # Dossier publié TOUJOURS présent et lisible Apache, même si le build est
+    # sauté plus bas par l'un des gardes (package.json/npm absents) : un
+    # Alias Apache vers un dossier absent produit un 404 (acceptable), mais
+    # le dossier lève toute ambiguïté. mkdir -p crée aussi userDoc/ au
+    # besoin.
+    mkdir -p "$publish_dir" 2>/dev/null || true
+    if id www-admin >/dev/null 2>&1; then
+        chown -R www-admin:www-admin "$publish_dir" 2>/dev/null || true
+    fi
+    chmod u+rwX,go+rX "$doc_dir" 2>/dev/null || true
+    chmod -R u+rwX,go+rX "$publish_dir" 2>/dev/null || true
+
+    if [[ ! -f "$doc_dir/package.json" ]]; then
+        log_warning "userDoc/package.json absent — build documentation ignoré, site précédent conservé"
+        return 0
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+        log_warning "npm non installé — build documentation ignoré, site précédent conservé"
+        return 0
+    fi
+
+    # Chaque étape dans un `if !` : avec `set -euo pipefail`, un appel nu qui
+    # échoue (registre npm injoignable, lien mort, etc.) tuerait TOUT le
+    # reste de l'update (piège #3 documenté dans la story).
+    if ! ( cd "$doc_dir" && npm install --no-audit --no-fund --prefer-offline ); then
+        log_warning "npm install documentation échoué (registre injoignable ?) — build ignoré, site précédent conservé"
+        return 0
+    fi
+
+    if ! ( cd "$doc_dir" && npm run build ); then
+        log_warning "Build documentation échoué (lien interne mort ? cf. userDoc/README.md) — site précédent conservé"
+        return 0
+    fi
+
+    if [[ ! -d "$build_out" ]]; then
+        log_warning "Build documentation : dossier de sortie $build_out introuvable après succès signalé — publication ignorée"
+        return 0
+    fi
+
+    # ── Publication SEULEMENT en cas de succès du build ci-dessus : miroir
+    # strict .vitepress/dist → dist/ (patron EXACT ensure_ipxe_statics ci-
+    # dessous). Builder directement dans dist/ laisserait un site absent ou à
+    # moitié écrit en cas d'échec (piège #4) ; le miroir neutralise aussi les
+    # pages fantômes de SORTIE — une page retirée des sources disparaît du
+    # site publié (AC7).
+    cp -a "$build_out"/. "$publish_dir"/
+
+    (
+        cd "$publish_dir" || exit 0
+        find . -type f | while IFS= read -r f; do
+            [[ -f "$build_out/$f" ]] || rm -f "$f"
+        done
+        find . -depth -mindepth 1 -type d -empty -exec rmdir {} \; 2>/dev/null
+    )
+
+    if id www-admin >/dev/null 2>&1; then
+        chown -R www-admin:www-admin "$publish_dir" 2>/dev/null \
+            || log_warning "chown www-admin échoué sur $publish_dir (risque de 404 Apache)"
+    fi
+    # Lisible Apache (« other » : r sur fichiers, rx sur dossiers), Y COMPRIS
+    # le parent userDoc/ (piège umask documenté mot pour mot dans
+    # ensure_ipxe_statics — sinon 404 Apache silencieux sur TOUTE la doc).
+    chmod u+rwX,go+rX "$doc_dir" 2>/dev/null || true
+    chmod -R u+rwX,go+rX "$publish_dir" 2>/dev/null || true
+
+    log_success "Documentation utilisateur publiée dans $publish_dir (chown www-admin, lisible Apache)"
+}
+
+# ============================================================================
 # Mise à jour Laravel
 # ============================================================================
 
@@ -451,6 +538,7 @@ update_apache() {
            && grep -q "Alias /wpkg/bundle" "$APACHE_CONF_TARGET" \
            && grep -q "Alias /wpkg/files" "$APACHE_CONF_TARGET" \
            && grep -q "Alias /wpkg/tools" "$APACHE_CONF_TARGET" \
+           && grep -q "Alias /doc " "$APACHE_CONF_TARGET" \
            && [[ -z "$LEGACY_DIRECTIVES" ]]; then
             log_success "Apache déjà configuré pour SER (setupApache.sh)"
             return
@@ -459,17 +547,20 @@ update_apache() {
             # (vhost antérieur à la Story 27.5) OU alias /wpkg/files absent (vhost
             # antérieur à la Story 27.19 — livraison HTTP des payloads WPKG) OU
             # alias /wpkg/tools absent (vhost antérieur à la Story 27.20 — outils
-            # partagés WPKG) OU une directive pointe encore dans l'arbre legacy
-            # (vhost antérieur à la Story 38.1 — `Alias /ipxe /var/www/sambaedu/ipxe`,
-            # qui casse TOUT `/ipxe/*` dès que le legacy est éteint) → relancer
-            # setupApache.sh pour (re)poser les aliases. Idempotent.
+            # partagés WPKG) OU alias /doc absent (vhost antérieur à la Story
+            # 52.1 — documentation publique userDoc/dist : sans cette relance,
+            # une instance déjà installée n'aurait JAMAIS l'alias /doc) OU une
+            # directive pointe encore dans l'arbre legacy (vhost antérieur à la
+            # Story 38.1 — `Alias /ipxe /var/www/sambaedu/ipxe`, qui casse TOUT
+            # `/ipxe/*` dès que le legacy est éteint) → relancer setupApache.sh
+            # pour (re)poser les aliases. Idempotent.
             if [[ -n "$LEGACY_DIRECTIVES" ]]; then
                 log_warning "Vhost SER antérieur à la Story 38.1 : des directives pointent encore dans $LEGACY_ROOT"
                 while IFS= read -r line; do
                     [[ -n "$line" ]] && log_warning "  $line"
                 done <<< "$LEGACY_DIRECTIVES"
             fi
-            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files ou /wpkg/tools manquant, ou directive legacy résiduelle) — relance de setupApache.sh"
+            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files ou /wpkg/tools ou /doc manquant, ou directive legacy résiduelle) — relance de setupApache.sh"
             if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
                 bash "$SETUP_APACHE_SCRIPT"
                 log_success "Apache reconfiguré via setupApache.sh"
@@ -1500,6 +1591,7 @@ show_summary() {
     log "Statistiques:"
     echo "  ✓ Composer"
     echo "  ✓ NPM/Build frontend"
+    echo "  ✓ Documentation utilisateur (/doc)"
     echo "  ✓ Laravel update"
     echo "  ✓ PKI Auth V1"
     echo "  ✓ Apache"
@@ -1574,6 +1666,9 @@ main() {
 
     echo ""
     update_npm
+
+    echo ""
+    ensure_user_doc
 
     echo ""
     update_env

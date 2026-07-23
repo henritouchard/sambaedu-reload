@@ -53,6 +53,11 @@ public/css/app.css
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+# Story 52.1 — userDoc/ est un projet npm ISOLÉ (site de doc publique
+# VitePress) : son package-lock.json est délibérément COMMITTÉ (build
+# reproductible sur la VM, cf. AC2), à l'inverse du package-lock.json de
+# l'application ignoré ci-dessus.
+!/userDoc/package-lock.json
 
 # Logs (les dossiers storage/* ont leur propre .gitignore qui préserve la structure)
 *.log
@@ -112,3 +117,13 @@ Desktop.ini
 # (conservés localement uniquement).
 /_bmad/
 /_bmad-output/
+
+# userDoc — site de documentation publique VitePress (Story 52.1). Chaîne
+# npm ISOLÉE de l'application (package.json/package-lock.json propres,
+# committés — cf. exception ci-dessus). node_modules et sorties de build non
+# versionnés : userDoc/dist/ est reconstruit intégralement par
+# ensure_user_doc() (scripts/update.sh) à chaque déploiement, jamais commité.
+/userDoc/node_modules/
+/userDoc/dist/
+/userDoc/.vitepress/dist/
+/userDoc/.vitepress/cache/

@@ -1,0 +1,22 @@
+/* Identité visuelle du site de documentation publique SE5 (Story 52.1, AC8).
+ * IBM Plex embarquée via @fontsource (imports dans theme/index.js) — aucune
+ * requête réseau vers des polices distantes. Ce fichier ne référence NI ne
+ * copie le CSS de l'application (resources/css/) — chaîne strictement
+ * isolée (UX-DR2). Ajustements volontairement sobres : le socle livré ici
+ * est le squelette de navigation, pas un gabarit de fiche (52.2).
+ */
+
+:root {
+    --vp-font-family-base:
+        'IBM Plex Sans',
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        sans-serif;
+    --vp-font-family-mono:
+        'IBM Plex Mono',
+        ui-monospace,
+        'SFMono-Regular',
+        Consolas,
+        monospace;
+}
