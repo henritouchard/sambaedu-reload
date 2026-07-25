@@ -44,6 +44,8 @@ Depuis n'importe quelle application (traitement de texte, navigateur, tableur…
    doit être celle de votre salle, reconnaissable à son nom ;
 3. lancez l'impression en cliquant sur **Imprimer**.
 
+![Fenêtre d'impression avec le menu Fichier (repère 1), l'imprimante « imprimante-salle-101 » sélectionnée (repère 2) et le bouton Imprimer (repère 3).](/captures/poste/impression/fenetre-impression.png)
+
 ## Résultat observable
 
 Après quelques instants, la feuille sort de l'imprimante de la salle. Le court

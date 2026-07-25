@@ -18,6 +18,8 @@ Dans l'explorateur de fichiers, un lecteur nommé **« Classes »**, repéré pa
 lettre **`H:`**, mène à un dossier par classe. En ouvrant celui de votre
 classe, vous y trouvez plusieurs dossiers, chacun avec sa règle :
 
+![Explorateur de fichiers Windows avec le lecteur « Classes » (H:) et le dossier de la classe 3B dans la liste des emplacements.](/captures/poste/fichiers/espaces-partages/explorateur-classes.png)
+
 - **Un dossier de travail** : les enseignants y déposent des documents pour la
   classe. Les élèves peuvent les ouvrir et les lire, mais pas les modifier ni
   en ajouter.

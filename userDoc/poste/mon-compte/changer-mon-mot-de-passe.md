@@ -22,6 +22,8 @@ est ouverte.
    fois (la seconde fois pour le confirmer).
 4. Validez.
 
+![Écran de sécurité Windows ouvert par Ctrl+Alt+Suppr (repère 1), avec le choix « Modifier un mot de passe » (repère 2).](/captures/poste/mon-compte/changer-mon-mot-de-passe/ecran-de-securite.png)
+
 ::: delai-effet immediat
 Le nouveau mot de passe vaut aussitôt sur tous les postes de l'établissement :
 dès votre prochaine connexion, où que ce soit, c'est lui qu'il faut utiliser.

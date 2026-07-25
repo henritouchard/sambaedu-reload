@@ -311,3 +311,252 @@ consolidés en une passe après rédaction parallèle des trois lots.
 - [ ] Chaque espace conditionnel porte son encart `::: attention`
 - [ ] Mot de passe oublié : renvoi référent, aucun geste admin décrit
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel encarts clair/sombre/mobile
+
+---
+
+## Section 4 — Lien d'aide depuis l'application (Story 52.8)
+
+Scénarios liés au point d'entrée d'aide dans l'interface authentifiée SE5 (icône
+« ? » de la navbar) qui ouvre `/doc/` dans un nouvel onglet. C'est la seule
+story de l'epic 52 qui touche le code applicatif Laravel (`config/sambaedu.php`,
+`resources/views/components/organisms/navbar.blade.php`) — aucune route
+Laravel créée, aucun fichier `userDoc/` ni `scripts/` touché.
+
+**Code de référence** :
+- `config/sambaedu.php` — clé `doc.index_file` (défaut
+  `base_path('userDoc/dist/index.html')`, surchargeable par
+  `SAMBAEDU_DOC_INDEX_FILE`)
+- `resources/views/components/organisms/navbar.blade.php` — bloc `@if
+  (is_file(config('sambaedu.doc.index_file')))` dans le cluster de droite,
+  href en dur `/doc/`, `target="_blank" rel="noopener"`
+- `tests/Feature/NavbarHelpLinkTest.php` — rendu Blade isolé des deux états
+  (fichier présent / absent), non-VM
+
+### Scénario 4.1 — Le bouton d'aide ouvre `/doc/` dans un nouvel onglet (AC1)
+**But** : un utilisateur connecté atteint la doc sans perdre son contexte SE5.
+**Étapes / attendu** :
+- Sur `/vm`, `userDoc/dist/index.html` doit exister (52.1 déployée).
+- Ouvrir une page quelconque de l'interface authentifiée : l'icône « ? »
+  (`fa-circle-question`) est visible en haut à droite, à côté de la bascule de
+  thème et des notifications.
+- Cliquer dessus : un NOUVEL onglet s'ouvre sur `/doc/` ; l'onglet SE5 d'origine
+  garde exactement la même URL et le même état (pas de rechargement, pas de
+  déconnexion).
+- `curl -s -o /dev/null -w '%{http_code}' http://localhost/doc/` → 200.
+- **VM non vérifiée au 2026-07-25** (VM injoignable pendant le développement) —
+  différé ; les tests PHPUnit hôte (Scénario 4.3) font foi en attendant.
+
+### Scénario 4.2 — Pas de lien mort quand la doc n'est pas publiée (AC2)
+**But** : un serveur sans site construit ne présente jamais un bouton qui mène
+à un 404/catchall.
+**Étapes / attendu** :
+- Sur `/vm`, déplacer temporairement `userDoc/dist/index.html` (UNIQUEMENT ce
+  fichier, jamais le dossier `dist/` — les ACL et l'`ErrorDocument 404` en
+  dépendent) : `mv userDoc/dist/index.html /tmp/...`.
+- Recharger une page authentifiée : le bouton d'aide a disparu, aucune erreur
+  visible, le reste de la navbar (thème, notifications, menu utilisateur) est
+  intact.
+- Restaurer le fichier immédiatement : recharger → le bouton d'aide réapparaît
+  sans autre intervention (pas de cache applicatif à vider).
+- Sur l'hôte de dev où `userDoc/dist/` n'existe généralement pas (build jamais
+  lancé localement) : le bouton est absent par construction — normal, ce n'est
+  pas une régression.
+- **VM non vérifiée au 2026-07-25** — différé.
+
+### Scénario 4.3 — Non-régression visuelle de la navbar (AC3)
+**But** : les éléments existants gardent leur position et leur comportement,
+avec ou sans le bouton d'aide.
+**Étapes / attendu** :
+- `php artisan test --filter=NavbarHelpLink` → les deux cas (doc présente / doc
+  absente) passent ; dans les deux cas le HTML rendu contient toujours le bloc
+  Notifications (preuve que le `@if` n'avale pas le reste du cluster).
+- `php artisan test --filter=Navbar` et `php artisan test --filter=Gpo`
+  (composant voisin `GpoBackLinkComponentTest`, même patron de test Blade
+  isolé) : verts, aucune régression introduite par le changement de largeur du
+  conteneur (`w-36` → `w-fit`).
+- Contrôle visuel réel (bureau ET mobile/drawer replié) : bouton menu
+  hamburger, recherche, thème, aide, notifications, avatar tous visibles sans
+  chevauchement ni débordement — **non observé dans un navigateur réel au
+  2026-07-25 (VM injoignable)**, différé.
+
+### Limites connues Section 4 (différé VM)
+- **Task 4 de la story différée en intégralité** : VM `192.168.122.50`
+  injoignable pendant le développement — aucune vérification serveur réelle
+  (clic réel ouvrant `/doc/`, matrice curl, contre-épreuve `mv`/restauration,
+  rendu visuel clair/sombre/mobile) n'a pu être rejouée. À faire dès que la VM
+  répond.
+- **Tests PHPUnit hôte seuls disponibles en attendant** : les deux états (doc
+  publiée / absente) sont couverts par simulation filesystem
+  (`tempnam()` / chemin inexistant) via la clé de config, pas par le vrai
+  dossier `userDoc/dist/` de la VM.
+- **Fenêtre résiduelle « build présent / alias Apache pas encore posé »** : le
+  garde `is_file(userDoc/dist/index.html)` teste la présence du build, pas la
+  disponibilité de `/doc/` sous Apache. Le seul cas où le lien s'afficherait pour
+  un `/doc/` non servi serait un `dist/` posé HORS de `scripts/update.sh` (qui,
+  lui, fait build + reconfiguration Apache dans la même passe). Cas jugé
+  théorique — à vérifier au premier `update.sh` sur une instance neuve.
+
+### Checklist rapide Section 4
+- [ ] `NavbarHelpLinkTest` : doc présente → `href="/doc/"` + `target="_blank"` +
+      `rel="noopener"` ; doc absente → pas de `href="/doc/"`, voisins (Notifications) intacts
+- [ ] `php artisan test --filter=Navbar` et `--filter=Gpo` verts (non-régression `w-36`→`w-fit`)
+- [ ] **VM (différé)** : clic réel nouvel onglet, curl `/doc/` → 200, contre-épreuve `mv`/restauration, contrôle visuel bureau+mobile
+
+---
+
+## Section 5 — Convention de captures d'écran (Story 52.7)
+
+Scénarios liés à la convention de captures (établissement fictif « Collège de
+Brumeville », thème/cadrage, nommage, alt obligatoire) et à son mécanisme
+d'insertion : règle `image` de markdown-it surchargée en un point unique dans
+`.vitepress/config.mjs`, styles `.se5-capture`/`.se5-capture-placeholder` dans
+`theme/custom.css`, motifs image ajoutés à `lint-doc.mjs`. **Aucune image
+réelle n'est produite par cette story** : l'état livré est le placeholder
+« Illustration à venir » sur les fiches qui référencent une capture — c'est
+l'état publié assumé tant que la production manuelle des images n'a pas eu
+lieu.
+
+**Code de référence** :
+- `userDoc/.vitepress/config.mjs` — `registerCaptureImageRule(md)` dans
+  `markdown.config(md)` : capture la règle `image` par défaut, délègue tout
+  `src` hors `/captures/` ; fichier présent sous `userDoc/public/captures/...`
+  → `<img class="se5-capture" src="/captures/...">` (le préfixe `base` `/doc/`
+  est appliqué par la transformation d'assets de `@vitejs/plugin-vue`, PAS par
+  une concaténation dans la règle — cf. point fragile ci-dessous) ; absent →
+  `<div class="se5-capture-placeholder">` (« Illustration à venir » + alt)
+- `userDoc/.vitepress/theme/custom.css` — `.se5-capture` (cadre fin,
+  `max-width:100%`), `.se5-capture-placeholder` (bloc discret), variables
+  `--vp-c-*` uniquement (clair/sombre hérité)
+- `userDoc/.vitepress/lint-doc.mjs` — `checkImagePatterns()` : alt vide,
+  cible hors `/captures/` (URL externe incluse), extension ≠ `.png`, segment
+  non kebab-case, balise `<img>` brute ; `reportMissingCaptures()` : sortie
+  informative non bloquante des captures référencées sans fichier
+- `userDoc/public/captures/.gitkeep` — emplacement matérialisé, aucune image
+- `userDoc/CONTRIBUTING.md` — section « Captures d'écran » (jeu fictif
+  ratifié, thème/cadrage, nommage + règle de remplacement, alt, checklist de
+  production), non publiée
+- `userDoc/.templates/fiche-modele.md` — exemple d'insertion à la position du
+  gabarit, non publié
+- Fiches modifiées (référence de capture posée, alt conforme) :
+  `poste/mon-compte/se-connecter.md`, `poste/mon-compte/changer-mon-mot-de-passe.md`
+  (2 gestes → 1 capture), `poste/mon-compte/changement-impose.md` (2 captures,
+  une par sous-scénario poste/navigateur), `poste/fichiers/espace-personnel.md`,
+  `poste/fichiers/espaces-partages.md`, `poste/impression.md`
+
+### Scénario 5.1 — Repli textuel : fichier absent → placeholder avec l'alt
+**But** : l'état livré (aucune image produite) reste utilisable et accessible.
+**Étapes / attendu** :
+- `npm run build` (aucune image sous `userDoc/public/captures/`).
+- Sur chacune des 6 fiches listées ci-dessus, le HTML publié contient
+  `<div class="se5-capture-placeholder">` avec `<p
+  class="se5-capture-placeholder__label">Illustration à venir</p>` suivi du
+  texte alternatif exact de la fiche.
+- La fiche reste complète et actionnable en l'ignorant : relue sans l'image,
+  chaque fiche dit tout ce qu'il faut pour agir (règle AC4).
+- Vérifié en LOCAL 2026-07-25 : `changement-impose.html` porte bien 2 blocs
+  placeholder (2 captures référencées sur cette fiche).
+
+### Scénario 5.2 — Remplacement sans retouche : dépôt puis retrait d'un PNG factice
+**But** : le contrat central de la convention (UX-DR5) — remplacer une
+illustration ne doit JAMAIS modifier le texte d'une fiche.
+**Étapes / attendu** :
+1. Noter le MD5 du `.md` d'une fiche référençant une capture.
+2. Déposer un PNG factice (1×1, décodé depuis base64, aucun outil graphique)
+   au nom exact déjà référencé sous `userDoc/public/captures/...`.
+3. `npm run build` : le HTML publié contient désormais
+   `<img class="se5-capture" src="/doc/captures/...">` avec le même alt,
+   `loading="lazy"`.
+4. Retirer le fichier (`mv`/`trash`, jamais `rm -rf` — fantôme d'inotify).
+5. `npm run build` : le placeholder revient, alt identique.
+6. MD5 du `.md` identique aux étapes 1 et 5.
+
+**Attendu** : MD5 IDENTIQUE avant/après tout le cycle ; le seul delta est la
+présence/absence du fichier PNG sous `public/`.
+**Vérifié en LOCAL 2026-07-25** (cycle complet rejoué sur
+`poste/mon-compte/se-connecter.md`, MD5 `c33502106c60e705dfa6e37133b950c8`
+inchangé aux deux extrémités du cycle).
+
+### ⚠️ Point fragile détecté en cours de développement — préfixe `base`
+**La story anticipait (piège #4) qu'un `src` émis en HTML brut ne serait
+JAMAIS préfixé du `base` `/doc/` automatiquement, imposant une concaténation
+manuelle dans la règle.** Vérifié FAUX par un build réel : concaténer `base`
+dans la règle (`src="/doc/captures/..."`) fait échouer le build
+(`Rollup failed to resolve import "/doc/captures/..."` — Rollup cherche un
+fichier sous `public/doc/captures/...`, qui n'existe pas). En cause : le HTML
+produit par la règle personnalisée est splicé dans le même template Vue que
+le rendu markdown natif, et la transformation d'assets de `@vitejs/plugin-vue`
+(`transformAssetUrls`) s'applique donc IDENTIQUEMENT aux deux — tout `src`
+absolu (`/...`) est réécrit en import résolu contre `publicDir`, et c'est
+CETTE étape qui injecte `base` au build, pas la règle elle-même. **La règle
+émet donc `src="/captures/..."` (site-root, SANS préfixe manuel)** ; le HTML
+publié final porte bien `/doc/captures/...` (vérifié dans `dist/`), mais par
+ce mécanisme, pas par concaténation. Sans incidence sur AC2 (le résultat final
+est conforme) — documenté ici pour qu'une future story ne réintroduise pas la
+concaténation manuelle en la croyant nécessaire.
+
+### Scénario 5.3 — Lint bloquant : chaque motif image individuellement, puis vert
+**But** : aucun des 5 motifs image ne doit pouvoir passer inaperçu.
+**Étapes / attendu** :
+1. Créer un fichier Markdown temporaire sous `userDoc/poste/` portant, une
+   ligne chacun : une image `/captures/...` à alt vide ; une image externe
+   `https://...` ; une image `/captures/....jpg` (mauvaise extension) ; une
+   image `/captures/.../Segment_Non_Kebab/...png` ; une balise `<img src=...>`
+   brute.
+2. `npm run build` (ou `npm run lint`).
+3. Retirer le fichier (`mv`/`trash`), `npm run build`.
+
+**Attendu** :
+- Étape 2 : 5 violations, une par motif, format `fichier:ligne → motif`,
+  exit ≠ 0.
+- Étape 3 : lint vert ; la sortie informative des captures manquantes revient
+  exactement à la liste des 7 références posées par cette story (aucune
+  n'existe encore sous `public/`).
+- **Vérifié en LOCAL 2026-07-25** : les 5 motifs déclenchés exactement comme
+  prévu sur un fichier de preuve dédié, puis lint vert après retrait.
+
+### Scénario 5.4 — Non-régression
+**But** : la convention de captures ne casse rien du socle existant.
+**Étapes / attendu** :
+- `npm run build` complet vert (lint + `vitepress build`).
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" .vitepress/dist/`
+  → vide (les captures sont des assets locaux, aucune requête tierce).
+- `find .vitepress/dist -iname "*readme*" -o -iname "*contributing*" -o -path "*templates*"`
+  → vide (CONTRIBUTING.md et `.templates/` toujours non publiés).
+- `git diff --stat -- package.json package-lock.json vite.config.js resources/`
+  (racine du dépôt) et `-- userDoc/package.json userDoc/package-lock.json` →
+  VIDE sur les deux (zéro dépendance nouvelle, chaîne npm isolée intacte).
+- Les 4 encarts (52.2) et la recherche (52.6) continuent de fonctionner sans
+  changement de comportement (zones distinctes dans `markdown.config(md)` et
+  `CONTRIBUTING.md`).
+
+### Limites connues Section 5 (différé VM)
+- **Task 6 de la story différée en intégralité** : VM `192.168.122.50`
+  injoignable pendant le développement (2026-07-25) — `bash scripts/update.sh`,
+  matrice curl serveur, et surtout le **contrôle visuel réel** (placeholder en
+  thème clair/sombre/mobile, cadre `.se5-capture` une fois une image
+  déposée) n'ont pas pu être rejoués en conditions serveur. Les preuves
+  ci-dessus sont des équivalents locaux (build hôte + lecture du HTML/CSS
+  généré), pas une observation dans un navigateur réel.
+- **Aucune image de capture réelle n'existe à la livraison** : c'est l'état
+  ASSUMÉ de cette story (AC5) — la production des images (environnement de
+  prise de vue aux données fictives, capture au niveau hyperviseur pour les
+  écrans du *secure desktop* Windows) est une action manuelle ultérieure, hors
+  périmètre. La sortie informative du lint (Scénario 5.3) est la liste
+  d'entrée de cette action.
+- **Décision d'audit AC4 non re-vérifiable mécaniquement** : le choix des 6
+  fiches retenues (et des 2 captures sur `changement-impose`) repose sur une
+  lecture éditoriale (« cette fiche décrit-elle un écran à identifier ? »),
+  pas sur un critère automatisable — une revue humaine reste utile si de
+  nouvelles fiches poste sont ajoutées.
+
+### Checklist rapide Section 5
+- [ ] 6 fiches ciblées → placeholder + alt exact quand aucune image n'existe
+- [ ] Cycle dépôt/retrait PNG factice : `<img class="se5-capture">` puis
+      placeholder de retour ; MD5 du `.md` identique aux deux extrémités
+- [ ] Lint : 5 motifs image déclenchés individuellement puis lint vert ;
+      sortie informative = exactement les captures manquantes
+- [ ] Build complet vert ; grep autonomie réseau vide ; CONTRIBUTING/.templates
+      non publiés ; `git diff` vide sur `package.json`/lockfile (app ET
+      `userDoc/`)
+- [ ] **VM (différé)** : `update.sh` rejoué vert, matrice curl, contrôle
+      visuel réel clair/sombre/mobile du placeholder ET de l'image factice

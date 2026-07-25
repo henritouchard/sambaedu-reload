@@ -9,6 +9,8 @@ Cette fiche explique d'où viennent les applications que vous trouvez sur votre
 poste, pourquoi elles peuvent changer, et comment demander une application qui
 vous manque.
 
+*Aussi appelé : logiciel, programme.*
+
 ## Ce qui décide des applications de votre poste
 
 Vous ne choisissez pas vous-même les applications de votre poste : c'est

@@ -9,10 +9,14 @@ Cette fiche explique ce que vous devez saisir pour ouvrir une session sur
 votre poste, et ce qu'il faut faire si vous n'avez jamais reçu vos
 identifiants.
 
+*Aussi appelé : login.*
+
 ## Contexte d'usage
 
 Au démarrage de votre poste, un écran vous demande un identifiant et un mot
 de passe.
+
+![Écran d'ouverture de session du poste, avec le champ identifiant (repère 1), le champ mot de passe (repère 2) et le bouton de validation (repère 3).](/captures/poste/mon-compte/se-connecter/ecran-de-connexion.png)
 
 ## Les gestes
 

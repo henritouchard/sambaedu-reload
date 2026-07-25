@@ -31,6 +31,8 @@ pouvoir ouvrir votre session.
    choisissez.
 3. Validez : votre session s'ouvre avec le nouveau mot de passe.
 
+![Écran affiché à l'ouverture de session invitant à changer de mot de passe (repère 1), avec le mot de passe actuel à saisir (repère 2) et le nouveau mot de passe à saisir deux fois (repère 3).](/captures/poste/mon-compte/changement-impose/nouveau-mot-de-passe-poste.png)
+
 ### Si vous vous connectez sur le site de l'établissement, dans un navigateur (plus rare)
 
 1. Après avoir saisi votre identifiant et votre mot de passe actuels, une
@@ -39,6 +41,8 @@ pouvoir ouvrir votre session.
    8 caractères).
 3. Validez avant la fin du quart d'heure affiché à l'écran — passé ce délai,
    il suffit de recommencer la connexion depuis le début.
+
+![Page web prévenant qu'un changement de mot de passe est nécessaire (repère 1), avec le mot de passe actuel (repère 2), les deux champs du nouveau mot de passe et le compte à rebours du quart d'heure (repère 3).](/captures/poste/mon-compte/changement-impose/nouveau-mot-de-passe-navigateur.png)
 
 ::: delai-effet immediat
 Le nouveau mot de passe vaut aussitôt sur tous les postes de l'établissement.

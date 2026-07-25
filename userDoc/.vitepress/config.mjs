@@ -1,18 +1,29 @@
 import { defineConfig } from 'vitepress'
-import { statSync } from 'node:fs'
+import { statSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import container from 'markdown-it-container'
 
 // Racine des sources VitePress (userDoc/, parent de .vitepress/) — utilisée
-// par le repli mtime de transformPageData ci-dessous.
+// par le repli mtime de transformPageData ci-dessous ET par la résolution
+// des captures d'écran sous userDoc/public/ (Story 52.7).
 const srcDirUrl = new URL('..', import.meta.url)
+
+// Racine des assets statiques VitePress (userDoc/public/) : un fichier posé
+// ici est servi TEL QUEL, sans le préfixe `base` dans le chemin disque (le
+// préfixe n'existe que dans l'URL publiée — piège #4 de la Story 52.7).
+const publicDirUrl = new URL('public/', srcDirUrl)
+
+// Alias Apache sous lequel le site est publié (jamais à la racine — piège #1
+// de la Story 52.1). Constante UNIQUE réutilisée par `base` ci-dessous.
+const BASE = '/doc/'
 
 // Socle du site de documentation publique SE5 (Story 52.1). Ce fichier pose
 // l'infrastructure : deux portes (/admin/, /poste/) à sidebars séparées,
 // autonomie réseau (fonts embarquées, cf. theme/index.js), date de fraîcheur
 // avec repli mtime. Les quatre encarts normalisés, le glossaire et
 // l'exclusion de la doc contributeur sont posés par la Story 52.2. La
-// recherche (themeConfig.search) reste hors périmètre (52.6).
+// recherche (themeConfig.search) est posée par la Story 52.6. La convention
+// de captures d'écran (règle image ci-dessous) est posée par la Story 52.7.
 
 // --- Encarts normalisés (Story 52.2, AC2/AC3) --------------------------
 //
@@ -73,6 +84,80 @@ function registerDelaiEffetCallout(md) {
     })
 }
 
+// --- Captures d'écran (Story 52.7, AC2) ---------------------------------
+//
+// UN SEUL point de rendu pour toute image markdown `![alt](/captures/...)` :
+// la règle `image` de markdown-it, capturée AVANT d'être remplacée (piège
+// #6 — toute image dont la cible n'est PAS sous /captures/ est déléguée
+// intacte à cette règle par défaut : logo, schéma futur, rien d'autre n'est
+// jamais réécrit ici). Fichier présent sous userDoc/public/captures/... →
+// <img class="se5-capture">. Fichier absent → placeholder « Illustration à
+// venir » + alt (repli textuel, cœur d'UX-DR5) : VitePress ne vérifie PAS
+// les chemins absolus vers public/ au build, c'est cette règle qui rend le
+// manque visible.
+//
+// ⚠️ Préfixe `base` : NE PAS le concaténer ici (vérifié par build réel, cette
+// règle diverge de l'hypothèse initiale de la story — piège #4 tel
+// qu'énoncé était FAUX à l'épreuve). Le HTML produit par cette règle est
+// splicé dans le même template Vue que celui du rendu markdown natif ; la
+// transformation d'assets de `@vitejs/plugin-vue` (transformAssetUrls)
+// s'applique donc IDENTIQUEMENT aux deux : tout `src` absolu (`/...`) est
+// réécrit en import résolu contre `publicDir`, et Vite y injecte `base` tout
+// seul au build. Émettre `src="${BASE}${src}"` fait chercher à Rollup un
+// fichier sous `public/doc/captures/...` (qui n'existe pas) → échec de build
+// (`Rollup failed to resolve import "/doc/captures/..."`), constaté en
+// preuve locale (Task 5). Le `src` émis ici reste donc le chemin SITE-ROOT
+// (`/captures/...`), exactement comme le ferait la règle par défaut.
+function escapeHtml(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+}
+
+function registerCaptureImageRule(md) {
+    const defaultImageRender =
+        md.renderer.rules.image ??
+        ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
+
+    md.renderer.rules.image = (tokens, idx, options, env, self) => {
+        const token = tokens[idx]
+        const srcIndex = token.attrIndex('src')
+        const src = srcIndex >= 0 ? token.attrs[srcIndex][1] : ''
+
+        // Toute image hors /captures/ (logo, schéma futur, URL externe) est
+        // déléguée SANS modification à la règle par défaut — elle est de
+        // toute façon bloquée dans les sources publiées par le lint (AC3).
+        if (!src.startsWith('/captures/')) {
+            return defaultImageRender(tokens, idx, options, env, self)
+        }
+
+        // Même résolution d'alt que la règle par défaut de markdown-it
+        // (renderInlineAsText sur les enfants) : gère un alt purement texte
+        // comme un alt avec emphase imbriquée, sans jamais laisser passer de
+        // markup brut dans l'attribut.
+        const altHtml = escapeHtml(self.renderInlineAsText(token.children, options, env))
+        const publicPath = fileURLToPath(new URL('.' + src, publicDirUrl))
+
+        if (existsSync(publicPath)) {
+            return `<img class="se5-capture" src="${src}" alt="${altHtml}" loading="lazy">`
+        }
+
+        // Éléments `span` (rendus en bloc par le CSS), et non `div`/`p` : une
+        // image seule est enveloppée par markdown-it dans un `<p>`, or un bloc
+        // à l'intérieur d'un `<p>` est du HTML invalide (le navigateur ferme le
+        // `<p>` prématurément). Des `span` en `display:block` donnent le même
+        // rendu tout en restant valides à l'intérieur du paragraphe.
+        return (
+            '<span class="se5-capture-placeholder">' +
+            '<span class="se5-capture-placeholder__label">Illustration à venir</span>' +
+            `<span class="se5-capture-placeholder__alt">${altHtml}</span>` +
+            '</span>'
+        )
+    }
+}
+
 export default defineConfig({
     lang: 'fr-FR',
     title: 'Documentation SE5',
@@ -81,7 +166,7 @@ export default defineConfig({
     // OBLIGATOIRE : le site est publié sous l'alias Apache /doc (jamais à la
     // racine). Sans ce réglage, tous les assets et liens internes 404ent une
     // fois déployés (piège #1 de la story 52.1).
-    base: '/doc/',
+    base: BASE,
 
     // README.md et CONTRIBUTING.md sont la doc de MAINTENANCE/RÉDACTION de
     // userDoc/ (à l'usage des devs et rédacteurs : commande de build, gabarit
@@ -102,7 +187,10 @@ export default defineConfig({
     // réécritures Apache sous l'alias statique (piège #9).
     // ignoreDeadLinks NON posé : le défaut strict de VitePress fait échouer le
     // build sur un lien interne mort (AC7) — ne JAMAIS le désactiver ici.
-    // themeConfig.search NON posé : recherche locale réservée à la story 52.6.
+    // La recherche est le provider LOCAL de VitePress (themeConfig.search
+    // ci-dessous) : index construit au build, moteur MiniSearch embarqué dans
+    // les assets, tout s'exécute dans le navigateur. AUCUN provider externe
+    // (Algolia/DocSearch) — le site doit rester consultable sans internet.
 
     // Encarts normalisés (AC2/AC3) : UN seul point d'enregistrement des 4
     // containers markdown-it, repris par toutes les fiches. `markdown-it-container`
@@ -114,10 +202,56 @@ export default defineConfig({
             registerSimpleCallout(md, 'attention', CALLOUT_TITLES.attention)
             registerSimpleCallout(md, 'vue-poste', CALLOUT_TITLES['vue-poste'])
             registerDelaiEffetCallout(md)
+
+            // Captures d'écran (Story 52.7, AC2) — zone distincte des encarts
+            // ci-dessus et du bloc recherche de themeConfig (Story 52.6) :
+            // ne rien fusionner, ne rien réordonner de ces deux zones.
+            registerCaptureImageRule(md)
         },
     },
 
     themeConfig: {
+        // Recherche 100 % locale (index au build, MiniSearch embarqué — déjà
+        // dépendance directe de VitePress, aucune dépendance nouvelle).
+        // `detailedView: true` : titre ET extrait visibles d'emblée dans les
+        // résultats. `processTerm` (une seule fonction, appliquée par MiniSearch
+        // à l'indexation ET aux requêtes) plie les diacritiques : « depot »
+        // trouve « dépôt », « eleve » trouve « élève ». Tous les libellés sont
+        // en français (clé absente = défaut anglais).
+        search: {
+            provider: 'local',
+            options: {
+                detailedView: true,
+                miniSearch: {
+                    options: {
+                        processTerm: (term) =>
+                            term.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
+                    },
+                },
+                translations: {
+                    button: {
+                        buttonText: 'Rechercher',
+                        buttonAriaLabel: 'Rechercher dans la documentation',
+                    },
+                    modal: {
+                        displayDetails: 'Afficher les extraits',
+                        resetButtonTitle: 'Effacer la recherche',
+                        backButtonTitle: 'Fermer la recherche',
+                        noResultsText: 'Aucun résultat pour',
+                        footer: {
+                            selectText: 'pour ouvrir',
+                            selectKeyAriaLabel: 'entrée',
+                            navigateText: 'pour naviguer',
+                            navigateUpKeyAriaLabel: 'flèche haut',
+                            navigateDownKeyAriaLabel: 'flèche bas',
+                            closeText: 'pour fermer',
+                            closeKeyAriaLabel: 'échap',
+                        },
+                    },
+                },
+            },
+        },
+
         nav: [
             { text: 'Accueil', link: '/' },
             { text: "J'administre SE5", link: '/admin/' },

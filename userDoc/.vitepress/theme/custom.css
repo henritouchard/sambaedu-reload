@@ -97,3 +97,52 @@
         padding: 10px 12px;
     }
 }
+
+/* Captures d'écran (Story 52.7, AC2) — UN seul point de style pour les deux
+ * états rendus par la règle `image` de .vitepress/config.mjs :
+ * `.se5-capture` (fichier présent) et `.se5-capture-placeholder` (fichier
+ * absent, « Illustration à venir »). Couleurs uniquement via les variables
+ * `--vp-c-*` (clair/sombre hérité, même patron que les encarts ci-dessus) —
+ * un cadre codé en dur disparaîtrait sur fond sombre.
+ */
+.se5-capture {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 16px 0;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 8px;
+}
+
+/* `span` rendus en bloc (l'élément est un span pour rester valide dans le
+   `<p>` que markdown-it pose autour d'une image seule — cf. config.mjs). */
+.se5-capture-placeholder {
+    display: block;
+    margin: 16px 0;
+    padding: 24px 16px;
+    border: 1px dashed var(--vp-c-divider);
+    border-radius: 8px;
+    background-color: var(--vp-c-bg-soft);
+    text-align: center;
+}
+
+.se5-capture-placeholder__label {
+    display: block;
+    margin: 0 0 4px;
+    font-weight: 600;
+    color: var(--vp-c-text-2);
+}
+
+.se5-capture-placeholder__alt {
+    display: block;
+    margin: 0;
+    font-size: 14px;
+    color: var(--vp-c-text-2);
+}
+
+/* Mobile : padding resserré, même logique que les encarts. */
+@media (max-width: 419px) {
+    .se5-capture-placeholder {
+        padding: 16px 12px;
+    }
+}

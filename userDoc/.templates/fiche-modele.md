@@ -20,6 +20,17 @@ comprendre.]
 Parcours poste : le contexte d'usage — remplacer ce titre par une phrase de
 contexte si la fiche s'adresse à l'utilisateur du poste.]
 
+![Texte alternatif à remplacer : ce que montre l'écran et, s'il y a des repères numérotés, ce qu'ils pointent](/captures/[chemin-de-la-fiche-sans-extension]/[nom-de-lecran].png)
+
+<!-- Capture facultative : à retirer si la fiche ne décrit aucun écran que le
+     lecteur doit reconnaître. Sinon, la garder ICI, ou la déplacer juste
+     après « Les gestes » si elle en annote la liste numérotée (repères =
+     numéros des gestes). Voir « Captures d'écran » dans CONTRIBUTING.md :
+     jeu fictif ratifié, nommage kebab-case sans numéro d'ordre, alt
+     obligatoire. Tant qu'aucun fichier n'existe au chemin donné, cette ligne
+     rend un placeholder « Illustration à venir » — rien à modifier ici au
+     dépôt de l'image. -->
+
 ::: droit-requis
 [L'habilitation nécessaire pour effectuer ce qui suit, si la fiche en
 décrit une. Retirer cet encart si aucun droit particulier n'est requis.]

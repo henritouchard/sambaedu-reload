@@ -19,6 +19,8 @@ Dans l'explorateur de fichiers de Windows, il apparaît comme un lecteur nommé
 **« Mes documents »**, repéré par la lettre **`K:`**. C'est là que vous
 enregistrez tout ce que vous voulez conserver.
 
+![Explorateur de fichiers Windows avec le lecteur « Mes documents » (K:) dans la liste des emplacements.](/captures/poste/fichiers/espace-personnel/explorateur-mes-documents.png)
+
 ## Le retrouver sur n'importe quel poste
 
 Parce que votre espace personnel vit sur le serveur, ce que vous y enregistrez
