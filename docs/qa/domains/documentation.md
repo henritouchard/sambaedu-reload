@@ -231,3 +231,83 @@
 - [ ] Lint : fichier de preuve → toutes les violations listées `fichier:ligne → motif`, SE4/SE5 jamais signalés ; fichier retiré → lint vert
 - [ ] Non-régression 52.1 : sidebars/nav intactes, zéro domaine tiers, `git diff` vide sur l'application
 - [ ] **VM (différé)** : inotify à jour, `update.sh` rejoué vert, matrice curl serveur (`/doc/glossaire.html` 200, `.templates`/`README`/`CONTRIBUTING` 404), contrôle visuel navigateur clair/sombre/mobile, test négatif fail-soft réel
+
+---
+
+## Section 3 — Parcours utilisateur du poste : fiches de contenu
+
+Scénarios liés aux fiches du parcours « J'utilise mon poste » : « Mon compte »
+(`poste/mon-compte/`), « Mes fichiers » (`poste/fichiers/`), « Mes applications »
+et « Imprimer » (`poste/applications.md`, `poste/impression.md`). La navigation,
+les liens de la page d'orientation `poste/index.md` et cette section QA ont été
+consolidés en une passe après rédaction parallèle des trois lots.
+
+### Scénario 3.1 — Toutes les fiches du poste sont servies et reliées
+**But** : aucune fiche orpheline, navigation complète.
+**Étapes / attendu** :
+- Après build+publication, chaque fiche répond en 200 sous `/doc/poste/…` :
+  `mon-compte/` (+ `se-connecter`, `changer-mon-mot-de-passe`, `changement-impose`,
+  `mot-de-passe-oublie`), `fichiers/` (+ `espace-personnel`, `espaces-partages`,
+  `dun-poste-a-lautre`), `applications`, `impression`.
+- La sidebar `/poste/` liste les trois sections (Mon compte · Mes fichiers ·
+  Applications et impression) ; la sidebar `/admin/` reste bit à bit inchangée.
+- `poste/index.md` pointe vers les quatre entrées ; plus de mention « en cours de
+  rédaction ».
+- La navigation précédent/suivant traverse toutes les fiches sans trou.
+
+### Scénario 3.2 — Le build est le garde-fou d'intégrité (liens, YAML, balises)
+**But** : ne pas publier une fiche cassée que le lint ne voit pas.
+**Étapes / attendu** :
+- `npm run build` vert = aucun lien interne mort (les renvois `/glossaire#…` de
+  chaque fiche résolvent vers une ancre existante) et aucun frontmatter YAML
+  invalide.
+- Piège vérifié : une `description:` de frontmatter contenant un `:` doit être
+  entre guillemets, sinon le build échoue (`incomplete explicit mapping pair`).
+- Piège vérifié : aucune balise parasite `</content>`, `</invoke>` ou fragment
+  d'appel d'outil ne doit subsister dans une fiche — VitePress compile le
+  markdown comme un template Vue et échoue sur `Invalid end tag`. Grep de
+  contrôle : `grep -rnE "</(content|invoke|parameter|function)>" userDoc/poste/`
+  doit être vide.
+
+### Scénario 3.3 — Règles de rédaction du parcours poste (non-informaticien)
+**But** : le lecteur enseignant/élève ne rencontre ni jargon ni promesse fausse.
+**Étapes / attendu** :
+- Grep anti-jargon sur les fiches publiées : aucun de `WPKG`, `CUPS`, `Samba`,
+  `GPO`, `UNC`, `ACL`, `SMB`, `montage`, `annuaire`, `jeton`, `LDAP`, `CAS`,
+  `ENT`, `pwdlastset`, `Nextcloud`, `capacité`, `politique de fichiers`.
+- Aucun délai chiffré présenté comme un engagement ; le délai d'apparition d'une
+  application est qualitatif (« en général dans l'heure, poste allumé ») et porté
+  par l'encart `::: delai-effet agent`.
+- Mot de passe oublié : la fiche énonce qu'il n'existe aucune récupération
+  automatique et renvoie au référent ; elle ne décrit aucun geste d'administration.
+- Les seuils « 8 caractères / quart d'heure » n'apparaissent que dans la fiche
+  `changement-impose`, jamais généralisés ailleurs.
+
+### Scénario 3.4 — Conditionnalité des espaces de fichiers
+**But** : ne présenter comme certain que ce qui l'est dans tous les cas.
+**Étapes / attendu** :
+- Chaque espace dont l'existence dépend d'un réglage d'établissement (espace
+  personnel `K:`, lecteur « Classes » `H:`, dossier d'échange, lecteurs
+  supplémentaires, suivi Firefox/Thunderbird) porte un encart `::: attention` de
+  conditionnalité.
+- Test de conditionnalité : masquer mentalement un espace conditionnel — la fiche
+  reste vraie (elle n'affirme pas sa présence comme certaine).
+- Le cas « je vois le lecteur mais l'accès est refusé » est désamorcé
+  explicitement (ce n'est pas une panne).
+- Le dossier personnel de l'élève (dans l'espace de classe) est distingué de
+  l'espace personnel privé.
+
+### Limites connues Section 3 (différé VM)
+- **Rendu visuel réel non confirmé** : encarts `attention` et `delai-effet` en
+  thème clair/sombre et sur mobile — non observés dans un navigateur (VM
+  injoignable au 2026-07-25), reposent sur l'héritage des variables de thème.
+- **Matrice curl serveur non rejouée** : les codes 200/404 ci-dessus sont
+  attendus mais non vérifiés sur le serveur tant que la VM ne répond pas.
+
+### Checklist rapide Section 3
+- [ ] Toutes les fiches `poste/**` en 200 ; sidebars correctes ; `admin/` inchangée
+- [ ] `npm run build` vert (liens, YAML, aucune balise parasite)
+- [ ] Grep anti-jargon et anti-engagement-chiffré vert sur les fiches publiées
+- [ ] Chaque espace conditionnel porte son encart `::: attention`
+- [ ] Mot de passe oublié : renvoi référent, aucun geste admin décrit
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel encarts clair/sombre/mobile

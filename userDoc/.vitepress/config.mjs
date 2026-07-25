@@ -140,6 +140,32 @@ export default defineConfig({
                     text: 'Mon poste',
                     items: [{ text: "Vue d'ensemble", link: '/poste/' }],
                 },
+                {
+                    text: 'Mon compte',
+                    link: '/poste/mon-compte/',
+                    items: [
+                        { text: 'Se connecter', link: '/poste/mon-compte/se-connecter' },
+                        { text: 'Changer mon mot de passe', link: '/poste/mon-compte/changer-mon-mot-de-passe' },
+                        { text: 'On me demande de changer mon mot de passe', link: '/poste/mon-compte/changement-impose' },
+                        { text: 'Mot de passe oublié', link: '/poste/mon-compte/mot-de-passe-oublie' },
+                    ],
+                },
+                {
+                    text: 'Mes fichiers',
+                    link: '/poste/fichiers/',
+                    items: [
+                        { text: 'Mon espace personnel', link: '/poste/fichiers/espace-personnel' },
+                        { text: 'Les espaces partagés', link: '/poste/fichiers/espaces-partages' },
+                        { text: "D'un poste à l'autre", link: '/poste/fichiers/dun-poste-a-lautre' },
+                    ],
+                },
+                {
+                    text: 'Applications et impression',
+                    items: [
+                        { text: 'Mes applications', link: '/poste/applications' },
+                        { text: 'Imprimer', link: '/poste/impression' },
+                    ],
+                },
             ],
         },
 
