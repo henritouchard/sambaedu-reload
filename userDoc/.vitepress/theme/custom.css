@@ -20,3 +20,80 @@
         Consolas,
         monospace;
 }
+
+/* Encarts normalisés (Story 52.2, AC2) — UN seul point de style pour les
+ * quatre containers markdown-it enregistrés dans .vitepress/config.mjs
+ * (`se5-callout se5-callout--<type>`). Couleurs uniquement via les variables
+ * `--vp-c-*` du thème par défaut : le clair/sombre est HÉRITÉ, jamais
+ * dupliqué en valeurs hex fixes (piège #7 de la story). Chaque type emprunte
+ * une famille de couleur du thème déjà déclinée clair/sombre, distincte des
+ * trois autres — sans reproduire le rendu des containers natifs
+ * `warning`/`danger` (interdits dans les sources publiées par le lint).
+ */
+.se5-callout {
+    margin: 16px 0;
+    padding: 12px 16px;
+    border-left: 4px solid transparent;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.se5-callout > :last-child {
+    margin-bottom: 0;
+}
+
+.se5-callout__title {
+    margin: 0 0 4px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+/* Droit requis — famille "important" (violet) : signale un pré-requis
+ * d'habilitation avant de suivre les gestes de la fiche. */
+.se5-callout--droit-requis {
+    border-color: var(--vp-c-important-1);
+    background-color: var(--vp-c-important-soft);
+}
+.se5-callout--droit-requis .se5-callout__title {
+    color: var(--vp-c-important-1);
+}
+
+/* Quand l'effet est visible — famille "brand"/indigo : information neutre
+ * sur le délai, pas un avertissement. */
+.se5-callout--delai-effet {
+    border-color: var(--vp-c-brand-1);
+    background-color: var(--vp-c-brand-soft);
+}
+.se5-callout--delai-effet .se5-callout__title {
+    color: var(--vp-c-brand-1);
+}
+
+/* Attention — famille "warning"/jaune : LE seul encart d'avertissement du
+ * site (remplace les containers natifs ::: warning / ::: danger, interdits
+ * par le lint dans les sources publiées — un seul rendu pour cet usage). */
+.se5-callout--attention {
+    border-color: var(--vp-c-warning-1);
+    background-color: var(--vp-c-warning-soft);
+}
+.se5-callout--attention .se5-callout__title {
+    color: var(--vp-c-warning-1);
+}
+
+/* Ce que voit l'utilisateur du poste — famille "success"/vert : décrit un
+ * état observable côté poste, pas un problème. */
+.se5-callout--vue-poste {
+    border-color: var(--vp-c-success-1);
+    background-color: var(--vp-c-success-soft);
+}
+.se5-callout--vue-poste .se5-callout__title {
+    color: var(--vp-c-success-1);
+}
+
+/* Mobile : padding resserré, la largeur suit déjà le conteneur (100%) —
+ * aucune règle spécifique nécessaire au-delà du padding pour rester lisible
+ * sur petit viewport. */
+@media (max-width: 419px) {
+    .se5-callout {
+        padding: 10px 12px;
+    }
+}

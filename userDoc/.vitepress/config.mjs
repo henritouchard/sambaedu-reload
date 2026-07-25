@@ -1,16 +1,77 @@
 import { defineConfig } from 'vitepress'
 import { statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import container from 'markdown-it-container'
 
 // Racine des sources VitePress (userDoc/, parent de .vitepress/) — utilisée
 // par le repli mtime de transformPageData ci-dessous.
 const srcDirUrl = new URL('..', import.meta.url)
 
-// Socle du site de documentation publique SE5 (Story 52.1). Ce fichier ne pose
-// QUE l'infrastructure : deux portes (/admin/, /poste/) à sidebars séparées,
+// Socle du site de documentation publique SE5 (Story 52.1). Ce fichier pose
+// l'infrastructure : deux portes (/admin/, /poste/) à sidebars séparées,
 // autonomie réseau (fonts embarquées, cf. theme/index.js), date de fraîcheur
-// avec repli mtime. Le CONTENU des fiches, le glossaire, la recherche
-// (themeConfig.search) et les encarts sont hors périmètre (52.2 → 52.8).
+// avec repli mtime. Les quatre encarts normalisés, le glossaire et
+// l'exclusion de la doc contributeur sont posés par la Story 52.2. La
+// recherche (themeConfig.search) reste hors périmètre (52.6).
+
+// --- Encarts normalisés (Story 52.2, AC2/AC3) --------------------------
+//
+// UN SEUL point de rendu par type de container : une fiche écrit
+// `::: droit-requis` … `:::` et le HTML produit ici est repris tel quel sur
+// tout le site (styles dans theme/custom.css). Titres FIGÉS — aucune fiche
+// ne les reformule.
+const CALLOUT_TITLES = {
+    'droit-requis': 'Droit requis',
+    attention: 'Attention',
+    'vue-poste': "Ce que voit l'utilisateur du poste",
+}
+
+// Les trois temporalités d'effet, nommées une fois pour toutes (AC3). Le
+// paramètre de `::: delai-effet <valeur>` DOIT être l'une de ces clés.
+const DELAI_EFFET_LABELS = {
+    immediat: 'Effet immédiat',
+    session: 'À la prochaine ouverture de session',
+    agent: 'Au prochain passage de l’agent sur le poste',
+}
+
+// Container simple (droit-requis / attention / vue-poste) : titre fixe,
+// aucun paramètre attendu.
+function registerSimpleCallout(md, name, title) {
+    md.use(container, name, {
+        render(tokens, idx) {
+            if (tokens[idx].nesting === 1) {
+                return `<div class="se5-callout se5-callout--${name}">\n<p class="se5-callout__title">${title}</p>\n`
+            }
+            return '</div>\n'
+        },
+    })
+}
+
+// Container `delai-effet <valeur>` : valide son paramètre au rendu. Une
+// valeur absente ou inconnue fait ÉCHOUER LE BUILD (throw explicite : fichier
+// + valeur reçue + valeurs admises — piège #6 de la story, indispensable
+// pour ne pas perdre de temps en `npm run dev`).
+function registerDelaiEffetCallout(md) {
+    md.use(container, 'delai-effet', {
+        render(tokens, idx, _options, env) {
+            const token = tokens[idx]
+            if (token.nesting !== 1) {
+                return '</div>\n'
+            }
+            const value = token.info.trim().slice('delai-effet'.length).trim()
+            const label = DELAI_EFFET_LABELS[value]
+            if (!label) {
+                const file = env?.relativePath ?? '(fichier inconnu)'
+                const admises = Object.keys(DELAI_EFFET_LABELS).join(', ')
+                throw new Error(
+                    `[delai-effet] valeur invalide "${value || '(aucune)'}" dans ${file} — ` +
+                        `utiliser "::: delai-effet <valeur>" avec une des valeurs suivantes : ${admises}`,
+                )
+            }
+            return `<div class="se5-callout se5-callout--delai-effet">\n<p class="se5-callout__title">${label}</p>\n`
+        },
+    })
+}
 
 export default defineConfig({
     lang: 'fr-FR',
@@ -22,12 +83,15 @@ export default defineConfig({
     // fois déployés (piège #1 de la story 52.1).
     base: '/doc/',
 
-    // README.md est la doc de MAINTENANCE de userDoc/ (à l'usage des devs :
-    // commande de build, qui publie, piège des fantômes de source) — PAS une
-    // fiche du site public. Sans cette exclusion, VitePress la compile comme
-    // une page ordinaire et l'expose sous /doc/README.html, y compris ses
-    // détails d'infra serveur (chemins VM, ssh) — violation NFR-D1.
-    srcExclude: ['README.md'],
+    // README.md et CONTRIBUTING.md sont la doc de MAINTENANCE/RÉDACTION de
+    // userDoc/ (à l'usage des devs et rédacteurs : commande de build, gabarit
+    // de fiche, charte de rédaction) — PAS des fiches du site public.
+    // `.templates/**` porte le modèle de fiche copiable (Story 52.2) : jamais
+    // publié non plus. Sans ces exclusions, VitePress les compile comme des
+    // pages ordinaires (`/doc/README.html`, `/doc/CONTRIBUTING.html`), y
+    // compris leurs détails d'infra serveur et les mots que le lint interdit
+    // précisément dans les sources publiées — violation NFR-D1 (piège #4).
+    srcExclude: ['README.md', 'CONTRIBUTING.md', '.templates/**'],
 
     // Date de dernière mise à jour affichée sur chaque page (AC6), calculée au
     // build depuis l'historique git. AUCUN champ de date saisi à la main dans
@@ -40,11 +104,25 @@ export default defineConfig({
     // build sur un lien interne mort (AC7) — ne JAMAIS le désactiver ici.
     // themeConfig.search NON posé : recherche locale réservée à la story 52.6.
 
+    // Encarts normalisés (AC2/AC3) : UN seul point d'enregistrement des 4
+    // containers markdown-it, repris par toutes les fiches. `markdown-it-container`
+    // est une dépendance EXPLICITE de userDoc/package.json (jamais comptée
+    // comme transitive de VitePress).
+    markdown: {
+        config(md) {
+            registerSimpleCallout(md, 'droit-requis', CALLOUT_TITLES['droit-requis'])
+            registerSimpleCallout(md, 'attention', CALLOUT_TITLES.attention)
+            registerSimpleCallout(md, 'vue-poste', CALLOUT_TITLES['vue-poste'])
+            registerDelaiEffetCallout(md)
+        },
+    },
+
     themeConfig: {
         nav: [
             { text: 'Accueil', link: '/' },
             { text: "J'administre SE5", link: '/admin/' },
             { text: "J'utilise mon poste", link: '/poste/' },
+            { text: 'Glossaire', link: '/glossaire' },
         ],
 
         // Sidebar keyée par préfixe de chemin : un lecteur du parcours

@@ -17,4 +17,8 @@ features:
     details: Connexion, fichiers, applications — les réponses aux questions courantes pour utiliser votre poste au quotidien.
     link: /poste/
     linkText: Accéder à l'espace utilisateur
+  - title: Glossaire
+    details: Le sens, en langage courant, des mots propres à SE5 employés dans les fiches (parc, capacité, agent...).
+    link: /glossaire
+    linkText: Consulter le glossaire
 ---

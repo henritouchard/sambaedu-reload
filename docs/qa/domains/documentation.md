@@ -2,13 +2,16 @@
 
 **Domaine** : site de documentation publique SE5 — build VitePress isolé (`userDoc/`), publication Apache verrouillée sous `/doc`, intégration fail-soft à `scripts/update.sh`, socle deux parcours (« J'administre SE5 » / « J'utilise mon poste »).
 
-**Stories couvertes** : 52.1 (socle : build isolé, alias Apache, `ensure_user_doc()` fail-soft, porte à deux parcours). _Stories 52.2 → 52.8 (gabarit/encarts/glossaire, contenu des fiches, recherche, captures, lien d'aide depuis l'app) à ajouter en sections suivantes quand livrées._
+**Stories couvertes** : 52.1 (socle : build isolé, alias Apache, `ensure_user_doc()` fail-soft, porte à deux parcours) ; 52.2 (gabarit de fiche, 4 encarts normalisés, glossaire, lint des règles de rédaction). _Stories 52.3 → 52.8 (contenu des fiches, recherche, captures, lien d'aide depuis l'app) à ajouter en sections suivantes quand livrées._
 
 **Code de référence** :
-- `userDoc/package.json`, `userDoc/package-lock.json` — chaîne npm ISOLÉE de l'application (jamais de dépendance croisée)
-- `userDoc/.vitepress/config.mjs` — `base: '/doc/'`, `lastUpdated` + repli mtime (`transformPageData`), sidebars keyées par chemin, `srcExclude` (README.md exclu du build public)
-- `userDoc/.vitepress/theme/{index.js,custom.css}` — `theme-without-fonts` + IBM Plex embarquée
+- `userDoc/package.json`, `userDoc/package-lock.json` — chaîne npm ISOLÉE de l'application (jamais de dépendance croisée) ; dépendance explicite `markdown-it-container` (52.2), script `build` chaînant `node .vitepress/lint-doc.mjs && vitepress build`, script `lint` seul
+- `userDoc/.vitepress/config.mjs` — `base: '/doc/'`, `lastUpdated` + repli mtime (`transformPageData`), sidebars keyées par chemin, `srcExclude` (`README.md`, `CONTRIBUTING.md`, `.templates/**` exclus du build public), `markdown.config(md)` : les 4 containers normalisés (52.2)
+- `userDoc/.vitepress/theme/{index.js,custom.css}` — `theme-without-fonts` + IBM Plex embarquée ; styles `.se5-callout*` des 4 encarts sur variables `--vp-c-*` (52.2)
+- `userDoc/.vitepress/lint-doc.mjs` — lint éditorial Node pur, motifs interdits + validation des ancres glossaire (52.2)
 - `userDoc/{index,admin/index,poste/index}.md` — porte d'accueil + pages d'orientation des deux parcours
+- `userDoc/glossaire.md` — glossaire publié, 9 entrées à ancres explicites (52.2)
+- `userDoc/CONTRIBUTING.md`, `userDoc/.templates/fiche-modele.md` — doc contributeur et modèle de fiche, NON publiés (52.2)
 - `scripts/setupApache.sh` — bloc `Alias /doc` (vhost SER, modèle `/wpkg/bundle`), `ErrorDocument 404`, `<FilesMatch "\.php$">` interne
 - `scripts/update.sh` — `ensure_user_doc()` (fail-soft, patron `ensure_agent_build` + miroir-purge `ensure_ipxe_statics`), sentinelle `update_apache()` (`grep -q "Alias /doc "`)
 
@@ -138,3 +141,93 @@
 - [ ] Repli mtime affiché sur VM sans `.git`
 - [ ] Zéro domaine tiers dans `userDoc/dist/` (grep)
 - [ ] `/`, `/ipxe/boot.ipxe`, `/wpkg/bundle/*` inchangés ; `/doc/inexistant` → 404 statique (pas Laravel)
+
+---
+
+## Section 2 — Gabarit de fiche, encarts, glossaire, lint (Story 52.2)
+
+**Point d'exécution 2026-07-25** : les scénarios ci-dessous ont été vérifiés en LOCAL (build hôte) pendant que la VM `192.168.122.50` était injoignable — les vérifications marquées « VM » n'ont PAS pu être rejouées en conditions serveur réelles et restent à faire dès que la VM répond (Task 6 de la story, différée). Les preuves locales sont documentées dans le Dev Agent Record de `52-2-gabarit-fiche-encarts-glossaire.md`.
+
+### Scénario 2.1 — Les 4 encarts rendent un HTML identique partout
+
+1. Dans une page Markdown quelconque, écrire successivement `::: droit-requis`, `::: delai-effet immediat`, `::: attention`, `::: vue-poste` (contenu libre dans chaque bloc), fermer par `:::`.
+2. `npm run build`, inspecter le HTML généré pour cette page.
+
+**Attendu** :
+- Chaque container produit `<div class="se5-callout se5-callout--<type>">` avec un `<p class="se5-callout__title">` portant le titre FIGÉ : « Droit requis », « Quand l'effet est visible » *(porté par le libellé de la valeur choisie, cf. Scénario 2.2)*, « Attention », « Ce que voit l'utilisateur du poste ».
+- Le même balisage apparaît quelle que soit la page — un seul point de rendu (`markdown.config` de `.vitepress/config.mjs`).
+- **VM/navigateur non vérifié** : lisibilité réelle en thème clair, thème sombre, et viewport mobile (à confirmer visuellement — la CSS s'appuie sur les variables `--vp-c-*` du thème par défaut, donc l'héritage clair/sombre est acquis par construction, mais non observé dans un navigateur réel à ce jour).
+
+### Scénario 2.2 — `delai-effet` : les 3 libellés et le verrou de paramètre
+
+1. Construire une page avec les trois valeurs : `::: delai-effet immediat`, `::: delai-effet session`, `::: delai-effet agent`. `npm run build`.
+2. Dans une page de test, écrire `::: delai-effet` (sans valeur). `npm run build`.
+3. Dans une page de test, écrire `::: delai-effet bogus`. `npm run build`.
+4. Retirer la page de test, `npm run build`.
+
+**Attendu** :
+- Étape 1 : les titres rendus sont exactement « Effet immédiat », « À la prochaine ouverture de session », « Au prochain passage de l'agent sur le poste ».
+- Étape 2 : le build échoue ; le message contient le fichier fautif, la valeur reçue (`(aucune)`) et la liste des valeurs admises (`immediat, session, agent`).
+- Étape 3 : même échec, valeur reçue affichée = `bogus`.
+- Étape 4 : build de nouveau vert.
+
+### Scénario 2.3 — Glossaire publié et atteignable
+
+1. `npm run build`, puis `grep -o 'id="[a-z0-9-]*"' .vitepress/dist/glossaire.html` (en local) ou `curl <serveur>/doc/glossaire.html` (VM).
+2. Ouvrir `/doc/` (ou `index.html` généré) et vérifier l'accès au glossaire.
+3. Ouvrir `/doc/admin/` et `/doc/poste/` : vérifier que « Glossaire » apparaît dans la nav du haut sur les deux parcours.
+
+**Attendu** :
+- Les 9 ancres sont présentes : `parc`, `groupe-de-postes`, `socle-commun`, `capacite`, `profil-applicatif`, `agent`, `depot-applications`, `espace-personnel`, `partage`.
+- La page d'accueil porte un accès direct au glossaire (3e carte).
+- Le lien « Glossaire » de la nav est visible depuis les deux parcours (nav globale, pas dans les sidebars par parcours).
+- L'entrée « profil applicatif » distingue explicitement ses deux sens (ensemble d'applications par parc / profil Firefox-Thunderbird qui suit l'utilisateur) sans les confondre.
+- Aucune entrée ne contient de numéro de story/épic, de code d'exigence, ni de donnée réelle d'établissement (vérifiable par le lint, cf. Scénario 2.5).
+- **VM non vérifié** : `curl <serveur>/doc/glossaire.html` → 200 réel en conditions serveur.
+
+### Scénario 2.4 — Doc contributeur et modèle non publiés
+
+1. `npm run build`.
+2. `find .vitepress/dist -iname "*readme*" -o -iname "*contributing*" -o -path "*templates*"` (en local) ou `curl` sur `/doc/README.html`, `/doc/CONTRIBUTING.html`, `/doc/.templates/fiche-modele.html` (VM).
+
+**Attendu** :
+- Aucun résultat / chaque URL → 404. Ni `README.md`, ni `CONTRIBUTING.md`, ni `.templates/**` n'apparaissent dans le site construit (`srcExclude` de `.vitepress/config.mjs`).
+
+### Scénario 2.5 — Lint éditorial bloquant : preuve rouge puis verte
+
+1. Créer un fichier Markdown temporaire dans `userDoc/` contenant : le mot « story » et « épic » et « epic », un code `FR-D1`/`NFR-D4`/`UX-DR1`, une adresse IPv4, un container `::: warning`, un container `::: danger`, un lien `/glossaire#ancre-inexistante`, et — témoins — les mots « SE4 » et « SE5 ».
+2. `npm run build` (ou `npm run lint`).
+3. Retirer le fichier (`mv`/`trash`, jamais `rm -rf`), `npm run build`.
+
+**Attendu** :
+- Étape 2 : le build échoue, chaque violation listée au format `fichier:ligne → motif`, une ligne par occurrence (au moins 9 violations attendues sur ce fichier de preuve) ; « SE4 » et « SE5 » ne remontent JAMAIS.
+- Étape 3 : lint vert, `npm run build` termine avec succès.
+- **VM non vérifié** : rejeu du même test négatif via `bash scripts/update.sh` en conditions serveur — le build doc doit échouer en fail-soft (warning, exit 0 côté `update.sh`, site précédent inchangé), cf. patron du Scénario 1.6.
+
+### Scénario 2.6 — Non-régression du socle 52.1 après 52.2
+
+1. `npm run build`, comparer avec les pages d'accueil/`/admin/`/`/poste/` déjà validées en Section 1.
+2. `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" .vitepress/dist/`.
+3. `git diff --stat -- package.json package-lock.json vite.config.js resources/` (racine du dépôt).
+4. `git status --porcelain` : vérifier qu'aucun fichier hors `userDoc/` n'apparaît modifié.
+
+**Attendu** :
+- Sidebars par parcours toujours isolées (inchangées par 52.2), nav enrichie du seul lien « Glossaire ».
+- Zéro domaine tiers dans le dossier publié.
+- `git diff` VIDE sur les 4 chemins de l'application.
+- Aucun fichier hors `userDoc/` (config, story, `sprint-status.yaml` ligne 52.2, ce runbook) n'est touché par les changements de code applicatif.
+
+### Limites connues (documentées, non corrigées ici)
+- **Task 6 de la story différée en intégralité** : VM `192.168.122.50` injoignable pendant le développement — aucune vérification serveur réelle (inotify, `update.sh`, matrice curl, test négatif fail-soft en conditions réelles) n'a pu être rejouée. À faire dès que la VM répond.
+- **Rendu visuel réel des 4 encarts non confirmé dans un navigateur** : bascule clair/sombre et viewport mobile reposent sur les variables `--vp-c-*` du thème (héritage acquis par construction), mais aucune capture ni observation visuelle réelle n'a été faite — cf. limite déjà posée en Section 1 pour le socle.
+- **Mermaid non rendu nativement** : constaté par test réel (bloc `​```mermaid` produit un bloc de code coloré, pas un diagramme). Aucun plugin ajouté dans cette story ; à activer avec la première fiche qui en a réellement besoin (52.3+).
+- **Contenu des fiches toujours hors périmètre** : cette story livre l'outillage éditorial, pas les fiches elles-mêmes — `/admin/` et `/poste/` restent des pages d'orientation minimales.
+
+### Checklist rapide Section 2
+- [ ] Les 4 encarts rendent `se5-callout se5-callout--<type>` + titre figé, un seul point de rendu
+- [ ] `delai-effet immediat|session|agent` → 3 libellés figés ; valeur absente/inconnue → build échoue avec fichier+valeur+valeurs admises
+- [ ] Glossaire : 9/9 ancres présentes, nav+accueil pointent dessus, « profil applicatif » désambiguïsé
+- [ ] `README.md`/`CONTRIBUTING.md`/`.templates/**` absents du site construit
+- [ ] Lint : fichier de preuve → toutes les violations listées `fichier:ligne → motif`, SE4/SE5 jamais signalés ; fichier retiré → lint vert
+- [ ] Non-régression 52.1 : sidebars/nav intactes, zéro domaine tiers, `git diff` vide sur l'application
+- [ ] **VM (différé)** : inotify à jour, `update.sh` rejoué vert, matrice curl serveur (`/doc/glossaire.html` 200, `.templates`/`README`/`CONTRIBUTING` 404), contrôle visuel navigateur clair/sombre/mobile, test négatif fail-soft réel
