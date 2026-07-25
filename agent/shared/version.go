@@ -499,29 +499,44 @@ package shared
 // INCHANGÉS (aucun champ de payload nouveau — seul CHANGE l'acteur qui pose le
 // lien).
 //
-// 2.14.0 = Story 27.21 : le handler `shortcuts` balaie les DEUX Bureaux
-// candidats à chaque passe — le Bureau RÉSEAU (`\\<se4fs>\users\<user>\Bureau\`,
-// gabarit `NetworkDesktopPathTemplate` dérivé LOCALEMENT via
-// SubstituteServerTokens) ET le Bureau LOCAL (`%USERPROFILE%\Desktop`) — au lieu
-// du seul emplacement porté par le `desktop_path` du desired courant.
+// 2.14.0 = Story 27.21, 1re passe — ⛔ JAMAIS PUBLIÉE, COMPORTEMENT RÉPUDIÉ.
+// NE JAMAIS CONSTRUIRE NI PUBLIER un binaire portant ce numéro.
 //
-// Pourquoi : le serveur choisit désormais l'emplacement du bureau en croisant
-// l'environnement du parc ET la politique home (`FilePolicyService['home']`). Un
-// admin qui coupe K: fait basculer `desktop_path` de réseau à local — mais le
-// serveur ne NOMME plus jamais l'ancien emplacement, dont les `.lnk` gérés
-// resteraient orphelins à vie. En balayant systématiquement les deux, la bascule
-// (dans les deux sens) nettoie l'emplacement devenu inactif au passage suivant.
+// Elle faisait balayer au handler `shortcuts` les DEUX Bureaux candidats de
+// façon INCONDITIONNELLE, le Bureau RÉSEAU étant dérivé localement d'une
+// constante d'agent (`NetworkDesktopPathTemplate`, supprimée depuis). Défaut
+// 🔴 identifié en review (finding #1) : `\\<se4fs>\users\<user>\Bureau\` est un
+// emplacement PAR UTILISATEUR, PARTAGÉ entre TOUS ses postes, alors que le
+// desired-state est compilé par couple (poste, user). Un poste perdir/nomade y
+// supprimait donc les `.lnk` gérés légitimement posés par un poste `shared_local`
+// du même utilisateur, que ce dernier recréait à la passe suivante — ping-pong
+// permanent de suppressions/re-créations sur un partage de production.
 //
-// CONTRAT WIRE INCHANGÉ (aucun champ de payload nouveau — `desktop_path` reste
-// un token et la seule autorité de PLACEMENT ; le gabarit réseau est dérivable
-// localement de l'env, donc rien à envoyer). Golden `state.v1.json` /
-// `FROZEN_STATE_HASH` (PHP + Go) INTACTS.
+// 2.15.0 = Story 27.21, arbitrage « option A » : c'est le SERVEUR qui NOMME les
+// emplacements Bureau à balayer, via le champ additif `desktop_sweep_paths` du
+// payload `shortcuts`. L'agent n'invente plus rien, il obéit :
 //
-// ⚠️ Le bump est OBLIGATOIRE malgré le contrat identique : le comportement vit
-// ENTIÈREMENT dans le binaire. Un agent ≤ 2.13.0 continue de poser au bon
-// endroit (il obéit au `desktop_path` serveur, déjà policy-aware) mais NE NETTOIE
-// PAS l'ancien emplacement — symptôme : des raccourcis fantômes sur le Bureau
-// réseau après avoir coupé K:. Publication requise pour armer le nettoyage.
+//	parc shared_local             → [Bureau réseau, Bureau local]  (double
+//	                                 balayage anti-orphelins : une bascule de la
+//	                                 politique home ne laisse jamais de `.lnk`
+//	                                 géré à l'ancien emplacement)
+//	parc personal_local / nomade  → [Bureau local] SEULEMENT       (aucune
+//	                                 autorité sur le Bureau réseau)
+//
+// POSE ≠ BALAYAGE : `desktop_path` (string) reste la SEULE autorité de
+// PLACEMENT ; `desktop_sweep_paths` (liste) ne gouverne QUE le nettoyage des
+// `.lnk` gérés sortis des règles. La constante réseau côté agent a DISPARU (plus
+// aucune source de vérité dupliquée serveur/agent) ; l'agent n'ajoute d'office
+// que des emplacements PROPRES AU POSTE (Bureau local standard, `desktop_path`
+// du desired) — jamais un emplacement partagé non nommé par le serveur.
+//
+// CONTRAT WIRE : champ AJOUTÉ = évolution mineure §9, forward-compatible. Un
+// agent antérieur qui ignore `desktop_sweep_paths` garde son comportement de
+// balayage précédent — pour un binaire ≤ 2.13.0 : il pose au bon endroit (il
+// obéit au `desktop_path`, déjà policy-aware côté serveur) mais ne nettoie PAS
+// l'ancien emplacement ⇒ raccourcis fantômes sur le Bureau réseau après coupure
+// de K:. Golden `state.v1.json` et `FROZEN_STATE_HASH` (PHP + Go) RÉGÉNÉRÉS
+// sciemment (l'item `shortcuts` du golden porte le nouveau champ).
 //
 // Fail-soft associé (`UsableShortcutDir`) : sur un poste où `<se4fs>` n'est pas
 // substituable (hors-domaine, ni SE4FS ni LOGONSERVER), la probe réseau est
@@ -530,4 +545,4 @@ package shared
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.14.0"
+var Version = "2.15.0"

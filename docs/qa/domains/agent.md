@@ -4809,3 +4809,67 @@ régression. Il disparaît à la première passe après montée en 2.14.0.
 - [ ] Symétrie assumée avec 36.7 : `app_profile` DÉCORRÉLÉ de K: (le profil suit
       toujours), Bureau ASSERVI à K: (un bureau réseau invisible est inutile).
       Dans les deux cas : la donnée va là où l'utilisateur peut l'atteindre.
+
+## Story 27.21 — arbitrage « option A » (le serveur pilote le balayage)
+
+> ⚠️ **Cette section SUPERSÈDE certains items de la check-list ci-dessus** (issus
+> de la 1re passe, agent 2.14.0, jamais publiée) : le contrat wire N'est PLUS
+> inchangé (champ additif `desktop_sweep_paths`), le golden EST régénéré (nouveau
+> `FROZEN_STATE_HASH`), et la version cible est **2.15.0** (pas 2.14.0). La cause :
+> le finding 🔴 #1 de la review 27.21 (guerre de suppression inter-postes).
+>
+> **Ce qui change côté comportement** : l'agent ne dérive plus le Bureau réseau
+> lui-même ; c'est le SERVEUR qui NOMME les emplacements à balayer, selon
+> l'environnement du parc : `shared_local` ⇒ [réseau, local] ; `personal_local`/
+> `nomade` ⇒ [local] SEUL. Un poste perdir/nomade ne touche donc JAMAIS au Bureau
+> réseau — il n'en a pas l'autorité.
+
+**Pré-requis spécifiques** : deux postes rattachés au MÊME utilisateur, d'environnements
+DIFFÉRENTS — un poste `shared_local` (ex. `info2`) et un poste `personal_local`/`nomade`
+(ex. un portable perdir). Un raccourci géré assigné à l'utilisateur (maille User) ou à
+un groupe commun aux deux postes. Home global `on`.
+
+### Scénario 27.21.7 — Non-régression finding #1 : un poste perdir ne détruit pas le Bureau réseau d'un poste partagé
+
+1. Sur le poste `shared_local`, ouvrir une session avec l'utilisateur cible.
+   Vérifier que le raccourci géré est posé sur le Bureau **réseau**
+   `\\se4fs\users\<user>\Bureau\` (K: actif) et visible.
+2. **Sans fermer** cet état (ou juste après), ouvrir une session du MÊME utilisateur
+   sur le poste `personal_local`/`nomade`. Laisser l'agent y faire au moins une passe
+   complète (`test` + `apply`).
+3. Retourner sur le poste `shared_local`, forcer une passe de l'agent.
+
+**Attendu** :
+- Le `.lnk` géré du Bureau **réseau** est **toujours là** après la passe du poste
+  perdir — ce dernier ne l'a PAS supprimé (il n'a pas le Bureau réseau dans ses
+  `desktop_sweep_paths`).
+- Aucun ping-pong : le raccourci ne clignote pas (suppression puis re-création) entre
+  les passes des deux postes.
+- Sur le poste perdir, le raccourci est posé sur son Bureau **local** (comportement
+  attendu de son environnement), sans incidence sur le réseau.
+
+**Diagnostic si régression** : inspecter le payload `shortcuts` reçu par le poste
+perdir (`desktop_sweep_paths` NE doit PAS contenir `\\se4fs\...\Bureau\`). S'il le
+contient, la dérivation serveur `desktopSweepPathsFor()` est en cause, pas l'agent.
+
+### Scénario 27.21.8 — Balayage serveur : perdir n'émet que le Bureau local
+
+1. Comparer, pour un même utilisateur, le payload `shortcuts` d'un poste `shared_local`
+   et d'un poste `personal_local` (log agent, ou état serveur).
+
+**Attendu** : `shared_local` ⇒ `desktop_sweep_paths = [réseau, local]` ; `personal_local`/
+`nomade` ⇒ `desktop_sweep_paths = [local]`. C'est indépendant de la politique home
+(couper K: ne change QUE `desktop_path`, pas la liste de balayage).
+
+### Check-list (option A)
+
+- [ ] 27.21.7 — Le poste perdir ne supprime jamais le `.lnk` géré du Bureau réseau ;
+      aucun ping-pong inter-postes.
+- [ ] 27.21.8 — `desktop_sweep_paths` : [réseau, local] en `shared_local`, [local]
+      seul en perdir/nomade ; indépendant de home.
+- [ ] Contrat wire : champ additif `desktop_sweep_paths` présent sur les items
+      `shortcuts` ; golden `state.v1.json` régénéré, `FROZEN_STATE_HASH` =
+      `34b4f15b…` cohérent PHP + Go.
+- [ ] Version cible **agent 2.15.0** (2.14.0 répudiée, jamais publiée). Un agent
+      antérieur ignore `desktop_sweep_paths` ⇒ retombe sur l'ancien balayage (fantômes
+      possibles) : c'est pourquoi la publication 2.15.0 est requise.

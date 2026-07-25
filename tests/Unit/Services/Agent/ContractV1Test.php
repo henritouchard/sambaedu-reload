@@ -276,7 +276,22 @@ class ContractV1Test extends TestCase
     // rapport), d'où publication de release 2.13.0 obligatoire. Le type entre dans
     // ReportRequest via Rule::in(RESOURCE_TYPES). Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'df138f19e07222797ae0214358ebb1cdbc3a1e05a77c4ea5704afc89c0468f4d';
+    // Re-bumpé SCIEMMENT par la Story 27.21 (arbitrage « option A » de la review,
+    // champ additif `desktop_sweep_paths` au payload `shortcuts`, §7/§9) :
+    // l'unique item `shortcuts` (portée machine_user) gagne la LISTE des
+    // emplacements Bureau que l'agent doit BALAYER — notion DISTINCTE de
+    // `desktop_path` (où il POSE). Le golden illustre un parc `shared_local`,
+    // seul environnement à porter les DEUX emplacements
+    // (`[\\<se4fs>\users\<user>\Bureau\, %USERPROFILE%\Desktop\]`) ; un parc
+    // perdir/nomade n'en porterait qu'un (le local) — il n'a aucune autorité sur
+    // le Bureau réseau, PARTAGÉ entre tous les postes de l'utilisateur.
+    // Champ additif = forward-compatible, pas un major : un agent ≤ 2.14.x
+    // IGNORE le champ inconnu SANS ERREUR (§9) et conserve son comportement de
+    // balayage précédent (cf. release 2.15.0). 19 items au total (INCHANGÉ, le
+    // champ est ajouté à un item existant), hash d'item RECALCULÉ
+    // (1ff7dadf… → e3fa179d…) et hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = '34b4f15b5a9e7cf5f0883d24c52bc6deb5b4d65582eee1c6502c89264b28b869';
 
     private StateHasher $hasher;
 

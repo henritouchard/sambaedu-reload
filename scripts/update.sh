@@ -148,7 +148,11 @@ ensure_user_doc() {
     if id www-admin >/dev/null 2>&1; then
         chown -R www-admin:www-admin "$publish_dir" 2>/dev/null || true
     fi
-    chmod u+rwX,go+rX "$doc_dir" 2>/dev/null || true
+    # Parent userDoc/ : traversée SEULE pour « other » (+X, pas +r) — Apache
+    # n'a besoin que de traverser userDoc/ pour atteindre dist/ ; pas de la
+    # lecture des sources (README.md cite des chemins serveur/ssh). Moindre
+    # privilège. Le contenu publié dist/ garde bien go+rX juste en dessous.
+    chmod u+rwX,go+X "$doc_dir" 2>/dev/null || true
     chmod -R u+rwX,go+rX "$publish_dir" 2>/dev/null || true
 
     if [[ ! -f "$doc_dir/package.json" ]]; then
@@ -164,8 +168,12 @@ ensure_user_doc() {
     # Chaque étape dans un `if !` : avec `set -euo pipefail`, un appel nu qui
     # échoue (registre npm injoignable, lien mort, etc.) tuerait TOUT le
     # reste de l'update (piège #3 documenté dans la story).
-    if ! ( cd "$doc_dir" && npm install --no-audit --no-fund --prefer-offline ); then
-        log_warning "npm install documentation échoué (registre injoignable ?) — build ignoré, site précédent conservé"
+    # `npm ci` = install strict depuis le lockfile committé (build reproductible
+    # visé par l'AC2). Repli sur `npm install` si le lockfile désynchronise du
+    # package.json (npm ci refuse alors de continuer), pour rester fail-soft.
+    if ! ( cd "$doc_dir" && { npm ci --no-audit --no-fund --prefer-offline \
+            || npm install --no-audit --no-fund --prefer-offline; } ); then
+        log_warning "npm ci/install documentation échoué (registre injoignable ?) — build ignoré, site précédent conservé"
         return 0
     fi
 
@@ -185,24 +193,37 @@ ensure_user_doc() {
     # moitié écrit en cas d'échec (piège #4) ; le miroir neutralise aussi les
     # pages fantômes de SORTIE — une page retirée des sources disparaît du
     # site publié (AC7).
-    cp -a "$build_out"/. "$publish_dir"/
-
-    (
-        cd "$publish_dir" || exit 0
-        find . -type f | while IFS= read -r f; do
-            [[ -f "$build_out/$f" ]] || rm -f "$f"
-        done
-        find . -depth -mindepth 1 -type d -empty -exec rmdir {} \; 2>/dev/null
-    )
+    #
+    # La publication elle-même (cp + purge) est GARDÉE : sous `set -euo
+    # pipefail`, un `cp`/`find` nu qui échoue (ENOSPC, dist/ verrouillé,
+    # dossier vanishé pendant la boucle) avorterait TOUT l'update après
+    # composer/migrations — exactement ce que l'AC5 interdit. En cas d'échec
+    # de miroir, le site précédemment publié reste servi tel quel.
+    if ! {
+        cp -a "$build_out"/. "$publish_dir"/ &&
+        (
+            cd "$publish_dir" || exit 1
+            find . -type f | while IFS= read -r f; do
+                [[ -f "$build_out/$f" ]] || rm -f "$f"
+            done
+            find . -depth -mindepth 1 -type d -empty -exec rmdir {} \; 2>/dev/null
+            true
+        )
+    }; then
+        log_warning "Publication documentation échouée (miroir dist/) — site précédent conservé"
+        return 0
+    fi
 
     if id www-admin >/dev/null 2>&1; then
         chown -R www-admin:www-admin "$publish_dir" 2>/dev/null \
             || log_warning "chown www-admin échoué sur $publish_dir (risque de 404 Apache)"
     fi
-    # Lisible Apache (« other » : r sur fichiers, rx sur dossiers), Y COMPRIS
-    # le parent userDoc/ (piège umask documenté mot pour mot dans
-    # ensure_ipxe_statics — sinon 404 Apache silencieux sur TOUTE la doc).
-    chmod u+rwX,go+rX "$doc_dir" 2>/dev/null || true
+    # Lisible Apache (« other » : r sur fichiers, rx sur dossiers) sur le
+    # contenu publié dist/. Parent userDoc/ : traversée SEULE (+X, pas +r) —
+    # suffit à Apache pour atteindre dist/ sans exposer la lecture des sources
+    # (piège umask d'ensure_ipxe_statics : c'est le bit +X qui évite le 404
+    # silencieux, pas +r).
+    chmod u+rwX,go+X "$doc_dir" 2>/dev/null || true
     chmod -R u+rwX,go+rX "$publish_dir" 2>/dev/null || true
 
     log_success "Documentation utilisateur publiée dans $publish_dir (chown www-admin, lisible Apache)"

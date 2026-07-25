@@ -145,10 +145,12 @@ func (o *shortcutOps) PlaceDir(spec shared.ShortcutSpec) (string, error) {
 		// nettoyer les orphelins gérés. Ne JAMAIS poser un `.lnk` sur cette probe
 		// (desiredSet n'émet que des specs avec desktop_path non vide).
 		//
-		// Story 27.21 : la MÊME porte sert au Bureau RÉSEAU tokenisé
-		// (shared.NetworkDesktopPathTemplate, probe de nettoyage de
-		// l'emplacement inactif) — d'où la substitution de tokens UNIQUE ici
-		// (SubstituteServerTokens), jamais une 2ᵉ implémentation.
+		// Story 27.21 (option A) : la MÊME porte sert au Bureau RÉSEAU tokenisé.
+		// Ce chemin ne vit PLUS dans une constante d'agent — c'est le SERVEUR qui
+		// le NOMME via `desktop_sweep_paths` (il connaît seul l'environnement du
+		// parc, cf. finding #1) ; l'agent le reçoit dans le payload et le résout
+		// ICI par la substitution de tokens UNIQUE (SubstituteServerTokens),
+		// jamais une 2ᵉ implémentation.
 		dir := substituteTokens(spec.DesktopPath)
 		if dir == "" {
 			return standardDesktopDir()

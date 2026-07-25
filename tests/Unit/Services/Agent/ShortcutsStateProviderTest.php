@@ -161,6 +161,12 @@ class ShortcutsStateProviderTest extends TestCase
             'icon' => 'C:\\icons\\i.ico',
             'place' => 'desktop',
             'desktop_path' => '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+            // Story 27.21 (option A) : parc partagé ⇒ les DEUX Bureaux sont
+            // balayés (POSE ≠ BALAYAGE).
+            'desktop_sweep_paths' => [
+                '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+                '%USERPROFILE%\\Desktop\\',
+            ],
         ], $payload);
     }
 
@@ -223,6 +229,102 @@ class ShortcutsStateProviderTest extends TestCase
         $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
 
         self::assertSame($expected, $payload['desktop_path']);
+    }
+
+    // --- Story 27.21 (option A) : le SERVEUR nomme les Bureaux à BALAYER ------
+
+    /**
+     * Matrice complète {SharedLocal, PersonalLocal, Nomade} × {home on, home off}
+     * des emplacements de BALAYAGE (finding 🔴 #1 de la review 27.21).
+     *
+     * Le Bureau réseau est PARTAGÉ entre tous les postes d'un utilisateur : seul
+     * un parc `shared_local` a autorité pour y supprimer des `.lnk` gérés. Un
+     * poste perdir/nomade ne doit JAMAIS le balayer, sous peine d'effacer les
+     * raccourcis que le poste de classe du même utilisateur vient de poser.
+     *
+     * La liste ne dépend PAS de la politique home (délibéré) : couper K: ne
+     * change que l'emplacement de POSE — les deux emplacements d'un parc partagé
+     * restent balayés dans les deux états, sinon celui qu'on vient d'abandonner
+     * ne serait plus jamais nettoyé (AC3).
+     *
+     * @return iterable<string, array{WorkstationEnvironment, bool, list<string>}>
+     */
+    public static function desktopSweepPathsMatrix(): iterable
+    {
+        $network = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
+        $local = '%USERPROFILE%\\Desktop\\';
+
+        yield 'shared_local + home on → [réseau, local]' => [WorkstationEnvironment::SharedLocal, true, [$network, $local]];
+        yield 'shared_local + home off → [réseau, local]' => [WorkstationEnvironment::SharedLocal, false, [$network, $local]];
+        yield 'personal_local + home on → [local] SEUL' => [WorkstationEnvironment::PersonalLocal, true, [$local]];
+        yield 'personal_local + home off → [local] SEUL' => [WorkstationEnvironment::PersonalLocal, false, [$local]];
+        yield 'nomade + home on → [local] SEUL' => [WorkstationEnvironment::Nomade, true, [$local]];
+        yield 'nomade + home off → [local] SEUL' => [WorkstationEnvironment::Nomade, false, [$local]];
+    }
+
+    /**
+     * @param  list<string>  $expected
+     */
+    #[Test]
+    #[DataProvider('desktopSweepPathsMatrix')]
+    public function desktop_sweep_paths_follow_the_park_environment(
+        WorkstationEnvironment $environment,
+        bool $home,
+        array $expected,
+    ): void {
+        $this->parc->update(['environment' => $environment]);
+        FilePolicyService::setGlobal($home, true, false);
+
+        $sc = $this->shortcut('intranet', [
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'https://intranet.edu',
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame($expected, $payload['desktop_sweep_paths']);
+    }
+
+    #[Test]
+    public function desktop_sweep_paths_are_emitted_on_non_desktop_places_too(): void
+    {
+        // Le balayage est une donnée de CONTEXTE (le poste), pas une propriété
+        // du raccourci : l'agent doit connaître les Bureaux à nettoyer MÊME
+        // quand plus aucune règle `place=desktop` n'existe (sinon un Bureau vidé
+        // de ses règles garde ses `.lnk` gérés orphelins à vie — review #2 de 27.1).
+        $sc = $this->shortcut('boot', ['place' => Shortcut::PLACE_STARTUP, 'windows_link' => 'C:\\b.exe']);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertArrayNotHasKey('desktop_path', $payload);
+        self::assertSame([
+            '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+            '%USERPROFILE%\\Desktop\\',
+        ], $payload['desktop_sweep_paths']);
+    }
+
+    #[Test]
+    public function perdir_park_never_names_the_shared_network_desktop(): void
+    {
+        // LE garde-fou du finding #1 : quelle que soit la politique home, un
+        // parc perdir ne nomme JAMAIS le Bureau réseau — ni en pose, ni en
+        // balayage.
+        $this->parc->update(['environment' => WorkstationEnvironment::PersonalLocal]);
+
+        foreach ([true, false] as $home) {
+            FilePolicyService::setGlobal($home, true, false);
+            $sc = $this->shortcut('intranet'.($home ? '1' : '0'), [
+                'place' => Shortcut::PLACE_DESKTOP,
+                'windows_link' => 'https://intranet.edu',
+            ]);
+            $this->assign($sc, Workstation::class, $this->ws->id);
+
+            foreach ($this->provider->itemsFor($this->ctx()) as $candidate) {
+                self::assertStringNotContainsString('<se4fs>', json_encode($candidate->payload, JSON_THROW_ON_ERROR));
+            }
+        }
     }
 
     #[Test]

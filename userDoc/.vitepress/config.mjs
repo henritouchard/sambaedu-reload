@@ -66,7 +66,10 @@ export default defineConfig({
         },
 
         // Libellés du thème en français (AC1) : retour en haut, sommaire,
-        // bascule de thème, pied de page précédent/suivant, menu latéral.
+        // bascule de thème, pied de page précédent/suivant, menu latéral,
+        // et le lien d'accessibilité « saut au contenu » (visible au focus
+        // clavier / lecteur d'écran).
+        skipToContentLabel: 'Aller au contenu',
         outline: {
             label: 'Sommaire de la page',
         },

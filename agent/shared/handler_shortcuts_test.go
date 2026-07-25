@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -135,6 +136,21 @@ func shortcutItem(name, target, place, desktopPath string) StateItem {
 	}
 
 	return StateItem{Type: "shortcuts", Semantics: "aggregate", Hash: name + "-h", Payload: payload}
+}
+
+// shortcutItemSweep : idem, mais le serveur NOMME les emplacements Bureau à
+// BALAYER (`desktop_sweep_paths`, Story 27.21 arbitrage option A). Le champ est
+// un `[]any` — la forme réelle après décodage JSON du contrat.
+func shortcutItemSweep(name, target, place, desktopPath string, sweep []string) StateItem {
+	item := shortcutItem(name, target, place, desktopPath)
+	payload, _ := item.Payload.(map[string]any)
+	raw := make([]any, 0, len(sweep))
+	for _, p := range sweep {
+		raw = append(raw, p)
+	}
+	payload["desktop_sweep_paths"] = raw
+
+	return item
 }
 
 const netDesktop = `\\<se4fs>\users\<user>\Bureau`
@@ -337,29 +353,53 @@ func TestShortcutsCrossPlacementOrphanRemoved(t *testing.T) {
 	}
 }
 
-// --- Story 27.21 : DOUBLE Bureau (réseau + local) balayé à chaque passe ------
+// --- Story 27.21 : le SERVEUR nomme les Bureaux à balayer (option A) ---------
 //
-// Le serveur ne désigne que l'emplacement ACTIF via `desktop_path` (réseau si
-// parc partagé ET home accessible, local sinon). L'agent doit néanmoins balayer
-// les DEUX Bureaux pour supprimer les `.lnk` GÉRÉS restés sur l'emplacement
-// devenu inactif après une bascule de la politique home (AC2/AC3).
+// Le serveur désigne l'emplacement de POSE via `desktop_path` (réseau si parc
+// partagé ET home accessible, local sinon) ET les emplacements de BALAYAGE via
+// `desktop_sweep_paths` — deux notions distinctes. Sur un parc `shared_local`,
+// le serveur ordonne les DEUX Bureaux, pour supprimer les `.lnk` GÉRÉS restés
+// sur l'emplacement devenu inactif après une bascule de la politique home
+// (AC2/AC3). Sur un parc perdir/nomade, il n'ordonne que le Bureau local.
 
-// Le gabarit réseau de l'agent est le JUMEAU du chemin serveur (à la convention
-// de backslash final près, normalisée par PlaceDir).
-func TestNetworkDesktopTemplateMatchesServerPath(t *testing.T) {
-	if got := strings.TrimRight(NetworkDesktopPathTemplate, `\/`); got != netDesktop {
-		t.Fatalf("gabarit réseau agent %q ≠ chemin serveur %q", got, netDesktop)
-	}
-}
-
-func TestShortcutsManagedDirsSweepBothDesktops(t *testing.T) {
+func TestShortcutsManagedDirsSweepServerNamedDesktops(t *testing.T) {
+	bothDesktops := []string{netDesktop, localDesktop}
 	cases := []struct {
-		name    string
-		desired []StateItem
+		name     string
+		desired  []StateItem
+		wantDirs []string
 	}{
-		{"aucune règle desktop", []StateItem{shortcutItem("N", `C:\n.exe`, shortcutPlaceStartup, "")}},
-		{"règle desktop RÉSEAU (home on)", []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}},
-		{"règle desktop LOCALE (home off)", []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)}},
+		{
+			// Le champ vit sur TOUS les items du type — un parc partagé sans
+			// aucune règle `desktop` fait quand même balayer les deux Bureaux
+			// (leçon review #2 de 27.1 : sinon orphelins à vie).
+			"aucune règle desktop (parc partagé)",
+			[]StateItem{shortcutItemSweep("N", `C:\n.exe`, shortcutPlaceStartup, "", bothDesktops)},
+			[]string{netDesktop, strings.TrimRight(localDesktop, `\/`)},
+		},
+		{
+			"règle desktop RÉSEAU (parc partagé, home on)",
+			[]StateItem{shortcutItemSweep("A", "ta", shortcutPlaceDesktop, netDesktop, bothDesktops)},
+			[]string{netDesktop, strings.TrimRight(localDesktop, `\/`)},
+		},
+		{
+			"règle desktop LOCALE (parc partagé, home off)",
+			[]StateItem{shortcutItemSweep("A", "ta", shortcutPlaceDesktop, localDesktop, bothDesktops)},
+			[]string{netDesktop, strings.TrimRight(localDesktop, `\/`)},
+		},
+		{
+			// LE cas du finding #1 : aucun Bureau réseau dans les dirs balayés.
+			"parc perdir/nomade : Bureau LOCAL seul",
+			[]StateItem{shortcutItemSweep("A", "ta", shortcutPlaceDesktop, localDesktop, []string{localDesktop})},
+			[]string{strings.TrimRight(localDesktop, `\/`)},
+		},
+		{
+			// Serveur antérieur à 27.21 (champ absent) : repli CONSERVATEUR sur
+			// les seuls emplacements propres au poste — jamais le Bureau réseau.
+			"champ absent (serveur antérieur) : repli local",
+			[]StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)},
+			[]string{strings.TrimRight(localDesktop, `\/`)},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,13 +410,12 @@ func TestShortcutsManagedDirsSweepBothDesktops(t *testing.T) {
 				t.Fatalf("desiredSet: %v", err)
 			}
 
-			dirs, err := h.managedDirs(desired)
+			dirs, err := h.managedDirs(desired, sweepPathsFrom(tc.desired))
 			if err != nil {
 				t.Fatalf("managedDirs: %v", err)
 			}
 
-			// Les DEUX Bureaux sont balayés quel que soit le desired courant.
-			for _, want := range []string{netDesktop, strings.TrimRight(localDesktop, `\/`)} {
+			for _, want := range tc.wantDirs {
 				if !containsDir(dirs, want) {
 					t.Fatalf("le Bureau %q doit être balayé (dirs=%v)", want, dirs)
 				}
@@ -387,10 +426,66 @@ func TestShortcutsManagedDirsSweepBothDesktops(t *testing.T) {
 					t.Fatalf("l'emplacement %q doit rester balayé (dirs=%v)", want, dirs)
 				}
 			}
-			if len(dirs) != 4 {
-				t.Fatalf("4 répertoires distincts attendus (2 Bureaux + startup + taskbar), obtenu %v", dirs)
+			// Aucun emplacement de PLUS que ceux attendus : un Bureau réseau non
+			// ordonné ne doit JAMAIS se glisser dans la liste.
+			if len(dirs) != len(tc.wantDirs)+2 {
+				t.Fatalf("%d répertoires distincts attendus (%v + startup + taskbar), obtenu %v",
+					len(tc.wantDirs)+2, tc.wantDirs, dirs)
 			}
 		})
+	}
+}
+
+// Verrou serveur⇄agent SANS duplication de littéral : on lit le golden
+// CANONIQUE partagé (`tests/Fixtures/Agent/state.v1.json`, la même source de
+// vérité que le hash croisé NFR13) et on prouve que le handler balaie
+// EXACTEMENT les emplacements qu'il porte. Si le serveur change sa convention de
+// chemin, le golden change et ce test suit — plus aucune constante réseau côté
+// agent (le jumelage Go-vs-Go tautologique de la 1re passe est supprimé,
+// review 27.21 #2).
+func TestShortcutsSweepsExactlyTheGoldenNamedDesktops(t *testing.T) {
+	var state struct {
+		MachineUser []struct {
+			Type    string         `json:"type"`
+			Payload map[string]any `json:"payload"`
+		} `json:"machine_user"`
+	}
+	if err := json.Unmarshal(goldenFile(t, "state.v1.json"), &state); err != nil {
+		t.Fatalf("golden illisible : %v", err)
+	}
+
+	items := []StateItem{}
+	wantDirs := []string{}
+	for _, raw := range state.MachineUser {
+		if raw.Type != "shortcuts" {
+			continue
+		}
+		items = append(items, StateItem{Type: raw.Type, Semantics: "aggregate", Hash: "golden", Payload: raw.Payload})
+		for _, path := range sweepPathValues(raw.Payload[shortcutSweepPathsKey]) {
+			wantDirs = append(wantDirs, strings.TrimRight(path, `\/`))
+		}
+	}
+	if len(items) == 0 {
+		t.Fatal("le golden doit porter au moins un item `shortcuts` (portée machine_user)")
+	}
+	if len(wantDirs) == 0 {
+		t.Fatalf("le golden doit porter %q sur son item `shortcuts` (contrat 27.21)", shortcutSweepPathsKey)
+	}
+
+	ops := newFakeOps()
+	h := &ShortcutsHandler{Ops: ops}
+	desired, err := h.desiredSet(items)
+	if err != nil {
+		t.Fatalf("desiredSet: %v", err)
+	}
+	dirs, err := h.managedDirs(desired, sweepPathsFrom(items))
+	if err != nil {
+		t.Fatalf("managedDirs: %v", err)
+	}
+	for _, want := range wantDirs {
+		if !containsDir(dirs, want) {
+			t.Fatalf("le Bureau %q nommé par le golden doit être balayé (dirs=%v)", want, dirs)
+		}
 	}
 }
 
@@ -413,8 +508,12 @@ func TestShortcutsHomePolicySwitchLeavesNoOrphan(t *testing.T) {
 			fromLnk := strings.TrimRight(tc.fromPath, `\/`) + `\Intranet.lnk`
 			toLnk := strings.TrimRight(tc.toPath, `\/`) + `\Intranet.lnk`
 
+			// Parc `shared_local` : le serveur ORDONNE le balayage des deux
+			// Bureaux (c'est ce parc, et lui seul, qui a autorité sur le réseau).
+			bothDesktops := []string{netDesktop, localDesktop}
+
 			// Passage 1 : la politique en vigueur pose le raccourci ici.
-			before := []StateItem{shortcutItem("Intranet", "https://intranet", shortcutPlaceDesktop, tc.fromPath)}
+			before := []StateItem{shortcutItemSweep("Intranet", "https://intranet", shortcutPlaceDesktop, tc.fromPath, bothDesktops)}
 			if err := h.Apply(before); err != nil {
 				t.Fatalf("apply 1: %v", err)
 			}
@@ -422,8 +521,10 @@ func TestShortcutsHomePolicySwitchLeavesNoOrphan(t *testing.T) {
 				t.Fatalf("raccourci attendu à %q après le 1er passage, posés=%v", fromLnk, ops.files)
 			}
 
-			// L'admin bascule la politique home ⇒ le serveur émet l'AUTRE Bureau.
-			after := []StateItem{shortcutItem("Intranet", "https://intranet", shortcutPlaceDesktop, tc.toPath)}
+			// L'admin bascule la politique home ⇒ le serveur émet l'AUTRE Bureau
+			// en POSE, mais la liste de BALAYAGE ne bouge pas (elle ne dépend que
+			// de l'environnement du parc).
+			after := []StateItem{shortcutItemSweep("Intranet", "https://intranet", shortcutPlaceDesktop, tc.toPath, bothDesktops)}
 
 			// Test doit être NON conforme AVANT la convergence : le résidu géré de
 			// l'emplacement inactif compte comme une dérive (level-triggered honnête).
@@ -471,12 +572,13 @@ func TestShortcutsNeverDeletesUserLnkInEitherDesktop(t *testing.T) {
 	ops.userLnks[netDesktop+`\MesNotes.lnk`] = true
 	ops.userLnks[strings.TrimRight(localDesktop, `\/`)+`\MesNotes.lnk`] = true
 	h := &ShortcutsHandler{Ops: ops}
+	bothDesktops := []string{netDesktop, localDesktop}
 
 	// Bascule complète (réseau → local) avec des fichiers user dans les deux.
-	if err := h.Apply([]StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}); err != nil {
+	if err := h.Apply([]StateItem{shortcutItemSweep("A", "ta", shortcutPlaceDesktop, netDesktop, bothDesktops)}); err != nil {
 		t.Fatalf("apply 1: %v", err)
 	}
-	if err := h.Apply([]StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)}); err != nil {
+	if err := h.Apply([]StateItem{shortcutItemSweep("A", "ta", shortcutPlaceDesktop, localDesktop, bothDesktops)}); err != nil {
 		t.Fatalf("apply 2: %v", err)
 	}
 
@@ -499,10 +601,14 @@ func TestShortcutsNeverDeletesUserLnkInEitherDesktop(t *testing.T) {
 // convergent (AC2).
 func TestShortcutsUnresolvableNetworkDesktopIsNotFatal(t *testing.T) {
 	ops := newFakeOps()
-	ops.desktopPathErr[NetworkDesktopPathTemplate] = fmt.Errorf("SE4FS non défini")
+	ops.desktopPathErr[netDesktop] = fmt.Errorf("SE4FS non défini")
 	h := &ShortcutsHandler{Ops: ops}
 
-	items := []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)}
+	// Le serveur ordonne bien les deux Bureaux (parc partagé), mais le Bureau
+	// réseau n'est pas résoluble sur CE poste.
+	items := []StateItem{shortcutItemSweep(
+		"A", "ta", shortcutPlaceDesktop, localDesktop, []string{netDesktop, localDesktop},
+	)}
 	if err := h.Apply(items); err != nil {
 		t.Fatalf("un Bureau réseau non résoluble ne doit pas faire échouer la passe : %v", err)
 	}
@@ -532,6 +638,92 @@ func TestUsableShortcutDir(t *testing.T) {
 		if got := UsableShortcutDir(tc.dir); got != tc.want {
 			t.Fatalf("UsableShortcutDir(%q) = %v, attendu %v", tc.dir, got, tc.want)
 		}
+	}
+}
+
+// --- Story 27.21 (arbitrage option A) : le SERVEUR nomme les Bureaux balayés --
+//
+// LE test de non-régression du finding #1 (🔴 review 27.21) : le Bureau RÉSEAU
+// `\\<se4fs>\users\<user>\Bureau\` est un emplacement PAR UTILISATEUR, PARTAGÉ
+// entre TOUS ses postes, alors que le desired-state est compilé par couple
+// (poste, user). Un poste `personal_local`/`nomade` n'a AUCUNE autorité dessus :
+// s'il le balayait, il y supprimerait les `.lnk` gérés légitimement posés par un
+// poste `shared_local` du même utilisateur (ping-pong permanent de
+// suppressions/re-créations sur un partage de production).
+//
+// Depuis l'option A, l'agent n'invente plus l'emplacement réseau : il balaie
+// EXACTEMENT les chemins que le serveur lui nomme (`desktop_sweep_paths`).
+func TestShortcutsPerdirNeverSweepsNetworkDesktop(t *testing.T) {
+	ops := newFakeOps()
+	// Un `.lnk` GÉRÉ posé sur le Bureau RÉSEAU par un AUTRE poste (shared_local)
+	// du même utilisateur — parfaitement légitime, invisible de ce poste-ci.
+	netLnk := netDesktop + `\Intranet.lnk`
+	ops.files[netLnk] = ShortcutSpec{
+		Name: "Intranet", Target: "https://intranet", Place: shortcutPlaceDesktop, DesktopPath: netDesktop,
+	}
+
+	h := &ShortcutsHandler{Ops: ops}
+	// Poste perdir/nomade : le serveur n'ordonne QUE le Bureau local.
+	items := []StateItem{shortcutItemSweep(
+		"Intranet", "https://intranet", shortcutPlaceDesktop, localDesktop, []string{localDesktop},
+	)}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, survived := ops.files[netLnk]; !survived {
+		t.Fatalf("FINDING #1 : le poste perdir a supprimé un `.lnk` géré du Bureau RÉSEAU partagé (%q) — il n'a aucune autorité dessus", netLnk)
+	}
+	if ops.removeCalls != 0 {
+		t.Fatalf("aucune suppression attendue sur un poste sans autorité réseau, removeCalls=%d", ops.removeCalls)
+	}
+
+	// …et l'état du poste converge quand même : le raccourci local est posé et
+	// `Test` est conforme (le résidu réseau n'est PAS de son ressort — sinon le
+	// poste rapporterait une dérive qu'il ne peut pas corriger, indéfiniment).
+	localLnk := strings.TrimRight(localDesktop, `\/`) + `\Intranet.lnk`
+	if _, ok := ops.files[localLnk]; !ok {
+		t.Fatalf("le raccourci local devait être posé, posés=%v", ops.files)
+	}
+	ok, err := h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("test : ok=%v err=%v (attendu conforme — le Bureau réseau est hors de son périmètre)", ok, err)
+	}
+}
+
+// Le pendant : un poste `shared_local` — à qui le serveur ORDONNE les deux
+// emplacements — nettoie toujours correctement l'emplacement devenu inactif
+// (le double-balayage anti-orphelins de l'AC2/AC3 reste pleinement en vigueur).
+func TestShortcutsSharedLocalStillSweepsBothDesktops(t *testing.T) {
+	ops := newFakeOps()
+	netLnk := netDesktop + `\Intranet.lnk`
+	ops.files[netLnk] = ShortcutSpec{
+		Name: "Intranet", Target: "https://intranet", Place: shortcutPlaceDesktop, DesktopPath: netDesktop,
+	}
+
+	h := &ShortcutsHandler{Ops: ops}
+	// Parc partagé, home coupé : pose en LOCAL, balayage des DEUX Bureaux.
+	items := []StateItem{shortcutItemSweep(
+		"Intranet", "https://intranet", shortcutPlaceDesktop, localDesktop, []string{netDesktop, localDesktop},
+	)}
+
+	// Level-triggered honnête : le résidu réseau rend l'item NON conforme.
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("test devait être NON conforme (résidu géré sur le Bureau réseau balayé)")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, exists := ops.files[netLnk]; exists {
+		t.Fatalf("le `.lnk` géré du Bureau réseau devait être nettoyé sur un poste shared_local : %v", ops.files)
+	}
+	if _, ok := ops.files[strings.TrimRight(localDesktop, `\/`)+`\Intranet.lnk`]; !ok {
+		t.Fatalf("le raccourci devait être posé en local, posés=%v", ops.files)
 	}
 }
 

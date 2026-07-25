@@ -184,7 +184,13 @@ import (
 // Story 36.5 : +1 item `app_profile` (redirection profil Firefox → home réseau,
 // aggregate, §7.11) en portée SESSION → hash d'état RECALCULÉ, bumpé à
 // l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "df138f19e07222797ae0214358ebb1cdbc3a1e05a77c4ea5704afc89c0468f4d"
+// Story 27.21 (arbitrage « option A » de la review) : l'item `shortcuts`
+// (machine_user) gagne le champ additif `desktop_sweep_paths` — la LISTE des
+// Bureaux à BALAYER, nommée par le SERVEUR (notion distincte de `desktop_path`,
+// où l'agent POSE). Nombre d'items INCHANGÉ (19), hash d'item et hash d'état
+// RECALCULÉS, bumpés à l'IDENTIQUE côté PHP
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+const frozenStateHash = "34b4f15b5a9e7cf5f0883d24c52bc6deb5b4d65582eee1c6502c89264b28b869"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).

@@ -224,9 +224,13 @@
                 "icon_asset": "3a7bd3e2360a3d4b1c2a5e6f7890abcdef1234567890abcdef1234567890abcd.ico",
                 "icon_checksum": "3a7bd3e2360a3d4b1c2a5e6f7890abcdef1234567890abcdef1234567890abcd",
                 "place": "desktop",
-                "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\"
+                "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+                "desktop_sweep_paths": [
+                    "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+                    "%USERPROFILE%\\Desktop\\"
+                ]
             },
-            "hash": "1ff7dadf19767a81dcfd7bb45efbca04ef265b8298e96ecab4a69ae6fe684263"
+            "hash": "e3fa179d99ff934eb12ec32832a3dda8ca5e6bb253e9aacd17560b9202ff0fbc"
         }
     ]
 }

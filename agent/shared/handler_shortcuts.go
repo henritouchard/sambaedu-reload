@@ -49,18 +49,26 @@ const (
 	shortcutPlaceTaskbar = "taskbar"
 )
 
-// NetworkDesktopPathTemplate : gabarit TOKENISÉ du Bureau RÉSEAU, JUMEAU du
-// `ShortcutsStateProvider::DESKTOP_PATH_NETWORK` serveur (Story 27.21).
+// shortcutSweepPathsKey : clé du payload `shortcuts` portant les emplacements
+// Bureau à BALAYER (Story 27.21, arbitrage option A — champ additif §9,
+// forward-compatible).
 //
-// Il n'introduit AUCUN champ de contrat : le `desktop_path` du payload reste la
-// seule autorité de PLACEMENT (le serveur décide réseau-vs-local selon
-// l'environnement du parc ET la politique home). Ce gabarit ne sert qu'au
-// BALAYAGE : pour supprimer un `.lnk` géré resté sur le Bureau réseau après une
-// bascule (`home` coupé ⇒ `desktop_path` local), l'agent doit encore savoir
-// atteindre l'emplacement DEVENU inactif — que le serveur ne lui envoie plus.
-// La résolution passe par le MÊME SubstituteServerTokens que les chemins
-// serveur (jamais une 2ᵉ implémentation, contrainte de réutilisation 27.21).
-const NetworkDesktopPathTemplate = `\\<se4fs>\users\<user>\Bureau\`
+// POSE ≠ BALAYAGE — les deux notions sont DISTINCTES et ne se confondent pas :
+//   - `desktop_path` (string) = l'emplacement UNIQUE où l'agent POSE. Seule
+//     autorité de placement, inchangée depuis le fix du Bug C.
+//   - `desktop_sweep_paths` (liste de strings) = les emplacements que l'agent
+//     BALAIE pour y supprimer les `.lnk` GÉRÉS sortis des règles. Il contient
+//     toujours l'emplacement de pose, plus le ou les emplacements DEVENUS
+//     inactifs dont le serveur veut le nettoyage.
+//
+// Pourquoi le serveur et pas l'agent : le Bureau RÉSEAU
+// `\\<se4fs>\users\<user>\Bureau\` est un emplacement PAR UTILISATEUR, PARTAGÉ
+// entre TOUS ses postes, alors que le desired-state est compilé par couple
+// (poste, user). Un agent qui déciderait seul de le balayer y supprimerait les
+// `.lnk` d'un AUTRE poste du même utilisateur (finding 🔴 #1 de la review
+// 27.21). Seul le serveur connaît l'environnement du parc, donc l'autorité :
+// parc `shared_local` ⇒ [réseau, local] ; `personal_local`/`nomade` ⇒ [local].
+const shortcutSweepPathsKey = "desktop_sweep_paths"
 
 // ShortcutSpec : un raccourci cible résolu (un item du payload `shortcuts`).
 // Tous les champs sont des strings (contrat §4.1, jamais de float).
@@ -261,15 +269,23 @@ func (h *ShortcutsHandler) desiredSet(items []StateItem) (map[string]ShortcutSpe
 // (marqueur) supprimés au passage suivant — jamais les fichiers utilisateur
 // (ListManaged ne liste que les `.lnk` marqués).
 //
-// **Story 27.21 — le Bureau a DEUX emplacements candidats, balayés à CHAQUE
-// passe** : le Bureau RÉSEAU (`NetworkDesktopPathTemplate`, dérivé localement de
-// l'env) et le Bureau LOCAL (`%USERPROFILE%\Desktop`, probe sans desktop_path).
-// Le serveur ne désigne que l'emplacement ACTIF (`desktop_path`) — c'est le seul
-// où l'on POSE. Mais quand la politique home bascule (K: coupé ⇒ bureau local),
-// les `.lnk` gérés restés sur l'ancien emplacement ne sont plus jamais nommés par
-// le serveur : sans balayage des deux, ils resteraient orphelins à vie (AC2/AC3).
-// On balaie donc toujours les deux, plus le `desktop_path` courant s'il diffère
-// (forward-compatible : un futur troisième chemin serveur reste balayé).
+// **Story 27.21 (arbitrage option A) — les emplacements Bureau à balayer sont
+// NOMMÉS PAR LE SERVEUR** (`desktop_sweep_paths`, cf. shortcutSweepPathsKey).
+// L'agent n'en invente aucun : il obéit. Parc `shared_local` ⇒ le serveur
+// ordonne [Bureau réseau, Bureau local] (double-balayage anti-orphelins : une
+// bascule de la politique home ne laisse jamais de `.lnk` géré à l'ancien
+// emplacement) ; parc `personal_local`/`nomade` ⇒ [Bureau local] SEULEMENT —
+// ces postes n'ont aucune autorité sur le Bureau réseau, partagé entre tous les
+// postes de l'utilisateur (finding 🔴 #1).
+//
+// Deux emplacements sont ajoutés d'office, et c'est SÛR car ils sont PROPRES AU
+// POSTE (jamais partagés entre postes, donc jamais de suppression d'un fichier
+// dont un autre poste est l'autorité) :
+//   - le Bureau LOCAL standard (`%USERPROFILE%\Desktop`, probe sans
+//     desktop_path) — garde le nettoyage cross-placement de la review #2 de 27.1
+//     même si le serveur ne nomme rien (payload d'un serveur antérieur) ;
+//   - les `desktop_path` du desired courant — on POSE là, donc on doit y
+//     nettoyer ce qui est sorti des règles.
 //
 // L'UNC réseau reste JOIGNABLE même quand K: n'est pas monté (le montage client
 // ≠ l'accès UNC — même principe que la décorrélation 36.7). Si l'emplacement
@@ -279,22 +295,27 @@ func (h *ShortcutsHandler) desiredSet(items []StateItem) (map[string]ShortcutSpe
 //
 // Jamais de suppression d'un fichier user : seuls les `.lnk` marqués sont listés
 // (ListManaged / ShortcutManagedMarker).
-func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec) ([]string, error) {
+func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec, sweepPaths []string) ([]string, error) {
 	// Probes : un spec par emplacement gérable CONNU (union, pas seulement le
-	// desired courant). startup/taskbar se résolvent toujours (env). Pour le
-	// Bureau : réseau + local SYSTÉMATIQUEMENT (27.21), plus le desktop_path
-	// courant s'il désigne un troisième chemin (dédoublonné plus bas).
+	// desired courant). startup/taskbar se résolvent toujours (env).
 	probes := []ShortcutSpec{
-		// Bureau RÉSEAU (emplacement actif quand home=on & parc partagé, sinon
-		// emplacement à NETTOYER).
-		{Place: shortcutPlaceDesktop, DesktopPath: NetworkDesktopPathTemplate},
 		// Bureau LOCAL standard (desktop_path vide → l'impl OS résout
-		// `%USERPROFILE%\Desktop`).
+		// `%USERPROFILE%\Desktop`). Propre au poste ⇒ toujours balayé.
 		{Place: shortcutPlaceDesktop},
 		{Place: shortcutPlaceStartup},
 		{Place: shortcutPlaceTaskbar},
 	}
-	seenDesktopPath := map[string]bool{NetworkDesktopPathTemplate: true}
+
+	// Emplacements Bureau ORDONNÉS par le serveur, dans l'ordre reçu (déjà
+	// déterministe côté provider), puis ceux du desired courant.
+	seenDesktopPath := map[string]bool{}
+	desktopPaths := []string{}
+	for _, path := range sweepPaths {
+		if path != "" && !seenDesktopPath[path] {
+			seenDesktopPath[path] = true
+			desktopPaths = append(desktopPaths, path)
+		}
+	}
 	extra := []string{}
 	for _, spec := range desired {
 		if spec.Place == shortcutPlaceDesktop && spec.DesktopPath != "" && !seenDesktopPath[spec.DesktopPath] {
@@ -306,7 +327,8 @@ func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec) ([]strin
 	// probes varierait d'une passe à l'autre (les dirs finaux sont triés, mais
 	// autant garder la construction déterministe).
 	sort.Strings(extra)
-	for _, path := range extra {
+	desktopPaths = append(desktopPaths, extra...)
+	for _, path := range desktopPaths {
 		probes = append(probes, ShortcutSpec{Place: shortcutPlaceDesktop, DesktopPath: path})
 	}
 
@@ -343,6 +365,66 @@ func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec) ([]strin
 	return dirs, nil
 }
 
+// sweepPathsFrom : emplacements Bureau à BALAYER, tels que NOMMÉS par le serveur
+// (`desktop_sweep_paths`, Story 27.21 option A). Union dédoublonnée sur les
+// items, dans l'ordre d'émission du serveur (déterministe : `items` est une
+// slice, jamais une map).
+//
+// Ce champ est une donnée de CONTEXTE (poste), pas une propriété du raccourci :
+// il est recopié à l'identique sur CHAQUE item du type, y compris les
+// `place=startup`/`taskbar`. C'est délibéré — l'agent doit connaître les Bureaux
+// à balayer MÊME quand plus aucune règle `place=desktop` n'existe (leçon de la
+// review #2 de 27.1 : sinon un Bureau vidé de ses règles n'est plus jamais
+// nettoyé et garde ses `.lnk` gérés orphelins à vie).
+//
+// Absent (payload d'un serveur antérieur à 27.21, ou aucun item) ⇒ liste vide :
+// repli CONSERVATEUR sur les seuls emplacements propres au poste (cf.
+// managedDirs). On ne touche JAMAIS un emplacement partagé que le serveur n'a
+// pas explicitement nommé.
+func sweepPathsFrom(items []StateItem) []string {
+	seen := map[string]bool{}
+	paths := []string{}
+	for _, item := range items {
+		payload, ok := item.Payload.(map[string]any)
+		if !ok || payload == nil {
+			continue
+		}
+		for _, raw := range sweepPathValues(payload[shortcutSweepPathsKey]) {
+			path := strings.TrimSpace(raw)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+
+	return paths
+}
+
+// sweepPathValues normalise la valeur brute du champ : `[]any` (forme réelle
+// après décodage JSON du contrat) ou `[]string` (construction directe en test).
+// Toute autre forme (absente, scalaire, éléments non-string) est IGNORÉE — un
+// payload malformé ne doit jamais faire échouer la passe ni élargir le périmètre
+// de balayage.
+func sweepPathValues(raw any) []string {
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, elem := range v {
+			if s, ok := elem.(string); ok {
+				out = append(out, s)
+			}
+		}
+
+		return out
+	default:
+		return nil
+	}
+}
+
 // Test : l'ensemble des `.lnk` gérés == l'union cible (présence + contenu) ?
 func (h *ShortcutsHandler) Test(items []StateItem) (bool, error) {
 	desired, err := h.desiredSet(items)
@@ -350,7 +432,7 @@ func (h *ShortcutsHandler) Test(items []StateItem) (bool, error) {
 		return false, err
 	}
 
-	dirs, err := h.managedDirs(desired)
+	dirs, err := h.managedDirs(desired, sweepPathsFrom(items))
 	if err != nil {
 		return false, err
 	}
@@ -399,7 +481,7 @@ func (h *ShortcutsHandler) Apply(items []StateItem) error {
 		return err
 	}
 
-	dirs, err := h.managedDirs(desired)
+	dirs, err := h.managedDirs(desired, sweepPathsFrom(items))
 	if err != nil {
 		return err
 	}

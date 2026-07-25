@@ -38,6 +38,14 @@ use Illuminate\Support\Collection;
  * bureau réseau posé alors que K: est coupé n'est jamais vu par l'utilisateur.
  * Voir {@see self::desktopPathFor()}.
  *
+ * **Story 27.21 (arbitrage option A)** : le serveur émet EN PLUS la liste des
+ * emplacements Bureau à BALAYER ({@see self::desktopSweepPathsFor()}, champ
+ * `desktop_sweep_paths`). POSE et BALAYAGE sont deux notions distinctes :
+ * l'agent pose au seul `desktop_path`, mais il ne nettoie QUE les emplacements
+ * que le serveur lui nomme — il n'en invente aucun. Sans cela, un poste
+ * perdir/nomade balayait le Bureau réseau, emplacement PARTAGÉ entre tous les
+ * postes de l'utilisateur, et y supprimait les `.lnk` d'un poste de classe.
+ *
  * **Lecture Postgres PURE** (NFR7, critère Keycloak) : l'ancien canal legacy
  * (supprimé en 27.14) lisait `ad_users`/`ad_user_groups` (CN AD) via
  * `whereJsonContains` + cache APCu — INTERDIT ici. Ce provider ne
@@ -56,8 +64,9 @@ use Illuminate\Support\Collection;
  * user, mais le CHEMIN du bureau dépend du POSTE (`WorkstationEnvironment`) —
  * le calcul est un croisement (poste, user), compilé par couple.
  *
- * Payload v1 (décision n° 6) : `{name, target, args, icon, place, desktop_path}`
- * — `desktop_path` présent uniquement si `place=desktop`. Pas de float (§4.1).
+ * Payload v1 (décision n° 6) : `{name, target, args, icon, place, desktop_path,
+ * desktop_sweep_paths}` — `desktop_path` présent uniquement si `place=desktop` ;
+ * `desktop_sweep_paths` (liste, Story 27.21) sur TOUS les items. Pas de float (§4.1).
  * Story 27.7 (AC2) : payload étendu de `{icon_asset, icon_checksum}` quand
  * l'icône est un NOM NU uploadé content-addressed (champs ajoutés,
  * forward-compatible — l'agent dérive l'URL statique).
@@ -67,9 +76,9 @@ final class ShortcutsStateProvider implements StateProvider
     /**
      * Bureau RÉSEAU (redirigé sur le home de l'utilisateur). Tokens `<se4fs>` /
      * `<user>` substitués LOCALEMENT par l'agent. Backslash final = convention
-     * legacy. Le MÊME gabarit est connu de l'agent
-     * (`shared.NetworkDesktopPathTemplate`) pour BALAYER cet emplacement même
-     * quand il n'est plus l'emplacement actif (Story 27.21, AC2).
+     * legacy. **Seul le serveur** connaît ce gabarit : l'agent ne le dérive
+     * JAMAIS lui-même, il le reçoit (`desktop_path` pour la POSE,
+     * `desktop_sweep_paths` pour le BALAYAGE — Story 27.21, option A).
      */
     private const DESKTOP_PATH_NETWORK = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
 
@@ -106,7 +115,17 @@ final class ShortcutsStateProvider implements StateProvider
     public function itemsFor(TargetContext $ctx): Collection
     {
         $wgIds = $ctx->workstationGroupIds();
-        $desktopPath = $this->desktopPathFor($ctx);
+
+        // L'environnement du parc est résolu UNE SEULE FOIS ici : il gouverne à
+        // la fois l'emplacement de POSE (`desktop_path`) et les emplacements de
+        // BALAYAGE (`desktop_sweep_paths`) — deux notions distinctes, une seule
+        // résolution (contrainte de réutilisation 27.21 : ne jamais interroger
+        // le WorkstationEnvironmentResolver deux fois pour le même contexte).
+        $environment = $this->environmentResolver->resolveForGroupIds($wgIds);
+        $homeEnabled = FilePolicyService::capabilities()['home'];
+
+        $desktopPath = $this->desktopPathFor($environment, $homeEnabled);
+        $desktopSweepPaths = $this->desktopSweepPathsFor($environment);
 
         $rows = Shortcut::query()
             ->where('shortcuts.is_active', true)
@@ -151,7 +170,7 @@ final class ShortcutsStateProvider implements StateProvider
 
         return $rows->map(fn (Shortcut $row): StateCandidate => new StateCandidate(
             maille: $this->mailleFor($row, $ctx),
-            payload: $this->payloadFor($row, $desktopPath),
+            payload: $this->payloadFor($row, $desktopPath, $desktopSweepPaths),
             updatedAt: $row->updated_at,
             sourceId: (int) $row->id,
         ));
@@ -183,12 +202,14 @@ final class ShortcutsStateProvider implements StateProvider
      *
      * Lecture canonique iso {@see DrivesStateProvider}
      * (appel statique direct, aucun cache — le réglage est global d'instance).
+     *
+     * ⚠️ POSE ≠ BALAYAGE : cette méthode résout le seul emplacement où l'agent
+     * POSE les `.lnk`. Les emplacements qu'il BALAIE (pour y supprimer les `.lnk`
+     * gérés sortis des règles) sont une autre décision, prise par
+     * {@see self::desktopSweepPathsFor()} — ne pas confondre les deux.
      */
-    private function desktopPathFor(TargetContext $ctx): string
+    private function desktopPathFor(WorkstationEnvironment $environment, bool $homeEnabled): string
     {
-        $environment = $this->environmentResolver->resolveForGroupIds($ctx->workstationGroupIds());
-        $homeEnabled = FilePolicyService::capabilities()['home'];
-
         return match ($environment) {
             // Poste partagé : bureau redirigé RÉSEAU (le défaut du pansement Bug
             // C, mais désormais PARAMÉTRABLE par parc et non figé) — SEULEMENT
@@ -200,6 +221,48 @@ final class ShortcutsStateProvider implements StateProvider
             // dans le profil de l'utilisateur, pas sur le partage réseau.
             WorkstationEnvironment::PersonalLocal,
             WorkstationEnvironment::Nomade => self::DESKTOP_PATH_LOCAL,
+        };
+    }
+
+    /**
+     * Emplacements Bureau que l'agent doit BALAYER (`desktop_sweep_paths`,
+     * Story 27.21 — arbitrage « option A », le serveur pilote).
+     *
+     * **Pourquoi le serveur et pas l'agent (finding 🔴 #1 de la review 27.21).**
+     * Le Bureau RÉSEAU `\\<se4fs>\users\<user>\Bureau\` vit dans le home : c'est
+     * un emplacement PAR UTILISATEUR, PARTAGÉ entre TOUS ses postes. Le
+     * desired-state, lui, est compilé par couple (poste, user). Un agent qui
+     * déciderait SEUL de balayer cet emplacement y supprimerait les `.lnk`
+     * gérés légitimement posés par un AUTRE poste du même utilisateur (le
+     * portable perdir d'un prof effaçant les raccourcis que le poste de classe
+     * vient de poser, et réciproquement — ping-pong permanent sur un partage de
+     * production). Seul le serveur connaît l'environnement du parc, donc
+     * l'autorité :
+     *
+     *  - `SharedLocal`             ⇒ `[réseau, local]` — le double-balayage
+     *    anti-orphelins de l'AC2/AC3 : une bascule de la politique home ne laisse
+     *    jamais de `.lnk` géré à l'emplacement devenu inactif.
+     *  - `PersonalLocal` / `Nomade` ⇒ `[local]` SEULEMENT — ces postes n'ont
+     *    aucune autorité sur le Bureau réseau et ne doivent JAMAIS y toucher.
+     *
+     * **Indépendant de la politique home** — délibérément : basculer K: ne change
+     * QUE l'emplacement de POSE. Les deux emplacements d'un parc partagé restent
+     * balayés dans les deux états, sinon celui qui vient d'être abandonné ne
+     * serait plus jamais nettoyé (c'est exactement le scénario cible de l'AC3).
+     * Effet de bord utile : couper K: ne fait bouger qu'un champ du payload.
+     *
+     * L'ORDRE est fixe (réseau puis local) : la liste est hachée telle quelle
+     * (les listes ne sont pas triées par {@see \App\Services\Agent\StateHasher}),
+     * un ordre stable garantit un hash stable.
+     *
+     * @return list<string>
+     */
+    private function desktopSweepPathsFor(WorkstationEnvironment $environment): array
+    {
+        return match ($environment) {
+            WorkstationEnvironment::SharedLocal => [self::DESKTOP_PATH_NETWORK, self::DESKTOP_PATH_LOCAL],
+            WorkstationEnvironment::PersonalLocal,
+            WorkstationEnvironment::Nomade => [self::DESKTOP_PATH_LOCAL],
         };
     }
 
@@ -224,9 +287,20 @@ final class ShortcutsStateProvider implements StateProvider
      * backfillé (`icon_asset` null) → `icon` brut seul (ancien comportement,
      * jamais un asset cassé).
      *
+     * **Story 27.21 — `desktop_sweep_paths` (champ additif, §9).** Contrairement
+     * à `desktop_path` (présent seulement pour `place=desktop`), ce champ est
+     * émis sur TOUS les items du type. Ce n'est pas une propriété du raccourci
+     * mais une donnée de CONTEXTE (le poste) : l'agent doit connaître les
+     * Bureaux à balayer MÊME quand plus aucune règle `place=desktop` n'existe —
+     * sinon un Bureau vidé de ses règles ne serait plus jamais nettoyé et
+     * garderait ses `.lnk` gérés orphelins à vie (leçon de la review #2 de
+     * 27.1). Un agent antérieur ignore le champ inconnu sans erreur (§9,
+     * forward-compatible) et conserve son comportement de balayage précédent.
+     *
+     * @param  list<string>  $desktopSweepPaths
      * @return array<string,mixed>
      */
-    private function payloadFor(Shortcut $row, string $desktopPath): array
+    private function payloadFor(Shortcut $row, string $desktopPath, array $desktopSweepPaths): array
     {
         $icon = (string) ($row->windows_icon ?? $row->icon_path ?? '');
 
@@ -252,6 +326,10 @@ final class ShortcutsStateProvider implements StateProvider
         if ($row->place === Shortcut::PLACE_DESKTOP) {
             $payload['desktop_path'] = $desktopPath;
         }
+
+        // Émis sur TOUS les emplacements (cf. docbloc) — le balayage n'est pas
+        // une propriété du raccourci mais du poste.
+        $payload['desktop_sweep_paths'] = $desktopSweepPaths;
 
         return $payload;
     }
