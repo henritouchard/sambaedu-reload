@@ -643,3 +643,36 @@ Vérifier ensuite `getent hosts <se4ad_name>.<domain>`.
 3. **Attendu** : réponse `unchanged`, ligne de log `"wrote": false`, et
    `getent hosts <se4ad_name>.<domain>` résout toujours.
 4. Idem avec l'IP du serveur de fichiers.
+
+### Constat empirique — réservation ≠ exemption DDNS (2026-07-25)
+
+Vérifié sur /vm avec un vrai client DHCP (netns + macvlan Docker sur `virbr0`,
+dhcpd sur le guest `.50`) : une réservation `fixed-address` **ne dispense pas**
+du canal DDNS. ISC dhcpd 4.4.3 déclenche `on commit` (`add`) et `on release`
+(`delete`) même pour un hôte à IP fixe (`leased-address` est renseigné, sans
+qu'un bail soit écrit dans `dhcpd.leases`). Un périphérique réservé
+(imprimante/NAS) voit donc son A record créé au boot et supprimé à l'extinction.
+
+Ce n'est pas un problème : les événements portent sur le **propre** nom/IP du
+périphérique, et la garde infrastructure (scénario 10.7) couvre les serveurs.
+La suppression croisée de l'incident I1 ne s'applique pas aux IP fixes (pas de
+réutilisation d'IP entre noms).
+
+#### Scénario 10.8 — Réservation dans une plage dynamique refusée
+
+Garde `DhcpService::assertIpNotInDynamicRange()` — **conflit d'IP**, indépendant
+du DDNS : une IP réservée dans une plage servie dynamiquement pourrait être
+attribuée par bail à un autre poste.
+
+1. Plage par défaut sur /vm : `192.168.122.100–200` (`dhcp_begin_range` /
+   `dhcp_end_range` de `sambaedu.conf`).
+2. `/app/network/dhcp?tab=reservations` → créer une réservation avec IP
+   **dans** la plage (ex. `.150`).
+3. **Attendu** : refus, message « L'IP … est dans la plage dynamique …
+   (sous-réseau par défaut) : un poste pourrait recevoir cette adresse par bail,
+   créant un conflit. » (erreur de champ + toast).
+4. IP **hors** plage (ex. `.55`, ou `.201–.254`) → acceptée.
+5. Même refus pour une IP tombant dans la plage d'un VLAN géré (message
+   « VLAN <id> »).
+
+- [ ] Scénario 10.8 vert — réservation en plage dynamique refusée (défaut + VLAN)
