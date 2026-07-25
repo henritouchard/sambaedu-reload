@@ -674,4 +674,17 @@ return [
             'failed_days' => (int) env('SAMBAEDU_WORKERS_RETENTION_FAILED_DAYS', 30),
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 52.8 — Lien d'aide vers la documentation publiée
+    |--------------------------------------------------------------------------
+    | Chemin absolu de l'index du site statique publié sous l'Alias Apache
+    | /doc (Story 52.1 : userDoc/dist, miroir géré par scripts/update.sh).
+    | Si ce fichier n'existe pas, l'application n'affiche PAS le bouton
+    | d'aide (pas de lien mort — FR-D13).
+    */
+    'doc' => [
+        'index_file' => env('SAMBAEDU_DOC_INDEX_FILE', base_path('userDoc/dist/index.html')),
+    ],
 ];
