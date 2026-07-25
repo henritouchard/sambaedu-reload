@@ -90,7 +90,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AdSyncService::class);
         $this->app->singleton(UserGroupAdSyncService::class);
         $this->app->singleton(\App\Services\AdSync\AdSyncChecker::class);
-        $this->app->singleton(\App\Services\AdSync\AppProfileAdSyncService::class);
+        // AppProfileAdSyncService retiré en 38.7 : OU=Parcs est en lecture seule,
+        // un AppProfile n'a plus de représentation AD à écrire.
 
         // Services Parc
         $this->app->singleton(MachinePowerService::class);

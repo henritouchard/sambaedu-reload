@@ -7,19 +7,28 @@ namespace App\Services\AdSync;
 use App\Config\LdapDnHelper;
 use App\Config\SambaEduConfig;
 use App\LdapModels\DeviceGroupModel;
-use App\LdapModels\DeviceGroupTagModel;
 use App\LdapModels\MachineModel;
 use App\Models\WorkstationGroup;
 use App\Models\Workstation;
 use App\Observers\WorkstationObserver;
 use Illuminate\Support\Facades\Log;
-use LdapRecord\Models\ActiveDirectory\Group;
 use LdapRecord\Models\ActiveDirectory\OrganizationalUnit;
 
 /**
- * Service de synchronisation SQL → AD pour les parcs et machines
- * 
- * Adapté pour le nouveau schéma PostgreSQL.
+ * Service de synchronisation SQL → AD des salles physiques et des machines.
+ *
+ * ── Asymétrie `OU=Parcs` / `OU=Computers` (Story 38.7) ───────────────────────
+ * `OU=Parcs` est un vestige SE4 en LECTURE SEULE : LU à l'import de migration,
+ * jamais ÉCRIT. Ce service n'écrit plus QUE dans `OU=Computers` — l'`OU` d'une
+ * salle physique, où sont rangées les machines et où sont liées les GPO. C'est
+ * l'unique invariant AD à préserver.
+ *
+ * Ce qui a disparu en 38.7 : la branche logique de {@see createWorkstationGroup()},
+ * le miroir `CN` des salles dans `OU=Parcs`, et tout l'entretien de l'attribut
+ * `member` (l'appartenance machine ↔ parc est SQL-only). Les groupes LOGIQUES
+ * (`is_physical = false`) n'ont plus AUCUNE représentation écrite dans l'AD ;
+ * les méthodes publiques les refusent explicitement (défense en profondeur —
+ * l'observer filtre déjà en amont).
  */
 class AdSyncService
 {
@@ -30,216 +39,142 @@ class AdSyncService
     }
 
     // ========================================================================
-    // GESTION DES PARCS/SALLES
+    // GESTION DES SALLES PHYSIQUES (OU dans OU=Computers)
     // ========================================================================
 
     /**
-     * Crée un groupe de machines dans l'AD
-     * 
-     * Règles de synchronisation SQL → AD :
-     * - Groupe physique (is_physical=true) : crée OU dans OU=Computers ET CN dans OU=Parcs
-     * - Groupe logique (is_physical=false) : crée CN dans OU=Parcs uniquement
-     * 
-     * Les AppProfiles sont gérés séparément par l'AppProfileObserver.
+     * Crée l'`OU` d'une salle physique dans `OU=Computers`.
+     *
+     * Un groupe LOGIQUE est refusé : il n'a plus aucune écriture AD (38.7).
      */
     public function createWorkstationGroup(WorkstationGroup $group): array
     {
+        if (! $group->is_physical) {
+            return $this->refuseLogical('createWorkstationGroup', $group->name, withGuidDn: true);
+        }
+
         $name = $group->name;
         $description = $group->description ?? "Groupe de postes $name";
-        $isPhysical = $group->is_physical;
 
-        Log::info('[AdSyncService] Création WorkstationGroup dans AD', [
+        Log::info('[AdSyncService] Création OU salle dans AD', [
             'name' => $name,
-            'is_physical' => $isPhysical,
-            'parent_id' => $group->parent_id
+            'parent_id' => $group->parent_id,
         ]);
 
         try {
-            $guid = null;
-            $dn = null;
+            $existingOu = $this->findSalleOu($name);
 
-            if ($isPhysical) {
-                // Groupe physique : créer OU dans OU=Computers
-                $existingOu = $this->findSalleOu($name);
+            if ($existingOu) {
+                return [
+                    'success' => true,
+                    'guid' => $existingOu->getConvertedGuid(),
+                    'dn' => $existingOu->getDn(),
+                    'error' => null,
+                ];
+            }
 
-                if ($existingOu) {
-                    $guid = $existingOu->getConvertedGuid();
-                    $dn = $existingOu->getDn();
-                    Log::debug('[AdSyncService] OU existe déjà', [
-                        'name' => $name,
-                        'guid' => $guid,
-                        'dn' => $dn
-                    ]);
-                } else {
-                    $ouResult = $this->createSalleOu($name, $description, $group->parent_id);
-                    if (!$ouResult['success']) {
-                        return $ouResult;
-                    }
-                    $guid = $ouResult['guid'];
-                    $dn = $ouResult['dn'];
-                }
-
-                // Groupe physique : créer aussi CN dans OU=Parcs
-                $existingCn = $this->findGroupCn($name);
-                if (!$existingCn) {
-                    $cnResult = $this->createGroupCn($name, $description);
-                    if (!$cnResult['success']) {
-                        Log::warning('[AdSyncService] Échec création CN pour groupe physique', [
-                            'name' => $name,
-                            'error' => $cnResult['error']
-                        ]);
-                    }
-                }
-            } else {
-                // Groupe logique : créer CN dans OU=Parcs uniquement
-                $existingCn = $this->findGroupCn($name);
-
-                if ($existingCn) {
-                    $guid = $existingCn->getConvertedGuid();
-                    $dn = $existingCn->getDn();
-                    Log::debug('[AdSyncService] CN existe déjà', [
-                        'name' => $name,
-                        'guid' => $guid,
-                        'dn' => $dn
-                    ]);
-                } else {
-                    $cnResult = $this->createGroupCn($name, $description);
-                    if (!$cnResult['success']) {
-                        return $cnResult;
-                    }
-                    $guid = $cnResult['guid'];
-                    $dn = "CN={$name}," . $this->dnHelper->parcs();
-                }
+            $ouResult = $this->createSalleOu($name, $description, $group->parent_id);
+            if (! $ouResult['success']) {
+                return $ouResult;
             }
 
             return [
                 'success' => true,
-                'guid' => $guid,
-                'dn' => $dn,
-                'error' => null
+                'guid' => $ouResult['guid'],
+                'dn' => $ouResult['dn'],
+                'error' => null,
             ];
-
         } catch (\Exception $e) {
-            Log::error('[AdSyncService] Erreur création groupe AD', [
+            Log::error('[AdSyncService] Erreur création OU salle AD', [
                 'name' => $name,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            return [
-                'success' => false,
-                'guid' => null,
-                'dn' => null,
-                'error' => $e->getMessage()
-            ];
+
+            return ['success' => false, 'guid' => null, 'dn' => null, 'error' => $e->getMessage()];
         }
     }
 
     /**
-     * Supprime un groupe de machines de l'AD par son nom
-     * 
-     * Règles de synchronisation SQL → AD :
-     * - Groupe physique : supprime OU dans OU=Computers ET CN dans OU=Parcs
-     * - Groupe logique : supprime CN dans OU=Parcs uniquement
+     * Supprime l'`OU` d'une salle physique de `OU=Computers`.
+     *
+     * `$isPhysical = false` est un refus explicite : un groupe logique n'a plus
+     * de représentation AD (38.7). Le paramètre est conservé pour la stabilité
+     * de signature (job de suppression), mais toute valeur `false` est rejetée.
      */
     public function deleteWorkstationGroupByName(string $name, ?string $adGuid = null, bool $isPhysical = true): array
     {
-        Log::info('[AdSyncService] Suppression groupe AD', [
-            'name' => $name,
-            'is_physical' => $isPhysical
-        ]);
+        if (! $isPhysical) {
+            return $this->refuseLogical('deleteWorkstationGroupByName', $name);
+        }
+
+        Log::info('[AdSyncService] Suppression OU salle AD', ['name' => $name]);
 
         try {
-            if ($isPhysical) {
-                // Groupe physique : supprimer OU dans OU=Computers
-                $ouResult = $this->deleteSalleOu($name);
-                if (!$ouResult['success']) {
-                    return $ouResult;
-                }
-            }
-
-            // Supprimer CN dans OU=Parcs (pour physique ET logique)
-            $cnResult = $this->deleteGroupCn($name);
-            if (!$cnResult['success']) {
-                Log::warning('[AdSyncService] Échec suppression CN', [
-                    'name' => $name,
-                    'error' => $cnResult['error']
-                ]);
-            }
-
-            return ['success' => true, 'error' => null];
-
+            return $this->deleteSalleOu($name);
         } catch (\Exception $e) {
-            Log::error('[AdSyncService] Erreur suppression groupe AD', [
+            Log::error('[AdSyncService] Erreur suppression OU salle AD', [
                 'name' => $name,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
     /**
-     * Renomme un groupe de machines dans l'AD
-     * 
-     * Règles de synchronisation SQL → AD :
-     * - Groupe physique : renomme OU dans OU=Computers ET CN dans OU=Parcs
-     * - Groupe logique : renomme CN dans OU=Parcs uniquement
+     * Renomme l'`OU` d'une salle physique dans `OU=Computers`.
+     *
+     * Un groupe logique est refusé (plus d'écriture AD — 38.7).
      */
     public function renameWorkstationGroup(WorkstationGroup $group, string $oldName, string $newName): array
     {
-        $isPhysical = $group->is_physical;
+        if (! $group->is_physical) {
+            return $this->refuseLogical('renameWorkstationGroup', $oldName);
+        }
 
-        Log::info('[AdSyncService] Renommage WorkstationGroup dans AD', [
+        Log::info('[AdSyncService] Renommage OU salle dans AD', [
             'old_name' => $oldName,
             'new_name' => $newName,
-            'is_physical' => $isPhysical
         ]);
 
         try {
-            if ($isPhysical) {
-                // Groupe physique : renommer OU dans OU=Computers
-                $ouResult = $this->renameSalleOu($oldName, $newName);
-                if (!$ouResult['success']) {
-                    return $ouResult;
-                }
-            }
-
-            // Renommer CN dans OU=Parcs (pour physique ET logique)
-            $cnResult = $this->renameGroupCn($oldName, $newName);
-            if (!$cnResult['success']) {
-                Log::warning('[AdSyncService] Échec renommage CN', [
-                    'old_name' => $oldName,
-                    'new_name' => $newName,
-                    'error' => $cnResult['error']
-                ]);
-            }
-
-            return ['success' => true, 'error' => null];
-
+            return $this->renameSalleOu($oldName, $newName);
         } catch (\Exception $e) {
-            Log::error('[AdSyncService] Erreur renommage groupe AD', [
+            Log::error('[AdSyncService] Erreur renommage OU salle AD', [
                 'old_name' => $oldName,
                 'new_name' => $newName,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
     /**
-     * Déplace un groupe de machines vers un nouveau parent dans l'AD
+     * Déplace l'`OU` d'une salle physique vers un nouveau parent dans `OU=Computers`.
+     *
+     * Réduit en 38.7 au seul `move()` de l'`OU` : plus aucun entretien de membres
+     * (l'appartenance machine ↔ parc est SQL-only). Un groupe logique est refusé
+     * — il n'a d'ailleurs jamais eu d'`OU` à déplacer (`findSalleOu()` retournait
+     * null → « OU salle non trouvée » ; cf. défaut n°3 du contexte de la story).
      */
     public function moveWorkstationGroup(WorkstationGroup $group, ?WorkstationGroup $newParent): array
     {
+        if (! $group->is_physical) {
+            return $this->refuseLogical('moveWorkstationGroup', $group->name);
+        }
+
         $groupName = $group->name;
         $newParentName = $newParent?->name ?? 'Computers (racine)';
 
-        Log::info('[AdSyncService] Déplacement WorkstationGroup dans AD', [
+        Log::info('[AdSyncService] Déplacement OU salle dans AD', [
             'name' => $groupName,
-            'new_parent' => $newParentName
+            'new_parent' => $newParentName,
         ]);
 
         try {
             $currentOu = $this->findSalleOu($groupName);
-            if (!$currentOu) {
+            if (! $currentOu) {
                 return ['success' => false, 'error' => "OU salle '$groupName' non trouvée dans AD"];
             }
 
@@ -251,40 +186,20 @@ class AdSyncService
                 }
             }
 
-            $machines = $this->getMachinesInOu($currentOu);
-            $oldParentGroups = $this->getParentGroupNames($group);
-
-            $newDn = "OU={$groupName},{$newParentDn}";
             $currentOu->move($newParentDn);
 
-            $group->refresh();
-            $newParentGroups = $this->getParentGroupNames($group);
-
-            $groupsToRemove = array_diff($oldParentGroups, $newParentGroups);
-            $groupsToAdd = array_diff($newParentGroups, $oldParentGroups);
-
-            foreach ($machines as $machine) {
-                foreach ($groupsToRemove as $groupToRemove) {
-                    $this->removeMachineFromGroupByName($machine, $groupToRemove);
-                }
-                foreach ($groupsToAdd as $groupToAdd) {
-                    $this->addMachineToGroupByName($machine, $groupToAdd);
-                }
-            }
-
-            Log::info('[AdSyncService] Déplacement groupe réussi', [
+            Log::info('[AdSyncService] Déplacement OU salle réussi', [
                 'name' => $groupName,
-                'new_dn' => $newDn,
-                'machines_updated' => count($machines)
+                'new_dn' => "OU={$groupName},{$newParentDn}",
             ]);
 
             return ['success' => true, 'error' => null];
-
         } catch (\Exception $e) {
-            Log::error('[AdSyncService] Erreur déplacement groupe AD', [
+            Log::error('[AdSyncService] Erreur déplacement OU salle AD', [
                 'name' => $groupName,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -293,13 +208,16 @@ class AdSyncService
     // GESTION DES MACHINES DANS LES SALLES (OU)
     // ========================================================================
 
-    // NOTE: Les méthodes addMemberToGroup et removeMemberFromGroup ont été supprimées.
-    // L'appartenance des machines aux groupes (parcs) est maintenant gérée uniquement en SQL.
-    // Le calcul des applications WPKG se fait depuis la base de données, pas depuis l'AD.
-    // Seul le déplacement physique d'une machine vers une salle (OU) reste synchronisé.
+    // NOTE: l'appartenance des machines aux groupes (parcs) est gérée uniquement
+    // en SQL. Le calcul des applications WPKG se fait depuis la base, pas depuis
+    // l'AD. Seul le déplacement physique d'une machine vers une salle (OU) reste
+    // synchronisé (rangement + GPO).
 
     /**
-     * Déplace une machine vers une salle (OU)
+     * Déplace une machine vers l'`OU` d'une salle et remonte `workstations.ad_dn`.
+     *
+     * Réduit en 38.7 au seul `move()` de l'objet ordinateur : plus aucun entretien
+     * de l'attribut `member` des groupes `OU=Parcs`.
      */
     public function moveMachineToSalle(Workstation $machine, WorkstationGroup $targetSalle): array
     {
@@ -308,21 +226,19 @@ class AdSyncService
 
         Log::info('[AdSyncService] Déplacement machine vers salle', [
             'machine' => $machineName,
-            'target_salle' => $salleName
+            'target_salle' => $salleName,
         ]);
 
         try {
             $machineAd = $this->findMachine($machineName);
-            if (!$machineAd) {
+            if (! $machineAd) {
                 return ['success' => false, 'error' => "Machine '$machineName' non trouvée dans AD"];
             }
 
             $targetOu = $this->findSalleOu($salleName);
-            if (!$targetOu) {
+            if (! $targetOu) {
                 return ['success' => false, 'error' => "Salle OU '$salleName' non trouvée dans AD"];
             }
-
-            $oldGroups = $this->getMachineGroups($machineAd);
 
             try {
                 $machineAd->move($targetOu);
@@ -332,99 +248,44 @@ class AdSyncService
 
             $machineAd = $this->findMachine($machineName);
             $this->syncAdDnFromMachine($machine, $machineAd);
-            $newGroups = $this->getSalleHierarchyGroups($targetSalle);
-
-            foreach ($oldGroups as $oldGroup) {
-                if (!in_array($oldGroup, $newGroups)) {
-                    $this->removeMachineFromGroupByName($machineAd, $oldGroup);
-                }
-            }
-
-            foreach ($newGroups as $newGroup) {
-                if (!in_array($newGroup, $oldGroups)) {
-                    $this->addMachineToGroupByName($machineAd, $newGroup);
-                }
-            }
 
             return ['success' => true, 'error' => null];
-
         } catch (\Exception $e) {
             Log::error('[AdSyncService] Erreur déplacement machine', [
                 'machine' => $machineName,
                 'target_salle' => $salleName,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
     // ========================================================================
-    // MÉTHODES PRIVÉES - OPÉRATIONS LDAP DE BAS NIVEAU
+    // MÉTHODES PRIVÉES - OPÉRATIONS LDAP DE BAS NIVEAU (OU=Computers uniquement)
     // ========================================================================
 
-    private function createGroupCn(string $name, string $description): array
+    /**
+     * Refus uniforme d'un groupe logique sur une méthode d'écriture AD (défense
+     * en profondeur : le chemin normal ne doit jamais l'atteindre, l'observer
+     * filtrant sur `is_physical` en amont).
+     */
+    private function refuseLogical(string $method, string $name, bool $withGuidDn = false): array
     {
-        $parcsDn = $this->dnHelper->parcs();
-        $suffix = $this->config->establishment()->suffix ?? '';
-        $samAccountName = $name . $suffix;
+        $error = "Groupe logique '{$name}' refusé : OU=Parcs est en lecture seule (38.7), aucune écriture AD.";
 
-        $group = new Group();
-        $group->setDn("CN={$name},{$parcsDn}");
-        $group->cn = $name;
-        $group->samaccountname = $samAccountName;
-        $group->description = $description;
-        $group->grouptype = -2147483646;
-
-        $group->save();
-
-        $group = Group::find($group->getDn());
-        $guid = $group?->getConvertedGuid();
-
-        Log::debug('[AdSyncService] Groupe CN créé', [
+        Log::warning('[AdSyncService] Écriture AD refusée pour groupe logique', [
+            'method' => $method,
             'name' => $name,
-            'dn' => "CN={$name},{$parcsDn}",
-            'guid' => $guid
         ]);
 
-        return ['success' => true, 'guid' => $guid, 'error' => null];
-    }
-
-    private function deleteGroupCn(string $name): array
-    {
-        $group = $this->findGroupCn($name);
-        if ($group) {
-            $group->delete();
-            Log::debug('[AdSyncService] Groupe CN supprimé', ['name' => $name]);
-        }
-        return ['success' => true, 'error' => null];
-    }
-
-    private function renameGroupCn(string $oldName, string $newName): array
-    {
-        $group = $this->findGroupCn($oldName);
-        if (!$group) {
-            return ['success' => false, 'error' => "Groupe CN '$oldName' non trouvé"];
+        $result = ['success' => false, 'error' => $error];
+        if ($withGuidDn) {
+            $result['guid'] = null;
+            $result['dn'] = null;
         }
 
-        $suffix = $this->config->establishment()->suffix ?? '';
-        $group->rename("CN={$newName}");
-        $group->samaccountname = $newName . $suffix;
-        $group->save();
-
-        Log::debug('[AdSyncService] Groupe CN renommé', [
-            'old_name' => $oldName,
-            'new_name' => $newName
-        ]);
-
-        return ['success' => true, 'error' => null];
-    }
-
-    private function findGroupCn(string $name): ?DeviceGroupTagModel
-    {
-        $parcsDn = $this->dnHelper->parcs();
-        return DeviceGroupTagModel::in($parcsDn)
-            ->where('cn', '=', $name)
-            ->first();
+        return $result;
     }
 
     private function createSalleOu(string $name, string $description, ?int $parentId): array
@@ -454,7 +315,7 @@ class AdSyncService
         Log::debug('[AdSyncService] OU salle créée', [
             'name' => $name,
             'dn' => $ouDn,
-            'guid' => $guid
+            'guid' => $guid,
         ]);
 
         return ['success' => true, 'guid' => $guid, 'dn' => $ouDn, 'error' => null];
@@ -471,13 +332,14 @@ class AdSyncService
             $ou->delete();
             Log::debug('[AdSyncService] OU salle supprimée', ['name' => $name]);
         }
+
         return ['success' => true, 'error' => null];
     }
 
     private function renameSalleOu(string $oldName, string $newName): array
     {
         $ou = $this->findSalleOu($oldName);
-        if (!$ou) {
+        if (! $ou) {
             return ['success' => false, 'error' => "OU salle '$oldName' non trouvée"];
         }
 
@@ -485,7 +347,7 @@ class AdSyncService
 
         Log::debug('[AdSyncService] OU salle renommée', [
             'old_name' => $oldName,
-            'new_name' => $newName
+            'new_name' => $newName,
         ]);
 
         return ['success' => true, 'error' => null];
@@ -494,6 +356,7 @@ class AdSyncService
     private function findSalleOu(string $name): ?DeviceGroupModel
     {
         $computersDn = $this->dnHelper->computers();
+
         return DeviceGroupModel::in($computersDn)
             ->where('ou', '=', $name)
             ->first();
@@ -502,6 +365,7 @@ class AdSyncService
     private function findMachine(string $name): ?MachineModel
     {
         $computersDn = $this->dnHelper->computers();
+
         return MachineModel::in($computersDn)
             ->where('cn', '=', $name)
             ->first();
@@ -529,103 +393,17 @@ class AdSyncService
         ]);
     }
 
-    private function getMachineGroups(MachineModel $machine): array
-    {
-        $memberOf = $machine->memberof ?? [];
-        if (!is_array($memberOf)) {
-            $memberOf = [$memberOf];
-        }
-
-        $parcsDn = strtolower($this->dnHelper->parcs());
-        $groups = [];
-
-        foreach ($memberOf as $dn) {
-            if (stripos($dn, $parcsDn) !== false) {
-                if (preg_match('/^CN=([^,]+),/i', $dn, $matches)) {
-                    $groups[] = $matches[1];
-                }
-            }
-        }
-
-        return $groups;
-    }
-
-    private function getSalleHierarchyGroups(WorkstationGroup $salle): array
-    {
-        $groups = [$salle->name];
-
-        $current = $salle;
-        while ($current->parent_id) {
-            $parent = WorkstationGroup::find($current->parent_id);
-            if ($parent && $parent->is_physical) {
-                $groups[] = $parent->name;
-                $current = $parent;
-            } else {
-                break;
-            }
-        }
-
-        return $groups;
-    }
-
+    /**
+     * Machines rangées dans une `OU` de salle. Conservé (moitié `OU=Computers`)
+     * bien qu'inutilisé depuis le retrait de l'entretien de membres.
+     *
+     * @return array<int, MachineModel>
+     */
     private function getMachinesInOu(DeviceGroupModel $ou): array
     {
-        $ouDn = $ou->getDn();
-        return MachineModel::in($ouDn)
+        return MachineModel::in($ou->getDn())
             ->limit(500)
             ->get()
             ->all();
-    }
-
-    private function getParentGroupNames(WorkstationGroup $group): array
-    {
-        $groups = [];
-
-        $current = $group;
-        while ($current->parent_id) {
-            $parent = WorkstationGroup::find($current->parent_id);
-            if ($parent && $parent->is_physical) {
-                $groups[] = $parent->name;
-                $current = $parent;
-            } else {
-                break;
-            }
-        }
-
-        return $groups;
-    }
-
-    private function addMachineToGroupByName(MachineModel $machine, string $groupName): void
-    {
-        $group = $this->findGroupCn($groupName);
-        if ($group) {
-            $members = $group->member ?? [];
-            if (!is_array($members)) {
-                $members = [$members];
-            }
-
-            $machineDn = $machine->getDn();
-            if (!in_array($machineDn, $members)) {
-                $members[] = $machineDn;
-                $group->member = $members;
-                $group->save();
-            }
-        }
-    }
-
-    private function removeMachineFromGroupByName(MachineModel $machine, string $groupName): void
-    {
-        $group = $this->findGroupCn($groupName);
-        if ($group) {
-            $members = $group->member ?? [];
-            if (!is_array($members)) {
-                $members = [$members];
-            }
-
-            $machineDn = $machine->getDn();
-            $members = array_filter($members, fn($m) => strcasecmp($m, $machineDn) !== 0);
-            $group->member = array_values($members);
-            $group->save();
-        }
     }
 }

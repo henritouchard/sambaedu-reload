@@ -11,21 +11,29 @@ Dans SambaEdu, les observers sont utilisés pour **synchroniser automatiquement 
 
 ## Observers disponibles
 
+> **Story 38.7 — asymétrie `OU=Parcs` / `OU=Computers`.** `OU=Parcs` est un
+> vestige SE4 en LECTURE SEULE : lu à l'import de migration (`sync-from-ad`),
+> jamais écrit. Seule l'`OU` d'une salle physique sous `OU=Computers` reste
+> synchronisée (rangement des machines + liens GPO). Les groupes LOGIQUES et les
+> profils applicatifs (`AppProfile`) sont purement SQL.
+
 ### WorkstationGroupObserver
 
-Synchronise les groupes de machines (WorkstationGroup) vers l'AD :
+Synchronise les **salles physiques** (`is_physical = true`) vers leur `OU` sous
+`OU=Computers`. Les groupes logiques ne produisent AUCUN job.
 
-- **`created()`** : Crée l'AppProfile correspondant en SQL (pour les salles physiques), puis dispatch le job de sync AD
-- **`updated()`** : Détecte les changements (nom, parent), renomme le AppProfile associé si même nom, et dispatch les jobs appropriés (rename, move)
-- **`deleting()`** : Supprime le AppProfile associé si même nom, puis dispatch le job de suppression AD
+- **`created()`** : groupe physique → dispatch du job de création de l'OU
+- **`updated()`** : groupe physique → dispatch des jobs (rename, move) selon les changements
+- **`deleting()`** : groupe physique → dispatch du job de suppression de l'OU
+
+La création automatique d'un `AppProfile` (profil WPKG) a été **retirée** en 38.7 :
+un profil se crée dans `/parc-settings/profiles` et s'attache explicitement.
 
 ### AppProfileObserver
 
-Synchronise les profils applicatifs (AppProfile) vers l'AD :
-
-- **`created()`** : Dispatch le job de création du groupe CN dans OU=Parcs
-- **`updated()`** : Détecte les changements de nom et dispatch le job de renommage AD
-- **`deleting()`** : Dispatch le job de suppression du groupe CN de l'AD
+Ne dispatche plus aucun job AD (38.7) : un `AppProfile` n'a plus de représentation
+écrite dans `OU=Parcs`. L'observer ne conserve que le drapeau `disableSync()` utilisé
+par l'importeur de migration.
 
 ### WorkstationObserver
 
@@ -39,14 +47,11 @@ Synchronise les machines (Workstation) vers l'AD :
 ```
 WorkstationGroup (SQL)
     │
-    ├── WorkstationGroupObserver
-    │       ├── Crée/Renomme/Supprime AppProfile associé
-    │       └── Dispatch WorkstationGroupAdSyncJob
-    │
-    └── AppProfile (SQL)
-            │
-            └── AppProfileObserver
-                    └── Dispatch AppProfileAdSyncJob
+    └── WorkstationGroupObserver
+            └── [is_physical == true seulement] Dispatch WorkstationGroupAdSyncJob
+                    └── OU sous OU=Computers (rangement + GPO)
+
+AppProfile (SQL)  ── purement SQL, aucune écriture AD (OU=Parcs en lecture seule)
 ```
 
 ## Désactivation temporaire

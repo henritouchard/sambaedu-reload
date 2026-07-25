@@ -14,13 +14,20 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Job unifié pour la synchronisation des WorkstationGroups vers l'AD
- * 
+ * Job de synchronisation SQL → AD des WorkstationGroup PHYSIQUES.
+ *
+ * Story 38.7 — n'est dispatché QUE pour les groupes physiques (`is_physical =
+ * true`) : l'observer filtre en amont. Il n'écrit plus que l'`OU` de la salle
+ * sous `OU=Computers` (rangement des machines + liens GPO — l'unique invariant
+ * AD). `OU=Parcs` est en LECTURE SEULE : on l'y LIT à l'import de migration, on
+ * n'y ÉCRIT plus rien (ni parcs logiques, ni miroir CN des salles, ni profils
+ * applicatifs). Les groupes logiques sont purement SQL et ne produisent aucun job.
+ *
  * Actions supportées :
- * - create : Crée le groupe dans l'AD
- * - rename : Renomme le groupe dans l'AD
- * - move   : Déplace le groupe vers un nouveau parent
- * - delete : Supprime le groupe de l'AD
+ * - create : Crée l'OU de la salle dans OU=Computers
+ * - rename : Renomme l'OU
+ * - move   : Déplace l'OU vers un nouveau parent
+ * - delete : Supprime l'OU
  */
 class WorkstationGroupAdSyncJob implements ShouldQueue
 {

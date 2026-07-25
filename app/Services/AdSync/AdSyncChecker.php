@@ -8,20 +8,22 @@ use App\Config\LdapDnHelper;
 use App\LdapModels\MachineModel;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
-use App\Models\AppProfile;
 use App\Repositories\WorkstationGroupRepository;
-use App\Repositories\AppProfileRepository;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Service de vérification de la cohérence AD/SQL
+ * Service de vérification de la cohérence AD/SQL.
+ *
+ * Story 38.7 — `checkAppProfiles()` a été RETIRÉE : elle comparait SQL ↔
+ * `OU=Parcs` pour un « exporter vers l'AD », or SE5 n'écrit plus les profils
+ * dans l'AD (`OU=Parcs` en lecture seule). {@see checkWorkstationGroups()}
+ * RESTE : il compare les `OU` de `OU=Computers`, qui demeurent la vérité AD.
  */
 class AdSyncChecker
 {
     public function __construct(
         private WorkstationGroupRepository $workstationGroupRepository,
-        private AppProfileRepository $appProfileRepository,
         private LdapDnHelper $dnHelper
     ) {
     }
@@ -151,124 +153,6 @@ class AdSyncChecker
                 'missing_in_ad' => collect(),
                 'missing_in_sql' => collect(),
                 'name_mismatches' => collect(),
-                'recommendations' => collect(),
-                'last_check' => now()->toIso8601String(),
-                'error' => $e->getMessage(),
-            ];
-        }
-    }
-
-    /**
-     * Vérifie la cohérence des AppProfiles entre AD et SQL
-     */
-    public function checkAppProfiles(): array
-    {
-        try {
-            $systemGroups = ['computers'];
-
-            $profilesAd = $this->appProfileRepository->getAllFromAd();
-            $adData = collect($profilesAd)->map(fn($p) => [
-                'name' => strtolower($p['name'] ?? ''),
-                'original_name' => $p['name'] ?? '',
-                'dn' => $p['dn'] ?? '',
-                'uuid' => $p['guid'] ?? null,
-                'description' => $p['description'] ?? null,
-            ])->filter(fn($p) => !empty($p['name']) && !in_array($p['name'], $systemGroups));
-            $adNames = $adData->pluck('name')->unique();
-
-            $sqlProfiles = AppProfile::whereNotIn('name', $systemGroups)
-                ->get();
-            $sqlData = $sqlProfiles->map(fn($p) => [
-                'id' => $p->id,
-                'name' => strtolower($p->name),
-                'original_name' => $p->name,
-                'description' => $p->description,
-                'uuid' => $p->ad_guid,
-            ]);
-            $sqlNames = $sqlData->pluck('name')->unique();
-
-            $missingInAdRaw = $sqlData->filter(fn($p) => !$adNames->contains($p['name']));
-            $missingInSqlRaw = $adData->filter(fn($p) => !$sqlNames->contains($p['name']));
-
-            $recommendations = collect();
-
-            foreach ($missingInAdRaw as $sqlProfile) {
-                if (!empty($sqlProfile['uuid'])) {
-                    $adMatch = $adData->first(fn($ad) => $ad['uuid'] === $sqlProfile['uuid']);
-                    if ($adMatch) {
-                        $recommendations->push([
-                            'type' => 'rename_detected',
-                            'source' => 'sql',
-                            'sql_name' => $sqlProfile['original_name'],
-                            'sql_id' => $sqlProfile['id'],
-                            'ad_name' => $adMatch['original_name'],
-                            'uuid' => $sqlProfile['uuid'],
-                            'suggestion' => "Le profil '{$sqlProfile['original_name']}' en SQL semble avoir été renommé '{$adMatch['original_name']}' dans l'AD",
-                            'action' => 'Mettre à jour le nom en SQL ou renommer dans l\'AD',
-                        ]);
-                    }
-                }
-            }
-
-            foreach ($missingInSqlRaw as $adProfile) {
-                if (!empty($adProfile['uuid'])) {
-                    $sqlMatch = $sqlData->first(fn($sql) => $sql['uuid'] === $adProfile['uuid']);
-                    if ($sqlMatch) {
-                        $alreadyDetected = $recommendations->contains(fn($r) => $r['uuid'] === $adProfile['uuid']);
-                        if (!$alreadyDetected) {
-                            $recommendations->push([
-                                'type' => 'rename_detected',
-                                'source' => 'ad',
-                                'sql_name' => $sqlMatch['original_name'],
-                                'sql_id' => $sqlMatch['id'],
-                                'ad_name' => $adProfile['original_name'],
-                                'uuid' => $adProfile['uuid'],
-                                'suggestion' => "Le profil '{$adProfile['original_name']}' dans l'AD correspond à '{$sqlMatch['original_name']}' en SQL",
-                                'action' => 'Mettre à jour le nom en SQL ou renommer dans l\'AD',
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            $detectedUuids = $recommendations->pluck('uuid')->filter()->unique();
-
-            $missingInAd = $missingInAdRaw->map(fn($p) => [
-                'id' => $p['id'],
-                'name' => $p['original_name'],
-                'description' => $p['description'],
-                'uuid' => $p['uuid'],
-                'has_recommendation' => !empty($p['uuid']) && $detectedUuids->contains($p['uuid']),
-            ])->values();
-
-            $missingInSql = $missingInSqlRaw->map(fn($p) => [
-                'name' => $p['original_name'],
-                'dn' => $p['dn'],
-                'uuid' => $p['uuid'],
-                'has_recommendation' => !empty($p['uuid']) && $detectedUuids->contains($p['uuid']),
-            ])->values();
-
-            $synced = $missingInAd->isEmpty() && $missingInSql->isEmpty() && $recommendations->isEmpty();
-
-            return [
-                'synced' => $synced,
-                'ad_count' => $adNames->count(),
-                'sql_count' => $sqlProfiles->count(),
-                'missing_in_ad' => $missingInAd,
-                'missing_in_sql' => $missingInSql,
-                'recommendations' => $recommendations->values(),
-                'last_check' => now()->toIso8601String(),
-                'error' => null,
-            ];
-
-        } catch (\Exception $e) {
-            Log::error('[AdSyncChecker] Erreur vérification AppProfiles: ' . $e->getMessage());
-            return [
-                'synced' => false,
-                'ad_count' => 0,
-                'sql_count' => 0,
-                'missing_in_ad' => collect(),
-                'missing_in_sql' => collect(),
                 'recommendations' => collect(),
                 'last_check' => now()->toIso8601String(),
                 'error' => $e->getMessage(),

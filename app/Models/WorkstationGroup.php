@@ -28,7 +28,7 @@ use App\Enums\LockReason;
  * @property bool $is_physical true = groupe physique (OU dans Computers), false = groupe logique (CN dans Parcs)
  * @property string|null $display_name Nom d'affichage
  * @property string|null $description
- * @property string|null $app_profile_name Nom du AppProfile à créer (si rempli)
+ * @property string|null $app_profile_name Champ hérité INERTE (Story 38.7) — la création auto d'AppProfile a été retirée. Conservé sans migration car lu par SnapshotController (export controlHub) et écrit par BulkCreateWorkstationGroupsJob (payload controlHub descendant).
  * @property int|null $parent_id Parent pour les groupes physiques (hiérarchie GPO)
  * @property string|null $ad_dn Distinguished Name dans AD
  * @property string|null $ad_guid objectGUID dans AD
@@ -346,7 +346,10 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Scope pour les groupes avec un AppProfile associé
+     * Scope sur `app_profile_name` renseigné.
+     *
+     * Champ hérité inerte — la création automatique d'AppProfile a été retirée
+     * en 38.7. Conservé pour la couture controlHub (cf. docblock de la propriété).
      */
     public function scopeWithAppProfile(Builder $query): Builder
     {
@@ -354,7 +357,10 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Scope pour les groupes sans AppProfile associé
+     * Scope sur `app_profile_name` vide.
+     *
+     * Champ hérité inerte — la création automatique d'AppProfile a été retirée
+     * en 38.7. Conservé pour la couture controlHub (cf. docblock de la propriété).
      */
     public function scopeWithoutAppProfile(Builder $query): Builder
     {
@@ -362,7 +368,10 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Vérifie si ce groupe a un AppProfile associé
+     * `app_profile_name` est-il renseigné ?
+     *
+     * Champ hérité inerte — la création automatique d'AppProfile a été retirée
+     * en 38.7. Conservé pour la couture controlHub (cf. docblock de la propriété).
      */
     public function hasAppProfile(): bool
     {

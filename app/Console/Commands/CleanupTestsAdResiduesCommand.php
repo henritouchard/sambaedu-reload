@@ -10,7 +10,6 @@ use App\LdapModels\DeviceGroupTagModel;
 use App\Models\AppProfile;
 use App\Models\WorkstationGroup;
 use App\Services\AdSync\AdSyncService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use Illuminate\Console\Command;
 
 /**
@@ -45,7 +44,6 @@ class CleanupTestsAdResiduesCommand extends Command
     public function handle(
         LdapDnHelper $dnHelper,
         AdSyncService $adSyncService,
-        AppProfileAdSyncService $appProfileAdSyncService,
     ): int {
         $apply = (bool) $this->option('apply');
         $pattern = $this->option('pattern') ?: self::DEFAULT_PATTERN;
@@ -124,20 +122,16 @@ class CleanupTestsAdResiduesCommand extends Command
         $stats = ['parcs_cn' => 0, 'computers_ou' => 0, 'sql_group' => 0, 'sql_profile' => 0, 'errors' => 0];
 
         foreach ($parcsCns as $entry) {
-            $name = $entry->getParcName() ?? '';
+            // Story 38.7 — SE5 n'écrit plus dans OU=Parcs ; la suppression d'un
+            // résidu de test se fait par delete() direct sur l'objet LDAP (le
+            // service d'écriture AppProfileAdSyncService a été retiré).
             try {
-                $appProfileAdSyncService->deleteAppProfile($name);
+                $entry->delete();
                 $stats['parcs_cn']++;
                 $this->line("  ✓ AD CN supprimé : {$entry->getDn()}");
             } catch (\Throwable $e) {
-                try {
-                    $entry->delete();
-                    $stats['parcs_cn']++;
-                    $this->line("  ✓ AD CN supprimé (fallback direct) : {$entry->getDn()}");
-                } catch (\Throwable $e2) {
-                    $stats['errors']++;
-                    $this->error("  ✗ AD CN {$entry->getDn()} : {$e2->getMessage()}");
-                }
+                $stats['errors']++;
+                $this->error("  ✗ AD CN {$entry->getDn()} : {$e->getMessage()}");
             }
         }
 

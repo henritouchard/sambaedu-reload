@@ -6,7 +6,6 @@ namespace App\Services\AppProfile;
 
 use App\Models\AppProfile;
 use App\Models\Application;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -35,6 +34,11 @@ use Illuminate\Support\Facades\Log;
  */
 final class AppProfileLegacyApplicationLinker
 {
+    public function __construct(
+        private readonly LegacyParcApplicationReader $legacyReader = new LegacyParcApplicationReader(),
+    ) {
+    }
+
     /**
      * @param  callable|null  $logCallback  fn(string $level, string $message): void
      * @return array{
@@ -61,16 +65,10 @@ final class AppProfileLegacyApplicationLinker
             'errors' => [],
         ];
 
-        if (! $this->canConnectLegacy()) {
-            $stats['legacy_unavailable'] = true;
-            $log('warning', 'Connexion legacy_mysql non configurée/injoignable — liaison des applications aux profils ignorée.');
-
-            return $stats;
-        }
-
-        $legacy = $this->readLegacyAssignments($log);
+        $legacy = $this->legacyReader->read($log);
         if ($legacy === null) {
             $stats['legacy_unavailable'] = true;
+            $log('warning', 'Liaison des applications aux profils ignorée — source legacy indisponible.');
 
             return $stats;
         }
@@ -127,81 +125,5 @@ final class AppProfileLegacyApplicationLinker
         ));
 
         return $stats;
-    }
-
-    /**
-     * Garde-fou de connexion (parité {@see \App\Console\Commands\QuotaSeedFromLegacyCommand}).
-     */
-    private function canConnectLegacy(): bool
-    {
-        $driver = (string) config('database.connections.legacy_mysql.driver');
-        $database = (string) config('database.connections.legacy_mysql.database');
-        $username = (string) config('database.connections.legacy_mysql.username');
-
-        if ($driver === 'mysql' && ($database === '' || $username === '')) {
-            return false;
-        }
-
-        try {
-            DB::connection('legacy_mysql')->getPdo();
-
-            return true;
-        } catch (\Throwable $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Lit les assignations parc → applications du legacy.
-     *
-     * @return array{0: array<int, list<string>>, 1: array<string, int>}|null
-     *   [parcId => [id_nom_app, …], lower(nom_parc) => parcId] ; null si lecture échouée.
-     */
-    private function readLegacyAssignments(callable $log): ?array
-    {
-        try {
-            // id_app → id_nom_app (clé métier stable, = app_id côté SE5).
-            // F2 : on ne retient que les applis ACTIVES — le catalogue SE5 (issu
-            // du packages.xml legacy) ne contient que les actives, donc une appli
-            // inactive encore assignée à un parc ne doit PAS être comptée comme
-            // « manquante » (faux positif anxiogène). Ses assignations sont
-            // simplement ignorées (id_appli non résolu plus bas).
-            $appNameById = DB::connection('legacy_mysql')
-                ->table('applications')
-                ->where('active_app', 1)
-                ->pluck('id_nom_app', 'id_app');
-
-            // lower(nom_parc) → id_parc.
-            $parcByName = [];
-            DB::connection('legacy_mysql')
-                ->table('parc')
-                ->select(['id_parc', 'nom_parc'])
-                ->orderBy('id_parc')
-                ->each(function ($row) use (&$parcByName): void {
-                    $parcByName[mb_strtolower((string) $row->nom_parc)] = (int) $row->id_parc;
-                });
-
-            // id_parc → [id_nom_app, …] depuis applications_profile (type 'parc').
-            $parcAppNames = [];
-            DB::connection('legacy_mysql')
-                ->table('applications_profile')
-                ->where('type_entite', 'parc')
-                ->select(['id_entite', 'id_appli'])
-                ->orderBy('id_applications_profile')
-                ->each(function ($row) use (&$parcAppNames, $appNameById): void {
-                    $idNomApp = $appNameById[$row->id_appli] ?? null;
-                    if ($idNomApp === null) {
-                        return;
-                    }
-                    $parcAppNames[(int) $row->id_entite][] = (string) $idNomApp;
-                });
-
-            return [$parcAppNames, $parcByName];
-        } catch (\Throwable $e) {
-            $log('error', 'Lecture des assignations legacy (applications_profile/parc) échouée : ' . $e->getMessage());
-            Log::error('AppProfileLegacyApplicationLinker: lecture legacy échouée', ['error' => $e->getMessage()]);
-
-            return null;
-        }
     }
 }

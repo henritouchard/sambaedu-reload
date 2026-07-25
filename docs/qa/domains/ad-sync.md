@@ -122,3 +122,61 @@ Après scénario 1.1, restaurer l'état initial pour pouvoir rejouer la batterie
 - [ ] 1.4 — Create → ad_guid posé en PG
 - [ ] 1.5 — withoutSync ne dispatche aucun job
 - [ ] 1.6 — Rollback nom original OK
+
+---
+
+## Story 38.7 — `OU=Parcs` en lecture seule (extinction des écritures SE5)
+
+**Invariant.** `OU=Parcs` est un vestige SE4 en LECTURE SEULE : on le LIT à l'import
+de migration (`sync-from-ad`), on n'y ÉCRIT plus rien — ni parcs logiques, ni miroir
+`CN` des salles physiques, ni profils applicatifs (`AppProfile`). `OU=Computers` reste
+INTÉGRALEMENT géré par SE5 : c'est là que les machines sont rangées et que les GPO sont
+liées — l'unique invariant AD à protéger.
+
+> **Note d'honnêteté (asymétrie assumée).** `WorkstationGroupService::importLogicalGroupsFromAd()`
+> aspire *tout* `CN` de `OU=Parcs`, y compris d'anciens profils WPKG legacy — comportement
+> préexistant, non aggravé, mais désormais asymétrique (on lit un conteneur qu'on n'écrit
+> plus). Signalé explicitement plutôt que subi.
+
+### Scénario 38.7-A — Aucune écriture SE5 dans `OU=Parcs`
+
+Créer / renommer / déplacer / supprimer un groupe **logique** (`is_physical = false`),
+créer / renommer / supprimer un `AppProfile`, déplacer une machine d'une salle à l'autre.
+
+Vérifier dans `storage/logs/laravel.log` qu'AUCUN `[WorkstationGroupAdSyncJob]` ni
+`AppProfileAdSyncJob` n'est émis pour ces objets, et qu'aucun `CN` n'apparaît /
+disparaît sous `OU=Parcs`. Test de référence : **la suite passe avec un annuaire
+injoignable** sur tous ces chemins d'administration.
+
+### Scénario 38.7-B — La salle physique reste écrite (non-régression)
+
+Créer / renommer / déplacer / supprimer un groupe **physique** (`is_physical = true`) :
+l'`OU` correspondante sous `OU=Computers` doit être créée / renommée / déplacée /
+supprimée exactement comme avant, et l'objet ordinateur rangé dans la bonne `OU`.
+
+### Scénario 38.7-C — `se4:prune-ad-parcs` (prévisionnel)
+
+- `php artisan se4:prune-ad-parcs` (sans `--confirm`) : dry-run, liste les `CN`,
+  journalise NOMMÉMENT les exclusions (homonymes d'un `app_profiles.name` — collision ;
+  homonymes d'un groupe physique — miroir vivant), **aucune écriture LDAP**.
+- `--confirm` : refuse si l'extinction à blanc SE4 n'est pas en place (le legacy lit
+  encore `OU=Parcs` via `gpo/applications.php`), et refuse d'agir sans droit d'écriture
+  (pas de faux succès). NON branchée dans un scheduler ni dans `import:sync-from-ad`.
+
+### Scénario 38.7-D — Import de migration sélectif
+
+- Étape 5 (groupes logiques) : un `CN` dont le parc legacy ne porte AUCUNE application
+  n'est PAS importé (listé nommément avec son nombre de machines). `_TousLesPostes` n'est
+  jamais importé. Salles physiques (étape 4) : NON concernées.
+- Étape 7 (profils) : un `AppProfile` n'est créé QUE si le parc legacy porte des
+  applications. `_TousLesPostes` → ses applications sont promues en `applications.is_parc_default`
+  (couche Broadcast), jamais un profil. Legacy injoignable ⇒ **zéro création + warning**
+  (« étape incomplète, à rejouer »), jamais de repli silencieux. Rejeu idempotent :
+  `is_parc_default` n'est jamais retiré.
+
+### Checklist rapide
+
+- [ ] 38.7-A — Admin parcs/profils : zéro écriture `OU=Parcs`, suite verte annuaire injoignable
+- [ ] 38.7-B — Salle physique : `OU=Computers` créée/renommée/déplacée/supprimée comme avant
+- [ ] 38.7-C — `se4:prune-ad-parcs` dry-run liste + exclusions journalisées, `--confirm` gardé
+- [ ] 38.7-D — Import : parc sans app sauté (nom+machines), `_TousLesPostes` → défauts parc, legacy KO = zéro création

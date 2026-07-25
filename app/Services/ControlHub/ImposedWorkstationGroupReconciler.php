@@ -123,8 +123,13 @@ class ImposedWorkstationGroupReconciler
     }
 
     /**
-     * Crée un WorkstationGroup imposé absent via le chemin parc existant
-     * (observer → `WorkstationGroupAdSyncJob`, AD réel `OU=Parcs`).
+     * Crée un WorkstationGroup imposé absent via le chemin parc existant.
+     *
+     * Story 38.7 — le groupe imposé est LOGIQUE (`is_physical = false`) : il est
+     * désormais purement SQL. L'observer ne dispatche plus aucun job AD pour lui
+     * (`OU=Parcs` est en lecture seule ; on l'y LIT à l'import de migration, on
+     * n'y ÉCRIT plus rien). Seules les salles physiques restent écrites, dans
+     * leur `OU` sous `OU=Computers`.
      */
     private function createImposedGroup(string $name, ?string $labelName): void
     {
