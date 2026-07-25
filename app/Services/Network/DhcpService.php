@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Network;
 
 use App\Models\DhcpReservation;
+use App\Models\DhcpSubnet;
 use App\Models\Workstation;
 use App\Services\Network\Exceptions\DhcpCommandException;
 use App\Services\Network\Exceptions\DhcpDaemonDownException;
@@ -184,6 +185,14 @@ class DhcpService
         $this->assertNoDuplicate('mac', $mac, $current?->id);
         $this->assertNoDuplicate('ip', $ip, $current?->id);
 
+        // Symétrique de DhcpSubnetService::assertNoRangeCoversReservation() :
+        // une IP réservée qui tombe dans une plage dynamique déclarée peut être
+        // attribuée par bail à un AUTRE poste → deux machines sur la même IP.
+        // (Ce n'est PAS une protection DDNS : vérifié empiriquement le
+        // 2026-07-25, une réservation `fixed-address` déclenche quand même
+        // `on commit`/`on release` — cf. project_dhcp_ddns_native_channel.)
+        $this->assertIpNotInDynamicRange($ip);
+
         $source = $attrs['source'] ?? ($current->source ?? DhcpReservation::SOURCE_MANUAL);
         if (!in_array($source, DhcpReservation::SOURCES, true)) {
             $source = DhcpReservation::SOURCE_MANUAL;
@@ -203,6 +212,80 @@ class DhcpService
         ];
 
         return $payload;
+    }
+
+    /**
+     * Refuse une IP réservée qui tombe dans une plage dynamique déclarée
+     * (sous-réseau par défaut OU VLAN géré). Une telle IP peut être servie
+     * dynamiquement à un autre client → conflit d'adresse. Symétrique de la
+     * garde côté sous-réseau (`DhcpSubnetService::assertNoRangeCoversReservation`).
+     *
+     * Les plages sont lues à la source réelle : le sous-réseau par défaut vit
+     * dans `sambaedu.conf`/`dhcp.conf` (via `SambaEduConfig`, PAS la config
+     * Laravel — cf. le même piège que `etab_ou`), les VLAN gérés dans
+     * `dhcp_subnets`.
+     *
+     * @throws DhcpValidationException
+     */
+    private function assertIpNotInDynamicRange(string $ip): void
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return; // déjà rejeté par validateIp() en amont
+        }
+
+        $ipLong = ip2long($ip) & 0xFFFFFFFF;
+
+        foreach ($this->dynamicRanges() as $range) {
+            $beginLong = ip2long($range['begin']) & 0xFFFFFFFF;
+            $endLong = ip2long($range['end']) & 0xFFFFFFFF;
+
+            if ($ipLong >= $beginLong && $ipLong <= $endLong) {
+                throw new DhcpValidationException(sprintf(
+                    'L\'IP %s est dans la plage dynamique %s–%s (%s) : un poste pourrait '
+                    . 'recevoir cette adresse par bail, créant un conflit. Choisir une IP hors plage.',
+                    $ip,
+                    $range['begin'],
+                    $range['end'],
+                    $range['label'],
+                ));
+            }
+        }
+    }
+
+    /**
+     * Toutes les plages dynamiques déclarées, sous-réseau par défaut inclus.
+     * Les plages malformées (bornes vides/invalides) sont ignorées — une garde
+     * ne doit jamais faire échouer une réservation légitime sur une conf bancale.
+     *
+     * @return list<array{begin:string,end:string,label:string}>
+     */
+    private function dynamicRanges(): array
+    {
+        $ranges = [];
+
+        $config = app(\App\Config\SambaEduConfig::class);
+        $begin = trim((string) $config->get('dhcp_begin_range', ''));
+        $end = trim((string) $config->get('dhcp_end_range', ''));
+        if ($this->isValidIpv4($begin) && $this->isValidIpv4($end)) {
+            $ranges[] = ['begin' => $begin, 'end' => $end, 'label' => 'sous-réseau par défaut'];
+        }
+
+        foreach (DhcpSubnet::all(['vlan_id', 'ranges']) as $subnet) {
+            foreach ((array) $subnet->ranges as $range) {
+                $b = trim((string) ($range['begin'] ?? ''));
+                $e = trim((string) ($range['end'] ?? ''));
+                if ($this->isValidIpv4($b) && $this->isValidIpv4($e)) {
+                    $ranges[] = ['begin' => $b, 'end' => $e, 'label' => 'VLAN ' . $subnet->vlan_id];
+                }
+            }
+        }
+
+        return $ranges;
+    }
+
+    private function isValidIpv4(string $ip): bool
+    {
+        return $ip !== '' && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
     }
 
     /**

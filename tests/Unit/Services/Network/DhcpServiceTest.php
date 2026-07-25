@@ -317,4 +317,101 @@ class DhcpServiceTest extends TestCase
             'ip' => '10.0.0.11',
         ]);
     }
+
+    // ========================================================================
+    // Garde plage dynamique (symétrique de assertNoRangeCoversReservation)
+    // ========================================================================
+
+    /**
+     * Bind un SambaEduConfig factice exposant la plage du sous-réseau par
+     * défaut (lue depuis sambaedu.conf en prod).
+     *
+     * @param  array<string,string>  $keys
+     */
+    private function fakeSambaEduDefaultRange(array $keys): void
+    {
+        $this->app->instance(\App\Config\SambaEduConfig::class, new class($keys) extends \App\Config\SambaEduConfig {
+            /** @param array<string,string> $keys */
+            public function __construct(private array $keys) {}
+
+            public function get(string $key, mixed $default = null): mixed
+            {
+                return $this->keys[$key] ?? $default;
+            }
+        });
+    }
+
+    #[Test]
+    public function reservation_ip_inside_default_subnet_range_is_refused(): void
+    {
+        $this->runner->whenContains('make_dhcpd_conf.sh', '', returnCode: 0);
+        $this->fakeSambaEduDefaultRange([
+            'dhcp_begin_range' => '192.168.122.100',
+            'dhcp_end_range' => '192.168.122.200',
+        ]);
+
+        $this->expectException(DhcpValidationException::class);
+        $this->expectExceptionMessageMatches('/plage dynamique 192\.168\.122\.100.*défaut/');
+
+        $this->service->createReservation([
+            'name' => 'imprimante-cdi',
+            'mac' => 'aa:bb:cc:dd:ee:10',
+            'ip' => '192.168.122.150', // dans la plage
+        ]);
+    }
+
+    #[Test]
+    public function reservation_ip_outside_ranges_is_accepted(): void
+    {
+        $this->runner->whenContains('make_dhcpd_conf.sh', '', returnCode: 0);
+        $this->fakeSambaEduDefaultRange([
+            'dhcp_begin_range' => '192.168.122.100',
+            'dhcp_end_range' => '192.168.122.200',
+        ]);
+
+        $r = $this->service->createReservation([
+            'name' => 'imprimante-cdi',
+            'mac' => 'aa:bb:cc:dd:ee:11',
+            'ip' => '192.168.122.55', // hors plage
+        ]);
+
+        $this->assertSame('192.168.122.55', $r->ip);
+    }
+
+    #[Test]
+    public function reservation_ip_inside_managed_vlan_range_is_refused(): void
+    {
+        $this->runner->whenContains('make_dhcpd_conf.sh', '', returnCode: 0);
+        \App\Models\DhcpSubnet::factory()->create([
+            'vlan_id' => 30,
+            'network' => '192.168.30.0/24',
+            'ranges' => [['begin' => '192.168.30.50', 'end' => '192.168.30.150']],
+        ]);
+
+        $this->expectException(DhcpValidationException::class);
+        $this->expectExceptionMessageMatches('/VLAN 30/');
+
+        $this->service->createReservation([
+            'name' => 'nas-svt',
+            'mac' => 'aa:bb:cc:dd:ee:12',
+            'ip' => '192.168.30.100', // dans la plage du VLAN 30
+        ]);
+    }
+
+    #[Test]
+    public function malformed_default_range_does_not_block_reservation(): void
+    {
+        $this->runner->whenContains('make_dhcpd_conf.sh', '', returnCode: 0);
+        // Conf bancale (bornes vides) : la garde ne doit PAS faire échouer une
+        // réservation légitime.
+        $this->fakeSambaEduDefaultRange(['dhcp_begin_range' => '', 'dhcp_end_range' => '']);
+
+        $r = $this->service->createReservation([
+            'name' => 'poste-x',
+            'mac' => 'aa:bb:cc:dd:ee:13',
+            'ip' => '192.168.122.150',
+        ]);
+
+        $this->assertSame('192.168.122.150', $r->ip);
+    }
 }
