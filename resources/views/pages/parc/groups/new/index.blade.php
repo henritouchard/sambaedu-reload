@@ -25,8 +25,6 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     public string $description = '';
     public ?int $parent_id = null;
     public bool $is_physical = true;
-    public bool $createAppProfile = false;
-    public string $appProfileName = '';
     public array $selectedMachines = [];
     public bool $showMachineModal = false;
 
@@ -90,8 +88,6 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
             'description' => 'nullable|string|max:500',
             'parent_id' => 'nullable|integer|exists:workstation_groups,id',
             'is_physical' => 'boolean',
-            'createAppProfile' => 'boolean',
-            'appProfileName' => 'nullable|string|max:255',
             // Story 30.2 — borne défensive ; l'appartenance au contrat actif est
             // tranchée par WorkstationGroupLabelService::assignLabel().
             'controlhubLabel' => 'nullable|string|max:255',
@@ -105,24 +101,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
             'display_name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
             'description.max' => 'La description ne peut pas dépasser 500 caractères.',
             'parent_id.exists' => 'Le groupe parent sélectionné n\'existe pas.',
-            'appProfileName.max' => 'Le nom du profil applicatif ne peut pas dépasser 255 caractères.',
         ];
-    }
-
-    public function updatedDisplayName($value): void
-    {
-        // Pré-remplir le nom du profil applicatif avec le nom du groupe
-        if (empty($this->appProfileName) || $this->appProfileName === $this->getOriginal('display_name')) {
-            $this->appProfileName = $value;
-        }
-    }
-
-    public function updatedCreateAppProfile($value): void
-    {
-        // Si on active le toggle et que le nom du profil est vide, le pré-remplir
-        if ($value && empty($this->appProfileName)) {
-            $this->appProfileName = $this->display_name;
-        }
     }
 
     public function save(WorkstationGroupLabelService $labelService): void
@@ -136,19 +115,16 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
         $validated = $this->validate();
 
         try {
-            // Déterminer le nom du profil applicatif à créer
-            $appProfileName = null;
-            if ($this->createAppProfile && !empty($this->appProfileName)) {
-                $appProfileName = trim($this->appProfileName);
-            }
-
+            // Story 38.7 — la création automatique d'un profil applicatif (WPKG)
+            // à la création d'un groupe a été retirée. Un profil se crée dans
+            // /parc-settings/profiles et s'attache explicitement (réutilisable
+            // entre parcs). La colonne `app_profile_name` n'est plus alimentée ici.
             // `name` (technique) est dérivé (slug) par le service depuis `display_name`.
             $group = $this->parcService->createGroup([
                 'display_name' => $validated['display_name'],
                 'description' => $validated['description'] ?: null,
                 'parent_id' => $validated['parent_id'] ?: null,
                 'is_physical' => $validated['is_physical'],
-                'app_profile_name' => $appProfileName,
             ]);
 
             // Story 30.2 (AC #3) — Rattacher le label libre choisi via le service
@@ -179,9 +155,6 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
             }
 
             $message = "Le groupe \"{$group->display_name_or_name}\" a été créé avec succès.";
-            if ($appProfileName) {
-                $message .= " Un profil applicatif \"{$appProfileName}\" a également été créé.";
-            }
 
             session()->flash('toast', [
                 'type' => 'success',
@@ -344,51 +317,6 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                                     <option value="{{ $labelName }}">{{ $labelName }}</option>
                                 @endforeach
                             </select>
-                        </div>
-                    @endif
-                </div>
-            </div>
-
-            <!-- Profil applicatif -->
-            <div class="card bg-base-100 shadow-sm">
-                <div class="card-body">
-                    <h3 class="card-title text-lg mb-4">
-                        <i class="fa-solid fa-boxes-stacked text-primary"></i>
-                        Profil applicatif
-                    </h3>
-
-                    <!-- Toggle créer un profil applicatif -->
-                    <div class="form-control">
-                        <label class="label cursor-pointer justify-start gap-4">
-                            <input type="checkbox" wire:model.live="createAppProfile" class="toggle toggle-primary" />
-                            <div>
-                                <span class="label-text font-medium">Créer un profil applicatif</span>
-                                <p class="text-sm text-base-content/60 whitespace-normal">
-                                    Un profil applicatif permet d'associer des applications à ce groupe de machines
-                                </p>
-                            </div>
-                        </label>
-                    </div>
-
-                    <!-- Nom du profil applicatif (affiché si toggle activé) -->
-                    @if ($createAppProfile)
-                        <div class="form-control w-full mt-4" wire:transition>
-                            <label class="label py-2">
-                                <span class="label-text font-medium">Nom du profil applicatif</span>
-                            </label>
-                            <input type="text" wire:model="appProfileName"
-                                class="input input-bordered w-full @error('appProfileName') input-error @enderror"
-                                placeholder="Nom du profil applicatif">
-                            @error('appProfileName')
-                                <label class="label py-1">
-                                    <span class="label-text-alt text-error">{{ $message }}</span>
-                                </label>
-                            @enderror
-                            <label class="label py-1">
-                                <span class="label-text-alt text-base-content/60">
-                                    Par défaut, le nom du groupe est utilisé. Vous pouvez le modifier si nécessaire.
-                                </span>
-                            </label>
                         </div>
                     @endif
                 </div>

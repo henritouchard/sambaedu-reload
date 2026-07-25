@@ -8,7 +8,6 @@ use App\Models\AppProfile;
 use App\Models\Workstation;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\AdSync\AdSyncService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use App\Config\LdapDnHelper;
 use App\LdapModels\DeviceGroupModel;
 use App\LdapModels\DeviceGroupTagModel;
@@ -30,7 +29,6 @@ class WorkstationMembershipRemoveTest extends TestCase
 {
     protected WorkstationGroupService $workstationGroupService;
     protected AdSyncService $adSyncService;
-    protected AppProfileAdSyncService $appProfileAdSyncService;
     protected LdapDnHelper $dnHelper;
     protected array $config;
 
@@ -43,8 +41,12 @@ class WorkstationMembershipRemoveTest extends TestCase
     {
         parent::setUp();
 
-        // Charger la config legacy pour les tests AD
+        // Test d'intégration AD réel : se skippe hors annuaire (HÔTE, sans les
+        // includes legacy).
         $legacy_base = '/var/www/sambaedu';
+        if (! is_file($legacy_base . '/includes/config.inc.php')) {
+            $this->markTestSkipped('Includes legacy/annuaire indisponibles (test d\'intégration AD).');
+        }
         require_once $legacy_base . '/includes/config.inc.php';
         require_once $legacy_base . '/includes/ldap.inc.php';
         require_once $legacy_base . '/includes/samba-tool.inc.php';
@@ -52,7 +54,6 @@ class WorkstationMembershipRemoveTest extends TestCase
         $this->config = get_config();
         $this->workstationGroupService = app(WorkstationGroupService::class);
         $this->adSyncService = app(AdSyncService::class);
-        $this->appProfileAdSyncService = app(AppProfileAdSyncService::class);
         $this->dnHelper = app(LdapDnHelper::class);
 
         Queue::fake();
@@ -86,7 +87,7 @@ class WorkstationMembershipRemoveTest extends TestCase
         WorkstationGroup::where('name', 'like', 'TestRemoveMachineWithProfile_%')->delete();
         AppProfile::where('name', 'like', 'TestRemoveMachineWithProfile_%')->delete();
         
-        // 1. Créer le WorkstationGroup AVEC app_profile_name
+        // 1. Créer le WorkstationGroup
         $workstationGroup = $this->workstationGroupService->createGroup([
             'name' => $groupName,
             'description' => 'Test retrait avec AppProfile',
@@ -95,15 +96,15 @@ class WorkstationMembershipRemoveTest extends TestCase
             'is_physical' => true,
             'is_active' => true,
         ]);
-        
-        // 2. Vérifier que l'AppProfile a été créé
-        $appProfile = AppProfile::where('name', $groupName)->first();
-        $this->assertNotNull($appProfile, 'L\'AppProfile doit être créé automatiquement');
-        
-        // 3. Synchroniser OU et CN vers AD
+
+        // 2. Story 38.7 — l'Observer ne crée plus d'AppProfile : on le crée
+        // EXPLICITEMENT et on l'attache pour le scénario.
+        $appProfile = AppProfile::create(['name' => $groupName, 'is_active' => true]);
+        $workstationGroup->appProfiles()->attach($appProfile->id);
+
+        // 3. Synchroniser l'OU vers AD (aucun CN dans OU=Parcs — lecture seule).
         $this->adSyncService->createWorkstationGroup($workstationGroup);
-        $this->appProfileAdSyncService->createAppProfile($appProfile);
-        
+
         // 4. Trouver une machine dans l'AD
         $machineName = $this->findAvailableMachine();
         if (!$machineName) {
@@ -131,12 +132,11 @@ class WorkstationMembershipRemoveTest extends TestCase
             'La relation pivot ne doit plus exister après retrait'
         );
         
-        // 8. Vérifier que l'OU et le CN existent toujours
+        // 8. L'OU existe toujours ; AUCUN CN n'est écrit dans OU=Parcs (38.7).
         $this->assertOuExistsInComputers($groupName);
-        $this->assertCnExistsInParcs($groupName);
-        
+        $this->assertCnNotExistsInParcs($groupName);
+
         // 9. Nettoyage
-        $this->appProfileAdSyncService->deleteAppProfile($groupName);
         $this->adSyncService->deleteWorkstationGroupByName($groupName);
         $this->workstationGroupService->deleteGroup($workstationGroup->id);
     }
@@ -229,16 +229,16 @@ class WorkstationMembershipRemoveTest extends TestCase
     }
 
     /**
-     * Vérifie qu'un CN existe dans OU=Parcs
+     * Story 38.7 — vérifie qu'AUCUN CN n'existe dans OU=Parcs (lecture seule).
      */
-    private function assertCnExistsInParcs(string $name): void
+    private function assertCnNotExistsInParcs(string $name): void
     {
         $parcsDn = $this->dnHelper->parcs();
         $cn = DeviceGroupTagModel::in($parcsDn)
             ->where('cn', '=', $name)
             ->first();
 
-        $this->assertNotNull($cn, "Le CN '$name' doit exister dans OU=Parcs");
+        $this->assertNull($cn, "Aucun CN '$name' ne doit exister dans OU=Parcs (38.7)");
     }
 
     /**
@@ -263,7 +263,10 @@ class WorkstationMembershipRemoveTest extends TestCase
     private function cleanupProfile(string $name): void
     {
         try {
-            $this->appProfileAdSyncService->deleteAppProfile($name);
+            // Story 38.7 — suppression directe d'un éventuel CN résiduel.
+            DeviceGroupTagModel::in($this->dnHelper->parcs())
+                ->where('cn', '=', $name)
+                ->first()?->delete();
         } catch (\Throwable $e) {
             $this->reportCleanupFailure('profile/AD', $name, $e);
         }

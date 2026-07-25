@@ -18,6 +18,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
 use App\Repositories\WorkstationGroupRepository;
 use App\Services\Parc\RemoteAccessService;
+use App\Services\AppProfile\LegacyParcApplicationReader;
 use App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector;
 use App\Exceptions\ControlHub\UpstreamLockCollisionException;
 use App\Enums\LockReason;
@@ -35,6 +36,21 @@ use Illuminate\Support\Str;
  */
 class WorkstationGroupService
 {
+    /**
+     * Parc réservé SE4 (nom codé en dur — jamais configurable). Story 38.7 /
+     * AC10 : exclu de l'import logique (ni WorkstationGroup ni AppProfile), ses
+     * applications sont promues en défaut d'établissement à l'étape 7.
+     */
+    private const ALL_WORKSTATIONS_PARC = '_TousLesPostes';
+
+    /**
+     * Seam de test (HÔTE, sans AD) : entrées `OU=Parcs` consommées par
+     * {@see importLogicalGroupsFromAd()}. Null = requête LDAP réelle.
+     *
+     * @var iterable<object>|null
+     */
+    public static ?iterable $parcsEntriesSeam = null;
+
     /** @var array<int, string> */
     private const SUPPORTED_MACHINE_ACTIONS = ['wake', 'shutdown', 'shutdown-force', 'restart', 'remote'];
 
@@ -54,6 +70,10 @@ class WorkstationGroupService
         // Story 30.5 — garde prédictive verrou/verrou au rattachement. Nullable +
         // résolu paresseusement (préserve les instanciations directes à 3 args).
         private ?UpstreamLockCollisionDetector $lockCollisionDetector = null,
+        // Story 38.7 — lecteur legacy MUTUALISÉ avec l'étape 7 (AppProfileAdImporter)
+        // pour l'import sélectif (AC9.1). Nullable + résolu paresseusement, même
+        // patron que $lockCollisionDetector (préserve les instanciations existantes).
+        private ?LegacyParcApplicationReader $legacyParcReader = null,
     ) {
     }
 
@@ -1591,17 +1611,38 @@ class WorkstationGroupService
     {
         Log::warning('WorkstationGroupService::importLogicalGroupsFromAd() appelé - Migration initiale.');
 
-        $log = $logCallback ?? fn(string $level, string $message) => Log::log($level, $message);
-        
+        // 'success' est un niveau d'affichage (callback Livewire), pas un niveau
+        // PSR-3 : le ramener à 'info' pour le logger de repli, sinon Log::log()
+        // lève et fait rollback tout l'import.
+        $log = $logCallback ?? fn(string $level, string $message) => Log::log($level === 'success' ? 'info' : $level, $message);
+
         $stats = [
             'created' => 0,
             'updated' => 0,
             'skipped' => 0,
+            'skipped_no_apps' => 0,
+            'skipped_no_apps_details' => [],
             'etab_excluded' => 0,
+            'legacy_unavailable' => false,
             'errors' => [],
         ];
 
         try {
+            // Story 38.7 / AC9.3 — ne créer un groupe logique QUE si le parc legacy
+            // homonyme porte au moins une application (le parc SE4 n'est qu'un
+            // support d'assignation WPKG ; sans application il n'apporte que sa
+            // composition de machines, qui n'a jamais servi). Lecture legacy
+            // mutualisée avec l'étape 7 (LegacyParcApplicationReader). Source
+            // indisponible ⇒ aucune création, avertissement explicite (AC9.2).
+            $legacyReader = $this->legacyParcReader ??= app(LegacyParcApplicationReader::class);
+            $legacy = $legacyReader->read($log);
+            $legacyAvailable = $legacy !== null;
+            [$parcAppNames, $parcByName] = $legacy ?? [[], []];
+            if (! $legacyAvailable) {
+                $stats['legacy_unavailable'] = true;
+                $log('warning', 'Source d\'assignation legacy indisponible — étape 5 incomplète (aucun groupe logique créé), à rejouer.');
+            }
+
             $dnHelper = app(LdapDnHelper::class);
             $parcsDn = $dnHelper->parcs();
             $log('info', "Recherche des groupes logiques dans: {$parcsDn}");
@@ -1623,7 +1664,7 @@ class WorkstationGroupService
             }
 
             // Récupérer les groupes depuis OU=Parcs
-            $groupsAd = DeviceGroupTagModel::in($parcsDn)->get();
+            $groupsAd = static::$parcsEntriesSeam ?? DeviceGroupTagModel::in($parcsDn)->get();
             $log('info', count($groupsAd) . ' groupes logiques (CN) trouvés dans l\'AD');
 
             WorkstationGroupObserver::disableSync();
@@ -1635,6 +1676,14 @@ class WorkstationGroupService
                     try {
                         $name = $group->getParcName();
                         if (empty($name)) {
+                            continue;
+                        }
+
+                        // AC10 — `_TousLesPostes` n'est pas un parc : ni WorkstationGroup
+                        // logique, ni AppProfile. Son socle applicatif est promu en
+                        // défaut d'établissement à l'étape 7 (couche Broadcast).
+                        if ($name === self::ALL_WORKSTATIONS_PARC) {
+                            $log('info', "Parc réservé « {$name} » : ignoré (socle → défaut d'établissement, pas de groupe logique).");
                             continue;
                         }
 
@@ -1680,7 +1729,20 @@ class WorkstationGroupService
                                 $stats['skipped']++;
                             }
                         } else {
-                            $locked = ($name === 'computers') ? LockReason::ROOT->value : null;
+                            // AC9.3 — création conditionnée à la présence d'au moins une
+                            // application legacy. Le critère est l'application, pas la
+                            // composition : un CN peuplé mais sans app est sauté et
+                            // listé nominativement AVEC son nombre de machines, pour
+                            // qu'un admin reconnaisse un regroupement délibéré et le
+                            // recrée en connaissance de cause.
+                            if (! $legacyAvailable || ! $legacyReader->parcHasApplications($parcAppNames, $parcByName, $name)) {
+                                $machineCount = $this->countAdGroupMembers($group);
+                                $stats['skipped_no_apps']++;
+                                $stats['skipped_no_apps_details'][] = ['name' => $name, 'machines' => $machineCount];
+                                $log('info', "Groupe logique « {$name} » non créé : parc legacy sans application ({$machineCount} machine(s)).");
+                                continue;
+                            }
+
                             WorkstationGroup::create([
                                 'name' => $name,
                                 'is_physical' => false, // Groupe logique (CN dans OU=Parcs)
@@ -1763,7 +1825,7 @@ class WorkstationGroupService
                 WorkstationGroupObserver::enableSync();
             }
 
-            $log('info', "Résultat: {$stats['created']} créés, {$stats['updated']} mis à jour, {$stats['skipped']} ignorés");
+            $log('info', "Résultat: {$stats['created']} créés, {$stats['updated']} mis à jour, {$stats['skipped']} ignorés, {$stats['skipped_no_apps']} sans app");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1776,6 +1838,25 @@ class WorkstationGroupService
         }
 
         return $stats;
+    }
+
+    /**
+     * Compte les membres (`member`) d'un groupe AD `OU=Parcs`. Sert au rapport
+     * des CN logiques sautés faute d'application legacy (AC9.3) — l'admin voit
+     * le nombre de machines qu'il perdrait s'il s'agissait d'un regroupement
+     * délibéré.
+     */
+    private function countAdGroupMembers(object $group): int
+    {
+        $members = $group->getAttribute('member') ?? [];
+        if (is_array($members) && isset($members['count'])) {
+            unset($members['count']);
+        }
+        if (! is_array($members)) {
+            $members = $members === null ? [] : [$members];
+        }
+
+        return count(array_filter($members, static fn ($m) => is_string($m) && $m !== ''));
     }
 
     /**

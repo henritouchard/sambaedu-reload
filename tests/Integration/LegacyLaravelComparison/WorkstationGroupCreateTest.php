@@ -7,7 +7,6 @@ use App\Models\WorkstationGroup;
 use App\Models\AppProfile;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\AdSync\AdSyncService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use App\Config\LdapDnHelper;
 use App\Config\SambaEduConfig;
 use App\LdapModels\DeviceGroupTagModel;
@@ -38,7 +37,6 @@ class WorkstationGroupCreateTest extends TestCase
 {
     private WorkstationGroupService $workstationGroupService;
     private AdSyncService $adSyncService;
-    private AppProfileAdSyncService $appProfileAdSyncService;
     private LdapDnHelper $dnHelper;
     private SambaEduConfig $config;
     private array $createdGroups = [];
@@ -50,13 +48,27 @@ class WorkstationGroupCreateTest extends TestCase
 
         $this->workstationGroupService = app(WorkstationGroupService::class);
         $this->adSyncService = app(AdSyncService::class);
-        $this->appProfileAdSyncService = app(AppProfileAdSyncService::class);
         $this->dnHelper = app(LdapDnHelper::class);
         $this->config = app(SambaEduConfig::class);
+
+        // Story 38.7 — test d'intégration AD réel : se skippe hors annuaire (HÔTE).
+        $this->skipUnlessAdReachable();
 
         // Les observers restent actifs pour tester le comportement normal
         // Queue::fake() pour éviter l'exécution async des jobs
         Queue::fake();
+    }
+
+    /**
+     * Skip si l'annuaire n'est pas joignable (les tests HÔTE n'ont pas d'AD).
+     */
+    private function skipUnlessAdReachable(): void
+    {
+        try {
+            DeviceGroupModel::in($this->dnHelper->computers())->limit(1)->get();
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Annuaire AD injoignable (test d\'intégration OU=Computers).');
+        }
     }
 
     protected function tearDown(): void
@@ -172,22 +184,15 @@ class WorkstationGroupCreateTest extends TestCase
     }
 
     /**
-     * Test: Création d'un groupe avec AppProfile via le service (flux complet avec Observer)
-     * 
-     * Flux testé:
-     * 1. Service.createGroup() crée le WorkstationGroup
-     * 2. Observer.created() détecte app_profile_name et crée l'AppProfile + lien pivot
-     * 3. Observer dispatch les jobs AD (fakés)
-     * 4. Sync AD manuelle pour vérifier la création dans AD
+     * Story 38.7 — Création d'un groupe avec `app_profile_name` rempli : l'Observer
+     * ne crée PLUS d'AppProfile ni de lien pivot, et aucun CN n'est écrit dans
+     * OU=Parcs (conteneur en lecture seule). Seule l'OU sous OU=Computers est créée.
      */
-    public function test_create_workstation_group_with_app_profile_via_service(): void
+    public function test_create_workstation_group_with_app_profile_name_creates_no_profile_and_no_cn(): void
     {
         $groupName = 'TestGroupWithProfile_' . uniqid();
         $this->createdGroups[] = $groupName;
-        $this->createdProfiles[] = $groupName;
 
-        // 1. Créer le WorkstationGroup via le service avec app_profile_name
-        // L'Observer doit automatiquement créer l'AppProfile et le lien pivot
         $workstationGroup = $this->workstationGroupService->createGroup([
             'name' => $groupName,
             'display_name' => $groupName,
@@ -198,38 +203,26 @@ class WorkstationGroupCreateTest extends TestCase
             'is_active' => true,
         ]);
 
-        // 2. Vérifier que le WorkstationGroup a été créé en SQL
         $this->assertNotNull($workstationGroup->id);
-        $this->assertEquals($groupName, $workstationGroup->name);
+        // Le champ reste stocké (inerte), mais aucun AppProfile n'en découle.
         $this->assertEquals($groupName, $workstationGroup->app_profile_name);
 
-        // 3. Vérifier que l'Observer a dispatché le job de sync AD pour le WorkstationGroup
+        // Groupe physique → job de sync AD pour l'OU (OU=Computers).
         Queue::assertPushed(WorkstationGroupAdSyncJob::class, function ($job) use ($workstationGroup) {
             return $job->workstationGroupId === $workstationGroup->id && $job->action === 'create';
         });
 
-        // 4. Vérifier que l'AppProfile a été créé automatiquement par l'Observer
-        $appProfile = AppProfile::where('name', $groupName)->first();
-        $this->assertNotNull($appProfile, 'L\'AppProfile doit être créé automatiquement par l\'Observer');
+        // Aucune création automatique d'AppProfile ni de lien pivot (AC8).
+        $this->assertNull(AppProfile::where('name', $groupName)->first(), 'Aucun AppProfile ne doit être créé automatiquement (38.7).');
+        $this->assertFalse($workstationGroup->appProfiles()->exists(), 'Aucun lien pivot ne doit être posé.');
 
-        // 5. Vérifier que le lien existe dans la table pivot
-        $this->assertTrue(
-            $workstationGroup->appProfiles()->where('app_profiles.id', $appProfile->id)->exists(),
-            'Le lien doit exister dans la table pivot app_profile_workstation_group'
-        );
-
-        // 6. Synchroniser manuellement vers AD (les jobs sont fakés, donc on exécute la sync nous-mêmes)
+        // Sync AD : l'OU est créée dans OU=Computers…
         $resultGroup = $this->adSyncService->createWorkstationGroup($workstationGroup);
         $this->assertTrue($resultGroup['success'], 'Création OU doit réussir: ' . ($resultGroup['error'] ?? ''));
-
-        $resultProfile = $this->appProfileAdSyncService->createAppProfile($appProfile);
-        $this->assertTrue($resultProfile['success'], 'Création CN doit réussir: ' . ($resultProfile['error'] ?? ''));
-
-        // 7. Vérifier que l'OU existe dans OU=Computers
         $this->assertOuExistsInComputers($groupName);
 
-        // 8. Vérifier que le CN existe dans OU=Parcs
-        $this->assertCnExistsInParcs($groupName);
+        // …mais AUCUN CN n'est écrit dans OU=Parcs (lecture seule — 38.7).
+        $this->assertCnNotExistsInParcs($groupName);
     }
 
     /**
@@ -250,16 +243,16 @@ class WorkstationGroupCreateTest extends TestCase
     }
 
     /**
-     * Vérifie qu'un CN existe dans OU=Parcs
+     * Story 38.7 — vérifie qu'AUCUN CN n'existe dans OU=Parcs (lecture seule).
      */
-    private function assertCnExistsInParcs(string $name): void
+    private function assertCnNotExistsInParcs(string $name): void
     {
         $parcsDn = $this->dnHelper->parcs();
         $cn = DeviceGroupTagModel::in($parcsDn)
             ->where('cn', '=', $name)
             ->first();
 
-        $this->assertNotNull($cn, "Le CN '$name' doit exister dans OU=Parcs");
+        $this->assertNull($cn, "Aucun CN '$name' ne doit exister dans OU=Parcs (conteneur en lecture seule — 38.7)");
     }
 
     /**
@@ -288,7 +281,11 @@ class WorkstationGroupCreateTest extends TestCase
     private function cleanupProfile(string $name): void
     {
         try {
-            $this->appProfileAdSyncService->deleteAppProfile($name);
+            // Story 38.7 — plus de service d'écriture AD : suppression directe du
+            // CN résiduel s'il en subsiste un (créé avant 38.7).
+            DeviceGroupTagModel::in($this->dnHelper->parcs())
+                ->where('cn', '=', $name)
+                ->first()?->delete();
         } catch (\Throwable $e) {
             $this->reportCleanupFailure('profile/AD', $name, $e);
         }

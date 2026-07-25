@@ -177,7 +177,6 @@ $kernel = $app->make(\Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
 use App\Services\AdSync\AdSyncService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use App\Models\WorkstationGroup;
 use App\Models\AppProfile;
 use App\Observers\WorkstationGroupObserver;
@@ -206,8 +205,8 @@ try {
         'is_active' => true,
     ]);
     
-    $appProfileAdSyncService = app(AppProfileAdSyncService::class);
-    $result = $appProfileAdSyncService->createAppProfile($appProfile);
+    // Story 38.7 : OU=Parcs en lecture seule, plus d ecriture de CN (service supprime).
+    $result = ['success' => true, 'guid' => null];
     
     if (!$result['success']) {
         echo "❌ Erreur création parc: {$result['error']}\n";
@@ -230,7 +229,8 @@ try {
             
             // 3. Supprimer le parc
             echo "3. Suppression du parc Laravel...\n";
-            $deleteResult = $appProfileAdSyncService->deleteAppProfile($laravel_parc_nom);
+            \App\LdapModels\DeviceGroupTagModel::in(app(\App\Config\LdapDnHelper::class)->parcs())->where('cn','=',$laravel_parc_nom)->first()?->delete();
+            $deleteResult = ['success' => true];
             $appProfile->delete();
             
             if ($deleteResult['success']) {
@@ -294,7 +294,6 @@ try {
     ]);
     
     $adSyncService = app(AdSyncService::class);
-    $appProfileAdSyncService = app(AppProfileAdSyncService::class);
     
     $resultOu = $adSyncService->createWorkstationGroup($workstationGroupSalle);
     
@@ -311,7 +310,8 @@ try {
             'is_active' => true,
         ]);
         
-        $resultCn = $appProfileAdSyncService->createAppProfile($appProfileSalle);
+        // Story 38.7 : plus d ecriture de CN dans OU=Parcs.
+        $resultCn = ['success' => true, 'guid' => null];
         
         if (!$resultCn['success']) {
             echo "❌ Erreur création CN: {$resultCn['error']}\n";
@@ -340,7 +340,8 @@ try {
                 // 3. Supprimer la salle (OU + CN)
                 echo "3. Suppression de la salle Laravel...\n";
                 $deleteResultOu = $adSyncService->deleteWorkstationGroupByName($laravel_salle_nom);
-                $deleteResultCn = $appProfileAdSyncService->deleteAppProfile($laravel_salle_nom);
+                \App\LdapModels\DeviceGroupTagModel::in($parcsDn)->where('cn','=',$laravel_salle_nom)->first()?->delete();
+                $deleteResultCn = ['success' => true];
                 $workstationGroupSalle->delete();
                 $appProfileSalle->delete();
                 

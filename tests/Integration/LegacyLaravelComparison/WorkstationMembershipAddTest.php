@@ -8,7 +8,6 @@ use App\Models\AppProfile;
 use App\Models\Workstation;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\AdSync\AdSyncService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use App\Config\LdapDnHelper;
 use App\LdapModels\DeviceGroupModel;
 use App\LdapModels\DeviceGroupTagModel;
@@ -30,7 +29,6 @@ class WorkstationMembershipAddTest extends TestCase
 {
     protected WorkstationGroupService $workstationGroupService;
     protected AdSyncService $adSyncService;
-    protected AppProfileAdSyncService $appProfileAdSyncService;
     protected LdapDnHelper $dnHelper;
     protected array $config;
 
@@ -43,6 +41,12 @@ class WorkstationMembershipAddTest extends TestCase
     {
         parent::setUp();
 
+        // Story 38.7 : ces tests d integration portaient sur l ecriture d un CN
+        // dans OU=Parcs (via AppProfileAdSyncService), supprimee. OU=Parcs est en
+        // lecture seule ; le contrat est couvert par les tests HOTE 38.7. AD-only.
+        $this->markTestSkipped("Superseded by 38.7 (OU=Parcs read-only) - AD-only test.");
+
+
         // Charger la config legacy pour les tests AD
         $legacy_base = '/var/www/sambaedu';
         require_once $legacy_base . '/includes/config.inc.php';
@@ -52,7 +56,6 @@ class WorkstationMembershipAddTest extends TestCase
         $this->config = get_config();
         $this->workstationGroupService = app(WorkstationGroupService::class);
         $this->adSyncService = app(AdSyncService::class);
-        $this->appProfileAdSyncService = app(AppProfileAdSyncService::class);
         $this->dnHelper = app(LdapDnHelper::class);
 
         Queue::fake();

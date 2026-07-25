@@ -5,11 +5,9 @@ namespace Tests\Integration\LegacyLaravelComparison;
 use Tests\TestCase;
 use App\Models\AppProfile;
 use App\Services\AppProfile\AppProfileService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use App\Config\LdapDnHelper;
 use App\LdapModels\DeviceGroupTagModel;
 use App\LdapModels\DeviceGroupModel;
-use App\Jobs\AdSync\AppProfileAdSyncJob;
 use Illuminate\Support\Facades\Queue;
 
 /**
@@ -25,15 +23,19 @@ use Illuminate\Support\Facades\Queue;
 class CreateParcComparisonTest extends TestCase
 {
     protected AppProfileService $appProfileService;
-    protected AppProfileAdSyncService $appProfileAdSyncService;
     protected LdapDnHelper $dnHelper;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Story 38.7 : ces tests d integration portaient sur l ecriture d un CN
+        // dans OU=Parcs (via AppProfileAdSyncService), supprimee. OU=Parcs est en
+        // lecture seule ; le contrat est couvert par les tests HOTE 38.7. AD-only.
+        $this->markTestSkipped("Superseded by 38.7 (OU=Parcs read-only) - AD-only test.");
+
         
         $this->appProfileService = app(AppProfileService::class);
-        $this->appProfileAdSyncService = app(AppProfileAdSyncService::class);
         $this->dnHelper = app(LdapDnHelper::class);
         
         Queue::fake();

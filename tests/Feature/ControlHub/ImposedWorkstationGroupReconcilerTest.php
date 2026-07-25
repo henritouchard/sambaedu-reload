@@ -98,8 +98,9 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertSame('direction', $group->controlhub_label);
 
         self::assertSame(1, $result->created);
-        // Le chemin de création parc dispatche la synchro AD (observer → job).
-        Queue::assertPushed(WorkstationGroupAdSyncJob::class);
+        // Story 38.7 — un groupe imposé est LOGIQUE (is_physical = false) : purement
+        // SQL, l'observer ne dispatche plus aucun job AD (OU=Parcs en lecture seule).
+        Queue::assertNotPushed(WorkstationGroupAdSyncJob::class);
     }
 
     #[Test]

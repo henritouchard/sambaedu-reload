@@ -147,10 +147,9 @@ new class extends Component
 ?>
 
 <div class="flex flex-col gap-3 flex-1 min-h-0">
-    {{-- Vérification synchronisation AD/SQL --}}
-    <div class="flex-shrink-0">
-        <livewire:components::molecules.app-profile-sync-status />
-    </div>
+    {{-- Story 38.7 — le badge de synchronisation AD des profils applicatifs a été
+         retiré : OU=Parcs est en lecture seule, un profil n'a plus de représentation
+         AD, la comparaison SQL ↔ AD n'a plus d'objet. --}}
 
     <!-- Filtres -->
     <x-molecules.filter-bar reset="resetProfileFilters">

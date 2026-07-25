@@ -6,7 +6,6 @@ use Tests\TestCase;
 use App\Models\WorkstationGroup;
 use App\Models\AppProfile;
 use App\Services\AdSync\AdSyncService;
-use App\Services\AdSync\AppProfileAdSyncService;
 use App\Observers\WorkstationGroupObserver;
 use App\Observers\AppProfileObserver;
 use App\Repositories\WorkstationGroupRepository;
@@ -30,7 +29,6 @@ use LdapRecord\Models\ActiveDirectory\Group;
 class ManualSyncTest extends TestCase
 {
     private AdSyncService $adSyncService;
-    private AppProfileAdSyncService $appProfileAdSyncService;
     private WorkstationGroupRepository $repository;
     private LdapDnHelper $dnHelper;
     private array $createdGroups = [];
@@ -40,6 +38,12 @@ class ManualSyncTest extends TestCase
     {
         parent::setUp();
 
+        // Story 38.7 : ces tests d integration portaient sur l ecriture d un CN
+        // dans OU=Parcs (via AppProfileAdSyncService), supprimee. OU=Parcs est en
+        // lecture seule ; le contrat est couvert par les tests HOTE 38.7. AD-only.
+        $this->markTestSkipped("Superseded by 38.7 (OU=Parcs read-only) - AD-only test.");
+
+
         // Charger la config legacy pour les tests AD
         $legacy_base = '/var/www/sambaedu';
         require_once $legacy_base . '/includes/config.inc.php';
@@ -47,7 +51,6 @@ class ManualSyncTest extends TestCase
         require_once $legacy_base . '/includes/samba-tool.inc.php';
 
         $this->adSyncService = app(AdSyncService::class);
-        $this->appProfileAdSyncService = app(AppProfileAdSyncService::class);
         $this->repository = app(WorkstationGroupRepository::class);
         $this->dnHelper = app(LdapDnHelper::class);
 

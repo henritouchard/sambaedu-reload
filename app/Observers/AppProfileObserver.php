@@ -4,42 +4,43 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
-use App\Jobs\AdSync\AppProfileAdSyncJob;
 use App\Models\AppProfile;
-use Illuminate\Support\Facades\Log;
 
 /**
- * Observer pour synchroniser automatiquement les AppProfiles vers l'AD
- * 
- * Un AppProfile correspond à un groupe CN dans OU=Parcs de l'AD.
- * Cet Observer déclenche les jobs de synchronisation lors des opérations CRUD.
+ * Observer des AppProfile (profils WPKG).
+ *
+ * Story 38.7 — `OU=Parcs` est en LECTURE SEULE : un `AppProfile` n'a plus AUCUNE
+ * représentation écrite dans l'AD. Les dispatches de `AppProfileAdSyncJob`
+ * (create / rename / delete du `CN` dans `OU=Parcs`) ont été RETIRÉS, ainsi que
+ * le service d'écriture `AppProfileAdSyncService`. Les seuls lecteurs du `CN`
+ * d'un profil étaient l'importeur de migration (qui LIT `OU=Parcs`) et un badge
+ * de synchronisation devenu sans objet — tous deux traités par la story.
+ *
+ * Le calcul des applications WPKG (`profiles.xml`) se fait intégralement depuis
+ * SQL. Cet observer ne conserve que le drapeau de désactivation utilisé par
+ * l'importeur pour ses écritures en masse.
  */
 class AppProfileObserver
 {
     /**
-     * Indique si la synchronisation AD est activée
-     * Peut être désactivée temporairement pour les imports en masse
+     * Indique si une éventuelle synchronisation est activée. Conservé pour la
+     * compatibilité de l'importeur ({@see \App\Services\AppProfile\AppProfileAdImporter}) ;
+     * n'ordonne plus aucune écriture AD depuis 38.7.
      */
     public static bool $syncEnabled = true;
 
-    /**
-     * Désactive temporairement la synchronisation AD
-     */
     public static function disableSync(): void
     {
         self::$syncEnabled = false;
     }
 
-    /**
-     * Réactive la synchronisation AD
-     */
     public static function enableSync(): void
     {
         self::$syncEnabled = true;
     }
 
     /**
-     * Exécute un callback sans synchronisation AD
+     * Exécute un callback sans synchronisation AD.
      */
     public static function withoutSync(callable $callback): mixed
     {
@@ -51,81 +52,5 @@ class AppProfileObserver
         } finally {
             self::$syncEnabled = $wasEnabled;
         }
-    }
-
-    /**
-     * Appelé après la création d'un AppProfile
-     */
-    public function created(AppProfile $appProfile): void
-    {
-        if (!self::$syncEnabled) {
-            return;
-        }
-
-        Log::debug('[AppProfileObserver] AppProfile créé', [
-            'id' => $appProfile->id,
-            'name' => $appProfile->name
-        ]);
-
-        // Dispatch le job de sync AD pour créer le groupe CN dans OU=Parcs
-        dispatch(AppProfileAdSyncJob::create($appProfile->id));
-    }
-
-    /**
-     * Appelé après la mise à jour d'un AppProfile
-     */
-    public function updated(AppProfile $appProfile): void
-    {
-        if (!self::$syncEnabled) {
-            return;
-        }
-
-        // Vérifier si le nom a changé
-        if ($appProfile->isDirty('name')) {
-            $oldName = $appProfile->getOriginal('name');
-            $newName = $appProfile->name;
-
-            Log::debug('[AppProfileObserver] AppProfile renommé', [
-                'id' => $appProfile->id,
-                'old_name' => $oldName,
-                'new_name' => $newName
-            ]);
-
-            // Dispatch le job de renommage AD
-            dispatch(AppProfileAdSyncJob::rename($appProfile->id, $oldName, $newName));
-        }
-
-        // Si le AppProfile n'a pas encore de GUID AD, le créer
-        if (!$appProfile->ad_guid && !$appProfile->isDirty('ad_guid')) {
-            Log::debug('[AppProfileObserver] AppProfile sans GUID AD, dispatch sync job', [
-                'id' => $appProfile->id,
-                'name' => $appProfile->name
-            ]);
-
-            dispatch(AppProfileAdSyncJob::create($appProfile->id));
-        }
-    }
-
-    /**
-     * Appelé avant la suppression d'un AppProfile
-     * 
-     * Note: On utilise "deleting" pour capturer les données avant suppression
-     */
-    public function deleting(AppProfile $appProfile): void
-    {
-        if (!self::$syncEnabled) {
-            return;
-        }
-
-        Log::debug('[AppProfileObserver] AppProfile en cours de suppression', [
-            'id' => $appProfile->id,
-            'name' => $appProfile->name
-        ]);
-
-        // Dispatcher le job avec les données nécessaires (le modèle sera supprimé)
-        dispatch(AppProfileAdSyncJob::delete(
-            $appProfile->name,
-            $appProfile->ad_guid
-        ));
     }
 }
