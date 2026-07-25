@@ -2,87 +2,20 @@
 
 namespace App\Repositories;
 
-use App\Config\LdapDnHelper;
-use App\LdapModels\DeviceGroupTagModel;
 use App\Models\AppProfile;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 /**
- * Repository pour la gestion des profils applicatifs (AppProfiles)
- * 
- * Fournit une interface unifiée pour accéder aux données des profils applicatifs.
- * Gère les données SQL et AD (via LdapRecord).
- * 
- * Les AppProfiles correspondent aux CN dans OU=Parcs de l'AD.
+ * Repository pur-SQL pour la gestion des profils applicatifs (AppProfiles).
+ *
+ * La lecture AD des CN sous OU=Parcs a été retirée (nettoyage post-38.7 :
+ * OU=Parcs est en lecture seule, et seul l'import de migration
+ * {@see \App\Services\AppProfile\AppProfileAdImporter} le consulte, via
+ * DeviceGroupTagModel directement — pas via ce repository).
  */
 class AppProfileRepository
 {
-    public function __construct(
-        private LdapDnHelper $dnHelper
-    ) {
-    }
-
-    // ========================================
-    // LECTURE AD - PROFILS (CN)
-    // ========================================
-
-    /**
-     * Récupère tous les profils applicatifs (CN) depuis l'AD
-     * 
-     * Retourne uniquement les CN dans OU=Parcs
-     * 
-     * @return array Liste des profils avec name, dn, guid, description, samaccountname
-     */
-    public function getAllFromAd(): array
-    {
-        $profiles = [];
-        $parcsDn = $this->dnHelper->parcs();
-
-        try {
-            // Récupérer tous les groupes et filtrer ceux qui sont dans ou=Parcs
-            // LdapRecord ne respecte pas toujours le baseDn() du modèle
-            $groups = DeviceGroupTagModel::get();
-
-            foreach ($groups as $group) {
-                $dn = $group->getDn();
-
-                // Filtrer : ne garder que les groupes directement dans ou=Parcs
-                // Le DN doit se terminer par ou=Parcs,dc=...
-                if (!str_contains(strtolower($dn), strtolower($parcsDn))) {
-                    continue;
-                }
-
-                $name = $group->getFirstAttribute('cn');
-                if (empty($name)) {
-                    continue;
-                }
-
-                $profiles[] = [
-                    'name' => $name,
-                    'dn' => $dn,
-                    'guid' => $group->getConvertedGuid(),
-                    'description' => $group->getFirstAttribute('description'),
-                    'samaccountname' => $group->getFirstAttribute('samaccountname'),
-                ];
-            }
-
-            Log::debug('[AppProfileRepository] Profils applicatifs récupérés depuis AD', [
-                'count' => count($profiles),
-                'parcsDn' => $parcsDn,
-            ]);
-
-            return $profiles;
-
-        } catch (\Exception $e) {
-            Log::error('[AppProfileRepository] Erreur récupération profils AD', [
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
-        }
-    }
-
     // ========================================
     // LECTURE SQL
     // ========================================

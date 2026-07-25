@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use LdapRecord\Models\ActiveDirectory\OrganizationalUnit;
-use LdapRecord\Models\ActiveDirectory\Group;
 
 /**
  * Repository pour la gestion des groupes de postes de travail (WorkstationGroups)
@@ -77,48 +76,6 @@ class WorkstationGroupRepository
                 'error' => $e->getMessage()
             ]);
             throw $e;
-        }
-    }
-
-    /**
-     * Récupère les noms des parcs (groupes dans ou=Parcs) depuis l'AD
-     * 
-     * Ces groupes correspondent aux salles physiques.
-     * Si un groupe dans ou=Computers a un parc correspondant, c'est une salle physique.
-     * 
-     * @return array<string> Liste des noms de parcs (en minuscules pour comparaison)
-     */
-    public function getParcNamesFromAd(): array
-    {
-        $parcsDn = $this->dnHelper->parcs();
-        $parcNames = [];
-
-        try {
-            $groups = Group::in($parcsDn)
-                ->recursive()
-                ->get();
-
-            foreach ($groups as $group) {
-                $name = $group->getFirstAttribute('cn');
-                if (!empty($name)) {
-                    // Normaliser en minuscules pour comparaison insensible à la casse
-                    $parcNames[] = strtolower($name);
-                }
-            }
-
-            Log::debug('[WorkstationGroupRepository] Parcs récupérés depuis AD', [
-                'count' => count($parcNames),
-                'parcsDn' => $parcsDn
-            ]);
-
-            return $parcNames;
-
-        } catch (\Exception $e) {
-            Log::error('[WorkstationGroupRepository] Erreur récupération parcs AD', [
-                'error' => $e->getMessage(),
-                'parcsDn' => $parcsDn
-            ]);
-            return [];
         }
     }
 
