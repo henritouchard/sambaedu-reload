@@ -235,13 +235,33 @@ mailles, dédoublonnée par contenu au compilateur :
   courant, nom serveur) — aucune fuite de secret, aucune dépendance réseau au
   calcul. `desktop_path` n'est présent **que** pour `place=desktop`
   (startup/taskbar = chemins standards résolus par l'agent).
-- **Nettoyage du DOUBLE bureau côté agent** (≥ 2.14.0) : `desktop_path` désigne
-  le seul emplacement où l'agent **pose**, mais le handler **balaie** à chaque
-  passe le bureau réseau ET le bureau local, pour supprimer les `.lnk` **gérés**
-  (marqueur) restés sur l'emplacement devenu inactif après une bascule de la
-  politique home. Le gabarit réseau est une constante de l'agent
-  (`shared.NetworkDesktopPathTemplate`, jumelle du chemin serveur) résolue par la
-  même substitution de tokens — **aucun champ de contrat n'a été ajouté**.
+- **Nettoyage du DOUBLE bureau — le SERVEUR pilote le balayage** (≥ 2.15.0,
+  Story 27.21 option A) : **POSE ≠ BALAYAGE**, deux notions distinctes.
+  `desktop_path` (string) désigne le seul emplacement où l'agent **pose**
+  (policy-aware, cf. ci-dessus) ; **`desktop_sweep_paths`** (liste de strings,
+  champ **additif** §9, présent sur TOUS les items `shortcuts`) désigne les
+  emplacements que l'agent **balaie** pour y supprimer les `.lnk` **gérés**
+  (marqueur) restés sur un emplacement devenu inactif après une bascule de la
+  politique home. C'est le **serveur** qui nomme cette liste, selon
+  l'environnement du parc : `SharedLocal` ⇒ `[réseau, local]` ;
+  `PersonalLocal`/`Nomade` ⇒ `[local]` **seul**.
+
+  > ⚠️ **Pourquoi le serveur et pas l'agent** (finding 🔴 #1 de la review 27.21).
+  > Le Bureau **réseau** `\\<se4fs>\users\<user>\Bureau\` vit dans le home : c'est
+  > un emplacement **par utilisateur, partagé entre TOUS ses postes**, alors que
+  > l'état est compilé par couple (poste, user). Un agent qui déciderait SEUL de
+  > le balayer y supprimerait les `.lnk` d'un AUTRE poste du même utilisateur
+  > (ping-pong permanent sur un partage de production). L'agent ne dérive donc
+  > **JAMAIS** le Bureau réseau lui-même — il n'existe **plus** de constante
+  > d'agent pour ce chemin (l'ancienne `NetworkDesktopPathTemplate` a été
+  > **supprimée**) ; le chemin voyage dans le payload et est résolu par la même
+  > substitution de tokens `<se4fs>`/`<user>`. Le balayage est **indépendant de
+  > la politique home** : couper K: ne déplace que la POSE, la liste de balayage
+  > d'un parc partagé reste `[réseau, local]` dans les deux états (sinon
+  > l'emplacement abandonné ne serait plus jamais nettoyé — le scénario cible de
+  > l'AC3). Un agent antérieur qui ignore `desktop_sweep_paths` retombe sur son
+  > balayage d'origine — d'où la version cible 2.15.0 (la 2.14.0, à balayage
+  > réseau inconditionnel, est **répudiée, jamais publiée**).
 - **`scope=machine_user`** : le set dépend du user, le chemin du poste — le
   calcul est un croisement (poste, user). **`semantics=aggregate`** : le poste
   reçoit l'union de toutes ses mailles, sans précédence.
@@ -266,7 +286,8 @@ Quand c'est un nom nu **ET** qu'un asset content-addressed existe en base
 { "name": "Calculatrice", "target": "C:\\Windows\\System32\\calc.exe",
   "args": "", "icon": "Calculatrice",
   "icon_asset": "3a7b…abcd.ico", "icon_checksum": "3a7b…abcd",
-  "place": "desktop", "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\" }
+  "place": "desktop", "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+  "desktop_sweep_paths": ["\\\\<se4fs>\\users\\<user>\\Bureau\\", "%USERPROFILE%\\Desktop\\"] }
 ```
 
 - **PAS de champ `url`** : l'agent **dérive** l'URL depuis

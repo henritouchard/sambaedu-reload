@@ -377,6 +377,14 @@ func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec, sweepPat
 // review #2 de 27.1 : sinon un Bureau vidé de ses règles n'est plus jamais
 // nettoyé et garde ses `.lnk` gérés orphelins à vie).
 //
+// LIMITE (préexistante, niveau moteur — pas propre à 27.21) : ceci ne tient que
+// tant qu'il reste AU MOINS UN item `shortcuts` (n'importe quel `place`). Si la
+// DERNIÈRE règle raccourci d'un couple (poste, user) disparaît, le type est
+// absent de l'état, le moteur ne convoque JAMAIS ce handler, et un `.lnk` géré
+// résiduel reste orphelin. Vaut aussi pour le Bureau local et pour les autres
+// types agrégés (drives, etc.). Correction = story dédiée (sentinelle de type
+// vidé, ou invocation des handlers sur types absents), hors périmètre 27.21.
+//
 // Absent (payload d'un serveur antérieur à 27.21, ou aucun item) ⇒ liste vide :
 // repli CONSERVATEUR sur les seuls emplacements propres au poste (cf.
 // managedDirs). On ne touche JAMAIS un emplacement partagé que le serveur n'a

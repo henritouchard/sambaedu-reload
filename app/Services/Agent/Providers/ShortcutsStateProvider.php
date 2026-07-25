@@ -294,8 +294,13 @@ final class ShortcutsStateProvider implements StateProvider
      * Bureaux à balayer MÊME quand plus aucune règle `place=desktop` n'existe —
      * sinon un Bureau vidé de ses règles ne serait plus jamais nettoyé et
      * garderait ses `.lnk` gérés orphelins à vie (leçon de la review #2 de
-     * 27.1). Un agent antérieur ignore le champ inconnu sans erreur (§9,
-     * forward-compatible) et conserve son comportement de balayage précédent.
+     * 27.1). LIMITE (préexistante, niveau moteur) : ne tient que tant qu'il
+     * reste AU MOINS UN item `shortcuts` ; si la DERNIÈRE règle disparaît, aucun
+     * item n'est émis, le handler n'est jamais convoqué et un `.lnk` résiduel
+     * reste orphelin — hors périmètre 27.21 (cf. Points ouverts de la story).
+     * Un agent ANTÉRIEUR À 27.21 (≤ 2.13.0) ignore le champ inconnu sans erreur
+     * (§9, forward-compatible) et conserve son balayage local. La 2.14.0
+     * (balayage réseau inconditionnel) est répudiée, jamais publiée.
      *
      * @param  list<string>  $desktopSweepPaths
      * @return array<string,mixed>

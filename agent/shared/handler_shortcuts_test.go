@@ -487,6 +487,33 @@ func TestShortcutsSweepsExactlyTheGoldenNamedDesktops(t *testing.T) {
 			t.Fatalf("le Bureau %q nommé par le golden doit être balayé (dirs=%v)", want, dirs)
 		}
 	}
+
+	// « Exactement » (le nom du test l'exige) : AUCUN emplacement balayé en SURPLUS
+	// au-delà des chemins nommés par le golden + les 3 probes standard propres au
+	// poste (Bureau local, startup, taskbar). Sans cette borne, une probe réseau
+	// inconditionnelle réintroduite par un refactor futur resterait verte ici — or
+	// c'est précisément ce test golden-driven qui doit servir de verrou indépendant
+	// (review 27.21 2e tour, finding #5).
+	allowed := map[string]bool{}
+	for _, want := range wantDirs {
+		allowed[want] = true
+	}
+	for _, spec := range []ShortcutSpec{
+		{Place: shortcutPlaceDesktop}, // Bureau local standard (desktop_path vide)
+		{Place: shortcutPlaceStartup},
+		{Place: shortcutPlaceTaskbar},
+	} {
+		dir, err := ops.PlaceDir(spec)
+		if err != nil {
+			t.Fatalf("probe standard %q non résoluble : %v", spec.Place, err)
+		}
+		allowed[strings.TrimRight(dir, `\/`)] = true
+	}
+	for _, got := range dirs {
+		if !allowed[strings.TrimRight(got, `\/`)] {
+			t.Fatalf("emplacement balayé en SURPLUS %q — hors des chemins du golden et des probes standard (dirs=%v)", got, dirs)
+		}
+	}
 }
 
 // Bascule de la politique home dans les DEUX sens : le `.lnk` géré de

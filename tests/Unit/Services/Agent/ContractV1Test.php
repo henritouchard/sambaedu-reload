@@ -285,9 +285,13 @@ class ContractV1Test extends TestCase
     // (`[\\<se4fs>\users\<user>\Bureau\, %USERPROFILE%\Desktop\]`) ; un parc
     // perdir/nomade n'en porterait qu'un (le local) — il n'a aucune autorité sur
     // le Bureau réseau, PARTAGÉ entre tous les postes de l'utilisateur.
-    // Champ additif = forward-compatible, pas un major : un agent ≤ 2.14.x
-    // IGNORE le champ inconnu SANS ERREUR (§9) et conserve son comportement de
-    // balayage précédent (cf. release 2.15.0). 19 items au total (INCHANGÉ, le
+    // Champ additif = forward-compatible, pas un major : un agent ≤ 2.13.0
+    // IGNORE le champ inconnu SANS ERREUR (§9) et conserve son balayage LOCAL
+    // (au pire des fantômes bénins à l'ancien emplacement). ATTENTION : la
+    // 2.14.0 est une EXCEPTION — son « balayage précédent » est le balayage
+    // réseau INCONDITIONNEL du finding #1 (guerre de suppression inter-postes),
+    // d'où sa répudiation (jamais construire ni publier, cf. version.go). La
+    // cible est 2.15.0. 19 items au total (INCHANGÉ, le
     // champ est ajouté à un item existant), hash d'item RECALCULÉ
     // (1ff7dadf… → e3fa179d…) et hash d'état RECALCULÉ. Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).

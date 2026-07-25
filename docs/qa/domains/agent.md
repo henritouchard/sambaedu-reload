@@ -4870,6 +4870,9 @@ contient, la dérivation serveur `desktopSweepPathsFor()` est en cause, pas l'ag
 - [ ] Contrat wire : champ additif `desktop_sweep_paths` présent sur les items
       `shortcuts` ; golden `state.v1.json` régénéré, `FROZEN_STATE_HASH` =
       `34b4f15b…` cohérent PHP + Go.
-- [ ] Version cible **agent 2.15.0** (2.14.0 répudiée, jamais publiée). Un agent
-      antérieur ignore `desktop_sweep_paths` ⇒ retombe sur l'ancien balayage (fantômes
-      possibles) : c'est pourquoi la publication 2.15.0 est requise.
+- [ ] Version cible **agent 2.15.0**. Un agent **≤ 2.13.0** ignore
+      `desktop_sweep_paths` ⇒ conserve son balayage LOCAL (au pire des fantômes
+      bénins) : c'est pourquoi la publication 2.15.0 est requise. ⚠️ La **2.14.0**
+      est une EXCEPTION : son « ancien balayage » est le balayage réseau
+      INCONDITIONNEL du finding #1 (guerre de suppression inter-postes) ⇒
+      **répudiée, ne JAMAIS la construire ni la déployer** (cf. `version.go`).
