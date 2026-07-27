@@ -38,7 +38,7 @@ laquelle on rattache ensuite les réglages et les applications.
 
 Chemin : menu **Parc & postes**, entrée **Gestion du parc**.
 
-### Applications et personnalisation des postes
+### [Applications et personnalisation des postes](/admin/applications/)
 
 Choisir, dans le [dépôt d'applications](/glossaire#depot-applications), les
 logiciels installés sur les postes d'un parc, en plus du

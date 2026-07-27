@@ -809,3 +809,103 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Frontières : zéro réinstallation, imprimantes seulement nommées, applications/réglages sans lien
 - [ ] Lint vert, vocabulaire interdit absent, liens glossaire `#parc` / `#groupe-de-postes`, autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
+
+## Section 9 — Domaine admin « Applications et personnalisation des postes » (Story 53.4)
+
+**Portée** : domaine « Applications et personnalisation des postes » du guide « J'administre SE5 », sous `userDoc/admin/applications/` — page d'entrée + **sept** fiches (catalogue et dépôt / affecter une application / retirer une application / fonds d'écran / raccourcis / paramétrer Firefox et Thunderbird / en cas de problème). La huitième fiche prévue (« Messages aux utilisateurs ») est **volontairement exclue** : la page « Infos à transmettre » (overlay-messages) est orpheline de menu, on ne documente pas un accès par URL directe. Sidebar `'/admin/'` enrichie d'un seul groupe (additif) ; lien de domaine posé sur `admin/index.md`. Rédaction adossée à la table de faits F1-F27, aucune écriture de code.
+
+**Code / sources de référence** :
+- `userDoc/admin/applications/{index,catalogue-et-depot,affecter-une-application,retirer-une-application,fonds-d-ecran,raccourcis,parametrer-firefox-et-thunderbird,en-cas-de-probleme}.md` — les 8 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Applications et personnalisation » (additif, sous « Parc et postes »)
+- `userDoc/admin/index.md` — sous-section « Applications et personnalisation des postes » dont le titre devient un lien vers `/admin/applications/`
+- Libellés confirmés depuis le code : `resources/views/pages/parc-settings/index.blade.php` (onglets, bandeau amont), `_partials/applications-tab.blade.php` (Déployer sur un groupe, Supprimer l'installation, branches), `_partials/shortcuts-tab.blade.php` (emplacements, badge ControlHub), `pages/parc/groups/[id]/index.blade.php` (vignettes fonds d'écran), `pages/admin/settings/parc-defaults/index.blade.php` (onglets), `routes/web.php` (route overlay-messages orpheline)
+
+### Scénario 9.1 — Les 8 pages du domaine existent et se rendent
+**But** : le domaine est publié sous `/doc/admin/applications/`, avec la fiche messages exclue à dessein.
+**Étapes / attendu** :
+- Le build produit `admin/applications/{index,catalogue-et-depot,affecter-une-application,retirer-une-application,fonds-d-ecran,raccourcis,parametrer-firefox-et-thunderbird,en-cas-de-probleme}.html`.
+- **Aucun** `messages-aux-utilisateurs.html` généré (fiche exclue).
+- **Matrice curl (VM)** : les 8 pages en 200 ; `/doc/admin/` en 200 ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` liste les sept fiches et ne redéveloppe pas leur contenu.
+
+### Scénario 9.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, pointant vers des pages existantes.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, après « Parc et postes », le groupe « Applications et personnalisation » avec ses 7 entrées + le lien de tête vers `/admin/applications/`.
+- Aucune entrée « Messages aux utilisateurs » dans la sidebar.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; les groupes « Utilisateurs et groupes » et « Parc et postes » ne sont ni réordonnés ni modifiés ; le commentaire de convention additive est conservé.
+
+### Scénario 9.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Applications et personnalisation des postes » est un lien vers `/admin/applications/`.
+- Le reste de la page (autres sous-sections, schéma besoin→domaine, « Comment lire une fiche ») est inchangé.
+
+### Scénario 9.4 — Gabarit, encarts et valeurs `delai-effet`
+**But** : chaque fiche respecte le gabarit et n'emploie que les encarts normalisés avec des valeurs valides.
+**Étapes / attendu** :
+- Chaque fiche d'action porte : titre = la tâche, phrase d'intention, « Où ça se passe » (menu **Parc & postes** → **Applications** le plus souvent), gestes, résultat observable.
+- Encarts `droit-requis` en langage métier et POSITIF : « administrateur des applications du parc » (catalogue, affecter, retirer), « délégable salle par salle » (affecter, retirer), « gestion des fonds d'écran » (fonds d'écran), « gestion des raccourcis » (raccourcis), « personnalisation des applications » (Firefox/Thunderbird). Fiche « en cas de problème » sans `droit-requis`.
+- Valeurs `delai-effet` : **`agent`** partout (affecter, retirer, fonds d'écran, raccourcis, Firefox/Thunderbird) ; **AUCUN** `delai-effet` sur « catalogue et dépôt » (l'ajout au catalogue seul ne change rien sur les postes) ni sur « en cas de problème ». **Aucune fiche `delai-effet session`** dans ce domaine (la seule qui l'aurait porté — messages — est exclue).
+- Encart `attention` : « Supprimer l'installation » irréversible + cascade (catalogue) ; « retirer = désinstaller » + non-ingérence hors-SE5 (retirer). Pas d'`attention` ailleurs.
+- Encart `vue-poste` : menu Démarrer (affecter, retirer), fond/verrouillage (fonds d'écran), raccourci posé (raccourcis).
+
+### Scénario 9.5 — Exactitude métier : verdicts centraux
+**But** : les formulations de vérité sensibles sont fidèlement rendues.
+**Étapes / attendu** :
+- **Catalogue depuis le dépôt** : le catalogue n'a pas de saisie manuelle ; toute application vient d'un dépôt (branches Stable/Testing/Manuel, Stable = choix normal) ; colonne « Déploiement » (installés/visés) présentée comme premier signe serveur.
+- **Contrat amont** : décrit côté « ce que voit l'admin » (bandeau « Dépôts gérés par l'autorité amont », mention « (imposé par l'autorité amont) », actions de dépôt désactivées, dépôt qui se met à jour tout seul) ; ajout au catalogue borné MAIS **affectation entièrement la main de l'établissement** ; verrous « tant que le lien est actif », rien sur la mécanique de rupture. Aucun « central », aucun « controlHub » hors citation du badge « Géré par ControlHub » (fiche raccourcis).
+- **Trois voies d'affectation** : profil applicatif (voie de référence, héritage parent→sous-groupes en une phrase), direct sur groupe (deux portes : « Déployer sur un groupe » + cartes de l'onglet Applications), direct sur poste ; plus le socle commun (Réglages → Configuration par défaut du parc → Applications, réservé à l'administration du serveur).
+- **Délai sans SLA** : « le poste récupère la décision tout seul… en général dans l'heure qui suit, poste allumé » ; aucun « toutes les 60 minutes » garanti, aucun nom de réglage, aucun numéro de version.
+- **Symétrie ajout/retrait** : « retirer = désinstaller » énoncé sans ambiguïté ; garde « un logiciel installé hors SE5 n'est jamais touché ».
+- **Distinction des deux retraits** : « Supprimer l'installation » (catalogue, tout l'établissement, cascade) vs retrait d'affectation (postes concernés seulement) ; les deux fiches se renvoient l'une à l'autre.
+- **Fonds d'écran** : Bureau vs écran de verrouillage ; trois surfaces réelles (défaut établissement / vignettes de salle / fond personnel utilisateur) ; « le plus spécifique gagne » ; verrouillage **jamais par utilisateur ni groupe d'utilisateurs** ; pas de fond « par parc logique » inventé (piège n°7).
+- **Firefox/Thunderbird** : bouton « Paramétrer » + badge « Personnalisé », défaut d'établissement + plus spécifique gagne, couplage à l'installation, délai en deux temps (agent puis prochain lancement). **Aucune** allusion au suivi des réglages d'un poste à l'autre (piège n°2).
+
+### Scénario 9.6 — « En cas de problème » : symptômes → vérifications interface, zéro commande
+**But** : la page d'aide reste dans l'interface, sans manipulation serveur.
+**Étapes / attendu** :
+- Trois symptômes couverts : application qui ne s'installe pas (erreur au catalogue + « Réessayer l'installation » ; onglet Échecs + journal « Erreur »/« Non installé » ; poste allumé + « Forcer la synchro ») ; application qui ne se retire pas (toutes les voies : profils qui la portent, direct/hérité de la fiche poste, socle commun ; même patience/forçage ; cas « hors SE5, on n'y touche pas ») ; écart demandé/constaté (carte « Déploiement sur les postes » poste par poste, forcer la synchro, signaler).
+- Chaque piste se termine sur un geste ou un endroit exact dans l'interface. Aucune commande shell, aucun chemin serveur, aucun fichier de log.
+
+### Scénario 9.7 — Frontières de domaine tenues et page orpheline exclue
+**But** : la doc ne déborde pas sur les domaines voisins et n'expose pas de surface morte.
+**Étapes / attendu** :
+- **Capacités / registre / outils agent / associations / état cible** : jamais décrits ni liés (domaines « Réglages et supervision » et « Parc et postes »). Les onglets « Registre / capacités » et « Outils agent » de la Configuration par défaut du parc ne sont pas documentés.
+- **Lecteurs réseau, politiques de fichiers, associations de fichiers, mode examen, personnalisations Linux** : absents.
+- **Suivi des réglages d'un poste à l'autre (roaming)** : aucune allusion nulle part (piège n°2) ; l'homonymie « profil applicatif » est désambiguïsée par le seul lien glossaire.
+- **Tableau de bord « Déploiement WPKG »** : non documenté (orphelin de menu + hors périmètre) ; le suivi passe par la colonne « Déploiement » et la carte « Déploiement sur les postes ».
+- **Messages overlay / « Infos à transmettre »** : **aucune** page publiée n'y fait allusion (page orpheline de menu, exclue à dessein).
+
+### Scénario 9.8 — Lint, glossaire et autonomie réseau
+**But** : les règles de rédaction et l'autonomie sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute.
+- Vocabulaire technique interdit absent (WPKG, AD, LDAP, provider, handler, desired state, pivot, clés de permission…) ; seuls les libellés d'interface se citent tels quels (onglets, « Déployer sur un groupe », « Supprimer l'installation », « Appliquer par défaut », branches, « Géré par ControlHub », « imposé par l'autorité amont »).
+- Chiffres internes traduits en formules sobres (« dans l'heure qui suit, poste allumé », « dans la minute qui suit un contact »), jamais 3600 s ni « toutes les 60 minutes » garanti.
+- Liens glossaire employés : `/glossaire#depot-applications`, `#socle-commun`, `#parc`, `#profil-applicatif`, `#agent`, à première occurrence ; ancres existantes.
+- Références de captures posées (4) : `catalogue-et-depot` (onglet-catalogue, modale-depot), `affecter-une-application` (fiche-application), `fonds-d-ecran` (vignettes-salle) ; fichiers PNG absents → placeholders, listés par la sortie informative du lint.
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+
+### Limites connues Section 9 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur.
+- **Vérification des libellés d'interface à l'écran** : les libellés cités sont confirmés depuis le code source (blades, enums, routes), pas observés dans une session navigateur — à recaler visuellement lors de la levée de la dette VM.
+- **Gap produit signalé (hors périmètre doc)** : « Infos à transmettre » (overlay-messages) livrée et gardée mais orpheline de navigation ; non documentée tant qu'aucune entrée de menu n'existe.
+
+### Checklist rapide Section 9
+- [ ] 8 pages du domaine construites (7 fiches + index) ; aucune fiche « messages » ; page d'entrée = sommaire sans redite
+- [ ] Sidebar `/admin/` = un groupe additif « Applications et personnalisation » (7 entrées) ; commentaire de convention conservé ; groupes existants et `/poste/` inchangés
+- [ ] Titre de la sous-section « Applications et personnalisation des postes » de `/admin/` devenu un lien ; reste de la page inchangé
+- [ ] Gabarit tenu : droits en métier et positifs, encarts normalisés seuls, `delai-effet agent` (jamais `session` ici), pas de `delai-effet` sur catalogue ni en cas de problème
+- [ ] Catalogue alimenté par le dépôt (pas de saisie manuelle), branches Stable/Testing/Manuel
+- [ ] Contrat amont : ce que voit l'admin, ajout borné mais affectation = sa main, « tant que le lien est actif », zéro mécanique de rupture
+- [ ] Trois voies + socle commun (Réglages, admin serveur) ; délai sans SLA
+- [ ] Symétrie « retirer = désinstaller » + garde hors-SE5 ; distinction « Supprimer l'installation » vs retrait d'affectation (renvois croisés)
+- [ ] Fonds d'écran : Bureau/verrouillage, 3 surfaces, plus spécifique gagne, verrouillage jamais par utilisateur, pas de fond « par parc logique »
+- [ ] Firefox/Thunderbird : « Paramétrer », défaut + plus spécifique, couplage installation, délai en deux temps, zéro roaming
+- [ ] « En cas de problème » : 3 symptômes, vérifications interface, zéro commande
+- [ ] Frontières : zéro capacité/registre/outils, zéro lecteur réseau/association, zéro tableau de bord de déploiement, zéro message overlay, zéro roaming
+- [ ] Lint vert, vocabulaire interdit absent, liens glossaire `#depot-applications`/`#socle-commun`/`#parc`/`#profil-applicatif`/`#agent`, autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés

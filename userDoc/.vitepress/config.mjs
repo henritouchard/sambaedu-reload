@@ -301,6 +301,19 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/parc/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Applications et personnalisation',
+                    link: '/admin/applications/',
+                    items: [
+                        { text: 'Le catalogue et le dépôt', link: '/admin/applications/catalogue-et-depot' },
+                        { text: 'Affecter une application', link: '/admin/applications/affecter-une-application' },
+                        { text: 'Retirer une application', link: '/admin/applications/retirer-une-application' },
+                        { text: "Fonds d'écran", link: '/admin/applications/fonds-d-ecran' },
+                        { text: 'Raccourcis', link: '/admin/applications/raccourcis' },
+                        { text: 'Paramétrer Firefox et Thunderbird', link: '/admin/applications/parametrer-firefox-et-thunderbird' },
+                        { text: 'En cas de problème', link: '/admin/applications/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {
