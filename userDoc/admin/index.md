@@ -20,7 +20,7 @@ s'y rattacher au fil du temps.
 L'administration se répartit en sept domaines. Pour chacun : ce qu'on y fait,
 et le chemin à suivre dans l'interface pour l'atteindre.
 
-### Utilisateurs et groupes
+### [Utilisateurs et groupes](/admin/utilisateurs/)
 
 Consulter et créer les comptes des élèves et des enseignants, réinitialiser un
 mot de passe, et repérer les comptes qui demandent une attention (mot de passe

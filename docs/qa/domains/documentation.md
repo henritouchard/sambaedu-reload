@@ -631,3 +631,89 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Sidebar `/admin/` = « Vue d'ensemble » seule + commentaire de convention additive ; `/poste/` inchangée
 - [ ] Lint vert, autonomie réseau vide, `git diff` limité à `userDoc/` + `docs/qa/`
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel schéma/encarts clair/sombre/mobile
+
+---
+
+## Section 7 — Domaine admin « Utilisateurs et groupes » (Story 53.2)
+
+**Portée** : premières fiches de domaine du guide « J'administre SE5 », sous `userDoc/admin/utilisateurs/` — page d'entrée + six fiches (créer / modifier / réinitialiser un mot de passe / désactiver ou supprimer / groupes / en cas de problème). Sidebar `'/admin/'` enrichie d'un seul groupe (additif) ; lien de domaine posé sur la page d'orientation `admin/index.md`. Rédaction adossée à la table de faits métier de la story (comptes, mots de passe éphémères, suppression en deux temps, groupes), aucune écriture de code.
+
+**Code / sources de référence** :
+- `userDoc/admin/utilisateurs/{index,creer-un-compte,modifier-un-compte,reinitialiser-un-mot-de-passe,desactiver-ou-supprimer-un-compte,groupes-d-utilisateurs,en-cas-de-probleme}.md` — les 7 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Utilisateurs et groupes » (additif, sous le commentaire de convention posé par la fondation du guide)
+- `userDoc/admin/index.md` — sous-section « Utilisateurs et groupes » dont le titre devient un lien vers `/admin/utilisateurs/`
+
+### Scénario 7.1 — Les 7 pages du domaine existent et se rendent
+**But** : le domaine est complet et publié sous `/doc/admin/utilisateurs/`.
+**Étapes / attendu** :
+- Le build produit `admin/utilisateurs/{index,creer-un-compte,modifier-un-compte,reinitialiser-un-mot-de-passe,desactiver-ou-supprimer-un-compte,groupes-d-utilisateurs,en-cas-de-probleme}.html`.
+- **Matrice curl (VM)** : les 7 pages en 200 ; `/doc/admin/` en 200 ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` liste les six fiches et ne redéveloppe pas leur contenu.
+
+### Scénario 7.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, et il ne pointe que vers des pages existantes.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, après « Administration SE5 », le groupe « Utilisateurs et groupes » avec ses 6 entrées + le lien de tête vers `/admin/utilisateurs/`.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; aucun groupe n'apparaît sous `'/poste/'`.
+- Le commentaire de convention additive au-dessus du bloc `'/admin/'` est conservé (aucune réécriture ni réordonnancement).
+
+### Scénario 7.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche de la page.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Utilisateurs et groupes » est un lien vers `/admin/utilisateurs/`.
+- Les six autres sous-sections de domaine restent en texte (leurs pages n'existent pas encore) ; le reste de la page (schéma besoin→domaine, « Comment lire une fiche ») est inchangé.
+
+### Scénario 7.4 — Gabarit, encarts et valeurs `delai-effet`
+**But** : chaque fiche « comment faire » respecte le gabarit et n'emploie que les encarts normalisés avec des valeurs valides.
+**Étapes / attendu** :
+- Chaque fiche d'action porte : titre = la tâche, phrase d'intention, « Où ça se passe » (menu **Pilotage** → **Utilisateurs**), gestes numérotés, résultat observable.
+- Encarts `droit-requis` en langage métier (« administrateur des utilisateurs », « droit de réinitialisation des mots de passe ») — jamais de clé technique.
+- Valeurs `delai-effet` conformes : `immediat` (créer, réinitialiser), `session` (modifier, désactiver/supprimer, groupes). Une valeur invalide ferait échouer le build (validation du container).
+- Encarts `attention` présents là où prévu : mot de passe affiché une seule fois (créer), mot de passe jamais conservé + export 20 min (réinitialiser), suppression irréversible (désactiver/supprimer), suppression de groupes (groupes).
+- Encarts `vue-poste` sur les gestes à conséquence poste (créer : 1re connexion = changement de mot de passe).
+
+### Scénario 7.5 — Exactitude métier : points sensibles énoncés sans ambiguïté
+**But** : les verdicts centraux de la story sont fidèlement rendus.
+**Étapes / attendu** :
+- **Suppression en deux temps** : la fiche désactiver/supprimer structure le geste (désactiver = réversible, dossier archivé ; supprimer = seulement sur compte désactivé, irréversible) ; les comptes système ne se désactivent ni ne se suppriment ; une session ouverte n'est pas coupée (`delai-effet session`).
+- **Mot de passe éphémère** : restitution écran pour un seul compte, export PDF/CSV obligatoire (lien 20 min) pour plusieurs ou un groupe ; jamais conservé ; aucune promesse de ré-affichage.
+- **Portée enseignant** : la fiche réinitialiser précise en une phrase qu'un enseignant n'agit que sur les élèves de ses classes.
+- **Trois portes de réinitialisation** décrites (fiche, sélection multiple, groupe entier).
+- Renvoi croisé vers `/poste/mon-compte/changement-impose` présent (créer et réinitialiser).
+
+### Scénario 7.6 — « En cas de problème » : symptômes → vérifications interface, zéro commande
+**But** : la page d'aide reste dans l'interface, sans manipulation serveur.
+**Étapes / attendu** :
+- Trois symptômes couverts : compte introuvable (chips de filtres + **Tout effacer**, recherche à partir de 2 caractères, badge **Inactif**), connexion refusée (badge **Inactif**, filtre d'audit **Mot de passe par défaut**, solution = réinitialiser), groupe sans effet (composition sur la fiche, effet à la prochaine ouverture de session, dernier recours **Resynchroniser AD**).
+- Aucune commande shell, aucun chemin serveur, aucune clé technique dans la page.
+
+### Scénario 7.7 — Aucun vestige legacy ni compte fédéré documenté
+**But** : la doc n'expose que le livré et attesté.
+**Étapes / attendu** :
+- Aucune fiche ne mentionne « Régénérer profil Windows », « Créer dossier personnel », ni aucune page de création/gestion de comptes externes/fédérés.
+- Les surfaces d'autres domaines (capacités, quota, partage de classe) sont signalées d'une phrase au plus sur la fiche groupes, **sans lien** (aucune page cible n'existe encore).
+- Les libellés d'interface réels cités le sont tels quels quand la fiche décrit le bouton (« Resynchroniser AD », « Réinitialiser les mdp du groupe », « Nouvel utilisateur », « Nouveau groupe », « Nommer un professeur principal »…).
+
+### Scénario 7.8 — Lint, glossaire et autonomie réseau
+**But** : les règles de rédaction et l'autonomie sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute.
+- Seul lien glossaire employé : `/glossaire#espace-personnel` (dossier personnel créé/archivé) ; « annuaire », « classe », « groupe d'utilisateurs » restent en langage courant, sans lien.
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+- Références de captures posées (formulaire de création, fenêtre de réinitialisation, fiche groupe) sous `/captures/admin/utilisateurs/...` en kebab-case, avec alt complet issu du jeu fictif ; images non produites (repli « Illustration à venir » attendu).
+
+### Limites connues Section 7 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes de ce runbook.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur tant que la VM n'a pas été sollicitée pour ce domaine.
+
+### Checklist rapide Section 7
+- [ ] 7 pages du domaine construites ; page d'entrée = sommaire, sans redite
+- [ ] Sidebar `/admin/` = un seul groupe additif « Utilisateurs et groupes » ; commentaire de convention conservé ; `/poste/` inchangée
+- [ ] Titre de la sous-section « Utilisateurs et groupes » de `/admin/` devenu un lien ; reste de la page inchangé
+- [ ] Gabarit tenu : droits en métier, encarts normalisés seuls, valeurs `delai-effet` valides
+- [ ] Points sensibles exacts : deux-temps de la suppression, mot de passe éphémère (écran mono / export 20 min), portée enseignant, trois portes de réinitialisation
+- [ ] « En cas de problème » : trois symptômes, vérifications interface, zéro commande
+- [ ] Aucun vestige legacy ni compte fédéré documenté ; sections voisines signalées sans lien
+- [ ] Lint vert, seul lien glossaire `#espace-personnel`, autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile

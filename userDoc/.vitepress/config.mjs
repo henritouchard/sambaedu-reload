@@ -277,6 +277,18 @@ export default defineConfig({
                     text: 'Administration SE5',
                     items: [{ text: "Vue d'ensemble", link: '/admin/' }],
                 },
+                {
+                    text: 'Utilisateurs et groupes',
+                    link: '/admin/utilisateurs/',
+                    items: [
+                        { text: 'Créer un compte', link: '/admin/utilisateurs/creer-un-compte' },
+                        { text: 'Modifier un compte', link: '/admin/utilisateurs/modifier-un-compte' },
+                        { text: 'Réinitialiser un mot de passe', link: '/admin/utilisateurs/reinitialiser-un-mot-de-passe' },
+                        { text: 'Désactiver ou supprimer un compte', link: '/admin/utilisateurs/desactiver-ou-supprimer-un-compte' },
+                        { text: "Groupes d'utilisateurs", link: '/admin/utilisateurs/groupes-d-utilisateurs' },
+                        { text: 'En cas de problème', link: '/admin/utilisateurs/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {
