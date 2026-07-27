@@ -1298,3 +1298,82 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] « En cas de problème » : deux volets référent/serveur, renvois, **zéro commande**
 - [ ] Lint vert ; jargon uniquement en citation d'écran ; liens glossaire valides ; aucune capture ; autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés en lecture seule
+
+## Section 14 — Correspondance SE4 → SE5 : « Je viens de l'ancienne interface » (Story 53.9)
+
+**Portée** : DERNIÈRE page de l'épic documentation utilisateur — une page unique de renvoi, `userDoc/admin/depuis-se4/index.md`, qui associe chaque tâche courante de l'ancienne interface (SE4) à son emplacement et son geste dans SE5, avec lien vers la fiche détaillée. Huit sections par domaine (comptes et groupes, droits d'administration, parcs et postes, applications et environnement des postes, fichiers/partages/quotas, imprimantes, serveur et supervision, modules sans équivalent). Sidebar `'/admin/'` enrichie d'un groupe additif final « Depuis SE4 » (après « Réglages et supervision ») ; `admin/index.md` reçoit un paragraphe additif avec lien. Rédaction adossée à la table de correspondances fermée et vérifiée des deux côtés du dev-lead (45 lignes), aucune écriture de code (rien hors `userDoc/` + ce runbook). **Points de vérité centraux** : la table est fermée (aucune équivalence inventée, aucun statut requalifié) ; les lignes « pas encore disponible » (C8, A9, S4, S5, M1-M3) sont énoncées sans date et sans lien ; la ligne imprimantes (I1) est un statut intermédiaire distinct — onglet **Imprimantes** de Gestion du parc réellement livré, mais sans fiche dans ce guide — jamais présentée comme « pas encore dans SE5 » ; les 9 notes de logique (C6, C9, C10, R1, R3, P7, A2, A8, F4) tiennent en une phrase côté administrateur, jamais un récit d'évolution produit.
+
+**Code / sources de référence** :
+- `userDoc/admin/depuis-se4/index.md` — la nouvelle page (8 sections, 45 lignes de correspondance)
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Depuis SE4 » (additif, dernière position)
+- `userDoc/admin/index.md` — paragraphe additif avec lien vers `/admin/depuis-se4/`, inséré après l'encart `droit-requis` qui clôt « Les domaines de l'administration »
+- Libellé d'écran confirmé depuis le code : `resources/views/pages/parc/index.blade.php` l.656 (bouton « Ajouter une imprimante »), l.676 (onglet « Imprimantes »)
+- Table de correspondances source : `_bmad-output/implementation-artifacts/53-9-correspondance-se4-vers-se5.md`
+
+### Scénario 14.1 — La page existe et s'atteint
+**But** : la page de correspondance est publiée et accrochée au guide.
+**Étapes / attendu** :
+- Le build produit `admin/depuis-se4/index.html` ; frontmatter `title`/`description` présents.
+- Sidebar `/doc/admin/` porte, **après** « Réglages et supervision », un groupe additif « Depuis SE4 » avec une seule entrée « Je viens de l'ancienne interface » vers `/admin/depuis-se4/` ; les sept groupes de domaine existants et `/poste/` sont bit à bit inchangés.
+- `/doc/admin/` porte un paragraphe additif (deux phrases + lien) après l'encart « Droit requis » qui clôt « Les domaines de l'administration », avant « Trouver le bon domaine à partir d'un besoin » ; le reste de la page est inchangé.
+
+### Scénario 14.2 — Couverture des 45 lignes de correspondance, en 8 sections
+**But** : chaque tâche SE4 attestée a sa ligne, dans la bonne section.
+**Étapes / attendu** :
+- 8 sections présentes dans cet ordre : Comptes et groupes (C1-C10), Droits d'administration (R1-R3), Parcs et postes (P1-P8), Applications et environnement des postes (A1-A9), Fichiers/partages/quotas (F1-F5), Imprimantes (I1), Serveur et supervision (S1-S6), Modules SE4 sans équivalent (M1-M3).
+- Chaque ligne D nomme la tâche en langage métier (jamais un chemin `.php`), l'emplacement/geste SE5, et un lien vers la fiche de la colonne « Fiche à lier » de la table source — aucune autre cible liée.
+- Aucune ligne ne réexplique un geste que la fiche liée couvre déjà (test de relecture : chaque cellule SE5 tient en une phrase courte).
+
+### Scénario 14.3 — Statuts honnêtes : « pas encore » sans date, imprimantes distinctes
+**But** : les deux règles d'honnêteté de la story sont tenues à la lettre.
+**Étapes / attendu** :
+- Les 7 lignes P (C8, A9, S4, S5, M1, M2, M3) portent la formulation unique « Pas encore disponible dans SE5. », sans lien, sans date, sans justification (« prévu », « à venir » absents).
+- La ligne I1 (imprimantes) donne l'emplacement réel (onglet « Imprimantes » de Gestion du parc, bouton « Ajouter une imprimante », dépôt des pilotes), précise que ce guide n'a pas encore de fiche dédiée, et ne porte **aucun lien** ; elle n'est jamais formulée « pas encore dans SE5 ».
+- `grep -n "pas encore" userDoc/admin/depuis-se4/index.md` → uniquement les 7 lignes P plus la mention imprimantes qui, elle, ne dit pas « pas encore dans SE5 » mais « pas encore de fiche ».
+
+### Scénario 14.4 — Les 9 notes de logique, côté administrateur
+**But** : chaque changement de logique tient en une phrase de geste, jamais de récit produit.
+**Étapes / attendu** :
+- Les 9 lignes concernées (C6, C9, C10, R1, R3, P7, A2, A8, F4) portent chacune UNE phrase de « ce qui change », formulée du point de vue de l'administrateur (le geste qu'il fait maintenant), jamais de l'implémentation ni de l'historique produit.
+- A8 reprend la formulation prescrite : « Ce que vous régliez par des stratégies Windows se règle maintenant dans SE5 et s'applique par l'agent » (aucune mention de « GPO », « AD » ou « LDAP » comme termes techniques — seul « stratégies Windows » est employé).
+- A2 énonce que le parc est l'unité d'affectation (reprise du principe déjà connu en SE4, généralisé aux réglages — sans dire que c'est entièrement nouveau).
+- Aucune phrase ne commence par « SE5 a remplacé... » ni ne mentionne une décision abandonnée.
+
+### Scénario 14.5 — Bascule côté poste assumée (C9, C10)
+**But** : les deux seuls liens `/poste/` de la page sont corrects et justifiés.
+**Étapes / attendu** :
+- C9 renvoie vers `/poste/mon-compte/changer-mon-mot-de-passe` avec la phrase de logique (le mot de passe se change sur le poste, plus par une page web).
+- C10 renvoie vers `/poste/fichiers/espace-personnel` avec la phrase de logique (les fichiers personnels se consultent depuis le poste).
+- `grep -c "/poste/" userDoc/admin/depuis-se4/index.md` → exactement 2 occurrences de lien (hors mentions textuelles « sur le poste »).
+
+### Scénario 14.6 — Lint, glossaire, gabarit et build
+**But** : la page respecte la charte éditoriale et le build prouve tous les liens.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`. **Vérifié en LOCAL 2026-07-27** (« Lint éditorial : OK, 67 fichiers » ; build VitePress strict vert, `build complete`).
+- Aucun encart `droit-requis`/`delai-effet`/`vue-poste`/`attention` sur cette page (page de renvoi, pas fiche de geste).
+- Liens glossaire à la première occurrence, seulement parmi les 9 ancres valides : `/glossaire#espace-personnel` (C10), `/glossaire#parc` (intro section Parcs et postes), `/glossaire#depot-applications` (A1), `/glossaire#capacite` (A8), `/glossaire#agent` (A8), `/glossaire#partage` (F1) — toutes ancres existantes dans `glossaire.md`.
+- Aucun chemin de fichier `.php` ni nom de page technique SE4 recopié dans le texte publié ; tableaux markdown natifs (pas de HTML de tableau à la main).
+- `npm run build` vert : les 36 cibles internes distinctes (34 pages du parcours admin + 2 fiches du parcours poste) résolvent — c'est la preuve autoritaire, aucun lien mort.
+
+### Scénario 14.7 — Non-régression : diff limité, sept groupes existants et `/poste/` intouchés
+**But** : la story n'a rien modifié en dehors du périmètre déclaré.
+**Étapes / attendu** :
+- `git diff --stat -- userDoc` : uniquement `.vitepress/config.mjs` (+6) et `admin/index.md` (+4), plus le nouveau fichier `admin/depuis-se4/index.md`.
+- `git status` hors `userDoc/` et `docs/qa/` : vide (les suppressions préexistantes `docs/todo.md`/`todo/*.md`, sans rapport avec cette story, ni touchées ni restaurées).
+- Aucune fiche de domaine 53.1-53.8 modifiée ; aucun fichier de l'outillage éditorial (`glossaire.md`, `CONTRIBUTING.md`, `.templates/`, `lint-doc.mjs`, `theme/custom.css`) modifié.
+
+### Limites connues Section 14 (différé VM)
+- **Matrice curl serveur non rejouée** : `/doc/admin/depuis-se4/` en 200, `/doc/admin/` en 200 avec le paragraphe additif, attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur par ssh dans cette passe.
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des 8 sections et de leurs tableaux en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes.
+- **Libellé imprimantes confirmé par lecture de code, pas à l'écran** : « Imprimantes » (onglet) et « Ajouter une imprimante » (bouton) vérifiés dans `pages/parc/index.blade.php` l.656/676 ; recalage visuel à faire en lecture seule lors de la levée de la dette VM, sans muter d'endpoint d'écriture.
+
+### Checklist rapide Section 14
+- [ ] Page `admin/depuis-se4/index.md` construite ; frontmatter `title`/`description` ; 8 sections dans l'ordre attendu
+- [ ] Sidebar `/admin/` = un groupe additif « Depuis SE4 » en **dernière** position (1 entrée) ; sept groupes existants et `/poste/` inchangés
+- [ ] `admin/index.md` : paragraphe additif + lien après l'encart droit-requis ; reste de la page inchangé
+- [ ] 45 lignes couvertes : 37 D avec lien vers la seule fiche de la colonne « Fiche à lier », 1 L (imprimantes, emplacement donné, aucun lien, jamais « pas encore »), 7 P (« Pas encore disponible dans SE5. », sans date, sans lien)
+- [ ] 9 notes de logique en une phrase côté administrateur (A8 formulation prescrite ; A2 = parc unité d'affectation) ; aucun récit d'évolution produit
+- [ ] C9/C10 = seuls liens `/poste/` de la page, avec phrase de logique
+- [ ] Lint vert ; aucun encart normalisé sur la page ; liens glossaire valides (6 ancres utilisées) ; aucun chemin `.php` ; tableaux markdown natifs
+- [ ] `npm run build` vert (preuve des 36 cibles internes) ; `git diff` limité à 2 fichiers modifiés + 1 nouveau, hors `userDoc/`+`docs/qa/` vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel clair/sombre/mobile + recalage à l'écran du libellé imprimantes en lecture seule

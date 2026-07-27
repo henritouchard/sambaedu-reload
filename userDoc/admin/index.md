@@ -86,6 +86,10 @@ administre le serveur. Si une entrée citée ici ne figure pas dans votre menu,
 c'est que ce droit ne vous a pas été confié.
 :::
 
+Vous connaissiez l'ancienne interface ? La page
+[Je viens de l'ancienne interface](/admin/depuis-se4/) reprend vos tâches
+habituelles une par une et indique où les retrouver dans SE5.
+
 ## Trouver le bon domaine à partir d'un besoin
 
 Un besoin courant de l'établissement mène toujours à l'un des sept domaines

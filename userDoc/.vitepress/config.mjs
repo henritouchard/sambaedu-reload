@@ -363,6 +363,12 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/reglages/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Depuis SE4',
+                    items: [
+                        { text: "Je viens de l'ancienne interface", link: '/admin/depuis-se4/' },
+                    ],
+                },
             ],
             '/poste/': [
                 {
