@@ -314,6 +314,18 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/applications/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Fichiers et partages',
+                    link: '/admin/fichiers/',
+                    items: [
+                        { text: 'Régler la politique de fichiers', link: '/admin/fichiers/politique-de-fichiers' },
+                        { text: 'Le partage de classe', link: '/admin/fichiers/partage-de-classe' },
+                        { text: 'Créer un partage', link: '/admin/fichiers/creer-un-partage' },
+                        { text: 'Gérer les accès d\'un partage', link: '/admin/fichiers/gerer-les-acces-d-un-partage' },
+                        { text: "Limiter l'espace de stockage", link: '/admin/fichiers/limiter-l-espace-de-stockage' },
+                        { text: 'En cas de problème', link: '/admin/fichiers/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {

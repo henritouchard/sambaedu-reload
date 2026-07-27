@@ -49,7 +49,7 @@ appliqué à plusieurs parcs d'un seul geste.
 
 Chemin : menu **Parc & postes**, entrée **Applications**.
 
-### Fichiers et partages
+### [Fichiers et partages](/admin/fichiers/)
 
 Ouvrir un [partage](/glossaire#partage) — un dossier commun — à une classe ou à
 une équipe, et régler la place accordée à l'[espace personnel](/glossaire#espace-personnel)

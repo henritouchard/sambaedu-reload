@@ -909,3 +909,100 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Frontières : zéro capacité/registre/outils, zéro lecteur réseau/association, zéro tableau de bord de déploiement, zéro message overlay, zéro roaming
 - [ ] Lint vert, vocabulaire interdit absent, liens glossaire `#depot-applications`/`#socle-commun`/`#parc`/`#profil-applicatif`/`#agent`, autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
+
+## Section 10 — Domaine admin « Fichiers et partages » (Story 53.5)
+
+**Portée** : domaine « Fichiers et partages » du guide « J'administre SE5 », sous `userDoc/admin/fichiers/` — page d'entrée + **six** fiches (régler la politique de fichiers / le partage de classe / créer un partage / gérer les accès d'un partage / limiter l'espace de stockage / en cas de problème). Sidebar `'/admin/'` enrichie d'un seul groupe (additif, après « Applications et personnalisation ») ; lien de domaine posé sur `admin/index.md`. Rédaction adossée à la table de faits F1-F20, aucune écriture de code (rien hors `userDoc/` + ce runbook).
+
+**Code / sources de référence** :
+- `userDoc/admin/fichiers/{index,politique-de-fichiers,partage-de-classe,creer-un-partage,gerer-les-acces-d-un-partage,limiter-l-espace-de-stockage,en-cas-de-probleme}.md` — les 7 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Fichiers et partages » (additif, sous « Applications et personnalisation »)
+- `userDoc/admin/index.md` — sous-section « Fichiers et partages » dont le titre devient un lien vers `/admin/fichiers/` (le chemin « menu Serveur, entrée Réglages » déjà publié est laissé tel quel)
+- Libellés confirmés depuis le code : `pages/admin/settings/files/index.blade.php` (onglets « Personnels et partagés » / « Lecteurs réseaux », titre « Gestion des fichiers »), `_partials/personnels-partages-tab.blade.php` (les 3 interrupteurs, « Web uniquement », « Au prochain logon », Nextcloud désactivé), `pages/admin/shares/index.blade.php` (« Nouveau répertoire », « Créer depuis un template »), `pages/admin/shares/[id]/index.blade.php` (types d'assignation, Resynchroniser, suppression), `app/Models/NetworkShareAssignable.php` (libellés « Lire »/« Modifier »), `app/Services/Filesystem/NetworkShareValidator.php` (texte d'avertissement montage-seul), `database/seeders/DirectoryTemplateSeeder.php` (les 4 modèles), `class-share-section.blade.php` (bascule échange), `quota-section.blade.php` + `group-quota-section.blade.php` (Actualiser, Modifier le quota, Hérité (défaut)/Illimité)
+
+### Scénario 10.1 — Les 7 pages du domaine existent et se rendent
+**But** : le domaine est publié sous `/doc/admin/fichiers/`.
+**Étapes / attendu** :
+- Le build produit `admin/fichiers/{index,politique-de-fichiers,partage-de-classe,creer-un-partage,gerer-les-acces-d-un-partage,limiter-l-espace-de-stockage,en-cas-de-probleme}.html`.
+- **Matrice curl (VM)** : les 7 pages en 200 ; `/doc/admin/` en 200 ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` liste les six fiches et ne redéveloppe pas leur contenu.
+
+### Scénario 10.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, pointant vers des pages existantes.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, après « Applications et personnalisation », le groupe « Fichiers et partages » avec ses 6 entrées + le lien de tête vers `/admin/fichiers/`.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort, y compris les renvois `/poste/fichiers/…` et le lien `/admin/utilisateurs/`).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; les groupes « Utilisateurs et groupes », « Parc et postes » et « Applications et personnalisation » ne sont ni réordonnés ni modifiés ; le commentaire de convention additive est conservé.
+
+### Scénario 10.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Fichiers et partages » est un lien vers `/admin/fichiers/`.
+- Le chemin « menu Serveur, entrée Réglages » et le reste de la page (autres sous-sections, schéma besoin→domaine, « Comment lire une fiche ») sont inchangés.
+
+### Scénario 10.4 — Gabarit, encarts et valeurs `delai-effet`
+**But** : chaque fiche respecte le gabarit et n'emploie que les encarts normalisés avec des valeurs valides.
+**Étapes / attendu** :
+- Chaque fiche d'action porte : titre = la tâche, phrase d'intention, « Où ça se passe », gestes, résultat observable.
+- Encarts `droit-requis` en langage métier : « administrateur du serveur » (politique, créer, accès, limiter), « droit de gestion des partages » (partage de classe). Fiche « en cas de problème » sans `droit-requis`.
+- Valeurs `delai-effet` : **`session`** (politique, créer un partage, gérer les accès — avec nuance retrait immédiat côté serveur) ; **`immediat`** (partage de classe : bascule échange + phrase « nouvel élève = prochaine session » ; limiter l'espace). **AUCUN** `delai-effet` sur « en cas de problème ».
+- Encart `attention` : politique (désactiver ≠ supprimer), partage de classe (échange désactivé = contenu invisible mais conservé), gérer les accès (salle = lettre visible sans accès ; suppression = accès révoqués, fichiers conservés serveur). Pas d'`attention` sur créer / limiter / en cas de problème.
+- Encart `vue-poste` : présent sur les cinq fiches d'action, absent sur « en cas de problème ».
+
+### Scénario 10.5 — Exactitude métier : verdicts centraux
+**But** : les formulations de vérité sensibles sont fidèlement rendues.
+**Étapes / attendu** :
+- **Politique = 3 interrupteurs GLOBAUX** : « Répertoire personnel (K:) », « Partages réseau (H:) », « Nextcloud natif », valables pour tout l'établissement, **jamais** présentés comme un réglage par salle ou par parc ; effet concret par interrupteur + renvois `/poste/fichiers/…` ; « web uniquement » quand tout est désactivé ; enregistrement immédiat (pas de bouton Enregistrer, indicateur « Enregistré »). Le mot **« capacité »** n'est **jamais** employé pour ces interrupteurs ; aucun lien `/glossaire#capacite`.
+- **Nextcloud** : une seule phrase (« option visible mais pas encore activable »), jamais présenté comme disponible, jamais d'URL ni de « bientôt ».
+- **Lecture ≠ écriture** : chaque énoncé d'accès porte son niveau (**Lire** = consultation seule / **Modifier** = consultation + écriture) ET son périmètre (les membres du groupe ; pour une classe, les élèves ; équipe enseignante = groupe distinct).
+- **Lettre visible ≠ accès réel** : les deux axes distingués ; une assignation à une salle (parc) est « montage seul » (lettre visible, aucun accès) ; le texte d'avertissement de l'écran est cité verbatim.
+- **Partage de classe** : tableau des 4 sous-dossiers (travail / réservé enseignants / échange / au nom de l'élève) en lecture/écriture ; le dossier au nom de l'élève n'est PAS l'espace personnel privé ; bascule échange (désactivé = contenu conservé mais invisible) ; réappliquer les accès = rattrapage sans danger.
+- **Créer un partage** : création directe (nom, nom de dossier contraint, libellé facultatif, lettre facultative pré-suggérée, lettres réservées refusées avec message — sans recopier la liste) + 4 modèles (qui dépose = écriture, qui lit = lecture) ; seules `K:`/`H:` fixes, une lettre automatique peut changer → repérer par le nom.
+- **Limiter l'espace** : quota d'un compte (section Quotas disque : Actualiser, Modifier le quota) + quota d'un groupe (Hérité (défaut) / Illimité / valeur propre, Modifier) ; « la règle la plus favorable au compte s'applique » (une phrase) ; vécu au dépassement (enregistrement échoue, averti à la connexion) ; filtre d'audit « Quota dépassé » renvoyé au domaine Utilisateurs. **Aucun** réglage de quotas par défaut, de grâce ni de corbeille.
+
+### Scénario 10.6 — « En cas de problème » : symptômes → vérifications interface, zéro commande
+**But** : la page d'aide reste dans l'interface, sans manipulation serveur.
+**Étapes / attendu** :
+- Deux symptômes couverts : « un espace n'apparaît pas » (interrupteur global actif ? personne/groupe/salle dans les assignations ? session rouverte ? lettre automatique susceptible d'avoir changé ?) ; « accès refusé malgré le groupe » (niveau « Lire » au lieu de « Modifier » ? partage assigné qu'à des salles ? appartenance datant de la session en cours ? conformité en écart → Resynchroniser ? dossier d'échange désactivé pour une classe ?).
+- Pistes ordonnées du plus probable au plus rare ; chaque piste se termine sur un geste ou un endroit exact dans l'interface. Aucune commande shell, aucun chemin serveur.
+
+### Scénario 10.7 — Frontières de domaine tenues et surfaces mortes exclues
+**But** : la doc ne déborde pas et n'expose aucune surface sans point d'entrée.
+**Étapes / attendu** :
+- **Quotas par défaut / période de grâce / corbeille / « profils itinérants »** : jamais documentés (onglets orphelins, partials non inclus — F19).
+- **Règles d'accès aux dossiers** (`/app/folder-rules`) : jamais documentées (aucune entrée de menu — F20, gap consigné à l'orchestrateur).
+- **Impression / imprimantes** : aucune mention (hors épic 53).
+- **Composition des groupes, capacités et profils applicatifs, tiroir des droits** : au plus signalés d'une phrase et renvoyés, jamais documentés.
+- Les fiches `/poste/fichiers/…` (52.4) sont **liées, jamais réécrites** ; aucune n'est modifiée.
+
+### Scénario 10.8 — Lint, glossaire et autonomie réseau
+**But** : les règles de rédaction et l'autonomie sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute.
+- Vocabulaire technique interdit absent (ACL, POSIX, UNC, SMB, setfacl, provisionner/provisioning, « ro/rw », pivot, assignable, chemins serveur, clés de permission `server.admin`/`networkshare.manage`…) ; seuls les libellés d'interface se citent tels quels (onglets, interrupteurs, « Lire »/« Modifier », « Parc (montage seul) », « Nouveau répertoire », « Créer depuis un template », « Resynchroniser », « Hérité (défaut) »/« Illimité »/« Actualiser »/« Modifier le quota »).
+- Liens glossaire employés : `/glossaire#partage`, `#espace-personnel`, `#parc`, `#groupe-de-postes`, à première occurrence ; ancres existantes ; **jamais** `#capacite`.
+- Aucune référence de capture posée dans ce domaine (fiches complètes sans image) → la sortie informative du lint ne cite aucune capture de `admin/fichiers/`.
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+
+### Limites connues Section 10 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur.
+- **Vérification des libellés d'interface à l'écran** : les libellés cités sont confirmés depuis le code source (blades, enums, seeder, validator), pas observés dans une session navigateur — à recaler visuellement lors de la levée de la dette VM. Consigne mémoire respectée : aucun interrupteur de la politique n'a été basculé sur la VM pour « tester ».
+- **Gap produit signalé (hors périmètre doc)** : les « Règles d'accès aux dossiers » (`/app/folder-rules`, module 36.4) sont livrées mais orphelines de navigation (atteignables par URL directe seule) ; non documentées tant qu'aucune entrée de menu n'existe.
+
+### Checklist rapide Section 10
+- [ ] 7 pages du domaine construites (6 fiches + index) ; page d'entrée = sommaire sans redite
+- [ ] Sidebar `/admin/` = un groupe additif « Fichiers et partages » (6 entrées) ; commentaire de convention conservé ; groupes existants et `/poste/` inchangés
+- [ ] Titre de la sous-section « Fichiers et partages » de `/admin/` devenu un lien ; chemin « Serveur → Réglages » et reste de la page inchangés
+- [ ] Gabarit tenu : droits en métier, encarts normalisés seuls, `delai-effet` = `session` (politique/créer/accès) ou `immediat` (classe/limiter), aucun sur « en cas de problème »
+- [ ] Politique = 3 interrupteurs GLOBAUX (jamais « par salle »), enregistrement immédiat, « web uniquement », mot « capacité » proscrit
+- [ ] Nextcloud = une phrase (« pas encore activable »), jamais « disponible »
+- [ ] Chaque énoncé d'accès porte niveau (Lire/Modifier) ET périmètre exact
+- [ ] Lettre visible ≠ accès réel ; parc = montage seul ; avertissement d'écran cité verbatim
+- [ ] Partage de classe : 4 sous-dossiers en lecture/écriture, dossier élève ≠ espace personnel, bascule échange, réappliquer = rattrapage
+- [ ] Créer : direct (contraintes nom/lettre, réservées refusées) + 4 modèles ; seules K:/H: fixes, lettre auto peut changer → repérer par nom
+- [ ] Limiter : quota compte + quota groupe (Hérité/Illimité/valeur), règle la plus favorable, vécu au dépassement, filtre « Quota dépassé » renvoyé ; rien sur défauts/grâce/corbeille
+- [ ] « En cas de problème » : 2 symptômes, vérifications interface ordonnées, zéro commande
+- [ ] Frontières : zéro quotas par défaut/grâce/corbeille, zéro règles d'accès aux dossiers, zéro impression, fiches 52.4 liées jamais réécrites
+- [ ] Lint vert, vocabulaire interdit absent (ACL/POSIX/provisioning…), liens glossaire `#partage`/`#espace-personnel`/`#parc`/`#groupe-de-postes`, jamais `#capacite`, autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
