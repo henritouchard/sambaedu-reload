@@ -338,6 +338,18 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/droits/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Installer et déployer un poste',
+                    link: '/admin/installer/',
+                    items: [
+                        { text: 'Prérequis', link: '/admin/installer/prerequis' },
+                        { text: 'Préparer les systèmes', link: '/admin/installer/preparer-les-systemes' },
+                        { text: 'Installer un poste neuf', link: '/admin/installer/installer-un-poste-neuf' },
+                        { text: 'Réinstaller un poste', link: '/admin/installer/reinstaller-un-poste' },
+                        { text: 'Vérifier la mise en service', link: '/admin/installer/verifier-la-mise-en-service' },
+                        { text: 'En cas de problème', link: '/admin/installer/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {

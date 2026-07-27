@@ -1109,3 +1109,97 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Sujets fédérés/technicien externe/portail externe : silence total
 - [ ] Lint vert, vocabulaire technique absent, seul lien glossaire `#groupe-de-postes`, « droit »/« délégation »/« exclusion » sans lien, autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
+
+## Section 12 — Domaine admin « Installer et déployer un poste » (Story 53.7)
+
+**Portée** : domaine « Installer et déployer un poste » du guide « J'administre SE5 », sous `userDoc/admin/installer/` — page d'entrée + **six** fiches (prérequis / préparer les systèmes / installer un poste neuf / réinstaller un poste / vérifier la mise en service / en cas de problème). Sidebar `'/admin/'` enrichie d'un seul groupe (additif, après « Droits et délégation ») ; lien de domaine posé sur `admin/index.md`. Rédaction adossée à la table de faits F1-F21, aucune écriture de code (rien hors `userDoc/` + ce runbook). **Point de vérité central** : partition à trois plans — gestes **dans l'interface web**, gestes **à l'écran du poste** (menus de démarrage rendus par le serveur), et **prérequis d'exploitation** énoncés sans procédure ; la **déclaration** d'un poste neuf ne se fait PAS dans l'interface, l'ordre **déclarer puis installer** est imposé, la **réinstallation** se pilote entièrement depuis l'interface et **efface le disque**.
+
+**Code / sources de référence** :
+- `userDoc/admin/installer/{index,prerequis,preparer-les-systemes,installer-un-poste-neuf,reinstaller-un-poste,verifier-la-mise-en-service,en-cas-de-probleme}.md` — les 7 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Installer et déployer un poste » (additif, après « Droits et délégation »)
+- `userDoc/admin/index.md` — sous-section « Installation et déploiement d'un poste » dont le titre devient un lien vers `/admin/installer/` (chemin « menu Serveur, entrée Réglages » déjà publié laissé tel quel)
+- Libellés confirmés depuis le code : `resources/views/ipxe/menu/{default,admin,known,installation-windows}.blade.php` et `resources/views/ipxe/enrollment/name.blade.php` (écrans du poste, libellés sans accents : « Acces au menu d'administration », « Nommer le poste (enregistrement) », « Affecter a une salle physique », « Installation Windows (Win10/Win11) », « Installation Linux (Debian/Ubuntu) », « OK ! nom … reserve », « ERREUR ! nom … indisponible », « ATTENTION : sync AD echouee - verifiez avec admin SE5 ») ; `resources/views/pages/parc/_partials/reinstall-modal.blade.php` (fenêtre : « Maintenant »/« Planifier », « Le poste sera forcé à redémarrer au prochain tick (≤ 60 s)… », « Cette opération EFFACE le disque et réinstalle l'OS choisi. Irréversible. ») ; `app/Models/WorkstationReinstallRequest.php` (six libellés de suivi) ; `resources/views/pages/admin/settings/os/index.blade.php`, `.../ipxe/iso-windows/index.blade.php`, `.../network/dhcp/_partials/service-status-banner.blade.php`, `app/Doctor/Checks/Ipxe/IpxeConfigCheck.php` (pages de préparation et contrôles)
+
+### Scénario 12.1 — Les 7 pages du domaine existent et se rendent
+**But** : le domaine est publié sous `/doc/admin/installer/`.
+**Étapes / attendu** :
+- Le build produit `admin/installer/{index,prerequis,preparer-les-systemes,installer-un-poste-neuf,reinstaller-un-poste,verifier-la-mise-en-service,en-cas-de-probleme}.html`.
+- **Matrice curl (VM)** : les 7 pages en 200 ; `/doc/admin/` en 200 ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` déroule le parcours en **liste ordonnée** de 5 étapes (chacune avec sa condition de réussite observable et son lien), annonce le double plan interface-web / écran-du-poste, et renvoie la réinstallation vers sa fiche. **Aucun bloc mermaid** (décision : liste ordonnée).
+
+### Scénario 12.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, pointant vers des pages existantes.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, après « Droits et délégation », le groupe « Installer et déployer un poste » avec ses 6 entrées + le lien de tête vers `/admin/installer/`.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort, y compris les renvois internes vers `/admin/parc/lire-l-etat-d-un-poste` et `/admin/parc/`).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; les cinq groupes admin existants (Utilisateurs et groupes, Parc et postes, Applications et personnalisation, Fichiers et partages, Droits et délégation) ne sont ni réordonnés ni modifiés ; le commentaire de convention additive est conservé.
+
+### Scénario 12.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Installation et déploiement d'un poste » est un lien vers `/admin/installer/`.
+- Le chemin « menu Serveur, entrée Réglages », le paragraphe de la sous-section et le reste de la page (autres sous-sections, schéma besoin→domaine, « Comment lire une fiche ») sont inchangés.
+
+### Scénario 12.4 — Partition à trois plans (LE verdict central)
+**But** : la doc distingue sans ambiguïté ce qui se fait dans l'interface, à l'écran du poste, et ce qui relève de l'exploitation.
+**Étapes / attendu** :
+- **Écran du poste** : la fiche « installer un poste neuf » dit explicitement que ses gestes se font « à l'écran du poste lui-même », **pas** dans l'interface web ; elle affirme qu'il n'existe **aucun** bouton « Nouvelle machine ». Aucune procédure de déclaration « dans l'interface » n'est inventée.
+- **Ordre imposé** : la fiche énonce « on déclare d'abord, on installe ensuite » et que le menu **refuse un poste non enregistré**.
+- **Interface web** : préparer les systèmes, réinstaller, vérifier la mise en service sont décrits en gestes numérotés situés dans l'interface.
+- **Exploitation** : l'orientation du démarrage par le réseau vers le serveur est énoncée comme prérequis « mis en place à l'installation du serveur », renvoyée à « la personne qui exploite le serveur », **sans aucune commande ni chemin serveur**.
+
+### Scénario 12.5 — Réinstallation : sécurité, protégés, suivi
+**But** : la fiche la plus dangereuse rend fidèlement les garde-fous.
+**Étapes / attendu** :
+- **Trois portes** : fiche du poste (menu Actions → section « Système » → « Réinstaller le poste »), salle/groupe (« Réinstaller la salle »), sélection multiple (« Réinstaller la sélection »).
+- **Double sécurité** citée : avertissement « Cette opération EFFACE le disque et réinstalle l'OS choisi. Irréversible. » + confirmation chiffrée « Vous allez EFFACER N poste(s) et réinstaller … Irréversible. ».
+- **Postes protégés jamais réinstallés** : badge « Protégé », « Poste protégé — non réinstallable », « Poste protégé — réinstallation impossible », refus serveur, annulation d'office si le poste devient protégé.
+- **Ignorés + compte rendu** : « N poste(s) armé(s), N déjà en cours, N protégé(s) ignoré(s). » ; « Ce poste a déjà une réinstallation en cours. ».
+- **Six libellés de suivi mot pour mot** : « Réinstallation programmée », « Réinstallation démarrée », « Installation en cours », « Réinstallation terminée », « Réinstallation échouée », « Réinstallation annulée » ; panneau « Réinstallations en cours (N) » (colonnes Poste / OS / État / Planifiée + Annuler).
+- **Annuler / relancer** : annulation possible tant que l'installation n'a pas commencé, disparaît à « Installation en cours » ; « Relancer la réinstallation » (« La tentative en cours sera abandonnée et le poste redémarrera pour repartir de zéro. ») ; échec automatique par garde-fou de délai.
+- **Encarts** : `droit-requis`, `attention` (efface le disque, irréversible), `delai-effet agent` (poste joignable ou réveillable ; réveil réseau non garanti sur tout segment), `vue-poste` (redémarrage + installation sans intervention, session perdue).
+
+### Scénario 12.6 — Deux droits, formulation honnête du droit global
+**But** : les habilitations sont distinguées et « Installer un poste » n'est pas présenté comme délégable par salle.
+**Étapes / attendu** :
+- La fiche « prérequis » porte un encart `droit-requis` **double** : « Installer un poste » (déclarer/installer/réinstaller) **et** administration du serveur (préparer/contrôler).
+- « Installer un poste » est formulé comme un droit **à l'échelle de l'établissement**, « une délégation limitée à une seule salle ne l'ouvre pas » — répété sur les fiches « installer un poste neuf » et « réinstaller un poste ».
+- La préparation (« OS installables », « Gestion ISO Windows », « Réseau DHCP », « État du système ») est rattachée au droit d'**administration du serveur** ; le menu **Réglages** n'apparaît qu'à qui le détient.
+
+### Scénario 12.7 — Retenue sur les sujets écartés
+**But** : rien hors périmètre de l'épic n'est présenté comme disponible.
+**Étapes / attendu** :
+- **INSTALLATION** Linux documentée (préparation, menu, réinstallation) ; **GESTION** du poste Linux installé, environnement Windows par défaut, dépannage à distance : **silence** — aucune promesse au-delà de « le poste est installé et joint à l'établissement ».
+- **Outils de maintenance** du menu du poste, écran d'enregistrement invité, shell de démarrage : **non documentés** (`grep -rniE "maintenance|invité|byod|shell" userDoc/admin/installer/` — aucune procédure).
+- Le mot « annuaire » est employé en langage courant, sans lien glossaire ; le jargon (« iPXE », « DHCP », « sync AD », « tick ») n'apparaît **qu'entre guillemets**, en citation d'un libellé d'écran.
+
+### Scénario 12.8 — « En cas de problème » : symptômes → vérifications interface, zéro commande
+**But** : la page d'aide reste dans l'interface, renvoie à l'exploitation quand ça la dépasse.
+**Étapes / attendu** :
+- Trois symptômes couverts : **poste qui ne démarre pas sur le réseau** (bannière « Service DHCP injoignable… » ; contrôle « iPXE » d'« État du système » ; ordre de démarrage matériel du poste ; orientation serveur → exploitation) ; **installation qui s'arrête** (badge « Réinstallation échouée » → « Relancer la réinstallation » ; carte réseau → pilotes réseau de « Gestion ISO Windows » ; source absente/en échec → « OS installables » ; poste protégé) ; **poste installé mais pas rattaché** (message « sync AD echouee » vu à la déclaration ; contrôle des informations de rattachement dans « État du système » ; identifiant technique absent sous le nom dans « Gestion du parc » ; renvoi exploitation en dernier ressort).
+- **Aucune commande shell, aucun chemin serveur** dans toute la fiche.
+
+### Scénario 12.9 — Lint, glossaire, captures et autonomie réseau
+**But** : les règles de rédaction et l'autonomie sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute. **Vérifié en LOCAL 2026-07-27** (lint OK, 58 fichiers ; build VitePress strict vert).
+- Seul lien glossaire employé : `/glossaire#parc` (fiche « installer un poste neuf », première occurrence de « parcs »), ancre existante. « annuaire », « domaine », « salle » restent en langage courant **sans lien**.
+- **Trois références de capture** posées (production séparée), toutes sous `/captures/admin/installer/…` en `.png` kebab-case avec alt non vide : `preparer-les-systemes/os-installables.png`, `reinstaller-un-poste/fenetre-de-reinstallation.png`, `verifier-la-mise-en-service/ligne-de-poste.png` — listées par la sortie informative du lint (fichiers absents = placeholder « Illustration à venir »). Les écrans du poste ne sont **pas** référencés en capture.
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+
+### Limites connues Section 12 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur.
+- **Vérification des libellés à l'écran** : les libellés d'interface web sont confirmés depuis le code source ; les libellés des écrans du poste sont attestés par les gabarits `resources/views/ipxe/**` (un poste de test en démarrage réseau n'est pas exigible pour cette story de rédaction). À recaler visuellement lors de la levée de la dette VM.
+
+### Checklist rapide Section 12
+- [ ] 7 pages du domaine construites (6 fiches + index) ; page d'entrée = parcours en liste ordonnée (5 étapes + condition de réussite + lien), pas de mermaid
+- [ ] Sidebar `/admin/` = un groupe additif « Installer et déployer un poste » (6 entrées) ; commentaire de convention conservé ; cinq groupes existants et `/poste/` inchangés
+- [ ] Titre de la sous-section « Installation et déploiement d'un poste » de `/admin/` devenu un lien ; chemin « Serveur → Réglages » et reste de la page inchangés
+- [ ] Partition trois plans tenue : déclaration à l'écran du poste (pas d'interface), ordre déclarer-puis-installer imposé, exploitation en prérequis sans procédure
+- [ ] Réinstallation : 3 portes, double sécurité citée, protégés inviolables, ignorés + compte rendu, six libellés de suivi exacts, annuler/relancer/échec auto
+- [ ] Deux droits distingués ; « Installer un poste » global honnête (non délégable par salle) ; préparation = admin serveur
+- [ ] Sujets écartés (Linux géré, Windows par défaut, dépannage à distance, maintenance, invité, shell) : silence ; jargon uniquement en citation d'écran
+- [ ] « En cas de problème » : 3 symptômes, vérifications interface, renvoi exploitation explicite, zéro commande
+- [ ] Lint vert ; seul lien glossaire `#parc` ; 3 références de capture posées (alt non vide, kebab-case, .png) ; autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés

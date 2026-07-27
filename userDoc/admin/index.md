@@ -64,7 +64,7 @@ sur tout, en composant des profils de droits adaptés à son rôle.
 
 Chemin : menu **Pilotage**, entrée **Gestion des droits**.
 
-### Installation et déploiement d'un poste
+### [Installation et déploiement d'un poste](/admin/installer/)
 
 Préparer le démarrage par le réseau et mettre en service un poste neuf pour
 qu'il rejoigne l'établissement.
