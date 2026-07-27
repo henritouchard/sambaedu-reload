@@ -717,3 +717,95 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Aucun vestige legacy ni compte fédéré documenté ; sections voisines signalées sans lien
 - [ ] Lint vert, seul lien glossaire `#espace-personnel`, autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile
+
+## Section 8 — Domaine admin « Parc et postes » (Story 53.3)
+
+**Portée** : domaine « Parc et postes » du guide « J'administre SE5 », sous `userDoc/admin/parc/` — page d'entrée + six fiches (lire l'état d'un poste / agir sur un poste / agir sur un groupe / constituer les groupes / salle ou parc logique / en cas de problème). Sidebar `'/admin/'` enrichie d'un seul groupe (additif) ; lien de domaine posé sur la page d'orientation `admin/index.md`. Rédaction adossée à la table de faits métier de la story (présence dérivée de l'agent, actions à retour immédiat + suivi, groupes physiques/logiques, règle de priorité), aucune écriture de code.
+
+**Code / sources de référence** :
+- `userDoc/admin/parc/{index,lire-l-etat-d-un-poste,agir-sur-un-poste,agir-sur-un-groupe,constituer-les-groupes,salle-ou-parc-logique,en-cas-de-probleme}.md` — les 7 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Parc et postes » (additif, sous le groupe « Utilisateurs et groupes »)
+- `userDoc/admin/index.md` — sous-section « Parc et postes » dont le titre devient un lien vers `/admin/parc/`
+
+### Scénario 8.1 — Les 7 pages du domaine existent et se rendent
+**But** : le domaine est complet et publié sous `/doc/admin/parc/`.
+**Étapes / attendu** :
+- Le build produit `admin/parc/{index,lire-l-etat-d-un-poste,agir-sur-un-poste,agir-sur-un-groupe,constituer-les-groupes,salle-ou-parc-logique,en-cas-de-probleme}.html`.
+- **Matrice curl (VM)** : les 7 pages en 200 ; `/doc/admin/` en 200 ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` liste les six fiches et ne redéveloppe pas leur contenu.
+
+### Scénario 8.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, et il ne pointe que vers des pages existantes.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, après le groupe « Utilisateurs et groupes », le groupe « Parc et postes » avec ses 6 entrées + le lien de tête vers `/admin/parc/`.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; le groupe « Utilisateurs et groupes » n'est ni réordonné ni modifié.
+- Le commentaire de convention additive au-dessus du bloc `'/admin/'` est conservé.
+
+### Scénario 8.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche de la page.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Parc et postes » est un lien vers `/admin/parc/`.
+- Les autres sous-sections de domaine sans page publiée restent en texte ; le reste de la page (schéma besoin→domaine, « Comment lire une fiche ») est inchangé.
+
+### Scénario 8.4 — Gabarit, encarts et valeurs `delai-effet`
+**But** : chaque fiche respecte le gabarit et n'emploie que les encarts normalisés avec des valeurs valides.
+**Étapes / attendu** :
+- Chaque fiche d'action porte : titre = la tâche, phrase d'intention, « Où ça se passe » (menu **Parc & postes** → **Gestion du parc**), gestes ou actions, résultat observable.
+- Encarts `droit-requis` en langage métier : « Voir les machines » (lire l'état), « Contrôle à distance » (agir sur un poste / sur un groupe), « Installer un poste » (constituer les groupes). Fiches « salle ou parc logique » et « en cas de problème » sans droit-requis.
+- Valeurs `delai-effet` conformes : `immediat` pour les actions d'alimentation (agir sur un poste / sur un groupe), avec la précision « l'ordre part aussitôt ; le résultat dépend du poste » ; `agent` pour « Forcer la synchro » (agir sur un poste) et pour les appartenances de groupe (constituer). Aucune fiche de compréhension (salle ou parc logique) ne porte de `delai-effet`.
+- Encarts `attention` : extinction forcée = travail non sauvegardé perdu (agir sur un poste, agir sur un groupe) ; bascule automatique une-salle-max (constituer) ; limite « de l'ordre de l'heure » de la présence (lire l'état).
+- Encart `vue-poste` sur l'extinction/redémarrage visible côté utilisateur (agir sur un poste).
+
+### Scénario 8.5 — Exactitude métier : présence, actions et priorité
+**But** : les verdicts centraux de la story sont fidèlement rendus.
+**Étapes / attendu** :
+- **Présence** : quatre états nommés (« Allumé », « Éteint », « Éteint ou injoignable » = probablement éteint sans certitude, « Présence inconnue » pour un poste sans agent) ; détection du silence « de l'ordre de l'heure », jamais présentée comme du temps réel.
+- **Retour immédiat + suivi** : chaque fiche d'action distingue le message de lancement (départ de l'action, autres actions désactivées pendant le suivi sauf l'accès distant) et ce qu'il faut attendre (suivi jusqu'à « disponible » ou « non joignable » après environ deux minutes) ; la disponibilité = « le poste répond sur le réseau », jamais « session ouvrable ».
+- **Allumage à distance** : formulation prudente (« dans la plupart des installations… si le poste ne s'allume jamais, rapprochez-vous de la personne qui gère le réseau »), jamais de promesse ferme.
+- **Cinq actions** décrites (allumer, éteindre, forcer l'extinction, redémarrer, accès distant) ; accès distant exclu du geste groupé.
+- **Programmations** : allumage/extinction seulement, récurrente ou date unique, historique, duplication d'une date passée.
+- **Règle de priorité** relue mot à mot : « réglage propre à l'utilisateur > groupe d'utilisateurs > poste > parc logique > salle physique > défaut d'établissement » ; le parc logique l'emporte sur la salle ; un exemple concret (fond d'écran salle vs parc → le poste des deux affiche celui du parc). Aucune mention de tiers « amont » ni de départage entre deux parcs logiques.
+- **Groupes** : nom affiché saisi + identifiant technique automatique et définitif ; type choisi à la création (physique = salle/bâtiment hiérarchisable ; logique = parc de machines, sélection libre) ; nature Partagé/Personnel/Nomade avec héritage Nomade > Personnel > Partagé ; une salle au plus par poste (bascule automatique) mais plusieurs parcs logiques ; groupes verrouillés non modifiables.
+
+### Scénario 8.6 — « En cas de problème » : symptômes → vérifications interface, zéro commande
+**But** : la page d'aide reste dans l'interface, sans manipulation serveur.
+**Étapes / attendu** :
+- Trois symptômes couverts : poste qui ne répond pas (état de présence + limite, poste réellement allumé, prudence réveil réseau, pare-feu local sobre) ; action sans effet visible (attendre la fin du suivi ~2 min, lire le message de fin, poste « déjà en cours » ignoré, historique d'une programmation, « Forcer la synchro » pour la configuration) ; poste absent de la liste (réinitialiser les filtres et tuiles, périmètre de délégation, « Synchroniser depuis l'AD », encart d'état de synchronisation).
+- Chaque piste se termine sur un geste ou un endroit exact dans l'interface. Aucune commande shell, aucun chemin serveur, aucun fichier de log.
+
+### Scénario 8.7 — Frontières de domaine tenues
+**But** : la doc ne déborde pas sur les domaines voisins.
+**Étapes / attendu** :
+- **Réinstallation d'un poste** : absente des six fiches (ni décrite, ni liée, ni listée parmi les actions).
+- **Imprimantes** : nommées uniquement dans l'énumération des trois onglets (page d'entrée + fiche « lire l'état ») ; aucune fiche ne les documente.
+- **Applications / réglages / personnalisation** : mentionnés au plus d'une demi-phrase d'orientation (fiche « lire l'état »), **sans lien interne** (les domaines cibles ne sont pas publiés) ; leur contenu n'est pas décrit.
+
+### Scénario 8.8 — Lint, glossaire et autonomie réseau
+**But** : les règles de rédaction et l'autonomie sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute.
+- Vocabulaire technique interdit absent des fiches (AD, LDAP, OU, CN, GPO, WPKG, WOL, broadcast, VLAN, ping, batch, toast, pivot…) — seule exception : le libellé d'interface « Synchroniser depuis l'AD », cité tel quel.
+- Chiffres internes traduits en formules sobres (« environ deux minutes », « de l'ordre de l'heure »), jamais 120 s / 3 s / 2 × ttl.
+- Liens glossaire employés : `/glossaire#parc` et `/glossaire#groupe-de-postes` (fiches index, lire l'état, salle ou parc logique), à première occurrence ; ancres existantes.
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+- Aucune référence de capture posée dans ce domaine (fiches sans image) : la liste informative de production du lint reste inchangée pour `admin/parc/`.
+
+### Limites connues Section 8 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes de ce runbook.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur tant que la VM n'a pas été sollicitée pour ce domaine.
+- **Vérification des libellés d'interface à l'écran** : les libellés cités (onglets, actions, boutons, états de présence, cartes de type, natures de postes) sont confirmés depuis le code source (blades et enums), pas observés dans une session navigateur — à recaler visuellement lors de la levée de la dette VM.
+
+### Checklist rapide Section 8
+- [ ] 7 pages du domaine construites ; page d'entrée = sommaire, sans redite
+- [ ] Sidebar `/admin/` = un groupe additif « Parc et postes » ; commentaire de convention conservé ; « Utilisateurs et groupes » et `/poste/` inchangés
+- [ ] Titre de la sous-section « Parc et postes » de `/admin/` devenu un lien ; reste de la page inchangé
+- [ ] Gabarit tenu : droits en métier, encarts normalisés seuls, valeurs `delai-effet` valides (`immediat` alimentation, `agent` synchro/appartenances)
+- [ ] Présence : 4 états + limite « ordre de l'heure », pas de temps réel
+- [ ] Actions : retour immédiat + suivi ~2 min, allumage prudent, 5 actions, accès distant hors geste groupé
+- [ ] Règle de priorité mot à mot (parc logique > salle), exemple concret, zéro amont ni départage intra-rang
+- [ ] Groupes : nom/identifiant, type à la création, nature + héritage, une salle max, verrouillés non modifiables
+- [ ] « En cas de problème » : 3 symptômes, vérifications interface, zéro commande
+- [ ] Frontières : zéro réinstallation, imprimantes seulement nommées, applications/réglages sans lien
+- [ ] Lint vert, vocabulaire interdit absent, liens glossaire `#parc` / `#groupe-de-postes`, autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés

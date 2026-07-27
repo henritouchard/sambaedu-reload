@@ -289,6 +289,18 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/utilisateurs/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Parc et postes',
+                    link: '/admin/parc/',
+                    items: [
+                        { text: "Lire l'état d'un poste", link: '/admin/parc/lire-l-etat-d-un-poste' },
+                        { text: 'Agir sur un poste', link: '/admin/parc/agir-sur-un-poste' },
+                        { text: 'Agir sur un groupe', link: '/admin/parc/agir-sur-un-groupe' },
+                        { text: 'Constituer les groupes', link: '/admin/parc/constituer-les-groupes' },
+                        { text: 'Salle ou parc logique', link: '/admin/parc/salle-ou-parc-logique' },
+                        { text: 'En cas de problème', link: '/admin/parc/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {

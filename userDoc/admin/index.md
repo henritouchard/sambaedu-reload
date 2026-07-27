@@ -29,7 +29,7 @@ les enseignants d'une même équipe sont réunis en groupes prêts à l'emploi.
 
 Chemin : menu **Pilotage**, entrée **Utilisateurs**.
 
-### Parc et postes
+### [Parc et postes](/admin/parc/)
 
 Regrouper les postes de l'établissement en [parcs](/glossaire#parc) — aussi
 appelés [groupes de postes](/glossaire#groupe-de-postes) —, le plus souvent
