@@ -1006,3 +1006,106 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Frontières : zéro quotas par défaut/grâce/corbeille, zéro règles d'accès aux dossiers, zéro impression, fiches 52.4 liées jamais réécrites
 - [ ] Lint vert, vocabulaire interdit absent (ACL/POSIX/provisioning…), liens glossaire `#partage`/`#espace-personnel`/`#parc`/`#groupe-de-postes`, jamais `#capacite`, autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
+
+---
+
+## Section 11 — Domaine admin « Droits et délégation » (Story 53.6)
+
+**Portée** : domaine « Droits et délégation » du guide « J'administre SE5 », sous `userDoc/admin/droits/` — page d'entrée + **six** fiches (comprendre le modèle de droits / les profils types / composer un profil / attribuer des droits / déléguer sur une salle / en cas de problème). Sidebar `'/admin/'` enrichie d'un seul groupe (additif, après « Fichiers et partages ») ; lien de domaine posé sur `admin/index.md`. Rédaction adossée à la table de faits F1-F24, aucune écriture de code (rien hors `userDoc/` + ce runbook). **Point de vérité central** : cloisonnement honnête — seuls deux droits ont un effet réel par salle.
+
+**Code / sources de référence** :
+- `userDoc/admin/droits/{index,comprendre-le-modele-de-droits,profils-types,composer-un-profil,attribuer-des-droits,deleguer-sur-une-salle,en-cas-de-probleme}.md` — les 7 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Droits et délégation » (additif, sous « Fichiers et partages »)
+- `userDoc/admin/index.md` — sous-section « Droits et délégation » dont le titre devient un lien vers `/admin/droits/` (le chemin « menu Pilotage, entrée Gestion des droits » déjà publié est laissé tel quel)
+- Libellés confirmés depuis le code : `app/Enums/SambaRole.php` (les 9 profils : Élève, Professeur, Admin élèves, Admin partages, Admin utilisateurs, Technicien, Référent numérique, Admin machines, Super administrateur ; leurs `permissions()`), `app/Enums/SambaPermission.php` (libellés français des droits : « Voir les machines », « Contrôle à distance », « Admin de poste », « Installer un poste », « Bureau à distance (RDP) », « Affecter des applications », « Ajouter des applications », « Créer des recettes WPKG » ; `isDelegatable()` = catégories `computer` + `wpkg`)
+
+### Scénario 11.1 — Les 7 pages du domaine existent et se rendent
+**But** : le domaine est publié sous `/doc/admin/droits/`.
+**Étapes / attendu** :
+- Le build produit `admin/droits/{index,comprendre-le-modele-de-droits,profils-types,composer-un-profil,attribuer-des-droits,deleguer-sur-une-salle,en-cas-de-probleme}.html`.
+- **Matrice curl (VM)** : les 7 pages en 200 ; `/doc/admin/` en 200 ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` liste les six fiches et ne redéveloppe pas leur contenu.
+
+### Scénario 11.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, pointant vers des pages existantes.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, après « Fichiers et partages », le groupe « Droits et délégation » avec ses 6 entrées + le lien de tête vers `/admin/droits/`.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort, y compris les renvois `/admin/utilisateurs/`, `/admin/parc/`, `/admin/applications/`).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; les groupes « Utilisateurs et groupes », « Parc et postes », « Applications et personnalisation » et « Fichiers et partages » ne sont ni réordonnés ni modifiés ; le commentaire de convention additive est conservé.
+
+### Scénario 11.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Droits et délégation » est un lien vers `/admin/droits/`.
+- Le chemin « menu Pilotage, entrée Gestion des droits » et le reste de la page (autres sous-sections, schéma besoin→domaine, « Comment lire une fiche ») sont inchangés.
+
+### Scénario 11.4 — Gabarit, encarts et valeurs `delai-effet`
+**But** : chaque fiche respecte le gabarit et n'emploie que les encarts normalisés.
+**Étapes / attendu** :
+- Chaque fiche d'action porte : titre = la tâche, phrase d'intention, « Où ça se passe », gestes ou explication, résultat observable.
+- Encarts `droit-requis` en langage métier (« le droit d'attribuer des droits ») sur : composer un profil, attribuer des droits, déléguer sur une salle. Absents de : comprendre le modèle, profils types, en cas de problème.
+- Valeurs `delai-effet` : **`immediat`** uniquement, une fois par fiche sur comprendre le modèle / composer / attribuer / déléguer ; formulation « dès le prochain chargement de page de la personne concernée » — l'effet est dans l'interface d'administration, jamais côté session Windows (F24). **AUCUN** `delai-effet` sur profils types ni sur « en cas de problème ».
+- **AUCUN encart `vue-poste` dans tout le domaine** (F24) : `grep -rn "vue-poste" userDoc/admin/droits/` doit être vide.
+- Encart `attention` : profils types (initiaux verrouillés), composer (suppression irréversible), attribuer (compte protégé irrétractable), déléguer (2 encarts : exclusion prime sur tout ; autres droits restant globaux). Aucun sur comprendre / en cas de problème.
+
+### Scénario 11.5 — Cloisonnement honnête (LE verdict central)
+**But** : la doc ne promet pas de cloisonnement plus fin que la réalité.
+**Étapes / attendu** :
+- La fiche « déléguer sur une salle » ne prête un effet limité à la salle qu'à **deux** droits : « **Voir les machines** » (parc restreint aux salles déléguées, regroupements logiques exclus) et « **Affecter des applications** » (affectation/retrait sur la salle et ses postes). L'exclusion joue sur ces deux mêmes points et prive même un droit d'établissement.
+- Les **six autres** droits proposés par la fenêtre (contrôle à distance, admin de poste, installer un poste, bureau à distance, ajouter des applications, créer des recettes) sont énoncés comme **restant au niveau de l'établissement** : « déléguer un tel droit sur une salle ne le restreint pas à cette salle ». **Aucune** promesse d'effet, **aucun** « à venir ».
+- **Aucune mention** du badge « GPO », d'écriture de stratégie, ni de mécanique interne (F19).
+- Grep de contrôle : `grep -rniE "GPO|stratégie|Spatie|Gate|Policy|LDAP" userDoc/admin/droits/` doit être vide.
+
+### Scénario 11.6 — Exactitude métier : verdicts sensibles
+**But** : les formulations de vérité sont fidèlement rendues.
+**Étapes / attendu** :
+- **Assignation d'un profil = AJOUT** : la fiche « attribuer » décrit « assigner » (ajoute aux profils existants) et « retirer » comme deux gestes distincts ; **jamais** « le rôle remplace les rôles existants » (texte de volet inexact, F11).
+- **Droit reçu par un profil = non retirable individuellement** : énoncé (« retirez le profil qui le porte »).
+- **Compte protégé irrétractable** : formulé « ses droits d'administration ne peuvent pas lui être retirés », ignoré au retrait avec le message de l'écran ; pas de sur-généralisation en « il peut tout ».
+- **Profils initiaux verrouillés** : ni renommables, ni modifiables, ni supprimables ; message « Rôle initial — permissions gérées par le système » cité ; édition décrite pour les profils personnalisés seulement.
+- **Portée de classe** (Professeur, Admin élèves) : présentée comme propriété du profil décidée côté serveur, **pas** comme une délégation.
+- **Règle de priorité** énoncée sans ambiguïté : exclusion active > droit d'établissement > délégation ; échéance éteint.
+- **Catégorie de compte n'ouvre aucun droit** (F14) : une phrase sobre dans « comprendre le modèle ».
+- **Tableau des 9 profils** : ne liste que des capacités attestées (F4) ; les droits de F19 n'y apparaissent pas comme des capacités opérantes.
+
+### Scénario 11.7 — « En cas de problème » : symptômes → vérifications interface, zéro commande
+**But** : la page d'aide reste dans l'interface, sans manipulation serveur.
+**Étapes / attendu** :
+- Deux symptômes couverts : « une personne ne voit pas une page attendue » (Gestion des droits visible mais « accès refusé » sans le droit ; entrée de menu absente = droit non confié ; délégué ne voit que ses salles, pas les regroupements logiques → onglet « Droits d'un utilisateur ») ; « une action refusée malgré un profil attribué » (exclusion active sur la salle ; délégation échue ; portée de classe d'un professeur ; droit restant au niveau de l'établissement ; journal Historique pour retracer).
+- Chaque piste se termine sur un endroit exact de l'interface. Aucune commande shell, aucun chemin serveur.
+
+### Scénario 11.8 — Lint, glossaire et autonomie réseau
+**But** : les règles de rédaction et l'autonomie sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute. **Vérifié en LOCAL 2026-07-27** (lint OK, 51 fichiers ; build VitePress strict vert).
+- Vocabulaire technique interdit absent (Spatie, Gate, Policy, LDAP, AD, GPO, bitmask, SQL/PostgreSQL, clés `user.assign.right`/`computer.view`/`wpkg.assign`/`app.customize`, noms techniques de profils `super-admin`/`referent-numerique`…) ; seuls les libellés d'interface se citent tels quels (onglets « Profils »/« Droits d'un utilisateur »/« Délégations actives »/« Historique », boutons « Nouveau profil »/« Gérer les droits »/« Déléguer un droit sur une salle »/« Lever l'exclusion », libellés de droits et de profils).
+- « Droit », « profil de droits », « délégation », « exclusion » restent en langage courant **sans lien** glossaire. Seul lien glossaire employé : `/glossaire#groupe-de-postes` (pour « salle »), à première occurrence, ancre existante.
+- Aucune référence de capture posée dans ce domaine (fiches complètes sans image) → la sortie informative du lint ne cite aucune capture de `admin/droits/`.
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+
+### Scénario 11.9 — Sujets écartés de l'épic : silence
+**But** : la doc ne présente aucun sujet hors épic comme disponible.
+**Étapes / attendu** :
+- **Aucune mention** du login fédéré, du technicien externe de la collectivité, du portail d'utilisateurs externes, du badge « Externe ».
+- Grep de contrôle : `grep -rniE "fédér|externe|technicien de la|portail" userDoc/admin/droits/` — les seules occurrences admises portent sur « au niveau de l'établissement » et non sur ces sujets.
+
+### Limites connues Section 11 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur.
+- **Vérification des libellés d'interface à l'écran** : les libellés cités sont confirmés depuis le code source (enums `SambaRole`/`SambaPermission`, table de faits fichier:ligne), pas observés dans une session navigateur — à recaler visuellement lors de la levée de la dette VM.
+
+### Checklist rapide Section 11
+- [ ] 7 pages du domaine construites (6 fiches + index) ; page d'entrée = sommaire sans redite
+- [ ] Sidebar `/admin/` = un groupe additif « Droits et délégation » (6 entrées) ; commentaire de convention conservé ; groupes existants et `/poste/` inchangés
+- [ ] Titre de la sous-section « Droits et délégation » de `/admin/` devenu un lien ; chemin « Pilotage → Gestion des droits » et reste de la page inchangés
+- [ ] Gabarit tenu : droits en métier, encarts normalisés seuls, `delai-effet immediat` sur 4 fiches, aucun sur profils types / en cas de problème, AUCUN `vue-poste` du domaine
+- [ ] Cloisonnement honnête : SEULS « Voir les machines » + « Affecter des applications » à effet par salle ; six autres droits énoncés comme globaux, aucune promesse
+- [ ] Aucun badge GPO/stratégie/mécanique interne ; grep GPO/Spatie/Gate/Policy/LDAP vide sur le domaine
+- [ ] Assignation = AJOUT (jamais « remplace ») ; droit via profil non retirable individuellement
+- [ ] Compte protégé irrétractable (formulation exacte) ; profils initiaux verrouillés (message cité) ; édition = personnalisés seuls
+- [ ] Portée de classe = propriété de profil, pas délégation ; règle de priorité exclusion > établissement > délégation ; catégorie de compte n'ouvre rien
+- [ ] Tableau des 9 profils = capacités attestées seules (F4) ; droits de F19 jamais présentés comme opérants
+- [ ] « En cas de problème » : 2 symptômes, vérifications interface, zéro commande
+- [ ] Sujets fédérés/technicien externe/portail externe : silence total
+- [ ] Lint vert, vocabulaire technique absent, seul lien glossaire `#groupe-de-postes`, « droit »/« délégation »/« exclusion » sans lien, autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés

@@ -326,6 +326,18 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/fichiers/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Droits et délégation',
+                    link: '/admin/droits/',
+                    items: [
+                        { text: 'Comprendre le modèle de droits', link: '/admin/droits/comprendre-le-modele-de-droits' },
+                        { text: 'Les profils types', link: '/admin/droits/profils-types' },
+                        { text: 'Composer un profil de droits', link: '/admin/droits/composer-un-profil' },
+                        { text: 'Attribuer des droits à une personne', link: '/admin/droits/attribuer-des-droits' },
+                        { text: 'Déléguer un droit sur une salle', link: '/admin/droits/deleguer-sur-une-salle' },
+                        { text: 'En cas de problème', link: '/admin/droits/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {

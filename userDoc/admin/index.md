@@ -57,7 +57,7 @@ de chaque utilisateur.
 
 Chemin : menu **Serveur**, entrée **Réglages**.
 
-### Droits et délégation
+### [Droits et délégation](/admin/droits/)
 
 Confier une partie de l'administration à un collègue sans lui donner la main
 sur tout, en composant des profils de droits adaptés à son rôle.
