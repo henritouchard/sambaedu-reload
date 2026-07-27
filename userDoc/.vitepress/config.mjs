@@ -263,6 +263,15 @@ export default defineConfig({
         // /poste/ ne voit JAMAIS la navigation du parcours /admin/, et
         // réciproquement (AC1).
         sidebar: {
+            // Convention ADDITIVE de la sidebar du parcours « J'administre SE5 » :
+            // chaque domaine du guide ajoute SON groupe ICI au moment où ses
+            // pages existent réellement, par modification strictement additive —
+            // jamais par pré-remplissage. VitePress fait échouer le build sur un
+            // lien interne mort (`ignoreDeadLinks` au défaut strict) : un lien
+            // vers une page encore absente casserait la publication. Tant qu'un
+            // domaine n'a pas de page, il est présenté en TEXTE sur la page
+            // d'orientation `/admin/`, pas en lien de sidebar. Ne référencer que
+            // des pages existantes (aujourd'hui : la seule « Vue d'ensemble »).
             '/admin/': [
                 {
                     text: 'Administration SE5',

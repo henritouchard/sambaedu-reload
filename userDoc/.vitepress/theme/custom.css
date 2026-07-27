@@ -146,3 +146,74 @@
         padding: 16px 12px;
     }
 }
+
+/* Schéma besoins → domaines de la page d'orientation admin — UN seul point de
+ * style, même patron que les encarts et les captures : couleurs uniquement via
+ * les variables `--vp-c-*` du thème (clair/sombre HÉRITÉ, jamais de valeurs hex
+ * fixes). Structure sobre HTML/CSS, sans dépendance ni image : une mise en
+ * correspondance statique (un besoin → un domaine) que la grille dit aussi
+ * clairement qu'un graphe. Chaque paire est une grille à trois cellules
+ * (besoin · flèche · domaine) ; sur petit écran elle passe en pile verticale
+ * (aucun débordement horizontal, la flèche pivote vers le bas).
+ */
+.se5-plan {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 24px 0;
+}
+
+.se5-plan__pair {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+}
+
+.se5-plan__need,
+.se5-plan__domain {
+    min-width: 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 20px;
+}
+
+/* Le besoin : cellule neutre (fond doux du thème). */
+.se5-plan__need {
+    border: 1px solid var(--vp-c-divider);
+    background-color: var(--vp-c-bg-soft);
+    color: var(--vp-c-text-1);
+}
+
+/* Le domaine : cellule accentuée famille "brand" (même repère visuel que
+ * l'encart de délai), pour marquer la cible de la correspondance. */
+.se5-plan__domain {
+    border: 1px solid var(--vp-c-brand-1);
+    background-color: var(--vp-c-brand-soft);
+    color: var(--vp-c-brand-1);
+    font-weight: 600;
+}
+
+/* La flèche : décorative (aria-hidden dans le HTML), teinte discrète. */
+.se5-plan__arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--vp-c-text-3);
+    font-size: 18px;
+    line-height: 1;
+}
+
+/* Petit écran : pile verticale besoin → domaine, la flèche pivote vers le bas.
+ * Aucune largeur fixe → jamais de scroll horizontal de page. */
+@media (max-width: 639px) {
+    .se5-plan__pair {
+        grid-template-columns: 1fr;
+        justify-items: stretch;
+    }
+
+    .se5-plan__arrow {
+        transform: rotate(90deg);
+    }
+}

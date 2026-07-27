@@ -560,3 +560,74 @@ concaténation manuelle en la croyant nécessaire.
       `userDoc/`)
 - [ ] **VM (différé)** : `update.sh` rejoué vert, matrice curl, contrôle
       visuel réel clair/sombre/mobile du placeholder ET de l'image factice
+
+---
+
+## Section 6 — Page d'orientation admin : plan + comment lire une fiche (Story 53.1)
+
+Scénarios liés à la réécriture de la page d'orientation du parcours
+« J'administre SE5 » (`userDoc/admin/index.md`) : le **plan des sept domaines**
+avec leur chemin de navigation réel, le **schéma besoins → domaines** (HTML/CSS
+sans dépendance, option B), la section **« Comment lire une fiche »** (encarts
+réels `::: droit-requis` et trois `::: delai-effet`), et la **convention de
+sidebar additive** posée en commentaire sans lien mort. Aucune page nouvelle,
+aucun code applicatif : la story tient sur `admin/index.md`, plus les classes
+de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
+
+**Code de référence** :
+- `userDoc/admin/index.md` — page réécrite (plan 7 domaines, schéma `se5-plan-*`, section lecture de fiche)
+- `userDoc/.vitepress/theme/custom.css` — classes `.se5-plan`, `.se5-plan__pair`, `.se5-plan__need`, `.se5-plan__domain`, `.se5-plan__arrow` (variables `--vp-c-*`, grille responsive < 640 px)
+- `userDoc/.vitepress/config.mjs` — commentaire de convention additive au-dessus du bloc sidebar `'/admin/'` (aucune entrée nouvelle ; `'/poste/'` intouché)
+- `resources/views/components/organisms/sidebar.blade.php` — menu réel de l'application dont sont tirés les chemins de navigation
+
+### Scénario 6.1 — Le plan des sept domaines est présent, chemins réels
+**But** : la page d'orientation cartographie tout le produit sans lien mort.
+**Étapes / attendu** :
+- Après build+publication, `/doc/admin/` répond 200 avec, dans le HTML, les sept domaines : utilisateurs et groupes, parc et postes, applications et personnalisation des postes, fichiers et partages, droits et délégation, installation et déploiement d'un poste, réglages et supervision.
+- Chaque domaine porte un chemin de navigation citant les libellés RÉELS des menus (« menu Pilotage, entrée Utilisateurs » ; « menu Parc & postes, entrée Gestion du parc / Applications » ; « menu Serveur, entrée Réglages » ; « menu Pilotage, entrée Tableau de bord ») — vérifiables contre `sidebar.blade.php`.
+- Une phrase signale que certaines entrées (le menu Réglages) ne sont visibles qu'aux personnes détenant le droit correspondant, sans nommer de permission technique.
+- **Aucun lien interne de doc vers une page de domaine inexistante** : les domaines sont en TEXTE. `npm run build` vert = preuve d'absence de lien mort (`ignoreDeadLinks` au défaut strict).
+- Le placeholder « en cours de rédaction » a disparu ; frontmatter `title`/`description` mis à jour.
+
+### Scénario 6.2 — Schéma besoins → domaines rendu et responsive
+**But** : relier un besoin courant à son domaine, lisible clair/sombre et mobile, sans ressource externe.
+**Étapes / attendu** :
+- Le HTML de `/doc/admin/` contient 7 paires `se5-plan__pair` (besoin · flèche · domaine), chacune avec un `se5-plan__need`, un `se5-plan__arrow` (`aria-hidden`) et un `se5-plan__domain`.
+- Aucune balise `<img>` dans la page (le lint la refuserait) ; le schéma est 100 % HTML/CSS.
+- Les styles `se5-plan-*` vivent uniquement dans `theme/custom.css` et n'emploient que des variables `--vp-c-*` (héritage clair/sombre par construction).
+- **Contrôle visuel (VM/navigateur)** : en largeur mobile la paire passe en pile verticale (aucun débordement horizontal de page), la flèche pivote vers le bas ; lisible en thème clair ET sombre.
+
+### Scénario 6.3 — « Comment lire une fiche » : encarts réels et 3 temporalités mot pour mot
+**But** : le lecteur voit les vrais encarts et les trois délais nommés exactement comme dans les fiches.
+**Étapes / attendu** :
+- La section « Comment lire une fiche » explique les trois informations : droit requis, résultat observable, moment de visibilité.
+- Le HTML porte un encart `se5-callout--droit-requis` d'exemple (rendu réel du container, jamais une imitation manuelle).
+- Les trois `se5-callout--delai-effet` rendent EXACTEMENT « Effet immédiat », « À la prochaine ouverture de session », « Au prochain passage de l'agent sur le poste » (libellés de `DELAI_EFFET_LABELS`), chacun avec une phrase d'explication en langage courant.
+- La temporalité « agent » porte le lien glossaire `/doc/glossaire.html#agent` à sa première occurrence.
+
+### Scénario 6.4 — Convention de sidebar additive, sans lien mort
+**But** : la sidebar `/admin/` ne référence que des pages existantes ; la convention pour les domaines à venir est écrite.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` ne contient QUE « Vue d'ensemble » (→ `/admin/`). Aucun groupe de domaine, aucun lien vers une page absente.
+- Un commentaire au-dessus du bloc `'/admin/'` dans `config.mjs` énonce la règle additive (chaque domaine ajoute son groupe quand ses pages existent, jamais par pré-remplissage).
+- La sidebar `/doc/poste/` est bit à bit inchangée.
+
+### Scénario 6.5 — Charte, lint et autonomie réseau
+**But** : la page respecte les règles de rédaction et n'introduit aucune dépendance réseau.
+**Étapes / attendu** :
+- `npm run lint` (ou `node .vitepress/lint-doc.mjs`) vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucune ancre glossaire inexistante, aucun container natif `warning`/`danger`, aucune balise `<img>`.
+- Aucune fonctionnalité non livrée présentée comme disponible ; aucune liste des manques (les sujets écartés de l'épic ne figurent pas sur la page).
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide (schéma sans image ni ressource externe).
+- `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés ; `git diff` vide hors `userDoc/` et `docs/qa/`.
+
+### Limites connues Section 6 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu du schéma et des encarts d'exemple en thème clair/sombre et en viewport mobile — reposent sur l'héritage des variables `--vp-c-*` et sur une grille sans largeur fixe (pas de scroll horizontal par construction), mais non observés dans un navigateur réel. Même statut que les sections précédentes de ce runbook.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire, non vérifiés sur le serveur tant que la VM n'a pas été sollicitée pour cette story.
+
+### Checklist rapide Section 6
+- [ ] `/doc/admin/` : 7 domaines en texte, chemins de navigation réels, phrase de visibilité conditionnelle, aucun lien de doc mort
+- [ ] Schéma : 7 paires `se5-plan__pair`, aucune `<img>`, styles `se5-plan-*` sur `--vp-c-*` uniquement
+- [ ] Section lecture : encart `droit-requis` + 3 encarts `delai-effet` aux libellés exacts, lien `#agent` à la 1re occurrence
+- [ ] Sidebar `/admin/` = « Vue d'ensemble » seule + commentaire de convention additive ; `/poste/` inchangée
+- [ ] Lint vert, autonomie réseau vide, `git diff` limité à `userDoc/` + `docs/qa/`
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel schéma/encarts clair/sombre/mobile
