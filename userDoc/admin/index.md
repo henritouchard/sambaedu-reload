@@ -71,7 +71,7 @@ qu'il rejoigne l'établissement.
 
 Chemin : menu **Serveur**, entrée **Réglages**.
 
-### Réglages et supervision
+### [Réglages et supervision](/admin/reglages/)
 
 Vérifier d'un coup d'œil que l'établissement fonctionne bien — postes, comptes,
 activité — et ajuster les réglages généraux du serveur.

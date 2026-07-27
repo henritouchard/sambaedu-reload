@@ -350,6 +350,19 @@ export default defineConfig({
                         { text: 'En cas de problème', link: '/admin/installer/en-cas-de-probleme' },
                     ],
                 },
+                {
+                    text: 'Réglages et supervision',
+                    link: '/admin/reglages/',
+                    items: [
+                        { text: "Les réglages de l'établissement", link: '/admin/reglages/reglages-de-l-etablissement' },
+                        { text: 'Capacités et portées', link: '/admin/reglages/capacites-et-portees' },
+                        { text: 'Les adresses réseau des postes', link: '/admin/reglages/reseau-dhcp' },
+                        { text: 'Le tableau de bord', link: '/admin/reglages/tableau-de-bord' },
+                        { text: 'Un poste en règle ou en retard', link: '/admin/reglages/poste-en-regle-ou-en-retard' },
+                        { text: "L'état du système", link: '/admin/reglages/etat-du-systeme' },
+                        { text: 'En cas de problème', link: '/admin/reglages/en-cas-de-probleme' },
+                    ],
+                },
             ],
             '/poste/': [
                 {

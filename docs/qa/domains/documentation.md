@@ -1203,3 +1203,98 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] « En cas de problème » : 3 symptômes, vérifications interface, renvoi exploitation explicite, zéro commande
 - [ ] Lint vert ; seul lien glossaire `#parc` ; 3 références de capture posées (alt non vide, kebab-case, .png) ; autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
+
+---
+
+## Section 13 — Domaine admin « Réglages et supervision » (Story 53.8)
+
+**Portée** : domaine « Réglages et supervision » du guide « J'administre SE5 », sous `userDoc/admin/reglages/` — page d'entrée + **sept** fiches (les réglages de l'établissement / capacités et portées / les adresses réseau des postes / le tableau de bord / un poste en règle ou en retard / l'état du système / en cas de problème). Sidebar `'/admin/'` enrichie d'un seul groupe (additif, en **dernière** position, après « Installer et déployer un poste ») ; lien de domaine posé sur `admin/index.md`. Rédaction adossée à la table de faits F1-F24, aucune écriture de code (rien hors `userDoc/` + ce runbook). **Points de vérité centraux** : la tuile « Active Directory » du tableau de bord est un **texte constant** (jamais un voyant qui passerait au rouge — renvoi vers « État du système ») ; il **n'existe pas de réglage de capacité par poste** (maille la plus fine = le groupe ; le plus spécifique gagne, le parc logique bat la salle) ; « Muet » = **probablement éteint, pas une panne** ; « En écart » = **auto-résolu** (la cible fait loi) ; « En retard » = **version rapportée au contact, pas un téléchargement ni une panne** ; la page Réglages est un **hall** dont plus de la moitié des cartes est signalée sans être documentée.
+
+**Code / sources de référence** :
+- `userDoc/admin/reglages/{index,reglages-de-l-etablissement,capacites-et-portees,reseau-dhcp,tableau-de-bord,poste-en-regle-ou-en-retard,etat-du-systeme,en-cas-de-probleme}.md` — les 8 nouvelles pages
+- `userDoc/.vitepress/config.mjs` — groupe sidebar `'/admin/'` « Réglages et supervision » (additif, dernière position)
+- `userDoc/admin/index.md` — sous-section « Réglages et supervision » dont le titre devient un lien vers `/admin/reglages/`
+- Libellés confirmés depuis le code (table F1-F24) : `resources/views/pages/dashboard/index.blade.php` (tuiles « PostgreSQL », « MariaDB (legacy) », « Espace Disque » seuils 75 %/90 %, « Queue Workers », « Redémarrer les workers », « Actualiser » ; tuile « Active Directory » en texte statique) ; `.../dashboard/activity/index.blade.php` (page Activité, statut OK/Échec) ; `.../admin/settings/index.blade.php` (4 sections de cartes) ; `.../admin/settings/security/index.blade.php` (« Sécurité & session », délai 5-1440) ; `.../admin/settings/parc-defaults/_partials/registry-tab.blade.php` (« Défaut », « Éditer le défaut », « Gelé »/« Ouvert », badges amont) ; `.../parc/groups/_partials/capabilities-tab.blade.php` (« Valeur (parc) », « Retirer » = revenir au défaut) ; `app/Models/Capability.php` (badges de temporalité) ; `.../admin/settings/system-status/index.blade.php` (5 blocs, badges OK/Attention/Erreur, onglet « Logs ») ; `.../network/dhcp/index.blade.php` + `.../_partials/service-status-banner.blade.php` (3 onglets, « Service DHCP injoignable ») ; `app/Enums/AgentResourceStatus.php` + `.../conformity-badge.blade.php` (5 libellés de conformité) ; `.../admin/settings/agent/_partials/deployment-progress.blade.php` (« À jour »/« En retard »/« Jamais vus »)
+
+### Scénario 13.1 — Les 8 pages du domaine existent et se rendent
+**But** : le domaine est publié sous `/doc/admin/reglages/`.
+**Étapes / attendu** :
+- Le build produit `admin/reglages/{index,reglages-de-l-etablissement,capacites-et-portees,reseau-dhcp,tableau-de-bord,poste-en-regle-ou-en-retard,etat-du-systeme,en-cas-de-probleme}.html`.
+- **Matrice curl (VM)** : les 8 pages en 200 ; `/doc/admin/` en 200 avec le lien du domaine ; `/doc/`, `/doc/poste/`, `/doc/glossaire.html` inchangés.
+- La page d'entrée `index.md` annonce les **deux portes** (Tableau de bord ouvert à tous les connectés / Réglages sous droit d'administration serveur) et le **principe de portée**, puis liste les 7 fiches. **Aucun bloc mermaid.**
+
+### Scénario 13.2 — Sidebar `/admin/` additive et sans lien mort ; `/poste/` intouchée
+**But** : le seul ajout à la navigation admin est le groupe du domaine, en dernière position.
+**Étapes / attendu** :
+- La sidebar `/doc/admin/` porte, **après** « Installer et déployer un poste », le groupe « Réglages et supervision » avec ses 7 entrées + le lien de tête vers `/admin/reglages/`.
+- Chaque entrée pointe vers une page réellement construite (build strict VitePress vert = preuve d'absence de lien mort, y compris les renvois internes et vers `/admin/parc/lire-l-etat-d-un-poste`, `/admin/fichiers/politique-de-fichiers`, `/admin/installer/preparer-les-systemes`, `/admin/applications/fonds-d-ecran`, `/admin/applications/catalogue-et-depot`).
+- La sidebar `/doc/poste/` est bit à bit inchangée ; les six groupes admin existants ne sont ni réordonnés ni modifiés ; le commentaire de convention additive est conservé.
+
+### Scénario 13.3 — Lien de domaine sur la page d'orientation
+**But** : la mention texte du domaine devient un lien, sans autre retouche.
+**Étapes / attendu** :
+- Sur `/doc/admin/`, le titre de la sous-section « Réglages et supervision » est un lien vers `/admin/reglages/`.
+- Le chemin « menu Pilotage → Tableau de bord, et menu Serveur → Réglages », le paragraphe et le reste de la page (autres sous-sections, schéma besoin→domaine, « Comment lire une fiche ») sont inchangés.
+
+### Scénario 13.4 — La portée de chaque réglage (verdict central « pas de portée poste »)
+**But** : chaque réglage porte sa portée, et l'absence de portée poste est énoncée honnêtement.
+**Étapes / attendu** :
+- « Sécurité & session » (`reglages-de-l-etablissement.md`) et le défaut de capacité (`capacites-et-portees.md`) portent « tout l'établissement » ; « Réseau DHCP » (`reseau-dhcp.md`) porte « tout l'établissement ».
+- L'écart de capacité (`capacites-et-portees.md`) porte « ce groupe de postes » et **prime** sur le défaut ; la **précédence** est formulée en langage courant (« le plus précis l'emporte », « le parc logique l'emporte » sur la salle) **sans échelle ni rang technique**.
+- La question « portée poste » reçoit une **réponse par la négative** : section « Y a-t-il un réglage par poste ? » → non, la maille la plus fine est le groupe ; contournement = placer le poste dans son propre groupe. **Aucune portée poste inventée.**
+- Contrat amont : « Verrouillé » = imposé, non modifiable ; « Modifiable » = le réglage local prévaut — deux phrases, badges présents seulement en cas de rattachement.
+
+### Scénario 13.5 — Tableau de bord : la tuile « Active Directory » n'est PAS un voyant
+**But** : ne pas présenter comme un indicateur ce qui est un texte constant.
+**Étapes / attendu** :
+- `tableau-de-bord.md` décrit la tuile « Active Directory » comme affichant l'annuaire « Connecté » et précise qu'elle **n'est pas un voyant** qui changerait de couleur ; elle **oriente vers « État du système »** pour une vraie vérification. **Sans** le mot « statique », **sans** dénigrer le produit.
+- Les tuiles réelles sont rendues avec leurs seuils : « Espace Disque » orange dès 75 % / rouge dès 90 % ; « Queue Workers » rouge à 0 + action « Redémarrer les workers » ; « MariaDB (legacy) » dont « Non configuré » est annoncé **normal** sur un serveur neuf.
+- Aucun encart `droit-requis` sur cette fiche (page ouverte à toute personne connectée). Pour chaque tuile au rouge, une ligne « quoi faire » renvoie vers « En cas de problème ».
+
+### Scénario 13.6 — Indicateurs : quoi faire ET quoi ne pas conclure
+**But** : chaque état rouge est actionnable sans induire de fausse alerte ni de fausse tranquillité.
+**Étapes / attendu** :
+- Les **cinq libellés** sont repris mot pour mot (Conforme / En écart / Erreur / Muet / Jamais rapporté) avec lien vers `/admin/parc/lire-l-etat-d-un-poste`.
+- **Muet** = « probablement éteint, sans certitude » → vérifier d'abord allumage/réseau (pas « en panne »). **En écart** = la cible fait loi, réapplication automatique → regarder « Depuis » avant d'agir. **Erreur** = détail + « Forcer la synchro » + relire avant d'escalader. **Jamais rapporté** = normal (pas encore allumé). **En retard** = version rapportée au contact serveur, pas un téléchargement → pas une panne, aucun délai de rattrapage promis.
+- « Forcer la synchro » : droit « Contrôle à distance », effet au prochain contact (`delai-effet agent`), rafraîchissement automatique de l'affichage, poste en quarantaine non forçable.
+- Panneau « Conformité agent » d'un groupe : compteurs + **seules exceptions** listées et cliquables (postes conformes jamais listés).
+
+### Scénario 13.7 — Triage de la page Réglages et exclusions F24
+**But** : la moitié « hall d'exploitation » est signalée sans être documentée, sans fuite d'interdits.
+**Étapes / attendu** :
+- `reglages-de-l-etablissement.md` trie les cartes en trois catégories : documenté ici (« État du système », « Réseau DHCP », « Sécurité & session », volet capacités) ; documenté ailleurs (liens Fichiers/Installation/Applications) ; relève de l'exploitation (une phrase générique, **sans procédure ni lien**).
+- Les **profils applicatifs itinérants ne sont pas nommés** (direction non figée) ; le **compte technique de déploiement n'est pas nommé** ; la reprise depuis SE4 et la liaison à un pilotage central sont mentionnées d'une phrase.
+- L'onglet « Logs » (`etat-du-systeme.md`) et le pilotage des versions / enrôlements (`poste-en-regle-ou-en-retard.md`) sont signalés d'une phrase, sans procédure.
+
+### Scénario 13.8 — « En cas de problème » : deux volets, zéro commande
+**But** : distinguer nettement ce que le référent corrige lui-même de ce qui relève du serveur.
+**Étapes / attendu** :
+- Volet **référent** (gestes interface) : poste Muet → vérifier allumage ; En écart/Erreur → détail + « Depuis » + « Forcer la synchro » ; « Queue Workers » à 0 → « Redémarrer les workers » + « Actualiser » ; déconnexions → « Sécurité & session » ; poste sans adresse → « Baux actifs » + réservation.
+- Volet **serveur** (énoncé, jamais détaillé, renvoi à qui exploite le serveur) : « Espace Disque » au rouge ; bloc « État du système » en « Erreur » persistant ; « Service DHCP injoignable » ; journaux « Logs » ; « Queue Workers » toujours à 0 après redémarrage.
+- Chaque volet renvoie vers la fiche du domaine concernée. **Aucune commande shell, aucun chemin serveur** dans toute la fiche.
+
+### Scénario 13.9 — Lint, glossaire, citations d'écran et autonomie réseau
+**But** : les règles de rédaction et la discipline de citation sont tenues.
+**Étapes / attendu** :
+- `node .vitepress/lint-doc.mjs` vert : aucun mot interdit (« story »/« épic »/codes d'exigence/IPv4), aucun container natif `warning`/`danger`, aucune balise `<img>` brute. **Vérifié en LOCAL 2026-07-27** (« Lint éditorial : OK, 66 fichiers » ; build VitePress strict vert).
+- Le **jargon** (« PostgreSQL », « MariaDB (legacy) », « Queue Workers », « Redémarrer les workers », « controlHub », « Apache », « iPXE », « Réseau DHCP », « Service DHCP injoignable ») n'apparaît **qu'entre guillemets**, en citation d'un libellé d'écran ; la prose emploie « la base de données », « l'annuaire », « le service d'adressage réseau », « les traitements en arrière-plan », « le serveur web », « le démarrage réseau ». `grep -rnoE "\bworkers\b" userDoc/admin/reglages/` → uniquement dans « Redémarrer les workers ».
+- Liens glossaire employés (première occurrence) : `/glossaire#capacite`, `/glossaire#groupe-de-postes`, `/glossaire#parc`, `/glossaire#socle-commun`, `/glossaire#agent` — toutes ancres existantes. « annuaire », « salle », « session » restent en langage courant **sans lien**.
+- **Aucune référence de capture** posée dans ce domaine (fiches complètes sans image ; production éventuelle en étape séparée).
+- `grep -RInE "https?://(fonts|cdn|unpkg|cdnjs|jsdelivr|googleapis)" userDoc/.vitepress/dist/` → vide.
+
+### Limites connues Section 13 (différé VM)
+- **Contrôle visuel réel non couvert en ssh-only** : rendu des fiches et des encarts en thème clair/sombre et en viewport mobile non observé dans un navigateur — même dette d'environnement que les sections précédentes.
+- **Matrice curl serveur non rejouée** : les codes 200/inchangés ci-dessus sont attendus depuis le build local autoritaire (lint + build VitePress strict verts), non vérifiés sur le serveur.
+- **Vérification des libellés à l'écran** : les libellés d'interface sont confirmés depuis le code source (table F1-F24, fichier:ligne) ; à recaler visuellement (tuiles du tableau de bord, badges de conformité) lors de la levée de la dette VM, en **lecture seule** — ne jamais muter un endpoint d'écriture (réglages, réservations) pour vérifier un libellé.
+
+### Checklist rapide Section 13
+- [ ] 8 pages du domaine construites (7 fiches + index) ; page d'entrée = deux portes + principe de portée, pas de mermaid
+- [ ] Sidebar `/admin/` = un groupe additif « Réglages et supervision » en **dernière** position (7 entrées) ; commentaire de convention conservé ; six groupes existants et `/poste/` inchangés
+- [ ] Titre de la sous-section « Réglages et supervision » de `/admin/` devenu un lien ; chemin et reste de la page inchangés
+- [ ] Portée énoncée par réglage ; **pas de portée poste** dite par la négative ; précédence sans jargon (plus précis gagne, parc logique bat salle) ; contrat amont Verrouillé/Modifiable
+- [ ] Tuile « Active Directory » jamais présentée comme un voyant → renvoi « État du système » ; seuils disque 75/90 % ; « Non configuré » normal
+- [ ] Chaque indicateur rouge : quoi faire + quoi ne pas conclure (Muet ≠ panne, En écart auto-résolu, En retard ≠ panne) ; 5 libellés mot pour mot + lien parc
+- [ ] Triage page Réglages : documenté/renvoyé/exploitation ; profils itinérants et compte de service **non nommés** ; Logs/enrôlements signalés une phrase
+- [ ] « En cas de problème » : deux volets référent/serveur, renvois, **zéro commande**
+- [ ] Lint vert ; jargon uniquement en citation d'écran ; liens glossaire valides ; aucune capture ; autonomie réseau vide
+- [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés en lecture seule
