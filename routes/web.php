@@ -504,6 +504,28 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/settings/parc-defaults', 'pages::admin.settings.parc-defaults.index')
         ->middleware('can:server.admin')
         ->name('settings.parc-defaults');
+
+    // ========================================
+    // Story 54.1 — Bibliothèque d'EXTENSIONS (socle Epic 54).
+    // `/admin/extensions`      : catalogue multi-sources en lecture seule.
+    // `/admin/extensions/{id}` : fiche d'une extension (manifest = source de
+    //                            vérité : version, description, scopes,
+    //                            dépendances).
+    // Protection 3 couches : middlewares du groupe admin
+    // (`sambaedu.auth` + `sambaedu.admin` + `federated.audit`) + `can:server.admin`
+    // par route + double garde `Gate::allows('server.admin')` dans `mount()`.
+    // Aucune nouvelle SambaPermission : `server.admin` suffit.
+    // Ordre : route statique AVANT la route paramétrée (`whereNumber` borne en
+    // plus l'identifiant à un entier).
+    // ========================================
+    Route::livewire('/extensions', 'pages::admin.extensions.index')
+        ->middleware('can:server.admin')
+        ->name('extensions');
+
+    Route::livewire('/extensions/{id}', 'pages::admin.extensions.[id].index')
+        ->middleware('can:server.admin')
+        ->whereNumber('id')
+        ->name('extensions.show');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)
