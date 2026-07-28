@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. _Epics 55/56 (SSO, sources distantes, type `app`) à ajouter en sections suivantes quand livrées._
+**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)**. _Stories 55.2 (claims métier + `/userinfo`), 55.3 (app-témoin + suite d'attaque) et Epic 56 (scopes consentis, sources distantes, type `app`) à ajouter en sections suivantes quand livrées._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -28,6 +28,20 @@
 - `resources/views/components/organisms/app-launcher.blade.php` — SFC Livewire du lanceur « gaufre » (54.3)
 - `resources/views/components/organisms/navbar.blade.php` — insertion `<livewire:organisms.app-launcher />` (54.3)
 - `tests/Unit/Models/UserBusinessRolesTest.php`, `tests/Feature/Extensions/ExtensionLauncherServiceTest.php`, `tests/Feature/Livewire/AppLauncherTest.php` — matrice rôles×visibilités, fail-closed `app`/`available`, NFR9, FR14 (54.3)
+- `app/Auth/Oidc/README.md` — topologie du namespace, invariants, catalogue `action_type` (55.1)
+- `database/migrations/2026_07_28_300000_create_oidc_provider_tables.php` — `oidc_clients`, `oidc_authorization_codes`, `oidc_access_tokens` (55.1)
+- `app/Models/{OidcClient,OidcAuthorizationCode,OidcAccessToken}.php` — colonnes de hash en `$hidden` (NFR3)
+- `app/Auth/Oidc/Keys/OidcKeyManager.php` + `app/Console/Commands/OidcKeysInit.php` — paire RS256 **dédiée**, génération idempotente, export JWKS
+- `app/Auth/Oidc/Services/OidcClientRegistry.php` — `register`/`authenticate`/`revoke` ; point d'accroche du provisioning Epic 56
+- `app/Auth/Oidc/Services/OidcAuthorizationService.php` — ordre de validation, émission et consommation des codes sous `lockForUpdate`
+- `app/Auth/Oidc/Jwt/OidcIdTokenIssuer.php` — **seul** fichier du namespace important `Firebase\JWT`
+- `app/Auth/Oidc/Support/OidcSubjectResolver.php` — **point UNIQUE** de résolution du claim `sub` (arbitrage en cours)
+- `app/Auth/Oidc/Support/OidcErrorCodes.php` — codes internes, journal uniquement (jamais dans une réponse HTTP)
+- `app/Auth/Oidc/Http/Controllers/{Discovery,Authorize,Token}Controller.php`
+- `app/Console/Commands/{OidcClientRegister,OidcClientRevoke}.php`
+- `app/Http/Middleware/Auth/SambaEduAuthGuard.php` — `url.intended` passe de `path()` à `fullUrl()` (55.1, piège n°1)
+- `config/oidc.php`, `config/logging.php` (channel `oidc`), `resources/views/oidc/authorize-error.blade.php`
+- `tests/Feature/Oidc/*`, `tests/Architecture/OidcRoutesTest.php` — flux, refus, discovery/JWKS, commandes, reprise post-login, garde-fous d'ordre et de frontière crypto (55.1)
 
 ---
 
@@ -597,6 +611,206 @@ Déposer un manifest de test avec `"entry_url": "javascript:alert(1)"` (puis `da
 
 ---
 
+## Section 11 — Fournisseur OIDC : registre des clients et flux d'autorisation (Story 55.1)
+
+> **Première story de l'Epic 55 (SSO).** SE5 devient **fournisseur d'identité** : une extension enregistrée obtient un jeton d'identité pour l'utilisateur SE5 courant, sans re-login ni secret partagé. Cette section couvre l'exploitation (clés, clients) et les quatre familles de comportement : flux nominal, découverte, refus, reprise après login.
+>
+> **Ce qui n'est PAS ici** : les claims métier `name`/`role`/`groups` et `/userinfo` (Story 55.2), l'app-témoin et la suite d'attaque (Story 55.3), les scopes consentis et le provisioning automatique du client à l'installation d'une extension (Epic 56).
+
+**Prérequis spécifiques à cette section**
+
+- `php artisan migrate` a joué `2026_07_28_300000_create_oidc_provider_tables.php` (3 tables : `oidc_clients`, `oidc_authorization_codes`, `oidc_access_tokens`).
+- `OIDC_ISSUER` aligné sur l'URL réellement servie par le vhost (sans slash final). À défaut, `APP_URL` est utilisée — une divergence casse la validation côté client.
+- Un outil capable de fabriquer un couple PKCE. En ligne de commande :
+  ```bash
+  VERIFIER=$(openssl rand -hex 32)
+  CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -binary -sha256 | openssl base64 | tr '+/' '-_' | tr -d '=')
+  echo "verifier=$VERIFIER"; echo "challenge=$CHALLENGE"
+  ```
+
+### Scénario 11.1 — Initialisation des clés : idempotence et permissions
+
+1. `php artisan oidc:keys:init` → statut `initialized`.
+2. Relancer la même commande **sans option**.
+3. `ls -l storage/keys/oidc/`
+4. `php artisan oidc:keys:init --force` (répondre `non` à la confirmation, puis rejouer et répondre `oui`).
+
+**Attendu** :
+- 1er passage : `storage/keys/oidc/private.pem` et `public.pem` créés.
+- 2e passage : `already_initialized`, **fichiers strictement inchangés** (comparer `ls --full-time`).
+- Permissions : `private.pem` en `0600`, `public.pem` en `0644`, propriétaire = utilisateur du pool PHP-FPM (`www-admin` par défaut).
+- `--force` refusé → rien ne bouge. `--force` accepté → nouvelle paire **et** sauvegarde `private.pem.bak-<horodatage>`.
+
+**Pourquoi ce scénario existe** : `scripts/update.sh` rejoue les commandes d'initialisation à **chaque** déploiement, sur **chaque** instance. Si `oidc:keys:init` écrasait la paire, tous les id_tokens en circulation deviendraient invérifiables et toutes les extensions perdraient le SSO — silencieusement, à chaque mise à jour. L'idempotence n'est pas un confort, c'est la condition de survie de la fonctionnalité.
+
+Le chown importe autant : la commande est lancée en **root**, une clé `0600 root:root` est **illisible par PHP-FPM**, et le symptôme serait « le SSO ne marche pas » sans aucune trace évidente.
+
+### Scénario 11.2 — Enregistrement d'un client : le secret n'est affiché qu'une fois
+
+```bash
+php artisan oidc:client:register "App de test" \
+  --redirect-uri=https://exemple.test/callback \
+  --extension=doc
+```
+
+**Attendu** :
+- Sortie : `client_id` (32 hexadécimaux), `client_secret` sous un avertissement explicite, liste des URI déclarées, rappel de la configuration côté extension.
+- En base : `SELECT client_id, client_secret_hash, extension_key, enabled FROM oidc_clients;` — la colonne `client_secret_hash` contient **64 caractères hexadécimaux** (un sha256), et **le secret affiché n'apparaît nulle part**.
+- `--extension=inexistante` → commande en échec, **aucune ligne créée**.
+- `--redirect-uri=javascript:alert(1)` (idem `data:…`, `//hote/cb`) → refusée. `https://…` et `/chemin-interne` acceptés.
+- Sans aucun `--redirect-uri` → refusée.
+
+**Pourquoi ce scénario existe** : NFR3 — un secret stocké en clair transforme un accès en lecture à la base en compromission de l'identité de tous les utilisateurs de l'extension. Le bornage des schémas d'URI reprend le correctif `entry_url` de la review 54.3 : une `redirect_uri` en `javascript:` ou `//hôte` placée dans un en-tête `Location:` détournerait l'utilisateur — **et le code d'autorisation avec lui**.
+
+### Scénario 11.3 — Découverte : discovery et JWKS
+
+```bash
+curl -s https://<host>/.well-known/openid-configuration | jq
+curl -s https://<host>/oidc/jwks | jq
+```
+
+**Attendu (discovery)** : `issuer` identique à `OIDC_ISSUER`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`, `response_types_supported: ["code"]`, `grant_types_supported: ["authorization_code"]`, `id_token_signing_alg_values_supported: ["RS256"]`, `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["client_secret_basic","client_secret_post"]`.
+
+**Attendu (JWKS)** : une clé, `kty: "RSA"`, `use: "sig"`, `alg: "RS256"`, `kid` égal à `OIDC_JWT_KID`, `n` et `e` en base64url **sans `=` ni `+` ni `/`**. Aucun champ `d`, aucune occurrence de `PRIVATE KEY`.
+
+**Les deux répondent sans authentification** (ils ne contiennent que des métadonnées de protocole et une clé publique).
+
+**Vérifications négatives** :
+- `userinfo_endpoint` est **absent** de la discovery. Il arrivera avec la Story 55.2 ; l'annoncer avant qu'il existe ferait échouer tout client qui suit la discovery à la lettre.
+- Renommer temporairement `storage/keys/oidc/public.pem` puis rappeler `/oidc/jwks` → **503**, jamais un `{"keys": []}` en 200. Un JWKS vide servi en 200 serait mis en cache par les clients et casserait les vérifications longtemps après la remise en place de la clé. Restaurer le fichier.
+
+### Scénario 11.4 — Flux complet avec un client de test
+
+1. Se connecter à SE5 dans le navigateur (session ouverte).
+2. Ouvrir l'URL suivante en remplaçant `<CLIENT_ID>` et `<CHALLENGE>` :
+   ```
+   https://<host>/oidc/authorize?response_type=code&client_id=<CLIENT_ID>
+     &redirect_uri=https://exemple.test/callback&scope=openid&state=abc123
+     &code_challenge=<CHALLENGE>&code_challenge_method=S256&nonce=xyz789
+   ```
+3. Le navigateur est redirigé vers `https://exemple.test/callback?code=…&state=abc123` (la cible n'existe pas : relever le `code` dans la barre d'adresse).
+4. Échanger le code :
+   ```bash
+   curl -s -u '<CLIENT_ID>:<CLIENT_SECRET>' https://<host>/oidc/token \
+     -d grant_type=authorization_code \
+     -d code=<CODE> \
+     -d redirect_uri=https://exemple.test/callback \
+     -d code_verifier=<VERIFIER> | jq
+   ```
+5. Décoder l'`id_token` sur https://jwt.io **ou** localement :
+   `echo <ID_TOKEN> | cut -d. -f2 | base64 -d 2>/dev/null | jq`
+
+**Attendu** :
+- **Aucun formulaire de login** n'apparaît à l'étape 2 (c'est FR17 : le SSO, pas une seconde authentification).
+- Le `state` d'origine est relayé tel quel.
+- Réponse d'échange : `access_token`, `token_type: "Bearer"`, `expires_in: 600`, `id_token`, `scope`. En-tête `Cache-Control: no-store`.
+- **Header** de l'id_token : `alg: "RS256"`, `typ: "JWT"`, `kid` présent et égal à celui du JWKS.
+- **Claims** : `iss` (= issuer), `sub` (= login SE5 de l'utilisateur connecté), `aud` (= `client_id`), `iat`/`exp` espacés de **300 s au plus**, `nonce: "xyz789"`, `jti`.
+- **Et rien d'autre** : ni `name`, ni `role`, ni `groups` — ils appartiennent à la Story 55.2.
+- Journal : `storage/logs/oidc/oidc-<date>.log` contient `oidc.authorize.granted` puis `oidc.token.issued`. **Aucune ligne ne contient le code clair, l'access_token, l'id_token complet ni un secret** — seulement `client_id`, `kid`, `jti` et un `code_hash_prefix` de 8 caractères.
+
+**Pourquoi ce scénario existe** : c'est le contrat que toutes les extensions liront. Le PRD nomme le SSO « le risque n°1 » du système d'extensions ; la présence du `kid`, la brièveté du TTL et l'absence de claims non décidés sont les trois points qu'une régression casserait en silence.
+
+### Scénario 11.5 — Le rejeu d'un code est refusé
+
+Rejouer **exactement** la commande `curl` de l'étape 4 du scénario 11.4.
+
+**Attendu** : `HTTP 400`, corps `{"error":"invalid_grant", …}`, aucun nouveau jeton. Journal : `oidc.token.rejected` avec `code: oidc.code_consumed`.
+
+**Variantes à dérouler** (chacune doit échouer, et chacune écrit sa ligne de journal avec un code interne distinct) :
+
+| Variante | Réponse attendue | Code au journal |
+|---|---|---|
+| Attendre 60 s avant l'échange | `invalid_grant` 400 | `oidc.code_expired` |
+| `code_verifier` incorrect | `invalid_grant` 400 | `oidc.code_verifier_mismatch` |
+| Re-tenter ensuite avec le **bon** verifier | `invalid_grant` 400 | `oidc.code_consumed` |
+| `redirect_uri` différente de celle de l'autorisation | `invalid_grant` 400 | `oidc.redirect_uri_mismatch` |
+| Mauvais `client_secret` | `invalid_client` **401** + `WWW-Authenticate: Basic` | `oidc.client_auth_failed` |
+| `grant_type=client_credentials` | `unsupported_grant_type` 400 | `oidc.unsupported_grant_type` |
+
+**Pourquoi ce scénario existe** : deux invariants s'y vérifient. D'abord l'usage unique — un code rejouable annulerait tout l'intérêt du TTL court. Ensuite l'**asymétrie assumée** entre le journal et la réponse : le corps HTTP dit toujours la même chose (`The authorization code is invalid, expired or already used.`), parce que distinguer « inconnu » de « expiré » indiquerait à un attaquant qu'il a mis la main sur un code réel. Le diagnostic fin, lui, est dans le journal.
+
+Noter la 3ᵉ ligne du tableau : un `code_verifier` faux **brûle le code**. Il a été présenté par quelqu'un qui le possède — il n'y a pas de seconde chance.
+
+### Scénario 11.6 — Refus non redirigeables : SE5 n'est pas un open-redirector
+
+Depuis un navigateur avec une session SE5 active, ouvrir successivement :
+
+1. `…/oidc/authorize?response_type=code&client_id=INEXISTANT&redirect_uri=https://attaquant.example/collecte&scope=openid&state=s&code_challenge=x&code_challenge_method=S256`
+2. La même URL avec un `client_id` **valide** mais `redirect_uri=https://attaquant.example/collecte`
+3. La même URL avec un `client_id` **révoqué** (`php artisan oidc:client:revoke <client_id>`)
+
+**Attendu pour les trois** :
+- **HTTP 400**, page « Connexion impossible » sobre, en français.
+- **Aucune redirection** : `curl -sI` ne renvoie **pas** d'en-tête `Location`.
+- La page **ne divulgue ni** la liste des `redirect_uris` déclarées, **ni** l'existence du client, **ni** le nom de l'extension. Elle affiche uniquement le code d'erreur normalisé.
+- `SELECT count(*) FROM oidc_authorization_codes;` inchangé — **aucun code émis**.
+- Journal : `oidc.authorize.rejected` avec `kind: local` et le code fin (`oidc.client_unknown`, `oidc.redirect_uri_mismatch`, `oidc.client_disabled`).
+
+**Pourquoi ce scénario existe** : c'est la règle cardinale d'OAuth. Rediriger vers une `redirect_uri` non validée — **même pour annoncer une erreur** — ferait de SE5 un open-redirector réputé de confiance, et enverrait le message de refus (donc l'information) à celui qui a fabriqué l'URL. Le cas 2 est le plus important : le client est parfaitement valide, seule l'URI est falsifiée ; c'est le scénario d'attaque réel.
+
+### Scénario 11.7 — Refus redirigeables : le client mal configuré reçoit une réponse exploitable
+
+Toujours avec une session active et un client **valide**, avec la `redirect_uri` **déclarée** :
+
+| Variante de l'URL | Attendu dans la redirection |
+|---|---|
+| `code_challenge` retiré | `?error=invalid_request&state=…` |
+| `code_challenge_method=plain` | `?error=invalid_request&state=…` |
+| `code_challenge_method` retiré | `?error=invalid_request&state=…` |
+| `response_type=token` | `?error=unsupported_response_type&state=…` |
+| `scope=profile` (sans `openid`) | `?error=invalid_scope&state=…` |
+
+**Attendu pour toutes** :
+- **HTTP 302 vers la `redirect_uri` DÉCLARÉE** (pas celle fournie arbitrairement — elles coïncident ici, c'est le point).
+- `state` relayé, **aucun paramètre `code`**, aucune ligne dans `oidc_authorization_codes`.
+- Journal : `oidc.authorize.rejected` avec `kind: redirect`.
+
+**Contrôle positif à ne pas oublier** : `scope=openid profile` **fonctionne** (le scope composé est légitime), et `scope=openidx` est **refusé**. Sans ces deux vérifications, on ne saurait pas si la validation découpe la liste ou fait une bête recherche de sous-chaîne.
+
+**Pourquoi ce scénario existe** : PKCE est obligatoire (NFR1) et `plain` est explicitement refusé — il transmet le secret en clair dès l'autorisation et ne protège de rien. La 3ᵉ ligne est subtile : la RFC 7636 dit qu'une méthode **absente** vaut `plain`. L'interpréter silencieusement comme S256 « pour être conciliant » reviendrait à ne rien vérifier du tout.
+
+### Scénario 11.8 — Reprise du flux après login : la query string survit
+
+1. Se **déconnecter** de SE5 (ou utiliser une fenêtre de navigation privée).
+2. Coller l'URL complète `/oidc/authorize?…` du scénario 11.4.
+3. Le formulaire de login SE5 s'affiche : s'authentifier normalement.
+
+**Attendu** :
+- Après authentification, **aucune action supplémentaire n'est nécessaire** : le navigateur repart directement vers `https://exemple.test/callback?code=…&state=abc123`.
+- Le `nonce` d'origine se retrouve dans l'id_token après échange (preuve que **tous** les paramètres ont survécu, pas seulement le chemin).
+
+**Pourquoi ce scénario existe** : c'est le **piège n°1** de la story. `SambaEduAuthGuard::unauthorized()` mémorisait `$request->path()` — **sans la query string**. Or tout le flux OIDC vit dans la query. Un utilisateur sans session était donc renvoyé au login puis « repris » sur `/oidc/authorize` **nu**, c'est-à-dire une page 400 — à **chaque première connexion de la journée**, le cas le plus fréquent qui soit. Le correctif (`fullUrl()`) répare le mécanisme standard du projet (`url.intended` + `redirect()->intended()`) au lieu d'inventer un canal parallèle.
+
+**Effet de bord bénéfique à vérifier au passage** : ouvrir `/admin/settings?tab=fichiers` sans session, se connecter → on revient bien sur l'onglet demandé. Avant le correctif, tout paramètre d'onglet était perdu au re-login.
+
+### Scénario 11.9 — Frontière avec la sync amont (NFR14) étendue à l'OIDC
+
+1. Enregistrer un client lié à une extension : `php artisan oidc:client:register "Doc" --redirect-uri=… --extension=doc`.
+2. Dérouler un flux complet (scénario 11.4) pour laisser un code et un access token en base.
+3. Déclencher une ingestion de contrat amont, puis une rupture de lien (cf. Section 5 pour les commandes).
+4. Ré-inspecter : `SELECT client_id, enabled FROM oidc_clients;` et le nombre de lignes des deux autres tables.
+
+**Attendu** : **strictement rien n'a changé**. Le client reste actif, le code et le jeton restent en place.
+
+**Pourquoi ce scénario existe** : le registre des clients est un prolongement du registre d'extensions, et l'incident fondateur du projet (catalogue applicatif local effacé par la sync amont) montre que la frontière ne va pas de soi. La conséquence serait ici pire qu'un catalogue vidé : **plus personne ne pourrait se connecter à aucune extension**, et la cause serait cherchée très loin de la sync. Verrouillé automatiquement par `UpstreamSyncExtensionsBoundaryTest`, désormais étendu à **6 tables**.
+
+### Scénario 11.10 — Révocation d'un client
+
+1. `php artisan oidc:client:revoke <client_id>` → succès.
+2. Rejouer la commande → message « déjà révoqué », code retour **0**.
+3. `php artisan oidc:client:revoke inconnu` → erreur, code retour **1**.
+4. Retenter un `/oidc/authorize` avec ce client, puis un `/oidc/token`.
+
+**Attendu** :
+- La ligne existe toujours en base avec `enabled = false` : **révoquer n'est pas supprimer**, l'historique du registre est conservé.
+- `/oidc/authorize` → page 400 (refus non redirigeable).
+- `/oidc/token` → `invalid_client` 401, **y compris avec un code émis avant la révocation**.
+
+**Pourquoi ce scénario existe** : l'idempotence est la doctrine d'exploitation du projet (rejouable sans risque), mais un client **inconnu** doit échouer bruyamment : sur une faute de frappe, un succès silencieux laisserait croire à une révocation qui n'a jamais eu lieu — un faux sentiment de sécurité au pire moment.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
@@ -607,6 +821,10 @@ Déposer un manifest de test avec `"entry_url": "javascript:alert(1)"` (puis `da
 - **Section 4.2 — listes vides** : exigence explicite de l'AC1. Une section « Autorisations demandées » vide et muette laisserait penser à un bug d'affichage plutôt qu'à une extension sans scope.
 - **Section 7 — no-op ⇒ zéro ligne d'audit (NFR8)** : décision tranchée de la Story 54.2. Le journal `extension_audit_logs` trace des TRANSITIONS RÉELLES, pas des clics — un double-clic ou un re-jeu sur un état déjà atteint ne doit produire ni écriture ni ligne d'audit, sinon l'historique mentirait sur le nombre réel d'actes.
 - **Section 7 — atomicité acte ↔ trace** : la ligne d'audit s'écrit DANS la même transaction que la mutation de `status` ({@see \App\Services\Extensions\ExtensionLifecycleService}). Un acte sans sa trace ne peut pas exister — vérifié par un test automatisé qui simule la disparition de la table d'audit (`tests/Feature/Extensions/ExtensionLifecycleServiceTest.php`).
+- **Section 11.6 — on ne redirige jamais vers une `redirect_uri` non validée** : règle cardinale d'OAuth, appliquée y compris pour annoncer une erreur. Toute évolution du flux d'autorisation doit conserver les DEUX familles de refus séparées (locale 400 vs 302 sur l'URI déclarée) — les fusionner « pour simplifier » ferait de SE5 un open-redirector réputé de confiance.
+- **Section 11.8 — `url.intended` porte l'URL COMPLÈTE** : le guard mémorisait `path()`, ce qui amputait la query string et rendait le SSO impossible à la première connexion de la journée. Le correctif (`fullUrl()`) est transverse : tout futur flux qui dépend de paramètres de query au moment du re-login en bénéficie. Ne pas inventer de canal parallèle (session dédiée, cookie) — `url.intended` + `redirect()->intended()` est le mécanisme standard du projet.
+- **Section 11.5 — le journal est fin, la réponse est muette** : les codes `oidc.*` distinguent code inconnu / expiré / consommé pour le diagnostic ; la réponse HTTP dit toujours `invalid_grant`. Fusionner les deux — dans un sens ou dans l'autre — casse soit l'exploitabilité, soit la sécurité.
+- **Section 11.1 — l'idempotence d'`oidc:keys:init` est vitale, pas confortable** : `update.sh` la rejoue à chaque déploiement de chaque instance. Même règle que pour toute opération multi-instance du projet : une commande artisan rejouable, jamais une procédure manuelle.
 - **Section 7 — carte 54.1 restructurée** : la carte de bibliothèque était un `<a href>` entier (54.1) ; 54.2 sépare la zone cliquable (titre → fiche) du pied d'actions (`card-actions`) pour permettre des boutons `wire:click` sans navigation parasite ni HTML invalide.
 
 ---
@@ -663,3 +881,13 @@ Déposer un manifest de test avec `"entry_url": "javascript:alert(1)"` (puis `da
 - [ ] 10.2 État vide réellement masqué quand des tuiles existent
 - [ ] 10.3 Un administratif voit la tuile Documentation
 - [ ] 10.4 `entry_url` à schéma dangereux refusée (`javascript:`, `data:`, `//`)
+- [ ] 11.1 `oidc:keys:init` idempotente, permissions 0600/0644, `--force` sauvegarde
+- [ ] 11.2 `oidc:client:register` : secret affiché une fois, sha256 en base, schémas d'URI bornés
+- [ ] 11.3 Discovery + JWKS publics, `userinfo_endpoint` absent, JWKS fail-closed en 503
+- [ ] 11.4 Flux complet : aucun login, `kid` présent, claims exacts, aucun secret au journal
+- [ ] 11.5 Rejeu, expiration, verifier faux (code brûlé), secret faux → refus normalisés
+- [ ] 11.6 Client inconnu / URI non déclarée / client révoqué → 400 **sans** `Location`
+- [ ] 11.7 PKCE absent ou `plain`, `response_type`, `scope` → 302 `error` sur l'URI déclarée
+- [ ] 11.8 Reprise post-login : query string complète préservée
+- [ ] 11.9 Sync amont : client, code et jeton OIDC intacts
+- [ ] 11.10 Révocation idempotente ; client inconnu = échec bruyant

@@ -237,8 +237,21 @@ class SambaEduAuthGuard implements AuthGuardInterface
             ], 401);
         }
 
-        // Stocker l'URL demandée pour redirection après login
-        $intendedUrl = $request->path();
+        // Stocker l'URL demandée pour redirection après login.
+        //
+        // ⚠️ `fullUrl()` et NON `path()` (Story 55.1) : `path()` amputait la
+        // QUERY STRING. Or tout le flux OIDC vit dans la query
+        // (`client_id`, `state`, `code_challenge`, `nonce`…) — un utilisateur
+        // sans session dirigé vers `/oidc/authorize?…` était « repris » après
+        // login sur `/oidc/authorize` NU, donc refusé systématiquement. Le SSO
+        // ne pouvait jamais aboutir au premier accès de la journée.
+        //
+        // Le correctif est transverse et bénin : aujourd'hui même un `?tab=`
+        // d'onglet est perdu au re-login. Précédent interne identique :
+        // `app/Http/Middleware/RequireAdminRights.php:145`. On répare le
+        // mécanisme standard (`url.intended` + `redirect()->intended()` de
+        // `AuthController`) plutôt que d'inventer un canal parallèle.
+        $intendedUrl = $request->fullUrl();
         session()->put('url.intended', $intendedUrl);
 
         return redirect(route('auth.login'));

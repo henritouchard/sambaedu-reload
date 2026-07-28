@@ -1272,6 +1272,63 @@ Route::match(['GET', 'POST'], '/ipxe/Win10/unattend.xml.php', [$tombstone, 'xml'
 
 /*
 |--------------------------------------------------------------------------
+| Story 55.1 — SE5 FOURNISSEUR OIDC (Epic 55 — SSO des extensions)
+|--------------------------------------------------------------------------
+| Quatre routes, deux natures :
+|
+| 1. PUBLIQUES ET STATELESS — la discovery et le JWKS ne révèlent que des
+|    métadonnées de protocole et une clé PUBLIQUE. Les exiger authentifiées
+|    casserait tout client OIDC standard. `withoutMiddleware(['web'])` : aucune
+|    session à ouvrir pour servir un document constant.
+|
+| 2. `/oidc/authorize` est une route NAVIGATEUR derrière `sambaedu.auth` : le
+|    guard est la définition AUTORITATIVE de « session SE5 active ». Un
+|    émetteur d'identité moins strict que les pages qu'il protège serait une
+|    faille. ⚠️ `federated.audit` est OBLIGATOIRE sur toute route
+|    `sambaedu.auth` (invariant `FederatedAuditCoverageTest`) : un acteur
+|    fédéré peut atteindre cette route, l'émission d'un jeton en son nom doit
+|    figurer au journal d'imputabilité.
+|
+| 3. `/oidc/token` est un appel SERVEUR-À-SERVEUR : `withoutMiddleware(['web'])`
+|    (ni session, ni CSRF — l'appelant n'a pas de cookie, son authentification
+|    EST le secret du client). **POST uniquement** : en GET, le secret et le
+|    code d'autorisation atterriraient dans les logs, l'historique et le
+|    `Referer` — même doctrine que le binding POST du login fédéré (D-3).
+|
+| **ORDRE STRICT** : ces routes DOIVENT rester AVANT le catchall `{path}`
+| ci-dessous, sinon le catchall les proxifie vers le vhost legacy (mort) et
+| aucun client OIDC ne peut découvrir SE5. Test garde-fou : `OidcRoutesTest`.
+|
+| Prérequis d'exploitation : `php artisan oidc:keys:init` (idempotent) puis
+| `php artisan oidc:client:register` pour déclarer un client.
+*/
+Route::get('/.well-known/openid-configuration', [
+    \App\Auth\Oidc\Http\Controllers\DiscoveryController::class,
+    'openidConfiguration',
+])
+    ->middleware('throttle:60,1')
+    ->name('oidc.discovery')
+    ->withoutMiddleware(['web']);
+
+Route::get('/oidc/jwks', [
+    \App\Auth\Oidc\Http\Controllers\DiscoveryController::class,
+    'jwks',
+])
+    ->middleware('throttle:60,1')
+    ->name('oidc.jwks')
+    ->withoutMiddleware(['web']);
+
+Route::get('/oidc/authorize', \App\Auth\Oidc\Http\Controllers\AuthorizeController::class)
+    ->middleware(['sambaedu.auth', 'federated.audit'])
+    ->name('oidc.authorize');
+
+Route::post('/oidc/token', \App\Auth\Oidc\Http\Controllers\TokenController::class)
+    ->middleware('throttle:60,1')
+    ->name('oidc.token')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | DDNS piloté par DHCP (Story 8.4) — port natif de `dhcp/dnsupdate.php`
 |--------------------------------------------------------------------------
 | Appelé par `/usr/share/sambaedu/sbin/dhcp-dyndns.sh`, déclenché par les

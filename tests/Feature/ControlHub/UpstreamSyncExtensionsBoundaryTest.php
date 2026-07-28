@@ -14,6 +14,9 @@ use App\Models\DepotApplication;
 use App\Models\Extension;
 use App\Models\ExtensionAuditLog;
 use App\Models\ExtensionSource;
+use App\Models\OidcAccessToken;
+use App\Models\OidcAuthorizationCode;
+use App\Models\OidcClient;
 use App\Models\User;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\AppStore\PackagesXmlService;
@@ -28,10 +31,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC3 / NFR14) / 54.2 (AC3) — **FRONTIÈRE** : la sync amont
+ * Story 54.1 (AC3 / NFR14) / 54.2 (AC3) / 55.1 — **FRONTIÈRE** : la sync amont
  * (controlHub) ne touche JAMAIS le registre d'extensions — désormais
- * **3 tables** : `extensions`, `extension_sources`, et depuis 54.2
- * `extension_audit_logs` (le journal du cycle de vie, lui aussi isolé).
+ * **6 tables** : `extensions`, `extension_sources`, `extension_audit_logs`
+ * (le journal du cycle de vie, 54.2), et depuis la Story 55.1 les trois tables
+ * du fournisseur OIDC : `oidc_clients`, `oidc_authorization_codes`,
+ * `oidc_access_tokens`.
+ *
+ * Pourquoi les tables OIDC rejoignent CETTE frontière : le registre des clients
+ * confidentiels est un PROLONGEMENT du registre d'extensions (`oidc_clients`
+ * porte une FK `extension_id` et la clé dénormalisée). Un listener de sync qui
+ * y déborderait ne se contenterait pas d'effacer un catalogue : il casserait le
+ * SSO de toutes les extensions installées, et l'incident se manifesterait
+ * comme « les utilisateurs ne peuvent plus se connecter aux extensions » —
+ * un symptôme dont la cause serait cherchée très loin d'ici.
  *
  * Pourquoi ce test existe : le catalogue applicatif LOCAL a déjà été effacé par
  * la sync amont dans ce projet. La chaîne destructive réelle est :
@@ -70,8 +83,18 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** Identifiants QUOTÉS des trois tables du registre (54.2 : + le journal d'audit). */
-    private const REGISTRY_NEEDLES = ['"extensions"', '"extension_sources"', '"extension_audit_logs"'];
+    /**
+     * Identifiants QUOTÉS des six tables du registre (54.2 : + le journal
+     * d'audit ; 55.1 : + les trois tables du fournisseur OIDC).
+     */
+    private const REGISTRY_NEEDLES = [
+        '"extensions"',
+        '"extension_sources"',
+        '"extension_audit_logs"',
+        '"oidc_clients"',
+        '"oidc_authorization_codes"',
+        '"oidc_access_tokens"',
+    ];
 
     protected function setUp(): void
     {
@@ -122,24 +145,62 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
             actorUserId: $actor->id,
             actorLogin: $actor->login,
         );
+
+        // Story 55.1 — un client OIDC LIÉ à l'extension, avec un code et un
+        // access token en circulation. Les trois tables doivent être NON VIDES
+        // avant les scénarios : une table vide serait invisible par
+        // construction et la frontière ne prouverait rien à son sujet.
+        $client = OidcClient::factory()->forExtension($extension)->create();
+
+        OidcAuthorizationCode::query()->create([
+            'oidc_client_id' => $client->id,
+            'user_id' => $actor->id,
+            'user_login' => $actor->login,
+            'code_hash' => hash('sha256', 'code-de-frontiere'),
+            'redirect_uri' => 'https://ext.example.test/callback',
+            'code_challenge' => 'challenge-de-frontiere',
+            'code_challenge_method' => 'S256',
+            'nonce' => '',
+            'scope' => 'openid',
+            'expires_at' => now()->addMinutes(5),
+            'created_at' => now(),
+        ]);
+
+        OidcAccessToken::query()->create([
+            'oidc_client_id' => $client->id,
+            'user_login' => $actor->login,
+            'token_hash' => hash('sha256', 'token-de-frontiere'),
+            'scope' => 'openid',
+            'expires_at' => now()->addMinutes(10),
+            'created_at' => now(),
+        ]);
     }
 
     /**
      * Snapshot brut du registre (lignes + `updated_at`), pris HORS de la
      * fenêtre de query-log.
      *
-     * @return array{sources: array<int, array<string, mixed>>, extensions: array<int, array<string, mixed>>, audit_logs: array<int, array<string, mixed>>}
+     * @return array<string, array<int, array<string, mixed>>>
      */
     private function registrySnapshot(): array
     {
-        return [
-            'sources' => DB::table('extension_sources')->orderBy('id')->get()
-                ->map(fn ($row): array => (array) $row)->all(),
-            'extensions' => DB::table('extensions')->orderBy('id')->get()
-                ->map(fn ($row): array => (array) $row)->all(),
-            'audit_logs' => DB::table('extension_audit_logs')->orderBy('id')->get()
-                ->map(fn ($row): array => (array) $row)->all(),
+        $tables = [
+            'sources' => 'extension_sources',
+            'extensions' => 'extensions',
+            'audit_logs' => 'extension_audit_logs',
+            // Story 55.1 — le fournisseur OIDC fait partie du registre.
+            'oidc_clients' => 'oidc_clients',
+            'oidc_codes' => 'oidc_authorization_codes',
+            'oidc_tokens' => 'oidc_access_tokens',
         ];
+
+        $snapshot = [];
+        foreach ($tables as $label => $table) {
+            $snapshot[$label] = DB::table($table)->orderBy('id')->get()
+                ->map(fn ($row): array => (array) $row)->all();
+        }
+
+        return $snapshot;
     }
 
     /**
@@ -217,10 +278,31 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         });
 
         self::assertNotSame([], $hits, 'le filtre doit détecter une VRAIE requête sur le registre');
+
+        // Story 55.1 — le filtre doit détecter CHACUNE des trois tables OIDC
+        // individuellement : un needle absent rendrait la table concernée
+        // invisible, et la frontière muette à son sujet.
+        foreach ([
+            '"oidc_clients"' => fn () => OidcClient::query()->count(),
+            '"oidc_authorization_codes"' => fn () => OidcAuthorizationCode::query()->count(),
+            '"oidc_access_tokens"' => fn () => OidcAccessToken::query()->count(),
+        ] as $needle => $probe) {
+            $oidcHits = $this->registryQueriesDuring($probe);
+            self::assertNotSame([], $oidcHits, 'le filtre doit détecter une requête sur '.$needle);
+
+            $matched = false;
+            foreach ($oidcHits as $sql) {
+                if (str_contains($sql, $needle)) {
+                    $matched = true;
+                    break;
+                }
+            }
+            self::assertTrue($matched, 'la requête détectée doit l\'être PAR le needle '.$needle);
+        }
     }
 
     #[Test]
-    public function the_quoted_needles_do_not_confuse_the_three_tables(): void
+    public function the_quoted_needles_do_not_confuse_the_six_tables(): void
     {
         $this->seedRegistry();
 
@@ -256,6 +338,40 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         foreach ($onlyExtensions as $sql) {
             self::assertStringNotContainsString('"extension_sources"', $sql);
             self::assertStringNotContainsString('"extension_audit_logs"', $sql);
+            // ⚠️ 55.1 : `extensions` ne doit pas non plus attraper les tables
+            // OIDC (aucune ne contient l'identifiant quoté `"extensions"`).
+            self::assertStringNotContainsString('"oidc_clients"', $sql);
+        }
+
+        // ⚠️ Story 55.1 — les trois tables OIDC partagent le préfixe `oidc_` :
+        // sans quotes, `oidc_clients` nu ne matcherait rien de plus, mais un
+        // needle mal choisi (`oidc_`) confondrait les trois. Vérification
+        // deux à deux.
+        $onlyOidcClients = $this->registryQueriesDuring(function (): void {
+            OidcClient::query()->count();
+        });
+        self::assertNotSame([], $onlyOidcClients);
+        foreach ($onlyOidcClients as $sql) {
+            self::assertStringNotContainsString('"oidc_authorization_codes"', $sql);
+            self::assertStringNotContainsString('"oidc_access_tokens"', $sql);
+        }
+
+        $onlyOidcCodes = $this->registryQueriesDuring(function (): void {
+            OidcAuthorizationCode::query()->count();
+        });
+        self::assertNotSame([], $onlyOidcCodes);
+        foreach ($onlyOidcCodes as $sql) {
+            self::assertStringNotContainsString('"oidc_clients"', $sql);
+            self::assertStringNotContainsString('"oidc_access_tokens"', $sql);
+        }
+
+        $onlyOidcTokens = $this->registryQueriesDuring(function (): void {
+            OidcAccessToken::query()->count();
+        });
+        self::assertNotSame([], $onlyOidcTokens);
+        foreach ($onlyOidcTokens as $sql) {
+            self::assertStringNotContainsString('"oidc_clients"', $sql);
+            self::assertStringNotContainsString('"oidc_authorization_codes"', $sql);
         }
     }
 
@@ -294,7 +410,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
             $ingestion->ingest($this->contractPayload([]));
         });
 
-        self::assertSame([], $hits, 'NFR14 : zéro requête sur "extensions" / "extension_sources"');
+        self::assertSame([], $hits, 'NFR14 : zéro requête sur les 6 tables du registre (extensions + OIDC)');
         self::assertEquals($before, $this->registrySnapshot(), 'registre identique (lignes + updated_at)');
 
         // Sanity : la cascade a bien tourné POUR DE VRAI — sans ça, l'absence
@@ -413,5 +529,13 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         self::assertSame(1, Extension::query()->count());
         self::assertNotNull(Extension::where('key', 'doc')->first());
         self::assertSame(1, ExtensionAuditLog::query()->count(), 'le journal d\'audit (54.2) est aussi resté intact');
+
+        // Story 55.1 — le SSO des extensions survit intégralement à la sync
+        // amont : le client reste actif, son code et son jeton restent en
+        // circulation.
+        self::assertSame(1, OidcClient::query()->count());
+        self::assertTrue(OidcClient::query()->firstOrFail()->enabled, 'le client OIDC n\'a pas été révoqué');
+        self::assertSame(1, OidcAuthorizationCode::query()->count());
+        self::assertSame(1, OidcAccessToken::query()->count());
     }
 }
