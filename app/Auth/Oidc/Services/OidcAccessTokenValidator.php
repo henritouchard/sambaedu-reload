@@ -18,13 +18,25 @@ use Illuminate\Support\Carbon;
  * une réponse normalisée, pas une trace d'erreur.
  *
  * ══════════════════════════════════════════════════════════════════════════
- *  CINQ CAUSES DE REFUS, UNE SEULE RÉPONSE
+ *  SIX CAUSES DE REFUS, UNE SEULE RÉPONSE
  *
- *  absent · inconnu · expiré · client révoqué · utilisateur disparu
+ *  absent · inconnu · expiré · client révoqué · utilisateur disparu ·
+ *  utilisateur désactivé
  *
  *  Le verdict les distingue POUR LE JOURNAL (diagnostic d'intégration), le
  *  contrôleur n'en rend qu'un `401 invalid_token` indistinct — même doctrine
  *  que le token endpoint : ne jamais offrir d'oracle à qui teste des jetons.
+ *
+ *  ⚠️ **Résidu assumé (review 55.2 #2)** : le nombre de requêtes SQL avant
+ *  verdict diffère selon la cause (1 pour un jeton inconnu, 2 pour un client
+ *  révoqué, 3 pour un utilisateur disparu ou désactivé). La réponse HTTP est
+ *  indistincte — corps et en-têtes identiques — mais le temps de traitement ne
+ *  l'est pas strictement. Ce résidu est CONSERVÉ délibérément : l'écart porte
+ *  sur deux lectures indexées locales, très en dessous de la gigue réseau, et
+ *  l'égaliser imposerait de résoudre client ET utilisateur avant tout verdict —
+ *  soit deux requêtes supplémentaires sur CHAQUE jeton invalide, ce qui offre à
+ *  qui sonde des jetons une amplification de charge gratuite. On échangerait un
+ *  canal non exploitable contre un vecteur de charge réel.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * **« Révoquer un client rend ses jetons inutilisables »** : la promesse de
@@ -86,6 +98,19 @@ class OidcAccessTokenValidator
 
         if (! $user instanceof User) {
             return $this->refusal(OidcErrorCodes::USER_MISSING, true, $prefix);
+        }
+
+        // Correctif review 55.2 — SYMÉTRIE avec `$client->enabled` ci-dessus.
+        // Un compte désactivé pendant la vie du jeton doit mourir avec lui,
+        // exactement comme une extension révoquée : sans ce contrôle,
+        // `/userinfo` continuait de servir nom, rôle et groupes d'un compte
+        // désactivé pendant toute la fenêtre restante du jeton.
+        //
+        // Ce n'est doublonné par aucune couche : `SambaEduAuthGuard` valide
+        // l'état du compte côté LDAP/AD, pas `users.is_active` — et de toute
+        // façon la chaîne OIDC part d'un jeton, sans session à traverser.
+        if (! $user->isActive()) {
+            return $this->refusal(OidcErrorCodes::USER_INACTIVE, true, $prefix);
         }
 
         return ['ok' => true, 'record' => $record, 'user' => $user];

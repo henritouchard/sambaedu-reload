@@ -529,6 +529,52 @@ class OidcIdTokenClaimsTest extends TestCase
     }
 
     #[Test]
+    public function a_user_deactivated_between_authorization_and_exchange_gets_invalid_grant(): void
+    {
+        // Correctif review 55.2 (#1). `users.is_active = false` ne gardait RIEN
+        // dans la chaîne OIDC : `SambaEduAuthGuard` valide l'état du compte côté
+        // LDAP/AD, et le token endpoint est un appel serveur-à-serveur qui ne
+        // traverse aucune session. Un compte désactivé pendant la fenêtre de
+        // 60 s du code obtenait donc un id_token complet — et un access_token
+        // utilisable 10 minutes de plus.
+        //
+        // La symétrie attendue est celle du client : `$client->enabled` était
+        // vérifié, `$user->is_active` non.
+        $user = $this->makeUser('prof');
+        $client = $this->makeClient();
+
+        // Contrôle POSITIF : la fixture émet bien un jeton tant que le compte
+        // est actif — sans lui, le refus ci-dessous ne prouverait rien.
+        $this->exchange($client, $this->obtainCode($client, $user, 'openid profile'))->assertOk();
+        self::assertSame(1, OidcAccessToken::query()->count());
+
+        $code = $this->obtainCode($client, $user, 'openid profile');
+
+        $this->captureLogs();
+        $user->forceFill(['is_active' => false])->save();
+
+        $response = $this->exchange($client, $code);
+
+        $response->assertStatus(400);
+        self::assertSame('invalid_grant', $response->json('error'));
+
+        // Indistinct d'un code inconnu ET d'un compte supprimé : la réponse ne
+        // dit pas à un appelant dans quel état est le compte visé.
+        self::assertSame(
+            'The authorization code is invalid, expired or already used.',
+            $response->json('error_description'),
+        );
+
+        self::assertNull($response->json('id_token'));
+        self::assertSame(1, OidcAccessToken::query()->count(), 'aucun SECOND jeton émis');
+
+        // Seul le journal distingue — sinon l'exploitant ne comprendrait pas
+        // pourquoi une intégration cesse brusquement de fonctionner.
+        self::assertContains(OidcErrorCodes::USER_INACTIVE, $this->loggedCodes());
+        self::assertNotContains(OidcErrorCodes::USER_MISSING, $this->loggedCodes());
+    }
+
+    #[Test]
     public function business_claims_can_never_override_a_standard_claim(): void
     {
         // L'ordre du `array_merge` dans l'émetteur EST la garantie. Un

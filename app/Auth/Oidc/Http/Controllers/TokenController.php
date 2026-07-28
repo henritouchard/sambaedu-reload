@@ -138,6 +138,25 @@ class TokenController extends Controller
             );
         }
 
+        // Correctif review 55.2 — un compte DÉSACTIVÉ n'obtient pas d'identité,
+        // au même titre qu'un compte supprimé. Symétrie avec la révocation d'un
+        // client, vérifiée plus haut : sans ce contrôle, une désactivation faite
+        // pendant la fenêtre de 60 s du code émettait quand même un id_token ET
+        // un access_token utilisable 10 minutes de plus.
+        //
+        // `SambaEduAuthGuard` ne couvre pas ce cas : il valide l'état du compte
+        // côté LDAP/AD, jamais `users.is_active` — et le token endpoint est un
+        // appel serveur-à-serveur qui ne traverse aucune session.
+        if (! $user->isActive()) {
+            $this->logRejection(OidcErrorCodes::USER_INACTIVE, $clientId);
+
+            return $this->error(
+                'invalid_grant',
+                'The authorization code is invalid, expired or already used.',
+                400,
+            );
+        }
+
         // Claims MÉTIER, filtrés par le scope LIÉ AU CODE (celui qui a été
         // validé et consenti à l'autorisation), jamais par un scope renvoyé au
         // token endpoint par le client.

@@ -354,6 +354,34 @@ class OidcUserinfoTest extends TestCase
     }
 
     #[Test]
+    public function deactivating_the_user_kills_their_already_issued_tokens(): void
+    {
+        // Correctif review 55.2 (#1) — SYMÉTRIE avec la révocation d'un client,
+        // testée juste au-dessus. Sans ce contrôle, `/userinfo` continuait de
+        // servir nom, rôle et groupes d'un compte désactivé pendant toute la
+        // fenêtre restante du jeton (jusqu'à 10 minutes), alors même que les
+        // claims sont censés refléter l'état SQL courant.
+        //
+        // Aucune autre couche ne l'attrape : `SambaEduAuthGuard` valide l'état
+        // du compte côté LDAP/AD, pas `users.is_active`, et `/userinfo` est un
+        // appel porteur de Bearer qui ne traverse aucune session.
+        $flow = $this->completeFlow();
+
+        // Contrôle POSITIF : le même jeton fonctionne tant que le compte est actif.
+        $this->userinfo($flow['access_token'])->assertOk();
+
+        $this->captureLogs();
+        $flow['user']->forceFill(['is_active' => false])->save();
+
+        $this->assertPresentedTokenRefusal($this->userinfo($flow['access_token']));
+
+        // Le journal distingue le compte désactivé du compte supprimé ; la
+        // réponse HTTP, elle, reste le même 401 indistinct.
+        self::assertContains(OidcErrorCodes::USER_INACTIVE, $this->loggedCodes());
+        self::assertNotContains(OidcErrorCodes::USER_MISSING, $this->loggedCodes());
+    }
+
+    #[Test]
     public function a_token_passed_in_the_query_string_is_ignored(): void
     {
         // Doctrine D-3 (55.1) : jamais de secret en query — il finirait dans

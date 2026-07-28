@@ -325,6 +325,28 @@ class OidcAuthorizeRefusalsTest extends TestCase
     }
 
     #[Test]
+    public function an_oversized_scope_containing_an_unknown_name_is_an_invalid_request_not_an_invalid_scope(): void
+    {
+        // Correctif review 55.2 (#4) — FIGE l'ordre de validation choisi
+        // délibérément par le dev : la borne de longueur (étape 4) passe AVANT
+        // le catalogue fermé de scopes (étape 5).
+        //
+        // Le cas composite est le seul qui distingue les deux ordres possibles.
+        // Sans ce test, l'arbitrage n'était garanti que par la lecture du code :
+        // quelqu'un jugeant un jour que « scope inconnu » doit primer pourrait
+        // réordonner les deux contrôles sans qu'aucun test ne bronche.
+        //
+        // Pourquoi cet ordre est le bon : un `scope` hors gabarit est d'abord un
+        // paramètre malformé. Le découper puis reprocher à l'appelant un nom de
+        // scope inconnu reviendrait à commenter le contenu d'une valeur qu'on a
+        // déjà jugée irrecevable par sa forme.
+        $this->assertRedirectableRefusal(
+            ['scope' => 'openid '.str_repeat('s', OidcAuthorizationService::MAX_SCOPE_LENGTH).' scope-inconnu'],
+            'invalid_request',
+        );
+    }
+
+    #[Test]
     public function an_oversized_code_challenge_is_refused_too(): void
     {
         // `code_challenge` (128) : un challenge démesuré échouerait de toute

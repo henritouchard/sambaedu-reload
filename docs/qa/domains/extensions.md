@@ -1028,7 +1028,46 @@ curl -s https://<host>/.well-known/openid-configuration | jq
 
 ---
 
+## Section 14 — Correctifs de review 55.2
+
+> Ajoutée après la review sonnet de la Story 55.2 (dev opus), findings évalués par l'orchestrateur.
+
+### Scénario 14.1 — Désactiver un compte coupe immédiatement son accès aux extensions
+
+**Contexte** : `users.is_active` ne gardait **rien** dans la chaîne OIDC. `SambaEduAuthGuard` valide l'état du compte côté **LDAP/AD** (ou `ExternalIdentity` pour une session fédérée), jamais cette colonne PostgreSQL — et les endpoints `/oidc/token` et `/oidc/userinfo` partent d'un code ou d'un jeton, sans traverser aucune session. La révocation d'un **client** était vérifiée ; la désactivation d'un **utilisateur** ne l'était pas.
+
+1. Faire un flux SSO complet vers une extension, conserver l'`access_token` (TTL 600 s par défaut).
+2. Vérifier que `GET /oidc/userinfo` avec ce Bearer répond 200 avec les claims.
+3. Désactiver le compte : `UPDATE users SET is_active = false WHERE login = '<login>';`
+4. Rappeler `/oidc/userinfo` avec **le même** Bearer.
+5. Variante token endpoint : relancer un `/oidc/authorize`, récupérer le `code`, désactiver le compte, **puis** échanger le code.
+
+**Attendu** :
+- (4) **401 `invalid_token`**, corps et en-têtes strictement identiques à ceux d'un jeton inconnu — aucun oracle sur l'état du compte. Journal `oidc` : `oidc.user_inactive`.
+- (5) **400 `invalid_grant`**, message identique à celui d'un code inconnu. **Aucun** id_token, **aucun** access_token émis.
+- Réactiver le compte et refaire un flux complet : tout refonctionne (le contrôle n'est pas un verrou définitif).
+
+**Pourquoi ce scénario existe** : c'est le geste d'exploitation le plus courant lors d'un départ ou d'une mesure disciplinaire. Sans ce contrôle, un compte désactivé continuait de voir son nom, son rôle et ses classes servis à des applications tierces pendant toute la fenêtre restante du jeton.
+
+### Scénario 14.2 — La clé étrangère `user_id` est bien posée en production
+
+**Contexte** : la FK est ajoutée en best-effort (`try/catch`), parce que SQLite — driver de la suite de tests — ne sait pas ajouter une contrainte à une table existante. Le `catch` interceptait aussi, en silence, un échec **réel** en PostgreSQL.
+
+1. Après `php artisan migrate` sur la VM, vérifier :
+   `\d oidc_access_tokens` dans `psql`, ou
+   `SELECT conname FROM pg_constraint WHERE conname = 'oidc_tokens_user_fk';`
+2. Inspecter `storage/logs/laravel.log` à la recherche de `oidc.migration.foreign_key_skipped`.
+
+**Attendu** : la contrainte existe, et **aucune** ligne `oidc.migration.foreign_key_skipped` n'a été écrite. Si cette ligne apparaît, la migration a réussi mais l'intégrité référentielle annoncée est absente — à traiter.
+
+**Pourquoi ce scénario existe** : le fail-closed applicatif ne dépend pas de la FK (un `user_id` orphelin donne `User::find() → null` → refus), donc l'absence de contrainte **ne casse rien de visible**. C'est exactement ce qui la rendrait indétectable pendant des mois.
+
+---
+
 ## Post-correctifs & non-régressions
+
+- **Section 14.1 — l'état du compte se vérifie à CHAQUE maillon, pas une fois pour toutes** : la chaîne OIDC part d'un code ou d'un jeton, jamais d'une session — aucun middleware d'authentification ne la protège. Toute donnée d'identité servie doit donc revérifier l'état du sujet (`users.is_active`) **et** celui du client (`oidc_clients.enabled`) au moment où elle est servie. Piège de fond : `SambaEduAuthGuard` contrôle l'état côté **LDAP/AD**, pas la colonne PostgreSQL — supposer que « le guard s'en occupe » est faux hors du web classique. La même vigilance vaudra pour les tokens de service de l'Epic 56.
+- **Section 14.2 — un `catch` best-effort doit rester bavard hors du cas qu'il vise** : intercepter `\Throwable` pour absorber une limite connue de SQLite absorbe aussi les vraies erreurs PostgreSQL. La règle : restreindre au driver concerné, ou au minimum journaliser — sinon la migration se déclare réussie en laissant fausse une garantie annoncée.
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
 - **Section 2.4 — la version prime sur le contenu** : décision reprise de la Story 33.2 (négociation du schéma d'échange amont). Un rejet de contenu sur un manifest de version future masquerait la vraie cause et ferait perdre du temps à l'admin.
@@ -1132,3 +1171,5 @@ curl -s https://<host>/.well-known/openid-configuration | jq
 - [ ] 13.9 Discovery : `userinfo_endpoint` + scopes/claims enrichis, **aucune clé 55.1 retirée ni renommée**
 - [ ] 13.10 Un claim n'autorise rien : `role=prof` n'ouvre aucune page admin, son absence n'en ferme aucune
 - [ ] 13.11 ~40 groupes : id_token émis et vérifiable, `/userinfo` rend la même liste
+- [ ] **14.1 Compte désactivé : `/userinfo` en 401 indistinct et échange de code en `invalid_grant`, réactivation OK**
+- [ ] 14.2 FK `oidc_tokens_user_fk` présente en PostgreSQL, aucun log `oidc.migration.foreign_key_skipped`

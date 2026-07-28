@@ -65,6 +65,19 @@ final class OidcErrorCodes
     // donnée — jamais un id_token aux claims partiels.
     public const USER_MISSING = 'oidc.user_missing';
 
+    // Correctif review 55.2 — le compte existe mais est DÉSACTIVÉ
+    // (`users.is_active = false`). Traité exactement comme un compte disparu :
+    // aucun jeton, aucune donnée, réponse indistincte. Seul le journal les
+    // sépare, pour que l'exploitant comprenne pourquoi une intégration cesse
+    // brusquement de fonctionner.
+    //
+    // ⚠️ Ce contrôle ne fait DOUBLON avec rien : `SambaEduAuthGuard` valide
+    // l'état du compte côté **LDAP/AD** (ou `ExternalIdentity` pour une session
+    // fédérée), jamais la colonne `users.is_active` de PostgreSQL. Dans la
+    // chaîne OIDC — qui part d'un code ou d'un jeton, sans session — cette
+    // colonne ne gardait donc absolument rien.
+    public const USER_INACTIVE = 'oidc.user_inactive';
+
     // --- `/userinfo` (Story 55.2). Ces trois codes ne se distinguent QUE dans
     //     le journal : la réponse HTTP est un 401 `invalid_token` indistinct,
     //     même doctrine que le token endpoint (pas d'oracle).
@@ -104,6 +117,7 @@ final class OidcErrorCodes
             self::CODE_VERIFIER_MISSING,
             self::CODE_VERIFIER_MISMATCH,
             self::USER_MISSING,
+            self::USER_INACTIVE,
             self::ACCESS_TOKEN_MISSING,
             self::ACCESS_TOKEN_INVALID,
             self::ACCESS_TOKEN_EXPIRED,

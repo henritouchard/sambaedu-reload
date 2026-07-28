@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -63,8 +64,24 @@ return new class extends Migration
                         ->on('users')
                         ->nullOnDelete();
                 });
-            } catch (\Throwable) {
-                // Driver sans ALTER ADD CONSTRAINT : ignoré volontairement.
+            } catch (\Throwable $e) {
+                // Correctif review 55.2 — le cas ATTENDU est SQLite, qui ne sait
+                // pas ajouter une contrainte à une table existante. Mais ce
+                // `catch` intercepte aussi un échec RÉEL en PostgreSQL (nom de
+                // contrainte déjà pris, droit `ALTER` manquant) : l'avaler en
+                // silence marquerait la migration réussie en laissant fausse la
+                // garantie d'intégrité annoncée ci-dessus — le genre de dérive
+                // qu'un audit découvre par accident, des mois plus tard.
+                //
+                // On n'échoue PAS la migration (le fail-closed applicatif ne
+                // dépend pas de la FK), mais on laisse une trace exploitable.
+                if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+                    Log::warning('[oidc] FK oidc_tokens_user_fk non posée', [
+                        'action_type' => 'oidc.migration.foreign_key_skipped',
+                        'driver' => Schema::getConnection()->getDriverName(),
+                        'reason' => $e->getMessage(),
+                    ]);
+                }
             }
         }
     }
