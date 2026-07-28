@@ -146,7 +146,11 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertNotNull($doc, 'la tuile Documentation est chargée');
         self::assertSame('/doc', $doc->entryUrl());
         self::assertSame(ExtensionType::Link, $doc->type);
-        self::assertSame(['admin', 'prof', 'eleve'], $doc->visibilityRoles());
+        // `administratif` ajouté en review 54.3 (#5) : cette population, écrite
+        // telle quelle par la sync, ouvrait sinon un lanceur SYSTÉMATIQUEMENT
+        // vide — la documentation est le contre-exemple parfait d'une
+        // application réservée aux enseignants et aux élèves.
+        self::assertSame(['admin', 'prof', 'eleve', 'administratif'], $doc->visibilityRoles());
     }
 
     #[Test]

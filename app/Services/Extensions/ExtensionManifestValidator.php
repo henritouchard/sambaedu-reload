@@ -117,7 +117,7 @@ class ExtensionManifestValidator
         // 4. Champs texte obligatoires restants.
         $name = $this->requiredString($manifest, 'name');
         $extensionVersion = $this->requiredString($manifest, 'version');
-        $entryUrl = $this->requiredString($manifest, 'entry_url');
+        $entryUrl = $this->assertEntryUrl($manifest);
 
         // 5. Visibilité (rôles métier — décision #2).
         $roles = $this->assertVisibilityRoles($manifest);
@@ -169,6 +169,45 @@ class ExtensionManifestValidator
         }
 
         return $normalized;
+    }
+
+    /**
+     * `entry_url` : chemin absolu de l'instance (`/doc`) ou URL http(s).
+     *
+     * Borné depuis la Story 54.3 : c'est elle qui a fait de `entry_url` un
+     * `href` CLIQUABLE dans le lanceur, exposé à tous les rôles visés — 54.1 et
+     * 54.2 se contentaient de l'afficher dans une fiche. Sans contrainte de
+     * schéma, `javascript:…` ou `data:text/html,…` passaient la validation.
+     * Blade échappe correctement (pas d'évasion d'attribut possible), donc ce
+     * n'était pas une injection HTML : c'est le SCHÉMA d'URL qui n'était pas
+     * borné.
+     *
+     * Durci ici et pas reporté, pour la même raison que `array_is_list()` en
+     * review 54.1 : sans effet sur la source embarquée (dépôt contrôlé),
+     * décisif dès que des sources DISTANTES fourniront des manifests non
+     * contrôlés (Epic 56) — et un contrat public durci APRÈS publication casse
+     * ses consommateurs (NFR11).
+     *
+     * @param  array<string, mixed>  $manifest
+     *
+     * @throws InvalidExtensionManifestException
+     */
+    private function assertEntryUrl(array $manifest): string
+    {
+        $entryUrl = $this->requiredString($manifest, 'entry_url');
+
+        $isAbsolutePath = str_starts_with($entryUrl, '/') && ! str_starts_with($entryUrl, '//');
+        $isHttpUrl = preg_match('#^https?://#i', $entryUrl) === 1;
+
+        if (! $isAbsolutePath && ! $isHttpUrl) {
+            throw InvalidExtensionManifestException::invalidField(
+                'entry_url',
+                'doit être un chemin absolu de l\'instance (« /doc ») ou une URL http(s) — '
+                .'tout autre schéma (javascript:, data:, file:…) est refusé',
+            );
+        }
+
+        return $entryUrl;
     }
 
     /**

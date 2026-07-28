@@ -335,6 +335,39 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
+    // ── Correctif de review 54.3 — schéma d'`entry_url` borné ─────────────
+
+    #[Test]
+    public function a_dangerous_entry_url_scheme_is_rejected(): void
+    {
+        // La Story 54.3 fait d'`entry_url` un href CLIQUABLE dans le lanceur,
+        // exposé à tous les rôles visés. Décisif dès l'Epic 56 (sources
+        // distantes, manifests non contrôlés).
+        foreach ([
+            'javascript:alert(document.cookie)',
+            'data:text/html,<script>alert(1)</script>',
+            'file:///etc/passwd',
+            'doc',            // relatif : ambigu selon la page courante
+            '//evil.example', // protocol-relative : sort de l'instance
+        ] as $bad) {
+            try {
+                $this->validator->validate($this->validManifest(['entry_url' => $bad]));
+                self::fail("L'entry_url « {$bad} » aurait dû être rejetée.");
+            } catch (InvalidExtensionManifestException $e) {
+                self::assertSame('entry_url', $e->field);
+            }
+        }
+    }
+
+    #[Test]
+    public function absolute_paths_and_http_urls_remain_accepted(): void
+    {
+        foreach (['/doc', '/ext/bbb', 'https://visio.example.test', 'http://intra.local/app'] as $ok) {
+            $normalized = $this->validator->validate($this->validManifest(['entry_url' => $ok]));
+            self::assertSame($ok, $normalized['entry_url']);
+        }
+    }
+
     #[Test]
     public function a_sparse_list_is_rejected_as_an_object(): void
     {

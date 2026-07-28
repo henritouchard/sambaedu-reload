@@ -407,6 +407,98 @@ class User extends Authenticatable implements Wireable
         return $this->role ?? 'autre';
     }
 
+    /**
+     * Story 54.3 — LA résolution canonique du rôle MÉTIER (`admin`/`prof`/
+     * `eleve`/`administratif`), 100 % Postgres, pensée pour un rendu
+     * omniprésent (la navbar, sur les 156 pages du produit).
+     *
+     * **Pourquoi cette méthode existe et pas une autre :**
+     *
+     * 1. **PAS `isProf()`/`isEleve()`/`isAdmin()`** ({@see self::isProf()},
+     *    {@see self::isEleve()}, {@see self::isAdmin()}) : ces méthodes sont
+     *    **LDAP-first**
+     *    (`ldapBusinessObject()?->isProf() ?? ...`) — `getLdapUser()` déclenche
+     *    `LdapUser::findByLogin()`, soit **une requête réseau LDAP par login**,
+     *    avec un cache seulement *request-scoped* (`self::$ldapCache`).
+     *    Dans une navbar rendue à CHAQUE page vue, par CHAQUE
+     *    utilisateur, ce serait un aller-retour LDAP systématique — le repo
+     *    interdit déjà ce pattern sur des rendus ailleurs (ex.
+     *    `app/Actions/Groups/BackfillUserGroupUserRoles.php:26`,
+     *    `app/Services/UserGroupService.php:1071`).
+     * 2. **PAS `hasRole('prof')`/`hasRole('eleve')` (Spatie)** : ces rôles
+     *    *existent* dans {@see \Database\Seeders\PermissionSeeder} mais la
+     *    sync AD→SQL ne les matérialise JAMAIS pour la population
+     *    synchronisée — c'est le périmètre de la Story 49.1, non implémentée.
+     *    `hasRole('prof')` renverrait `false` pour la quasi-totalité des
+     *    profs réels.
+     * 3. **PAS `$this->role` brut sans normalisation** : la colonne `role` a
+     *    TROIS écrivains au vocabulaire divergent — la sync AD→SQL
+     *    (`UserSyncService.php:503-508`, singulier `eleve|prof|administratif`),
+     *    l'auto-provisioning au login (`LdapUserProvider.php:120`,
+     *    `SambaEduAuthGuard.php:209` — **PLURIEL** `eleves|profs|administratifs`)
+     *    et `UserService` (`administratifs → 'admin'`). Un prof connecté avant
+     *    le prochain passage de sync porte `role='profs'` : un simple `===`
+     *    le raterait.
+     *
+     * **`'admin'` n'est JAMAIS déduit de `users.role`** : la valeur littérale
+     * `'admin'` en base est ambiguë (elle peut désigner un profil
+     * administratif via le roleMap `UserService`, et le compte protégé
+     * `admin` porte `role='autre'` en régime stable). Le SEUL signal fiable
+     * pour le rôle métier `admin` est le rôle Spatie `super-admin`
+     * ({@see \App\Enums\SambaRole::SuperAdmin}) — matérialisé de façon fiable
+     * par `grantAdminRights()` de la sync et par le drawer de délégation.
+     *
+     * **Coût** : 0 LDAP, 0 SQL pour `users.role` (déjà hydraté en mémoire par
+     * `Auth::login()` — `SambaEduAuthGuard.php:111-114`), au plus 1 SELECT
+     * Spatie par requête HTTP (relation mise en cache par le registrar Spatie).
+     * NFR9 tenu.
+     *
+     * **Résultat = un ENSEMBLE, jamais un scalaire** : un prof délégué
+     * `super-admin` renvoie `['prof', 'admin']` — il voit les deux familles
+     * de tuiles du lanceur.
+     *
+     * **Risque résiduel assumé, par écrit** : le mode `delta` de la sync AD ne
+     * rétrograde jamais `users.role` (Story 49.3, non implémentée) — un prof
+     * sorti du groupe AD Profs garde `role='prof'` jusqu'à réconciliation.
+     * Conséquence ICI : une tuile affichée à tort au pire jusqu'à la
+     * réconciliation suivante — **jamais une autorisation** (FR14 : la tuile
+     * est un affichage, l'autorisation réelle reste côté extension).
+     * Acceptable pour de l'affichage.
+     *
+     * **Point de modification unique** : cette méthode sera réutilisée/raffinée
+     * par le claim `role` du SSO (Story 55.2) et simplifiée quand 49.1/49.2
+     * matérialiseront Spatie et basculeront le runtime en Postgres-only — un
+     * seul endroit à faire évoluer, volontairement pas de classe résolveuse
+     * dédiée pour une seule méthode nommée et testée (fiche « pas de
+     * sur-conçu »).
+     *
+     * @return list<string>
+     */
+    public function businessRoles(): array
+    {
+        $roles = [];
+
+        // 1. users.role NORMALISÉ (colonne déjà hydratée par Auth::login() :
+        //    0 SQL). ⚠️ 'admin' est VOLONTAIREMENT mappé sur 'administratif',
+        //    JAMAIS sur 'admin' (valeur ambiguë — voir docblock ci-dessus).
+        $profile = match (strtolower(trim((string) $this->role))) {
+            'prof', 'profs' => 'prof',
+            'eleve', 'eleves' => 'eleve',
+            'administratif', 'administratifs', 'admin' => 'administratif',
+            default => null,   // 'autre', 'federated', vide…
+        };
+        if ($profile !== null) {
+            $roles[] = $profile;
+        }
+
+        // 2. Le rôle métier 'admin' vient EXCLUSIVEMENT de Spatie super-admin.
+        if ($this->hasRole(SambaRole::SuperAdmin->value)) {
+            $roles[] = 'admin';
+        }
+
+        return $roles;
+    }
+
     public function isActive(): bool
     {
         return (bool) $this->is_active;

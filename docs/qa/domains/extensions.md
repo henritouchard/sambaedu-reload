@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table). _Story 54.3 (lanceur « gaufre » navbar), Epics 55/56 (SSO, sources distantes) à ajouter en sections suivantes quand livrées._
+**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. _Epics 55/56 (SSO, sources distantes, type `app`) à ajouter en sections suivantes quand livrées._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -23,6 +23,11 @@
 - `routes/web.php` — `admin.extensions` et `admin.extensions.show` (groupe admin + `can:server.admin`)
 - `tests/Feature/ControlHub/UpstreamSyncExtensionsBoundaryTest.php` — frontière NFR14 (3 tables depuis 54.2)
 - `tests/Feature/Extensions/ExtensionLifecycleServiceTest.php` — transitions, no-op, atomicité, append-only (54.2)
+- `app/Models/User.php` — `businessRoles()` : résolution canonique du rôle métier, 100 % Postgres (54.3)
+- `app/Services/Extensions/ExtensionLauncherService.php` — `tilesFor()` : tuiles d'un utilisateur, lecture seule, 1 requête SQL (54.3)
+- `resources/views/components/organisms/app-launcher.blade.php` — SFC Livewire du lanceur « gaufre » (54.3)
+- `resources/views/components/organisms/navbar.blade.php` — insertion `<livewire:organisms.app-launcher />` (54.3)
+- `tests/Unit/Models/UserBusinessRolesTest.php`, `tests/Feature/Extensions/ExtensionLauncherServiceTest.php`, `tests/Feature/Livewire/AppLauncherTest.php` — matrice rôles×visibilités, fail-closed `app`/`available`, NFR9, FR14 (54.3)
 
 ---
 
@@ -37,7 +42,7 @@
   - `enseignant.test` — rôle `prof`, **sans** `server.admin`
 - Le site de documentation `/doc` doit être publié (Story 52.1, `bash scripts/update.sh`) pour que la cible de la tuile Documentation réponde.
 
-> **Rappel de périmètre 54.1** : les pages étaient en **lecture seule** à l'origine. **Depuis la Story 54.2**, les boutons « Intégrer » / « Désinstaller » existent pour le type `link` (cartes de la bibliothèque + fiche) — voir Section 7. Reste hors périmètre : aucun lanceur navbar (Story 54.3), aucune UI d'ajout de source distante ni cycle du type `app` (Epic 56).
+> **Rappel de périmètre 54.1** : les pages étaient en **lecture seule** à l'origine. **Depuis la Story 54.2**, les boutons « Intégrer » / « Désinstaller » existent pour le type `link` (cartes de la bibliothèque + fiche) — voir Section 7. **Depuis la Story 54.3**, le lanceur « gaufre » de la navbar rend les tuiles des extensions intégrées de type `link`, filtrées par rôle métier — voir Section 9. **L'Epic 54 est désormais complet.** Reste hors périmètre : aucune UI d'ajout de source distante, aucun cycle du type `app`, aucune santé/indisponibilité de tuile (FR35), aucun SSO/claims (Epics 55/56).
 
 ---
 
@@ -482,6 +487,116 @@ Déposer un manifest avec `"visibility": {"roles": {"a": "admin"}}` (objet au li
 
 ---
 
+## Section 9 — Lanceur d'applications navbar (Story 54.3)
+
+> **DERNIÈRE section de l'Epic 54** — le lanceur « gaufre » de la navbar, filtré par rôle métier, clôt l'epic. Composant : `resources/views/components/organisms/app-launcher.blade.php` (SFC Livewire `<livewire:organisms.app-launcher />`, inséré en tête du groupe d'icônes de droite de `navbar.blade.php`, visible sur **toutes** les pages de l'application). Résolution du rôle : `App\Models\User::businessRoles()`.
+
+### Scénario 9.1 — Tuile Documentation visible selon le rôle, après intégration
+
+**Pré-requis** : extension `doc` (`link` → `/doc`) **intégrée** (Section 7, scénario 7.1) avec `visibility.roles` couvrant au moins `prof`/`eleve`/`admin` selon le manifest livré.
+
+1. Se connecter en `enseignant.test` (rôle `prof`, sans `server.admin`) et ouvrir la gaufre (icône `fa-table-cells`) dans la navbar, sur n'importe quelle page de l'application.
+
+**Attendu** :
+- La gaufre est présente et cliquable sur toute page (elle ne dépend d'aucun droit `server.admin`).
+- Le panneau affiche une grille de tuiles avec au moins la tuile Documentation (icône + nom « Documentation »).
+- Cliquer la tuile ouvre `/doc` dans un **nouvel onglet** — l'onglet SE5, et donc le lanceur, reste ouvert (FR16).
+
+2. Répéter en `admin` (`super-admin`) et en un compte élève de test : la tuile Documentation doit apparaître pour chaque rôle couvert par `visibility.roles` du manifest.
+
+### Scénario 9.2 — Tuile absente pour un rôle hors visibilité
+
+1. Créer (tinker ou fixture) une extension `link` intégrée dont `manifest.visibility.roles = ["admin"]` uniquement.
+2. Se connecter en `enseignant.test` (rôle `prof`, pas `super-admin`) et ouvrir la gaufre.
+
+**Attendu** : la tuile de cette extension **n'apparaît pas** dans la grille — seule une tuile dont `visibility.roles` intersecte les rôles métier de l'utilisateur (`prof` ici) est affichée. Aucune erreur, aucune grille cassée.
+
+### Scénario 9.3 — La tuile masquée n'est PAS une protection (FR14)
+
+1. Reprendre l'extension de 9.2 (tuile masquée pour `enseignant.test`).
+2. Toujours en `enseignant.test`, taper directement l'URL cible de l'extension (`entry_url` du manifest, ex. `/doc`) dans le navigateur.
+
+**Attendu** : l'accès direct **fonctionne exactement comme si la tuile avait été cliquée** — masquer une tuile au lanceur ne bloque **rien** côté SE5 : aucune route, aucun middleware, aucune garde n'a été ajoutée devant `entry_url` par cette story. L'autorisation réelle appartient à la cible elle-même (les extensions `app` la feront par claims SSO, Epics 55+). Ce comportement est **voulu**, pas un bug — c'est la doctrine FR14 : le lanceur est un affichage, pas un contrôle d'accès.
+
+### Scénario 9.4 — Disparition de la tuile après désinstallation (solde l'AC d'epic 54.2)
+
+1. Extension `doc` `integrated`, tuile visible en 9.1.
+2. En `admin`, aller sur `/admin/extensions` et cliquer « Désinstaller » (Section 7, scénario 7.3).
+3. Recharger n'importe quelle page (ou rouvrir la gaufre sans recharger — un nouveau rendu du composant suffit).
+
+**Attendu** : la tuile Documentation **disparaît** du lanceur au rendu suivant. C'est l'AC d'epic 54 « sa tuile disparaît du lanceur », différé par 54.2 et vérifié ici pour de bon.
+
+### Scénario 9.5 — État vide propre
+
+1. En un utilisateur dont les rôles métier n'intersectent aucune tuile intégrée (ex. `role = 'autre'` sans `super-admin`), **ou** sur une instance sans aucune extension intégrée, ouvrir la gaufre.
+
+**Attendu** :
+- La gaufre reste présente et cliquable (elle ne disparaît jamais).
+- Le panneau affiche un message explicite (« Aucune application disponible. ») — jamais une grille vide silencieuse, jamais une erreur, jamais une page blanche.
+
+### Scénario 9.6 — Nouvel onglet, le lanceur reste ouvert (FR16)
+
+1. Depuis n'importe quelle page, ouvrir la gaufre et cliquer une tuile `link`.
+
+**Attendu** : la cible s'ouvre dans un **nouvel onglet** du navigateur (`target="_blank" rel="noopener"`). L'onglet d'origine (SE5, avec le lanceur) reste ouvert sur la même page — « revenir au lanceur » = revenir à cet onglet, sans chrome de retour à construire (réservé aux extensions `app`, starter kit Epics 56-58).
+
+### Scénario 9.7 — L'icône d'aide 52.8 coexiste avec la gaufre (décision documentée)
+
+1. Sur une page quelconque, observer le groupe d'icônes de droite de la navbar : icône d'aide « ? » (`/doc`, rendue seulement si la doc est publiée), puis la gaufre du lanceur, l'une à côté de l'autre.
+
+**Attendu** :
+- Les deux affordances coexistent, **sans conflit ni doublon fonctionnel visible** — l'icône d'aide est l'aide contextuelle du produit (52.8, indépendante d'un acte d'intégration) ; la gaufre est le lanceur d'applications intégrées (piloté par le registre).
+- Désinstaller l'extension Documentation (scénario 9.4) fait disparaître la tuile du lanceur, mais **ne touche pas** l'icône d'aide, qui reste fonctionnelle : ce sont deux mécanismes distincts, décision tranchée à la clôture de l'epic (point hérité de la review 54.1, `codeReviews/54-1.md#3`).
+- Aucun diff sur l'icône d'aide elle-même n'a été introduit par cette story.
+
+---
+
+## Section 10 — Correctifs de review 54.3
+
+> Ajoutée après la review opus de la Story 54.3. **Le scénario 10.1 est le plus important de tout ce runbook** : il porte sur une indisponibilité totale du produit.
+
+### Scénario 10.1 — Mise à jour en cours : SE5 reste debout sans la table `extensions`
+
+**Contexte** : `scripts/update.sh` sert le code neuf pendant tout `composer` + `npm` + build VitePress **avant** de lancer `migrate --force`. La release qui livre l'Epic 54 traverse donc forcément une fenêtre de plusieurs minutes où la table `extensions` n'existe pas encore, alors que la navbar — rendue sur **toutes** les pages — l'interroge.
+
+1. Sur une VM de test, renommer temporairement la table : `ALTER TABLE extensions RENAME TO extensions_bak;`
+2. Se connecter à SE5 et naviguer sur **plusieurs pages sans rapport avec les extensions** : `/app/users`, `/app/parc`, `/admin/settings`, une page legacy embarquée.
+3. Restaurer : `ALTER TABLE extensions_bak RENAME TO extensions;`
+
+**Attendu** :
+- **Toutes les pages répondent normalement (200)**, jamais une 500.
+- Le lanceur « gaufre » reste présent dans la navbar et affiche « Aucune application disponible. »
+- L'exception est **journalisée** dans `storage/logs/laravel.log` (jamais silencieuse).
+
+**Pourquoi ce scénario existe** : sans garde, une table absente faisait tomber l'intégralité de SE5 — y compris des pages sans aucun lien avec les extensions. Le symptôme avait d'ailleurs été observé en test (une page d'administration ISO Windows cessait de se rendre) et d'abord traité comme un problème de test, en recopiant la table dans le test concerné. C'était masquer la cause : le correctif est la dégradation gracieuse du lanceur, et ce scénario est ce qui la vérifie.
+
+### Scénario 10.2 — L'état vide se masque réellement quand il y a des tuiles
+
+1. Registre vide (ou rôle sans tuile visible) : ouvrir la gaufre → « Aucune application disponible. » **visible**.
+2. Intégrer la Documentation, recharger, rouvrir la gaufre.
+
+**Attendu** : la tuile apparaît **et** le message d'état vide **disparaît**. Les deux blocs sont toujours dans le DOM (c'est ce qui évite un `@if` de premier niveau et donc un 500 au re-render) — c'est la classe `hidden` qui bascule, pas la présence.
+
+**Pourquoi ce scénario existe** : le bloc étant rendu inconditionnellement, tester sa seule présence était tautologique. Retirer le ternaire — donc afficher « Aucune application disponible. » **sous** les tuiles de tous les utilisateurs qui en ont — laissait la suite de tests entièrement verte.
+
+### Scénario 10.3 — Un administratif voit la Documentation
+
+Se connecter avec un compte dont `users.role` vaut `administratif` (ou `administratifs`) et ouvrir la gaufre.
+
+**Attendu** : la tuile Documentation est présente.
+
+**Pourquoi ce scénario existe** : le contrat manifest v1 documente `admin`/`prof`/`eleve`, et le manifest livré ne visait que ces trois rôles — une population réelle, écrite telle quelle par la sync, ouvrait donc une gaufre systématiquement vide le jour de la clôture de l'epic. Le rôle a été ajouté au manifest (une chaîne, aucun code).
+
+### Scénario 10.4 — Une cible de manifest à schéma dangereux est refusée
+
+Déposer un manifest de test avec `"entry_url": "javascript:alert(1)"` (puis `data:text/html,…`, puis `//evil.example`), re-seeder.
+
+**Attendu** : chaque manifest est **rejeté**, log nommant `entry_url`. Les chemins absolus (`/doc`) et les URL `http(s)` restent acceptés.
+
+**Portée réelle** : sans effet sur la source embarquée (dépôt contrôlé) — décisif dès l'**Epic 56**, quand des sources distantes fourniront des manifests non contrôlés. La Story 54.3 est celle qui a fait d'`entry_url` un `href` cliquable exposé à tous les rôles visés.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
@@ -537,3 +652,14 @@ Déposer un manifest avec `"visibility": {"roles": {"a": "admin"}}` (objet au li
 - [ ] 8.1 Double-clic de confirmation : succès puis info, jamais « Extension #0 »
 - [ ] 8.2 Écran périmé : le no-op rafraîchit la carte (+ variante fiche disparue → retour bibliothèque)
 - [ ] 8.3 Trace d'audit survivant au prune : 2 lignes, `extension_id` null, clé lisible
+- [ ] 9.1 Tuile Documentation visible selon le rôle, après intégration, ouverture nouvel onglet
+- [ ] 9.2 Tuile absente pour un rôle hors visibilité
+- [ ] 9.3 Tuile masquée ≠ protection : accès direct `entry_url` toujours possible (FR14)
+- [ ] 9.4 Disparition de la tuile après désinstallation (solde l'AC d'epic 54.2)
+- [ ] 9.5 État vide propre : gaufre toujours présente, message explicite
+- [ ] 9.6 Nouvel onglet : `target="_blank" rel="noopener"`, le lanceur reste ouvert (FR16)
+- [ ] 9.7 Icône d'aide 52.8 et gaufre coexistent, désinstallation de la tuile n'affecte pas l'aide
+- [ ] **10.1 Table `extensions` absente : TOUTES les pages restent en 200, gaufre en état vide, exception journalisée**
+- [ ] 10.2 État vide réellement masqué quand des tuiles existent
+- [ ] 10.3 Un administratif voit la tuile Documentation
+- [ ] 10.4 `entry_url` à schéma dangereux refusée (`javascript:`, `data:`, `//`)

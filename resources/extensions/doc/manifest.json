@@ -11,6 +11,6 @@
   "scopes": [],
   "dependencies": [],
   "visibility": {
-    "roles": ["admin", "prof", "eleve"]
+    "roles": ["admin", "prof", "eleve", "administratif"]
   }
 }
