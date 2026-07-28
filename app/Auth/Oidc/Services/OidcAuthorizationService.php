@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Auth\Oidc\Services;
 
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Auth\Oidc\Support\OidcErrorCodes;
 use App\Auth\Oidc\Support\OidcSubjectResolver;
 use App\Models\OidcAuthorizationCode;
@@ -33,7 +34,9 @@ use Illuminate\Support\Facades\DB;
  *   3. — à partir d'ici seulement, les refus sont REDIRIGEABLES —
  *      `response_type` = `code`, `scope` contenant `openid`,
  *      `code_challenge` présent et `code_challenge_method` = `S256`
- *   4. nominal : émission du code
+ *   4. bornes de longueur des paramètres PERSISTÉS
+ *   5. (55.2) tous les scopes demandés appartiennent au catalogue FERMÉ
+ *   6. nominal : émission du code
  * ══════════════════════════════════════════════════════════════════════════
  *
  * **PKCE est OBLIGATOIRE, en S256 seul** (NFR1). Ni son absence ni la méthode
@@ -179,6 +182,33 @@ class OidcAuthorizationService
             return $this->redirectRefusal(
                 OidcErrorCodes::PARAMETER_TOO_LONG,
                 'invalid_request',
+                $clientId,
+                $redirectUri,
+                $state,
+            );
+        }
+
+        // ── 5. Story 55.2 — l'ensemble des scopes est FERMÉ ──────────────
+        // Un scope hors catalogue est REFUSÉ, jamais ignoré : l'ignorer
+        // reviendrait à laisser un client croire qu'il a obtenu quelque chose
+        // dont personne ne connaît la sémantique, et à préparer le jour où ce
+        // nom serait attribué à un vrai scope — qui deviendrait alors accordé
+        // rétroactivement. Fail-closed (NFR1).
+        //
+        // ⚠️ Ce contrôle vient APRÈS la borne de longueur, délibérément : un
+        // `scope` démesuré est d'abord un paramètre hors gabarit
+        // (`invalid_request`), pas un catalogue de scopes inconnus. L'ordre
+        // inverse changerait le code d'erreur rendu à un client dont le seul
+        // tort est d'envoyer une valeur monstrueuse.
+        $unsupported = array_diff(
+            OidcClaimsResolver::parseScope($scope),
+            OidcClaimsResolver::supportedScopes(),
+        );
+
+        if ($unsupported !== []) {
+            return $this->redirectRefusal(
+                OidcErrorCodes::SCOPE_UNSUPPORTED,
+                'invalid_scope',
                 $clientId,
                 $redirectUri,
                 $state,

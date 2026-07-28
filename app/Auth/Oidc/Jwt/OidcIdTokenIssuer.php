@@ -22,15 +22,20 @@ use Illuminate\Support\Str;
  * dans les contrôleurs, ni dans les modèles.
  *
  * ══════════════════════════════════════════════════════════════════════════
- *  STRUCTURE DE L'ID_TOKEN — figée par 55.1, CONTENU métier en 55.2
+ *  STRUCTURE DE L'ID_TOKEN — structure figée par 55.1, claims métier par 55.2
  *
  *  header : { alg: "RS256", typ: "JWT", kid: "<active_kid>" }
  *  claims : { iss, sub, aud, exp, iat, jti, nonce? }
+ *           + les claims MÉTIER scope-gatés fournis par l'appelant
+ *             ({@see \App\Auth\Oidc\Support\OidcClaimsResolver} — `name`,
+ *             `role`, `groups`, et RIEN d'autre : NFR5/NFR11).
  *
- *  **Rien d'autre.** `name`, `role` et `groups` appartiennent à la Story 55.2
- *  (qui s'appuiera sur `User::businessRoles()`). Le contrat de claims est
- *  versionné (NFR11) : on n'y met rien qu'on n'ait décidé, et le test du
- *  chemin nominal asserte l'ABSENCE des claims 55.2.
+ *  ⚠️ **LES CLAIMS STANDARDS SONT INÉCRASABLES.** L'ordre du `array_merge` est
+ *  LA garantie : `array_merge($metier, $standard)` — les claims standards sont
+ *  écrits EN DERNIER, donc gagnent toute collision. Un résolveur bugué (ou un
+ *  jour compromis) qui renverrait `sub`, `aud` ou `exp` ne peut pas altérer
+ *  l'identité, le destinataire ni la durée de vie du jeton. Vérifié par un
+ *  test d'injection dédié.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * **`sub`** est fourni par l'appelant, résolu par le point unique
@@ -63,10 +68,21 @@ class OidcIdTokenIssuer
      * Signe un id_token RS256 pour un couple (client, sujet).
      *
      * @param  string  $nonce  Relayé s'il est non vide (anti-rejeu côté client).
+     * @param  array<string, mixed>  $businessClaims  Claims MÉTIER déjà filtrés
+     *                                                par scope
+     *                                                ({@see \App\Auth\Oidc\Support\OidcClaimsResolver::claimsFor()}).
+     *                                                Cette classe ne les
+     *                                                interprète pas : elle
+     *                                                garantit seulement qu'ils
+     *                                                n'écrasent rien.
      * @return array{token: string, jti: string, exp: int, iat: int, kid: string}
      */
-    public function issueIdToken(OidcClient $client, string $subject, string $nonce = ''): array
-    {
+    public function issueIdToken(
+        OidcClient $client,
+        string $subject,
+        string $nonce = '',
+        array $businessClaims = [],
+    ): array {
         $kid = $this->keys->activeKid();
         $privateKey = $this->keys->loadPrivateKey();
 
@@ -75,7 +91,7 @@ class OidcIdTokenIssuer
         $exp = $now->copy()->addSeconds($ttl);
         $jti = (string) Str::uuid();
 
-        $claims = [
+        $standard = [
             'iss' => $this->issuer(),
             'sub' => $subject,
             'aud' => $client->client_id,
@@ -88,8 +104,15 @@ class OidcIdTokenIssuer
         // l'autorisation — et ne doit PAS apparaître sinon (un claim vide
         // laisserait croire à une protection anti-rejeu inexistante).
         if ($nonce !== '') {
-            $claims['nonce'] = $nonce;
+            $standard['nonce'] = $nonce;
         }
+
+        // ⚠️ ORDRE CRITIQUE — les standards EN DERNIER, donc gagnants.
+        // `array_merge` écrase la valeur d'une clé déjà vue par celle qui
+        // arrive après : aucun claim métier ne peut redéfinir `iss`, `sub`,
+        // `aud`, `iat`, `exp`, `jti` ni `nonce`. Inverser ces deux arguments
+        // ouvrirait une usurpation d'identité par le résolveur de claims.
+        $claims = array_merge($businessClaims, $standard);
 
         $token = JWT::encode($claims, $privateKey, 'RS256', $kid);
 
@@ -115,14 +138,23 @@ class OidcIdTokenIssuer
      * Émet l'access_token OPAQUE (CSPRNG) et persiste son sha256.
      *
      * La réponse du token endpoint DOIT contenir un `access_token`
-     * (RFC 6749 §5.1). En 55.1 il n'est consommé par rien ; `/userinfo` le lira
-     * en Story 55.2 — la table est donc posée dès maintenant pour éviter une
-     * re-plomberie du token endpoint.
+     * (RFC 6749 §5.1). Story 55.2 : il est désormais CONSOMMÉ par `/userinfo`.
      *
+     * @param  string  $subject  Le `sub` DÉJÀ RÉSOLU (valeur publiée) — stocké
+     *                           pour garantir l'égalité `sub` id_token ⇄
+     *                           `sub` userinfo par construction.
+     * @param  int|null  $userId  La clé de jointure vers `users`. C'est ELLE
+     *                            qui sert à recalculer les claims à l'appel de
+     *                            `/userinfo` — jamais le `subject`, qui n'est
+     *                            pas une clé (55.2, migration `310000`).
      * @return array{clear: string, expires_in: int, expires_at: Carbon}
      */
-    public function issueAccessToken(OidcClient $client, string $subject, string $scope): array
-    {
+    public function issueAccessToken(
+        OidcClient $client,
+        string $subject,
+        string $scope,
+        ?int $userId = null,
+    ): array {
         $ttl = (int) config('oidc.access_token_ttl', 600);
         $expiresAt = Carbon::now()->addSeconds($ttl);
 
@@ -132,6 +164,7 @@ class OidcIdTokenIssuer
 
         OidcAccessToken::query()->create([
             'oidc_client_id' => $client->id,
+            'user_id' => $userId,
             'user_login' => $subject,
             'token_hash' => hash('sha256', $clear),
             'scope' => $scope === '' ? 'openid' : $scope,

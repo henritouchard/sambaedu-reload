@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\Oidc;
 
 use App\Auth\Oidc\Services\OidcAuthorizationService;
+use App\Auth\Oidc\Support\OidcClaimsResolver;
+use App\Auth\Oidc\Support\OidcErrorCodes;
 use App\Http\Middleware\Auth\AuditExternalAction;
 use App\Http\Middleware\Auth\SambaEduAuth;
 use App\Models\OidcAuthorizationCode;
@@ -12,6 +14,7 @@ use App\Models\OidcClient;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Feature\Oidc\Concerns\CapturesOidcLogs;
 use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
@@ -40,6 +43,7 @@ use Tests\TestCase;
  */
 class OidcAuthorizeRefusalsTest extends TestCase
 {
+    use CapturesOidcLogs;
     use RefreshDatabase;
     use UsesOidcTestKeys;
 
@@ -329,6 +333,60 @@ class OidcAuthorizeRefusalsTest extends TestCase
             ['code_challenge' => str_repeat('c', OidcAuthorizationService::MAX_CODE_CHALLENGE_LENGTH + 1)],
             'invalid_request',
         );
+    }
+
+    // ── Story 55.2 / AC4 — l'ensemble des scopes est FERMÉ ────────────────
+
+    #[Test]
+    public function an_unsupported_scope_is_refused_with_invalid_scope_and_journaled(): void
+    {
+        // AC4 : un scope inconnu ne peut PAS être « accordé silencieusement ».
+        // L'ignorer laisserait un client croire qu'il a obtenu quelque chose —
+        // et le jour où `foo` deviendrait un vrai scope, il serait accordé
+        // rétroactivement à qui le demandait déjà.
+        $this->captureLogs();
+
+        $this->assertRedirectableRefusal(['scope' => 'openid profile foo'], 'invalid_scope');
+
+        self::assertContains(
+            OidcErrorCodes::SCOPE_UNSUPPORTED,
+            $this->loggedCodes(),
+            'le code FIN doit partir au journal — la réponse OAuth, elle, reste générique',
+        );
+    }
+
+    #[Test]
+    public function the_three_supported_scopes_are_accepted_together(): void
+    {
+        // Contrôle POSITIF du test précédent : sans lui, un contrôle de scopes
+        // qui refuserait TOUT passerait le test de refus haut la main.
+        $client = $this->makeClient();
+
+        $response = $this->authorize($client, ['scope' => 'openid profile groups']);
+
+        $response->assertStatus(302);
+        self::assertStringStartsWith(self::DECLARED_URI.'?code=', (string) $response->headers->get('Location'));
+        self::assertSame('openid profile groups', OidcAuthorizationCode::query()->first()?->scope);
+    }
+
+    #[Test]
+    public function the_supported_scope_set_is_exactly_the_one_the_discovery_announces(): void
+    {
+        // Le catalogue est une SOURCE UNIQUE : la discovery et le validateur
+        // doivent lire la même. Deux listes divergentes annonceraient un
+        // contrat que le flux ne tient pas.
+        self::assertSame(['openid', 'profile', 'groups'], OidcClaimsResolver::supportedScopes());
+
+        $announced = $this->get('/.well-known/openid-configuration')->assertOk()->json('scopes_supported');
+        self::assertSame(OidcClaimsResolver::supportedScopes(), $announced);
+    }
+
+    #[Test]
+    public function an_unsupported_scope_alone_is_refused_too(): void
+    {
+        // Variante sans `profile` : le refus ne dépend pas de la présence d'un
+        // scope valide à côté.
+        $this->assertRedirectableRefusal(['scope' => 'openid email'], 'invalid_scope');
     }
 
     #[Test]

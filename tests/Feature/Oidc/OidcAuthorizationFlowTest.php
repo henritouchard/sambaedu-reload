@@ -188,9 +188,19 @@ class OidcAuthorizationFlowTest extends TestCase
         self::assertNotEmpty($claims['jti']);
         self::assertLessThanOrEqual(300, $claims['exp'] - $claims['iat'], 'TTL court (NFR1)');
 
-        // ⚠️ CONTRAT VERSIONNÉ (NFR11) : 55.1 pose la STRUCTURE, pas le
-        // contenu métier. `name`/`role`/`groups` appartiennent à la 55.2 —
-        // les émettre ici publierait un contrat qu'on n'a pas décidé.
+        // ⚠️ CONTRAT VERSIONNÉ (NFR11).
+        //
+        // Story 55.2 — cette assertion ÉVOLUE DE SENS sans changer de forme.
+        // En 55.1 elle disait « les claims métier n'existent pas encore ».
+        // Depuis 55.2 ils existent — et ce flux demande `scope=openid` SEUL :
+        // elle prouve désormais le SCOPE-GATING (un scope non demandé ne
+        // produit rien, NFR5), ce qui est une exigence strictement plus forte.
+        // La preuve positive est dans `OidcIdTokenClaimsTest`.
+        self::assertSame(
+            'openid',
+            OidcAccessToken::query()->first()?->scope,
+            'ce flux demande bien `openid` seul — sans quoi l\'absence ci-dessous ne prouverait rien',
+        );
         self::assertArrayNotHasKey('name', $claims);
         self::assertArrayNotHasKey('role', $claims);
         self::assertArrayNotHasKey('groups', $claims);

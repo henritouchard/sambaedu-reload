@@ -1272,9 +1272,9 @@ Route::match(['GET', 'POST'], '/ipxe/Win10/unattend.xml.php', [$tombstone, 'xml'
 
 /*
 |--------------------------------------------------------------------------
-| Story 55.1 — SE5 FOURNISSEUR OIDC (Epic 55 — SSO des extensions)
+| Stories 55.1 / 55.2 — SE5 FOURNISSEUR OIDC (Epic 55 — SSO des extensions)
 |--------------------------------------------------------------------------
-| Quatre routes, deux natures :
+| Cinq routes, deux natures :
 |
 | 1. PUBLIQUES ET STATELESS — la discovery et le JWKS ne révèlent que des
 |    métadonnées de protocole et une clé PUBLIQUE. Les exiger authentifiées
@@ -1325,6 +1325,22 @@ Route::get('/oidc/authorize', \App\Auth\Oidc\Http\Controllers\AuthorizeControlle
 Route::post('/oidc/token', \App\Auth\Oidc\Http\Controllers\TokenController::class)
     ->middleware('throttle:60,1')
     ->name('oidc.token')
+    ->withoutMiddleware(['web']);
+
+/*
+| 4. Story 55.2 — `/oidc/userinfo` : le client présente son access_token
+|    opaque en `Authorization: Bearer` et reçoit `{sub, …claims du scope}`.
+|    GET **et** POST : OIDC Core §5.3.1 impose les deux. Stateless
+|    (`withoutMiddleware(['web'])`) — l'appelant est un serveur porteur d'un
+|    jeton, il n'a ni cookie ni jeton CSRF ; son authentification EST le
+|    Bearer. Pas de `sambaedu.auth`, donc pas de `federated.audit` :
+|    l'invariant `FederatedAuditCoverageTest` ne vise que les routes du
+|    guard, et l'imputabilité fédérée est déjà écrite à l'autorisation
+|    (Section 12.1 du runbook QA).
+*/
+Route::match(['get', 'post'], '/oidc/userinfo', \App\Auth\Oidc\Http\Controllers\UserinfoController::class)
+    ->middleware('throttle:60,1')
+    ->name('oidc.userinfo')
     ->withoutMiddleware(['web']);
 
 /*

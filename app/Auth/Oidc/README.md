@@ -1,6 +1,6 @@
 # `App\Auth\Oidc` — SE5 fournisseur d'identité OIDC
 
-**Story 55.1** (Epic 55 — SSO des extensions). Document d'accueil pour 55.2, 55.3 et l'Epic 56.
+**Stories 55.1 et 55.2** (Epic 55 — SSO des extensions). Document d'accueil pour 55.3 et l'Epic 56.
 
 ## Où ce namespace se situe
 
@@ -14,13 +14,14 @@ SE5 a trois rôles d'authentification, un namespace chacun, mêmes règles :
 
 Règles communes : frontière d'import `Firebase\JWT`, channel de log dédié, aucune inclusion `legacy/*`, aucun secret en clair ni en base ni en journal.
 
-## Ce que 55.1 livre (et ce qu'elle ne livre pas)
+## Ce que 55.1 et 55.2 livrent (et ce qu'elles ne livrent pas)
 
-Livré : registre de clients confidentiels, flux **Authorization Code + PKCE (S256 obligatoire)**, discovery, JWKS, id_token RS256, access_token opaque, refus journalisés fail-closed.
+**55.1** : registre de clients confidentiels, flux **Authorization Code + PKCE (S256 obligatoire)**, discovery, JWKS, id_token RS256, access_token opaque, refus journalisés fail-closed.
+
+**55.2** : le **contrat de claims v1** (`name`, `role`, `groups`, scope-gatés), `GET|POST /oidc/userinfo`, l'ensemble **fermé** des scopes (`openid`, `profile`, `groups` — l'inconnu est refusé), `userinfo_endpoint` à la discovery.
 
 Non livré, volontairement :
 
-- claims `name`/`role`/`groups` et `/userinfo` → **Story 55.2** (le contrat de claims se gèle là, NFR11) ;
 - app-témoin et suite de tests d'attaque → **Story 55.3** ;
 - scopes consentis, `client_credentials`, provisioning automatique du client à l'installation d'une extension `app`, UI admin → **Epic 56** ;
 - écran de consentement utilisateur : **il n'y en a pas**. Le consentement des scopes est un acte admin à l'installation, pas un dialogue.
@@ -38,15 +39,18 @@ app/Auth/Oidc/
 ├── Http/Controllers/
 │   ├── DiscoveryController.php   GET /.well-known/openid-configuration, GET /oidc/jwks  (publics, stateless)
 │   ├── AuthorizeController.php   GET /oidc/authorize   (navigateur, derrière `sambaedu.auth`)
-│   └── TokenController.php       POST /oidc/token      (serveur-à-serveur, stateless)
+│   ├── TokenController.php       POST /oidc/token      (serveur-à-serveur, stateless)
+│   └── UserinfoController.php    GET|POST /oidc/userinfo  (Bearer en en-tête UNIQUEMENT — 55.2)
 ├── Jwt/OidcIdTokenIssuer.php     ⚠️ SEUL fichier autorisé à importer Firebase\JWT
 ├── Keys/OidcKeyManager.php       génération/lecture de la paire RS256 dédiée + export JWKS
 ├── Services/
 │   ├── OidcClientRegistry.php        register / authenticate / revoke  ← point d'accroche Epic 56
-│   └── OidcAuthorizationService.php  validation, émission et consommation des codes
+│   ├── OidcAuthorizationService.php  validation, émission et consommation des codes
+│   └── OidcAccessTokenValidator.php  verdict sur un Bearer opaque (55.2)  ← réutilisé par Epic 56
 └── Support/
     ├── OidcErrorCodes.php        codes INTERNES (journal uniquement)
-    └── OidcSubjectResolver.php   ⚠️ POINT UNIQUE de résolution du claim `sub`
+    ├── OidcSubjectResolver.php   ⚠️ POINT UNIQUE de résolution du claim `sub`
+    └── OidcClaimsResolver.php    ⚠️ LE CONTRAT DE CLAIMS v1 (55.2) — gelé, additif seulement
 ```
 
 Modèles : `App\Models\{OidcClient, OidcAuthorizationCode, OidcAccessToken}` — cohérence avec `Extension*`, l'UI admin de l'Epic 56 les lira.
@@ -62,6 +66,23 @@ Modèles : `App\Models\{OidcClient, OidcAuthorizationCode, OidcAccessToken}` —
 7. **Fail-closed.** Clé absente ⇒ exception explicite, jamais d'émission dégradée. JWKS non initialisé ⇒ 503, jamais un `{"keys": []}` en 200 (qui serait mis en cache par les clients).
 8. **Frontière crypto** : seul `OidcIdTokenIssuer` importe `Firebase\JWT` — verrouillé par `tests/Architecture/OidcRoutesTest`.
 9. **Clé de signature DÉDIÉE.** Jamais celle d'`auth_v1` (non publiée, alors que le JWKS est public), jamais `APP_KEY`.
+10. **Les claims standards sont inécrasables** (55.2). `array_merge($claimsMétier, $standard)` dans l'émetteur : l'ordre EST la garantie. Inverser les arguments ouvrirait une usurpation d'identité par le résolveur de claims.
+11. **L'ensemble des scopes est FERMÉ** (55.2). Un scope hors `OidcClaimsResolver::supportedScopes()` est refusé (`invalid_scope`), jamais ignoré : l'ignorer laisserait croire à un accord, et le jour où ce nom deviendrait un vrai scope il serait accordé rétroactivement.
+12. **L'utilisateur se résout par `user_id`, jamais par le `sub`** (55.2). Le `sub` est une valeur PUBLIÉE, pas une clé de jointure — d'où `oidc_access_tokens.user_id`.
+
+## Le contrat de claims v1 (Story 55.2 — GELÉ, NFR11)
+
+| Scope | Claims produits | Source (SQL uniquement) |
+|---|---|---|
+| `openid` (obligatoire) | `sub` | `OidcSubjectResolver::for()` |
+| `profile` | `name`, `role` | `users.display_name` ; `User::businessRoles()[0]` — **clé absente** si non résoluble |
+| `groups` | `groups` | `user_groups` de types `classe` + `equipe`, noms nus triés, `[]` possible |
+
+- **Vocabulaire fermé de `role`** : `prof`, `eleve`, `administratif`, `admin`. Jamais `autre`, jamais `federated`, jamais un rôle Spatie brut. **Scalaire**, jamais un tableau.
+- **Règle d'évolution** : on **AJOUTE**, on ne retire ni ne renomme jamais, et on ne change jamais le type d'un claim. Un claim `roles` (ensemble complet) ou un scope supplémentaire sont des évolutions additives légitimes sur besoin démontré.
+- **Pas d'`email`, même sous `profile`** — dérogation ASSUMÉE au scope OIDC standard. La population contient des élèves mineurs et NFR5 dit « identité, rôle, groupes du contexte — rien d'autre ». Ni `given_name`/`family_name`, ni attribut d'annuaire (`ad_guid`, `dn`, `memberOf`), ni permission Spatie. **C'est un choix, pas un oubli.**
+- **Un claim est une DONNÉE, pas une autorisation.** `role=prof` n'ouvre aucun droit — ni dans SE5, ni dans l'extension. Même distinction que la tuile du lanceur (FR14 : afficher n'est pas protéger). L'autorisation réelle reste côté extension, sur la base de SES règles.
+- **`/userinfo`** rend exactement `{sub}` + les claims du scope DU JETON, recalculés depuis l'état SQL courant. Bearer en **en-tête uniquement** (un jeton en query est ignoré, donc refusé). Refus : 401 `invalid_token` INDISTINCT entre jeton inconnu / expiré / client révoqué / utilisateur disparu.
 
 ## Catalogue `action_type` (channel `oidc`)
 
@@ -72,8 +93,9 @@ Modèles : `App\Models\{OidcClient, OidcAuthorizationCode, OidcAccessToken}` —
 | `oidc.authorize.granted` / `oidc.authorize.rejected` | `AuthorizeController` |
 | `oidc.token.issued` | `OidcIdTokenIssuer` |
 | `oidc.token.rejected` | `TokenController`, `OidcClientRegistry` |
+| `oidc.userinfo.served` / `oidc.userinfo.rejected` | `UserinfoController` (55.2) |
 
-**Jamais loggés** : secret client (clair ou hash), code d'autorisation clair, access_token clair, id_token complet, clé privée. Pour corréler une émission et un échange, utiliser un préfixe de hash de 8 caractères (patron `WorkstationJwtVerifier::logRejection()`).
+**Jamais loggés** : secret client (clair ou hash), code d'autorisation clair, access_token clair, id_token complet, clé privée — et, depuis 55.2, **toute PII** : `sub`, `name`, `groups`. Pour corréler une émission et un échange, utiliser un préfixe de hash de 8 caractères (patron `WorkstationJwtVerifier::logRejection()`).
 
 ## Exploitation
 

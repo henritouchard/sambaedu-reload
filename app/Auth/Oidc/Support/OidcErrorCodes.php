@@ -37,6 +37,13 @@ final class OidcErrorCodes
     //     réponse OAuth normalisée sur sa propre `redirect_uri`).
     public const UNSUPPORTED_RESPONSE_TYPE = 'oidc.unsupported_response_type';
     public const SCOPE_MISSING_OPENID = 'oidc.scope_missing_openid';
+
+    // Story 55.2 — l'ensemble des scopes est FERMÉ
+    // ({@see \App\Auth\Oidc\Support\OidcClaimsResolver::supportedScopes()}) :
+    // un scope inconnu est refusé, jamais ignoré. Ignorer reviendrait à
+    // « accorder » un scope dont personne ne connaît la sémantique.
+    public const SCOPE_UNSUPPORTED = 'oidc.scope_unsupported';
+
     public const PKCE_MISSING = 'oidc.pkce_missing';
     public const PKCE_METHOD_UNSUPPORTED = 'oidc.pkce_method_unsupported';
     public const PARAMETER_TOO_LONG = 'oidc.parameter_too_long';
@@ -51,6 +58,19 @@ final class OidcErrorCodes
     public const CODE_CLIENT_MISMATCH = 'oidc.code_client_mismatch';
     public const CODE_VERIFIER_MISSING = 'oidc.code_verifier_missing';
     public const CODE_VERIFIER_MISMATCH = 'oidc.code_verifier_mismatch';
+
+    // Story 55.2 — l'utilisateur du code (ou du jeton) n'est plus résoluble :
+    // compte supprimé entre l'autorisation et l'échange, ou entre l'émission
+    // du jeton et l'appel à `/userinfo`. Fail-closed : AUCUN jeton, AUCUNE
+    // donnée — jamais un id_token aux claims partiels.
+    public const USER_MISSING = 'oidc.user_missing';
+
+    // --- `/userinfo` (Story 55.2). Ces trois codes ne se distinguent QUE dans
+    //     le journal : la réponse HTTP est un 401 `invalid_token` indistinct,
+    //     même doctrine que le token endpoint (pas d'oracle).
+    public const ACCESS_TOKEN_MISSING = 'oidc.access_token_missing';
+    public const ACCESS_TOKEN_INVALID = 'oidc.access_token_invalid';
+    public const ACCESS_TOKEN_EXPIRED = 'oidc.access_token_expired';
 
     // --- Session / configuration.
     public const NO_SESSION = 'oidc.no_session';
@@ -70,6 +90,7 @@ final class OidcErrorCodes
             self::REDIRECT_URI_MISMATCH,
             self::UNSUPPORTED_RESPONSE_TYPE,
             self::SCOPE_MISSING_OPENID,
+            self::SCOPE_UNSUPPORTED,
             self::PKCE_MISSING,
             self::PKCE_METHOD_UNSUPPORTED,
             self::PARAMETER_TOO_LONG,
@@ -82,6 +103,10 @@ final class OidcErrorCodes
             self::CODE_CLIENT_MISMATCH,
             self::CODE_VERIFIER_MISSING,
             self::CODE_VERIFIER_MISMATCH,
+            self::USER_MISSING,
+            self::ACCESS_TOKEN_MISSING,
+            self::ACCESS_TOKEN_INVALID,
+            self::ACCESS_TOKEN_EXPIRED,
             self::NO_SESSION,
             self::KEYS_UNAVAILABLE,
         ];

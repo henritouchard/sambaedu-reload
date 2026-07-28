@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Auth\Oidc\Http\Controllers;
 
 use App\Auth\Oidc\Keys\OidcKeyManager;
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Auth\Oidc\Support\OidcErrorCodes;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
@@ -26,9 +27,13 @@ use Throwable;
  *
  * ⚠️ **Ces deux documents sont un CONTRAT PUBLIC gelé à la première
  * publication** : une extension déployée lit la discovery une fois et met en
- * cache. Retirer ou renommer une clé casse les intégrations existantes.
- * `userinfo_endpoint` est VOLONTAIREMENT absent en 55.1 — l'annoncer avant
- * d'avoir l'endpoint (Story 55.2) ferait échouer les clients qui l'appellent.
+ * cache. Retirer ou renommer une clé casse les intégrations existantes — on
+ * n'AJOUTE que des clés (NFR11).
+ *
+ * Story 55.2 : `userinfo_endpoint` est désormais annoncé (l'endpoint existe),
+ * `scopes_supported` reflète l'ensemble FERMÉ des scopes acceptés et
+ * `claims_supported` s'enrichit de `name`/`role`/`groups`. Aucune clé de 55.1
+ * n'a été retirée ni renommée — l'additivité est vérifiée par test.
  *
  * ⚠️ Le JSON est en anglais normatif (contrat standard), contrairement aux
  * messages destinés aux humains.
@@ -52,6 +57,9 @@ class DiscoveryController extends Controller
             'token_endpoint' => route('oidc.token'),
             'jwks_uri' => route('oidc.jwks'),
 
+            // Story 55.2 — annoncé SEULEMENT maintenant que l'endpoint existe.
+            'userinfo_endpoint' => route('oidc.userinfo'),
+
             // UN SEUL flux est supporté : Authorization Code + PKCE. Les flux
             // implicite et hybride exposent des jetons dans la barre d'adresse
             // — ils ne seront pas ajoutés.
@@ -61,7 +69,12 @@ class DiscoveryController extends Controller
 
             'subject_types_supported' => ['public'],
             'id_token_signing_alg_values_supported' => ['RS256'],
-            'scopes_supported' => ['openid'],
+
+            // Story 55.2 — ensemble FERMÉ, servi par la source UNIQUE du
+            // mapping scope→claims : un scope annoncé ici est un scope
+            // accepté à l'autorisation, et réciproquement. Deux listes
+            // divergentes annonceraient un contrat non tenu.
+            'scopes_supported' => OidcClaimsResolver::supportedScopes(),
 
             // PKCE OBLIGATOIRE, S256 seul : `plain` n'est pas annoncé, donc
             // aucun client conforme ne le tentera.
@@ -72,9 +85,14 @@ class DiscoveryController extends Controller
                 'client_secret_post',
             ],
 
-            'claims_supported' => ['iss', 'sub', 'aud', 'exp', 'iat', 'jti', 'nonce'],
-
-            // ⚠️ `userinfo_endpoint` : Story 55.2. Ne pas l'ajouter ici.
+            // Story 55.2 — ÉVOLUTION ADDITIVE (NFR11) : les 7 claims standards
+            // publiés en 55.1 restent présents, à l'identique et dans le même
+            // ordre ; `name`, `role` et `groups` s'ajoutent APRÈS. Retirer ou
+            // renommer l'un d'eux casserait les extensions déjà intégrées.
+            'claims_supported' => [
+                'iss', 'sub', 'aud', 'exp', 'iat', 'jti', 'nonce',
+                'name', 'role', 'groups',
+            ],
         ]);
     }
 

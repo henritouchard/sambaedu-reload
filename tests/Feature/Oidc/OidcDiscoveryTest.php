@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Oidc;
 
 use App\Auth\Oidc\Jwt\OidcIdTokenIssuer;
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Models\OidcClient;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
@@ -18,9 +19,14 @@ use Tests\TestCase;
  *
  * Ces deux documents sont un **CONTRAT PUBLIC gelé à la première
  * publication** : une extension déployée lit la discovery une fois et met en
- * cache. Ce fichier verrouille donc leur forme, y compris par la NÉGATIVE
- * (`userinfo_endpoint` absent tant que la 55.2 n'a pas livré l'endpoint —
- * l'annoncer trop tôt ferait échouer les clients qui l'appellent).
+ * cache. Ce fichier verrouille donc leur forme.
+ *
+ * **Story 55.2** — l'assertion négative `userinfo_endpoint` absent (garde
+ * « pas avant l'heure » de 55.1) est devenue son inverse : l'endpoint existe,
+ * il doit être annoncé. La protection qu'elle portait n'est pas perdue, elle
+ * est remontée d'un cran — `the_discovery_evolved_additively_from_the_55_1_contract()`
+ * fige désormais CHAQUE clé publiée en 55.1 (nom ET valeur) : c'est une
+ * exigence plus forte que celle qu'elle remplace (NFR11).
  *
  * Le test du JWKS ne se contente pas de comparer des chaînes : il
  * **reconstruit une clé publique RSA depuis les seuls `n` et `e` publiés**, et
@@ -69,14 +75,90 @@ class OidcDiscoveryTest extends TestCase
         );
     }
 
+    /**
+     * Story 55.2 — **ÉVOLUTION** de l'assertion 55.1
+     * `the_discovery_document_does_not_yet_announce_userinfo`.
+     *
+     * Elle assertait l'ABSENCE de `userinfo_endpoint` : c'était une garde
+     * « pas avant l'heure » (annoncer un endpoint inexistant fait échouer tout
+     * client qui suit la discovery à la lettre). L'heure est arrivée —
+     * l'endpoint existe, il DOIT être annoncé, sans quoi aucun client standard
+     * ne le trouverait. La garde ne disparaît pas : elle devient l'assertion
+     * INVERSE, et l'exigence de non-régression est reprise, plus forte, par
+     * {@see self::the_discovery_evolved_additively_from_the_55_1_contract()}.
+     */
     #[Test]
-    public function the_discovery_document_does_not_yet_announce_userinfo(): void
+    public function the_discovery_document_announces_the_userinfo_endpoint_and_the_closed_scope_set(): void
     {
         $body = $this->get('/.well-known/openid-configuration')->assertOk()->json();
 
-        // Story 55.2 livrera `/userinfo`. L'annoncer avant qu'il existe
-        // ferait échouer tout client qui suit la discovery à la lettre.
-        self::assertArrayNotHasKey('userinfo_endpoint', $body);
+        self::assertSame(route('oidc.userinfo'), $body['userinfo_endpoint'] ?? null);
+
+        // Ensemble FERMÉ : ce qui est annoncé est exactement ce qui est
+        // accepté à l'autorisation (test miroir dans OidcAuthorizeRefusalsTest).
+        self::assertSame(['openid', 'profile', 'groups'], $body['scopes_supported']);
+        self::assertSame(
+            OidcClaimsResolver::supportedScopes(),
+            $body['scopes_supported'],
+            'la discovery et le validateur de scopes lisent la MÊME source',
+        );
+
+        self::assertSame(
+            ['iss', 'sub', 'aud', 'exp', 'iat', 'jti', 'nonce', 'name', 'role', 'groups'],
+            $body['claims_supported'],
+        );
+
+        // NFR5 — la liste de claims annoncée est FERMÉE elle aussi : rien qui
+        // ressemble à de la PII hors contrat ne doit y apparaître, même
+        // « juste » comme métadonnée (un intégrateur lirait la discovery et
+        // demanderait le claim).
+        foreach (['email', 'given_name', 'family_name', 'picture', 'locale', 'ad_guid', 'dn'] as $forbidden) {
+            self::assertNotContains($forbidden, $body['claims_supported'], 'claim hors contrat : '.$forbidden);
+        }
+    }
+
+    /**
+     * Story 55.2 — **NFR11 vérifié, pas seulement affirmé** : la discovery ne
+     * peut évoluer QU'ADDITIVEMENT.
+     *
+     * Une extension déployée lit ce document une fois et le met en cache. Ce
+     * test fige, clé par clé et valeur par valeur, ce que 55.1 a publié : tout
+     * retrait, tout renommage et toute modification de valeur le fait échouer.
+     * Les ajouts, eux, passent — c'est exactement l'asymétrie du contrat.
+     */
+    #[Test]
+    public function the_discovery_evolved_additively_from_the_55_1_contract(): void
+    {
+        $body = $this->get('/.well-known/openid-configuration')->assertOk()->json();
+
+        // Le document TEL QUE 55.1 l'a publié — recopié ici volontairement,
+        // pas dérivé du code : un test qui lit la même source que
+        // l'implémentation ne prouverait rien.
+        $contract55_1 = [
+            'issuer' => $this->testIssuer,
+            'authorization_endpoint' => route('oidc.authorize'),
+            'token_endpoint' => route('oidc.token'),
+            'jwks_uri' => route('oidc.jwks'),
+            'response_types_supported' => ['code'],
+            'grant_types_supported' => ['authorization_code'],
+            'response_modes_supported' => ['query'],
+            'subject_types_supported' => ['public'],
+            'id_token_signing_alg_values_supported' => ['RS256'],
+            'code_challenge_methods_supported' => ['S256'],
+            'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post'],
+        ];
+
+        foreach ($contract55_1 as $key => $value) {
+            self::assertArrayHasKey($key, $body, sprintf('clé 55.1 « %s » RETIRÉE du contrat public', $key));
+            self::assertSame($value, $body[$key], sprintf('valeur 55.1 de « %s » modifiée', $key));
+        }
+
+        // `scopes_supported` et `claims_supported` sont les deux seules clés de
+        // 55.1 dont la VALEUR change : elles ne peuvent que S'ÉTENDRE.
+        self::assertSame(['openid'], array_values(array_intersect(['openid'], $body['scopes_supported'])));
+        foreach (['iss', 'sub', 'aud', 'exp', 'iat', 'jti', 'nonce'] as $claim) {
+            self::assertContains($claim, $body['claims_supported'], 'claim 55.1 retiré : '.$claim);
+        }
     }
 
     // ── AC2 — JWKS ────────────────────────────────────────────────────────

@@ -24,14 +24,24 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * ⚠️ **`token_hash` est dans `$hidden` et stocke un sha256** : le jeton clair ne
  * touche jamais la base ni les logs (NFR3).
  *
+ * Story 55.2 — `user_id` (migration additive `2026_07_28_310000`) : c'est par
+ * CETTE clé que `/userinfo` résout l'utilisateur, jamais par `user_login`.
+ * `user_login` est le **sub PUBLIÉ** (résolu à l'émission par
+ * {@see \App\Auth\Oidc\Support\OidcSubjectResolver}) : une valeur de contrat,
+ * pas une clé de jointure. Les deux colonnes coexistent pour cette raison —
+ * `user_login` garantit l'égalité `sub` id_token ⇄ `sub` userinfo (OIDC Core
+ * §5.3.2) PAR CONSTRUCTION, `user_id` garantit la résolution métier.
+ *
  * @property int $id
  * @property int $oidc_client_id
+ * @property int|null $user_id
  * @property string $user_login
  * @property string $token_hash
  * @property string $scope
  * @property \Illuminate\Support\Carbon $expires_at
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property-read OidcClient|null $client
+ * @property-read User|null $user
  */
 class OidcAccessToken extends Model
 {
@@ -43,6 +53,7 @@ class OidcAccessToken extends Model
     /** @var list<string> */
     protected $fillable = [
         'oidc_client_id',
+        'user_id',
         'user_login',
         'token_hash',
         'scope',
@@ -64,5 +75,18 @@ class OidcAccessToken extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(OidcClient::class, 'oidc_client_id');
+    }
+
+    /**
+     * Story 55.2 — l'utilisateur porteur du jeton.
+     *
+     * `null` si le compte a été supprimé depuis l'émission : c'est un cas
+     * NOMINAL, traité fail-closed par
+     * {@see \App\Auth\Oidc\Services\OidcAccessTokenValidator} (401, aucune
+     * donnée), jamais une erreur d'intégrité.
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 }

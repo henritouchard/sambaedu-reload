@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)**. _Stories 55.2 (claims métier + `/userinfo`), 55.3 (app-témoin + suite d'attaque) et Epic 56 (scopes consentis, sources distantes, type `app`) à ajouter en sections suivantes quand livrées._
+**Stories couvertes** (mise à jour 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)**. _Stories 55.2 (claims métier + `/userinfo`), 55.3 (app-témoin + suite d'attaque) et Epic 56 (scopes consentis, sources distantes, type `app`) à ajouter en sections suivantes quand livrées._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -37,6 +37,11 @@
 - `app/Auth/Oidc/Jwt/OidcIdTokenIssuer.php` — **seul** fichier du namespace important `Firebase\JWT`
 - `app/Auth/Oidc/Support/OidcSubjectResolver.php` — **point UNIQUE** de résolution du claim `sub` (arbitrage en cours)
 - `app/Auth/Oidc/Support/OidcErrorCodes.php` — codes internes, journal uniquement (jamais dans une réponse HTTP)
+- `app/Auth/Oidc/Support/OidcClaimsResolver.php` — **le contrat de claims v1** (55.2) : `CLAIMS_BY_SCOPE`, `supportedScopes()`, vocabulaire fermé de `role`, zéro LDAP
+- `app/Auth/Oidc/Services/OidcAccessTokenValidator.php` — verdict sur un Bearer opaque (55.2), réutilisé par l'Epic 56
+- `app/Auth/Oidc/Http/Controllers/UserinfoController.php` — `GET|POST /oidc/userinfo`, Bearer en en-tête uniquement, 401 indistincts (55.2)
+- `database/migrations/2026_07_28_310000_add_user_id_to_oidc_access_tokens.php` — clé de résolution de l'utilisateur, additive (55.2)
+- `tests/Feature/Oidc/{OidcIdTokenClaimsTest,OidcUserinfoTest}.php` — liste EXACTE des clés de claims par scope, refus adossés à un contrôle positif (55.2)
 - `app/Auth/Oidc/Http/Controllers/{Discovery,Authorize,Token}Controller.php`
 - `app/Console/Commands/{OidcClientRegister,OidcClientRevoke}.php`
 - `app/Http/Middleware/Auth/SambaEduAuthGuard.php` — `url.intended` passe de `path()` à `fullUrl()` (55.1, piège n°1)
@@ -858,6 +863,171 @@ Toujours avec une session active et un client **valide**, avec la `redirect_uri`
 
 ---
 
+## Section 13 — Claims d'identité minimisés et `/userinfo` (Story 55.2)
+
+> **Deuxième story de l'Epic 55.** L'id_token cesse d'être une simple preuve d'authentification : il porte désormais **l'identité, le rôle métier et les groupes du contexte** — et **rien d'autre** (NFR5). Une extension applique ses règles métier (salons BBB par classe) **sans jamais accéder à l'annuaire ni à la base SE5**.
+>
+> ⚠️ **Ce que ces scénarios vérifient est un CONTRAT PUBLIC GELÉ (NFR11).** À partir de la première extension intégrée, un claim ne peut plus être retiré ni renommé sans casser toutes les intégrations. Les vérifications « rien d'autre » ne sont donc pas du zèle : une clé émise par erreur devient une dette permanente **et** une fuite de PII sur une population qui contient des élèves mineurs.
+>
+> **Ce qui n'est PAS ici** : l'app-témoin et la suite d'attaque (`alg:none`, HS256-confusion, `aud` étrangère, rejeu `jti`) → Story 55.3 ; les scopes **consentis par l'admin et révocables en UI**, les tokens de service `client_credentials`, l'API `/api/ext/v1/*` → Epic 56.
+
+**Prérequis spécifiques à cette section**
+
+- `php artisan migrate` a joué `2026_07_28_310000_add_user_id_to_oidc_access_tokens.php` (colonne additive `user_id`). Vérifier : `\d oidc_access_tokens` en `psql` doit montrer `user_id` nullable.
+- Les mêmes prérequis que la Section 11 (clés, client déclaré, couple PKCE).
+- **Trois comptes de test** dans SE5 : un prof membre d'au moins deux classes et d'une équipe, un élève d'une classe, et un compte dont `users.role` vaut `autre` (ou une identité fédérée `ext:…`).
+- Un décodeur d'id_token local (aucun secret ne quitte le poste) :
+  ```bash
+  decode() { echo "$1" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq; }
+  ```
+
+### Scénario 13.1 — Un prof obtient nom, rôle et groupes — et RIEN d'autre
+
+1. Dérouler le flux complet du scénario 11.4 **en changeant le scope** : `&scope=openid%20profile%20groups`.
+2. Décoder l'`id_token` obtenu : `decode <ID_TOKEN>`.
+
+**Attendu** :
+- `name` = le nom d'affichage du prof (`fullname`, à défaut son login).
+- `role` = **`"prof"`**, une **chaîne** — jamais un tableau, jamais `["prof","admin"]`.
+- `groups` = la liste de ses classes **et** de ses équipes, en **noms nus** (`"4B"`, jamais `"Classe_4B"`), **triés alphabétiquement** et sans doublon.
+- **La liste EXACTE des clés est** : `iss, sub, aud, exp, iat, jti, nonce, name, role, groups`. Compter les clés (`decode <ID_TOKEN> | keys`) : **rien d'autre ne doit apparaître**, en particulier ni `email`, ni `given_name`/`family_name`, ni `picture`, ni `locale`, ni `ad_guid`, ni `dn`, ni `memberOf`, ni permission Spatie.
+- Journal `storage/logs/oidc/` : `oidc.authorize.granted` puis `oidc.token.issued`. **Aucune ligne ne contient le nom de l'utilisateur, un nom de groupe, ni son `sub`.** Vérifier explicitement :
+  ```bash
+  grep -c "<NOM DU PROF>" storage/logs/oidc/oidc-$(date +%F).log   # doit rendre 0
+  ```
+
+**Pourquoi ce scénario existe** : c'est le contrat que 55.3 puis BBB (Epic 57) consommeront. La vérification par **liste exacte** — et non par « contient bien `name` » — est la seule qui empêche un claim auquel personne n'a pensé d'entrer dans un contrat qu'on ne pourra plus réduire.
+
+### Scénario 13.2 — Un prof délégué super-admin reste `prof`
+
+1. Attribuer le rôle Spatie `super-admin` au compte prof de test.
+2. Rejouer le flux avec `scope=openid profile`.
+
+**Attendu** : `role` = **`"prof"`**, pas `"admin"`. Le profil métier prime sur la délégation d'administration.
+
+**Pourquoi ce scénario existe** : `User::businessRoles()` rend l'ENSEMBLE (`["prof","admin"]`) ; le claim en prend le **premier**. C'est le bon comportement pour une extension pédagogique — un prof qui administre le serveur reste un prof pour ses salons de classe. Une extension d'administration qui aurait besoin de l'ensemble complet justifierait un claim `roles` **ajouté**, jamais un changement de type de `role`.
+
+### Scénario 13.3 — L'élève, et la minimisation par scopes
+
+Dérouler **trois** flux avec le compte élève, en ne changeant QUE le scope.
+
+| Scope demandé | Claims métier attendus dans l'id_token |
+|---|---|
+| `openid profile groups` | `name`, `role: "eleve"`, `groups: ["4B"]` |
+| `openid profile` | `name`, `role` — **`groups` ABSENT** |
+| `openid` | **AUCUN** : exactement les claims de la Section 11 (`iss, sub, aud, exp, iat, jti, nonce`) |
+
+**Attendu** : dans le deuxième cas, `groups` est absent **alors que l'élève a bien une classe** — l'absence vient du scope, pas d'une base vide. Dans le troisième, la liste de clés est **identique** à celle observée en 11.4 avant cette story.
+
+**Pourquoi ce scénario existe** : c'est NFR5 rendu observable. Un scope non demandé ne produit **rien** ; si un jour un claim apparaissait sans son scope, la fuite serait silencieuse — aucun client ne s'en plaindrait, et la donnée serait pourtant partie.
+
+### Scénario 13.4 — Rôle non résoluble : le claim est ABSENT, jamais inventé
+
+1. Dérouler le flux avec le compte dont `users.role = 'autre'` (ou l'identité fédérée), `scope=openid profile`.
+2. Décoder l'id_token.
+
+**Attendu** :
+- `name` **présent**, `sub` présent.
+- **`role` totalement absent** de l'objet JSON — pas `"autre"`, pas `null`, pas `""`.
+
+**Pourquoi ce scénario existe** : c'est le fail-closed du PRD (« signature, scopes, **rôle inconnu** »). Une valeur sentinelle serait interprétée par une extension comme un rôle réel ; une clé absente est testable par tout client OIDC et le laisse fail-closed — il n'habilite pas. La limite est **connue et assumée** : les identités fédérées et les délégations non-`super-admin` ne résolvent pas de rôle métier (raffinement en 49.1/49.2, pas dans le SSO).
+
+### Scénario 13.5 — Un scope inconnu est REFUSÉ, jamais ignoré
+
+Rejouer l'URL d'autorisation avec `&scope=openid%20profile%20foo`.
+
+**Attendu** :
+- Redirection 302 vers la `redirect_uri` **déclarée**, avec `error=invalid_scope` et le `state` relayé.
+- **Aucun code émis** : `SELECT count(*) FROM oidc_authorization_codes;` inchangé.
+- Journal : `oidc.authorize.rejected` avec `code: oidc.scope_unsupported`.
+- Contrôle positif à enchaîner : `&scope=openid%20profile%20groups` est bien **accepté**.
+
+**Pourquoi ce scénario existe** : un scope qui n'existe pas ne peut pas être consenti. L'ignorer laisserait le client croire qu'il a obtenu quelque chose — et le jour où `foo` deviendrait un vrai scope, il serait accordé **rétroactivement** à tous ceux qui le demandaient déjà. L'ensemble annoncé par la discovery (`scopes_supported`) et l'ensemble accepté au flux sont la **même source** : les comparer est un test à part entière.
+
+### Scénario 13.6 — `/userinfo` nominal, et le `sub` identique à l'id_token
+
+1. Dérouler le flux complet avec `scope=openid profile groups` et conserver **l'`access_token`** de la réponse d'échange.
+2. ```bash
+   curl -sD- -H "Authorization: Bearer <ACCESS_TOKEN>" https://<host>/oidc/userinfo | jq
+   ```
+3. Refaire l'appel en **POST** : `curl -s -X POST -H "Authorization: Bearer <ACCESS_TOKEN>" https://<host>/oidc/userinfo | jq`
+
+**Attendu** :
+- `{ "sub": …, "name": …, "role": …, "groups": [ … ] }` — les **mêmes valeurs** que dans l'id_token du même flux, et un `sub` **strictement identique** (OIDC Core §5.3.2).
+- **GET et POST rendent exactement la même chose** (les deux sont imposés par la spécification).
+- En-têtes : `Cache-Control: no-store`.
+- Journal : `oidc.userinfo.served`, portant le `client_id` et un préfixe de hash — **ni `sub`, ni `name`, ni `groups`**.
+- Avec un jeton obtenu en `scope=openid` **seul** : la réponse est **`{"sub": "…"}` et rien d'autre**.
+
+**Pourquoi ce scénario existe** : `/userinfo` est le canal de repli du contrat — il doit dire **exactement** la même chose que l'id_token, sinon une extension qui utilise l'un et une autre qui utilise l'autre divergeraient sur la même personne. Le filtrage par scope s'y applique aussi : ce canal ne peut pas être une porte dérobée aux claims.
+
+### Scénario 13.7 — `/userinfo` fail-closed : cinq causes, une seule réponse
+
+Dérouler chaque variante et comparer **mot pour mot** les réponses.
+
+| Variante | Comment la produire |
+|---|---|
+| Bearer absent | `curl -sD- https://<host>/oidc/userinfo` |
+| Jeton inconnu | `Authorization: Bearer $(openssl rand -hex 32)` |
+| Jeton expiré | attendre **plus de 600 s** après l'échange, puis rappeler |
+| Client révoqué | `php artisan oidc:client:revoke <CLIENT_ID>` puis rappeler avec un jeton **encore valide** |
+| Utilisateur supprimé | supprimer le compte SE5 puis rappeler avec son jeton |
+| Jeton en query | `curl -sD- "https://<host>/oidc/userinfo?access_token=<ACCESS_TOKEN>"` |
+
+**Attendu** :
+- **Toutes** : `HTTP 401`, en-tête `WWW-Authenticate: Bearer …`, **aucune donnée d'identité** dans le corps (pas de `sub`, pas de `name`, pas de `groups`), `Cache-Control: no-store`.
+- Les quatre variantes « jeton présenté » rendent **exactement** `{"error":"invalid_token","error_description":"The access token is invalid or expired."}` — **rigoureusement indistinctes**.
+- Le Bearer **absent** (et le jeton en **query**, qui est ignoré donc équivaut à absent) rend le challenge **sans** code d'erreur (RFC 6750 §3).
+- Le journal, lui, **distingue** : `oidc.access_token_missing`, `oidc.access_token_invalid`, `oidc.access_token_expired`, `oidc.client_disabled`, `oidc.user_missing`.
+- Contrôle positif **obligatoire avant chaque variante** : le même appel, avec un jeton valide et l'en-tête correct, rend bien `200`.
+
+**Pourquoi ce scénario existe** : un endpoint qui répondrait 401 à tout passerait ces vérifications sans rien garantir — d'où le contrôle positif. Et une réponse qui distinguerait « expiré » de « inconnu » offrirait un **oracle** à qui teste des jetons : il saurait qu'il en a trouvé un vrai. Le jeton en query est refusé par principe : il finirait dans les logs du serveur, l'historique et le `Referer`.
+
+### Scénario 13.8 — Révoquer une extension tue ses jetons déjà émis
+
+1. Dérouler un flux complet, garder l'`access_token`, vérifier que `/userinfo` rend `200`.
+2. `php artisan oidc:client:revoke <CLIENT_ID>`
+3. Rappeler `/userinfo` avec le **même** jeton.
+
+**Attendu** : `401`, immédiatement — **sans attendre l'expiration des 600 s**.
+
+**Pourquoi ce scénario existe** : c'est la promesse de la Section 11.10 qui devient enfin observable. Elle n'est tenable que parce que l'access_token est **opaque** (une clé de ligne), et non un JWT auto-porteur : un JWT resterait valable jusqu'à son `exp`, quoi qu'on fasse au registre. Désinstaller une extension doit couper l'accès **maintenant**.
+
+### Scénario 13.9 — La discovery a évolué ADDITIVEMENT
+
+```bash
+curl -s https://<host>/.well-known/openid-configuration | jq
+```
+
+**Attendu** :
+- **Nouveau** : `userinfo_endpoint` (= `https://<host>/oidc/userinfo`), `scopes_supported: ["openid","profile","groups"]`, `claims_supported` enrichi de `name`, `role`, `groups`.
+- **Inchangé** : `issuer`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`, `response_types_supported`, `grant_types_supported`, `response_modes_supported`, `subject_types_supported`, `id_token_signing_alg_values_supported`, `code_challenge_methods_supported`, `token_endpoint_auth_methods_supported` — **aucune clé retirée, aucune renommée, aucune valeur modifiée**.
+- `claims_supported` ne mentionne **pas** `email` : un intégrateur lirait ce document et demanderait le claim.
+
+**Pourquoi ce scénario existe** : une extension déployée lit la discovery **une fois** et la met en cache. Retirer une clé la casse sans qu'aucun message d'erreur ne l'explique. C'est aussi pourquoi `userinfo_endpoint` était volontairement absent en 55.1 : annoncer un endpoint inexistant fait échouer tout client qui suit la discovery à la lettre.
+
+### Scénario 13.10 — Un claim n'autorise rien (miroir de 9.3)
+
+1. Obtenir un id_token portant `role: "prof"` pour un compte prof.
+2. Avec ce même compte, tenter d'atteindre une page d'administration SE5 (`/admin/extensions`).
+3. Inversement : sur un compte `role='autre'` (donc **sans** claim `role`), vérifier que ses accès SE5 habituels sont **inchangés**.
+
+**Attendu** : le claim `role` n'ouvre **aucun** droit dans SE5 (2 → refus, comme avant), et son absence n'en **retire aucun** (3 → rien ne change). L'autorisation réelle reste portée par les permissions Spatie côté SE5, et par ses propres règles côté extension.
+
+**Pourquoi ce scénario existe** : c'est exactement la distinction du scénario 9.3 (« masquer n'est pas protéger », FR14), vue depuis l'autre bout. Un claim est une **donnée transportée**, pas une décision d'autorisation. Une extension qui traiterait la présence d'un claim comme une permission se tromperait de contrat — et une régression qui ferait de `role` une source d'autorisation dans SE5 créerait une escalade silencieuse.
+
+### Scénario 13.11 — Volumétrie : un utilisateur à quarante groupes
+
+1. Rattacher le compte prof de test à ~40 classes (base de test uniquement).
+2. Dérouler le flux avec `scope=openid profile groups` et décoder l'id_token.
+3. Appeler `/userinfo` avec l'access_token du même flux.
+
+**Attendu** : l'id_token est **émis et vérifiable** (signature valide sur https://jwt.io ou via le JWKS), les 40 noms sont présents, triés. `/userinfo` rend la **même** liste.
+
+**Pourquoi ce scénario existe** : le claim `groups` n'est persisté dans **aucune colonne** — il vit dans le JWT (transporté en corps POST de la réponse d'échange, jamais en query) et dans le JSON `/userinfo`. Il n'est donc pas concerné par la leçon 12.3 sur les bornes `VARCHAR`. Si un établissement pathologique faisait un jour exploser la taille du jeton, `/userinfo` est le canal de repli documenté : le contrat y est identique.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
@@ -873,6 +1043,14 @@ Toujours avec une session active et un client **valide**, avec la `redirect_uri`
 - **Section 12.1 — déclarer `federated.audit` ne suffit pas sur un GET** : le middleware n'audite les lectures que par **allowlist** (`federated_auth.audit.sensitive_get_routes`). Toute route GET qui **émet une identité, un jeton ou un secret** doit être ajoutée à cette liste en même temps qu'elle est déclarée — sinon l'alias est un no-op silencieux. Et le test qui le vérifie doit observer une **ligne d'audit réellement écrite**, jamais la seule présence de l'alias dans `routes/web.php`.
 - **Section 12.3 — les bornes de longueur sont applicatives, jamais déléguées au SGBD** : SQLite (tests) n'applique aucune limite sur un `VARCHAR`, PostgreSQL (prod) refuse. Toute valeur issue d'une requête entrante et persistée dans une colonne bornée doit être contrôlée dans le code, avec un refus normalisé — sinon la seule preuve du problème arrive en production, en 500 hors journal métier. Les constantes (`OidcClientRegistry::MAX_REDIRECT_URI_LENGTH`, `OidcAuthorizationService::MAX_*_LENGTH`) sont alignées sur la migration : élargir une colonne impose de les élargir.
 - **Section 11.5 — le journal est fin, la réponse est muette** : les codes `oidc.*` distinguent code inconnu / expiré / consommé pour le diagnostic ; la réponse HTTP dit toujours `invalid_grant`. Fusionner les deux — dans un sens ou dans l'autre — casse soit l'exploitabilité, soit la sécurité.
+- **Section 13.1 / 13.3 — la minimisation se prouve par LISTE EXACTE, jamais par « contient »** : le contrat de claims est public et gelé (NFR11) ; une clé émise par erreur ne pourra plus être retirée et sera une fuite de PII permanente sur une population qui contient des élèves mineurs. Toute story qui touche aux claims doit conserver l'assertion d'ensemble exact **par combinaison de scopes** — un `assertArrayNotHasKey` ne couvre que ce à quoi on a pensé, une liste exacte échoue pour un claim auquel personne n'a pensé. Corollaire d'exploitation : ne JAMAIS ajouter un claim « en passant » pour dépanner une extension ; l'ajout est définitif.
+- **Section 13.4 — un rôle non résolu produit une CLÉ ABSENTE, jamais une sentinelle** : ni `"autre"`, ni `null`, ni `""`. Une valeur sentinelle serait lue par l'extension comme un rôle réel ; l'absence la laisse fail-closed. Même règle pour tout claim futur : l'inconnu ne s'invente pas. La limite (identités fédérées, délégations non-`super-admin`) est **connue et assumée** — son raffinement appartient à 49.1/49.2, pas au SSO.
+- **Section 13.5 — un scope inconnu est refusé, jamais ignoré** : l'ignorer laisserait un client croire qu'il a obtenu quelque chose, et attribuerait ce nom **rétroactivement** le jour où il deviendrait un vrai scope. La discovery (`scopes_supported`) et le validateur du flux lisent la **même** source (`OidcClaimsResolver::CLAIMS_BY_SCOPE`) : deux listes divergentes annonceraient un contrat non tenu — c'est vérifié par un test dédié.
+- **Section 13.6 / 13.7 — `/userinfo` : Bearer en en-tête UNIQUEMENT, réponses de refus indistinctes** : un jeton en query finirait dans les logs, l'historique et le `Referer` (doctrine D-3, iso token endpoint) — RFC 6750 l'autorise, SE5 ne le supporte pas. Et les quatre causes « jeton présenté et rejeté » rendent le MÊME corps : distinguer « expiré » de « inconnu » offrirait un oracle. Le détail va au journal, jamais à la réponse — exactement la règle 11.5.
+- **Section 13.6 — l'égalité `sub` id_token ⇄ `sub` userinfo est garantie PAR CONSTRUCTION** : `/userinfo` rend la valeur STOCKÉE sur le jeton (le sujet résolu à l'émission), il ne la re-résout pas. Et l'utilisateur est retrouvé par `oidc_access_tokens.user_id`, **jamais par le `sub`** : un `sub` est une valeur publiée, pas une clé de jointure — s'en servir casserait silencieusement le jour où le sujet changerait de nature (`OidcSubjectResolver`).
+- **Section 13.8 — l'access_token est opaque POUR pouvoir mourir avec son client** : un JWT auto-porteur resterait valable jusqu'à son `exp` quoi qu'on fasse au registre. Désinstaller une extension doit couper l'accès immédiatement — toute évolution vers un access token auto-porteur romprait cette promesse.
+- **Section 13.10 — un claim est une DONNÉE, pas une autorisation** : miroir exact du scénario 9.3 (« masquer n'est pas protéger », FR14). `role=prof` n'ouvre aucun droit dans SE5 et son absence n'en retire aucun. Une régression qui ferait de `role` une source d'autorisation dans SE5 créerait une escalade silencieuse.
+- **Section 13.11 — `groups` n'est persisté nulle part** : il vit dans le JWT et le JSON `/userinfo`, jamais en colonne bornée — la leçon 12.3 (bornes applicatives) ne s'y applique donc pas, et 55.2 n'ajoute **aucun** paramètre entrant persisté. `/userinfo` est le canal de repli documenté si la taille du jeton devenait un jour un problème.
 - **Section 11.1 — l'idempotence d'`oidc:keys:init` est vitale, pas confortable** : `update.sh` la rejoue à chaque déploiement de chaque instance. Même règle que pour toute opération multi-instance du projet : une commande artisan rejouable, jamais une procédure manuelle.
 - **Section 7 — carte 54.1 restructurée** : la carte de bibliothèque était un `<a href>` entier (54.1) ; 54.2 sépare la zone cliquable (titre → fiche) du pied d'actions (`card-actions`) pour permettre des boutons `wire:click` sans navigation parasite ni HTML invalide.
 
@@ -943,3 +1121,14 @@ Toujours avec une session active et un client **valide**, avec la `redirect_uri`
 - [ ] 12.1 Acteur fédéré : ligne `oidc.authorize` dans `external_action_audit_logs` ; acteur AD local : aucune
 - [ ] **12.2 `Host` détourné : `url.intended` reste relatif, la reprise post-login ne quitte jamais l'instance**
 - [ ] 12.3 `redirect_uri` / `nonce` trop longs : refus normalisé et journalisé, jamais une 500
+- [ ] **13.1 Prof, `scope=openid profile groups` : `name`/`role="prof"`/`groups` triés — LISTE EXACTE des clés, aucune PII au journal**
+- [ ] 13.2 Prof délégué `super-admin` : `role` reste `"prof"`
+- [ ] 13.3 Élève : matrice des 3 scopes (`groups` absent sans le scope, aucun claim métier avec `openid` seul)
+- [ ] **13.4 Rôle non résoluble (`autre` / fédéré) : claim `role` ABSENT, jamais `"autre"`**
+- [ ] 13.5 `scope=openid profile foo` : 302 `invalid_scope`, aucun code, journal `oidc.scope_unsupported` (+ contrôle positif)
+- [ ] 13.6 `/userinfo` GET et POST : `sub` identique à l'id_token, claims scope-gatés, `no-store`, journal sans PII
+- [ ] **13.7 `/userinfo` : Bearer absent / inconnu / expiré / client révoqué / user supprimé / jeton en query → 401 INDISTINCTS**
+- [ ] 13.8 Révocation du client : jeton déjà émis mort immédiatement
+- [ ] 13.9 Discovery : `userinfo_endpoint` + scopes/claims enrichis, **aucune clé 55.1 retirée ni renommée**
+- [ ] 13.10 Un claim n'autorise rien : `role=prof` n'ouvre aucune page admin, son absence n'en ferme aucune
+- [ ] 13.11 ~40 groupes : id_token émis et vérifiable, `/userinfo` rend la même liste

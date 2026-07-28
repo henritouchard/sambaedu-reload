@@ -13,7 +13,8 @@ use Symfony\Component\Finder\Finder;
  *
  * Calque de {@see FederatedRouteTest} (Story 20.1), pour les mêmes raisons :
  *
- *  1. Les 4 routes OIDC sont déclarées AVANT le catchall legacy `{path}`. En
+ *  1. Les 5 routes OIDC (4 en 55.1 + `/oidc/userinfo` en 55.2) sont déclarées
+ *     AVANT le catchall legacy `{path}`. En
  *     dessous, le catchall les proxifierait vers le vhost legacy (mort) et
  *     AUCUN client OIDC ne pourrait découvrir SE5.
  *  2. `/oidc/token` est un POST, et uniquement un POST : en GET, le secret du
@@ -50,7 +51,7 @@ class OidcRoutesTest extends TestCase
     }
 
     #[Test]
-    public function the_four_oidc_routes_are_declared_before_the_catchall(): void
+    public function the_five_oidc_routes_are_declared_before_the_catchall(): void
     {
         $content = $this->routesContent();
         $catchallOffset = $this->catchallOffset($content);
@@ -60,6 +61,8 @@ class OidcRoutesTest extends TestCase
             'jwks' => "@Route::get\s*\([^;]*?['\"]/oidc/jwks['\"]@",
             'authorize' => "@Route::get\s*\([^;]*?['\"]/oidc/authorize['\"]@",
             'token' => "@Route::post\s*\([^;]*?['\"]/oidc/token['\"]@",
+            // Story 55.2 — 5ᵉ route.
+            'userinfo' => "@Route::match\s*\([^;]*?['\"]/oidc/userinfo['\"]@",
         ];
 
         foreach ($routes as $label => $pattern) {
@@ -87,6 +90,39 @@ class OidcRoutesTest extends TestCase
             preg_match("@Route::(get|any|match)\s*\([^;]*?['\"]/oidc/token['\"]@", $content),
             'Le token endpoint ne doit exposer NI GET NI ANY (secret et code en query = fuite)',
         );
+    }
+
+    /**
+     * Story 55.2 — `/oidc/userinfo` expose GET **et** POST, et RIEN d'autre.
+     *
+     * Les deux méthodes sont imposées par OIDC Core §5.3.1. En revanche
+     * `Route::any` ouvrirait PUT/DELETE/PATCH sur un endpoint de lecture — une
+     * surface gratuite sur la seule route qui sert des données d'identité.
+     */
+    #[Test]
+    public function the_userinfo_endpoint_exposes_get_and_post_only(): void
+    {
+        $content = $this->routesContent();
+
+        self::assertSame(
+            0,
+            preg_match("@Route::any\s*\([^;]*?['\"]/oidc/userinfo['\"]@", $content),
+            'Route::any ouvrirait des verbes non prévus sur /oidc/userinfo',
+        );
+
+        self::assertSame(
+            1,
+            preg_match("@Route::match\s*\(\s*\[([^\]]*)\][^;]*?['\"]/oidc/userinfo['\"]@", $content, $matches),
+            'Route /oidc/userinfo non déclarée en Route::match',
+        );
+
+        $verbs = array_map(
+            static fn (string $v): string => strtolower(trim($v, " \t\n\r'\"")),
+            explode(',', $matches[1]),
+        );
+        sort($verbs);
+
+        self::assertSame(['get', 'post'], $verbs);
     }
 
     #[Test]
@@ -132,6 +168,9 @@ class OidcRoutesTest extends TestCase
 
         $finder = (new Finder())->files()->in($namespaceDir)->name('*.php');
 
+        // Story 55.2 : ni `OidcClaimsResolver`, ni `OidcAccessTokenValidator`,
+        // ni `UserinfoController` n'importent quoi que ce soit de crypto — la
+        // frontière est INCHANGÉE malgré trois fichiers de plus.
         $allowed = ['OidcIdTokenIssuer.php'];
         $inspected = 0;
         $importers = [];

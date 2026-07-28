@@ -7,8 +7,10 @@ namespace App\Auth\Oidc\Http\Controllers;
 use App\Auth\Oidc\Jwt\OidcIdTokenIssuer;
 use App\Auth\Oidc\Services\OidcAuthorizationService;
 use App\Auth\Oidc\Services\OidcClientRegistry;
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Auth\Oidc\Support\OidcErrorCodes;
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -43,9 +45,16 @@ use Throwable;
  * ══════════════════════════════════════════════════════════════════════════
  *
  * **Les codes d'erreur fins restent dans le journal.** La réponse ne distingue
- * jamais « code inconnu », « code expiré » et « code déjà consommé » : les
- * trois sont `invalid_grant`. Un attaquant ne doit pas pouvoir savoir qu'il a
- * trouvé un code valide mais périmé.
+ * jamais « code inconnu », « code expiré », « code déjà consommé » ni
+ * « utilisateur disparu » : les quatre sont `invalid_grant`, avec la MÊME
+ * description. Un attaquant ne doit pas pouvoir savoir qu'il a trouvé un code
+ * valide mais périmé — ni qu'un compte a été supprimé.
+ *
+ * **Story 55.2 — les claims métier.** L'utilisateur est résolu depuis le code
+ * consommé (`user_id`), ses claims sont filtrés par le scope LIÉ AU CODE, et
+ * l'émetteur les ajoute SOUS les claims standards (inécrasables).
+ * ⚠️ `name`, `groups` et le `sub` sont de la PII : ils ne sont JAMAIS
+ * journalisés, pas même en cas de refus.
  */
 class TokenController extends Controller
 {
@@ -103,10 +112,51 @@ class TokenController extends Controller
 
         $record = $verdict['record'];
 
-        // ── 4. L'émission ────────────────────────────────────────────────
+        // ── 4. L'utilisateur, puis ses claims (Story 55.2) ───────────────
+        // ⚠️ Résolution par `user_id`, JAMAIS par `user_login` : ce dernier est
+        // le `sub` PUBLIÉ (une valeur de contrat), pas une clé de jointure —
+        // s'en servir créerait une adhérence au choix actuel du sujet.
+        //
+        // Fail-closed AVANT toute émission : compte supprimé pendant la fenêtre
+        // de 60 s du code (ou code antérieur à la migration `user_id`) ⇒
+        // `invalid_grant`, aucun jeton — jamais un id_token aux claims
+        // partiels, jamais un access_token orphelin que `/userinfo` refuserait
+        // ensuite sans que personne comprenne pourquoi.
+        $user = $record->user_id !== null
+            ? User::query()->find($record->user_id)
+            : null;
+
+        if (! $user instanceof User) {
+            $this->logRejection(OidcErrorCodes::USER_MISSING, $clientId);
+
+            // Même corps que les autres `invalid_grant` : la réponse ne dit pas
+            // à un appelant que le compte visé a disparu.
+            return $this->error(
+                'invalid_grant',
+                'The authorization code is invalid, expired or already used.',
+                400,
+            );
+        }
+
+        // Claims MÉTIER, filtrés par le scope LIÉ AU CODE (celui qui a été
+        // validé et consenti à l'autorisation), jamais par un scope renvoyé au
+        // token endpoint par le client.
+        $businessClaims = OidcClaimsResolver::claimsFor($user, $record->scope);
+
+        // ── 5. L'émission ────────────────────────────────────────────────
         try {
-            $idToken = $this->issuer->issueIdToken($client, $record->user_login, $record->nonce);
-            $accessToken = $this->issuer->issueAccessToken($client, $record->user_login, $record->scope);
+            $idToken = $this->issuer->issueIdToken(
+                $client,
+                $record->user_login,
+                $record->nonce,
+                $businessClaims,
+            );
+            $accessToken = $this->issuer->issueAccessToken(
+                $client,
+                $record->user_login,
+                $record->scope,
+                (int) $user->id,
+            );
         } catch (Throwable $e) {
             // Fail-closed : clé absente ou illisible ⇒ AUCUN jeton dégradé.
             Log::channel('oidc')->error('[TokenController] oidc.token.rejected', [
