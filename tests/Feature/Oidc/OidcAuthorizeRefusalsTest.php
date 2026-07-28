@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Oidc;
 
+use App\Auth\Oidc\Services\OidcAuthorizationService;
 use App\Http\Middleware\Auth\AuditExternalAction;
 use App\Http\Middleware\Auth\SambaEduAuth;
 use App\Models\OidcAuthorizationCode;
@@ -270,6 +271,64 @@ class OidcAuthorizeRefusalsTest extends TestCase
         // « openidx » n'est PAS le scope `openid` : la vérification doit
         // découper sur les espaces, pas faire un `str_contains`.
         $this->assertRedirectableRefusal(['scope' => 'openidx'], 'invalid_scope');
+    }
+
+    // ── Bornes de longueur des paramètres PERSISTÉS (correctif review #3) ──
+
+    #[Test]
+    public function a_nonce_longer_than_its_column_is_refused_instead_of_crashing_on_insert(): void
+    {
+        // `nonce` part de la query string et atterrit dans
+        // `oidc_authorization_codes.nonce` (VARCHAR 255). PostgreSQL REFUSE le
+        // dépassement (`value too long for type character varying`) : sans
+        // borne applicative, le client obtient un 500 générique hors journal
+        // `oidc` au lieu d'un refus OAuth normalisé (FR20).
+        //
+        // ⚠️ SQLite — driver de cette suite — n'applique AUCUNE limite de
+        // longueur. Ce test ne peut donc PAS prouver la contrainte SQL : il
+        // prouve que le code refuse AVANT d'y arriver. C'est précisément ce qui
+        // rend la divergence visible sur l'hôte.
+        $this->assertRedirectableRefusal(
+            ['nonce' => str_repeat('n', OidcAuthorizationService::MAX_NONCE_LENGTH + 1)],
+            'invalid_request',
+        );
+    }
+
+    #[Test]
+    public function a_nonce_exactly_at_the_limit_is_accepted(): void
+    {
+        // Contrôle POSITIF de la borne : sans lui, un `off-by-one` qui refuserait
+        // TOUT nonce passerait inaperçu derrière le test de refus ci-dessus.
+        $client = $this->makeClient();
+        $nonce = str_repeat('n', OidcAuthorizationService::MAX_NONCE_LENGTH);
+
+        $response = $this->authorize($client, ['nonce' => $nonce]);
+
+        $response->assertStatus(302);
+        self::assertStringStartsWith(self::DECLARED_URI.'?code=', (string) $response->headers->get('Location'));
+        self::assertSame($nonce, OidcAuthorizationCode::query()->first()?->nonce);
+    }
+
+    #[Test]
+    public function an_oversized_scope_is_refused_too(): void
+    {
+        // Même colonne bornée, même raisonnement : `scope` (255) vient aussi de
+        // la query et est persisté.
+        $this->assertRedirectableRefusal(
+            ['scope' => 'openid '.str_repeat('s', OidcAuthorizationService::MAX_SCOPE_LENGTH)],
+            'invalid_request',
+        );
+    }
+
+    #[Test]
+    public function an_oversized_code_challenge_is_refused_too(): void
+    {
+        // `code_challenge` (128) : un challenge démesuré échouerait de toute
+        // façon à la vérification PKCE — mais l'INSERT a lieu AVANT elle.
+        $this->assertRedirectableRefusal(
+            ['code_challenge' => str_repeat('c', OidcAuthorizationService::MAX_CODE_CHALLENGE_LENGTH + 1)],
+            'invalid_request',
+        );
     }
 
     #[Test]

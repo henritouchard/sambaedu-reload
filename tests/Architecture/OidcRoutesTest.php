@@ -110,6 +110,18 @@ class OidcRoutesTest extends TestCase
         // Invariant `FederatedAuditCoverageTest` : toute route `sambaedu.auth`
         // porte `federated.audit`.
         self::assertStringContainsString('federated.audit', $declaration);
+
+        // ⚠️ Correctif review 55.1 (#1) : déclarer `federated.audit` NE SUFFIT
+        // PAS. `AuditExternalAction` n'audite les GET que si le NOM de la route
+        // figure dans `federated_auth.audit.sensitive_get_routes` — sans quoi le
+        // middleware est un no-op SILENCIEUX.
+        //
+        // Ce test-ci ne peut PAS le vérifier : c'est un `PHPUnit\TestCase` sans
+        // application bootstrapée, donc sans `config()` résolue. Et une assertion
+        // sur le texte du fichier de config ne prouverait qu'une chaîne, pas une
+        // couverture. La garantie est donc vérifiée là où elle est OBSERVABLE —
+        // par l'écriture réelle d'une ligne d'audit :
+        // {@see \Tests\Feature\Oidc\OidcFederatedAuditTest}.
     }
 
     #[Test]

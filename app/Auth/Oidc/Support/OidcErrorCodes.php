@@ -39,6 +39,7 @@ final class OidcErrorCodes
     public const SCOPE_MISSING_OPENID = 'oidc.scope_missing_openid';
     public const PKCE_MISSING = 'oidc.pkce_missing';
     public const PKCE_METHOD_UNSUPPORTED = 'oidc.pkce_method_unsupported';
+    public const PARAMETER_TOO_LONG = 'oidc.parameter_too_long';
 
     // --- Token endpoint.
     public const CLIENT_AUTH_FAILED = 'oidc.client_auth_failed';
@@ -71,6 +72,7 @@ final class OidcErrorCodes
             self::SCOPE_MISSING_OPENID,
             self::PKCE_MISSING,
             self::PKCE_METHOD_UNSUPPORTED,
+            self::PARAMETER_TOO_LONG,
             self::CLIENT_AUTH_FAILED,
             self::UNSUPPORTED_GRANT_TYPE,
             self::CODE_MISSING,

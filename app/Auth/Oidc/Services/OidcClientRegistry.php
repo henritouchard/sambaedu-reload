@@ -47,6 +47,13 @@ class OidcClientRegistry
     private const SECRET_BYTES = 32;
 
     /**
+     * Longueur maximale d'une `redirect_uri`, ALIGNÉE sur la colonne
+     * `oidc_authorization_codes.redirect_uri` (VARCHAR 512) où elle est recopiée
+     * à chaque émission de code. Élargir la colonne impose d'élargir ici.
+     */
+    public const MAX_REDIRECT_URI_LENGTH = 512;
+
+    /**
      * Déclare un client confidentiel.
      *
      * @param  list<string>  $redirectUris  Liste STRICTE — égalité exacte à l'usage.
@@ -206,6 +213,20 @@ class OidcClientRegistry
             if (str_starts_with($uri, '//')) {
                 throw new InvalidArgumentException(
                     'URI de redirection refusée (protocol-relative) : ' . $uri
+                );
+            }
+
+            // Borne ALIGNÉE sur `oidc_authorization_codes.redirect_uri`
+            // (VARCHAR 512) : l'URI validée y est recopiée à chaque émission de
+            // code. Sans ce contrôle, un client accepté ici échouerait à CHAQUE
+            // flux d'autorisation sur une `QueryException` PostgreSQL (500 hors
+            // journal `oidc`), alors que SQLite — driver des tests — ne signale
+            // jamais le dépassement. Refus à l'enregistrement = échec bruyant
+            // au bon moment, pour la bonne personne.
+            if (mb_strlen($uri) > self::MAX_REDIRECT_URI_LENGTH) {
+                throw new InvalidArgumentException(
+                    'URI de redirection refusée (longueur ' . mb_strlen($uri) . ' > '
+                    . self::MAX_REDIRECT_URI_LENGTH . ' caractères) : ' . mb_substr($uri, 0, 80) . '…'
                 );
             }
 

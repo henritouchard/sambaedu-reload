@@ -811,6 +811,53 @@ Toujours avec une session active et un client **valide**, avec la `redirect_uri`
 
 ---
 
+## Section 12 — Correctifs de review 55.1
+
+> Ajoutée après la review sonnet de la Story 55.1 (dev opus), findings évalués par l'orchestrateur. Les trois scénarios portent sur des garanties que la story **affirmait** fournir et qui n'étaient pas tenues.
+
+### Scénario 12.1 — L'émission d'un jeton pour un acteur fédéré laisse une trace durable
+
+**Contexte** : `/oidc/authorize` porte `federated.audit`, mais ce middleware n'audite un **GET** que si le nom de la route figure dans `federated_auth.audit.sensitive_get_routes`. Sans cette entrée, l'alias était un **no-op silencieux**, et rien d'autre ne rattrapait l'imputabilité : les logs du channel `oidc` omettent volontairement le `sub`, et `oidc_authorization_codes` est purgée au fil de l'eau.
+
+1. Se connecter à SE5 via le **login fédéré** (technicien externe, controlHub).
+2. Déclencher un flux SSO complet vers une extension cliente (`/oidc/authorize?…`).
+3. En base : `SELECT route_name, http_method, status_code, actor_login, actor_external_sub FROM external_action_audit_logs ORDER BY occurred_at DESC LIMIT 5;`
+
+**Attendu** :
+- Une ligne `route_name = 'oidc.authorize'`, `http_method = 'GET'`, portant le login `ext:<sub>` et le `sub` externe de l'acteur.
+- Refaire le même flux avec un compte **AD local** : **aucune** ligne ajoutée (ce journal est réservé aux acteurs externes).
+
+**Pourquoi ce scénario existe** : passé le délai de purge des codes, plus rien ne disait qui avait obtenu un jeton, pour quelle extension, ni quand. Le test qui « couvrait » le sujet n'inspectait qu'une chaîne de caractères dans la déclaration de route — il aurait continué de passer avec le middleware muet.
+
+### Scénario 12.2 — Un `Host` détourné n'emmène personne hors de l'instance
+
+**Contexte** : `SambaEduAuthGuard` mémorise l'URL demandée dans `url.intended`, que `redirect()->intended()` suit ensuite **sans vérifier aucun hôte**. `TrustHosts` est désactivé dans le Kernel et le vhost Apache répond à n'importe quel `Host`.
+
+1. Émettre une requête vers l'instance **sans session**, en forçant un en-tête `Host` étranger :
+   `curl -sD- -H 'Host: attaquant.example' 'https://<se4fs>/oidc/authorize?client_id=abc&state=xyz' -o /dev/null`
+2. Inspecter la session créée (ou rejouer le parcours dans un navigateur avec un DNS pointant un nom tiers vers l'IP du serveur), puis s'authentifier.
+
+**Attendu** :
+- La valeur mémorisée est un chemin **relatif** (`/oidc/authorize?…`) : ni schéma, ni hôte.
+- Après login, l'utilisateur revient sur **l'instance**, jamais sur le domaine injecté — et la query OIDC (`client_id`, `state`, `nonce`, `code_challenge`) est intacte.
+
+**Pourquoi ce scénario existe** : le correctif initial de la story utilisait `fullUrl()`, qui reconstruit une URL **absolue** à partir du `Host` entrant. C'était exactement la classe d'attaque (open-redirect) que la validation de `redirect_uri` s'échine à empêcher, réintroduite par la porte d'à côté — sur le point d'entrée de l'IdP lui-même.
+
+### Scénario 12.3 — Une valeur trop longue est refusée proprement, pas en 500
+
+**Contexte** : `redirect_uri` (512), `nonce` (255), `scope` (255) et `code_challenge` (128) sont écrits dans `oidc_authorization_codes`. **PostgreSQL refuse** un dépassement ; **SQLite — driver de toute la suite de tests — ne l'applique jamais**. La divergence est donc invisible aux tests automatisés tant que la borne n'est pas dans le code.
+
+1. `php artisan oidc:client:register --name "Trop long" --redirect-uri "https://ext.example.test/cb?j=$(python3 -c 'print("a"*520)')"`
+2. Sur un client valide, appeler `/oidc/authorize?…&nonce=<300 caractères>`.
+
+**Attendu** :
+- (1) La commande **échoue** avec un message nommant la longueur et la borne ; **aucun client créé**.
+- (2) Redirection 302 vers l'URI **déclarée** avec `error=invalid_request`, `state` relayé, **aucun code émis** — et une ligne `oidc.parameter_too_long` au journal `oidc`. Jamais une page 500.
+
+**Pourquoi ce scénario existe** : sans borne applicative, un client parfaitement légitime était accepté à l'enregistrement puis échouait à **chaque** flux sur une exception SQL convertie en 500 générique — hors du journal métier, donc indiagnosticable depuis les logs `oidc` (FR20 non tenu).
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
@@ -822,7 +869,9 @@ Toujours avec une session active et un client **valide**, avec la `redirect_uri`
 - **Section 7 — no-op ⇒ zéro ligne d'audit (NFR8)** : décision tranchée de la Story 54.2. Le journal `extension_audit_logs` trace des TRANSITIONS RÉELLES, pas des clics — un double-clic ou un re-jeu sur un état déjà atteint ne doit produire ni écriture ni ligne d'audit, sinon l'historique mentirait sur le nombre réel d'actes.
 - **Section 7 — atomicité acte ↔ trace** : la ligne d'audit s'écrit DANS la même transaction que la mutation de `status` ({@see \App\Services\Extensions\ExtensionLifecycleService}). Un acte sans sa trace ne peut pas exister — vérifié par un test automatisé qui simule la disparition de la table d'audit (`tests/Feature/Extensions/ExtensionLifecycleServiceTest.php`).
 - **Section 11.6 — on ne redirige jamais vers une `redirect_uri` non validée** : règle cardinale d'OAuth, appliquée y compris pour annoncer une erreur. Toute évolution du flux d'autorisation doit conserver les DEUX familles de refus séparées (locale 400 vs 302 sur l'URI déclarée) — les fusionner « pour simplifier » ferait de SE5 un open-redirector réputé de confiance.
-- **Section 11.8 — `url.intended` porte l'URL COMPLÈTE** : le guard mémorisait `path()`, ce qui amputait la query string et rendait le SSO impossible à la première connexion de la journée. Le correctif (`fullUrl()`) est transverse : tout futur flux qui dépend de paramètres de query au moment du re-login en bénéficie. Ne pas inventer de canal parallèle (session dédiée, cookie) — `url.intended` + `redirect()->intended()` est le mécanisme standard du projet.
+- **Section 11.8 / 12.2 — `url.intended` porte la query, et RIEN de plus** : le guard mémorisait `path()`, ce qui amputait la query string et rendait le SSO impossible à la première connexion de la journée. Le correctif retenu est **`getRequestUri()`** (chemin + query, relatif) et **surtout pas `fullUrl()`**, qui reconstruirait une URL absolue à partir du `Host` entrant — non filtré, `TrustHosts` étant désactivé — que `redirect()->intended()` suivrait sans contrôle. La règle générale : ce qui est mémorisé pour être suivi après login ne doit jamais porter d'hôte issu de la requête. Ne pas inventer de canal parallèle (session dédiée, cookie) — `url.intended` + `redirect()->intended()` est le mécanisme standard du projet. Dette connexe : `app/Http/Middleware/RequireAdminRights.php:145` porte encore le même motif `fullUrl()`.
+- **Section 12.1 — déclarer `federated.audit` ne suffit pas sur un GET** : le middleware n'audite les lectures que par **allowlist** (`federated_auth.audit.sensitive_get_routes`). Toute route GET qui **émet une identité, un jeton ou un secret** doit être ajoutée à cette liste en même temps qu'elle est déclarée — sinon l'alias est un no-op silencieux. Et le test qui le vérifie doit observer une **ligne d'audit réellement écrite**, jamais la seule présence de l'alias dans `routes/web.php`.
+- **Section 12.3 — les bornes de longueur sont applicatives, jamais déléguées au SGBD** : SQLite (tests) n'applique aucune limite sur un `VARCHAR`, PostgreSQL (prod) refuse. Toute valeur issue d'une requête entrante et persistée dans une colonne bornée doit être contrôlée dans le code, avec un refus normalisé — sinon la seule preuve du problème arrive en production, en 500 hors journal métier. Les constantes (`OidcClientRegistry::MAX_REDIRECT_URI_LENGTH`, `OidcAuthorizationService::MAX_*_LENGTH`) sont alignées sur la migration : élargir une colonne impose de les élargir.
 - **Section 11.5 — le journal est fin, la réponse est muette** : les codes `oidc.*` distinguent code inconnu / expiré / consommé pour le diagnostic ; la réponse HTTP dit toujours `invalid_grant`. Fusionner les deux — dans un sens ou dans l'autre — casse soit l'exploitabilité, soit la sécurité.
 - **Section 11.1 — l'idempotence d'`oidc:keys:init` est vitale, pas confortable** : `update.sh` la rejoue à chaque déploiement de chaque instance. Même règle que pour toute opération multi-instance du projet : une commande artisan rejouable, jamais une procédure manuelle.
 - **Section 7 — carte 54.1 restructurée** : la carte de bibliothèque était un `<a href>` entier (54.1) ; 54.2 sépare la zone cliquable (titre → fiche) du pied d'actions (`card-actions`) pour permettre des boutons `wire:click` sans navigation parasite ni HTML invalide.
@@ -891,3 +940,6 @@ Toujours avec une session active et un client **valide**, avec la `redirect_uri`
 - [ ] 11.8 Reprise post-login : query string complète préservée
 - [ ] 11.9 Sync amont : client, code et jeton OIDC intacts
 - [ ] 11.10 Révocation idempotente ; client inconnu = échec bruyant
+- [ ] 12.1 Acteur fédéré : ligne `oidc.authorize` dans `external_action_audit_logs` ; acteur AD local : aucune
+- [ ] **12.2 `Host` détourné : `url.intended` reste relatif, la reprise post-login ne quitte jamais l'instance**
+- [ ] 12.3 `redirect_uri` / `nonce` trop longs : refus normalisé et journalisé, jamais une 500

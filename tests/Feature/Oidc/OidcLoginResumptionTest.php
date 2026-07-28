@@ -127,6 +127,37 @@ class OidcLoginResumptionTest extends TestCase
     }
 
     #[Test]
+    public function the_memorised_url_is_host_relative_and_never_trusts_the_incoming_host_header(): void
+    {
+        // Correctif review 55.1 (#2). `fullUrl()` reconstruit une URL ABSOLUE à
+        // partir du header `Host` de la requête. Or `TrustHosts` est désactivé
+        // dans le Kernel et le vhost Apache répond à n'importe quel `Host` : un
+        // `Host` détourné serait recopié tel quel dans `url.intended`, puis SUIVI
+        // sans contrôle par `redirect()->intended()` (qui ne vérifie aucun host).
+        // SE5 deviendrait alors l'open-redirector que `validateAuthorizeRequest()`
+        // s'échine à empêcher sur `redirect_uri` — en emportant toute la query
+        // OIDC (`client_id`, `state`, `nonce`, `code_challenge`).
+        //
+        // `getRequestUri()` rend un chemin RELATIF : la query est préservée
+        // (besoin de la story), l'hôte n'est jamais lu.
+        $client = $this->makeClient();
+
+        $response = $this->get($this->authorizePath($client), ['Host' => 'attaquant.example']);
+
+        $response->assertRedirect(route('auth.login'));
+
+        $intended = (string) session('url.intended');
+
+        self::assertStringStartsWith('/oidc/authorize?', $intended, 'URI relative, jamais absolue');
+        self::assertStringNotContainsString('attaquant.example', $intended);
+        self::assertStringNotContainsString('://', $intended, 'aucun scheme : rien à suivre hors de l\'instance');
+
+        // Le correctif de la story tient toujours : la query est intacte.
+        self::assertStringContainsString('client_id='.$client->client_id, $intended);
+        self::assertStringContainsString('code_challenge=', $intended);
+    }
+
+    #[Test]
     public function an_amputated_url_would_not_complete_the_flow(): void
     {
         // Contrôle NÉGATIF : la démonstration de l'utilité du correctif. Avec

@@ -239,19 +239,29 @@ class SambaEduAuthGuard implements AuthGuardInterface
 
         // Stocker l'URL demandée pour redirection après login.
         //
-        // ⚠️ `fullUrl()` et NON `path()` (Story 55.1) : `path()` amputait la
-        // QUERY STRING. Or tout le flux OIDC vit dans la query
+        // ⚠️ `getRequestUri()` et NON `path()` (Story 55.1) : `path()` amputait
+        // la QUERY STRING. Or tout le flux OIDC vit dans la query
         // (`client_id`, `state`, `code_challenge`, `nonce`…) — un utilisateur
         // sans session dirigé vers `/oidc/authorize?…` était « repris » après
         // login sur `/oidc/authorize` NU, donc refusé systématiquement. Le SSO
         // ne pouvait jamais aboutir au premier accès de la journée.
         //
-        // Le correctif est transverse et bénin : aujourd'hui même un `?tab=`
-        // d'onglet est perdu au re-login. Précédent interne identique :
+        // ⚠️ Et NON `fullUrl()` (correctif review 55.1) : `fullUrl()` reconstruit
+        // une URL ABSOLUE à partir du header `Host` de la requête, non filtré ici
+        // (`TrustHosts` est désactivé dans le Kernel et le vhost Apache répond à
+        // n'importe quel `Host`). Cette URL absolue serait ensuite suivie telle
+        // quelle par `redirect()->intended()`, qui ne vérifie aucun host : un
+        // `Host` détourné ferait de `url.intended` un open-redirect emportant
+        // toute la query OIDC. `getRequestUri()` rend un chemin RELATIF
+        // (chemin + query, jamais de scheme ni d'hôte) — le besoin de la story
+        // est couvert sans jamais faire confiance à un en-tête entrant, et sans
+        // toucher à la configuration transverse de l'application.
+        //
+        // Précédent interne à corriger un jour de la même façon :
         // `app/Http/Middleware/RequireAdminRights.php:145`. On répare le
         // mécanisme standard (`url.intended` + `redirect()->intended()` de
         // `AuthController`) plutôt que d'inventer un canal parallèle.
-        $intendedUrl = $request->fullUrl();
+        $intendedUrl = $request->getRequestUri();
         session()->put('url.intended', $intendedUrl);
 
         return redirect(route('auth.login'));

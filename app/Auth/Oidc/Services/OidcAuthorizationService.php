@@ -64,6 +64,14 @@ class OidcAuthorizationService
     /** Refus redirigeable → 302 vers la `redirect_uri` DÉCLARÉE, avec `error`. */
     public const KIND_REDIRECT = 'redirect';
 
+    // Bornes ALIGNÉES sur les colonnes de `oidc_authorization_codes` (migration
+    // 2026_07_28_300000). Toute modification de largeur de colonne doit se
+    // répercuter ici — sinon la borne applicative laisse repasser un dépassement
+    // que seul PostgreSQL rejettera, en 500 plutôt qu'en refus normalisé.
+    public const MAX_NONCE_LENGTH = 255;
+    public const MAX_SCOPE_LENGTH = 255;
+    public const MAX_CODE_CHALLENGE_LENGTH = 128;
+
     /**
      * Valide une requête d'autorisation.
      *
@@ -152,13 +160,38 @@ class OidcAuthorizationService
             );
         }
 
+        // ── 4. Bornes de longueur des paramètres PERSISTÉS ───────────────
+        // `nonce`, `scope` et `code_challenge` viennent de la query string et
+        // sont écrits tels quels dans `oidc_authorization_codes` (VARCHAR 255 /
+        // 255 / 128). PostgreSQL REFUSE un dépassement (`value too long for type
+        // character varying`) : sans borne applicative, une valeur trop longue
+        // ne produit pas un refus OAuth normalisé mais une `QueryException` →
+        // 500 générique, hors du journal `oidc` (contradiction avec FR20).
+        // SQLite, driver de toute la suite de tests, n'applique AUCUNE limite de
+        // longueur (affinité de type) — la divergence est donc structurellement
+        // invisible aux tests tant que la borne n'est pas dans le code.
+        $nonce = $this->str($params, 'nonce');
+        $tooLong = mb_strlen($nonce) > self::MAX_NONCE_LENGTH
+            || mb_strlen(trim($scope)) > self::MAX_SCOPE_LENGTH
+            || mb_strlen($codeChallenge) > self::MAX_CODE_CHALLENGE_LENGTH;
+
+        if ($tooLong) {
+            return $this->redirectRefusal(
+                OidcErrorCodes::PARAMETER_TOO_LONG,
+                'invalid_request',
+                $clientId,
+                $redirectUri,
+                $state,
+            );
+        }
+
         return [
             'ok' => true,
             'client' => $client,
             'redirect_uri' => $redirectUri,
             'state' => $state,
             'scope' => trim($scope),
-            'nonce' => $this->str($params, 'nonce'),
+            'nonce' => $nonce,
             'code_challenge' => $codeChallenge,
             'code_challenge_method' => $method,
         ];

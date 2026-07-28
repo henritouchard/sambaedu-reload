@@ -160,6 +160,47 @@ class OidcClientCommandsTest extends TestCase
         app(OidcClientRegistry::class)->register('Bancal', ['https:///chemin-sans-hote']);
     }
 
+    #[Test]
+    public function the_registry_refuses_a_redirect_uri_longer_than_the_column_that_will_store_it(): void
+    {
+        // Correctif review 55.1 (#3). L'URI validée est RECOPIÉE dans
+        // `oidc_authorization_codes.redirect_uri` (VARCHAR 512) à chaque
+        // émission de code. Sans borne ici, un client accepté à
+        // l'enregistrement échouerait à CHAQUE flux sur une `QueryException`
+        // PostgreSQL → 500 générique, hors du journal `oidc` (FR20 non tenu).
+        //
+        // ⚠️ Ce test assert le comportement APPLICATIF, jamais la contrainte
+        // SQL : SQLite (driver de toute la suite) n'applique aucune limite de
+        // longueur sur un VARCHAR. Une assertion sur l'insertion ne prouverait
+        // donc rien ici et masquerait la divergence au lieu de la révéler.
+        $tooLong = 'https://ext.example.test/callback?jeton='
+            .str_repeat('a', OidcClientRegistry::MAX_REDIRECT_URI_LENGTH);
+
+        self::assertGreaterThan(OidcClientRegistry::MAX_REDIRECT_URI_LENGTH, mb_strlen($tooLong));
+
+        $this->artisan('oidc:client:register', [
+            'name' => 'URI démesurée',
+            '--redirect-uri' => [$tooLong],
+        ])->assertExitCode(1);
+
+        self::assertSame(0, OidcClient::query()->count(), 'aucun client déclaré');
+
+        // Contrôle POSITIF : une URI JUSTE en dessous de la borne passe — sans
+        // lui, le refus ci-dessus pourrait n'être que le symptôme d'une
+        // plomberie cassée et ne rien démontrer.
+        $atLimit = 'https://ext.example.test/cb?j='
+            .str_repeat('a', OidcClientRegistry::MAX_REDIRECT_URI_LENGTH - mb_strlen('https://ext.example.test/cb?j='));
+
+        self::assertSame(OidcClientRegistry::MAX_REDIRECT_URI_LENGTH, mb_strlen($atLimit));
+
+        $this->artisan('oidc:client:register', [
+            'name' => 'URI à la limite',
+            '--redirect-uri' => [$atLimit],
+        ])->assertExitCode(0);
+
+        self::assertSame([$atLimit], OidcClient::query()->firstOrFail()->redirectUris());
+    }
+
     // ── revoke ────────────────────────────────────────────────────────────
 
     #[Test]

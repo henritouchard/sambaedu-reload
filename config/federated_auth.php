@@ -246,6 +246,8 @@ return [
     |   - `app.user.show`          : détail d'un utilisateur (PII)
     |   - `app.users.groups.edit`  : groupe d'utilisateurs (membres / PII)
     |   - `app.users.*`            : filet pour les sous-écrans utilisateur.
+    | Ajout Story 55.1 :
+    |   - `oidc.authorize`         : GET qui ÉMET une identité (SSO extensions).
     |
     | Override `.env` non requis (liste statique config). Ajuster ici au besoin.
     |
@@ -257,6 +259,14 @@ return [
             'app.user.show',
             'app.users.groups.edit',
             'app.users.*',
+            // Story 55.1 — `/oidc/authorize` est un GET qui ÉMET une identité
+            // (code d'autorisation puis id_token) au nom de l'acteur connecté.
+            // Sans cette entrée, `federated.audit` déclaré sur la route est un
+            // NO-OP silencieux (les GET ne sont audités que par allowlist), et
+            // l'émission d'un token pour un acteur fédéré ne laisse aucune trace
+            // durable : les logs `oidc` omettent volontairement le `sub`, et la
+            // ligne `oidc_authorization_codes` est purgée au fil de l'eau.
+            'oidc.authorize',
         ],
     ],
 ];
