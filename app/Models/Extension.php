@@ -19,10 +19,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * dénormalisations destinées à la LISTE (afficher la bibliothèque sans décoder
  * N documents JSON).
  *
- * **`status` est affiché, jamais muté en 54.1** : la synchro de la source
- * bundled ({@see \App\Services\Extensions\ExtensionCatalogService::syncBundled()})
+ * **`status` est affiché, jamais muté par le catalogue** : la synchro de la
+ * source bundled ({@see \App\Services\Extensions\ExtensionCatalogService::syncBundled()})
  * ne l'écrit jamais, sinon un rechargement de catalogue dé-intégrerait
- * silencieusement une extension. Les transitions arrivent en Story 54.2.
+ * silencieusement une extension. Les transitions
+ * (`available ⇄ integrated`) vivent dans
+ * {@see \App\Services\Extensions\ExtensionLifecycleService} (Story 54.2),
+ * seul écrivain de cette colonne.
  *
  * ⚠️ Aucune de ces colonnes n'est alimentée par la sync amont (controlHub) :
  * le registre d'extensions est isolé PAR CONSTRUCTION (NFR14).
@@ -49,9 +52,12 @@ class Extension extends Model
     protected $table = 'extensions';
 
     /**
-     * ⚠️ `status` est VOLONTAIREMENT absent : rien dans cette story ne doit
-     * pouvoir le muter par assignation de masse. Story 54.2 l'ajoutera (ou
-     * mutera la propriété explicitement).
+     * ⚠️ `status` est VOLONTAIREMENT absent : rien dans cette classe ne doit
+     * pouvoir le muter par assignation de masse. Décision 54.2 (tranchée) :
+     * `status` RESTE hors `$fillable` — la transition se fait par
+     * ASSIGNATION DE PROPRIÉTÉ explicite dans
+     * {@see \App\Services\Extensions\ExtensionLifecycleService}, seul
+     * écrivain de la colonne.
      *
      * @var list<string>
      */

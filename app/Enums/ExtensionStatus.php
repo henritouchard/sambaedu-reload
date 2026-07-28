@@ -10,10 +10,11 @@ namespace App\Enums;
  * - `Available`  : présente au catalogue, PAS encore intégrée à l'instance.
  * - `Integrated` : intégrée — sa tuile est éligible au lanceur (Story 54.3).
  *
- * ⚠️ PÉRIMÈTRE 54.1 : cet état est **affiché** uniquement. AUCUN chemin de la
- * story ne le mute — la synchro de la source bundled n'écrit JAMAIS la colonne
- * `status` (idempotence AC2). Les transitions (bouton « Intégrer » /
- * « Désinstaller » + journal d'audit) arrivent en Story 54.2.
+ * ⚠️ La synchro de la source bundled n'écrit JAMAIS la colonne `status`
+ * (idempotence AC2 de 54.1). Les transitions (bouton « Intégrer » /
+ * « Désinstaller » + journal d'audit) vivent dans
+ * {@see \App\Services\Extensions\ExtensionLifecycleService} (Story 54.2),
+ * seul écrivain de cette colonne.
  */
 enum ExtensionStatus: string
 {

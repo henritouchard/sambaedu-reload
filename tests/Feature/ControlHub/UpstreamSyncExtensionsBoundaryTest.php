@@ -12,7 +12,9 @@ use App\Models\ControlHubLinkAuditLog;
 use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Models\Extension;
+use App\Models\ExtensionAuditLog;
 use App\Models\ExtensionSource;
+use App\Models\User;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\AppStore\PackagesXmlService;
 use App\Services\ControlHub\ControlHubContractIngestionService;
@@ -26,8 +28,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC3 / NFR14) — **FRONTIÈRE** : la sync amont (controlHub) ne
- * touche JAMAIS le registre d'extensions.
+ * Story 54.1 (AC3 / NFR14) / 54.2 (AC3) — **FRONTIÈRE** : la sync amont
+ * (controlHub) ne touche JAMAIS le registre d'extensions — désormais
+ * **3 tables** : `extensions`, `extension_sources`, et depuis 54.2
+ * `extension_audit_logs` (le journal du cycle de vie, lui aussi isolé).
  *
  * Pourquoi ce test existe : le catalogue applicatif LOCAL a déjà été effacé par
  * la sync amont dans ce projet. La chaîne destructive réelle est :
@@ -47,7 +51,7 @@ use Tests\TestCase;
  * L'isolement du registre d'extensions est **par construction** (aucune FK,
  * aucun listener, aucun service commun). Ce test le **prouve** et le
  * **verrouille** : il échouera si un futur listener de la sync déborde sur
- * `extensions` / `extension_sources`.
+ * `extensions` / `extension_sources` / `extension_audit_logs`.
  *
  * ⚠️ **PAS de `Event::fake()`** : on veut la cascade RÉELLE de listeners.
  * `Queue::fake()` + `WorkstationGroupObserver::disableSync()` neutralisent la
@@ -55,8 +59,10 @@ use Tests\TestCase;
  * mockées — la cascade Eloquent, elle, reste réelle.
  *
  * ⚠️ Needles **QUOTÉS** (`'"extensions"'`) : `extensions` nu matcherait
- * `extension_sources` (faux positif), et un filtre non quoté raterait le vrai
- * cas de figure.
+ * `extension_sources` **et** `extension_audit_logs` (faux positifs), et un
+ * filtre non quoté raterait le vrai cas de figure — le méta-test
+ * {@see self::the_quoted_needles_do_not_confuse_the_three_tables()} le
+ * vérifie explicitement pour les 3 tables.
  *
  * ⚠️ GARDE-FOU R3 : aucun « central » — vocabulaire « amont » / `Upstream`.
  */
@@ -64,8 +70,8 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** Identifiants QUOTÉS des deux tables du registre. */
-    private const REGISTRY_NEEDLES = ['"extensions"', '"extension_sources"'];
+    /** Identifiants QUOTÉS des trois tables du registre (54.2 : + le journal d'audit). */
+    private const REGISTRY_NEEDLES = ['"extensions"', '"extension_sources"', '"extension_audit_logs"'];
 
     protected function setUp(): void
     {
@@ -87,22 +93,42 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    /** Pose la source embarquée + l'extension Documentation. */
+    /**
+     * Pose la source embarquée + l'extension Documentation + AU MOINS une
+     * ligne d'audit (54.2, Task 5) — la frontière doit être vérifiée avec un
+     * journal déjà non vide, pas seulement un journal vide qui rendrait
+     * `extension_audit_logs` invisible par construction.
+     */
     private function seedRegistry(): void
     {
         $source = ExtensionSource::factory()->bundled()->create();
-        Extension::factory()->create([
+        $extension = Extension::factory()->create([
             'extension_source_id' => $source->id,
             'key' => 'doc',
             'name' => 'Documentation',
         ]);
+
+        $actor = User::query()->create([
+            'login' => 'qa-boundary-actor',
+            'role' => 'autre',
+            'is_active' => true,
+        ]);
+
+        ExtensionAuditLog::log(
+            extensionId: $extension->id,
+            extensionKey: $extension->key,
+            extensionName: $extension->name,
+            action: ExtensionAuditLog::ACTION_INTEGRATE,
+            actorUserId: $actor->id,
+            actorLogin: $actor->login,
+        );
     }
 
     /**
      * Snapshot brut du registre (lignes + `updated_at`), pris HORS de la
      * fenêtre de query-log.
      *
-     * @return array{sources: array<int, array<string, mixed>>, extensions: array<int, array<string, mixed>>}
+     * @return array{sources: array<int, array<string, mixed>>, extensions: array<int, array<string, mixed>>, audit_logs: array<int, array<string, mixed>>}
      */
     private function registrySnapshot(): array
     {
@@ -110,6 +136,8 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
             'sources' => DB::table('extension_sources')->orderBy('id')->get()
                 ->map(fn ($row): array => (array) $row)->all(),
             'extensions' => DB::table('extensions')->orderBy('id')->get()
+                ->map(fn ($row): array => (array) $row)->all(),
+            'audit_logs' => DB::table('extension_audit_logs')->orderBy('id')->get()
                 ->map(fn ($row): array => (array) $row)->all(),
         ];
     }
@@ -185,25 +213,49 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         $hits = $this->registryQueriesDuring(function (): void {
             Extension::query()->count();
             ExtensionSource::query()->count();
+            ExtensionAuditLog::query()->count();
         });
 
         self::assertNotSame([], $hits, 'le filtre doit détecter une VRAIE requête sur le registre');
     }
 
     #[Test]
-    public function the_quoted_needles_do_not_confuse_the_two_tables(): void
+    public function the_quoted_needles_do_not_confuse_the_three_tables(): void
     {
         $this->seedRegistry();
 
+        // `extension_sources` ne doit JAMAIS être compté comme `extensions`.
         $onlySources = $this->registryQueriesDuring(function (): void {
             ExtensionSource::query()->count();
         });
-
         self::assertNotSame([], $onlySources);
         foreach ($onlySources as $sql) {
-            // `extension_sources` ne doit JAMAIS être compté comme `extensions` :
-            // l'identifiant quoté `"extensions"` n'y apparaît pas.
             self::assertStringNotContainsString('"extensions"', $sql);
+            self::assertStringNotContainsString('"extension_audit_logs"', $sql);
+        }
+
+        // ⚠️ 3ᵉ table (54.2) : `extension_audit_logs` ne doit JAMAIS être
+        // comptée comme `extensions` — l'identifiant quoté `"extensions"`
+        // n'apparaît dans aucune requête visant `extension_audit_logs`.
+        $onlyAuditLogs = $this->registryQueriesDuring(function (): void {
+            ExtensionAuditLog::query()->count();
+        });
+        self::assertNotSame([], $onlyAuditLogs);
+        foreach ($onlyAuditLogs as $sql) {
+            self::assertStringNotContainsString('"extensions"', $sql);
+            self::assertStringNotContainsString('"extension_sources"', $sql);
+        }
+
+        // Et `extensions` seule ne doit matcher ni l'un ni l'autre needle voisin.
+        // (Le commentaire annonçait cette vérification sans que le `foreach`
+        // existe — 4 assertions dirigées sur 6 au lieu des 3 tables deux à deux.)
+        $onlyExtensions = $this->registryQueriesDuring(function (): void {
+            Extension::query()->count();
+        });
+        self::assertNotSame([], $onlyExtensions);
+        foreach ($onlyExtensions as $sql) {
+            self::assertStringNotContainsString('"extension_sources"', $sql);
+            self::assertStringNotContainsString('"extension_audit_logs"', $sql);
         }
     }
 
@@ -360,5 +412,6 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         self::assertSame(1, ExtensionSource::query()->count());
         self::assertSame(1, Extension::query()->count());
         self::assertNotNull(Extension::where('key', 'doc')->first());
+        self::assertSame(1, ExtensionAuditLog::query()->count(), 'le journal d\'audit (54.2) est aussi resté intact');
     }
 }

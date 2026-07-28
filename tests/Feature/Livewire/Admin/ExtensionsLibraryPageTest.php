@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
+use App\Enums\ExtensionStatus;
+use App\Enums\ExtensionType;
 use App\Models\Extension;
+use App\Models\ExtensionAuditLog;
 use App\Models\ExtensionSource;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,11 +18,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC1) — page `/admin/extensions` : bibliothèque en lecture seule.
+ * Story 54.1 (AC1) / 54.2 (AC1-AC3) — page `/admin/extensions` : bibliothèque.
  *
  * Couvre : liste alimentée par le registre multi-sources (nom, type, éditeur,
- * source, état), état vide propre, et la garde `server.admin` (403 + middleware
- * de route).
+ * source, état), état vide propre, la garde `server.admin` (403 + middleware
+ * de route), et depuis 54.2 les gestes « Intégrer » / « Désinstaller »
+ * (boutons conditionnels, flux de modale, idempotence, defense-in-depth).
  */
 class ExtensionsLibraryPageTest extends TestCase
 {
@@ -27,17 +31,19 @@ class ExtensionsLibraryPageTest extends TestCase
 
     private const PAGE = 'pages::admin.extensions.index';
 
+    private User $admin;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->withoutVite();
 
-        $admin = User::query()->create([
+        $this->admin = User::query()->create([
             'login' => 'extensions-admin',
             'role' => 'autre',
             'is_active' => true,
         ]);
-        $this->actingAs($admin);
+        $this->actingAs($this->admin);
     }
 
     /** @param list<string> $abilities */
@@ -144,5 +150,263 @@ class ExtensionsLibraryPageTest extends TestCase
             ->assertOk()
             ->assertSee('Aucune extension')
             ->assertSet('extensions', []);
+    }
+
+    // ── Story 54.2 — AC1 : boutons suivent l'état ─────────────────────────
+
+    #[Test]
+    public function shows_the_integrate_button_for_an_available_link_extension(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        // ⚠️ La modale de confirmation est toujours présente dans le DOM (juste
+        // fermée) : son titre/bouton contiennent le mot « Désinstaller » — on
+        // vérifie donc la présence du BOUTON DE CARTE via son data-testid, pas
+        // le texte brut.
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertSeeHtml("integrate-{$extension->id}")
+            ->assertDontSeeHtml("uninstall-{$extension->id}");
+    }
+
+    #[Test]
+    public function shows_the_uninstall_button_for_an_integrated_link_extension(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertSeeHtml("uninstall-{$extension->id}")
+            ->assertDontSeeHtml("integrate-{$extension->id}");
+    }
+
+    #[Test]
+    public function shows_no_action_button_for_an_app_type_extension(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->create(['type' => ExtensionType::App]);
+
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertDontSeeHtml("integrate-{$extension->id}")
+            ->assertDontSeeHtml("uninstall-{$extension->id}");
+    }
+
+    // ── AC1 — intégrer, direct, tracé ─────────────────────────────────────
+
+    #[Test]
+    public function integrate_mutates_and_dispatches_a_success_toast(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        Livewire::test(self::PAGE)
+            ->call('integrate', $extension->id)
+            ->assertDispatched('toastMagic', status: 'success');
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+        self::assertSame(1, ExtensionAuditLog::query()->count());
+    }
+
+    // ── AC3 — idempotence : intégrer une extension déjà intégrée ─────────
+
+    #[Test]
+    public function integrate_on_an_already_integrated_extension_is_a_noop_with_info_toast(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        Livewire::test(self::PAGE)
+            ->call('integrate', $extension->id)
+            ->assertDispatched('toastMagic', status: 'info');
+
+        self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    // ── Correctifs de review 54.2 ─────────────────────────────────────────
+
+    #[Test]
+    public function confirming_uninstall_twice_is_a_clean_noop_and_never_reports_extension_zero(): void
+    {
+        // Review #1 : `confirmUninstall()` appelait `closeUninstall()`, qui remet
+        // `uninstallTargetId` à 0. Le bouton restant cliquable tant que la 1re
+        // réponse n'est pas revenue, un double-clic rejouait la 2e invocation
+        // avec l'id 0 → toast d'ERREUR « Extension #0 introuvable », au lieu du
+        // no-op propre exigé par l'AC3 (« clic rejoué, double-clic »).
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        $component = Livewire::test(self::PAGE)
+            ->call('askUninstall', $extension->id)
+            ->call('confirmUninstall')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        $component->call('confirmUninstall')
+            ->assertDispatched('toastMagic', status: 'info')
+            ->assertNotDispatched('toastMagic', status: 'error');
+
+        self::assertSame(ExtensionStatus::Available, $extension->fresh()->status);
+        self::assertSame(1, ExtensionAuditLog::query()->count(), 'une seule transition, une seule trace');
+    }
+
+    #[Test]
+    public function a_noop_refreshes_the_stale_screen_instead_of_contradicting_it(): void
+    {
+        // Review #2 : le no-op n'arrive QUE sur un écran périmé (second admin,
+        // onglet dupliqué). Toaster « déjà intégrée » sans recharger laissait la
+        // carte afficher « Disponible » + le bouton « Intégrer » — le message de
+        // l'application et son écran se contredisaient.
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        $component = Livewire::test(self::PAGE)
+            ->assertSeeHtml('data-testid="integrate-'.$extension->id.'"');
+
+        // Un autre admin intègre, hors du composant : l'écran est désormais faux.
+        $fresh = $extension->fresh();
+        $fresh->status = ExtensionStatus::Integrated;
+        $fresh->save();
+
+        $component->call('integrate', $extension->id)
+            ->assertDispatched('toastMagic', status: 'info')
+            ->assertSeeHtml('data-testid="uninstall-'.$extension->id.'"')
+            ->assertDontSeeHtml('data-testid="integrate-'.$extension->id.'"');
+    }
+
+    // ── AC2 — flux de la modale de désinstallation ────────────────────────
+
+    #[Test]
+    public function ask_uninstall_opens_the_confirmation_modal(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create(['name' => 'Documentation']);
+
+        Livewire::test(self::PAGE)
+            ->call('askUninstall', $extension->id)
+            ->assertSet('isUninstallOpen', true)
+            ->assertSet('uninstallTargetId', $extension->id)
+            ->assertSet('uninstallTargetName', 'Documentation');
+    }
+
+    #[Test]
+    public function confirm_uninstall_mutates_and_audits(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        Livewire::test(self::PAGE)
+            ->call('askUninstall', $extension->id)
+            ->call('confirmUninstall')
+            ->assertSet('isUninstallOpen', false)
+            ->assertDispatched('toastMagic', status: 'success');
+
+        self::assertSame('available', $extension->fresh()->status->value);
+        self::assertSame(1, ExtensionAuditLog::query()->count());
+        self::assertSame(ExtensionAuditLog::ACTION_UNINSTALL, ExtensionAuditLog::query()->first()->action);
+    }
+
+    #[Test]
+    public function closing_the_modal_without_confirming_changes_nothing(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        Livewire::test(self::PAGE)
+            ->call('askUninstall', $extension->id)
+            ->call('closeUninstall')
+            ->assertSet('isUninstallOpen', false);
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+        self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    // ── AC3 — fail-closed : type non pris en charge, id inconnu ──────────
+
+    #[Test]
+    public function integrating_an_app_type_extension_is_refused_with_an_error_toast(): void
+    {
+        $this->grant(['server.admin']);
+        $extension = Extension::factory()->fromBundled()->create(['type' => ExtensionType::App]);
+
+        Livewire::test(self::PAGE)
+            ->call('integrate', $extension->id)
+            ->assertDispatched('toastMagic', status: 'error');
+
+        self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    #[Test]
+    public function integrating_an_unknown_id_is_refused_without_a_500(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::PAGE)
+            ->call('integrate', 999_999)
+            ->assertOk()
+            ->assertDispatched('toastMagic', status: 'error');
+    }
+
+    // ── AC1/AC2 — defense-in-depth : garde révoquée APRÈS mount() ────────
+
+    #[Test]
+    public function integrate_is_forbidden_when_the_ability_is_revoked_after_mount(): void
+    {
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        $allowed = true;
+        Gate::before(function ($user, string $ability) use (&$allowed) {
+            return ($ability === 'server.admin' && $allowed) ? true : null;
+        });
+
+        $component = Livewire::test(self::PAGE)->assertOk();
+
+        $allowed = false;
+        $component->call('integrate', $extension->id)->assertForbidden();
+
+        self::assertSame('available', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function ask_uninstall_is_forbidden_when_the_ability_is_revoked_after_mount(): void
+    {
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        $allowed = true;
+        Gate::before(function ($user, string $ability) use (&$allowed) {
+            return ($ability === 'server.admin' && $allowed) ? true : null;
+        });
+
+        $component = Livewire::test(self::PAGE)->assertOk()->assertSet('isUninstallOpen', false);
+
+        $allowed = false;
+        $component->call('askUninstall', $extension->id)->assertForbidden();
+
+        // Le composant n'a pas dépassé la garde : l'état monté avant révocation
+        // reste celui observable (le 403 a interrompu la requête avant toute
+        // mutation de $isUninstallOpen).
+        self::assertSame('integrated', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function confirm_uninstall_is_forbidden_when_the_ability_is_revoked_after_mount(): void
+    {
+        $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
+
+        $allowed = true;
+        Gate::before(function ($user, string $ability) use (&$allowed) {
+            return ($ability === 'server.admin' && $allowed) ? true : null;
+        });
+
+        $component = Livewire::test(self::PAGE)
+            ->assertOk()
+            ->call('askUninstall', $extension->id);
+
+        $allowed = false;
+        $component->call('confirmUninstall')->assertForbidden();
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+        self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 }

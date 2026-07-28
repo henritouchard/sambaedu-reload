@@ -2,22 +2,27 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont). _Stories 54.2 (intégrer/désinstaller + audit), 54.3 (lanceur « gaufre » navbar), Epics 55/56 (SSO, sources distantes) à ajouter en sections suivantes quand livrées._
+**Stories couvertes** : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table). _Story 54.3 (lanceur « gaufre » navbar), Epics 55/56 (SSO, sources distantes) à ajouter en sections suivantes quand livrées._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
+- `database/migrations/2026_07_28_200000_create_extension_audit_logs_table.php` — table d'audit append-only (54.2)
 - `app/Enums/{ExtensionType,ExtensionStatus,ExtensionSourceKind}.php`
 - `app/Models/{Extension,ExtensionSource}.php` — `status` volontairement HORS `$fillable`
+- `app/Models/ExtensionAuditLog.php` — journal append-only du cycle de vie (54.2, calque `CapabilityOverrideAuditLog`)
 - `app/Services/Extensions/ExtensionManifestValidator.php` — validation PURE du manifest v1 (version stricte d'abord)
 - `app/Services/Extensions/ExtensionCatalogService.php` — `syncBundled()` / `library()` / `find()`
+- `app/Services/Extensions/ExtensionLifecycleService.php` — `integrate()` / `uninstall()`, seul écrivain de `extensions.status` (54.2)
 - `app/Exceptions/InvalidExtensionManifestException.php` — porte le champ fautif
+- `app/Exceptions/ExtensionLifecycleException.php` — id inconnu / type non pris en charge (54.2, fail-closed)
 - `config/extensions.php` — `bundled_path` (chemin de découverte surchargeable)
 - `resources/extensions/doc/manifest.json` — manifest de la tuile Documentation (`link` → `/doc`)
 - `database/seeders/BundledExtensionSeeder.php` (+ enregistrement dans `DatabaseSeeder`)
-- `resources/views/pages/admin/extensions/index.blade.php`, `resources/views/pages/admin/extensions/[id]/index.blade.php`
+- `resources/views/pages/admin/extensions/index.blade.php`, `resources/views/pages/admin/extensions/[id]/index.blade.php` — boutons Intégrer/Désinstaller + modale de confirmation depuis 54.2
 - `resources/views/components/organisms/sidebar.blade.php` — entrée « Extensions » du bloc Serveur
 - `routes/web.php` — `admin.extensions` et `admin.extensions.show` (groupe admin + `can:server.admin`)
-- `tests/Feature/ControlHub/UpstreamSyncExtensionsBoundaryTest.php` — frontière NFR14
+- `tests/Feature/ControlHub/UpstreamSyncExtensionsBoundaryTest.php` — frontière NFR14 (3 tables depuis 54.2)
+- `tests/Feature/Extensions/ExtensionLifecycleServiceTest.php` — transitions, no-op, atomicité, append-only (54.2)
 
 ---
 
@@ -32,7 +37,7 @@
   - `enseignant.test` — rôle `prof`, **sans** `server.admin`
 - Le site de documentation `/doc` doit être publié (Story 52.1, `bash scripts/update.sh`) pour que la cible de la tuile Documentation réponde.
 
-> **Rappel de périmètre 54.1** : les pages sont en **lecture seule**. Aucun bouton « Intégrer » / « Désinstaller » (Story 54.2), aucun lanceur navbar (Story 54.3), aucune UI d'ajout de source distante (Epic 56). L'état affiché (« Disponible » / « Intégrée ») n'est mutable qu'en base à ce stade.
+> **Rappel de périmètre 54.1** : les pages étaient en **lecture seule** à l'origine. **Depuis la Story 54.2**, les boutons « Intégrer » / « Désinstaller » existent pour le type `link` (cartes de la bibliothèque + fiche) — voir Section 7. Reste hors périmètre : aucun lanceur navbar (Story 54.3), aucune UI d'ajout de source distante ni cycle du type `app` (Epic 56).
 
 ---
 
@@ -350,6 +355,133 @@ Déposer un manifest avec `"visibility": {"roles": {"a": "admin"}}` (objet au li
 
 ---
 
+## Section 7 — Intégrer / désinstaller une extension link (Story 54.2)
+
+**Contexte** : depuis cette story, les cartes de la bibliothèque et la fiche d'extension portent des boutons d'action pour le type `link` — la carte de 54.1 (un `<a href>` unique) a été restructurée en `<div>` racine + zone titre cliquable + pied `card-actions` hors du lien. ⚠️ Le scénario 3.3 (Section 3) décrit l'état AVANT 54.2 (« aucun bouton d'action ») — il reste vrai pour un type `app` (aucun bouton avant l'Epic 56), mais plus pour un type `link`. Chaque geste écrit une ligne dans `extension_audit_logs` (FR36 socle) DANS LA MÊME transaction que la mutation de `status`.
+
+> Repartir de l'état nominal avant/après chaque scénario : `status = available` pour `doc`, table `extension_audit_logs` vidée si besoin (`php artisan tinker --execute="\App\Models\ExtensionAuditLog::query()->delete();"`).
+
+### Scénario 7.1 — Intégrer depuis la bibliothèque
+
+1. En `admin`, sur `/admin/extensions`, repérer la carte « Documentation » (`status = available`).
+2. Cliquer le bouton « Intégrer » du pied de carte (PAS la zone titre — celle-ci mène toujours à la fiche).
+
+**Attendu** :
+- La transition est **immédiate** : pas de spinner de progression, pas d'installation de composants.
+- Le badge passe à « Intégrée », le bouton « Intégrer » est remplacé par « Désinstaller » au re-render.
+- Un toast de succès confirme l'opération.
+- Le compteur d'en-tête (« N intégrée(s) ») s'incrémente.
+
+### Scénario 7.2 — Intégrer depuis la fiche
+
+1. Remettre `doc` à `available` (tinker, cf. scénario 1.3).
+2. Ouvrir la fiche `/admin/extensions/{id}`.
+3. Cliquer « Intégrer » dans le bandeau d'actions en haut de page (`<x-slot:actions>`).
+
+**Attendu** :
+- Même comportement que 7.1 : transition immédiate, badge d'état mis à jour, toast de succès, le bouton devient « Désinstaller ».
+
+### Scénario 7.3 — Désinstaller avec confirmation par modale
+
+1. Partir d'une extension `doc` `integrated` (via 7.1 ou 7.2).
+2. Cliquer « Désinstaller » (carte OU fiche).
+3. Vérifier le contenu de la modale : titre « Désinstaller l'extension », texte expliquant qu'aucun composant n'est installé pour une extension lien (rien à nettoyer), **aucun champ de saisie de confirmation texte**.
+4. Cliquer le bouton rouge « Désinstaller » du footer de la modale.
+
+**Attendu** :
+- L'extension redevient `available` : badge « Disponible », bouton redevenu « Intégrer ».
+- Toast de succès.
+- La modale se ferme.
+
+### Scénario 7.4 — Annulation (bouton Annuler ou fermeture de la modale)
+
+1. Extension `doc` `integrated`. Cliquer « Désinstaller » pour ouvrir la modale.
+2. Cliquer « Annuler » (ou le bouton ✕, ou cliquer hors de la modale si le comportement le permet).
+
+**Attendu** :
+- La modale se ferme.
+- **Rien ne change** : badge toujours « Intégrée », aucun toast, `status` inchangé en base.
+- Vérification tinker : `\App\Models\ExtensionAuditLog::query()->count()` inchangé (aucune ligne créée par l'annulation).
+
+### Scénario 7.5 — No-op : double-clic / re-jeu de l'opération
+
+1. Extension `doc` `available`. Cliquer « Intégrer » une première fois (elle passe `integrated`).
+2. Recliquer « Intégrer » sur la même carte/fiche (double-clic, onglet dupliqué, ou second admin concurrent).
+
+**Attendu** :
+- Le second clic est un **no-op propre** : le toast affiché est un **toast d'information** (« déjà intégrée »), pas un toast de succès.
+- `status` reste `integrated`, **aucune écriture** (`updated_at` de l'extension inchangé).
+- **Aucune nouvelle ligne** dans `extension_audit_logs` — un seul enregistrement `integrate` existe pour cette extension malgré les deux clics.
+- Symétrique pour « Désinstaller » sur une extension déjà `available`.
+
+### Scénario 7.6 — Vérification tinker des lignes `extension_audit_logs`
+
+1. Après avoir intégré PUIS désinstallé `doc` (7.1 puis 7.3) :
+   ```php
+   \App\Models\ExtensionAuditLog::orderBy('id')->get([
+       'id', 'extension_id', 'extension_key', 'extension_name', 'action', 'actor_user_id', 'actor_login', 'created_at',
+   ])->toArray();
+   ```
+
+**Attendu** :
+- Exactement 2 lignes, dans l'ordre : `action = integrate` puis `action = uninstall`.
+- Chaque ligne porte `extension_key = 'doc'`, `extension_name = 'Documentation'`, `actor_login` = le login de l'admin connecté, `created_at` non nul.
+- Aucune colonne `updated_at` (table append-only, `public $timestamps = false`).
+- Tentative de modification d'une ligne existante (`$log = \App\Models\ExtensionAuditLog::first(); $log->action = 'x'; $log->save();`) lève une `LogicException` — le journal est bien append-only.
+
+### Scénario 7.7 — Type `app` : aucun bouton, refus fail-closed si forcé
+
+1. S'il existe une extension de type `app` au registre (sinon en créer une en tinker pour le test), ouvrir sa carte et sa fiche.
+
+**Attendu** :
+- **Aucun bouton** « Intégrer » ni « Désinstaller » n'apparaît (ni carte, ni fiche) — rien à proposer avant l'Epic 56.
+- (Contrôle développeur, pas un geste UI) : un appel direct au service (`app(\App\Services\Extensions\ExtensionLifecycleService::class)->integrate($id, $admin)`) sur cette extension lève une exception explicite, sans mutation ni ligne d'audit.
+
+### Scénario 7.8 — Refus sans `server.admin`
+
+1. En `enseignant.test` (sans `server.admin`), tenter d'atteindre les actions (l'entrée de menu et les boutons ne sont de toute façon pas visibles sans la permission, cf. Section 3.5 / 4.7).
+
+**Attendu** : comportement identique à 54.1 — accès refusé avant même d'atteindre un bouton d'action.
+
+---
+
+## Section 8 — Correctifs de review 54.2
+
+> Ajoutée après la review opus de la Story 54.2. Trois durcissements observables en QA.
+
+### Scénario 8.1 — Double-clic sur « Désinstaller » depuis la bibliothèque
+
+1. Extension `link` `integrated`. Cliquer « Désinstaller », puis **cliquer deux fois** rapidement sur le bouton de confirmation de la modale (le bouton reste cliquable tant que la première réponse n'est pas revenue).
+
+**Attendu** : un toast de **succès** puis un toast d'**information** (« déjà disponible »). **Jamais** un toast d'erreur, et **jamais** un message citant « Extension #0 ». Une seule ligne `uninstall` dans `extension_audit_logs`.
+
+**Pourquoi ce scénario existe** : la confirmation remettait la cible à `0` avant d'appeler le service ; le second clic partait donc avec un identifiant bidon et produisait une erreur technique, là où l'AC3 exige explicitement un no-op propre pour le double-clic. Le scénario 7.5 documentait ce comportement — le code ne l'avait pas.
+
+### Scénario 8.2 — Écran périmé : le no-op rafraîchit au lieu de contredire
+
+1. Ouvrir `/admin/extensions` dans **deux onglets** (ou deux sessions admin).
+2. Dans l'onglet A, intégrer `doc`. **Ne pas recharger l'onglet B.**
+3. Dans l'onglet B, cliquer « Intégrer » sur la même carte.
+
+**Attendu** : toast d'information « déjà intégrée » **et** la carte de l'onglet B bascule immédiatement sur le badge « Intégrée » avec le bouton « Désinstaller » ; le compteur d'en-tête « N intégrée(s) » se corrige.
+
+**Pourquoi ce scénario existe** : c'est le seul cas réel où le no-op survient. Sans rafraîchissement, l'application affirmait « déjà intégrée » tout en continuant d'afficher « Disponible / Intégrer » — le message et l'écran se contredisaient, et l'admin n'avait aucun moyen de voir la réalité sans recharger la page.
+
+4. **Variante fiche** : sur `/admin/extensions/{id}`, faire disparaître l'extension du registre (retirer son manifest puis re-seeder) pendant que la fiche est ouverte, puis cliquer une action.
+   **Attendu** : retour automatique à la bibliothèque (la fiche n'a plus d'objet), pas de 404 brutal ni de fiche figée sur un état mort.
+
+### Scénario 8.3 — La trace d'audit survit à la disparition de son extension
+
+1. Intégrer puis désinstaller une extension de test (2 lignes d'audit, `status = available`).
+2. Retirer son manifest de `resources/extensions/`, re-seeder (le prune emporte la ligne `available`).
+3. `\App\Models\ExtensionAuditLog::orderBy('id')->get(['extension_id','extension_key','extension_name','action'])->toArray();`
+
+**Attendu** : les **2 lignes subsistent**, `extension_id` à `null` (FK dénouée par `ON DELETE SET NULL`), `extension_key`/`extension_name` toujours lisibles. Le re-seed ne lève **aucune** `QueryException`.
+
+**Pourquoi ce scénario existe** : c'est le seul endroit où 54.2 peut casser un comportement de 54.1 — `pruneDisappeared()` supprime sans `try/catch`, et une extension intégrée puis désinstallée est prunable tout en portant un historique. Une FK mal émise ou réécrite en `restrict` ferait échouer `syncBundled()`, donc `db:seed` et `scripts/update.sh`, sur toute extension ayant un passé.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
@@ -358,6 +490,9 @@ Déposer un manifest avec `"visibility": {"roles": {"a": "admin"}}` (objet au li
 - **Section 6.1 — racine introuvable ≠ catalogue vide** : correctif de review 54.1. La distinction est portée par `discoverBundledManifestPaths()` qui renvoie désormais `null` (rien observé) au lieu de `[]` (observation légitime). Toute évolution du chargement de source — en particulier les sources **distantes** de l'Epic 56, où « source injoignable » est un cas nominal (NFR7) — doit reconduire cette distinction : **une source qu'on n'a pas pu lire ne prune rien**.
 - **Section 6.3 — strictness du contrat manifest** : correctif de review 54.1. `array_is_list()` sur `visibility.roles`, `scopes`, `dependencies`. Le validateur affiche une philosophie de rejet strict (décision #1, iso-33.2) ; accepter un objet JSON ré-indexé la contredisait.
 - **Section 4.2 — listes vides** : exigence explicite de l'AC1. Une section « Autorisations demandées » vide et muette laisserait penser à un bug d'affichage plutôt qu'à une extension sans scope.
+- **Section 7 — no-op ⇒ zéro ligne d'audit (NFR8)** : décision tranchée de la Story 54.2. Le journal `extension_audit_logs` trace des TRANSITIONS RÉELLES, pas des clics — un double-clic ou un re-jeu sur un état déjà atteint ne doit produire ni écriture ni ligne d'audit, sinon l'historique mentirait sur le nombre réel d'actes.
+- **Section 7 — atomicité acte ↔ trace** : la ligne d'audit s'écrit DANS la même transaction que la mutation de `status` ({@see \App\Services\Extensions\ExtensionLifecycleService}). Un acte sans sa trace ne peut pas exister — vérifié par un test automatisé qui simule la disparition de la table d'audit (`tests/Feature/Extensions/ExtensionLifecycleServiceTest.php`).
+- **Section 7 — carte 54.1 restructurée** : la carte de bibliothèque était un `<a href>` entier (54.1) ; 54.2 sépare la zone cliquable (titre → fiche) du pied d'actions (`card-actions`) pour permettre des boutons `wire:click` sans navigation parasite ni HTML invalide.
 
 ---
 
@@ -391,3 +526,14 @@ Déposer un manifest avec `"visibility": {"roles": {"a": "admin"}}` (objet au li
 - [ ] 6.1 Racine des manifests introuvable : catalogue PRÉSERVÉ, warning explicite
 - [ ] 6.2 Racine présente mais vidée : prune légitime toujours actif
 - [ ] 6.3 `visibility.roles` / `scopes` en objet JSON : rejetés
+- [ ] 7.1 Intégrer depuis la bibliothèque : transition immédiate, badge + toast
+- [ ] 7.2 Intégrer depuis la fiche : même comportement
+- [ ] 7.3 Désinstaller avec modale : retour à « Disponible », toast, pas de saisie texte
+- [ ] 7.4 Annulation : rien ne change, aucune ligne d'audit
+- [ ] 7.5 No-op double-clic : toast info, aucune écriture, aucune ligne d'audit dupliquée
+- [ ] 7.6 Tinker `extension_audit_logs` : 2 lignes ordonnées, append-only vérifié
+- [ ] 7.7 Type `app` : aucun bouton, refus fail-closed si forcé
+- [ ] 7.8 Refus sans `server.admin`
+- [ ] 8.1 Double-clic de confirmation : succès puis info, jamais « Extension #0 »
+- [ ] 8.2 Écran périmé : le no-op rafraîchit la carte (+ variante fiche disparue → retour bibliothèque)
+- [ ] 8.3 Trace d'audit survivant au prune : 2 lignes, `extension_id` null, clé lisible

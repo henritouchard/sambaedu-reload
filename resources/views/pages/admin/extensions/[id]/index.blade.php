@@ -1,19 +1,21 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Exceptions\ExtensionLifecycleException;
 use App\Services\Extensions\ExtensionCatalogService;
+use App\Services\Extensions\ExtensionLifecycleService;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 54.1 (AC1) — /admin/extensions/{id} : FICHE d'une extension.
+ * Story 54.1 (AC1) / 54.2 (AC1-AC2) — /admin/extensions/{id} : FICHE d'une
+ * extension.
  *
- * Lecture seule (patron `admin/shares/[id]` sans les gestes d'écriture) : tout
- * ce qui est affiché ici — version, description, scopes DEMANDÉS, dépendances,
- * URL d'entrée, visibilité — provient du **manifest**, seul contrat public du
- * système d'extensions (FR5).
+ * Tout ce qui est affiché — version, description, scopes DEMANDÉS,
+ * dépendances, URL d'entrée, visibilité — provient du **manifest**, seul
+ * contrat public du système d'extensions (FR5).
  *
  * Les listes vides sont rendues PROPREMENT (« Aucun scope demandé », « Aucune
  * dépendance ») : jamais une section cassée.
@@ -22,8 +24,14 @@ use Livewire\Component;
  * consommés en 54.1 (Epics 55/56). Les rôles de visibilité sont STOCKÉS ici,
  * RÉSOLUS par le lanceur en Story 54.3.
  *
- * Sécurité : `can:server.admin` sur la route + double garde dans `mount()`.
- * Identifiant inconnu ⇒ 404.
+ * Story 54.2 ajoute « Intégrer » / « Désinstaller » dans `<x-slot:actions>`
+ * pour le type `link` uniquement (patron `app-profiles/index.blade.php:319`),
+ * avec la même modale de confirmation que la bibliothèque. `$id` est
+ * `#[Locked]` — les actions s'appuient dessus, JAMAIS sur un id client.
+ *
+ * Sécurité : `can:server.admin` sur la route + garde `Gate::allows()` DANS
+ * `mount()` ET DANS CHAQUE méthode d'action (defense-in-depth). Identifiant
+ * inconnu ⇒ 404.
  */
 new #[Title('Extension')] class extends Component {
     use WithToasts;
@@ -35,15 +43,119 @@ new #[Title('Extension')] class extends Component {
     /** @var array<string, mixed> */
     public array $extension = [];
 
+    /** Modale de confirmation de désinstallation. */
+    public bool $isUninstallOpen = false;
+
     public function mount(string $id): void
     {
         abort_unless(Gate::allows('server.admin'), 403);
 
         $this->id = (int) $id;
 
+        $this->loadExtension();
+    }
+
+    // ── AC1 — Intégrer (direct, un clic) ────────────────────────────────
+
+    public function integrate(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        try {
+            $result = app(ExtensionLifecycleService::class)->integrate($this->id, auth()->user());
+        } catch (ExtensionLifecycleException $e) {
+            $this->toastError($e->getMessage());
+            $this->refreshAfterAction();
+
+            return;
+        }
+
+        if (! $result['changed']) {
+            // Le no-op signale un écran périmé (second admin, onglet dupliqué) :
+            // rafraîchir, sinon le toast et la fiche se contredisent (review #2).
+            $this->toastInfo('Cette extension est déjà intégrée.');
+            $this->refreshAfterAction();
+
+            return;
+        }
+
+        $this->loadExtension();
+        $this->toastSuccess('Extension intégrée.');
+    }
+
+    // ── AC2 — Désinstaller (confirmation par modale) ────────────────────
+
+    public function askUninstall(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $this->isUninstallOpen = true;
+    }
+
+    public function confirmUninstall(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $this->closeUninstall();
+
+        try {
+            $result = app(ExtensionLifecycleService::class)->uninstall($this->id, auth()->user());
+        } catch (ExtensionLifecycleException $e) {
+            $this->toastError($e->getMessage());
+            $this->refreshAfterAction();
+
+            return;
+        }
+
+        if (! $result['changed']) {
+            $this->toastInfo('Cette extension est déjà disponible.');
+            $this->refreshAfterAction();
+
+            return;
+        }
+
+        $this->loadExtension();
+        $this->toastSuccess('Extension désinstallée.');
+    }
+
+    public function closeUninstall(): void
+    {
+        $this->isUninstallOpen = false;
+    }
+
+    /**
+     * Recharge la fiche depuis le catalogue (après transition, ou au montage).
+     *
+     * `abort(404)` est le bon geste AU MONTAGE (l'URL ne désigne rien). En plein
+     * re-render Livewire il serait brutal — voir {@see self::refreshAfterAction()}.
+     */
+    private function loadExtension(): void
+    {
         $extension = app(ExtensionCatalogService::class)->find($this->id);
         if ($extension === null) {
             abort(404);
+        }
+
+        $this->extension = $extension;
+    }
+
+    /**
+     * Rafraîchit la fiche après un no-op ou un refus (review #2).
+     *
+     * Ces deux chemins ne surviennent que lorsque l'écran est PÉRIMÉ. Si
+     * l'extension existe encore, on remet la fiche en phase avec la base. Si
+     * elle a disparu entre-temps (prune concurrent), la fiche n'a plus d'objet :
+     * on ramène l'admin à la bibliothèque plutôt que de le laisser devant un
+     * écran qui ment, ou de lui servir un 404 en plein re-render.
+     */
+    private function refreshAfterAction(): void
+    {
+        $extension = app(ExtensionCatalogService::class)->find($this->id);
+
+        if ($extension === null) {
+            $this->redirect(route('admin.extensions'), navigate: true);
+
+            return;
         }
 
         $this->extension = $extension;
@@ -53,6 +165,20 @@ new #[Title('Extension')] class extends Component {
 
 <x-organisms.page :title="$extension['name']" icon="fa-solid fa-puzzle-piece"
     :back="route('admin.extensions')" back-text="Retour à la bibliothèque">
+
+    @if ($extension['type'] === 'link')
+        <x-slot:actions>
+            @if ($extension['status'] === 'available')
+                <button type="button" class="btn btn-primary" wire:click="integrate" data-testid="integrate-action">
+                    <i class="fa-solid fa-plug"></i> Intégrer
+                </button>
+            @elseif ($extension['status'] === 'integrated')
+                <button type="button" class="btn btn-ghost" wire:click="askUninstall" data-testid="uninstall-action">
+                    <i class="fa-solid fa-trash-can"></i> Désinstaller
+                </button>
+            @endif
+        </x-slot:actions>
+    @endif
 
     <div class="flex flex-col gap-6">
 
@@ -196,4 +322,28 @@ new #[Title('Extension')] class extends Component {
             </div>
         </div>
     </div>
+
+    {{-- ===================== Modale : confirmer la désinstallation (AC2) ===================== --}}
+    <x-molecules.modal wire:model="isUninstallOpen" size="max-w-lg" height="h-auto"
+        close-method="closeUninstall" title="Désinstaller l'extension" icon="fa-trash-can text-error">
+
+        <x-molecules.modal.section>
+            <p class="text-sm">
+                <strong>{{ $extension['name'] }}</strong> redevient disponible dans la bibliothèque.
+            </p>
+            <p class="text-sm text-base-content/60 mt-1">
+                Une extension lien n'installe aucun composant : il n'y a rien à nettoyer, la
+                désinstallation est un simple retour à l'état disponible — vous pourrez la
+                réintégrer en un clic.
+            </p>
+        </x-molecules.modal.section>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeUninstall">Annuler</button>
+            <button type="button" class="btn btn-error" wire:click="confirmUninstall"
+                data-testid="confirm-uninstall">
+                <i class="fa-solid fa-trash-can"></i> Désinstaller
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
 </x-organisms.page>
