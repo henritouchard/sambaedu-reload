@@ -46,12 +46,31 @@ use App\Models\User;
  * réelle appartient à la cible (les extensions `app` la feront par claims
  * SSO, Epics 55+).
  *
- * ## Fail-closed jusqu'à l'Epic 56
+ * ## Fail-closed : ce qui devient une tuile
  *
- * Seules les extensions `status = integrated` ET `type = link` peuvent
- * devenir des tuiles — une `available` n'apparaît jamais, une `app` (même
- * artificiellement `integrated`, ex. en factory de test) n'apparaît jamais
- * non plus : aucun moteur `app` n'existe avant l'Epic 56 (AR1).
+ * Une extension `available` n'apparaît JAMAIS. Parmi les `integrated` :
+ *
+ *  - une **`link`** apparaît (cycle 54.2) ;
+ *  - une **`app`** apparaît si — et seulement si — elle porte un
+ *    `installed_port`.
+ *
+ * Cette seconde règle est la levée MAÎTRISÉE du filtre `type = link` posé en
+ * 54.3, dont le docblock annonçait « jusqu'à l'Epic 56 » : le moteur existe
+ * désormais ({@see ExtensionInstallService}, Story 56.2), et une `app`
+ * réellement installée DOIT avoir sa tuile — c'est l'objet même de FR8.
+ *
+ * Le port n'est pas un détail de confort : il n'est écrit que par
+ * {@see ExtensionLifecycleService::markAppInstalled()}, en toute dernière étape
+ * d'une installation dont l'avant-dernière a posé le `ProxyPass /ext/<key>`.
+ * Le tester, c'est exiger que l'exposition ait été RÉELLEMENT provisionnée
+ * avant d'afficher un lien vers elle — une `app` marquée `integrated` sans
+ * port (ligne fabriquée à la main, fixture de test) n'a aucun backend derrière
+ * `/ext/<key>` : sa tuile mènerait à un 404. On préfère l'absence de tuile à
+ * une tuile morte.
+ *
+ * `entry_url` d'une `app` vaut EXACTEMENT `/ext/<key>` (règle AR3 du
+ * validateur) : la tuile pointe donc, par construction, le chemin que
+ * l'installation a provisionné.
  *
  * ## L'état de la SOURCE ne retire jamais une tuile (décision Story 56.1)
  *
@@ -82,9 +101,12 @@ use App\Models\User;
 class ExtensionLauncherService
 {
     /**
-     * Les tuiles du lanceur pour `$user` : extensions intégrées de type
-     * `link` dont `visibility.roles` intersecte les rôles métier de
-     * l'utilisateur ({@see \App\Models\User::businessRoles()}).
+     * Les tuiles du lanceur pour `$user` : extensions intégrées (`link`, ou
+     * `app` réellement installée) dont `visibility.roles` intersecte les rôles
+     * métier de l'utilisateur ({@see \App\Models\User::businessRoles()}).
+     *
+     * Toujours UNE SEULE requête (NFR9) : la condition de type reste dans le
+     * `WHERE`, elle n'a pas migré vers un filtre PHP.
      *
      * @return list<array{key: string, name: string, icon: string, entry_url: string}>
      */
@@ -94,7 +116,15 @@ class ExtensionLauncherService
 
         return Extension::query()
             ->where('status', ExtensionStatus::Integrated)
-            ->where('type', ExtensionType::Link)
+            ->where(function ($query): void {
+                $query
+                    ->where('type', ExtensionType::Link)
+                    // Story 56.2 — une `app` n'est une tuile que si son
+                    // exposition `/ext/<key>` a réellement été provisionnée.
+                    ->orWhere(fn ($sub) => $sub
+                        ->where('type', ExtensionType::App)
+                        ->whereNotNull('installed_port'));
+            })
             ->orderBy('name')
             ->get()
             ->filter(fn (Extension $extension): bool => array_intersect($extension->visibilityRoles(), $businessRoles) !== [])

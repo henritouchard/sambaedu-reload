@@ -91,6 +91,9 @@ class ExtensionManifestValidatorTest extends TestCase
         $normalized = $this->validator->validate($this->validManifest([
             'id' => 'bbb',
             'type' => 'app',
+            // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` — c'est le
+            // chemin que SE5 provisionne lui-même. La fixture suit le contrat.
+            'entry_url' => '/ext/bbb',
             'scopes' => ['profile', 'groups'],
             'dependencies' => ['doc'],
         ]));

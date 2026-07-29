@@ -47,7 +47,9 @@ class ExtensionLauncherServiceTest extends TestCase
             'type' => $type,
             'name' => $key,
             'version' => '1.0.0',
-            'entry_url' => '/'.$key,
+            // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` — c'est le
+            // chemin que l'installation provisionne (ProxyPass).
+            'entry_url' => $type === ExtensionType::App->value ? '/ext/'.$key : '/'.$key,
             'icon' => 'fa-solid fa-puzzle-piece',
             'publisher' => 'SambaEdu',
             'description' => 'Extension de test.',
@@ -140,8 +142,11 @@ class ExtensionLauncherServiceTest extends TestCase
     #[Test]
     public function an_integrated_app_type_extension_is_never_returned_fail_closed(): void
     {
-        // Type `app` artificiellement `integrated` (factory) : AUCUN moteur
-        // `app` n'existe avant l'Epic 56 — fail-closed testé explicitement.
+        // Type `app` artificiellement `integrated` (factory) SANS port : rien
+        // n'a été provisionné derrière `/ext/<clé>`, la tuile mènerait à un
+        // 404 — fail-closed testé explicitement. Story 56.2 : c'est le
+        // `installed_port` qui distingue une installation réelle d'une ligne
+        // fabriquée, pas le type.
         Extension::factory()->integrated()->create([
             'key' => 'app-ext',
             'type' => ExtensionType::App,
@@ -253,5 +258,59 @@ class ExtensionLauncherServiceTest extends TestCase
         $admin->assignRole(SambaRole::SuperAdmin->value);
 
         $this->assertSame([], $this->service->tilesFor($admin));
+    }
+
+    // =====================================================================
+    // Story 56.2 — une `app` RÉELLEMENT installée obtient sa tuile
+    // =====================================================================
+
+    #[Test]
+    public function an_installed_app_gets_a_tile_pointing_at_its_provisioned_path(): void
+    {
+        // Levée MAÎTRISÉE du filtre `type = link` de 54.3 : le moteur
+        // d'installation existe désormais, et `installed_port` atteste que
+        // l'exposition `/ext/<clé>` a bien été provisionnée.
+        Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $prof = $this->makeUser('prof');
+        $tiles = $this->service->tilesFor($prof);
+
+        $this->assertSame(['hello'], array_column($tiles, 'key'));
+        $this->assertSame('/ext/hello', $tiles[0]['entry_url']);
+    }
+
+    #[Test]
+    public function a_removed_app_loses_its_tile(): void
+    {
+        $extension = Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $prof = $this->makeUser('prof');
+        $this->assertSame(['hello'], array_column($this->service->tilesFor($prof), 'key'));
+
+        // Exactement ce que fait `markAppRemoved()` : statut ET colonnes
+        // d'installation remis à zéro.
+        app(\App\Services\Extensions\ExtensionLifecycleService::class)->markAppRemoved($extension->id, null);
+
+        $this->assertSame([], $this->service->tilesFor($prof));
+    }
+
+    #[Test]
+    public function an_installed_app_still_respects_role_visibility(): void
+    {
+        Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['admin']),
+        ]);
+
+        $this->assertSame([], $this->service->tilesFor($this->makeUser('eleve')));
     }
 }

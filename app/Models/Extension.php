@@ -41,6 +41,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property ExtensionType $type
  * @property ExtensionStatus $status
  * @property array<string, mixed> $manifest
+ * @property string $installed_version
+ * @property int|null $installed_port
+ * @property \Illuminate\Support\Carbon|null $installed_at
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read ExtensionSource|null $source
@@ -58,6 +61,15 @@ class Extension extends Model
      * ASSIGNATION DE PROPRIÉTÉ explicite dans
      * {@see \App\Services\Extensions\ExtensionLifecycleService}, seul
      * écrivain de la colonne.
+     *
+     * ⚠️ Story 56.2 : `installed_version` / `installed_port` / `installed_at`
+     * sont absentes POUR LA MÊME RAISON. Le `fill()` de l'upsert de catalogue
+     * ({@see \App\Services\Extensions\ExtensionCatalogService::syncManifestsForSource()})
+     * reçoit un manifest de source TIERCE : s'il pouvait écrire ces colonnes,
+     * un manifest hostile déclarerait `installed_port` et se ferait passer pour
+     * installé — donc proposé au lanceur — sans qu'aucun paquet n'ait jamais
+     * été vérifié. Une re-synchro de catalogue met à jour `version` (ce que la
+     * source PUBLIE) sans jamais toucher `installed_version` (ce qui TOURNE).
      *
      * @var list<string>
      */
@@ -78,6 +90,8 @@ class Extension extends Model
         'type' => ExtensionType::class,
         'status' => ExtensionStatus::class,
         'manifest' => 'array',
+        'installed_port' => 'integer',
+        'installed_at' => 'datetime',
     ];
 
     /** La source d'où provient cette extension. */
@@ -90,6 +104,65 @@ class Extension extends Model
     public function entryUrl(): string
     {
         return (string) ($this->manifest['entry_url'] ?? '');
+    }
+
+    /**
+     * Story 56.2 — Bloc `install` du manifest v1 (extension ADDITIVE) : ce qui
+     * permet d'installer une `app`. Absent ⇒ `null` (un manifest 54.x/56.1 sans
+     * bloc `install` reste valide verbatim, NFR11).
+     *
+     * La forme est celle NORMALISÉE par
+     * {@see \App\Services\Extensions\ExtensionManifestValidator} :
+     * `['channel' => 'deb', 'package' => 'packages/…deb', 'sha256' => '<64 hex>',
+     *   'redirect_paths' => list<string>]`.
+     *
+     * ⚠️ Le `sha256` lu ici vient du manifest PERSISTÉ, c'est-à-dire du dernier
+     * index VÉRIFIÉ contre la clé pinnée de la source (56.1) : la vérification
+     * du paquet contre cette valeur EST donc la vérification « contre la clé
+     * déclarée de sa source » (NFR2), à la manière d'apt
+     * (`Release` signé → `Packages` → `.deb` par hash).
+     *
+     * @return array{channel: string, package: string, sha256: string, redirect_paths: list<string>}|null
+     */
+    public function installBlock(): ?array
+    {
+        $install = $this->manifest['install'] ?? null;
+        if (! is_array($install) || $install === []) {
+            return null;
+        }
+
+        $channel = (string) ($install['channel'] ?? '');
+        $package = (string) ($install['package'] ?? '');
+        $sha256 = (string) ($install['sha256'] ?? '');
+
+        if ($channel === '' || $package === '' || $sha256 === '') {
+            return null;
+        }
+
+        $redirectPaths = $install['redirect_paths'] ?? [];
+        if (! is_array($redirectPaths)) {
+            $redirectPaths = [];
+        }
+
+        return [
+            'channel' => $channel,
+            'package' => $package,
+            'sha256' => $sha256,
+            'redirect_paths' => array_values(array_map(static fn ($p): string => (string) $p, $redirectPaths)),
+        ];
+    }
+
+    /**
+     * Cette extension est-elle une `app` réellement INSTALLÉE sur l'instance ?
+     *
+     * `status = integrated` ET `type = app` : les deux sont nécessaires — une
+     * `link` intégrée n'a jamais rien installé, et une `app` `available` n'a
+     * ni port, ni unité, ni fragment Apache.
+     */
+    public function isInstalledApp(): bool
+    {
+        return $this->type === ExtensionType::App
+            && ($this->status ?? ExtensionStatus::Available) === ExtensionStatus::Integrated;
     }
 
     /**

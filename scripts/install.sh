@@ -595,6 +595,80 @@ init_oidc_provider_keys() {
 }
 
 # ============================================================================
+# Moteur d'installation des extensions `app` (Story 56.2)
+# ============================================================================
+# Déploie la FRONTIÈRE DE PRIVILÈGE du système d'extensions (patron
+# `ensure_dhcp_scripts` d'update.sh) :
+#
+#   1. `sambaedu-ext-helper.sh` → /usr/share/sambaedu/sbin/ ;
+#   2. /etc/sudoers.d/sambaedu-ext : UNE ligne, VALIDÉE PAR `visudo -cf` AVANT
+#      mise en place — un fragment invalide dans /etc/sudoers.d casse `sudo`
+#      pour toute la machine ;
+#   3. `a2enmod proxy proxy_http headers` : sans eux, un fragment `/ext/<clé>`
+#      empêcherait Apache de démarrer ;
+#   4. /etc/apache2/sambaedu-ext.d (0755) et /etc/sambaedu/extensions (0700
+#      root — www-admin ne doit pas pouvoir relire un secret de client OIDC).
+#
+# IDEMPOTENT.
+
+ensure_extension_engine() {
+  log "Moteur d'installation des extensions (Epic 56)..."
+
+  local src="$APP_DIR/scripts/system/sambaedu-ext-helper.sh"
+  local dst_dir="/usr/share/sambaedu/sbin"
+  local dst="$dst_dir/sambaedu-ext-helper.sh"
+  local sudoers="/etc/sudoers.d/sambaedu-ext"
+
+  if [[ ! -f "$src" ]]; then
+    log_warning "sambaedu-ext-helper.sh absent (Story 56.2 pas déployée) — étape ignorée"
+    return 0
+  fi
+
+  mkdir -p "$dst_dir"
+
+  if [[ -f "$dst" ]] && [[ -x "$dst" ]] && cmp -s "$src" "$dst"; then
+    log "  → helper d'extensions déjà à jour"
+  else
+    install -m 755 -o root -g root "$src" "$dst"
+    log_success "  → helper d'extensions déployé vers $dst"
+  fi
+
+  local tmp_sudoers
+  tmp_sudoers="$(mktemp)"
+  cat > "$tmp_sudoers" <<SUDOERS
+# Géré par SambaEdu (Story 56.2) — moteur d'installation des extensions.
+# UNE seule entrée : toutes les validations de sécurité vivent DANS le helper,
+# côté root (namespace sambaedu-ext-*, chemins dérivés, template de fragment).
+www-admin ALL=(root) NOPASSWD: $dst
+SUDOERS
+
+  if visudo -cf "$tmp_sudoers" >/dev/null 2>&1; then
+    if [[ -f "$sudoers" ]] && cmp -s "$tmp_sudoers" "$sudoers"; then
+      log "  → sudoers extensions déjà en place"
+      rm -f "$tmp_sudoers"
+    else
+      install -m 0440 -o root -g root "$tmp_sudoers" "$sudoers"
+      rm -f "$tmp_sudoers"
+      log_success "  → $sudoers posé (0440)"
+    fi
+  else
+    rm -f "$tmp_sudoers"
+    log_error "Fragment sudoers invalide — NON installé (sudo reste intact)"
+    return 1
+  fi
+
+  if command -v a2enmod >/dev/null 2>&1; then
+    a2enmod -q proxy proxy_http headers >/dev/null 2>&1 || \
+      log_warning "a2enmod proxy/proxy_http/headers en échec — /ext/<clé> ne sera pas proxifié"
+  fi
+
+  install -d -m 0755 -o root -g root /etc/apache2/sambaedu-ext.d
+  install -d -m 0700 -o root -g root /etc/sambaedu/extensions
+
+  log_success "Moteur d'extensions prêt (helper + sudoers + modules + répertoires)"
+}
+
+# ============================================================================
 # Configuration Apache
 # ============================================================================
 
@@ -1117,6 +1191,7 @@ main() {
   init_auth_v1_pki
   seed_bundled_extensions
   init_oidc_provider_keys
+  ensure_extension_engine
 
   # Phase 6: Apache
   echo ""

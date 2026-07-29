@@ -372,4 +372,137 @@ class ExtensionLifecycleServiceTest extends TestCase
         $log->action = ExtensionAuditLog::ACTION_UNINSTALL;
         $log->save();
     }
+
+    // =====================================================================
+    // Story 56.2 (AC6) — transitions `app`, levée MAÎTRISÉE du filtre `link`
+    // =====================================================================
+
+    #[Test]
+    public function mark_app_installed_transitions_and_records_what_was_actually_posed(): void
+    {
+        $extension = Extension::factory()->app()->create(['key' => 'hello', 'name' => 'Hello']);
+
+        $result = $this->service()->markAppInstalled($extension->id, '1.2.3', 8600, null);
+
+        self::assertSame(['changed' => true, 'status' => 'integrated'], $result);
+
+        $fresh = $extension->fresh();
+        self::assertSame(ExtensionStatus::Integrated, $fresh->status);
+        self::assertSame('1.2.3', $fresh->installed_version);
+        self::assertSame(8600, $fresh->installed_port);
+        self::assertNotNull($fresh->installed_at);
+
+        $log = ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_INSTALL)->firstOrFail();
+        self::assertSame('hello', $log->extension_key);
+        self::assertSame(ExtensionAuditLog::ACTOR_SYSTEM, $log->actor_login);
+        self::assertNull($log->actor_user_id);
+    }
+
+    #[Test]
+    public function mark_app_installed_records_the_acting_admin_when_there_is_one(): void
+    {
+        $actor = $this->actor();
+        $extension = Extension::factory()->app()->create(['key' => 'hello']);
+
+        $this->service()->markAppInstalled($extension->id, '1.0.0', 8600, $actor);
+
+        $log = ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_INSTALL)->firstOrFail();
+        self::assertSame($actor->id, $log->actor_user_id);
+        self::assertSame('lifecycle-actor', $log->actor_login);
+    }
+
+    #[Test]
+    public function mark_app_removed_resets_every_installed_column(): void
+    {
+        $extension = Extension::factory()->app()->installed(8600)->create(['key' => 'hello']);
+
+        $result = $this->service()->markAppRemoved($extension->id, null);
+
+        self::assertSame(['changed' => true, 'status' => 'available'], $result);
+
+        $fresh = $extension->fresh();
+        self::assertSame(ExtensionStatus::Available, $fresh->status);
+        self::assertSame('', $fresh->installed_version);
+        self::assertNull($fresh->installed_port, 'un port non libéré serait perdu pour l\'allocateur');
+        self::assertNull($fresh->installed_at);
+        self::assertSame(1, ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_REMOVE)->count());
+    }
+
+    #[Test]
+    public function mark_app_installed_on_an_already_installed_app_is_a_silent_no_op(): void
+    {
+        $extension = Extension::factory()->app()->installed(8600)->create(['key' => 'hello']);
+
+        $result = $this->service()->markAppInstalled($extension->id, '9.9.9', 8699, null);
+
+        self::assertSame(['changed' => false, 'status' => 'integrated'], $result);
+        self::assertSame('1.0.0', $extension->fresh()->installed_version, 'aucune écriture sur un no-op');
+        self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    #[Test]
+    public function mark_app_removed_on_an_available_app_is_a_silent_no_op(): void
+    {
+        $extension = Extension::factory()->app()->create(['key' => 'hello']);
+
+        $result = $this->service()->markAppRemoved($extension->id, null);
+
+        self::assertSame(['changed' => false, 'status' => 'available'], $result);
+        self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    #[Test]
+    public function mark_app_installed_refuses_a_link(): void
+    {
+        // Symétrique du refus historique : les deux familles de transitions ne
+        // peuvent pas se croiser.
+        $extension = Extension::factory()->link()->create(['key' => 'doc']);
+
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->markAppInstalled($extension->id, '1.0.0', 8600, null);
+    }
+
+    #[Test]
+    public function mark_app_removed_refuses_a_link(): void
+    {
+        $extension = Extension::factory()->link()->integrated()->create(['key' => 'doc']);
+
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->markAppRemoved($extension->id, null);
+    }
+
+    #[Test]
+    public function mark_app_installed_refuses_an_unknown_extension(): void
+    {
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->markAppInstalled(999_999, '1.0.0', 8600, null);
+    }
+
+    #[Test]
+    public function integrate_still_refuses_an_app_verbatim(): void
+    {
+        // Régression 54.2 : la levée du filtre `link` est MAÎTRISÉE — elle passe
+        // par de nouvelles méthodes, pas par un assouplissement d'`integrate()`.
+        // Un clic dans l'UI ne peut donc pas déclencher une installation `app`.
+        $actor = $this->actor();
+        $extension = Extension::factory()->app()->create(['key' => 'hello']);
+
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->integrate($extension->id, $actor);
+    }
+
+    #[Test]
+    public function uninstall_still_refuses_an_app_verbatim(): void
+    {
+        $actor = $this->actor();
+        $extension = Extension::factory()->app()->installed(8600)->create(['key' => 'hello']);
+
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->uninstall($extension->id, $actor);
+    }
 }

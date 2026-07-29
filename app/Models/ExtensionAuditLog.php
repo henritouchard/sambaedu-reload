@@ -7,6 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 use LogicException;
 
 /**
@@ -54,7 +55,8 @@ use LogicException;
  * @property string $extension_name
  * @property int|null $extension_source_id
  * @property string $source_key
- * @property string $action           'integrate' | 'uninstall' | 'source_*' (string libre)
+ * @property string $action           'integrate' | 'uninstall' | 'source_*' | 'install' | 'remove' | 'install_failed' (string libre)
+ * @property string $details          catégorie COURTE d'échec — jamais d'URL, jamais de secret (56.2)
  * @property int|null $actor_user_id
  * @property string|null $actor_login
  * @property \Carbon\Carbon $created_at
@@ -84,8 +86,26 @@ class ExtensionAuditLog extends Model
     /** Échec de VÉRIFICATION d'un catalogue distant — consigné à la TRANSITION seulement. */
     public const ACTION_SOURCE_SYNC_FAILED = 'source_sync_failed';
 
+    // Story 56.2 — cycle d'une extension `app` (moteur `ext:install` / `ext:remove`).
+    public const ACTION_INSTALL = 'install';
+    public const ACTION_REMOVE = 'remove';
+
+    /**
+     * Échec d'une TENTATIVE d'installation — signature/hash refusé, source
+     * inexploitable, ou échec à une étape privilégiée.
+     *
+     * ⚠️ Contrairement à `source_sync_failed`, il n'y a PAS de dédoublonnage à
+     * la transition : une synchro est une tâche planifiée qui se répète toute
+     * seule, une installation est un ACTE de l'opérateur. Chaque tentative
+     * mérite sa ligne (décision 56.2 #7).
+     */
+    public const ACTION_INSTALL_FAILED = 'install_failed';
+
     /** Acteur conventionnel d'une synchro planifiée (aucun utilisateur connecté). */
     public const ACTOR_SYSTEM = 'system';
+
+    /** Borne de la colonne `details` (alignée sur la migration 56.2). */
+    public const DETAILS_MAX = 500;
 
     protected $fillable = [
         'extension_id',
@@ -94,6 +114,7 @@ class ExtensionAuditLog extends Model
         'extension_source_id',
         'source_key',
         'action',
+        'details',
         'actor_user_id',
         'actor_login',
         'created_at',
@@ -135,6 +156,17 @@ class ExtensionAuditLog extends Model
     /**
      * Consigne une transition du cycle de vie. Appelée DANS la transaction de
      * la mutation `status` (atomicité acte ↔ trace).
+     *
+     * Story 56.2 — signature ÉLARGIE, jamais dupliquée : `$details` est
+     * optionnel (`''` pour les actes 54.2, une CATÉGORIE courte pour un
+     * `install_failed`) et `$actorUserId` accepte `null` avec
+     * `$actorLogin = self::ACTOR_SYSTEM` pour l'acteur CLI. Les appels 54.2
+     * existants continuent de passer un `int` et restent valides verbatim — on
+     * ne crée pas une seconde fabrique là où un paramètre par défaut suffit.
+     *
+     * ⚠️ `$details` ne doit JAMAIS porter d'URL ni de secret (règle `last_error`
+     * de 56.1) : le journal d'audit est lisible par tout admin, et une URL de
+     * dépôt peut porter un jeton. Le détail complet va dans `Log::`.
      */
     public static function log(
         ?int $extensionId,
@@ -143,12 +175,14 @@ class ExtensionAuditLog extends Model
         string $action,
         ?int $actorUserId,
         ?string $actorLogin,
+        string $details = '',
     ): self {
         return self::create([
             'extension_id' => $extensionId,
             'extension_key' => $extensionKey,
             'extension_name' => $extensionName,
             'action' => $action,
+            'details' => Str::limit($details, self::DETAILS_MAX, ''),
             'actor_user_id' => $actorUserId,
             'actor_login' => $actorLogin,
             'created_at' => now(),

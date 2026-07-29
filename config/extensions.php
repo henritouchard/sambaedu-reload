@@ -59,4 +59,57 @@ return [
         'index_max_bytes' => (int) env('EXTENSIONS_REMOTE_INDEX_MAX_BYTES', 1_048_576),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Moteur d'INSTALLATION des extensions `app` (Story 56.2)
+    |--------------------------------------------------------------------------
+    |
+    | Bornes de SÉCURITÉ et chemins de déploiement du moteur
+    | `ext:install` / `ext:remove`. Comme le bloc `remote`, ce ne sont PAS des
+    | réglages métier : rien ici n'a sa place dans `SystemSetting` (AR14 — on
+    | n'invente pas un réglage admin là où il n'y en a pas). Un opérateur qui
+    | doit vraiment déplacer le staging ou la plage de ports le fait par `.env`,
+    | en connaissance de cause.
+    |
+    */
+    'install' => [
+
+        // Staging des paquets téléchargés, CONTENT-ADDRESSED
+        // (`<staging>/<key>/<sha256>.deb`). Un paquet vérifié y survit à un
+        // échec d'installation : la relance ne re-télécharge pas (NFR8). Le
+        // helper root REFUSE d'installer un `.deb` situé hors de ce répertoire.
+        'staging_path' => env('EXTENSIONS_INSTALL_STAGING_PATH', storage_path('app/extensions/packages')),
+
+        // Borne DURE de la taille d'un paquet (256 MiB). Appliquée à la LECTURE,
+        // pas après coup : une borne vérifiée quand les octets sont déjà arrivés
+        // ne borne rien, elle déplace juste l'épuisement de la RAM vers le
+        // disque (leçon review 56.1 #2).
+        'package_max_bytes' => (int) env('EXTENSIONS_INSTALL_PACKAGE_MAX_BYTES', 268_435_456),
+
+        // Durée totale du téléchargement d'un paquet (un `.deb` de plusieurs
+        // dizaines de Mo sur une liaison d'établissement).
+        'download_timeout' => (int) env('EXTENSIONS_INSTALL_DOWNLOAD_TIMEOUT', 300),
+
+        // Établissement de connexion — même valeur que le bloc `remote` :
+        // un dépôt injoignable doit le rester vite.
+        'connect_timeout' => (int) env('EXTENSIONS_INSTALL_CONNECT_TIMEOUT', 5),
+
+        // LE seul binaire privilégié du moteur : déployé par
+        // `ensure_extension_engine` (install.sh / update.sh) et autorisé par
+        // une ligne de `/etc/sudoers.d/sambaedu-ext`. Toutes les validations de
+        // sécurité vivent DEDANS, côté root — jamais dans l'appelant PHP.
+        //
+        // Sudoers attendu sur la VM :
+        //   www-admin ALL=(root) NOPASSWD: /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh
+        'helper_path' => env('EXTENSIONS_INSTALL_HELPER_PATH', '/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh'),
+
+        // Plage de ports de boucle locale ASSIGNÉS par SE5 aux backends
+        // d'extensions (jamais déclarés par un manifest — décision 56.2 #1).
+        // Le premier libre est pris sous le verrou global d'installation.
+        'port_range' => [
+            (int) env('EXTENSIONS_INSTALL_PORT_MIN', 8600),
+            (int) env('EXTENSIONS_INSTALL_PORT_MAX', 8699),
+        ],
+    ],
+
 ];

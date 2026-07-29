@@ -98,6 +98,61 @@ class ExtensionFactory extends Factory
     }
 
     /**
+     * Story 56.2 — Extension de type `app`.
+     *
+     * `entry_url` vaut EXACTEMENT `/ext/<key>` : c'est la règle AR3 du
+     * validateur, et la fabrique doit produire ce que la synchro réelle
+     * produirait (sinon un test passerait sur une donnée impossible).
+     */
+    public function app(): static
+    {
+        return $this->state(function (array $attributes): array {
+            $manifest = $attributes['manifest'];
+            $manifest['type'] = ExtensionType::App->value;
+            $manifest['entry_url'] = '/ext/'.$attributes['key'];
+
+            return ['type' => ExtensionType::App, 'manifest' => $manifest];
+        });
+    }
+
+    /**
+     * Story 56.2 — Bloc `install` du manifest (paquet `deb` + sha256).
+     *
+     * Le sha256 par défaut est un hexadécimal arbitraire : les tests qui
+     * vérifient réellement le hash passent le leur (`hash('sha256', $octets)`).
+     *
+     * @param  list<string>|null  $redirectPaths
+     */
+    public function withInstallBlock(?string $sha256 = null, ?array $redirectPaths = null): static
+    {
+        return $this->state(function (array $attributes) use ($sha256, $redirectPaths): array {
+            $manifest = $attributes['manifest'];
+            $manifest['install'] = [
+                'channel' => 'deb',
+                'package' => 'packages/sambaedu-ext-'.$attributes['key'].'_1.0.0_all.deb',
+                'sha256' => $sha256 ?? str_repeat('ab', 32),
+                'redirect_paths' => $redirectPaths ?? [],
+            ];
+
+            return ['manifest' => $manifest];
+        });
+    }
+
+    /**
+     * Story 56.2 — `app` déjà INSTALLÉE (état posé par
+     * {@see \App\Services\Extensions\ExtensionLifecycleService::markAppInstalled()}).
+     */
+    public function installed(int $port, string $version = '1.0.0'): static
+    {
+        return $this->state(fn (): array => [
+            'status' => ExtensionStatus::Integrated,
+            'installed_version' => $version,
+            'installed_port' => $port,
+            'installed_at' => now(),
+        ]);
+    }
+
+    /**
      * Manifest enrichi : scopes demandés + dépendances (fiche non vide).
      *
      * @param  list<string>  $scopes

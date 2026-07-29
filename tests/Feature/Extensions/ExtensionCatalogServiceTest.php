@@ -90,13 +90,18 @@ class ExtensionCatalogServiceTest extends TestCase
 
     private function manifest(string $id, array $overrides = []): array
     {
+        // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` (chemin
+        // provisionné par SE5) ; une `link` pointe où elle veut. La fixture
+        // suit le contrat, sinon elle fabriquerait un manifest impossible.
+        $type = (string) ($overrides['type'] ?? 'link');
+
         return array_merge([
             'manifest_version' => 1,
             'id' => $id,
             'type' => 'link',
             'name' => ucfirst($id),
             'version' => '1.0.0',
-            'entry_url' => '/'.$id,
+            'entry_url' => $type === 'app' ? '/ext/'.$id : '/'.$id,
             'icon' => 'fa-solid fa-puzzle-piece',
             'publisher' => 'SambaEdu',
             'description' => 'Extension '.$id.'.',
@@ -424,7 +429,7 @@ class ExtensionCatalogServiceTest extends TestCase
         $detail = $this->service()->find($id);
 
         self::assertNotNull($detail);
-        self::assertSame('/bbb', $detail['entry_url']);
+        self::assertSame('/ext/bbb', $detail['entry_url']);
         self::assertSame(['profile', 'groups'], $detail['scopes']);
         self::assertSame(['doc'], $detail['dependencies']);
         self::assertSame(['admin', 'prof'], $detail['visibility_roles']);
@@ -528,5 +533,43 @@ class ExtensionCatalogServiceTest extends TestCase
 
         self::assertTrue($row['source_is_official']);
         self::assertSame('', $row['source_host']);
+    }
+
+    // =====================================================================
+    // Story 56.2 — le catalogue ne touche JAMAIS ce qui est installé
+    // =====================================================================
+
+    #[Test]
+    public function a_catalog_resync_updates_the_published_version_but_never_the_installed_one(): void
+    {
+        // Le scénario qui compte : une `app` tourne en 1.0.0, la source publie
+        // 2.0.0. La synchro doit mettre à jour ce que la source PUBLIE
+        // (`version`) sans jamais toucher ce qui TOURNE (`installed_*`) —
+        // sinon la détection de mise à jour de la 56.3 mentirait, et une
+        // simple re-synchro effacerait la trace de l'installation réelle.
+        $source = ExtensionSource::factory()->remote('https://depot.example.test/extensions')->create();
+
+        $extension = Extension::factory()->app()->installed(8600, '1.0.0')->create([
+            'key' => 'hello',
+            'version' => '1.0.0',
+            'extension_source_id' => $source->id,
+        ]);
+
+        $this->service()->syncManifestsForSource($source, [
+            'index.json#0' => $this->manifest('hello', [
+                'type' => 'app',
+                'version' => '2.0.0',
+                // Un manifest HOSTILE tente en prime de se déclarer installé.
+                'installed_version' => '9.9.9',
+                'installed_port' => 8666,
+                'status' => 'integrated',
+            ]),
+        ]);
+
+        $fresh = $extension->fresh();
+        self::assertSame('2.0.0', $fresh->version, 'la version PUBLIÉE suit le catalogue');
+        self::assertSame('1.0.0', $fresh->installed_version, 'la version INSTALLÉE est intouchable');
+        self::assertSame(8600, $fresh->installed_port);
+        self::assertSame(ExtensionStatus::Integrated, $fresh->status);
     }
 }

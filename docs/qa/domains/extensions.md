@@ -71,6 +71,22 @@
 - `tests/Unit/Extensions/CatalogSignatureVerifierTest.php`, `tests/Feature/Extensions/{RemoteCatalogSyncServiceTest,ExtensionSourceServiceTest,ExtensionSourcesSyncCommandTest}.php`, `tests/Feature/Livewire/Admin/ExtensionSourcesPageTest.php` — signature, fail-closed, pin non renégocié, gardes, commande (56.1)
 - `tests/Feature/OidcWitness/{OidcWitnessCommandsTest,ExtensionIdentityLeakTest}.php` — provisioning, et « aucun identifiant de base ni d'annuaire ne fuit »
 - `tests/Architecture/ExtensionIsolationTest.php` — **FR24** : quarantaine du témoin (avec méta-test anti-tautologie), manifest sans champ exécutable, autoload sans répertoire d'extensions
+- `database/migrations/2026_08_01_100000_add_app_install_columns_to_extension_tables.php` — `installed_version`/`installed_port`/`installed_at` + `details` d'audit (additive, 56.2)
+- `app/Services/Extensions/ExtensionManifestValidator.php` § bloc `install` — canal fermé, chemin de paquet relatif borné, sha256 canonique, `redirect_paths` bornés à `/ext/<id>/`, règle AR3 `entry_url` des `app` (56.2)
+- `app/Services/Extensions/Contracts/ExtensionHelperRunner.php` — **le seul seam privilégié** du domaine (et pourquoi ce n'est pas `CommandRunner`) (56.2)
+- `app/Services/Extensions/SudoExtensionHelperRunner.php` — `sudo -n` + `proc_open`, stdin fermé avant lecture, chaque argument échappé (56.2)
+- `app/Services/Extensions/ExtensionInstallService.php` — **le moteur** : chaîne de confiance, ordre en 9 étapes, compensations inverses, verrou fichier global, allocation de port, contenu du fichier d'environnement (56.2)
+- `app/Services/Extensions/ExtensionLifecycleService.php` § `markAppInstalled`/`markAppRemoved` — transitions `app` ; `integrate()`/`uninstall()` restent `link`-only verbatim (56.2)
+- `app/Services/Extensions/ExtensionLauncherService.php` — levée BORNÉE du filtre `type = link` : une `app` n'est une tuile qu'avec un `installed_port` (56.2)
+- `app/Exceptions/ExtensionInstallException.php` — refus de CONTRAT (clé inconnue/ambiguë, moteur occupé, `link`) ; tous les autres refus passent par l'audit `install_failed`
+- `app/Console/Commands/{ExtensionInstall,ExtensionRemove}.php` — `ext:install {key} [--source=]` / `ext:remove {key}` (56.2)
+- `scripts/system/sambaedu-ext-helper.sh` — **la frontière de privilège** : namespace `sambaedu-ext-*`, chemins dérivés, `dpkg-deb --field`, fragment Apache généré, `configtest` avant reload (56.2)
+- `scripts/dev/build-test-extension.sh` — fabrique paquet + dépôt signé pour la QA, sans root (outil interne ; l'outillage éditeur est en 58.2)
+- `scripts/{install,update}.sh` § `ensure_extension_engine` — helper + sudoers validé `visudo -cf` + `a2enmod` + répertoires (56.2)
+- `scripts/setupApache.sh` + `config/apache/sambaedu.conf` — `IncludeOptional /etc/apache2/sambaedu-ext.d/*.conf` DANS le vhost :80, les deux en phase (56.2)
+- `config/extensions.php` § `install` — staging, borne de taille, timeouts, chemin du helper, plage de ports (bornes de sécurité, pas de réglage métier)
+- `tests/Support/FakeExtensionHelperRunner.php` — doublure enregistreuse : la séquence privilégiée devient une assertion
+- `tests/Unit/Extensions/{ExtensionManifestValidatorInstallBlockTest,SudoExtensionHelperRunnerTest}.php`, `tests/Feature/Extensions/{ExtensionInstallServiceTest,ExtensionInstallCommandsTest}.php` — bloc `install`, échappement/stdin, fail-closed, compensations par étape, no-op, unicité, ports, désinstallation (56.2)
 
 ---
 
@@ -1481,7 +1497,279 @@ SELECT key, last_error FROM extension_sources;
 
 ---
 
+## Section 18 — Installation signée d'une extension `app` (Story 56.2)
+
+> **Ce que cette section valide.** SE5 sait maintenant *installer* — c'est-à-dire écrire dans `/etc`, faire tourner `apt`, activer une unité systemd et recharger Apache — à partir d'un manifest publié par un tiers. Trois propriétés portent toute la sûreté de cette ouverture, et ce sont les trois seules à vérifier vraiment :
+>
+> 1. **rien de tiers ne s'exécute avant que son hash n'ait été vérifié.** La première exécution de code tiers, c'est le maintainer script d'apt (`preinst`/`postinst`, en root). Le sha256 du paquet — porté par l'index déjà signé Ed25519 de la 56.1 — est comparé AVANT le premier appel au helper. Un sha qui ne colle pas ⇒ apt n'est jamais invoqué ;
+> 2. **un échec à mi-parcours ne laisse pas d'installation zombie.** Chaque étape a sa compensation, exécutées en ordre inverse ; la base est écrite en DERNIER ;
+> 3. **www-admin n'exécute jamais rien en root directement.** Il appelle UN script racine, qui re-valide tout ce qu'il reçoit et génère lui-même le fragment Apache.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (ordre des étapes, fail-closed, compensations par étape, idempotence, unicité des clés, allocation de port, contenu du fichier d'environnement, secret jamais en argv) n'a **pas** à être rejoué ici. Cette section couvre exactement ce qu'une doublure ne peut pas prouver : **le helper bash, le provisioning ops, et le parcours réel de bout en bout.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui déploie helper + sudoers + vhost, puis migre).
+
+### Pré-requis de la section — le dépôt de test et son paquet
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh          # déploie le helper, le sudoers, l'IncludeOptional, puis migre
+
+# Fabrique le paquet ET le dépôt signé (aucun privilège requis)
+bash scripts/dev/build-test-extension.sh /tmp/ext-hello
+
+# Sert le dépôt (garder ce terminal ouvert : son journal d'accès sert aux scénarios 18.6 et 18.9)
+cd /tmp/ext-hello/repo && python3 -m http.server 8099
+```
+
+Puis, dans SE5 (`/admin/extensions/sources`) → « Ajouter une source » :
+
+- **URL** : `http://<ip du serveur>:8099`
+- **Clé publique** : le contenu de `/tmp/ext-hello/repo/source.pub` — **obligatoire**, l'URL étant en `http://` (règle 17.3, inchangée).
+
+```bash
+php artisan ext:sources:sync
+```
+
+**Attendu** : l'extension « Hello (test) » apparaît dans la bibliothèque, badge **Tierce**, type **Application**, **sans aucun bouton d'action** (l'UI d'installation est la Story 56.3 ; en 56.2 le canal est la ligne de commande).
+
+### Scénario 18.1 — Le provisioning ops a bien eu lieu
+
+```bash
+ls -l /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh   # 0755 root:root
+cat /etc/sudoers.d/sambaedu-ext                          # une seule ligne www-admin
+ls -ld /etc/sudoers.d/sambaedu-ext                       # 0440
+ls -ld /etc/apache2/sambaedu-ext.d /etc/sambaedu/extensions
+apache2ctl -M | grep -E 'proxy_module|proxy_http_module|headers_module'
+grep -n 'IncludeOptional /etc/apache2/sambaedu-ext.d' /etc/apache2/sites-available/sambaedu.conf
+sudo -u www-admin sudo -n /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh 2>&1 | head -3
+```
+
+**Attendu** : helper exécutable, sudoers en **0440**, `/etc/sambaedu/extensions` en **0700 root** (www-admin ne doit PAS pouvoir lire un secret de client OIDC), `/etc/apache2/sambaedu-ext.d` en 0755, les trois modules chargés, l'`IncludeOptional` présent **dans le vhost :80** et **pas** dans le vhost legacy 8082. Le dernier appel doit afficher l'usage du helper (donc `sudo -n` fonctionne pour www-admin) et **pas** « a password is required ».
+
+**Rejouer `bash scripts/update.sh`** : tout doit être signalé « déjà à jour / déjà en place », sans réécriture.
+
+### Scénario 18.2 — Installation réelle de bout en bout
+
+```bash
+sudo -u www-admin php artisan ext:install hello
+```
+
+**Attendu** — la commande liste les étapes dans cet ordre, puis :
+
+```bash
+systemctl is-active sambaedu-ext-hello.service      # active
+systemctl is-enabled sambaedu-ext-hello.service     # enabled
+ls -l /etc/sambaedu/extensions/hello.env            # -rw------- root root
+cat /etc/apache2/sambaedu-ext.d/hello.conf          # ProxyPass /ext/hello -> 127.0.0.1:8600
+ss -lntp | grep 8600                                # écoute sur 127.0.0.1 SEULEMENT, jamais 0.0.0.0
+curl -s http://se4fs/ext/hello/                     # 200, « hello depuis l'extension de test SE5 »
+```
+
+**Attendu aussi** :
+
+- la tuile « Hello (test) » apparaît au lanceur (gaufre) pour un admin et un prof, et pointe **`/ext/hello`** ;
+- en base : `SELECT key, status, installed_version, installed_port, installed_at FROM extensions WHERE key='hello';` → `integrated`, `1.0.0`, `8600`, horodatage ;
+- une ligne d'audit : `SELECT action, details, actor_login FROM extension_audit_logs ORDER BY id DESC LIMIT 1;` → `install`, `details` vide, acteur **`system`** ;
+- un client OIDC actif : `SELECT client_id, extension_key, enabled FROM oidc_clients WHERE extension_key='hello';`.
+
+**Le secret** : `grep SE5_OIDC_CLIENT_SECRET /etc/sambaedu/extensions/hello.env` en tant que **root** le montre ; en tant que www-admin la lecture doit être **refusée**. Il ne doit apparaître ni dans la sortie de la commande, ni dans `storage/logs/laravel.log`, ni dans `journalctl -u sambaedu-ext-hello`, ni dans le journal de sudo (`/var/log/auth.log` : la ligne `sudo` ne porte que `write-env hello`).
+
+### Scénario 18.3 — Le no-op est vraiment un no-op
+
+```bash
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** : message « déjà installée », **exit 0**, **aucune** nouvelle ligne dans `extension_audit_logs`, **aucune** entrée `sudo` dans `/var/log/auth.log`, et aucune requête sur le journal du serveur de test (rien n'a été re-téléchargé).
+
+### Scénario 18.4 — Le helper refuse ce qu'il doit refuser
+
+À jouer **en root**, directement sur le helper : c'est la partie qu'aucune doublure ne peut valider.
+
+```bash
+H=/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh
+$H write-env '../evil'                    ; echo "exit=$?"   # clé invalide
+$H write-env 'hello; id'                  ; echo "exit=$?"   # clé invalide
+$H write-fragment hello 80                ; echo "exit=$?"   # port hors format
+$H write-fragment hello 'x'               ; echo "exit=$?"   # port hors format
+$H install-package hello /tmp/quelconque.deb ; echo "exit=$?" # hors staging
+$H sous-commande-inconnue                 ; echo "exit=$?"
+```
+
+**Attendu** : `exit=2` à chaque fois, message explicite en **stderr**, et **aucun fichier créé** dans `/etc/sambaedu/extensions` ni `/etc/apache2/sambaedu-ext.d`.
+
+Puis le contrôle qui protège les paquets système — un `.deb` parfaitement formé mais mal nommé :
+
+```bash
+cd /tmp && mkdir -p faux/DEBIAN && printf 'Package: openssh-server\nVersion: 9.9\nArchitecture: all\nMaintainer: x <x@x>\nDescription: faux\n' > faux/DEBIAN/control
+dpkg-deb --build --root-owner-group faux /var/www/sambaedu-reload/storage/app/extensions/packages/hello/faux.deb
+$H install-package hello /var/www/sambaedu-reload/storage/app/extensions/packages/hello/faux.deb ; echo "exit=$?"
+```
+
+**Attendu** : refus (`nom de paquet refusé : « openssh-server » (attendu « sambaedu-ext-hello »)`), **exit ≠ 0**, `apt-get` jamais invoqué. Nettoyer ensuite le faux `.deb`.
+
+Enfin, le lien symbolique — le contournement le plus naturel du contrôle de staging :
+
+```bash
+ln -s /etc/shadow /var/www/sambaedu-reload/storage/app/extensions/packages/hello/lien.deb
+$H install-package hello /var/www/sambaedu-reload/storage/app/extensions/packages/hello/lien.deb ; echo "exit=$?"
+rm -f /var/www/sambaedu-reload/storage/app/extensions/packages/hello/lien.deb
+```
+
+**Attendu** : refus (le chemin est comparé **après** `readlink -f`).
+
+### Scénario 18.5 — `configtest` protège Apache d'un fragment cassé
+
+```bash
+$H remove-fragment hello
+printf 'ProxyPass "/ext/hello" "ceci-nest-pas-une-url\n' > /etc/apache2/sambaedu-ext.d/zz-casse.conf
+$H reload-apache ; echo "exit=$?"
+systemctl is-active apache2
+rm -f /etc/apache2/sambaedu-ext.d/zz-casse.conf
+$H reload-apache ; echo "exit=$?"
+```
+
+**Attendu** : le premier `reload-apache` échoue (**exit ≠ 0**, sortie de `apache2ctl configtest` en erreur) **sans recharger**, Apache reste **actif** et sert toujours l'application. Après retrait du fragment fautif, le reload réussit. C'est la garantie qu'un fragment invalide ne peut jamais mettre le serveur à terre : le moteur voit l'échec et compense.
+
+### Scénario 18.6 — Signature invalide ⇒ fail-closed, sans la moindre trace système
+
+Altérer le paquet du dépôt **sans re-signer l'index**, puis réinstaller depuis zéro :
+
+```bash
+sudo -u www-admin php artisan ext:remove hello
+printf 'contenu-substitue' >> /tmp/ext-hello/repo/packages/sambaedu-ext-hello_1.0.0_all.deb
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** :
+
+- **exit 1**, message « sha256 du paquet non concordant » ;
+- `journalctl -u apache2 --since '2 min ago'` : **aucun** reload ; `/etc/apache2/sambaedu-ext.d/` : **vide** ;
+- `/etc/sambaedu/extensions/` : **vide** ; `dpkg -l | grep sambaedu-ext-hello` : rien ;
+- `grep sambaedu-ext-helper /var/log/auth.log | tail -5` : **aucune** invocation postérieure au `remove` — c'est la preuve terrain de « zéro exécution privilégiée » ;
+- `SELECT count(*) FROM oidc_clients WHERE extension_key='hello' AND enabled;` → **0** ;
+- audit : une ligne `install_failed`, `details = 'sha256 du paquet non concordant'`, **sans URL** ;
+- `storage/app/extensions/packages/hello/` : **aucun** fichier `.tmp` résiduel.
+
+**Contre-épreuve indispensable** : re-générer le dépôt (`bash scripts/dev/build-test-extension.sh /tmp/ext-hello`), re-synchroniser (`ext:sources:sync`) puis réinstaller — l'installation doit réussir. Sans elle, le refus ci-dessus pourrait n'être que le symptôme d'un dépôt cassé.
+
+### Scénario 18.7 — Échec à mi-parcours ⇒ état propre, relance sans intervention
+
+Provoquer un échec **après** la vérification, du côté apt. Le plus simple est de casser la dépendance du paquet de test :
+
+```bash
+sudo -u www-admin php artisan ext:remove hello
+# Rendre `apt-get install` impossible : verrou dpkg tenu par un autre processus
+( flock -x 9 ; sleep 120 ) 9>/var/lib/dpkg/lock-frontend &
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** :
+
+- **exit 1**, message « échec à l'étape apt_install » ;
+- `/etc/sambaedu/extensions/hello.env` : **absent** (compensation `remove-env` jouée) ;
+- `/etc/apache2/sambaedu-ext.d/` : vide ; aucune unité `sambaedu-ext-hello` ;
+- `SELECT status, installed_port FROM extensions WHERE key='hello';` → `available`, `NULL` — **aucune installation zombie** ;
+- `SELECT enabled FROM oidc_clients WHERE extension_key='hello';` → **`f`** (révoqué, jamais supprimé — doctrine 55.1) ;
+- **le paquet vérifié est CONSERVÉ** : `ls storage/app/extensions/packages/hello/` montre `<sha256>.deb`.
+
+Puis, une fois le verrou relâché :
+
+```bash
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** : succès **sans aucune intervention manuelle**, et **aucune nouvelle requête** dans le journal du serveur de test (`python3 -m http.server`) : le paquet content-addressed déjà vérifié est réutilisé.
+
+### Scénario 18.8 — Désinstallation, et ce qu'elle emporte
+
+```bash
+sudo -u www-admin php artisan ext:remove hello ; echo "exit=$?"
+curl -s -o /dev/null -w '%{http_code}\n' http://se4fs/ext/hello/   # 404
+systemctl status sambaedu-ext-hello.service 2>&1 | head -2          # unité inconnue
+dpkg -l | grep sambaedu-ext-hello                                   # rien
+ls /etc/sambaedu/extensions/ /etc/apache2/sambaedu-ext.d/           # vides
+ls /var/www/sambaedu-reload/storage/app/extensions/packages/        # plus de dossier hello
+```
+
+**Attendu aussi** : la tuile disparaît du lanceur ; `SELECT status, installed_version, installed_port, installed_at FROM extensions WHERE key='hello';` → `available`, `''`, `NULL`, `NULL` ; audit `remove` ; `SELECT enabled FROM oidc_clients WHERE extension_key='hello';` → **tous `f`**.
+
+**Idempotence** : rejouer `ext:remove hello` ⇒ message « n'est pas installée », **exit 0**, aucune ligne d'audit supplémentaire.
+
+**Refus du type `link`** : `php artisan ext:remove doc` ⇒ **exit 1** et message pointant la bibliothèque (le volet `link` de FR10 est livré depuis la 54.2 ; il ne doit pas exister deux chemins d'audit pour le même acte).
+
+### Scénario 18.9 — Les jetons de l'extension meurent avec elle
+
+Avant la désinstallation, obtenir un `access_token` pour l'extension (mécanique 55.2, cf. scénario 13.8), puis :
+
+```bash
+sudo -u www-admin php artisan ext:remove hello
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer <token>" http://se4fs/oidc/userinfo   # 401
+```
+
+**Attendu** : **401** immédiat. La révocation du client suffit — `ext:remove` n'a pas à purger les jetons, et c'est précisément pourquoi l'access token de SE5 est **opaque** et non auto-porteur.
+
+### Scénario 18.10 — NFR16 : le reste du serveur n'a pas bougé
+
+Pose du fragment (`ext:install hello`) puis retrait (`ext:remove hello`), en vérifiant **avant et après** :
+
+```bash
+curl -s -o /dev/null -w '/ipxe %{http_code}\n'  http://se4fs/ipxe/
+curl -s -o /dev/null -w '/doc %{http_code}\n'   http://se4fs/doc/
+curl -s -o /dev/null -w '/assets %{http_code}\n' http://se4fs/assets/wallpaper/
+curl -s -o /dev/null -w '/legacy %{http_code}\n' http://127.0.0.1:8082/
+curl -s -o /dev/null -w '/ext inexistante %{http_code}\n' http://se4fs/ext/nexiste-pas/
+```
+
+**Attendu** : codes **identiques** avant/après dans les deux sens. Vérifier aussi que `/etc/apache2/conf-enabled/` ne contient **rien** relatif aux extensions : l'inclusion est locale au vhost :80, jamais globale — une conf globale s'appliquerait aussi au vhost legacy 8082.
+
+### Scénario 18.11 — Unicité globale, ambiguïté, ports
+
+Publier le **même** `hello` depuis un second dépôt de test (`build-test-extension.sh /tmp/ext-hello-bis`, servi sur un autre port, ajouté comme seconde source) :
+
+```bash
+php artisan ext:sources:sync
+sudo -u www-admin php artisan ext:install hello                      # exit 1 : ambiguïté, message citant --source
+sudo -u www-admin php artisan ext:install hello --source=<clé A>     # exit 0
+sudo -u www-admin php artisan ext:install hello --source=<clé B>     # exit 1 : déjà installée depuis <clé A>
+```
+
+**Attendu** : le troisième appel refuse **en nommant la source déjà installée**, sans toucher à quoi que ce soit du système. Puis, port : installer une seconde extension de test (clé différente) ⇒ elle obtient **8601** ; désinstaller la première ⇒ une troisième installation reprend **8600** (les trous sont comblés).
+
+### Scénario 18.12 — Le catalogue ne réécrit jamais ce qui est installé
+
+Avec `hello` installée en `1.0.0`, publier une `2.0.0` au dépôt de test (modifier `version` dans `index.json`, re-signer avec `/tmp/ext-hello/source.key`), puis :
+
+```bash
+php artisan ext:sources:sync
+```
+
+**Attendu** : `SELECT version, installed_version FROM extensions WHERE key='hello';` → **`2.0.0`** et **`1.0.0`**. La version publiée bouge, la version installée non — c'est cet écart qui permettra à la Story 56.3 de proposer une mise à jour, et c'est ce qui garantit qu'une simple re-synchro n'efface pas la trace de ce qui tourne réellement. Vérifier au passage que `installed_port`, `installed_at` et `status` sont **inchangés**.
+
+---
+
 ## Post-correctifs & non-régressions
+
+- **Section 18.6 — « avant toute exécution » n'est pas une figure de style, c'est un point précis dans le temps** : pour un canal `deb`, la première exécution de code tiers est le maintainer script d'apt, en root. La vérification du hash doit donc précéder le **premier appel au helper**, pas seulement l'appel à `apt`. La preuve terrain est l'absence de toute ligne `sambaedu-ext-helper` dans `/var/log/auth.log` après un refus ; la preuve automatisée est `assertSame([], $helper->calls)`. Toute story qui ajouterait un canal d'installation (Epic 57/58) devra identifier SON premier point d'exécution et placer la vérification avant.
+- **Section 18.4 — la frontière de privilège valide, elle ne fait pas confiance** : le code PHP valide déjà tout ce qu'il envoie, et le helper re-valide tout comme si l'appelant était hostile. Trois contrôles portent l'essentiel : la clé est re-validée par regex, les chemins (unité, env, fragment) sont **dérivés** de la clé au lieu d'être reçus, et le nom de paquet déclaré dans le `.deb` doit appartenir au namespace `sambaedu-ext-<clé>`. Ce dernier est ce qui empêche un manifest tiers — même parfaitement signé — de faire installer ou écraser un paquet système. Le contrôle de staging est fait **après `readlink -f`** : sans ça, un lien symbolique posé dans le staging le contournerait.
+- **Section 18.4 / 18.5 — le fragment Apache est GÉNÉRÉ par le helper, jamais reçu** : accepter du contenu de configuration arbitraire depuis www-admin serait un équivalent-root (un `SetHandler` ou un `Alias` suffirait). Le helper ne reçoit que `<clé>` et `<port>`, tous deux re-validés, et compose lui-même le fragment. Corollaire opérationnel : `reload-apache` fait `apache2ctl configtest` **d'abord** et ne fait jamais de `restart` — un fragment invalide fait échouer l'étape (le moteur compense) au lieu d'empêcher Apache de redémarrer plus tard, éventuellement des jours après, sans lien visible avec la cause.
+- **Section 18.2 — un secret transmis par argument est un secret publié** : `argv` est lisible dans `/proc/<pid>/cmdline`, dans un `ps` de n'importe quel utilisateur de la machine, et sudo journalise la commande complète. Le `client_secret` du client OIDC d'une extension ne transite donc que par le **stdin** de `write-env`. C'est aussi la raison pour laquelle le seam privilégié des extensions n'est pas `CommandRunner` (6.1), qui prend une chaîne déjà composée et n'a pas de stdin. Généralisation : tout futur canal d'exploitation qui doit convoyer un secret doit prévoir stdin dès sa conception, pas l'ajouter après.
+- **Section 18.2 — le fichier d'environnement est le canal par lequel une extension apprend son issuer** : c'est la réponse à la friction n° 3 relevée en clôture de l'Epic 55 (« rien ne dit comment une extension apprend son issuer »). Sept variables, un contrat, un seul canal — sinon chaque éditeur en inventerait un. Permissions **0600 root:root** : systemd lit le fichier en root **avant** le drop de privilèges, donc l'utilisateur de service n'a pas besoin d'y accéder, et www-admin — qui a pourtant provoqué son écriture — ne peut pas le relire.
+- **Section 18.7 — la base s'écrit en DERNIER, et c'est ce qui interdit le zombie** : l'ordre est « réversible-et-local d'abord, privilégié ensuite, base à la fin ». Si la base échoue, les compensations ramènent le système à l'état propre ; si l'ordre était inversé, on obtiendrait une extension marquée installée avec un système en vrac — exactement ce que NFR8 interdit. Corollaire moins évident : le fragment Apache est le **dernier geste système**, pour qu'on n'expose jamais `/ext/<clé>` avant que son backend ne tourne (pas de 502 provisionné).
+- **Section 18.7 — une compensation qui échoue ne doit pas arrêter les suivantes** : chaque `undo` a son propre `try/catch` et journalise. Interrompre la chaîne au premier échec de compensation garantirait précisément l'état résiduel qu'on cherche à éviter. Best effort **explicite**, pas par accident.
+- **Section 18.7 — le paquet vérifié survit à l'échec, pas à la désinstallation** : après un échec, le `.deb` content-addressed déjà vérifié épargne le re-téléchargement à la relance (NFR8 : « relancer réussit sans intervention ») ; après un `remove`, le conserver ferait un cache orphelin. Et un paquet trouvé en cache est **re-haché** avant réutilisation : un fichier corrompu est re-téléchargé, jamais refusé et jamais fait confiance sur son seul nom.
+- **Section 18.8 — `ext:remove` est à la fois la désinstallation nominale et l'outil de nettoyage** : chaque sous-commande de retrait du helper est idempotente (absent ⇒ exit 0), et un échec en cours de route laisse l'extension marquée installée pour que la commande se rejoue. C'est délibéré : un `remove` qui « réussit » à moitié en marquant l'extension désinstallée abandonnerait des composants système sans plus aucun outil pour les retirer.
+- **Section 18.8 — révoquer TOUS les clients de la clé, pas le dernier connu** : une installation avortée peut laisser un client actif que plus personne ne référence (register réussi, étape suivante en échec, compensation elle-même en échec). `remove()` révoque tous les clients `enabled` de l'`extension_key` — l'état final est sûr même après plusieurs échecs partiels. Et rien n'est jamais supprimé : la révocation est un `enabled = false` (doctrine 55.1).
+- **Section 18.11 — le port est assigné par SE5, jamais déclaré par le manifest** : un éditeur tiers qui choisirait son port garantirait les collisions inter-éditeurs et ouvrirait le squat d'un port système. La colonne `installed_port` EST le registre d'allocation, et l'allocation se fait sous le **verrou fichier global** du moteur (`Cache::store('file')->lock()` — jamais `Cache::lock()`, APCu n'ayant pas de support de lock dans ce projet). Le verrou est global plutôt que par clé : les installations sont des actes d'administration rares, et un verrou unique rend l'allocation de port et l'unicité des clés triviales, sans course.
+- **Section 18.11 — une clé publiée par plusieurs sources est une AMBIGUÏTÉ, pas un choix à faire** : la collision de clés est tolérée au catalogue (décision 56.1) parce que chaque carte affiche sa provenance ; à l'installation, elle doit être tranchée par l'opérateur (`--source`). Arbitrer en silence, c'est installer le paquet d'une source que personne n'a choisie — l'exact contraire de ce à quoi sert la chaîne de confiance.
+- **Section 18.12 — `version` (publiée) et `installed_version` (posée) sont deux colonnes parce que ce sont deux faits différents** : les confondre rendrait la détection de mise à jour impossible (56.3) et ferait effacer la trace de ce qui tourne par une simple re-synchro. Les trois colonnes `installed_*` sont **hors `$fillable`**, comme `status` : le `fill()` de l'upsert de catalogue reçoit un manifest de source tierce, et une clé `installed_port` parasite ferait passer une extension pour installée — donc afficher une tuile — sans qu'aucun paquet n'ait jamais été vérifié.
+- **Section 18.2 — la tuile d'une `app` ne s'affiche qu'avec un `installed_port`** : c'est la levée **bornée** du filtre `type = link` de la 54.3. Le port n'est écrit que par `markAppInstalled()`, en dernière étape d'une installation dont l'avant-dernière a posé le `ProxyPass`. Le tester revient à exiger que l'exposition ait été réellement provisionnée avant d'afficher un lien vers elle : une `app` marquée `integrated` à la main n'a aucun backend derrière `/ext/<clé>`, sa tuile serait morte. La règle AR3 (`entry_url === /ext/<id>`, imposée par le validateur) garantit le reste : la tuile pointe le chemin que l'installation provisionne, et pas un autre.
+- **Section 18.1 / 18.10 — `IncludeOptional` DANS le vhost, jamais un `a2enconf`** : une conf globale s'appliquerait aussi au vhost legacy 8082, qui doit rester strictement inchangé (NFR16). « Optional » : aucune extension installée ⇒ aucun fichier ⇒ Apache démarre normalement. Et `config/apache/sambaedu.conf` (fallback) doit rester **en phase** avec `scripts/setupApache.sh` — exigence inscrite dans l'en-tête du fallback, à revérifier à chaque modification de vhost.
+- **Section 18.1 — un fragment sudoers se valide AVANT d'être posé** : `visudo -cf` sur un fichier temporaire, puis `install -m 0440`. Un `/etc/sudoers.d/*` invalide casse `sudo` pour **toute la machine**, y compris pour l'administrateur qui vient de lancer l'update — c'est-à-dire au pire moment possible. Vaut pour tout futur fragment sudoers du projet.
+- **Section 18.6 / 18.7 — `details` d'audit = une catégorie, jamais un message** : troisième déclinaison de la règle `last_error` (39.4 #E11, puis 56.1). Le journal d'audit est lisible par tout admin ; un message d'exception Guzzle porte l'URI complète, qui peut porter un jeton. Nuance propre à 56.2 : contrairement à `source_sync_failed`, il n'y a **pas** de dédoublonnage à la transition — une synchro planifiée se répète toute seule, une installation est un acte volontaire de l'opérateur, et chaque tentative mérite sa ligne.
+- **Section 18 — la chaîne de confiance du paquet ne crée AUCUN second format de signature** : le `sha256` du paquet est porté par l'index déjà signé Ed25519 (56.1), donc transitivement couvert par cette signature. Le vérifier EST la vérification « contre la clé déclarée de sa source » (NFR2) — modèle apt `Release` → `Packages` → `.deb`. Une signature détachée par paquet aurait été un second vérificateur, pour la même clé, à zéro gain de sécurité et à coût non nul pour chaque éditeur. Corollaire : le paquet se télécharge **depuis l'URL de base de la source**, chemin relatif validé, redirections jamais suivies — même hôte que l'index, par construction.
+- **Section 18 — l'exemption d'`ExtensionIsolationTest` est nommée et compensée** : la règle FR24 « aucune exécution système dans `app/Services/Extensions` » a exactement une exception, `SudoExtensionHelperRunner`, qui gagne en échange des contraintes plus strictes que la règle générale (il ne connaît ni `manifest`, ni le modèle `Extension` ; son binaire vient de la configuration ; chaque argument est échappé ; un seul `proc_open`). Exempter sans compenser aurait transformé un garde-fou en formalité.
 
 - **Section 17.4 / 17.5 — l'ordre « vérifier PUIS lire » est la seule chose qui rende une source tierce acceptable** : la signature se vérifie sur les octets **verbatim** téléchargés, avant tout `json_decode`. Un test le prouve par la négative (index à la fois mal signé ET malformé : le refus est motivé par la SIGNATURE, jamais par le JSON). Toute story future qui aurait besoin de « jeter un œil » au contenu avant de le vérifier — pour choisir un parseur, deviner une version, journaliser un nom — rouvrirait la faille : c'est le contenu vérifié qui décide, jamais l'inverse.
 - **Section 17.4 / 17.7 — aucun chemin d'échec ne prune, jamais** : c'est l'invariant #5 de 54.1 (« racine introuvable ≠ catalogue vide ») étendu au réseau. Un dépôt injoignable ou un catalogue refusé ne sont pas des observations : on ne peut rien conclure de ce qu'on n'a pas lu. Le sinistre de référence du projet reste le catalogue applicatif local effacé par une synchro amont ; la règle vaut pour tout futur canal de catalogue (56.2 et au-delà).
@@ -1638,3 +1926,15 @@ SELECT key, last_error FROM extension_sources;
 - [ ] 17.10 `ext:sources:sync` (une / toutes), code retour non-zéro en échec, planification à 02:50, idempotence
 - [ ] **17.11 Audit : une ligne par acte réel, no-op muet, `source_sync_failed` UNE seule fois par transition, acteur `system` en planifié, trace survivant au retrait**
 - [ ] 17.12 `last_error` sans URL ni jeton ; URL avec query ou identifiants refusée à la saisie
+- [ ] **18.1 Provisioning ops : helper 0755, sudoers 0440 validé, modules proxy/headers, `/etc/sambaedu/extensions` en 0700 root, `IncludeOptional` dans le vhost :80 SEULEMENT — et `update.sh` rejouable en no-op**
+- [ ] **18.2 Installation réelle : unité active, env 0600 root, ProxyPass posé, `curl /ext/hello` en 200, tuile au lanceur, DB + audit `install` (acteur `system`), secret nulle part sauf dans le fichier**
+- [ ] 18.3 No-op : « déjà installée », exit 0, zéro `sudo`, zéro audit, zéro requête au dépôt
+- [ ] **18.4 Le helper refuse : clé invalide, port hors format, `.deb` hors staging, `.deb` au nom d'un paquet système, lien symbolique — exit ≠ 0, aucun fichier créé**
+- [ ] **18.5 `configtest` : un fragment invalide fait échouer `reload-apache` SANS recharger ; Apache reste actif**
+- [ ] **18.6 sha256 altéré : exit 1, AUCUNE invocation du helper dans `auth.log`, rien dans `/etc`, aucun client OIDC actif, audit `install_failed` sans URL, aucun `.tmp` résiduel — + contre-épreuve après régénération du dépôt**
+- [ ] **18.7 Échec apt à mi-parcours : compensations jouées, `status=available`, client révoqué, paquet vérifié conservé, relance réussie SANS re-téléchargement**
+- [ ] 18.8 `ext:remove` : 404, unité disparue, paquet purgé, env et fragment retirés, staging nettoyé, tuile disparue, audit `remove` ; rejeu = no-op exit 0 ; `link` refusée
+- [ ] 18.9 Jeton déjà émis mort immédiatement après `ext:remove` (401 sur `/userinfo`)
+- [ ] **18.10 NFR16 : `/ipxe`, `/doc`, `/assets/*` et le vhost legacy 8082 identiques avant/après pose ET retrait du fragment ; rien dans `conf-enabled/`**
+- [ ] 18.11 Ambiguïté ⇒ `--source` ; clé déjà installée depuis une autre source refusée en la nommant ; ports 8600/8601 et trous comblés
+- [ ] **18.12 Re-synchro du catalogue : `version` passe à 2.0.0, `installed_version` reste 1.0.0, `installed_port`/`installed_at`/`status` inchangés**

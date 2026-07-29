@@ -17,7 +17,30 @@ use Illuminate\Support\Facades\DB;
  * d'une extension : les deux transitions `available ⇄ integrated` du type
  * `link`, et leur trace d'audit.
  *
- * **Seul écrivain de `extensions.status` du projet.** `status` reste
+ * ## Story 56.2 — les transitions du type `app` (levée MAÎTRISÉE du filtre)
+ *
+ * L'Epic 56 étend le lifecycle PAR AJOUT, jamais par modification :
+ * {@see self::markAppInstalled()} / {@see self::markAppRemoved()} portent les
+ * transitions du type `app`, avec les MÊMES invariants (lecture sous
+ * `lockForUpdate`, no-op ⇒ zéro audit, atomicité acte ↔ trace). Elles sont
+ * appelées EXCLUSIVEMENT par
+ * {@see \App\Services\Extensions\ExtensionInstallService}, en toute DERNIÈRE
+ * étape de son plan : si la base échoue, les compensations système ont déjà
+ * ramené l'instance à l'état propre ; l'inverse — base posée puis système en
+ * vrac — serait l'installation zombie que NFR8 interdit.
+ *
+ * {@see self::integrate()} et {@see self::uninstall()} restent **`link`-only,
+ * comportement VERBATIM** : l'UI 54.2/56.1 (boutons conditionnés
+ * `type === 'link'`) ne change pas d'un pixel, et aucun clic ne peut déclencher
+ * une installation `app` — ce sera l'objet de la Story 56.3, avec confirmation
+ * et progression. Symétriquement, `markAppInstalled()` refuse une `link` : les
+ * deux familles de transitions ne peuvent pas se croiser.
+ *
+ * **Seul écrivain de `extensions.status` du projet** — et, depuis 56.2, seul
+ * écrivain des colonnes `installed_version` / `installed_port` /
+ * `installed_at`, qui suivent exactement la même doctrine (hors `$fillable`,
+ * mutées par assignation de propriété ici et nulle part ailleurs).
+ * `status` reste
  * VOLONTAIREMENT hors du `$fillable` d'{@see Extension} (décision 54.1
  * reconduite) : ajouter `status` au `$fillable` rouvrirait la trappe de
  * mass-assignment pour TOUS les chemins existants et futurs — au premier chef
@@ -91,6 +114,120 @@ class ExtensionLifecycleService
     public function uninstall(int $extensionId, User $actor): array
     {
         return $this->transition($extensionId, $actor, ExtensionStatus::Available, ExtensionAuditLog::ACTION_UNINSTALL);
+    }
+
+    // ========================================================================
+    // STORY 56.2 — transitions du type `app` (moteur d'installation)
+    // ========================================================================
+
+    /**
+     * Acte l'installation RÉUSSIE d'une extension `app` : `available →
+     * integrated`, avec la version, le port et l'horodatage réellement posés.
+     *
+     * Dernière étape du plan d'installation, et la seule transactionnelle : la
+     * mutation et sa ligne d'audit `install` vivent dans la MÊME transaction
+     * (atomicité acte ↔ trace).
+     *
+     * ⚠️ Type `app` STRICT — une `link` est refusée. Ce n'est pas une
+     * précaution décorative : `installed_port` sur une `link` signifierait
+     * qu'un backend a été provisionné pour une extension qui n'en a pas, et
+     * `ext:remove` irait ensuite purger un paquet inexistant.
+     *
+     * @param  User|null  $actor  `null` ⇒ acte CLI, journalisé sous `system`
+     * @return array{changed: bool, status: string}
+     */
+    public function markAppInstalled(int $extensionId, string $version, int $port, ?User $actor = null): array
+    {
+        return DB::transaction(function () use ($extensionId, $version, $port, $actor): array {
+            $extension = $this->lockApp($extensionId);
+
+            $current = $extension->status ?? ExtensionStatus::Available;
+
+            // NFR8 — déjà installée : ni écriture, ni audit. Le moteur écarte
+            // déjà ce cas en amont ; la garde tient ici aussi pour que
+            // l'invariant appartienne au service, pas à son appelant.
+            if ($current === ExtensionStatus::Integrated) {
+                return ['changed' => false, 'status' => ExtensionStatus::Integrated->value];
+            }
+
+            $extension->status = ExtensionStatus::Integrated;
+            $extension->installed_version = $version;
+            $extension->installed_port = $port;
+            $extension->installed_at = now();
+            $extension->save();
+
+            ExtensionAuditLog::log(
+                extensionId: $extension->id,
+                extensionKey: $extension->key,
+                extensionName: $extension->name,
+                action: ExtensionAuditLog::ACTION_INSTALL,
+                actorUserId: $actor?->id,
+                actorLogin: $actor?->login ?? ExtensionAuditLog::ACTOR_SYSTEM,
+            );
+
+            return ['changed' => true, 'status' => ExtensionStatus::Integrated->value];
+        });
+    }
+
+    /**
+     * Acte la désinstallation d'une extension `app` : `integrated → available`,
+     * et les colonnes `installed_*` REMISES À ZÉRO — sans quoi une extension
+     * désinstallée continuerait de réserver son port dans l'allocateur.
+     *
+     * @param  User|null  $actor  `null` ⇒ acte CLI, journalisé sous `system`
+     * @return array{changed: bool, status: string}
+     */
+    public function markAppRemoved(int $extensionId, ?User $actor = null): array
+    {
+        return DB::transaction(function () use ($extensionId, $actor): array {
+            $extension = $this->lockApp($extensionId);
+
+            $current = $extension->status ?? ExtensionStatus::Available;
+
+            if ($current === ExtensionStatus::Available) {
+                return ['changed' => false, 'status' => ExtensionStatus::Available->value];
+            }
+
+            $extension->status = ExtensionStatus::Available;
+            $extension->installed_version = '';
+            $extension->installed_port = null;
+            $extension->installed_at = null;
+            $extension->save();
+
+            ExtensionAuditLog::log(
+                extensionId: $extension->id,
+                extensionKey: $extension->key,
+                extensionName: $extension->name,
+                action: ExtensionAuditLog::ACTION_REMOVE,
+                actorUserId: $actor?->id,
+                actorLogin: $actor?->login ?? ExtensionAuditLog::ACTOR_SYSTEM,
+            );
+
+            return ['changed' => true, 'status' => ExtensionStatus::Available->value];
+        });
+    }
+
+    /**
+     * Relit l'extension DANS la transaction, verrouillée, et exige le type
+     * `app`. Le pendant exact du couple `find` + garde de type de
+     * {@see self::transition()}, pour la famille `app`.
+     *
+     * @throws ExtensionLifecycleException
+     */
+    private function lockApp(int $extensionId): Extension
+    {
+        /** @var Extension|null $extension */
+        $extension = Extension::query()->lockForUpdate()->find($extensionId);
+
+        if ($extension === null) {
+            throw ExtensionLifecycleException::unknownExtension($extensionId);
+        }
+
+        if ($extension->type !== ExtensionType::App) {
+            throw ExtensionLifecycleException::unsupportedType($extension->type?->value ?? 'inconnu');
+        }
+
+        return $extension;
     }
 
     /**

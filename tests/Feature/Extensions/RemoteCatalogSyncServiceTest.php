@@ -150,13 +150,17 @@ class RemoteCatalogSyncServiceTest extends TestCase
     /** @param array<string, mixed> $overrides */
     private function manifest(string $id, array $overrides = []): array
     {
+        // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` (chemin
+        // provisionné par SE5) ; une `link` pointe où elle veut.
+        $type = (string) ($overrides['type'] ?? 'link');
+
         return array_merge([
             'manifest_version' => 1,
             'id' => $id,
             'type' => 'link',
             'name' => 'Extension '.$id,
             'version' => '1.0.0',
-            'entry_url' => '/'.$id,
+            'entry_url' => $type === 'app' ? '/ext/'.$id : '/'.$id,
             'icon' => 'fa-solid fa-puzzle-piece',
             'publisher' => 'Éditeur tiers',
             'description' => 'Extension '.$id.'.',
