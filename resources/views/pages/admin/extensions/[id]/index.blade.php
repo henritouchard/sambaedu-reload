@@ -2,8 +2,11 @@
 
 use App\Components\Traits\WithToasts;
 use App\Exceptions\ExtensionLifecycleException;
+use App\Exceptions\ExtensionOperationException;
+use App\Models\ExtensionInstallRun;
 use App\Services\Extensions\ExtensionCatalogService;
 use App\Services\Extensions\ExtensionLifecycleService;
+use App\Services\Extensions\ExtensionOperationRunner;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -29,6 +32,17 @@ use Livewire\Component;
  * avec la même modale de confirmation que la bibliothèque. `$id` est
  * `#[Locked]` — les actions s'appuient dessus, JAMAIS sur un id client.
  *
+ * **Story 56.3 — le cycle `app` (FR6/FR11)** : « Intégrer », « Mettre à jour »
+ * et « Désinstaller » apparaissent aussi pour le type `app`, derrière LA MÊME
+ * modale de confirmation que la bibliothèque (un seul fichier,
+ * `_partials/app-operation-modal`), et s'exécutent en tâche de fond via
+ * {@see ExtensionOperationRunner}. La fiche affiche l'état du run : étapes
+ * accomplies, étape courante, raison d'échec — et la ligne « Version installée
+ * / catalogue » quand les deux divergent. Le `wire:poll` n'est rendu que
+ * pendant un run actif.
+ *
+ * Le cycle `link` est INCHANGÉ, verbatim.
+ *
  * Sécurité : `can:server.admin` sur la route + garde `Gate::allows()` DANS
  * `mount()` ET DANS CHAQUE méthode d'action (defense-in-depth). Identifiant
  * inconnu ⇒ 404.
@@ -49,6 +63,42 @@ new #[Title('Extension')] class extends Component {
     /** Modale d'avertissement « source non officielle » (Story 56.1, AC2). */
     public bool $isThirdPartyWarningOpen = false;
 
+    // ── Story 56.3 — cycle `app` en tâche de fond ───────────────────────
+
+    /** Modale unique de confirmation des opérations `app` (3 usages). */
+    public bool $isAppOperationOpen = false;
+
+    /** `install` | `update` | `remove`. */
+    public string $appOperation = '';
+
+    /**
+     * Cible de la modale : c'est la FICHE elle-même (`$this->id` est
+     * `#[Locked]`), rechargée par le service — aucune cible client à mémoriser.
+     *
+     * @var array<string, mixed>
+     */
+    public array $appTarget = [];
+
+    /**
+     * Dernier run de CETTE extension, mis en forme par l'orchestrateur.
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $run = null;
+
+    /**
+     * Un run actif AILLEURS gèle aussi les boutons de cette fiche : le verrou
+     * du moteur est global, la page le reflète.
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $activeRun = null;
+
+    /** Run suivi par cet onglet (toast de fin émis une seule fois). */
+    public int $trackedRunId = 0;
+
+    public string $trackedRunStatus = '';
+
     public function mount(string $id): void
     {
         abort_unless(Gate::allows('server.admin'), 403);
@@ -56,6 +106,7 @@ new #[Title('Extension')] class extends Component {
         $this->id = (int) $id;
 
         $this->loadExtension();
+        $this->loadRun();
     }
 
     // ── AC1 — Intégrer (direct, un clic) ────────────────────────────────
@@ -165,6 +216,149 @@ new #[Title('Extension')] class extends Component {
         $this->isUninstallOpen = false;
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 56.3 — opérations `app` (installation, mise à jour, retrait)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Ouvre la modale de confirmation. La cible est la fiche courante,
+     * rechargée PAR LE SERVICE : `$this->id` est `#[Locked]`, et le contenu de
+     * la modale (provenance, scopes, versions) ne vient jamais du snapshot
+     * client.
+     */
+    public function askAppOperation(string $operation): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        if (! in_array($operation, ExtensionInstallRun::OPERATIONS, true)) {
+            $this->toastError('Opération non reconnue.');
+
+            return;
+        }
+
+        $target = app(ExtensionCatalogService::class)->find($this->id);
+
+        if ($target === null) {
+            $this->redirect(route('admin.extensions'), navigate: true);
+
+            return;
+        }
+
+        if (($target['type'] ?? '') !== 'app') {
+            $this->extension = $target;
+            $this->toastError('Cette extension est un lien : elle n\'installe aucun composant système.');
+
+            return;
+        }
+
+        $this->extension = $target;
+        $this->appTarget = $target;
+        $this->appOperation = $operation;
+        $this->isAppOperationOpen = true;
+    }
+
+    public function confirmAppOperation(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $operation = $this->appOperation;
+
+        // `$this->id` étant `#[Locked]`, il n'y a pas de cible à préserver :
+        // fermer la modale est sans effet sur l'action, et un double-clic
+        // retombe sur le refus propre de l'orchestrateur.
+        $this->isAppOperationOpen = false;
+
+        if ($operation === '') {
+            return;
+        }
+
+        try {
+            $run = app(ExtensionOperationRunner::class)->start($operation, $this->id, auth()->user());
+        } catch (ExtensionOperationException $e) {
+            $this->toastError($e->getMessage());
+            $this->refreshAfterAction();
+            $this->loadRun();
+
+            return;
+        }
+
+        $this->trackedRunId = (int) $run->id;
+        $this->trackedRunStatus = (string) $run->status;
+
+        $this->loadRun();
+        $this->toastInfo(($this->run['operation_label'] ?? 'Opération').' en cours — suivez la progression ci-dessous.');
+    }
+
+    public function closeAppOperation(): void
+    {
+        $this->isAppOperationOpen = false;
+        $this->appOperation = '';
+        $this->appTarget = [];
+    }
+
+    /**
+     * Rafraîchissement piloté par le `wire:poll` du panneau d'état — rendu
+     * SEULEMENT quand il y a une opération à suivre.
+     */
+    public function pollRun(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $this->refreshAfterAction();
+        $this->loadRun();
+
+        if ($this->trackedRunId === 0 || $this->run === null || (int) $this->run['id'] !== $this->trackedRunId) {
+            return;
+        }
+
+        $status = (string) $this->run['status'];
+
+        if ($status === $this->trackedRunStatus) {
+            return;
+        }
+
+        $this->trackedRunStatus = $status;
+
+        if ($status === ExtensionInstallRun::STATUS_SUCCESS) {
+            $this->trackedRunId = 0;
+
+            // Même règle que la bibliothèque (review 56.3 #3) : un no-op propre
+            // s'annonce en « info », jamais en « terminée ».
+            if (($this->run['changed'] ?? true) === false) {
+                $this->toastInfo('Rien à faire : l\'extension était déjà dans l\'état demandé.');
+
+                return;
+            }
+
+            $this->toastSuccess($this->run['operation_label'].' terminée.');
+
+            return;
+        }
+
+        if ($status === ExtensionInstallRun::STATUS_FAILED) {
+            $this->trackedRunId = 0;
+            $this->toastError($this->run['operation_label'].' en échec : '.$this->run['error_label']);
+        }
+    }
+
+    /** Lecture UNIQUE des runs, centralisée dans l'orchestrateur. */
+    private function loadRun(): void
+    {
+        $runner = app(ExtensionOperationRunner::class);
+
+        try {
+            $this->run = $runner->latestRunFor($this->id);
+            // Le run actif est celui que le serveur reconnaît comme tel — la
+            // même méthode que celle qui refuse une seconde opération.
+            $this->activeRun = $runner->activeRunRow();
+        } catch (\Throwable $e) {
+            // Une table de runs illisible ne doit pas casser la fiche.
+            report($e);
+            $this->run = null;
+            $this->activeRun = null;
+        }
+    }
+
     /**
      * Recharge la fiche depuis le catalogue (après transition, ou au montage).
      *
@@ -208,24 +402,146 @@ new #[Title('Extension')] class extends Component {
 <x-organisms.page :title="$extension['name']" icon="fa-solid fa-puzzle-piece"
     :back="route('admin.extensions')" back-text="Retour à la bibliothèque">
 
-    @if ($extension['type'] === 'link')
+    @php
+        // Story 56.3 — le verrou du moteur est GLOBAL : une opération en cours
+        // ailleurs gèle aussi les boutons de cette fiche.
+        $busy = $activeRun !== null;
+        $isRunning = $run !== null && $run['is_active'];
+        $canInstall = $extension['type'] === 'app'
+            && $extension['status'] === 'available'
+            && ($extension['installable'] ?? false);
+        $canOperate = $extension['type'] === 'app' && $extension['status'] === 'integrated';
+        // Le slot n'est défini que s'il a quelque chose à porter : une `app`
+        // disponible mais non installable (bloc `install` absent) n'a AUCUNE
+        // action, et un en-tête d'actions vide serait un artefact visuel.
+        $hasActions = $extension['type'] === 'link'
+            || (! $isRunning && ($canInstall || $canOperate));
+    @endphp
+
+    @if ($hasActions)
         <x-slot:actions>
-            @if ($extension['status'] === 'available')
-                {{-- Officielle : un clic (54.2 inchangé). Tierce : avertissement d'abord. --}}
-                <button type="button" class="btn btn-primary"
-                    wire:click="{{ $extension['source_is_official'] ? 'integrate' : 'askIntegrate' }}"
-                    data-testid="integrate-action">
-                    <i class="fa-solid fa-plug"></i> Intégrer
-                </button>
-            @elseif ($extension['status'] === 'integrated')
-                <button type="button" class="btn btn-ghost" wire:click="askUninstall" data-testid="uninstall-action">
-                    <i class="fa-solid fa-trash-can"></i> Désinstaller
-                </button>
+            @if ($extension['type'] === 'link')
+                @if ($extension['status'] === 'available')
+                    {{-- Officielle : un clic (54.2 inchangé). Tierce : avertissement d'abord. --}}
+                    <button type="button" class="btn btn-primary"
+                        wire:click="{{ $extension['source_is_official'] ? 'integrate' : 'askIntegrate' }}"
+                        data-testid="integrate-action">
+                        <i class="fa-solid fa-plug"></i> Intégrer
+                    </button>
+                @elseif ($extension['status'] === 'integrated')
+                    <button type="button" class="btn btn-ghost" wire:click="askUninstall" data-testid="uninstall-action">
+                        <i class="fa-solid fa-trash-can"></i> Désinstaller
+                    </button>
+                @endif
+            @elseif (! $isRunning)
+                {{-- Story 56.3 — cycle `app` : les mêmes gestes, en tâche de fond. --}}
+                @if ($canInstall)
+                    <button type="button" class="btn btn-primary" @disabled($busy)
+                        wire:click="askAppOperation('install')" data-testid="app-install-action">
+                        <i class="fa-solid fa-plug"></i> Intégrer
+                    </button>
+                @elseif ($canOperate)
+                    @if (($extension['update_available'] ?? false) && ($extension['installable'] ?? false))
+                        <button type="button" class="btn btn-info" @disabled($busy)
+                            wire:click="askAppOperation('update')" data-testid="app-update-action">
+                            <i class="fa-solid fa-arrow-up"></i> Mettre à jour
+                        </button>
+                    @endif
+                    <button type="button" class="btn btn-ghost" @disabled($busy)
+                        wire:click="askAppOperation('remove')" data-testid="app-remove-action">
+                        <i class="fa-solid fa-trash-can"></i> Désinstaller
+                    </button>
+                @endif
             @endif
         </x-slot:actions>
     @endif
 
     <div class="flex flex-col gap-6">
+
+        {{--
+            Story 56.3 — Une opération en cours sur une AUTRE extension gèle
+            aussi les boutons de cette fiche (le verrou du moteur est global).
+            Ce bandeau porte alors le `wire:poll` : sans lui, la fiche resterait
+            gelée jusqu'à un rechargement manuel après la fin de l'opération.
+        --}}
+        @if ($activeRun !== null && (int) $activeRun['extension_id'] !== $id)
+            <div class="alert alert-info shadow-sm" wire:poll.3s="pollRun" data-testid="foreign-run-banner">
+                <span class="loading loading-spinner loading-sm"></span>
+                <div>
+                    <p class="font-medium">
+                        {{ $activeRun['operation_label'] }} en cours sur une autre extension.
+                    </p>
+                    <p class="text-sm opacity-80">
+                        Les opérations d'extensions s'exécutent une par une sur le serveur : les actions de cette
+                        fiche redeviendront disponibles à la fin.
+                        @if ($activeRun['requested_by_login'] !== '')
+                            Demandée par <strong>{{ $activeRun['requested_by_login'] }}</strong>.
+                        @endif
+                    </p>
+                </div>
+            </div>
+        @endif
+
+        {{--
+            ===== Story 56.3 — État de l'opération en cours ou de la dernière =====
+            Le `wire:poll` est porté par ce panneau et n'est RENDU que tant qu'il
+            y a une opération vivante à suivre : au repos, la fiche n'émet
+            aucune requête (patron `iso-windows`).
+        --}}
+        @if ($run !== null)
+            <div class="card bg-base-100 border {{ $run['is_active'] ? 'border-info' : 'border-base-300' }}"
+                @if ($run['is_active']) wire:poll.3s="pollRun" @endif
+                data-testid="run-panel">
+                <div class="card-body gap-3">
+                    <h3 class="card-title text-base">
+                        @if ($run['is_active'])
+                            <span class="loading loading-spinner loading-sm text-info"></span>
+                        @else
+                            <i class="fa-solid fa-clock-rotate-left text-primary"></i>
+                        @endif
+                        {{ $run['operation_label'] }}
+                        <span class="badge badge-sm {{ $run['status_badge'] }}"
+                            data-testid="run-status">{{ $run['status_label'] }}</span>
+                    </h3>
+
+                    <p class="text-xs text-base-content/50">
+                        @if ($run['requested_by_login'] !== '')
+                            Demandée par <strong>{{ $run['requested_by_login'] }}</strong>.
+                        @endif
+                        @if ($run['finished_at'] !== null)
+                            Terminée le {{ $run['finished_at'] }}.
+                        @endif
+                    </p>
+
+                    @if (count($run['steps']) > 0)
+                        <ul class="text-sm flex flex-col gap-1" data-testid="run-steps">
+                            @foreach ($run['steps'] as $step)
+                                <li wire:key="run-step-{{ $run['id'] }}-{{ $step['key'] }}"
+                                    class="flex items-center gap-2 text-base-content/70">
+                                    <i class="fa-solid fa-check text-success text-xs"></i> {{ $step['label'] }}
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+
+                    @if ($run['is_active'] && $run['current_step_label'] !== '')
+                        <p class="text-sm text-info" data-testid="run-current-step">
+                            <span class="loading loading-dots loading-xs align-middle"></span>
+                            {{ $run['current_step_label'] }}
+                        </p>
+                    @endif
+
+                    @if ($run['is_stale'])
+                        <p class="text-sm text-warning" data-testid="run-stale">
+                            Cette opération ne donne plus signe de vie (worker arrêté ou délai dépassé).
+                            Vous pouvez la relancer.
+                        </p>
+                    @elseif ($run['is_failed'])
+                        <p class="text-sm text-error" data-testid="run-error">{{ $run['error_label'] }}</p>
+                    @endif
+                </div>
+            </div>
+        @endif
 
         {{-- ============ Provenance non officielle (56.1 AC2, FR4/UX-DR4) ============ --}}
         @unless ($extension['source_is_official'])
@@ -264,10 +580,32 @@ new #[Title('Extension')] class extends Component {
                         </h2>
 
                         <dl class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                            <div class="flex items-center gap-2 text-base-content/70">
+                            <div class="flex items-center gap-2 text-base-content/70 flex-wrap">
                                 <i class="fa-solid fa-code-branch w-4 text-center opacity-50"></i>
                                 <span>Version</span>
                                 <span class="font-mono">{{ $extension['version'] !== '' ? $extension['version'] : '—' }}</span>
+
+                                {{--
+                                    Story 56.3 — `version` (ce que la source
+                                    PUBLIE) et `installed_version` (ce qui
+                                    TOURNE) sont deux faits distincts : on ne
+                                    les affiche ensemble que lorsqu'ils
+                                    divergent, c'est-à-dire quand ça veut dire
+                                    quelque chose.
+                                --}}
+                                @if (($extension['update_available'] ?? false))
+                                    <span class="badge badge-sm badge-info gap-1" data-testid="update-badge">
+                                        <i class="fa-solid fa-arrow-up text-[10px]"></i> Mise à jour disponible
+                                    </span>
+                                    <span class="text-xs text-base-content/50" data-testid="installed-version">
+                                        Version installée : <span class="font-mono">{{ $extension['installed_version'] }}</span>
+                                        (catalogue : <span class="font-mono">{{ $extension['version'] }}</span>)
+                                    </span>
+                                @elseif ($extension['type'] === 'app' && ($extension['installed_version'] ?? '') !== '')
+                                    <span class="text-xs text-base-content/50" data-testid="installed-version">
+                                        Version installée : <span class="font-mono">{{ $extension['installed_version'] }}</span>
+                                    </span>
+                                @endif
                             </div>
                             <div class="flex items-center gap-2 text-base-content/70">
                                 <i class="fa-solid fa-building w-4 text-center opacity-50"></i>
@@ -435,4 +773,7 @@ new #[Title('Extension')] class extends Component {
             </button>
         </x-slot:footer>
     </x-molecules.modal>
+
+    {{-- ===== Story 56.3 — confirmation des opérations `app` (3 usages) ===== --}}
+    @include('pages.admin.extensions._partials.app-operation-modal')
 </x-organisms.page>

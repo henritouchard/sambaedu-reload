@@ -87,6 +87,19 @@
 - `config/extensions.php` § `install` — staging, borne de taille, timeouts, chemin du helper, plage de ports (bornes de sécurité, pas de réglage métier)
 - `tests/Support/FakeExtensionHelperRunner.php` — doublure enregistreuse : la séquence privilégiée devient une assertion
 - `tests/Unit/Extensions/{ExtensionManifestValidatorInstallBlockTest,SudoExtensionHelperRunnerTest}.php`, `tests/Feature/Extensions/{ExtensionInstallServiceTest,ExtensionInstallCommandsTest}.php` — bloc `install`, échappement/stdin, fail-closed, compensations par étape, no-op, unicité, ports, désinstallation (56.2)
+- `database/migrations/2026_08_05_100000_add_update_tracking_and_extension_install_runs.php` — `extensions.installed_sha256` (gage de rollback) + table `extension_install_runs` (additive, 56.3)
+- `app/Models/ExtensionInstallRun.php` — l'ÉTAT d'une opération (pas un journal d'audit) ; `isStale()` calculé côté PHP, jamais un `now()` SQL (56.3)
+- `app/Services/Extensions/ExtensionOperationRunner.php` — création du run + dispatch DANS la même transaction, garde de concurrence sous verrou fichier COURT, et **seul lecteur** des runs pour les deux pages (56.3)
+- `app/Jobs/RunExtensionOperationJob.php` — `tries = 1`, timeout configuré, **pas de `WithoutOverlapping`** (piège APCu daté), acteur rechargé par identifiant, les trois chemins d'erreur du moteur traités (56.3)
+- `app/Services/Extensions/ExtensionInstallService.php` § `update()` — périmètre minimal (paquet + service), `redirect_paths` et gage de rollback vérifiés AVANT d'agir, compensation par ré-installation du `.deb` antérieur (56.3)
+- `app/Services/Extensions/ExtensionInstallService.php` § `stepLabels()` / `mark()` — libellés d'étapes à un SEUL énoncé (4 consommateurs), rapport de progression isolé (il ne peut jamais faire échouer une opération) (56.3)
+- `app/Services/Extensions/ExtensionLifecycleService.php` § `markAppUpdated()` — version + empreinte, RIEN d'autre (`installed_port`/`installed_at` invariants de la clé) (56.3)
+- `app/Services/Extensions/ExtensionCatalogService.php` § `hasUpdateAvailable()` / `isAppInstallable()` — détection par ÉCART (jamais un ordre), calculée dans `toListRow()` donc héritée par la fiche (56.3)
+- `app/Console/Commands/ExtensionUpdate.php` — `ext:update {key}`, troisième façade sur le même moteur (AR1) (56.3)
+- `app/Exceptions/ExtensionOperationException.php` — refus de l'ORCHESTRATEUR (déjà en cours, écran périmé, type `link`) : toast, jamais une 500 (56.3)
+- `resources/views/pages/admin/extensions/_partials/app-operation-modal.blade.php` — LA modale à 3 usages, partagée par la bibliothèque et la fiche (avertissement tierce verbatim, scopes affichés et non accordés) (56.3)
+- `config/extensions.php` § `install.job_timeout` — borne technique du Job **et** seuil de staleness (AR14 : pas un réglage métier)
+- `tests/Feature/Extensions/{ExtensionInstallServiceUpdateTest,ExtensionOperationRunnerTest,RunExtensionOperationJobTest,ExtensionUpdateCommandTest}.php`, `tests/Feature/Livewire/Admin/ExtensionAppOperationsPageTest.php`, `tests/Unit/Extensions/ExtensionUpdateDetectionTest.php`, `tests/Unit/Models/ExtensionInstallRunTest.php` — update et ses refus, concurrence, couture Job/runs, UI et gardes (56.3)
 
 ---
 
@@ -1747,9 +1760,309 @@ php artisan ext:sources:sync
 
 **Attendu** : `SELECT version, installed_version FROM extensions WHERE key='hello';` → **`2.0.0`** et **`1.0.0`**. La version publiée bouge, la version installée non — c'est cet écart qui permettra à la Story 56.3 de proposer une mise à jour, et c'est ce qui garantit qu'une simple re-synchro n'efface pas la trace de ce qui tourne réellement. Vérifier au passage que `installed_port`, `installed_at` et `status` sont **inchangés**.
 
+## Section 19 — Installation, mise à jour et retrait depuis l'UI (Story 56.3)
+
+> **Ce que cette section valide.** La 56.2 a livré le canal : `ext:install` / `ext:remove` en ligne de commande. La 56.3 pose le bouton — et *rien d'autre*. Le moteur est le MÊME (doctrine AR1) ; ce qui est neuf, c'est la **tâche de fond**, l'**état de progression persisté** et la **mise à jour**.
+>
+> Trois propriétés portent toute la valeur de cette story, et ce sont les trois seules à vérifier vraiment :
+>
+> 1. **la progression est un FAIT en base, pas un état d'écran.** Un rechargement de page, un second onglet, un second admin voient exactement le même run. C'est ce qui distingue un suivi d'un effet visuel ;
+> 2. **la mise à jour sait revenir en arrière AVANT de partir.** Le `.deb` de la version installée est vérifié (présent, re-haché) *avant* qu'apt ne soit invoqué. Une mise à jour dont on ne sait pas revenir n'a pas le droit de commencer ;
+> 3. **le verrou est global, et l'UI le reflète sans le remplacer.** Deux admins, un double-clic, un rechargement : un seul run. Un worker tué ne condamne pas la bibliothèque.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (séquence privilégiée exacte de l'update, fail-closed du sha256, refus `redirect_paths_changed` et `rollback_package_missing` avant toute action, compensations, atomicité run⇒Job, trois chemins d'erreur du Job, matrice de détection de mise à jour, staleness, modale et gardes Livewire) n'a **pas** à être rejoué ici. Cette section couvre exactement ce qu'une doublure ne peut pas prouver : **la chaîne de file d'attente réelle, un apt réel qui rate à mi-parcours, deux navigateurs simultanés, et un worker qu'on arrête.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1/56.2** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui redéploie le helper — modifié — puis migre).
+
+### Pré-requis de la section
+
+La Section 18 doit avoir été jouée : dépôt de test servi, source ajoutée avec sa clé pinnée, extension `hello` visible au catalogue.
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh          # redéploie le helper (restart-service + --allow-downgrades), puis migre
+
+# Le helper doit avoir été RÉÉCRIT (le `cmp` de ensure_extension_engine détecte le changement)
+grep -c 'restart-service' /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh   # ≥ 3
+grep -c 'allow-downgrades' /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh  # 1
+
+# Les workers de file doivent tourner : c'est EUX qui exécuteront les installations
+systemctl is-active laravel-queue-general laravel-queue-worker laravel-queue-sync
+php artisan queue:monitor default
+```
+
+Repartir d'un état propre : `php artisan ext:remove hello` si l'extension est encore installée depuis la Section 18.
+
+### Scénario 19.1 — Intégrer une `app` depuis la bibliothèque, progression observée
+
+Dans `/admin/extensions`, la carte « Hello (test) » porte désormais un bouton **« Intégrer »** (elle n'en avait aucun en 56.2).
+
+1. Cliquer sur **« Intégrer »**.
+
+**Attendu — la modale de confirmation** : titre « Intégrer l'extension », **provenance** (nom de la source, hôte réel du dépôt, badge **Tierce**), **bloc d'avertissement** « Source non officielle : `<hôte>` — vous installez sous votre responsabilité » au texte **identique** à celui de la 56.1, et la liste des **scopes demandés** (`profile` pour le dépôt de test). Une seule modale — jamais deux enchaînées.
+
+2. Cliquer **« Annuler »** : rien ne se passe.
+
+```sql
+SELECT count(*) FROM extension_install_runs;   -- 0
+```
+
+3. Rouvrir, puis **« Intégrer »**.
+
+**Attendu** : toast « Intégration en cours », bandeau d'opération en haut de page avec un spinner, et la carte qui affiche l'étape courante. Les étapes défilent avec les **mêmes libellés** que la CLI (« paquet téléchargé et sha256 vérifié », « client OIDC enregistré », …).
+
+```bash
+# Le Job est réellement passé par la file d'attente
+sudo -u www-admin php artisan tinker --execute="dump(DB::table('extension_install_runs')->latest('id')->first());"
+journalctl -u laravel-queue-general -n 30 --no-pager | grep -i RunExtensionOperationJob
+```
+
+**Attendu** : un run `operation=install`, `status` passant `pending → running → success`, `steps` remplies dans l'ordre, `requested_by_login` = votre login (**jamais** `system` — un acte d'UI a un auteur), `started_at` et `finished_at` renseignés.
+
+4. À la fin : toast de succès **une seule fois**, badge « Intégrée », tuile visible au lanceur, `curl -sI http://localhost/ext/hello` en 200.
+
+```sql
+SELECT action, actor_login, details FROM extension_audit_logs WHERE extension_key='hello' ORDER BY id DESC LIMIT 3;
+```
+
+**Attendu** : une ligne `install` avec **votre login** comme acteur.
+
+### Scénario 19.2 — Le monitoring des workers voit passer le Job (gratuitement)
+
+```
+/admin/workers
+```
+
+**Attendu** : le Job apparaît dans le suivi générique `queue_task_runs` (hooks `Queue::before/after` d'`AppServiceProvider`) — **sans que la Story 56.3 n'y écrive quoi que ce soit**. Vérifier que la file consommée est bien `default`.
+
+```sql
+SELECT job_name, queue, status FROM queue_task_runs ORDER BY id DESC LIMIT 5;
+```
+
+### Scénario 19.3 — Deux admins, deux navigateurs : un seul run
+
+Deux sessions simultanées (deux navigateurs, ou un mode privé), toutes deux sur `/admin/extensions`.
+
+1. Admin A lance une **désinstallation** de `hello`.
+2. **Sans attendre**, admin B tente une opération sur n'importe quelle extension.
+
+**Attendu** :
+- chez B, **tous** les boutons d'opération `app` sont **désactivés** — de toutes les cartes, pas seulement celle de `hello` (le verrou du moteur est global, la page le reflète) ;
+- si B force malgré tout (double-clic rapide avant rafraîchissement), il reçoit le toast « **Une opération d'extension est déjà en cours** » et **aucun second run n'est créé** ;
+- B voit **la même progression** que A, avec « Demandée par `<login de A>` ».
+
+```sql
+SELECT id, operation, status, requested_by_login FROM extension_install_runs ORDER BY id DESC LIMIT 3;
+```
+
+**Attendu** : **une seule** ligne active.
+
+3. Recharger la page de A en pleine opération (F5) : la progression **reprend là où elle en est** — l'état vit en base, pas dans le composant.
+
+### Scénario 19.4 — Zéro polling au repos
+
+Console réseau du navigateur ouverte, sur `/admin/extensions`, **aucune opération en cours**.
+
+**Attendu** : **aucune** requête Livewire périodique. Le `wire:poll` n'est rendu que lorsqu'il y a quelque chose à suivre — une page d'administration ouverte toute la journée ne doit pas marteler le serveur.
+
+Relancer une opération : les requêtes reprennent toutes les 3 s, puis **cessent** à la fin du run.
+
+### Scénario 19.5 — Publier une 1.1.0 et mettre à jour depuis l'UI
+
+`hello` doit être installée en `1.0.0`.
+
+```bash
+# Republie dans LE MÊME dépôt, avec LA MÊME clé (le pin TOFU de la source reste valide)
+bash scripts/dev/build-test-extension.sh --version 1.1.0 /tmp/ext-hello
+# (le serveur http.server de la Section 18 continue de servir /tmp/ext-hello/repo)
+
+php artisan ext:sources:sync
+```
+
+```sql
+SELECT version, installed_version, installed_sha256 FROM extensions WHERE key='hello';
+```
+
+**Attendu** : `1.1.0` publiée, `1.0.0` installée, `installed_sha256` = le sha du `.deb` de la 1.0.0 (`sha256sum /tmp/ext-hello/repo/packages/sambaedu-ext-hello_1.0.0_all.deb`).
+
+Dans `/admin/extensions` :
+
+**Attendu** : badge **« Mise à jour disponible »** sur la carte et bouton **« Mettre à jour »**. Sur la fiche : ligne « Version installée : 1.0.0 (catalogue : 1.1.0) ».
+
+Cliquer **« Mettre à jour »** → la modale nomme **les deux versions** et récapitule la provenance et les scopes du **nouveau** manifest.
+
+Confirmer, puis observer :
+
+```bash
+journalctl -u sambaedu-ext-hello -n 20 --no-pager    # un RESTART, pas un reload
+curl -s http://localhost/ext/hello                    # sert toujours
+sudo -u www-admin ls -l /var/www/sambaedu-reload/storage/app/extensions/packages/hello/
+```
+
+**Attendu** :
+- séquence privilégiée **minimale** : `install-package` puis `restart-service`, **rien d'autre** — pas de `write-env`, pas de `write-fragment`, pas de `reload-apache` (`grep sambaedu-ext-helper /var/log/auth.log | tail`) ;
+- `installed_version = 1.1.0`, `installed_sha256` = sha du nouveau `.deb`, **`installed_port` et `installed_at` inchangés** ;
+- **DEUX** `.deb` en staging (l'ancien reste : c'est le gage de rollback de la prochaine mise à jour) ;
+- audit `update` avec votre login ;
+- le client OIDC est le **même** (`SELECT client_id, enabled FROM oidc_clients WHERE extension_key='hello';`) — donc la session SSO déjà ouverte dans l'extension continue de fonctionner ;
+- `/etc/sambaedu/extensions/hello.env` : `mtime` **inchangé**.
+
+### Scénario 19.6 — Mise à jour déjà à jour : no-op signalé
+
+Recliquer « Mettre à jour » n'est pas possible (le bouton a disparu). En ligne de commande :
+
+```bash
+php artisan ext:update hello ; echo "exit=$?"
+```
+
+**Attendu** : « déjà à la version publiée par sa source — aucune action », **exit 0**, **aucune** invocation du helper (`/var/log/auth.log`), **aucune** ligne d'audit.
+
+### Scénario 19.7 — Rollback RÉEL : casser apt à mi-mise-à-jour
+
+Republier une `1.2.0` dont le paquet est **installable mais dont le maintainer script échoue** :
+
+```bash
+bash scripts/dev/build-test-extension.sh --version 1.2.0 /tmp/ext-hello
+
+# Saboter le postinst du paquet 1.2.0 puis re-signer l'index
+cd /tmp/ext-hello
+mkdir -p broken && dpkg-deb -R repo/packages/sambaedu-ext-hello_1.2.0_all.deb broken
+printf '#!/bin/sh\nexit 1\n' > broken/DEBIAN/postinst && chmod 0755 broken/DEBIAN/postinst
+dpkg-deb --build --root-owner-group broken repo/packages/sambaedu-ext-hello_1.2.0_all.deb
+NEW_SHA=$(sha256sum repo/packages/sambaedu-ext-hello_1.2.0_all.deb | cut -d' ' -f1)
+python3 - "$NEW_SHA" <<'PY'
+import json, sys
+p = "/tmp/ext-hello/repo/index.json"
+d = json.load(open(p))
+d["extensions"][0]["install"]["sha256"] = sys.argv[1]
+json.dump(d, open(p, "w"), ensure_ascii=False, indent=2)
+PY
+php -r '
+  $sk = base64_decode(trim(file_get_contents("/tmp/ext-hello/source.key")));
+  $i  = file_get_contents("/tmp/ext-hello/repo/index.json");
+  file_put_contents("/tmp/ext-hello/repo/index.json.sig", base64_encode(sodium_crypto_sign_detached($i, $sk)));
+'
+cd /var/www/sambaedu-reload && php artisan ext:sources:sync
+```
+
+Lancer la mise à jour **depuis l'UI**.
+
+**Attendu** :
+- le run termine **`failed`**, la carte affiche « Mise à jour en échec : échec à l'étape apt_install » ;
+- `journalctl -u sambaedu-ext-hello` montre un **redémarrage** après la compensation ;
+- `dpkg-query -W -f='${Version}\n' sambaedu-ext-hello` → **1.1.0** : l'ancienne version est **re-servie** ;
+- `curl -s http://localhost/ext/hello` répond toujours ;
+- en base : `installed_version = 1.1.0`, `installed_sha256` inchangé — **la base dit ce qui tourne** ;
+- audit `update_failed` avec la catégorie d'étape, **sans URL** ;
+- les boutons redeviennent cliquables, la mise à jour est **rejouable**.
+
+> C'est le scénario le plus important de la section : sans lui, « rollback » n'est qu'une intention écrite dans un docblock.
+
+### Scénario 19.8 — `--allow-downgrades` : republier une version antérieure
+
+```bash
+bash scripts/dev/build-test-extension.sh --version 1.0.0 /tmp/ext-hello
+php artisan ext:sources:sync
+```
+
+**Attendu** : la bibliothèque propose une « Mise à jour disponible » vers `1.0.0` — la règle est un **écart**, pas un ordre (la source est l'autorité de sa fraîcheur, modèle apt). La mise à jour aboutit : sans `--allow-downgrades`, apt aurait refusé — et ce même drapeau est ce qui rend le rollback du 19.7 exécutable.
+
+### Scénario 19.9 — `redirect_paths` modifiés : refus AVANT toute action
+
+Republier une version dont le manifest déclare un `redirect_paths` différent :
+
+```bash
+python3 - <<'PY'
+import json
+p = "/tmp/ext-hello/repo/index.json"
+d = json.load(open(p))
+d["extensions"][0]["version"] = "1.3.0"
+d["extensions"][0]["install"]["redirect_paths"] = ["/ext/hello/nouveau/callback"]
+json.dump(d, open(p, "w"), ensure_ascii=False, indent=2)
+PY
+php -r '
+  $sk = base64_decode(trim(file_get_contents("/tmp/ext-hello/source.key")));
+  $i  = file_get_contents("/tmp/ext-hello/repo/index.json");
+  file_put_contents("/tmp/ext-hello/repo/index.json.sig", base64_encode(sodium_crypto_sign_detached($i, $sk)));
+'
+cd /var/www/sambaedu-reload && php artisan ext:sources:sync
+```
+
+**Attendu** : la mise à jour est **refusée avant toute action** — carte en erreur « URI de redirection modifiées — désinstaller puis réinstaller », **aucune** invocation du helper dans `/var/log/auth.log`, **aucun** téléchargement dans le journal d'accès du dépôt, audit `update_failed`. L'extension tourne toujours dans sa version d'avant.
+
+### Scénario 19.10 — Gage de rollback absent : la mise à jour ne démarre pas
+
+```bash
+sudo -u www-admin rm -f /var/www/sambaedu-reload/storage/app/extensions/packages/hello/*.deb
+```
+
+Republier une version supérieure, re-synchroniser, puis tenter la mise à jour depuis l'UI.
+
+**Attendu** : refus immédiat, « paquet de la version installée absent ou corrompu — désinstaller puis réinstaller », **zéro** appel au helper, **zéro** téléchargement. Reproduire avec un `.deb` **corrompu** (`truncate -s 10 …/<sha>.deb`) : même refus — le nom du fichier ne fait jamais foi, il est re-haché.
+
+### Scénario 19.11 — Worker arrêté : le run attend, puis cesse de bloquer
+
+```bash
+systemctl stop laravel-queue-general laravel-queue-worker laravel-queue-sync
+```
+
+Lancer une intégration depuis l'UI.
+
+**Attendu** :
+- le run reste **`pending`**, la page affiche « en attente », les boutons sont gelés ;
+- **rien** n'est installé (aucune ligne helper dans `auth.log`).
+
+```bash
+systemctl start laravel-queue-general laravel-queue-worker laravel-queue-sync
+```
+
+**Attendu** : le Job est repris, l'opération se termine normalement, le toast de fin arrive.
+
+**Variante « worker tué en plein travail »** : relancer une opération, puis `systemctl kill -s SIGKILL laravel-queue-general` pendant l'exécution. Le run reste `running`. Au-delà de `job_timeout + 300 s` (30 min + 5 min par défaut), l'UI l'affiche « **Interrompue** », les boutons **redeviennent cliquables**, et le run n'est **ni retraité ni réécrit**. Pour raccourcir l'attente en QA : `EXTENSIONS_INSTALL_JOB_TIMEOUT=60` dans `.env` + `php artisan config:clear`.
+
+> ⚠️ Le verrou du **moteur** expire seul au bout de 600 s : c'est lui, et non la staleness, qui arbitre réellement. La staleness ne fait que libérer l'**interface**.
+
+### Scénario 19.12 — Désinstaller une `app` depuis l'UI
+
+Cliquer **« Désinstaller »** sur `hello`.
+
+**Attendu — la modale** : elle dit que **le paquet, son service, l'exposition `/ext/hello` et le client SSO** seront retirés et que **les données de l'extension seront purgées**. Surtout **PAS** le texte du type `link` (« il n'y a rien à nettoyer »).
+
+Confirmer, puis vérifier comme au 18.8 : unité disparue, paquet purgé, fragment retiré, staging nettoyé, tuile disparue du lanceur, badge « Disponible », audit `remove` avec **votre login**, run `operation=remove` en `success`.
+
+### Scénario 19.13 — Le cycle `link` n'a pas bougé d'un pixel
+
+Sur la tuile **Documentation** (`link`, source officielle) :
+
+**Attendu** : « Intégrer » reste **un clic**, **synchrone et instantané** — aucune modale, aucun run, aucun Job. La modale de désinstallation `link` conserve son texte « il n'y a rien à nettoyer ».
+
+```sql
+SELECT count(*) FROM extension_install_runs WHERE extension_id = (SELECT id FROM extensions WHERE key='doc');
+```
+
+**Attendu** : `0`. Le canal de fond n'existe que pour le type `app`.
+
+### Scénario 19.14 — Écran périmé : no-op propre, jamais une 500
+
+Deux onglets sur `/admin/extensions`. Désinstaller `hello` dans l'onglet A. Dans l'onglet B (périmé), cliquer « Mettre à jour » puis confirmer.
+
+**Attendu** : toast d'information ou d'erreur métier, **page rechargée et remise en phase**, aucune 500, aucune ligne d'audit parasite. Même contrôle depuis la fiche : si l'extension a été prunée entre-temps, retour à la bibliothèque.
+
 ---
 
 ## Post-correctifs & non-régressions
+
+- **Section 19.7 / 19.10 — un rollback n'est utile que s'il est GARANTI D'AVANCE** : le `.deb` de la version installée est exigé présent ET re-haché **avant** qu'apt ne soit invoqué (`installed_sha256` le désigne dans un staging content-addressed). Absent ou corrompu ⇒ refus, sans avoir rien entrepris. La formulation compte : ce n'est pas « on essaiera de revenir en arrière », c'est « on ne part pas sans savoir revenir ». Corollaire d'exploitation : le helper pose `--allow-downgrades`, sans quoi apt refuserait précisément la commande qui constitue la compensation. Toute story future qui remplacerait un artefact déployé (agent, paquet, image) doit vérifier sa réversibilité **avant** l'acte, pas après.
+- **Section 19.5 — la mise à jour ne touche QUE ce qui change d'une version à l'autre** : le port, le fragment Apache, le fichier d'environnement et le client OIDC sont des invariants de la **clé**, pas de la version. Les régénérer serait du churn à risque — le `client_secret` OIDC n'est pas récupérable (seul son sha256 est en base), donc re-enregistrer le client imposerait de réécrire l'env ET de redémarrer, avec une compensation impossible à garantir si l'une des deux échoue. L'unique cas où un invariant devrait bouger — des `redirect_paths` différents — est refusé fail-closed (19.9), chemin de secours documenté dans le message lui-même.
+- **Section 19.1 / 19.3 — une progression qui vit dans le composant n'est pas une progression** : rechargement de page, second onglet, second admin, consultation après coup — quatre exigences qu'aucun état d'écran ni cache ne couvre. D'où la table `extension_install_runs`. Elle n'est pas un journal d'audit pour autant : `extension_audit_logs` répond à « qui a décidé quoi » (append-only, conservé), les runs à « où en est-on » (mutable, lu quelques minutes). Confondre les deux ferait soit un journal pollué par des états transitoires, soit un suivi qu'on n'ose plus purger.
+- **Section 19.1 — le moteur reste MUET sur les runs** : le seul pont est un callback `?callable $onStep` additif. C'est ce qui garde `ext:install`/`ext:update`/`ext:remove` fonctionnels sans aucune ligne de run, et le moteur testable sans base de runs. ⚠️ Ce callback écrit en base : son échec est **isolé et journalisé**, jamais propagé — sinon une panne du canal d'AFFICHAGE déclencherait les compensations d'une installation pourtant réussie, et désinstallerait ce qui vient d'être posé.
+- **Section 19.3 / 19.11 — trois couches de concurrence, chacune à sa place** : (1) l'UI gèle les boutons — confort, ne garantit rien ; (2) l'orchestrateur re-vérifie sous verrou fichier COURT avant de créer le run — intégrité des runs ; (3) le verrou global du moteur — **la vérité**. L'UI REFLÈTE ce verrou (désactivation de TOUTES les cartes, puisqu'il est global), elle ne le remplace ni ne le contourne. Et « il y a un run actif » n'a qu'UNE définition, partagée par la garde de l'orchestrateur et par l'affichage : deux définitions finiraient par se contredire, et l'écran dirait alors le contraire de ce que le serveur applique (leçon review 56.1 #1).
+- **Section 19.11 — un worker mort ne doit pas condamner la bibliothèque** : passé `job_timeout + marge`, un run resté actif est affiché « Interrompue » et cesse de bloquer l'UI. On ne le « répare » pas et on ne le retraite pas — pas de janitor, ce serait de la sur-conception pour un cas rare. La staleness libère l'**interface** ; l'arbitre réel reste le verrou du moteur, qui expire seul à 600 s. La comparaison se fait **côté PHP** : les sessions PostgreSQL du projet sont en UTC alors que l'application vit à Paris, et un `now()` SQL décalerait le verdict de deux heures.
+- **Section 19.5 / 19.8 — la détection de mise à jour est un ÉCART, jamais un ORDRE** : `version` est une chaîne LIBRE du manifest (le validateur ne lui impose aucun format) — inventer un tri sémantique mentirait sur un « 2024-annexe-b ». Une republication antérieure est donc proposée comme un changement : c'est voulu, la source est l'autorité de sa propre fraîcheur (modèle apt). La règle vit dans `toListRow()`, dont `toDetail()` hérite par construction : la liste et la fiche ne PEUVENT pas diverger.
+- **Section 19.1 — l'acteur d'un acte d'UI n'est jamais `system`** : le Job recharge l'admin **par identifiant** (jamais un modèle sérialisé dans le payload : un admin supprimé entre le clic et le pickup ferait exploser le `unserialize`, hors de tout filet applicatif). S'il a disparu, on retombe sur `system` — ce qui reste vrai, faute d'humain à qui attribuer l'acte.
+- **Section 19.4 — un `wire:poll` inconditionnel est une fuite silencieuse** : une page d'administration reste ouverte des heures. Le poll n'est **rendu** que lorsqu'il y a quelque chose à suivre, et l'intervalle est de 3 s (une installation dure des minutes ; 1 s martèlerait le serveur pour rien). Patron repris de `iso-windows`.
+- **Section 19.11 — `WithoutOverlapping` est INTERDIT sur ce Job** : le middleware s'appuie sur le cache PAR DÉFAUT (APCu ici), qui n'implémente pas `lock()` — il lève « undefined method ApcStore::lock() » **au pickup**, et n'expose aucune API pour lui passer un store lock-capable. Il a été retiré de `DownloadWindowsIsoJob` pour cette raison exacte le 2026-06-22. Tout verrou de ce projet passe par `Cache::store('file')->lock()`.
+- **Section 19.13 — ouvrir un cycle ne doit pas en modifier un autre** : le type `link` reste synchrone, un clic, sans run ni Job ; ses modales et ses textes sont inchangés. La preuve n'est pas une relecture mais le fait que les suites 54.2/56.1 passent **sans qu'une seule assertion ait été touchée** — les tests de la 56.3 vivent dans des fichiers séparés, précisément pour que cette preuve reste lisible.
 
 - **Section 18.6 — « avant toute exécution » n'est pas une figure de style, c'est un point précis dans le temps** : pour un canal `deb`, la première exécution de code tiers est le maintainer script d'apt, en root. La vérification du hash doit donc précéder le **premier appel au helper**, pas seulement l'appel à `apt`. La preuve terrain est l'absence de toute ligne `sambaedu-ext-helper` dans `/var/log/auth.log` après un refus ; la preuve automatisée est `assertSame([], $helper->calls)`. Toute story qui ajouterait un canal d'installation (Epic 57/58) devra identifier SON premier point d'exécution et placer la vérification avant.
 - **Section 18.4 — la frontière de privilège valide, elle ne fait pas confiance** : le code PHP valide déjà tout ce qu'il envoie, et le helper re-valide tout comme si l'appelant était hostile. Trois contrôles portent l'essentiel : la clé est re-validée par regex, les chemins (unité, env, fragment) sont **dérivés** de la clé au lieu d'être reçus, et le nom de paquet déclaré dans le `.deb` doit appartenir au namespace `sambaedu-ext-<clé>`. Ce dernier est ce qui empêche un manifest tiers — même parfaitement signé — de faire installer ou écraser un paquet système. Le contrôle de staging est fait **après `readlink -f`** : sans ça, un lien symbolique posé dans le staging le contournerait.
@@ -1938,3 +2251,17 @@ php artisan ext:sources:sync
 - [ ] **18.10 NFR16 : `/ipxe`, `/doc`, `/assets/*` et le vhost legacy 8082 identiques avant/après pose ET retrait du fragment ; rien dans `conf-enabled/`**
 - [ ] 18.11 Ambiguïté ⇒ `--source` ; clé déjà installée depuis une autre source refusée en la nommant ; ports 8600/8601 et trous comblés
 - [ ] **18.12 Re-synchro du catalogue : `version` passe à 2.0.0, `installed_version` reste 1.0.0, `installed_port`/`installed_at`/`status` inchangés**
+- [ ] **19.1 Intégration depuis l'UI : modale (provenance + scopes + avertissement tierce), run `pending→running→success` en base, étapes aux libellés de la CLI, audit `install` à VOTRE login**
+- [ ] 19.2 Le Job apparaît dans `/admin/workers` (`queue_task_runs`), file `default`, sans que 56.3 n'y écrive rien
+- [ ] **19.3 Deux navigateurs : un seul run, tous les boutons gelés chez l'autre, même progression, F5 sans perte**
+- [ ] 19.4 Aucune requête périodique au repos ; polling 3 s uniquement pendant un run
+- [ ] **19.5 Update 1.0.0 → 1.1.0 : `install-package` + `restart-service` SEULEMENT, port/env/fragment/client OIDC intacts, deux `.deb` en staging, audit `update`**
+- [ ] 19.6 `ext:update` sur une extension à jour : exit 0, zéro helper, zéro audit
+- [ ] **19.7 apt cassé à mi-update : ancienne version RE-SERVIE (`dpkg-query` + `curl`), base inchangée, audit `update_failed`, opération rejouable**
+- [ ] 19.8 Republication d'une version antérieure : proposée comme changement et exécutée (`--allow-downgrades`)
+- [ ] **19.9 `redirect_paths` modifiés : refus AVANT toute action — aucun appel helper, aucun téléchargement**
+- [ ] **19.10 Gage de rollback absent ou corrompu : la mise à jour ne démarre pas**
+- [ ] **19.11 Workers arrêtés : run `pending`, rien d'installé, reprise au redémarrage ; worker tué ⇒ « Interrompue » et boutons libérés après le seuil**
+- [ ] 19.12 Désinstallation `app` depuis l'UI : texte de purge des composants système (jamais le texte `link`), retrait complet, audit `remove`
+- [ ] **19.13 Cycle `link` inchangé : un clic, synchrone, aucun run créé**
+- [ ] 19.14 Écran périmé : no-op propre, page remise en phase, jamais une 500

@@ -26,9 +26,26 @@ use RuntimeException;
  */
 final class ExtensionInstallException extends RuntimeException
 {
-    private function __construct(string $message)
+    /**
+     * Story 56.3 — Catégorie STABLE du refus, distincte du message.
+     *
+     * Le message est écrit pour un opérateur devant un terminal : il est long,
+     * il cite les sources en conflit, il donne la commande à taper. Ce n'est
+     * pas ce qu'on persiste dans `extension_install_runs.error` (191
+     * caractères, lu par une UI, soumis à la règle « jamais d'URL, jamais de
+     * secret »). La catégorie, elle, est courte, close et traduisible —
+     * {@see \App\Models\ExtensionInstallRun::errorLabel()} en fait une phrase.
+     *
+     * Ajout strictement ADDITIF : la construction reste privée, les messages
+     * 56.2 sont inchangés.
+     */
+    public readonly string $category;
+
+    private function __construct(string $message, string $category)
     {
         parent::__construct($message);
+
+        $this->category = $category;
     }
 
     /** Aucune extension de cette clé au registre. */
@@ -36,7 +53,8 @@ final class ExtensionInstallException extends RuntimeException
     {
         return new self(
             "Aucune extension « {$key} » au registre. Vérifiez la clé, ou synchronisez les sources "
-            .'(`php artisan ext:sources:sync`).'
+            .'(`php artisan ext:sources:sync`).',
+            \App\Models\ExtensionInstallRun::ERROR_UNKNOWN_EXTENSION,
         );
     }
 
@@ -52,7 +70,8 @@ final class ExtensionInstallException extends RuntimeException
     {
         return new self(
             "L'extension « {$key} » est publiée par plusieurs sources (".implode(', ', $sourceKeys).'). '
-            .'Précisez laquelle installer : --source=<clé de la source>.'
+            .'Précisez laquelle installer : --source=<clé de la source>.',
+            \App\Models\ExtensionInstallRun::ERROR_AMBIGUOUS_KEY,
         );
     }
 
@@ -60,7 +79,8 @@ final class ExtensionInstallException extends RuntimeException
     public static function unknownSourceForKey(string $key, string $sourceKey): self
     {
         return new self(
-            "La source « {$sourceKey} » ne publie aucune extension « {$key} »."
+            "La source « {$sourceKey} » ne publie aucune extension « {$key} ».",
+            \App\Models\ExtensionInstallRun::ERROR_UNKNOWN_SOURCE,
         );
     }
 
@@ -75,7 +95,8 @@ final class ExtensionInstallException extends RuntimeException
     {
         return new self(
             'Une opération d\'installation d\'extension est déjà en cours sur cette instance. '
-            .'Réessayez dans un instant.'
+            .'Réessayez dans un instant.',
+            \App\Models\ExtensionInstallRun::ERROR_ENGINE_BUSY,
         );
     }
 
@@ -90,7 +111,8 @@ final class ExtensionInstallException extends RuntimeException
     {
         return new self(
             "« {$key} » est une extension de type « lien » : elle n'installe aucun composant système. "
-            .'Désinstallez-la depuis la bibliothèque (/admin/extensions) — c\'est le cycle de la Story 54.2.'
+            .'Désinstallez-la depuis la bibliothèque (/admin/extensions) — c\'est le cycle de la Story 54.2.',
+            \App\Models\ExtensionInstallRun::ERROR_LINK_NOT_SUPPORTED,
         );
     }
 }

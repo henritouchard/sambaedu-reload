@@ -42,6 +42,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property ExtensionStatus $status
  * @property array<string, mixed> $manifest
  * @property string $installed_version
+ * @property string $installed_sha256
  * @property int|null $installed_port
  * @property \Illuminate\Support\Carbon|null $installed_at
  * @property \Illuminate\Support\Carbon|null $created_at
@@ -62,7 +63,8 @@ class Extension extends Model
      * {@see \App\Services\Extensions\ExtensionLifecycleService}, seul
      * écrivain de la colonne.
      *
-     * ⚠️ Story 56.2 : `installed_version` / `installed_port` / `installed_at`
+     * ⚠️ Story 56.2/56.3 : `installed_version` / `installed_sha256` /
+     * `installed_port` / `installed_at`
      * sont absentes POUR LA MÊME RAISON. Le `fill()` de l'upsert de catalogue
      * ({@see \App\Services\Extensions\ExtensionCatalogService::syncManifestsForSource()})
      * reçoit un manifest de source TIERCE : s'il pouvait écrire ces colonnes,
@@ -150,6 +152,37 @@ class Extension extends Model
             'sha256' => $sha256,
             'redirect_paths' => array_values(array_map(static fn ($p): string => (string) $p, $redirectPaths)),
         ];
+    }
+
+    /**
+     * Story 56.3 — Le manifest porte-t-il un bloc `install` EXPLOITABLE par le
+     * moteur (présent, complet, et sur un canal supporté) ?
+     *
+     * ⚠️ Règle à UN SEUL énoncé, avec deux appelants qui doivent dire la même
+     * chose (leçon review 56.1 #3) :
+     *  - {@see \App\Services\Extensions\ExtensionCatalogService} s'en sert pour
+     *    décider si la bibliothèque PROPOSE le bouton « Intégrer » ;
+     *  - {@see \App\Services\Extensions\ExtensionInstallService} refuse
+     *    exactement dans le cas complémentaire (avec deux messages distincts —
+     *    « bloc install absent » vs « canal non supporté » — parce que
+     *    l'opérateur doit savoir LEQUEL des deux, mais le périmètre du refus
+     *    est identique, et un test le verrouille).
+     *
+     * L'UI ne doit jamais proposer ce que le moteur refusera.
+     */
+    public function hasSupportedInstallBlock(): bool
+    {
+        $install = $this->installBlock();
+
+        if ($install === null) {
+            return false;
+        }
+
+        return in_array(
+            $install['channel'],
+            \App\Services\Extensions\ExtensionManifestValidator::SUPPORTED_INSTALL_CHANNELS,
+            true,
+        );
     }
 
     /**

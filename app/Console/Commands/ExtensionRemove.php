@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Exceptions\ExtensionInstallException;
+use App\Models\ExtensionInstallRun;
 use App\Services\Extensions\ExtensionInstallService;
 use Illuminate\Console\Command;
 
@@ -67,18 +68,15 @@ class ExtensionRemove extends Command
         return self::SUCCESS;
     }
 
-    /** @param  list<string>  $steps */
+    /**
+     * @param  list<string>  $steps
+     *
+     * ⚠️ Story 56.3 — map remontée dans {@see ExtensionInstallService::stepLabels()},
+     * libellés verbatim : sortie inchangée (leçon review 56.1 #3).
+     */
     private function renderSteps(array $steps): void
     {
-        $labels = [
-            ExtensionInstallService::STEP_SERVICE => 'unité systemd arrêtée et désactivée',
-            ExtensionInstallService::STEP_APACHE => 'fragment Apache retiré et configuration rechargée',
-            ExtensionInstallService::STEP_APT => 'paquet purgé (apt)',
-            ExtensionInstallService::STEP_ENV => 'fichier d\'environnement supprimé',
-            ExtensionInstallService::STEP_OIDC => 'clients OIDC de l\'extension révoqués (jetons morts)',
-            ExtensionInstallService::STEP_PACKAGE => 'staging du paquet nettoyé',
-            ExtensionInstallService::STEP_REGISTRY => 'registre mis à jour et acte journalisé',
-        ];
+        $labels = ExtensionInstallService::stepLabels(ExtensionInstallRun::OPERATION_REMOVE);
 
         foreach ($steps as $step) {
             $this->line('  ✔ '.($labels[$step] ?? $step));

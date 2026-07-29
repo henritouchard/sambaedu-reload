@@ -110,6 +110,16 @@ return [
             (int) env('EXTENSIONS_INSTALL_PORT_MIN', 8600),
             (int) env('EXTENSIONS_INSTALL_PORT_MAX', 8699),
         ],
+
+        // Story 56.3 — Durée maximale du Job de fond qui exécute une opération
+        // depuis l'UI (`RunExtensionOperationJob`). Téléchargement (300 s) +
+        // apt (dépendances, maintainer scripts) + redémarrage + marge large.
+        //
+        // Borne TECHNIQUE, pas un réglage métier : rien ici n'a sa place dans
+        // `SystemSetting` (AR14). Elle sert deux choses — le `timeout` du Job,
+        // et le seuil au-delà duquel un run resté actif est considéré
+        // INTERROMPU (un worker tué ne doit pas condamner la bibliothèque).
+        'job_timeout' => (int) env('EXTENSIONS_INSTALL_JOB_TIMEOUT', 1800),
     ],
 
 ];

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Exceptions\ExtensionInstallException;
+use App\Models\ExtensionInstallRun;
 use App\Services\Extensions\ExtensionInstallService;
 use Illuminate\Console\Command;
 
@@ -84,18 +85,18 @@ class ExtensionInstall extends Command
         return self::SUCCESS;
     }
 
-    /** @param  list<string>  $steps */
+    /**
+     * @param  list<string>  $steps
+     *
+     * ⚠️ Story 56.3 — la map de libellés a QUITTÉ cette classe pour
+     * {@see ExtensionInstallService::stepLabels()} : l'UI en avait besoin, et
+     * la dupliquer aurait garanti la divergence (leçon review 56.1 #3). Les
+     * libellés sont repris verbatim — la sortie de cette commande est
+     * inchangée, un test le verrouille.
+     */
     private function renderSteps(array $steps): void
     {
-        $labels = [
-            ExtensionInstallService::STEP_PACKAGE => 'paquet téléchargé et sha256 vérifié',
-            ExtensionInstallService::STEP_OIDC => 'client OIDC enregistré',
-            ExtensionInstallService::STEP_ENV => 'fichier d\'environnement posé (0600 root)',
-            ExtensionInstallService::STEP_APT => 'paquet installé (apt)',
-            ExtensionInstallService::STEP_SERVICE => 'unité systemd activée et démarrée',
-            ExtensionInstallService::STEP_APACHE => 'fragment Apache posé et configuration rechargée',
-            ExtensionInstallService::STEP_REGISTRY => 'registre mis à jour et acte journalisé',
-        ];
+        $labels = ExtensionInstallService::stepLabels(ExtensionInstallRun::OPERATION_INSTALL);
 
         foreach ($steps as $step) {
             $this->line('  ✔ '.($labels[$step] ?? $step));

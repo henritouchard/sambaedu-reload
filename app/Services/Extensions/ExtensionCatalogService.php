@@ -501,7 +501,87 @@ class ExtensionCatalogService
             'source_sync_status' => $syncStatus->value,
             'source_sync_label' => $syncStatus->label(),
             'source_sync_badge' => $syncStatus->badgeClass(),
+
+            // ── Story 56.3 — cycle `app` ────────────────────────────────────
+            // `installed_version` est ce qui TOURNE, `version` ce que la source
+            // PUBLIE : deux faits différents, et leur écart EST la détection de
+            // mise à jour.
+            'installed_version' => (string) $extension->installed_version,
+            'update_available' => $this->hasUpdateAvailable($extension),
+            'installable' => $this->isAppInstallable($extension),
+            // ⚠️ `installed_sha256` n'a RIEN à faire ici : c'est une donnée
+            // interne de rollback, sans aucune valeur pour l'admin.
         ];
+    }
+
+    /**
+     * Story 56.3 (AC3) — Une mise à jour est-elle PROPOSABLE pour cette
+     * extension ?
+     *
+     * ⚠️ Règle à UN SEUL énoncé, calculée dans {@see self::toListRow()} : la
+     * fiche hérite par construction ({@see self::toDetail()} = `toListRow()` +
+     * des champs de manifest), donc la liste et la fiche ne peuvent pas
+     * diverger. La dupliquer dans la vue ou dans un composant rouvrirait
+     * exactement le défaut de la review 56.1 #3.
+     *
+     * La règle est un **ÉCART**, jamais un ORDRE. `version` est une chaîne
+     * LIBRE du manifest — le validateur ne lui impose aucun format — donc un
+     * tri sémantique mentirait sur un « 2024-annexe-b ». Une republication
+     * ANTÉRIEURE est donc proposée comme un changement : c'est voulu (la source
+     * est l'autorité de sa propre fraîcheur, modèle apt), et c'est pourquoi le
+     * helper root pose `--allow-downgrades`.
+     *
+     * `installed_version` non vide est nécessaire : une `app` intégrée sans
+     * version installée n'a pas été posée par le moteur, et l'écart n'aurait
+     * aucun sens.
+     */
+    private function hasUpdateAvailable(Extension $extension): bool
+    {
+        if ($extension->type !== ExtensionType::App) {
+            return false;
+        }
+
+        if (($extension->status ?? ExtensionStatus::Available) !== ExtensionStatus::Integrated) {
+            return false;
+        }
+
+        $installed = (string) $extension->installed_version;
+
+        if ($installed === '' || $installed === (string) $extension->version) {
+            return false;
+        }
+
+        // Une source gelée ou dont le catalogue n'a pas pu être VÉRIFIÉ ne
+        // propose plus rien — y compris une nouvelle version. Même règle
+        // UNIQUE que l'affichage et que l'intégration (review 56.1 #1), portée
+        // par le modèle.
+        return $extension->source?->offersAvailableExtensions() === true;
+    }
+
+    /**
+     * Story 56.3 (AC1) — Le moteur accepterait-il d'installer cette extension ?
+     *
+     * L'UI ne doit JAMAIS proposer ce que le moteur refusera. Les deux
+     * conditions sont exactement celles de
+     * {@see ExtensionInstallService::install()} avant tout effet : un bloc
+     * `install` exploitable (règle unique portée par le modèle,
+     * {@see Extension::hasSupportedInstallBlock()}) et une source qui propose
+     * encore ({@see \App\Models\ExtensionSource::offersAvailableExtensions()}).
+     *
+     * Ce drapeau ne remplace aucune garde : le moteur revalide tout. Il évite
+     * seulement d'offrir un bouton qui ne peut que décevoir.
+     */
+    private function isAppInstallable(Extension $extension): bool
+    {
+        if ($extension->type !== ExtensionType::App) {
+            return false;
+        }
+
+        if (! $extension->hasSupportedInstallBlock()) {
+            return false;
+        }
+
+        return $extension->source?->offersAvailableExtensions() === true;
     }
 
     /**

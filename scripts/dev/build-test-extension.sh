@@ -21,16 +21,62 @@
 # la validation manuelle sur la VM — il ne prétend ni à la généralité, ni à la
 # stabilité d'interface.
 #
-# Usage : scripts/dev/build-test-extension.sh [répertoire de sortie]
-#         (défaut : /tmp/sambaedu-ext-hello)
+# Usage : scripts/dev/build-test-extension.sh [--version <x.y.z>] [répertoire de sortie]
+#         (défauts : --version 1.0.0, /tmp/sambaedu-ext-hello)
+#
+# ── Story 56.3 : REPUBLIER une autre version dans LE MÊME dépôt ──────────────
+#
+# Le runbook de la mise à jour a besoin de servir successivement deux versions
+# de « hello » SANS que SE5 n'ait à ré-ajouter la source. Or la clé publique
+# d'une source est PINNÉE à l'ajout et jamais renégociée (56.1) : régénérer une
+# paire de clés ferait tomber la source en `error`, ce qui n'est pas ce qu'on
+# veut tester.
+#
+# D'où le comportement : si `<out>/source.key` existe déjà, le script REJOUE
+# dans le dépôt existant — il réutilise la clé privée, conserve les paquets
+# déjà publiés et se contente de réécrire `index.json` + sa signature. Sinon il
+# repart de zéro avec une paire jetable neuve.
+#
+#   bash scripts/dev/build-test-extension.sh                       # publie 1.0.0
+#   bash scripts/dev/build-test-extension.sh --version 1.1.0       # republie 1.1.0, même clé
+#   bash scripts/dev/build-test-extension.sh --version 1.0.0       # retour arrière (--allow-downgrades)
 # =============================================================================
 
 set -euo pipefail
 
-OUT="${1:-/tmp/sambaedu-ext-hello}"
 KEY="hello"
 PKG="sambaedu-ext-${KEY}"
 VERSION="1.0.0"
+OUT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            [[ $# -ge 2 ]] || { echo "--version attend une valeur (ex. 1.1.0)" >&2; exit 1; }
+            VERSION="$2"
+            shift 2
+            ;;
+        --version=*)
+            VERSION="${1#--version=}"
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,40p' "$0" >&2
+            exit 0
+            ;;
+        *)
+            OUT="$1"
+            shift
+            ;;
+    esac
+done
+
+OUT="${OUT:-/tmp/sambaedu-ext-hello}"
+
+# Le champ `Version` d'un paquet Debian n'accepte pas n'importe quoi, et il est
+# interpolé dans des noms de fichiers servis par HTTP.
+[[ "$VERSION" =~ ^[0-9][0-9a-zA-Z.+~-]*$ ]] \
+    || { echo "Version de paquet invalide : « $VERSION »" >&2; exit 1; }
 
 for tool in dpkg-deb php python3; do
     command -v "$tool" >/dev/null 2>&1 || { echo "Outil requis manquant : $tool" >&2; exit 1; }
@@ -39,7 +85,15 @@ done
 php -r 'exit(extension_loaded("sodium") ? 0 : 1);' \
     || { echo "L'extension PHP sodium est requise (signature Ed25519)." >&2; exit 1; }
 
-rm -rf "$OUT"
+REUSE_KEY=0
+if [[ -f "$OUT/source.key" ]]; then
+    REUSE_KEY=1
+    echo "Dépôt existant détecté dans $OUT — republication avec la clé déjà pinnée."
+    rm -rf "$OUT/build"
+else
+    rm -rf "$OUT"
+fi
+
 mkdir -p "$OUT/build/DEBIAN" \
          "$OUT/build/usr/share/${PKG}" \
          "$OUT/build/lib/systemd/system" \
@@ -163,17 +217,33 @@ INDEX
 
 # Clé JETABLE générée ici : le dépôt de test n'a rien à voir avec les clés de
 # production, et une clé privée de test ne doit jamais quitter ce répertoire.
+#
+# En REPUBLICATION (`$REUSE_KEY = 1`), la clé existante est REPRISE telle
+# quelle : le pin TOFU de la source SE5 ne doit pas être invalidé par la simple
+# publication d'une nouvelle version.
 php -r '
     $out = $argv[1];
-    $pair = sodium_crypto_sign_keypair();
-    $sk = sodium_crypto_sign_secretkey($pair);
-    $pk = sodium_crypto_sign_publickey($pair);
+    $reuse = $argv[2] === "1";
+
+    if ($reuse) {
+        $sk = base64_decode(trim(file_get_contents($out . "/source.key")), true);
+        if ($sk === false || $sk === "") {
+            fwrite(STDERR, "Clé privée de test illisible : " . $out . "/source.key\n");
+            exit(1);
+        }
+        $pk = sodium_crypto_sign_publickey_from_secretkey($sk);
+    } else {
+        $pair = sodium_crypto_sign_keypair();
+        $sk = sodium_crypto_sign_secretkey($pair);
+        $pk = sodium_crypto_sign_publickey($pair);
+    }
+
     $index = file_get_contents($out . "/repo/index.json");
     file_put_contents($out . "/repo/index.json.sig", base64_encode(sodium_crypto_sign_detached($index, $sk)));
     file_put_contents($out . "/repo/source.pub", base64_encode($pk));
     file_put_contents($out . "/source.key", base64_encode($sk));
     chmod($out . "/source.key", 0600);
-' "$OUT"
+' "$OUT" "$REUSE_KEY"
 
 cat <<SUMMARY
 
@@ -195,5 +265,9 @@ Puis dans SE5 : /admin/extensions/sources → « Ajouter une source »
 Enfin :
   php artisan ext:sources:sync
   php artisan ext:install ${KEY}
+
+Republier une autre version dans CE dépôt (clé conservée, source SE5 inchangée) :
+  bash scripts/dev/build-test-extension.sh --version 1.1.0 $OUT
+  php artisan ext:sources:sync   # la bibliothèque propose alors la mise à jour
 
 SUMMARY

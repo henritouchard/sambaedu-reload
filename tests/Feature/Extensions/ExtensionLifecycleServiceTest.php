@@ -505,4 +505,119 @@ class ExtensionLifecycleServiceTest extends TestCase
 
         $this->service()->uninstall($extension->id, $actor);
     }
+
+    // =====================================================================
+    // Story 56.3 — `markAppUpdated()` et l'empreinte du paquet posé
+    // =====================================================================
+
+    #[Test]
+    public function mark_app_installed_records_the_fingerprint_of_the_posted_package(): void
+    {
+        $extension = Extension::factory()->app()->create(['key' => 'hello']);
+        $sha = hash('sha256', 'paquet-1.0.0');
+
+        $this->service()->markAppInstalled($extension->id, '1.0.0', 8600, null, $sha);
+
+        self::assertSame($sha, $extension->fresh()->installed_sha256);
+    }
+
+    #[Test]
+    public function mark_app_removed_clears_the_fingerprint(): void
+    {
+        // Le staging vient d'être purgé par le moteur : garder l'empreinte
+        // désignerait un paquet qui n'existe plus.
+        $extension = Extension::factory()->app()->installed(8600)->create(['key' => 'hello']);
+        self::assertNotSame('', $extension->installed_sha256);
+
+        $this->service()->markAppRemoved($extension->id, null);
+
+        self::assertSame('', $extension->fresh()->installed_sha256);
+    }
+
+    #[Test]
+    public function mark_app_updated_moves_the_version_and_the_fingerprint_and_nothing_else(): void
+    {
+        $extension = Extension::factory()->app()
+            ->installed(8600, '1.0.0', hash('sha256', 'v1'))
+            ->create(['key' => 'hello', 'name' => 'Hello']);
+        $installedAt = $extension->installed_at;
+
+        $result = $this->service()->markAppUpdated($extension->id, '2.0.0', hash('sha256', 'v2'), null);
+
+        self::assertSame(['changed' => true, 'status' => 'integrated'], $result);
+
+        $fresh = $extension->fresh();
+        self::assertSame('2.0.0', $fresh->installed_version);
+        self::assertSame(hash('sha256', 'v2'), $fresh->installed_sha256);
+        // Invariants de la CLÉ : ils ne bougent pas d'une version à l'autre.
+        self::assertSame(ExtensionStatus::Integrated, $fresh->status);
+        self::assertSame(8600, $fresh->installed_port);
+        self::assertSame(
+            $installedAt?->toDateTimeString(),
+            $fresh->installed_at?->toDateTimeString(),
+            'installed_at date la POSE de l\'extension, pas la dernière version',
+        );
+
+        $log = ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_UPDATE)->firstOrFail();
+        self::assertSame('hello', $log->extension_key);
+        self::assertSame(ExtensionAuditLog::ACTOR_SYSTEM, $log->actor_login);
+        self::assertStringContainsString('2.0.0', (string) $log->details);
+    }
+
+    #[Test]
+    public function mark_app_updated_records_the_acting_admin_when_there_is_one(): void
+    {
+        $actor = $this->actor();
+        $extension = Extension::factory()->app()
+            ->installed(8600, '1.0.0', hash('sha256', 'v1'))
+            ->create(['key' => 'hello']);
+
+        $this->service()->markAppUpdated($extension->id, '2.0.0', hash('sha256', 'v2'), $actor);
+
+        $log = ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_UPDATE)->firstOrFail();
+        self::assertSame($actor->id, $log->actor_user_id);
+        self::assertSame('lifecycle-actor', $log->actor_login);
+    }
+
+    #[Test]
+    public function mark_app_updated_to_the_same_version_is_a_silent_no_op(): void
+    {
+        $sha = hash('sha256', 'v1');
+        $extension = Extension::factory()->app()->installed(8600, '1.0.0', $sha)->create(['key' => 'hello']);
+
+        $result = $this->service()->markAppUpdated($extension->id, '1.0.0', $sha, null);
+
+        self::assertSame(['changed' => false, 'status' => 'integrated'], $result);
+        self::assertSame(0, ExtensionAuditLog::query()->count(), 'le journal trace des transitions RÉELLES');
+    }
+
+    #[Test]
+    public function mark_app_updated_on_an_extension_that_is_not_installed_is_a_no_op(): void
+    {
+        $extension = Extension::factory()->app()->create(['key' => 'hello']);
+
+        $result = $this->service()->markAppUpdated($extension->id, '2.0.0', hash('sha256', 'v2'), null);
+
+        self::assertSame(['changed' => false, 'status' => 'available'], $result);
+        self::assertSame('', $extension->fresh()->installed_version);
+        self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    #[Test]
+    public function mark_app_updated_refuses_a_link(): void
+    {
+        $extension = Extension::factory()->link()->integrated()->create(['key' => 'doc']);
+
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->markAppUpdated($extension->id, '2.0.0', hash('sha256', 'v2'), null);
+    }
+
+    #[Test]
+    public function mark_app_updated_refuses_an_unknown_extension(): void
+    {
+        $this->expectException(ExtensionLifecycleException::class);
+
+        $this->service()->markAppUpdated(999_999, '2.0.0', hash('sha256', 'v2'), null);
+    }
 }

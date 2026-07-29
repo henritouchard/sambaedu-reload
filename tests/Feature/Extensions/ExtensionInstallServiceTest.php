@@ -632,10 +632,24 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame(0, OidcClient::where('enabled', true)->count());
         self::assertGreaterThan(0, OidcClient::count(), 'Le client est révoqué, jamais supprimé (doctrine 55.1).');
 
-        // Aucune trace d'acte réussi ; une trace d'échec nommant l'étape.
+        // Aucune trace d'acte réussi ; une trace d'échec exploitable.
+        //
+        // ⚠️ Deux catégories légitimes ici, et pas une de moins (review 56.3
+        // #1) : « échec à l'étape X » quand le nettoyage a pu être mené à
+        // bien, et `ERROR_CLEANUP_INCOMPLETE` quand une compensation a échoué
+        // à son tour — cas réellement atteint par le jeu de données
+        // `reload-apache`, où la sous-commande en échec est aussi celle dont
+        // la compensation a besoin. L'assertion n'est pas relâchée : elle
+        // énumère, elle n'accepte pas n'importe quoi.
         self::assertSame(0, ExtensionAuditLog::where('action', ExtensionAuditLog::ACTION_INSTALL)->count());
         $log = ExtensionAuditLog::where('action', ExtensionAuditLog::ACTION_INSTALL_FAILED)->firstOrFail();
-        self::assertStringStartsWith('échec à l\'étape ', (string) $log->details);
+        $details = (string) $log->details;
+
+        self::assertTrue(
+            str_starts_with($details, 'échec à l\'étape ')
+                || $details === ExtensionInstallService::ERROR_CLEANUP_INCOMPLETE,
+            "catégorie d'échec inattendue : {$details}",
+        );
     }
 
     #[Test]

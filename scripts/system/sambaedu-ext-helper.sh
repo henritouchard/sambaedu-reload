@@ -94,6 +94,7 @@ Usage: sambaedu-ext-helper.sh <sous-commande> [args]
   remove-package  <key>
   enable-service  <key>
   disable-service <key>
+  restart-service <key>
   write-fragment  <key> <port>
   remove-fragment <key>
   reload-apache
@@ -214,7 +215,14 @@ cmd_install_package() {
 
     validate_deb_package_name "$frozen" "$key"
 
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "$frozen"
+    # `--allow-downgrades` (Story 56.3) : une source PEUT republier une version
+    # antérieure, et c'est aussi le chemin du ROLLBACK d'une mise à jour ratée
+    # — sans ce drapeau, apt refuserait de réinstaller l'ancien paquet et la
+    # compensation serait impossible, ce qui est exactement l'état zombie que
+    # NFR8 interdit. Ce que le drapeau assouplit, c'est la FRAÎCHEUR ; le
+    # CONTENU, lui, reste vérifié par le sha256 de l'index signé et le nom de
+    # paquet est contraint au namespace de la clé, juste au-dessus.
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$frozen"
 }
 
 cmd_remove_package() {
@@ -245,6 +253,21 @@ cmd_disable_service() {
     systemctl stop "$unit" >/dev/null 2>&1 || true
     systemctl disable "$unit" >/dev/null 2>&1 || true
     return 0
+}
+
+# Story 56.3 — après remplacement du paquet, le backend tourne encore sur
+# l'ANCIEN code : il faut le relancer.
+#
+# ⚠️ Contrairement à `disable-service`, ce n'est PAS idempotent-tolérant : un
+# redémarrage qui échoue DOIT échouer, pour que le moteur compense (réinstaller
+# l'ancien paquet et relancer) plutôt que de laisser une extension marquée « à
+# jour » derrière un service mort. `restart` et non `reload` : une extension
+# tierce n'a aucune obligation de savoir recharger sa configuration à chaud, et
+# son exécutable vient de changer sur le disque.
+cmd_restart_service() {
+    local key="$1"
+    validate_key "$key"
+    systemctl restart "${PACKAGE_PREFIX}${key}.service"
 }
 
 # Le fragment est GÉNÉRÉ ICI, jamais reçu. `retry=0` : un backend arrêté rend
@@ -302,6 +325,7 @@ main() {
         remove-package)   [[ $# -eq 1 ]] || usage; cmd_remove_package "$1" ;;
         enable-service)   [[ $# -eq 1 ]] || usage; cmd_enable_service "$1" ;;
         disable-service)  [[ $# -eq 1 ]] || usage; cmd_disable_service "$1" ;;
+        restart-service)  [[ $# -eq 1 ]] || usage; cmd_restart_service "$1" ;;
         write-fragment)   [[ $# -eq 2 ]] || usage; cmd_write_fragment "$1" "$2" ;;
         remove-fragment)  [[ $# -eq 1 ]] || usage; cmd_remove_fragment "$1" ;;
         reload-apache)    [[ $# -eq 0 ]] || usage; cmd_reload_apache ;;

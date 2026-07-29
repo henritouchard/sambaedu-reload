@@ -101,6 +101,20 @@ class ExtensionAuditLog extends Model
      */
     public const ACTION_INSTALL_FAILED = 'install_failed';
 
+    /**
+     * Story 56.3 — mise à jour d'une extension `app` déjà installée
+     * (`ext:update` / bouton « Mettre à jour »).
+     *
+     * Acte à part entière, distinct d'`install` : ce qu'il change, c'est la
+     * VERSION qui tourne, pas la présence de l'extension. Les confondre
+     * rendrait le journal incapable de répondre à « depuis quand tourne-t-on
+     * cette version-là ». Même doctrine d'échec qu'`install_failed` : une ligne
+     * PAR TENTATIVE, catégorie courte, jamais d'URL ni de secret.
+     */
+    public const ACTION_UPDATE = 'update';
+
+    public const ACTION_UPDATE_FAILED = 'update_failed';
+
     /** Acteur conventionnel d'une synchro planifiée (aucun utilisateur connecté). */
     public const ACTOR_SYSTEM = 'system';
 

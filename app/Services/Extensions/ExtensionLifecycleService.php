@@ -133,12 +133,13 @@ class ExtensionLifecycleService
      * qu'un backend a été provisionné pour une extension qui n'en a pas, et
      * `ext:remove` irait ensuite purger un paquet inexistant.
      *
-     * @param  User|null  $actor  `null` ⇒ acte CLI, journalisé sous `system`
+     * @param  User|null  $actor   `null` ⇒ acte CLI, journalisé sous `system`
+     * @param  string     $sha256  Story 56.3 — empreinte du `.deb` réellement posé (gage de rollback)
      * @return array{changed: bool, status: string}
      */
-    public function markAppInstalled(int $extensionId, string $version, int $port, ?User $actor = null): array
+    public function markAppInstalled(int $extensionId, string $version, int $port, ?User $actor = null, string $sha256 = ''): array
     {
-        return DB::transaction(function () use ($extensionId, $version, $port, $actor): array {
+        return DB::transaction(function () use ($extensionId, $version, $port, $actor, $sha256): array {
             $extension = $this->lockApp($extensionId);
 
             $current = $extension->status ?? ExtensionStatus::Available;
@@ -152,6 +153,7 @@ class ExtensionLifecycleService
 
             $extension->status = ExtensionStatus::Integrated;
             $extension->installed_version = $version;
+            $extension->installed_sha256 = strtolower($sha256);
             $extension->installed_port = $port;
             $extension->installed_at = now();
             $extension->save();
@@ -190,6 +192,9 @@ class ExtensionLifecycleService
 
             $extension->status = ExtensionStatus::Available;
             $extension->installed_version = '';
+            // Story 56.3 — le staging est purgé par le moteur juste avant :
+            // garder l'empreinte désignerait un paquet qui n'existe plus.
+            $extension->installed_sha256 = '';
             $extension->installed_port = null;
             $extension->installed_at = null;
             $extension->save();
@@ -204,6 +209,65 @@ class ExtensionLifecycleService
             );
 
             return ['changed' => true, 'status' => ExtensionStatus::Available->value];
+        });
+    }
+
+    /**
+     * Story 56.3 (FR11) — Acte la MISE À JOUR réussie d'une extension `app` :
+     * la version et l'empreinte du paquet qui tourne changent, RIEN D'AUTRE.
+     *
+     * `status`, `installed_port` et `installed_at` sont volontairement
+     * intouchés : l'extension était intégrée et le reste, son backend écoute
+     * toujours le même port (le fragment Apache n'a pas bougé), et
+     * `installed_at` date la POSE de l'extension sur l'instance — l'écraser
+     * ferait perdre cette information au profit d'une autre que
+     * `extension_audit_logs` porte déjà (la ligne `update` est horodatée).
+     *
+     * Mêmes invariants que ses deux sœurs : type `app` STRICT, lecture sous
+     * `lockForUpdate`, no-op ⇒ ZÉRO ligne d'audit, acte et trace dans la MÊME
+     * transaction. Dernière étape du plan de mise à jour, et la seule
+     * transactionnelle.
+     *
+     * @param  string     $sha256  empreinte du `.deb` de la NOUVELLE version
+     * @param  User|null  $actor   `null` ⇒ acte CLI, journalisé sous `system`
+     * @return array{changed: bool, status: string}
+     */
+    public function markAppUpdated(int $extensionId, string $version, string $sha256, ?User $actor = null): array
+    {
+        return DB::transaction(function () use ($extensionId, $version, $sha256, $actor): array {
+            $extension = $this->lockApp($extensionId);
+
+            $current = $extension->status ?? ExtensionStatus::Available;
+
+            // Une extension qui n'est pas installée ne se met pas à jour : le
+            // moteur écarte déjà ce cas, la garde vit ici pour que l'invariant
+            // appartienne au service.
+            if ($current !== ExtensionStatus::Integrated) {
+                return ['changed' => false, 'status' => $current->value];
+            }
+
+            // NFR8 — rien à changer : ni écriture (pas même `updated_at`), ni
+            // audit. Le journal trace des transitions RÉELLES.
+            if ((string) $extension->installed_version === $version
+                && (string) $extension->installed_sha256 === strtolower($sha256)) {
+                return ['changed' => false, 'status' => ExtensionStatus::Integrated->value];
+            }
+
+            $extension->installed_version = $version;
+            $extension->installed_sha256 = strtolower($sha256);
+            $extension->save();
+
+            ExtensionAuditLog::log(
+                extensionId: $extension->id,
+                extensionKey: $extension->key,
+                extensionName: $extension->name,
+                action: ExtensionAuditLog::ACTION_UPDATE,
+                actorUserId: $actor?->id,
+                actorLogin: $actor?->login ?? ExtensionAuditLog::ACTOR_SYSTEM,
+                details: 'version '.$version,
+            );
+
+            return ['changed' => true, 'status' => ExtensionStatus::Integrated->value];
         });
     }
 

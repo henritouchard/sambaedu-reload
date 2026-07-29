@@ -102,6 +102,25 @@ class FakeExtensionHelperRunner implements ExtensionHelperRunner
     }
 
     /**
+     * Story 56.3 — Oublie l'historique **et remet le compteur d'appels à
+     * zéro**, pour que {@see self::failAtCall()} porte sur la séquence qui
+     * commence maintenant.
+     *
+     * {@see self::forget()} ne touche volontairement pas au compteur (les tests
+     * 56.2 s'appuient sur cette sémantique) ; il fallait donc une seconde
+     * méthode plutôt qu'un changement de comportement. Utile quand une fixture
+     * a DÉJÀ fait tourner le moteur (installer avant de mettre à jour) et qu'on
+     * veut faire échouer « le premier appel de l'opération étudiée ».
+     */
+    public function forgetAll(): self
+    {
+        $this->calls = [];
+        $this->callCount = 0;
+
+        return $this;
+    }
+
+    /**
      * Séquence des sous-commandes appelées, dans l'ordre — l'assertion
      * centrale de cette story.
      *

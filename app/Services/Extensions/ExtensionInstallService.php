@@ -107,6 +107,25 @@ use Throwable;
  *  l'outil de nettoyage d'un état dégradé imprévu.
  * ══════════════════════════════════════════════════════════════════════════
  *
+ * ══════════════════════════════════════════════════════════════════════════
+ *  STORY 56.3 — CE QUI S'AJOUTE, ET CE QUI NE BOUGE PAS
+ *
+ *  Trois ajouts strictement ADDITIFS ; aucun chemin existant n'est retouché.
+ *
+ *   1. {@see self::update()} — un plan à DEUX étapes privilégiées
+ *      (`install-package` puis `restart-service`), précédé de préconditions
+ *      vérifiées AVANT d'agir, dont le GAGE DE ROLLBACK. Rien d'autre n'est
+ *      touché : port, fragment Apache, fichier d'environnement et client OIDC
+ *      sont des invariants de la CLÉ, pas de la version.
+ *   2. `?callable $onStep` sur les trois opérations — le pont, et le SEUL,
+ *      vers l'état de progression persisté de l'UI. Ce service ne connaît ni
+ *      la table des runs, ni les Jobs : la CLI fonctionne sans run, et le
+ *      moteur reste testable sans base de runs. ⚠️ Le rapport est ISOLÉ
+ *      ({@see self::mark()}) — il ne peut JAMAIS faire échouer une opération.
+ *   3. {@see self::stepLabels()} — les libellés d'étapes, remontés des
+ *      commandes vers le service : un seul énoncé, quatre consommateurs.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
  * **Aucun appel système ici** (NFR15) : tous les effets privilégiés passent par
  * {@see ExtensionHelperRunner}, seul seam root du domaine. Le secret OIDC ne
  * quitte ce service que par le `stdin` de `write-env` : jamais en argument,
@@ -130,8 +149,14 @@ class ExtensionInstallService
      */
     private const LOCK_KEY = 'extensions:install-engine';
 
-    /** Durée de rétention du verrou (une installation apt peut être longue). */
-    private const LOCK_SECONDS = 600;
+    /**
+     * Plancher de rétention du verrou. La valeur EFFECTIVE est dérivée du
+     * budget de temps du Job ({@see self::lockSeconds()}) — review 56.3 #2.
+     */
+    private const LOCK_SECONDS_FLOOR = 900;
+
+    /** Marge au-delà du budget du Job, avant expiration du verrou. */
+    private const LOCK_SECONDS_MARGIN = 300;
 
     /** Taille d'un morceau de lecture du paquet (borne appliquée À LA LECTURE). */
     private const READ_CHUNK_BYTES = 65536;
@@ -147,6 +172,14 @@ class ExtensionInstallService
     public const HELPER_REMOVE_FRAGMENT = 'remove-fragment';
     public const HELPER_RELOAD_APACHE = 'reload-apache';
 
+    /**
+     * Story 56.3 — redémarrage du backend après remplacement de son paquet.
+     * `restart` et non `reload` : une extension tierce n'a aucune obligation de
+     * savoir recharger sa configuration à chaud, et son binaire vient de
+     * changer sur le disque.
+     */
+    public const HELPER_RESTART_SERVICE = 'restart-service';
+
     // ── Étiquettes d'étapes (rapport console + `details` d'audit) ───────────
     public const STEP_PACKAGE = 'package';
     public const STEP_OIDC = 'oidc_client';
@@ -155,6 +188,50 @@ class ExtensionInstallService
     public const STEP_SERVICE = 'service';
     public const STEP_APACHE = 'apache';
     public const STEP_REGISTRY = 'registry';
+
+    /**
+     * Les trois OPÉRATIONS du moteur — vocabulaire canonique du domaine, défini
+     * ICI parce que ce sont exactement les trois méthodes publiques de ce
+     * service. {@see \App\Models\ExtensionInstallRun} persiste ces valeurs et
+     * les réexpose par référence : un seul énoncé, aucune dérive possible
+     * (leçon review 56.1 #3).
+     */
+    public const OPERATION_INSTALL = 'install';
+
+    public const OPERATION_UPDATE = 'update';
+
+    public const OPERATION_REMOVE = 'remove';
+
+    /**
+     * Story 56.3 — catégories de refus PROPRES à la mise à jour.
+     *
+     * Comme toutes les catégories du moteur (56.2) : courtes, stables, en
+     * français, écrites telles quelles dans `extension_audit_logs.details` et
+     * affichées telles quelles à l'admin — donc JAMAIS d'URL, JAMAIS de secret
+     * (règle `last_error` de 56.1). Elles portent en plus la consigne de
+     * sortie, parce qu'il n'y a rien d'autre à en dire : ces deux refus ne se
+     * réparent que par désinstallation puis réinstallation.
+     */
+    public const ERROR_REDIRECT_PATHS_CHANGED = 'URI de redirection modifiées — désinstaller puis réinstaller';
+
+    public const ERROR_ROLLBACK_PACKAGE_MISSING = 'paquet de la version installée absent ou corrompu — désinstaller puis réinstaller';
+
+    public const ERROR_OIDC_CLIENT_MISSING = 'client OIDC de l\'extension introuvable — désinstaller puis réinstaller';
+
+    /**
+     * Review 56.3 #1 — la mise à jour a échoué ET le retour arrière aussi.
+     * Le seul cas de cette story où l'instance peut rester dans un état que le
+     * moteur ne sait plus réparer seul : il doit se dire, pas se confondre avec
+     * un échec dont on est revenu proprement.
+     */
+    public const ERROR_ROLLBACK_FAILED = 'mise à jour ÉCHOUÉE et retour à la version précédente ÉCHOUÉ — vérifier le service, intervention manuelle requise';
+
+    /**
+     * Review 56.3 #1 — installation échouée dont le nettoyage est lui-même
+     * incomplet : des composants système peuvent subsister. `ext:remove` est
+     * l'outil de nettoyage prévu pour cet état (ses étapes sont idempotentes).
+     */
+    public const ERROR_CLEANUP_INCOMPLETE = 'installation échouée et nettoyage incomplet — relancer « ext:remove » pour repartir d\'un état propre';
 
     public function __construct(
         private readonly ExtensionHelperRunner $runner,
@@ -170,16 +247,17 @@ class ExtensionInstallService
     /**
      * Installe une extension `app` de bout en bout.
      *
-     * @param  string       $key        clé (`id` du manifest) de l'extension
-     * @param  string|null  $sourceKey  source à privilégier si la clé est publiée par plusieurs
-     * @param  User|null    $actor      `null` ⇒ acte CLI, audité sous `system`
+     * @param  string         $key        clé (`id` du manifest) de l'extension
+     * @param  string|null    $sourceKey  source à privilégier si la clé est publiée par plusieurs
+     * @param  User|null      $actor      `null` ⇒ acte CLI, audité sous `system`
+     * @param  callable|null  $onStep     Story 56.3 — rapport de progression (cf. {@see self::mark()})
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      *
      * @throws ExtensionInstallException  refus de CONTRAT (clé inconnue/ambiguë, type `link`, moteur occupé)
      */
-    public function install(string $key, ?string $sourceKey = null, ?User $actor = null): array
+    public function install(string $key, ?string $sourceKey = null, ?User $actor = null, ?callable $onStep = null): array
     {
-        return $this->underLock(fn (): array => $this->doInstall($key, $sourceKey, $actor));
+        return $this->underLock(fn (): array => $this->doInstall($key, $sourceKey, $actor, $onStep));
     }
 
     /**
@@ -190,9 +268,104 @@ class ExtensionInstallService
      *
      * @throws ExtensionInstallException
      */
-    public function remove(string $key, ?User $actor = null): array
+    public function remove(string $key, ?User $actor = null, ?callable $onStep = null): array
     {
-        return $this->underLock(fn (): array => $this->doRemove($key, $actor));
+        return $this->underLock(fn (): array => $this->doRemove($key, $actor, $onStep));
+    }
+
+    /**
+     * Story 56.3 (FR11, AR1) — Met à jour une extension `app` DÉJÀ installée
+     * vers la version que publie actuellement sa source.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     *  PÉRIMÈTRE MINIMAL, ASSUMÉ : le paquet et le service, RIEN D'AUTRE
+     *
+     *  `installed_port`, le fragment Apache, le fichier d'environnement et le
+     *  client OIDC sont des invariants de la CLÉ, pas de la version. Les
+     *  régénérer serait du churn à risque : le `client_secret` OIDC n'est pas
+     *  récupérable (55.1 — seul son sha256 est en base), donc re-enregistrer
+     *  le client imposerait de réécrire l'env ET de redémarrer, avec une
+     *  compensation impossible à garantir si l'une des deux échoue.
+     *
+     *  L'UNIQUE cas où un invariant devrait bouger — des `redirect_paths`
+     *  différents dans le nouveau manifest — est refusé FAIL-CLOSED avant
+     *  toute action, le chemin de secours étant désinstaller puis réinstaller
+     *  (la configuration de l'extension est alors purgée : c'est dit dans le
+     *  message et dans le runbook QA).
+     * ══════════════════════════════════════════════════════════════════════
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     *  LE ROLLBACK N'EST PAS UNE ESPÉRANCE, C'EST UNE PRÉCONDITION VÉRIFIÉE
+     *
+     *  Avant de toucher quoi que ce soit, le moteur exige que le `.deb` de la
+     *  version INSTALLÉE soit présent en staging (il y survit par construction,
+     *  décision 56.2 #6), désigné par `installed_sha256`, et RE-HACHÉ conforme
+     *  — jamais de confiance au nom de fichier. Absent ou corrompu ⇒ refus
+     *  `rollback_package_missing`, sans avoir rien entrepris.
+     *
+     *  Ainsi l'échec d'apt ou du redémarrage a TOUJOURS une compensation
+     *  exécutable : réinstaller l'ancien paquet puis redémarrer. L'état retombe
+     *  sur la version d'avant, `installed_*` restent vrais en base (ils n'ont
+     *  jamais été touchés), et l'audit consigne `update_failed`. Pas de zombie
+     *  (NFR8).
+     * ══════════════════════════════════════════════════════════════════════
+     *
+     * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
+     *
+     * @throws ExtensionInstallException
+     */
+    public function update(string $key, ?User $actor = null, ?callable $onStep = null): array
+    {
+        return $this->underLock(fn (): array => $this->doUpdate($key, $actor, $onStep));
+    }
+
+    /**
+     * Libellés FR des étapes, PAR OPÉRATION — un seul énoncé, quatre
+     * consommateurs : `ext:install`, `ext:remove`, `ext:update` et l'UI 56.3.
+     *
+     * Cette map vivait en privé dans `ExtensionInstall::renderSteps()` ; l'UI
+     * en avait besoin, et la dupliquer aurait garanti la divergence (leçon
+     * review 56.1 #3). Les libellés `install` et `remove` sont repris
+     * VERBATIM : la sortie des deux commandes 56.2 ne bouge pas d'un caractère.
+     *
+     * Les mêmes constantes `STEP_*` n'ont pas le même sens selon l'opération —
+     * `apt_install` veut dire « paquet installé », « paquet purgé » ou
+     * « nouvelle version installée ». D'où le paramètre : une map unique,
+     * indexée par opération, plutôt qu'un libellé faussement neutre.
+     *
+     * @param  string  $operation  une des constantes `OPERATION_*`
+     * @return array<string, string>  constante `STEP_*` ⇒ libellé FR
+     */
+    public static function stepLabels(string $operation = self::OPERATION_INSTALL): array
+    {
+        $maps = [
+            self::OPERATION_INSTALL => [
+                self::STEP_PACKAGE => 'paquet téléchargé et sha256 vérifié',
+                self::STEP_OIDC => 'client OIDC enregistré',
+                self::STEP_ENV => 'fichier d\'environnement posé (0600 root)',
+                self::STEP_APT => 'paquet installé (apt)',
+                self::STEP_SERVICE => 'unité systemd activée et démarrée',
+                self::STEP_APACHE => 'fragment Apache posé et configuration rechargée',
+                self::STEP_REGISTRY => 'registre mis à jour et acte journalisé',
+            ],
+            self::OPERATION_REMOVE => [
+                self::STEP_SERVICE => 'unité systemd arrêtée et désactivée',
+                self::STEP_APACHE => 'fragment Apache retiré et configuration rechargée',
+                self::STEP_APT => 'paquet purgé (apt)',
+                self::STEP_ENV => 'fichier d\'environnement supprimé',
+                self::STEP_OIDC => 'clients OIDC de l\'extension révoqués (jetons morts)',
+                self::STEP_PACKAGE => 'staging du paquet nettoyé',
+                self::STEP_REGISTRY => 'registre mis à jour et acte journalisé',
+            ],
+            self::OPERATION_UPDATE => [
+                self::STEP_PACKAGE => 'nouveau paquet téléchargé et sha256 vérifié',
+                self::STEP_APT => 'nouvelle version installée (apt)',
+                self::STEP_SERVICE => 'service redémarré',
+                self::STEP_REGISTRY => 'registre mis à jour et acte journalisé',
+            ],
+        ];
+
+        return $maps[$operation] ?? $maps[self::OPERATION_INSTALL];
     }
 
     /**
@@ -247,7 +420,7 @@ class ExtensionInstallService
     /**
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      */
-    private function doInstall(string $key, ?string $sourceKey, ?User $actor): array
+    private function doInstall(string $key, ?string $sourceKey, ?User $actor, ?callable $onStep = null): array
     {
         // ── 1. Résolution + gardes de CONTRAT (elles lèvent) ───────────────
         $extension = $this->resolve($key, $sourceKey);
@@ -342,7 +515,9 @@ class ExtensionInstallService
 
         // ═══ Au-delà de cette ligne, et pas avant, du code tiers s'exécute ═══
 
-        $steps = [self::STEP_PACKAGE];
+        /** @var list<string> $steps */
+        $steps = [];
+        $this->mark($steps, self::STEP_PACKAGE, $onStep);
         /** @var list<callable(): void> $undo */
         $undo = [];
         $currentStep = self::STEP_OIDC;
@@ -355,7 +530,7 @@ class ExtensionInstallService
             $undo[] = function () use ($clientId): void {
                 $this->registry->revoke($clientId);
             };
-            $steps[] = self::STEP_OIDC;
+            $this->mark($steps, self::STEP_OIDC, $onStep);
 
             // ── 5. Fichier d'environnement (LE secret part par stdin) ───────
             $currentStep = self::STEP_ENV;
@@ -370,7 +545,7 @@ class ExtensionInstallService
             $undo[] = function () use ($extension): void {
                 $this->callHelper([self::HELPER_REMOVE_ENV, (string) $extension->key]);
             };
-            $steps[] = self::STEP_ENV;
+            $this->mark($steps, self::STEP_ENV, $onStep);
 
             // ── 6. apt : PREMIÈRE exécution de code tiers (maintainer scripts)
             $currentStep = self::STEP_APT;
@@ -378,7 +553,7 @@ class ExtensionInstallService
             $undo[] = function () use ($extension): void {
                 $this->callHelper([self::HELPER_REMOVE_PACKAGE, (string) $extension->key]);
             };
-            $steps[] = self::STEP_APT;
+            $this->mark($steps, self::STEP_APT, $onStep);
 
             // ── 7. Unité systemd ───────────────────────────────────────────
             $currentStep = self::STEP_SERVICE;
@@ -386,7 +561,7 @@ class ExtensionInstallService
             $undo[] = function () use ($extension): void {
                 $this->callHelper([self::HELPER_DISABLE_SERVICE, (string) $extension->key]);
             };
-            $steps[] = self::STEP_SERVICE;
+            $this->mark($steps, self::STEP_SERVICE, $onStep);
 
             // ── 8. Exposition Apache — DERNIER geste système ───────────────
             $currentStep = self::STEP_APACHE;
@@ -396,7 +571,7 @@ class ExtensionInstallService
                 $this->callHelper([self::HELPER_RELOAD_APACHE]);
             };
             $this->callHelper([self::HELPER_RELOAD_APACHE]);
-            $steps[] = self::STEP_APACHE;
+            $this->mark($steps, self::STEP_APACHE, $onStep);
 
             // ── 9. Base : l'acte et sa trace, dans la même transaction ─────
             $currentStep = self::STEP_REGISTRY;
@@ -405,8 +580,12 @@ class ExtensionInstallService
                 (string) $extension->version,
                 $port,
                 $actor,
+                // Story 56.3 — le sha256 VÉRIFIÉ du paquet réellement posé : il
+                // désigne, dans le staging content-addressed, le `.deb` vers
+                // lequel une future mise à jour ratée devra revenir.
+                $install['sha256'],
             );
-            $steps[] = self::STEP_REGISTRY;
+            $this->mark($steps, self::STEP_REGISTRY, $onStep);
         } catch (Throwable $e) {
             Log::error('[Extensions] Installation interrompue — compensations en cours', [
                 'extension' => $extension->key,
@@ -415,9 +594,18 @@ class ExtensionInstallService
                 'message' => $e->getMessage(),
             ]);
 
-            $this->compensate($undo, (string) $extension->key);
+            // Même exigence d'honnêteté que pour la mise à jour (review 56.3
+            // #1) : si le nettoyage lui-même est incomplet, des composants
+            // système peuvent subsister — le dire, et nommer l'outil qui
+            // répare.
+            $cleaned = $this->compensate($undo, (string) $extension->key);
 
-            return $this->fail($extension, 'échec à l\'étape '.$currentStep, $actor, $steps);
+            return $this->fail(
+                $extension,
+                $cleaned ? 'échec à l\'étape '.$currentStep : self::ERROR_CLEANUP_INCOMPLETE,
+                $actor,
+                $steps,
+            );
         }
 
         Log::info('[Extensions] Extension installée', [
@@ -436,7 +624,7 @@ class ExtensionInstallService
     /**
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      */
-    private function doRemove(string $key, ?User $actor): array
+    private function doRemove(string $key, ?User $actor, ?callable $onStep = null): array
     {
         $extension = $this->resolveForRemoval($key);
 
@@ -458,20 +646,20 @@ class ExtensionInstallService
             // `ext:remove` est donc aussi l'outil de nettoyage d'un état
             // dégradé, et se rejoue sans risque après un échec partiel.
             $this->callHelper([self::HELPER_DISABLE_SERVICE, (string) $extension->key]);
-            $steps[] = self::STEP_SERVICE;
+            $this->mark($steps, self::STEP_SERVICE, $onStep);
 
             $currentStep = self::STEP_APACHE;
             $this->callHelper([self::HELPER_REMOVE_FRAGMENT, (string) $extension->key]);
             $this->callHelper([self::HELPER_RELOAD_APACHE]);
-            $steps[] = self::STEP_APACHE;
+            $this->mark($steps, self::STEP_APACHE, $onStep);
 
             $currentStep = self::STEP_APT;
             $this->callHelper([self::HELPER_REMOVE_PACKAGE, (string) $extension->key]);
-            $steps[] = self::STEP_APT;
+            $this->mark($steps, self::STEP_APT, $onStep);
 
             $currentStep = self::STEP_ENV;
             $this->callHelper([self::HELPER_REMOVE_ENV, (string) $extension->key]);
-            $steps[] = self::STEP_ENV;
+            $this->mark($steps, self::STEP_ENV, $onStep);
         } catch (Throwable $e) {
             // Pas de compensation : `remove()` EST le chemin de nettoyage. On
             // s'arrête net, l'état reste `integrated`, et l'opérateur rejoue —
@@ -513,17 +701,17 @@ class ExtensionInstallService
                 $this->registry->revoke((string) $client->client_id);
                 $revoked++;
             }
-            $steps[] = self::STEP_OIDC;
+            $this->mark($steps, self::STEP_OIDC, $onStep);
 
             // ── Staging : le paquet vérifié n'a plus de consommateur ────────
             $currentStep = self::STEP_PACKAGE;
             $this->purgeStaging((string) $extension->key);
-            $steps[] = self::STEP_PACKAGE;
+            $this->mark($steps, self::STEP_PACKAGE, $onStep);
 
             // ── Base : l'acte et sa trace, dans la même transaction ─────────
             $currentStep = self::STEP_REGISTRY;
             $this->lifecycle->markAppRemoved((int) $extension->id, $actor);
-            $steps[] = self::STEP_REGISTRY;
+            $this->mark($steps, self::STEP_REGISTRY, $onStep);
         } catch (Throwable $e) {
             // Même doctrine que ci-dessus : pas de compensation (on ne
             // réinstalle pas ce qu'on vient de retirer), l'état reste
@@ -551,6 +739,224 @@ class ExtensionInstallService
         ]);
 
         return $this->result(true, $extension->fresh() ?? $extension, $steps, null, '');
+    }
+
+    // =====================================================================
+    // Mise à jour (Story 56.3)
+    // =====================================================================
+
+    /**
+     * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
+     */
+    private function doUpdate(string $key, ?User $actor, ?callable $onStep): array
+    {
+        // Résolution façon `resolveForRemoval()` : quand plusieurs sources
+        // publient la clé, la ligne INSTALLÉE n'est jamais ambiguë (unicité
+        // globale garantie à l'installation, décision 56.2 #11).
+        $extension = $this->resolveForRemoval($key);
+
+        if ($extension->type !== ExtensionType::App) {
+            throw ExtensionInstallException::linkNotSupported($key);
+        }
+
+        // Rien d'installé : NO-OP signalé, pas un échec. C'est exactement la
+        // doctrine de `remove()` sur une extension déjà disponible — l'écran
+        // qui a déclenché l'acte était simplement périmé (l'autre admin a
+        // désinstallé entre-temps), et un clic périmé ne mérite ni ligne
+        // d'audit, ni message d'erreur.
+        if (($extension->status ?? ExtensionStatus::Available) !== ExtensionStatus::Integrated) {
+            return $this->result(false, $extension, [], null, '');
+        }
+
+        $source = $extension->source;
+
+        if ($source === null) {
+            return $this->failUpdate($extension, 'source introuvable pour cette extension', $actor);
+        }
+
+        if (! $source->offersAvailableExtensions()) {
+            return $this->failUpdate($extension, 'source désactivée ou catalogue non vérifié', $actor);
+        }
+
+        $install = $extension->installBlock();
+        if ($install === null) {
+            return $this->failUpdate($extension, 'bloc install absent du manifest', $actor);
+        }
+
+        if (! in_array($install['channel'], ExtensionManifestValidator::SUPPORTED_INSTALL_CHANNELS, true)) {
+            return $this->failUpdate($extension, 'canal d\'installation non supporté', $actor);
+        }
+
+        // ── No-op : la source publie ce qui tourne déjà ────────────────────
+        // ⚠️ La règle est un ÉCART, jamais un ORDRE : `version` est une chaîne
+        // LIBRE du manifest (le validateur ne lui impose aucun format), donc
+        // inventer une comparaison sémantique mentirait sur un
+        // « 2024-annexe-b ». Une republication antérieure est proposée comme
+        // un changement, et c'est voulu — la source est l'autorité de sa
+        // fraîcheur (modèle apt), d'où le `--allow-downgrades` du helper.
+        if ((string) $extension->version === (string) $extension->installed_version) {
+            return $this->result(false, $extension, [], (int) $extension->installed_port, '');
+        }
+
+        // ── Invariants de la CLÉ : ils ne doivent pas avoir bougé ──────────
+        $prefix = ExtensionManifestValidator::appEntryUrl((string) $extension->key).'/';
+        foreach ($install['redirect_paths'] as $path) {
+            if (! str_starts_with($path, $prefix) || str_contains($path, '..')) {
+                return $this->failUpdate($extension, 'URI de redirection hors du préfixe de l\'extension', $actor);
+            }
+        }
+
+        $client = OidcClient::query()
+            ->where('extension_key', $extension->key)
+            ->where('enabled', true)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($client === null) {
+            // Une `app` intégrée SANS client actif est un état incohérent qu'un
+            // update ne sait pas réparer (le secret n'est pas récupérable).
+            return $this->failUpdate($extension, self::ERROR_OIDC_CLIENT_MISSING, $actor);
+        }
+
+        $expected = $this->redirectUrisFor((string) $extension->key, $install['redirect_paths']);
+        $current = array_values(array_map(static fn ($u): string => (string) $u, (array) $client->redirect_uris));
+
+        // Comparaison par ENSEMBLE : un simple réordonnancement des URI dans le
+        // manifest ne change rien au comportement du client OIDC (l'égalité est
+        // exacte URI par URI à l'usage, 55.1) — refuser pour cela serait un
+        // faux positif. Ce qui est refusé, c'est un ensemble DIFFÉRENT.
+        sort($expected);
+        sort($current);
+
+        if ($expected !== $current) {
+            return $this->failUpdate($extension, self::ERROR_REDIRECT_PATHS_CHANGED, $actor);
+        }
+
+        // ── Gage de rollback : vérifié AVANT d'agir, pas espéré après ──────
+        $rollbackPath = $this->rollbackPackage($extension);
+        if ($rollbackPath === null) {
+            return $this->failUpdate($extension, self::ERROR_ROLLBACK_PACKAGE_MISSING, $actor);
+        }
+
+        // ── Nouveau paquet : FRONTIÈRE FAIL-CLOSED (identique à l'install) ─
+        $package = $this->ensurePackage($extension, $source, $install);
+        if ($package['path'] === null) {
+            return $this->failUpdate($extension, $package['error'], $actor);
+        }
+
+        // ═══ Au-delà de cette ligne, et pas avant, du code tiers s'exécute ═══
+
+        /** @var list<string> $steps */
+        $steps = [];
+        $this->mark($steps, self::STEP_PACKAGE, $onStep);
+        /** @var list<callable(): void> $undo */
+        $undo = [];
+        $currentStep = self::STEP_APT;
+
+        try {
+            // ⚠️ La compensation est enregistrée AVANT l'appel, contrairement au
+            // plan d'installation. Là-bas chaque `undo` retire ce que l'étape
+            // vient de créer : l'enregistrer après est correct. Ici l'`undo`
+            // RESTAURE un état antérieur, et un `apt-get install` interrompu à
+            // mi-parcours peut avoir déjà dépaqueté la nouvelle version.
+            // Réinstaller l'ancien paquet est idempotent (apt n'a rien à faire
+            // si la version est déjà en place) : l'enregistrer trop tôt ne
+            // coûte rien, l'enregistrer trop tard laisserait un état hybride
+            // sans compensation.
+            $undo[] = function () use ($extension, $rollbackPath): void {
+                $this->callHelper([self::HELPER_INSTALL_PACKAGE, (string) $extension->key, $rollbackPath]);
+                $this->callHelper([self::HELPER_RESTART_SERVICE, (string) $extension->key]);
+            };
+
+            $this->callHelper([self::HELPER_INSTALL_PACKAGE, (string) $extension->key, $package['path']]);
+            $this->mark($steps, self::STEP_APT, $onStep);
+
+            $currentStep = self::STEP_SERVICE;
+            $this->callHelper([self::HELPER_RESTART_SERVICE, (string) $extension->key]);
+            $this->mark($steps, self::STEP_SERVICE, $onStep);
+
+            // ── Base : l'acte et sa trace, dans la même transaction ────────
+            $currentStep = self::STEP_REGISTRY;
+            $this->lifecycle->markAppUpdated(
+                (int) $extension->id,
+                (string) $extension->version,
+                $install['sha256'],
+                $actor,
+            );
+            $this->mark($steps, self::STEP_REGISTRY, $onStep);
+        } catch (Throwable $e) {
+            Log::error('[Extensions] Mise à jour interrompue — retour à la version installée', [
+                'extension' => $extension->key,
+                'step' => $currentStep,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            // Review 56.3 #1 — un rollback qui échoue ne doit pas se raconter
+            // comme un rollback réussi : c'est le seul état que le moteur ne
+            // sait plus réparer seul, il mérite son propre message et sa propre
+            // trace d'audit.
+            $restored = $this->compensate($undo, (string) $extension->key);
+
+            return $this->failUpdate(
+                $extension,
+                $restored ? 'échec à l\'étape '.$currentStep : self::ERROR_ROLLBACK_FAILED,
+                $actor,
+                $steps,
+            );
+        }
+
+        Log::info('[Extensions] Extension mise à jour', [
+            'extension' => $extension->key,
+            // `$extension` n'a pas été rafraîchi : il porte encore la version
+            // d'avant, ce qui est exactement ce qu'on veut journaliser.
+            'from' => (string) $extension->installed_version,
+            'to' => (string) $extension->version,
+        ]);
+
+        $fresh = $extension->fresh() ?? $extension;
+
+        return $this->result(true, $fresh, $steps, (int) $fresh->installed_port, '');
+    }
+
+    /**
+     * Le `.deb` de la version ACTUELLEMENT installée, ou `null` s'il n'offre
+     * pas une garantie de retour arrière.
+     *
+     * Trois conditions, toutes nécessaires : `installed_sha256` renseigné et
+     * bien formé, fichier présent dans le staging content-addressed, et
+     * empreinte RE-CALCULÉE conforme. Le nom du fichier ne fait jamais foi
+     * (patron 56.2 : un paquet en cache est re-haché avant réutilisation).
+     */
+    private function rollbackPackage(Extension $extension): ?string
+    {
+        $sha = strtolower((string) $extension->installed_sha256);
+
+        if (preg_match('/^[0-9a-f]{64}$/', $sha) !== 1) {
+            return null;
+        }
+
+        $path = $this->stagingDir((string) $extension->key).DIRECTORY_SEPARATOR.$sha.'.deb';
+
+        if (! is_file($path)) {
+            Log::warning('[Extensions] Paquet de rollback absent du staging — mise à jour refusée', [
+                'extension' => $extension->key,
+            ]);
+
+            return null;
+        }
+
+        $computed = @hash_file('sha256', $path);
+
+        if ($computed === false || ! hash_equals($sha, strtolower((string) $computed))) {
+            Log::warning('[Extensions] Paquet de rollback CORROMPU — mise à jour refusée', [
+                'extension' => $extension->key,
+            ]);
+
+            return null;
+        }
+
+        return $path;
     }
 
     // =====================================================================
@@ -894,12 +1300,24 @@ class ExtensionInstallService
      *
      * @param  list<callable(): void>  $undo
      */
-    private function compensate(array $undo, string $key): void
+    private function compensate(array $undo, string $key): bool
     {
+        $complete = true;
+
         foreach (array_reverse($undo) as $index => $step) {
             try {
                 $step();
             } catch (Throwable $e) {
+                // Best effort maintenu : les compensations suivantes sont
+                // tentées quand même. Mais l'échec est désormais REMONTÉ
+                // (review 56.3 #1) — jusqu'ici il ne vivait que dans un
+                // `Log::error`, et l'appelant rendait alors le même message,
+                // la même trace d'audit et le même état qu'une compensation
+                // parfaitement réussie. Un opérateur lisait « la version
+                // précédente a été rétablie » alors que le service pouvait
+                // être resté à l'arrêt.
+                $complete = false;
+
                 Log::error('[Extensions] Compensation en échec — poursuite des suivantes', [
                     'extension' => $key,
                     'undo_index' => $index,
@@ -908,6 +1326,8 @@ class ExtensionInstallService
                 ]);
             }
         }
+
+        return $complete;
     }
 
     /**
@@ -923,25 +1343,103 @@ class ExtensionInstallService
      * @param  list<string>  $steps
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      */
-    private function fail(Extension $extension, string $category, ?User $actor, array $steps = []): array
-    {
-        Log::warning('[Extensions] Installation REFUSÉE', [
+    private function fail(
+        Extension $extension,
+        string $category,
+        ?User $actor,
+        array $steps = [],
+        string $action = ExtensionAuditLog::ACTION_INSTALL_FAILED,
+    ): array {
+        Log::warning('[Extensions] Opération REFUSÉE', [
             'extension' => $extension->key,
+            'action' => $action,
             'category' => $category,
             'steps_done' => $steps,
         ]);
 
-        ExtensionAuditLog::log(
-            extensionId: $extension->id,
-            extensionKey: (string) $extension->key,
-            extensionName: (string) $extension->name,
-            action: ExtensionAuditLog::ACTION_INSTALL_FAILED,
-            actorUserId: $actor?->id,
-            actorLogin: $actor?->login ?? ExtensionAuditLog::ACTOR_SYSTEM,
-            details: $category,
-        );
+        // ⚠️ La trace d'un ÉCHEC ne doit pas pouvoir transformer cet échec —
+        // déjà compensé, déjà journalisé — en exception nue chez l'appelant.
+        // Ce n'est pas l'atomicité « acte ↔ trace » du lifecycle (là-bas, un
+        // acte sans trace ne doit pas exister, et le rollback l'empêche) : ici
+        // il n'y a PAS d'acte, seulement un refus à rapporter. Perdre la ligne
+        // d'audit est un incident de journalisation ; laisser fuir l'exception
+        // ferait remonter une stack trace jusqu'à la CLI et laisserait un run
+        // d'UI sans terminus.
+        try {
+            ExtensionAuditLog::log(
+                extensionId: $extension->id,
+                extensionKey: (string) $extension->key,
+                extensionName: (string) $extension->name,
+                action: $action,
+                actorUserId: $actor?->id,
+                actorLogin: $actor?->login ?? ExtensionAuditLog::ACTOR_SYSTEM,
+                details: $category,
+            );
+        } catch (Throwable $e) {
+            Log::error('[Extensions] Trace d\'échec NON ÉCRITE — le refus reste rapporté à l\'appelant', [
+                'extension' => $extension->key,
+                'action' => $action,
+                'category' => $category,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        }
 
         return $this->result(false, $extension, $steps, null, $category);
+    }
+
+    /**
+     * Story 56.3 — Échec d'une MISE À JOUR : même mécanique que
+     * {@see self::fail()}, action d'audit `update_failed`.
+     *
+     * ⚠️ L'extension reste `integrated` et ses colonnes `installed_*` restent
+     * VRAIES : la compensation a remis la version d'avant, et rien en base n'a
+     * jamais été écrit (la transaction du lifecycle est la dernière étape). Le
+     * port retourné est donc celui, toujours valide, du backend qui tourne.
+     *
+     * @param  list<string>  $steps
+     * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
+     */
+    private function failUpdate(Extension $extension, string $category, ?User $actor, array $steps = []): array
+    {
+        $result = $this->fail($extension, $category, $actor, $steps, ExtensionAuditLog::ACTION_UPDATE_FAILED);
+
+        $port = (int) $extension->installed_port;
+        $result['port'] = $port > 0 ? $port : null;
+
+        return $result;
+    }
+
+    /**
+     * Story 56.3 — Enregistre une étape ACCOMPLIE et la rapporte à l'appelant.
+     *
+     * ⚠️ **Le rapport de progression ne peut JAMAIS faire échouer l'opération.**
+     * Le callback écrit en base (la ligne `extension_install_runs` de l'UI) :
+     * si cette écriture levait — base indisponible, table absente — l'exception
+     * remonterait dans le `try` du plan et déclencherait les compensations
+     * d'une installation pourtant RÉUSSIE, désinstallant ce qui vient d'être
+     * posé. Un canal d'affichage n'a pas le droit d'avoir cet effet : il est
+     * donc isolé, et son échec n'est qu'une ligne de journal.
+     *
+     * @param  list<string>  $steps
+     */
+    private function mark(array &$steps, string $step, ?callable $onStep): void
+    {
+        $steps[] = $step;
+
+        if ($onStep === null) {
+            return;
+        }
+
+        try {
+            $onStep($step);
+        } catch (Throwable $e) {
+            Log::warning('[Extensions] Rapport de progression en échec — opération poursuivie', [
+                'step' => $step,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -971,7 +1469,7 @@ class ExtensionInstallService
      */
     private function underLock(callable $work): mixed
     {
-        $lock = Cache::store('file')->lock(self::LOCK_KEY, self::LOCK_SECONDS);
+        $lock = Cache::store('file')->lock(self::LOCK_KEY, $this->lockSeconds());
 
         if (! $lock->get()) {
             throw ExtensionInstallException::engineBusy();
@@ -982,5 +1480,29 @@ class ExtensionInstallService
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Durée de rétention du verrou, DÉRIVÉE du budget de temps du Job.
+     *
+     * ⚠️ Review 56.3 #2 — le verrou du store `file` n'est pas lié à la vie du
+     * processus : c'est une entrée à expiration, qu'un second appelant peut
+     * acquérir dès l'échéance, que le premier ait fini ou non. Une valeur fixe
+     * de 600 s face à un `job_timeout` de 1800 s ouvrait donc une fenêtre de
+     * 20 minutes pendant laquelle deux opérations pouvaient s'exécuter
+     * ensemble — alors que ce verrou est précisément l'arbitre ultime de la
+     * concurrence (AC5) : deux allocations de port simultanées, deux
+     * transactions `markApp*` entrelacées.
+     *
+     * La valeur est donc CALCULÉE à partir du même réglage que le Job, pour
+     * que les deux ne puissent plus diverger en silence — une règle, un seul
+     * énoncé. Le plancher couvre le cas d'un `job_timeout` volontairement
+     * court : le verrou ne doit jamais tomber avant la fin d'un `apt` réel.
+     */
+    private function lockSeconds(): int
+    {
+        $jobTimeout = (int) config('extensions.install.job_timeout', 1800);
+
+        return max(self::LOCK_SECONDS_FLOOR, $jobTimeout + self::LOCK_SECONDS_MARGIN);
     }
 }

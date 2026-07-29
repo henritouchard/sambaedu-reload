@@ -142,14 +142,37 @@ class ExtensionFactory extends Factory
      * Story 56.2 — `app` déjà INSTALLÉE (état posé par
      * {@see \App\Services\Extensions\ExtensionLifecycleService::markAppInstalled()}).
      */
-    public function installed(int $port, string $version = '1.0.0'): static
+    public function installed(int $port, string $version = '1.0.0', ?string $sha256 = null): static
     {
         return $this->state(fn (): array => [
             'status' => ExtensionStatus::Integrated,
             'installed_version' => $version,
+            // Story 56.3 — gage de rollback : une `app` réellement installée
+            // porte TOUJOURS le sha256 du `.deb` posé. Une fabrique qui le
+            // laisserait vide produirait un état que le moteur refuse de
+            // mettre à jour, et les tests d'update ne prouveraient rien.
+            'installed_sha256' => $sha256 ?? hash('sha256', 'paquet-installe-'.$version),
             'installed_port' => $port,
             'installed_at' => now(),
         ]);
+    }
+
+    /**
+     * Story 56.3 — `app` installée dont la SOURCE publie une autre version :
+     * l'écart `version ≠ installed_version` EST la détection de mise à jour.
+     */
+    public function withUpdateAvailable(string $publishedVersion = '2.0.0', string $installedVersion = '1.0.0'): static
+    {
+        return $this->state(function (array $attributes) use ($publishedVersion, $installedVersion): array {
+            $manifest = $attributes['manifest'];
+            $manifest['version'] = $publishedVersion;
+
+            return [
+                'version' => $publishedVersion,
+                'installed_version' => $installedVersion,
+                'manifest' => $manifest,
+            ];
+        });
     }
 
     /**
