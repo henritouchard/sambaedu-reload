@@ -74,6 +74,16 @@
                             Réglages
                         </a>
                     </li>
+                    {{-- Extensions (Story 54.1) — bibliothèque des extensions
+                         disponibles et intégrées. Même garde `server.admin` que
+                         Réglages : c'est une fonction d'administration serveur. --}}
+                    <li>
+                        <a href="{{ route('admin.extensions') }}"
+                            class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/extensions*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
+                            <i class="fa-solid fa-puzzle-piece text-xl"></i>
+                            Extensions
+                        </a>
+                    </li>
                 @endcan
             </ul>
         </div>

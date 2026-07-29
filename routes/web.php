@@ -504,6 +504,28 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/settings/parc-defaults', 'pages::admin.settings.parc-defaults.index')
         ->middleware('can:server.admin')
         ->name('settings.parc-defaults');
+
+    // ========================================
+    // Story 54.1 — Bibliothèque d'EXTENSIONS (socle Epic 54).
+    // `/admin/extensions`      : catalogue multi-sources en lecture seule.
+    // `/admin/extensions/{id}` : fiche d'une extension (manifest = source de
+    //                            vérité : version, description, scopes,
+    //                            dépendances).
+    // Protection 3 couches : middlewares du groupe admin
+    // (`sambaedu.auth` + `sambaedu.admin` + `federated.audit`) + `can:server.admin`
+    // par route + double garde `Gate::allows('server.admin')` dans `mount()`.
+    // Aucune nouvelle SambaPermission : `server.admin` suffit.
+    // Ordre : route statique AVANT la route paramétrée (`whereNumber` borne en
+    // plus l'identifiant à un entier).
+    // ========================================
+    Route::livewire('/extensions', 'pages::admin.extensions.index')
+        ->middleware('can:server.admin')
+        ->name('extensions');
+
+    Route::livewire('/extensions/{id}', 'pages::admin.extensions.[id].index')
+        ->middleware('can:server.admin')
+        ->whereNumber('id')
+        ->name('extensions.show');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)
@@ -1247,6 +1269,120 @@ Route::match(['GET', 'POST'], '/ipxe/Win10/unattend.xml.php', [$tombstone, 'xml'
     ->middleware(['local.request', 'throttle:300,1'])
     ->name('legacy.tombstone.ipxe-unattend')
     ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
+| Stories 55.1 / 55.2 — SE5 FOURNISSEUR OIDC (Epic 55 — SSO des extensions)
+|--------------------------------------------------------------------------
+| Cinq routes, deux natures :
+|
+| 1. PUBLIQUES ET STATELESS — la discovery et le JWKS ne révèlent que des
+|    métadonnées de protocole et une clé PUBLIQUE. Les exiger authentifiées
+|    casserait tout client OIDC standard. `withoutMiddleware(['web'])` : aucune
+|    session à ouvrir pour servir un document constant.
+|
+| 2. `/oidc/authorize` est une route NAVIGATEUR derrière `sambaedu.auth` : le
+|    guard est la définition AUTORITATIVE de « session SE5 active ». Un
+|    émetteur d'identité moins strict que les pages qu'il protège serait une
+|    faille. ⚠️ `federated.audit` est OBLIGATOIRE sur toute route
+|    `sambaedu.auth` (invariant `FederatedAuditCoverageTest`) : un acteur
+|    fédéré peut atteindre cette route, l'émission d'un jeton en son nom doit
+|    figurer au journal d'imputabilité.
+|
+| 3. `/oidc/token` est un appel SERVEUR-À-SERVEUR : `withoutMiddleware(['web'])`
+|    (ni session, ni CSRF — l'appelant n'a pas de cookie, son authentification
+|    EST le secret du client). **POST uniquement** : en GET, le secret et le
+|    code d'autorisation atterriraient dans les logs, l'historique et le
+|    `Referer` — même doctrine que le binding POST du login fédéré (D-3).
+|
+| **ORDRE STRICT** : ces routes DOIVENT rester AVANT le catchall `{path}`
+| ci-dessous, sinon le catchall les proxifie vers le vhost legacy (mort) et
+| aucun client OIDC ne peut découvrir SE5. Test garde-fou : `OidcRoutesTest`.
+|
+| Prérequis d'exploitation : `php artisan oidc:keys:init` (idempotent) puis
+| `php artisan oidc:client:register` pour déclarer un client.
+*/
+Route::get('/.well-known/openid-configuration', [
+    \App\Auth\Oidc\Http\Controllers\DiscoveryController::class,
+    'openidConfiguration',
+])
+    ->middleware('throttle:60,1')
+    ->name('oidc.discovery')
+    ->withoutMiddleware(['web']);
+
+Route::get('/oidc/jwks', [
+    \App\Auth\Oidc\Http\Controllers\DiscoveryController::class,
+    'jwks',
+])
+    ->middleware('throttle:60,1')
+    ->name('oidc.jwks')
+    ->withoutMiddleware(['web']);
+
+Route::get('/oidc/authorize', \App\Auth\Oidc\Http\Controllers\AuthorizeController::class)
+    ->middleware(['sambaedu.auth', 'federated.audit'])
+    ->name('oidc.authorize');
+
+Route::post('/oidc/token', \App\Auth\Oidc\Http\Controllers\TokenController::class)
+    ->middleware('throttle:60,1')
+    ->name('oidc.token')
+    ->withoutMiddleware(['web']);
+
+/*
+| 4. Story 55.2 — `/oidc/userinfo` : le client présente son access_token
+|    opaque en `Authorization: Bearer` et reçoit `{sub, …claims du scope}`.
+|    GET **et** POST : OIDC Core §5.3.1 impose les deux. Stateless
+|    (`withoutMiddleware(['web'])`) — l'appelant est un serveur porteur d'un
+|    jeton, il n'a ni cookie ni jeton CSRF ; son authentification EST le
+|    Bearer. Pas de `sambaedu.auth`, donc pas de `federated.audit` :
+|    l'invariant `FederatedAuditCoverageTest` ne vise que les routes du
+|    guard, et l'imputabilité fédérée est déjà écrite à l'autorisation
+|    (Section 12.1 du runbook QA).
+*/
+Route::match(['get', 'post'], '/oidc/userinfo', \App\Auth\Oidc\Http\Controllers\UserinfoController::class)
+    ->middleware('throttle:60,1')
+    ->name('oidc.userinfo')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
+| Story 55.3 — APP-TÉMOIN SSO (`app/OidcWitness/`) — CLIENT du bloc ci-dessus
+|--------------------------------------------------------------------------
+| Deux routes, une page « Bonjour {name}, rôle {role}, groupes {groups} ». Le
+| témoin est un CLIENT OIDC honnête en quarantaine : il n'obtient RIEN de SE5
+| autrement que par les endpoints publics déclarés au-dessus, appelés en HTTP.
+| Sa frontière d'imports est verrouillée par
+| `tests/Architecture/ExtensionIsolationTest.php` (FR24).
+|
+| **PAS de `sambaedu.auth`** — et c'est le cœur de la démonstration : c'est
+| `/oidc/authorize` qui authentifie l'utilisateur. Un témoin placé derrière le
+| guard rendrait la preuve « sans re-saisie d'identifiants » circulaire. Donc
+| pas de `federated.audit` non plus : l'invariant `FederatedAuditCoverageTest`
+| ne vise que les routes du guard, et l'imputabilité est déjà écrite à
+| l'autorisation (review 55.1 #1).
+|
+| **Le groupe `web` est CONSERVÉ** (contrairement aux routes OIDC machine) :
+| le témoin a besoin d'`EncryptCookies` + `AddQueuedCookiesToResponse` pour
+| porter `state`/`nonce`/verifier PKCE entre les deux routes — c'est ce qu'une
+| extension ferait avec son propre magasin d'état côté client.
+|
+| **Noms de routes SANS préfixe `oidc.`** : ces routes ne font pas partie du
+| fournisseur (elles le consomment), et `OidcRoutesTest` compte exactement CINQ
+| routes `oidc.*`.
+|
+| **ORDRE STRICT** : avant le catchall `{path}`, et AVANT le bloc DDNS
+| ci-dessous — la fenêtre d'inspection de `DhcpDnsUpdateRoutesTest::ddnsBlock()`
+| court de la première route DDNS jusqu'au catchall.
+|
+| Prérequis d'exploitation : `php artisan oidc:witness:enable` (idempotent).
+| Sans lui, les deux routes répondent une page d'erreur EXPLICITE en 503.
+*/
+Route::get('/sso-demo', [\App\OidcWitness\Http\Controllers\WitnessController::class, 'start'])
+    ->middleware('throttle:60,1')
+    ->name('sso-demo.start');
+
+Route::get('/sso-demo/callback', [\App\OidcWitness\Http\Controllers\WitnessController::class, 'callback'])
+    ->middleware('throttle:60,1')
+    ->name('sso-demo.callback');
 
 /*
 |--------------------------------------------------------------------------

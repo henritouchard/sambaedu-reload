@@ -9,6 +9,8 @@
 
     <livewire:organisms.search-modal />
     <div class="gap-2  flex items-center justify-beetween w-fit">
+        <livewire:organisms.app-launcher />
+
         <x-atoms.theme-toggle size="md" position="relative" />
 
         {{-- Aide (52.8) : rendu SEULEMENT si la doc est publiée — pas de lien mort (FR-D13).

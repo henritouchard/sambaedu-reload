@@ -33,6 +33,12 @@ class DatabaseSeeder extends Seeder
             // d'échange préfabriquées). Idempotent/rejouable. ⚠️ Pré-déploiement
             // VM : `db:seed --class=DirectoryTemplateSeeder`.
             DirectoryTemplateSeeder::class,
+            // Story 54.1 — registre d'extensions : source « embarquée » +
+            // chargement des manifests du dépôt (`resources/extensions/*`),
+            // dont la tuile Documentation (`/doc`). Idempotent/rejouable :
+            // n'écrit jamais la colonne `status` (une extension intégrée n'est
+            // jamais dé-intégrée par un re-seed).
+            BundledExtensionSeeder::class,
         ]);
     }
 }

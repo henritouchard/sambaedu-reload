@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "id": "doc",
+  "type": "link",
+  "name": "Documentation",
+  "version": "1.0.0",
+  "entry_url": "/doc",
+  "icon": "fa-solid fa-book-open",
+  "publisher": "SambaEdu",
+  "description": "Documentation publique SambaEdu (guides admin et poste).",
+  "scopes": [],
+  "dependencies": [],
+  "visibility": {
+    "roles": ["admin", "prof", "eleve", "administratif"]
+  }
+}

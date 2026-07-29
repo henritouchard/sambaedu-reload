@@ -224,6 +224,36 @@ return [
             'replace_placeholders' => false,
         ],
 
+        // Story 55.1 — Channel dédié au FOURNISSEUR OIDC (Epic 55, SSO des
+        // extensions). Troisième pilier d'authentification après `auth-v1`
+        // (SE5 émetteur pour les postes) et `federated-auth` (SE5 consommateur) :
+        // ici SE5 émet des id_token pour des NAVIGATEURS, au profit de clients
+        // confidentiels déclarés au registre.
+        //
+        // ⚠️ SÉCURITÉ — ce qui ne doit JAMAIS transiter par ce channel :
+        //   secret de client (clair OU hash), code d'autorisation clair,
+        //   access_token clair, id_token complet, clé privée. Seuls sont
+        //   loggables : `client_id`, `kid`, `jti`, `exp`, le code d'erreur
+        //   normalisé ({@see \App\Auth\Oidc\Support\OidcErrorCodes}) et, si une
+        //   corrélation est nécessaire, un `*_hash_prefix` de 8 caractères
+        //   (patron `WorkstationJwtVerifier::logRejection()`).
+        //
+        // Catalogue `action_type` (documenté dans app/Auth/Oidc/README.md) :
+        //  - oidc.keys.init.start / .success / .skipped
+        //  - oidc.client.registered / oidc.client.revoked
+        //  - oidc.authorize.granted / oidc.authorize.rejected
+        //  - oidc.token.issued / oidc.token.rejected
+        'oidc' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/oidc/oidc.log'),
+            'level' => env('OIDC_LOG_LEVEL', 'info'),
+            'days' => (int) env('OIDC_LOG_DAYS', 30),
+            // Channel sécurité-critique : pas de remplacement de placeholders
+            // (une `redirect_uri` ou un `client_id` fourni par l'appelant
+            // pourrait contenir des `{placeholder}`). Iso pattern `auth-v1`.
+            'replace_placeholders' => false,
+        ],
+
         // Story 16.12 — Channel dédié logs d'exécution scripts centralisés.
         // Couvre : ingestion endpoint, idempotence, archivage job daily,
         // rendu du wrapper. Pas de secret loggé (jamais d'access_token,
