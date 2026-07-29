@@ -9,6 +9,7 @@ use App\Enums\ExtensionType;
 use App\Exceptions\ExtensionLifecycleException;
 use App\Models\Extension;
 use App\Models\ExtensionAuditLog;
+use App\Models\ExtensionSource;
 use App\Models\User;
 use App\Services\Extensions\ExtensionLifecycleService;
 use App\Services\Extensions\ExtensionCatalogService;
@@ -171,6 +172,93 @@ class ExtensionLifecycleServiceTest extends TestCase
         } finally {
             self::assertSame(0, ExtensionAuditLog::query()->count());
         }
+    }
+
+    // ── 56.1 review #1 — le fail-closed n'est pas qu'un filtre d'affichage ─
+    //
+    // La bibliothèque MASQUE les extensions `available` d'une source gelée ou
+    // en `error`. Mais `integrate(<id>)` est une méthode Livewire publique qui
+    // prend un identifiant arbitraire : si la garde ne vivait que dans la vue,
+    // il suffisait de connaître l'identifiant pour intégrer quand même — et
+    // pour contourner au passage la modale d'avertissement « source tierce ».
+    // Ces trois tests verrouillent la garde côté SERVICE.
+
+    #[Test]
+    public function integrating_an_extension_of_a_disabled_source_is_refused_even_by_a_direct_call(): void
+    {
+        $actor = $this->actor();
+        $source = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = Extension::factory()->link()->create([
+            'extension_source_id' => $source->id,
+            'status' => ExtensionStatus::Available,
+        ]);
+
+        // La bibliothèque la masque déjà…
+        self::assertNull(app(ExtensionCatalogService::class)->find($extension->id));
+
+        // …et le service la refuse AUSSI, sans mutation ni audit.
+        try {
+            $this->service()->integrate($extension->id, $actor);
+            self::fail('Une extension d\'une source gelée ne doit pas pouvoir être intégrée.');
+        } catch (ExtensionLifecycleException) {
+            self::assertSame(ExtensionStatus::Available, $extension->fresh()->status);
+            self::assertSame(0, ExtensionAuditLog::query()->count());
+        }
+    }
+
+    #[Test]
+    public function integrating_an_extension_of_a_source_in_signature_error_is_refused(): void
+    {
+        $actor = $this->actor();
+        $source = ExtensionSource::factory()->remote()->syncError()->create();
+        $extension = Extension::factory()->link()->create([
+            'extension_source_id' => $source->id,
+            'status' => ExtensionStatus::Available,
+        ]);
+
+        try {
+            $this->service()->integrate($extension->id, $actor);
+            self::fail('Une source dont le catalogue n\'est pas vérifié ne propose plus rien (NFR2).');
+        } catch (ExtensionLifecycleException) {
+            self::assertSame(ExtensionStatus::Available, $extension->fresh()->status);
+            self::assertSame(0, ExtensionAuditLog::query()->count());
+        }
+    }
+
+    #[Test]
+    public function an_unreachable_source_still_lets_its_last_verified_catalog_be_integrated(): void
+    {
+        // NFR7 — le registre EST le cache : `unreachable` n'invalide pas ce qui
+        // a DÉJÀ été vérifié. Contre-épreuve des deux tests ci-dessus : la
+        // garde refuse le non-vérifié, pas le hors-ligne.
+        $actor = $this->actor();
+        $source = ExtensionSource::factory()->remote()->unreachable()->create();
+        $extension = Extension::factory()->link()->create([
+            'extension_source_id' => $source->id,
+            'status' => ExtensionStatus::Available,
+        ]);
+
+        $result = $this->service()->integrate($extension->id, $actor);
+
+        self::assertSame(['changed' => true, 'status' => 'integrated'], $result);
+    }
+
+    #[Test]
+    public function uninstalling_stays_open_even_when_the_source_is_frozen(): void
+    {
+        // Rompre le lien FIGE l'état, il ne piège pas l'admin : ce qui est
+        // déjà intégré doit rester désinstallable quoi qu'il arrive à sa source.
+        $actor = $this->actor();
+        $source = ExtensionSource::factory()->remote()->disabled()->syncError()->create();
+        $extension = Extension::factory()->link()->create([
+            'extension_source_id' => $source->id,
+            'status' => ExtensionStatus::Integrated,
+        ]);
+
+        $result = $this->service()->uninstall($extension->id, $actor);
+
+        self::assertSame(['changed' => true, 'status' => 'available'], $result);
+        self::assertSame(ExtensionStatus::Available, $extension->fresh()->status);
     }
 
     // ── AC3 — atomicité acte ↔ trace ─────────────────────────────────────

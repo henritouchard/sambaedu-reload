@@ -117,6 +117,26 @@ class ExtensionLifecycleService
                 return ['changed' => false, 'status' => $target->value];
             }
 
+            // ── FAIL-CLOSED DE L'INTÉGRATION (56.1, review #1) ────────────
+            // Masquer une extension dans la bibliothèque ne suffit pas : la
+            // méthode Livewire `integrate(<id>)` est publique et prend un
+            // identifiant arbitraire. Sans cette garde, une extension d'une
+            // source GELÉE ou dont la signature ne se vérifie plus (`error`)
+            // restait intégrable — et la modale d'avertissement « source
+            // tierce » (AC2) restait contournable. La règle est celle du
+            // modèle, la MÊME que celle qui décide de l'affichage.
+            //
+            // Uniquement sur `available → integrated` : la désinstallation
+            // reste ouverte quoi qu'il arrive à la source (rompre le lien fige
+            // l'état, il ne piège pas l'admin).
+            if ($target === ExtensionStatus::Integrated) {
+                $source = $extension->source;
+
+                if ($source === null || ! $source->offersAvailableExtensions()) {
+                    throw ExtensionLifecycleException::sourceNoLongerOffers((string) $extension->name);
+                }
+            }
+
             $extension->status = $target;
             $extension->save();
 

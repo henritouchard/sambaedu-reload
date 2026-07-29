@@ -46,6 +46,9 @@ new #[Title('Extension')] class extends Component {
     /** Modale de confirmation de désinstallation. */
     public bool $isUninstallOpen = false;
 
+    /** Modale d'avertissement « source non officielle » (Story 56.1, AC2). */
+    public bool $isThirdPartyWarningOpen = false;
+
     public function mount(string $id): void
     {
         abort_unless(Gate::allows('server.admin'), 403);
@@ -81,6 +84,45 @@ new #[Title('Extension')] class extends Component {
 
         $this->loadExtension();
         $this->toastSuccess('Extension intégrée.');
+    }
+
+    // ── Story 56.1 AC2 — Intégrer une extension TIERCE (avertissement) ──
+
+    /**
+     * Ouvre l'avertissement de provenance. L'officialité est relue depuis la
+     * FICHE CHARGÉE PAR LE SERVICE (`$this->extension`), rechargée au montage
+     * et après chaque acte — jamais depuis un paramètre client. Une extension
+     * officielle atteinte par ce chemin (écran périmé) intègre directement :
+     * l'avertissement est une garde d'attention, pas une étape obligatoire.
+     */
+    public function askIntegrate(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        if ((bool) ($this->extension['source_is_official'] ?? false)) {
+            $this->integrate();
+
+            return;
+        }
+
+        $this->isThirdPartyWarningOpen = true;
+    }
+
+    public function confirmIntegrate(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        // `$this->id` est `#[Locked]` : contrairement à la bibliothèque, il n'y
+        // a pas de cible à préserver — fermer la modale est sans effet sur
+        // l'action, et un double-clic retombe sur le no-op propre du service.
+        $this->isThirdPartyWarningOpen = false;
+
+        $this->integrate();
+    }
+
+    public function closeThirdPartyWarning(): void
+    {
+        $this->isThirdPartyWarningOpen = false;
     }
 
     // ── AC2 — Désinstaller (confirmation par modale) ────────────────────
@@ -169,7 +211,10 @@ new #[Title('Extension')] class extends Component {
     @if ($extension['type'] === 'link')
         <x-slot:actions>
             @if ($extension['status'] === 'available')
-                <button type="button" class="btn btn-primary" wire:click="integrate" data-testid="integrate-action">
+                {{-- Officielle : un clic (54.2 inchangé). Tierce : avertissement d'abord. --}}
+                <button type="button" class="btn btn-primary"
+                    wire:click="{{ $extension['source_is_official'] ? 'integrate' : 'askIntegrate' }}"
+                    data-testid="integrate-action">
                     <i class="fa-solid fa-plug"></i> Intégrer
                 </button>
             @elseif ($extension['status'] === 'integrated')
@@ -181,6 +226,24 @@ new #[Title('Extension')] class extends Component {
     @endif
 
     <div class="flex flex-col gap-6">
+
+        {{-- ============ Provenance non officielle (56.1 AC2, FR4/UX-DR4) ============ --}}
+        @unless ($extension['source_is_official'])
+            <div class="alert alert-warning shadow-sm" data-testid="third-party-alert">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <div>
+                    <p class="font-medium">
+                        Source non officielle : {{ $extension['source_host'] !== '' ? $extension['source_host'] : 'dépôt inconnu' }}
+                        — vous installez sous votre responsabilité.
+                    </p>
+                    <p class="text-sm opacity-80">
+                        SE5 a vérifié que le catalogue de cette source est signé par la clé enregistrée pour elle.
+                        Cela authentifie le dépôt, pas le contenu : ni SambaEdu ni votre académie n'ont audité
+                        cette extension.
+                    </p>
+                </div>
+            </div>
+        @endunless
 
         {{-- ===================== Identité ===================== --}}
         <div class="card bg-base-100 shadow">
@@ -343,6 +406,32 @@ new #[Title('Extension')] class extends Component {
             <button type="button" class="btn btn-error" wire:click="confirmUninstall"
                 data-testid="confirm-uninstall">
                 <i class="fa-solid fa-trash-can"></i> Désinstaller
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- ============ Modale : avertissement de source tierce (56.1 AC2) ============ --}}
+    <x-molecules.modal wire:model="isThirdPartyWarningOpen" size="max-w-lg" height="h-auto"
+        close-method="closeThirdPartyWarning" title="Source non officielle"
+        icon="fa-triangle-exclamation text-warning">
+
+        <x-molecules.modal.section>
+            <p class="text-sm" data-testid="third-party-warning-text">
+                <strong>Source non officielle : {{ $extension['source_host'] !== '' ? $extension['source_host'] : 'dépôt inconnu' }}</strong>
+                — vous installez sous votre responsabilité.
+            </p>
+            <p class="text-sm text-base-content/60 mt-2">
+                <strong>{{ $extension['name'] }}</strong> provient d'un dépôt tiers. SE5 a vérifié la signature de
+                son catalogue, mais cela n'engage que le dépôt : le contenu de l'extension n'a été audité ni par
+                SambaEdu ni par votre académie.
+            </p>
+        </x-molecules.modal.section>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeThirdPartyWarning">Annuler</button>
+            <button type="button" class="btn btn-warning" wire:click="confirmIntegrate"
+                data-testid="confirm-third-party-integrate">
+                <i class="fa-solid fa-plug"></i> Intégrer quand même
             </button>
         </x-slot:footer>
     </x-molecules.modal>

@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. _Epic 56 (scopes consentis, sources distantes, type `app`, provisioning automatique des clients) à ajouter en sections suivantes quand livré._
+**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. **56.1 (sources tierces + catalogue signé Ed25519 : format de dépôt v1 contrat public, pin de clé TOFU, fail-closed NFR2, dégradation NFR7, provenance impossible à ignorer FR4/UX-DR4, audit des sources FR36, `ext:sources:sync`) — OUVRE l'Epic 56** — **Section 17**. _Suite de l'Epic 56 (installation `app`, UI de progression/màj, scopes consentis et API, santé + journal d'audit UI) à ajouter en sections suivantes quand livré._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -58,6 +58,17 @@
 - `config/oidc.php` § `witness` — chemin des credentials, store d'anti-rejeu, timeout HTTP, TTL du cookie d'état
 - `tests/Unit/OidcWitness/WitnessIdTokenVerifierTest.php` — **la suite d'attaque NFR1** + sa table de traçabilité (ce qui est déjà couvert par 55.1/55.2 n'y est PAS dupliqué)
 - `tests/Feature/OidcWitness/WitnessFlowTest.php` + `Concerns/ReentersTheTestKernel.php` — parcours complet par HTTP (transport substitué, protocole intact)
+- `database/migrations/2026_07_30_100000_add_remote_catalog_columns_to_extension_tables.php` — clé pinnée, état de synchro, audit de source (additive, 56.1)
+- `app/Enums/ExtensionSourceSyncStatus.php` — la table de sémantique `ok`/`unreachable`/`error` (ce qui est proposé, ce qui est prunable)
+- `app/Services/Extensions/CatalogSignatureVerifier.php` — vérification Ed25519 **pure**, base64 strict, fail-closed sans exception
+- `app/Services/Extensions/RemoteCatalogSyncService.php` — **l'ordre inviolable** octets → bornes → signature → décodage → version → manifests ; bornes HTTP, `allow_redirects => false`, `last_error` sans URL
+- `app/Services/Extensions/ExtensionSourceService.php` — add/enable/disable/remove/refresh, pin TOFU, gardes bundled et « intégrée bloque le retrait », audit
+- `app/Services/Extensions/ExtensionCatalogService.php` — `syncManifestsForSource()` extrait (invariants #1-#4 partagés) ; `library()`/`find()` filtrent l'état de la source
+- `app/Exceptions/ExtensionSourceException.php` — refus explicites destinés à l'admin
+- `app/Console/Commands/ExtensionSourcesSync.php` + `routes/console.php` — `ext:sources:sync {key?}`, planification 02:50 (moteur unique AR1)
+- `resources/views/pages/admin/extensions/sources/index.blade.php` — page des sources (ajout par modale, actualiser, activer/désactiver, retirer)
+- `config/extensions.php` § `remote` — timeouts et borne de taille de l'index (bornes de sécurité, pas de réglage métier)
+- `tests/Unit/Extensions/CatalogSignatureVerifierTest.php`, `tests/Feature/Extensions/{RemoteCatalogSyncServiceTest,ExtensionSourceServiceTest,ExtensionSourcesSyncCommandTest}.php`, `tests/Feature/Livewire/Admin/ExtensionSourcesPageTest.php` — signature, fail-closed, pin non renégocié, gardes, commande (56.1)
 - `tests/Feature/OidcWitness/{OidcWitnessCommandsTest,ExtensionIdentityLeakTest}.php` — provisioning, et « aucun identifiant de base ni d'annuaire ne fuit »
 - `tests/Architecture/ExtensionIsolationTest.php` — **FR24** : quarantaine du témoin (avec méta-test anti-tautologie), manifest sans champ exécutable, autoload sans répertoire d'extensions
 
@@ -1261,7 +1272,227 @@ Lire `tests/Architecture/ExtensionIsolationTest.php::the_textual_scan_has_a_docu
 
 ---
 
+## Section 17 — Sources tierces et catalogue signé (Story 56.1) — **OUVRE l'Epic 56**
+
+> **Ce que cette section valide.** SE5 sait désormais tirer des extensions d'un dépôt qui n'est pas le sien. Toute la sûreté de cette ouverture tient à trois propriétés, et ce sont les trois seules choses à vérifier vraiment :
+>
+> 1. **la signature du catalogue est vérifiée AVANT que quoi que ce soit du contenu ne soit lu** ;
+> 2. **aucun chemin d'échec n'écrit ni ne supprime la moindre extension** (le registre EST le cache local — NFR7) ;
+> 3. **la clé publique d'une source est pinnée à son ajout et n'est jamais renégociée** (modèle `known_hosts` / keyring apt).
+>
+> Le reste — badges, avertissements, boutons — sert à ce que l'admin ne puisse pas installer une extension tierce en croyant installer une extension officielle (FR4/UX-DR4).
+>
+> **Dette worktree assumée, iso 54.x/55.x** : story développée dans un worktree git non synchronisé vers la VM. La suite automatisée tourne sur l'HÔTE ; les scénarios ci-dessous sont à jouer **au merge sur `main`**, après `php artisan migrate`.
+
+### Pré-requis de la section — fabriquer un dépôt de test signé
+
+Aucun outillage de publication n'existe encore (c'est la Story 58.2) : on le fait à la main, ce qui a l'avantage de montrer à quel point le format est simple.
+
+```bash
+cd /var/www/sambaedu-reload
+php artisan migrate
+php artisan db:seed --class=BundledExtensionSeeder --force
+
+# 1. La paire de la SOURCE (elle appartient à l'éditeur, jamais à SE5).
+php -r '$k=sodium_crypto_sign_keypair();
+  file_put_contents("/tmp/depot.sk", base64_encode(sodium_crypto_sign_secretkey($k)));
+  file_put_contents("/tmp/depot.pub", base64_encode(sodium_crypto_sign_publickey($k)));'
+
+# 2. Le dépôt statique : index.json + sa signature détachée + la clé publique.
+mkdir -p /var/www/depot-test
+cat > /var/www/depot-test/index.json <<'JSON'
+{
+  "index_version": 1,
+  "name": "Dépôt de test",
+  "publisher": "QA SambaEdu",
+  "extensions": [
+    { "manifest_version": 1, "id": "agenda-test", "type": "link", "name": "Agenda de test",
+      "version": "1.0.0", "entry_url": "https://example.org/agenda", "publisher": "QA",
+      "description": "Extension de test tierce.", "icon": "fa-solid fa-calendar",
+      "scopes": [], "dependencies": [], "visibility": { "roles": ["admin", "prof"] } },
+    { "manifest_version": 1, "id": "resa-test", "type": "app", "name": "Réservation (app)",
+      "version": "0.1.0", "entry_url": "/ext/resa-test", "publisher": "QA",
+      "scopes": ["profile"], "dependencies": [], "visibility": { "roles": ["prof"] } }
+  ]
+}
+JSON
+
+php -r 'file_put_contents("/var/www/depot-test/index.json.sig",
+  base64_encode(sodium_crypto_sign_detached(
+    file_get_contents("/var/www/depot-test/index.json"),
+    base64_decode(file_get_contents("/tmp/depot.sk"), true))));'
+cp /tmp/depot.pub /var/www/depot-test/source.pub
+```
+
+Publier ce dossier derrière un Alias Apache (ou n'importe quel serveur statique) : l'URL de BASE du dépôt est celle du **dossier**, jamais celle d'`index.json`.
+
+### Scénario 17.1 — Ajouter une source avec sa clé collée
+
+1. `/admin/extensions` → bouton **« Gérer les sources »** → `/admin/extensions/sources`.
+2. **« Ajouter une source »** : Nom = `Dépôt de test`, Adresse = l'URL du dossier, Clé publique = contenu de `/tmp/depot.pub`.
+3. Valider.
+
+**Attendu** :
+- toast de succès mentionnant **2 extensions** ; la carte de la source affiche le badge **« Tierce »** (icône + libellé), l'état **« Catalogue vérifié »**, la date de synchro et une empreinte abrégée de la clé ;
+- `/admin/extensions` liste **Agenda de test** ET **Réservation (app)**, chacune badgée **« Tierce »** ;
+- **Réservation (app)** n'a **aucun bouton d'action** : le type `app` s'affiche, il ne s'installe pas (Story 56.2) ;
+- `SELECT key, kind, is_official, enabled, sync_status, last_error FROM extension_sources;` → `is_official = f`, `sync_status = ok`, `last_error` vide.
+
+### Scénario 17.2 — Ajouter une source SANS coller la clé (TOFU https)
+
+1. Retirer la source du 17.1 (Scénario 17.9).
+2. La rajouter en laissant le champ **Clé publique VIDE**, avec une URL en **`https://`**.
+
+**Attendu** : SE5 lit `<url>/source.pub` **une seule fois** et la pinne. Le contrôle décisif est côté **journal d'accès du serveur du dépôt** : `grep source.pub /var/log/apache2/access.log` doit montrer **exactement une** requête, à l'ajout. Aucune actualisation ultérieure ne doit en produire d'autre (revérifier après le 17.5).
+
+### Scénario 17.3 — Un dépôt en `http://` sans clé collée est refusé
+
+1. Ajouter une source dont l'URL commence par `http://` en laissant la clé vide.
+
+**Attendu** : refus explicite (« un dépôt en http:// exige que vous colliez sa clé publique vous-même »), **la modale reste ouverte avec la saisie**, aucune ligne créée dans `extension_sources`, et **aucune requête sortante** (vérifiable au journal d'accès du dépôt).
+
+**Pourquoi** : sur un canal en clair, n'importe quel intermédiaire réseau servirait SA clé et signerait SON catalogue. La signature ne prouverait alors plus rien du tout. La contre-épreuve fait partie du scénario : la même URL `http://` **avec** la clé collée doit, elle, être **acceptée** — le miroir LAN hors ligne (AR9) reste un cas d'usage légitime.
+
+### Scénario 17.4 — Signature invalide ⇒ fail-closed, et rien n'est perdu
+
+1. Partir d'une source en état `ok` avec ses 2 extensions.
+2. Intégrer **Agenda de test** (voir 17.6) pour avoir une extension en service.
+3. Altérer le catalogue **sans le re-signer** : `sed -i 's/Agenda de test/Agenda PIRATÉ/' /var/www/depot-test/index.json`
+4. Sur `/admin/extensions/sources` → **« Actualiser »**.
+
+**Attendu** :
+- la source passe **« Catalogue refusé »** (badge rouge) avec un message court ;
+- `/admin/extensions` : l'extension **`available`** de cette source **disparaît** ; l'extension **intégrée reste listée**, avec un badge d'état signalant la source ;
+- la **tuile du lanceur de l'extension intégrée est intacte** (ouvrir la gaufre) ;
+- `SELECT count(*) FROM extensions;` : **le compte n'a pas bougé** — rien n'a été supprimé, rien n'a été écrit ;
+- le nom `Agenda PIRATÉ` n'apparaît **nulle part** : le contenu non vérifié n'a jamais été lu.
+
+Puis re-signer (`php -r` du pré-requis) et **« Actualiser »** : la source repasse « Catalogue vérifié » et le nouveau nom apparaît. Sans cette contre-épreuve, on n'a prouvé qu'une chose : que le bouton ne marche pas.
+
+### Scénario 17.5 — La clé pinnée ne se renégocie jamais
+
+1. Générer une **nouvelle paire** pour le dépôt, re-signer `index.json` avec elle, et remplacer `source.pub` par la nouvelle clé publique.
+2. **« Actualiser »**.
+
+**Attendu** : la source passe **« Catalogue refusé »**. `SELECT public_key FROM extension_sources WHERE key='depot-de-test';` → **la clé d'origine, inchangée**. `grep source.pub` dans le journal d'accès du dépôt → **aucune nouvelle requête**.
+
+**Le remède est un ACTE de l'admin** : retirer la source, la rajouter avec la nouvelle clé. Deux lignes d'audit, deux décisions humaines.
+
+**Pourquoi c'est le scénario le plus important de la section** : c'est exactement ce qui se passerait si le dépôt était compromis. Un système qui re-téléchargerait la clé accepterait la substitution sans broncher, et la signature ne serait plus qu'une décoration.
+
+### Scénario 17.6 — Provenance impossible à ignorer
+
+1. Sur `/admin/extensions`, comparer une carte **officielle** (Documentation, source embarquée) et une carte **tierce**.
+2. Cliquer **« Intégrer »** sur l'extension **tierce**.
+3. Ouvrir la **fiche** de l'extension tierce.
+4. Cliquer **« Intégrer »** sur l'extension **officielle**.
+
+**Attendu** :
+- (1) badge **« Officielle »** (certificat, vert) vs **« Tierce »** (triangle d'avertissement, orange) — **jamais** une simple différence de couleur ;
+- (2) une **modale d'avertissement** s'ouvre : « **Source non officielle : `<hôte du dépôt>`** — vous installez sous votre responsabilité ». L'hôte affiché est bien celui de l'URL de la source. Annuler ⇒ rien ne se passe ; confirmer ⇒ l'extension est intégrée et la tuile apparaît au lanceur pour les rôles visés ;
+- (3) la fiche porte le **même avertissement en encart** permanent ;
+- (4) l'extension **officielle** s'intègre toujours **en un clic**, sans modale (comportement 54.2 inchangé).
+
+Double-cliquer rapidement sur « Intégrer quand même » ne doit produire ni erreur ni double ligne d'audit (`SELECT action, count(*) FROM extension_audit_logs GROUP BY action;`).
+
+### Scénario 17.7 — Dépôt injoignable : dégradation propre (NFR7)
+
+1. Avec une extension tierce **intégrée** et en service, rendre le dépôt injoignable (arrêter le serveur statique, ou couper la résolution DNS de son hôte).
+2. **« Actualiser »**, puis recharger `/admin/extensions` et le lanceur.
+
+**Attendu** :
+- la source passe **« Dépôt injoignable »** (badge orange) ; `last_synced_at` **conserve la date de la dernière synchro RÉUSSIE** ;
+- **les extensions `available` restent proposées** : le dernier catalogue vérifié est toujours valable, le registre EST le cache local ;
+- la tuile de l'extension intégrée fonctionne ;
+- `SELECT count(*) FROM extensions;` inchangé.
+
+Contre-épreuve : rétablir le dépôt, « Actualiser », la source repasse au vert.
+
+**Différence à comprendre** : `unreachable` (réseau) ne masque rien ; `error` (signature) masque les `available`. C'est délibéré — un incident réseau ne doit rien changer pour l'admin, un contenu non authentifiable ne doit plus rien proposer.
+
+### Scénario 17.8 — Une redirection n'est jamais suivie
+
+1. Configurer le serveur du dépôt pour répondre `302` sur `index.json` vers une autre machine.
+2. **« Actualiser »**.
+
+**Attendu** : source **« Dépôt injoignable »** ; le journal d'accès de la machine CIBLE de la redirection ne montre **aucune** requête de SE5.
+
+**Pourquoi** : ne pas suivre les redirections du tout est plus simple ET plus sûr qu'une liste blanche d'hôtes — un dépôt ne peut pas se servir de SE5 comme d'un client HTTP vers un serveur qu'il choisit.
+
+### Scénario 17.9 — Désactiver, réactiver, retirer une source
+
+1. **Désactiver** la source (une de ses extensions étant intégrée).
+2. Recharger `/admin/extensions` et le lanceur.
+3. Tenter de **Retirer** la source.
+4. Désinstaller l'extension intégrée depuis la bibliothèque, puis **Retirer** à nouveau.
+5. Vérifier la source embarquée.
+
+**Attendu** :
+- (2) les extensions **non intégrées** de la source disparaissent de la bibliothèque et leur fiche répond **404** (tester l'URL directe `/admin/extensions/<id>`) ; l'extension **intégrée reste visible**, signalée « Source désactivée », et **garde sa tuile** ;
+- (3) **retrait REFUSÉ**, avec un message **nommant l'extension bloquante** ;
+- (4) le retrait passe ; `SELECT count(*) FROM extensions WHERE extension_source_id = <id>;` → 0 (cascade FK) ;
+- (5) la carte de la source **embarquée** n'expose **aucun bouton** (ni Actualiser, ni Désactiver, ni Retirer) et affiche pourquoi.
+
+**Pourquoi le refus (3)** : retirer la source emporterait ses extensions par cascade, donc des tuiles **en service**, sans que personne ne l'ait décidé. On ne dé-intègre jamais silencieusement.
+
+### Scénario 17.10 — Moteur unique : commande artisan et planification
+
+```bash
+php artisan ext:sources:sync                 # toutes les sources distantes ACTIVES
+php artisan ext:sources:sync depot-de-test   # une seule
+echo "code retour : $?"
+php artisan schedule:list | grep ext:sources:sync
+```
+
+**Attendu** :
+- tableau récapitulatif (source, statut, compteurs) ; **code retour 0** si tout est vérifié, **non-zéro** si au moins une source est en erreur ou injoignable ;
+- une source **désactivée** nommée explicitement est **refusée** (« réactivez-la avant de la synchroniser ») — la commande ne contourne pas la décision de l'admin, et le journal d'accès du dépôt le confirme (aucune requête) ;
+- `schedule:list` montre `ext:sources:sync` à **02:50** ;
+- rejouer la commande deux fois de suite ne modifie **aucune** ligne (`updated_at` des `extensions` inchangés) : la synchro est idempotente.
+
+### Scénario 17.11 — Le journal d'audit des sources (FR36)
+
+```sql
+SELECT action, source_key, actor_login, created_at
+FROM extension_audit_logs
+WHERE action LIKE 'source_%'
+ORDER BY id;
+```
+
+**Attendu** :
+- une ligne `source_add` / `source_enable` / `source_disable` / `source_remove` par acte **réel**, avec le **login de l'admin** ;
+- **désactiver une source déjà désactivée n'écrit RIEN** (no-op = zéro ligne, discipline 54.2) ;
+- `source_sync_failed` apparaît **une seule fois** par entrée en erreur, quel que soit le nombre de re-synchros ratées ensuite (rejouer `ext:sources:sync` trois fois sur un dépôt à signature invalide et recompter) ; l'acteur d'une synchro planifiée est **`system`** ;
+- une synchro **réussie** n'écrit **aucune** ligne (c'est de la télémétrie, `last_synced_at` la porte), un dépôt **injoignable** non plus ;
+- après le **retrait** d'une source, la ligne `source_remove` **subsiste** avec sa `source_key` lisible (`extension_source_id` passe à `NULL`).
+
+### Scénario 17.12 — Aucun secret dans ce qui est persisté ou affiché
+
+1. Enregistrer une source dont l'URL porterait un jeton — **elle doit être refusée à la saisie** (une URL avec `?` ou avec `user:pass@` n'est pas acceptée).
+2. Provoquer une panne réseau sur une source normale, puis lire ce qui est stocké :
+
+```sql
+SELECT key, last_error FROM extension_sources;
+```
+
+**Attendu** : `last_error` est une **catégorie courte** (« dépôt injoignable (HTTP 503 sur index.json) »), **jamais** une URL, jamais un message d'exception Guzzle. Le détail complet — URL comprise — n'existe que dans le journal serveur (`storage/logs/laravel.log`), qui n'est pas exposé à l'admin dans l'UI.
+
+**Pourquoi** : Guzzle suffixe systématiquement l'URI complète à ses messages d'erreur, et une URL de dépôt GitLab peut porter `?private_token=…`. Le piège est documenté depuis la review 39.4 #E11 d'`ArtifactPullService` ; il se rejoue à l'identique ici.
+
+---
+
 ## Post-correctifs & non-régressions
+
+- **Section 17.4 / 17.5 — l'ordre « vérifier PUIS lire » est la seule chose qui rende une source tierce acceptable** : la signature se vérifie sur les octets **verbatim** téléchargés, avant tout `json_decode`. Un test le prouve par la négative (index à la fois mal signé ET malformé : le refus est motivé par la SIGNATURE, jamais par le JSON). Toute story future qui aurait besoin de « jeter un œil » au contenu avant de le vérifier — pour choisir un parseur, deviner une version, journaliser un nom — rouvrirait la faille : c'est le contenu vérifié qui décide, jamais l'inverse.
+- **Section 17.4 / 17.7 — aucun chemin d'échec ne prune, jamais** : c'est l'invariant #5 de 54.1 (« racine introuvable ≠ catalogue vide ») étendu au réseau. Un dépôt injoignable ou un catalogue refusé ne sont pas des observations : on ne peut rien conclure de ce qu'on n'a pas lu. Le sinistre de référence du projet reste le catalogue applicatif local effacé par une synchro amont ; la règle vaut pour tout futur canal de catalogue (56.2 et au-delà).
+- **Section 17.5 — pinner, c'est refuser la renégociation** : la clé d'une source est lue AU PLUS UNE fois, à l'ajout, et jamais réécrite par une synchro. Un dépôt qui change de clé DOIT tomber en erreur — c'est le comportement, pas un défaut. Corollaire pour 56.2 (signature des paquets) : le paquet se vérifie contre la clé **déjà pinnée de sa source**, jamais contre une clé livrée avec lui.
+- **Section 17.3 — le TOFU réseau n'a de sens que sous TLS** : récupérer `source.pub` en clair reviendrait à demander à l'attaquant potentiel de fournir la clé qui l'authentifiera. D'où la règle asymétrique : `http://` reste permis (miroir LAN, AR9) mais impose la clé collée à la main. Ne pas « assouplir » cette règle pour simplifier une installation.
+- **Section 17.7 — `unreachable` et `error` ne sont pas deux nuances du même échec** : le premier est un incident réseau (rien ne change pour l'admin, NFR7), le second un refus de contenu (fail-closed, NFR2). Les fusionner en un seul état « KO » ferait soit disparaître un catalogue valide sur une coupure réseau, soit continuer à proposer un catalogue non authentifiable. La table de sémantique est dans le docblock de `ExtensionSourceSyncStatus`.
+- **Section 17.9 — désactiver GÈLE, ça ne dé-intègre pas** : les `available` d'une source désactivée disparaissent (et leur fiche répond 404, pour qu'une URL directe ne les rende pas intégrables), mais une extension déjà intégrée garde sa place ET sa tuile. `ExtensionLauncherService` n'a donc **aucun** filtre de source — décision explicite qui solde le report de 54.3, verrouillée par un test de régression. Faire disparaître une tuile parce qu'un dépôt distant est tombé transformerait un incident de catalogue en panne visible pour les profs et les élèves.
+- **Section 17.8 — ne pas suivre les redirections vaut mieux qu'une liste blanche** : `allow_redirects => false` rend structurellement impossible qu'un dépôt oriente les requêtes sortantes de SE5 vers un hôte de son choix. Une allowlist d'hôtes aurait la même intention et beaucoup plus de façons d'être contournée.
+- **Section 17.11 — `source_sync_failed` trace une TRANSITION, pas un symptôme** : une synchro planifiée quotidienne sur un dépôt cassé empilerait 365 lignes identiques par an et noierait les vrais actes. Même discipline que le no-op de 54.2. Corollaire : la synchro réussie n'est pas auditée du tout (`last_synced_at` suffit) — le journal d'audit répond à « qui a décidé quoi », pas à « que s'est-il passé cette nuit ».
+- **Section 17.12 — un message d'erreur persisté est une surface d'exposition** : ce qui est écrit en base est lu par une UI ; ce qui vient d'une exception HTTP porte l'URI complète. Toute colonne `last_error`/`*_error` du projet doit recevoir une **catégorie** produite par le code, jamais un `$e->getMessage()`. Troisième occurrence de ce piège (39.4 #E11, puis ici) : il mérite d'être vérifié par défaut en review.
+- **Section 17.1 — le format de catalogue v1 est un CONTRAT PUBLIC (NFR11)** : `index.json` + `index.json.sig` + `source.pub`, manifests embarqués inline, `index_version` strict. Des éditeurs tiers vont l'implémenter ; il n'évoluera qu'**additivement** (56.2 y ajoutera un bloc `install` par manifest). Le durcir après publication casserait ses consommateurs — c'est la raison pour laquelle `ExtensionManifestValidator` avait déjà été durci en 54.1/54.3 *avant* qu'aucune source distante n'existe.
 
 - **Section 16.1 — un garde-fou par scan textuel doit embarquer ses formes d'évasion connues** : une regex qui mord sur la syntaxe canonique (`auth(`) ne dit rien des variantes légales que PHP autorise — antislash de résolution globale, FQCN inline, alias d'import, conteneur. Sans un jeu de contre-exemples **figé en dur** dans le test, un tel garde-fou ne verrouille qu'une syntaxe, pas une propriété. Règle dérivée : toute règle portant sur un **site d'appel** doit être doublée d'une règle sur l'**import FQCN**, seule façon de fermer la voie de l'alias. Vaut pour tout futur test d'architecture du projet, pas seulement pour la quarantaine des extensions.
 - **Section 16.2 — écrire les résidus plutôt que les taire** : troisième occurrence sur cet epic (canal de timing en 55.2, limite du scan ici, granularité d'erreur du témoin). Un écart connu et documenté vaut mieux qu'une promesse absolue démentie par le code — et c'est ce qui permet à la revue suivante de ne pas le redécouvrir comme s'il était neuf.
@@ -1395,3 +1626,15 @@ Lire `tests/Architecture/ExtensionIsolationTest.php::the_textual_scan_has_a_docu
 - [ ] **15.13 Ni `ad_guid`, ni `dn`, ni `users.id` dans l'id_token et `/userinfo` ; `sub` = `login`**
 - [ ] **16.1 Test de mutation : injecter `\…\Auth::user()`, `app('db')` puis un alias dans le témoin ⇒ quarantaine ROMPUE à chaque fois, verte après retrait**
 - [ ] 16.2 La limite résiduelle du scan textuel est écrite (test dédié + README du témoin)
+- [ ] **17.1 Ajout d'une source avec clé collée : 2 extensions au catalogue, badge « Tierce », `is_official = f`**
+- [ ] 17.2 Ajout TOFU https : `source.pub` lu **exactement une fois** (journal d'accès du dépôt)
+- [ ] **17.3 `http://` sans clé collée : REFUSÉ, aucune requête sortante — et accepté AVEC la clé collée**
+- [ ] **17.4 Catalogue altéré non re-signé : source « Catalogue refusé », `available` masquées, intégrée + tuile intactes, `count(extensions)` inchangé, nom piraté nulle part**
+- [ ] **17.5 Dépôt qui change de clé : erreur, `public_key` inchangée, aucun nouveau GET sur `source.pub`**
+- [ ] 17.6 Badges Officielle/Tierce (icône + libellé) ; modale d'avertissement nommant l'hôte ; un-clic conservé pour l'officielle ; double-clic sans double audit
+- [ ] **17.7 Dépôt injoignable : `available` toujours proposées, tuile intacte, `last_synced_at` conservé, aucun prune**
+- [ ] 17.8 Redirection 302 : jamais suivie, aucune requête vers la cible
+- [ ] **17.9 Désactivation : `available` masquées + fiche 404, intégrée conservée avec sa tuile ; retrait refusé tant qu'une intégrée existe ; source embarquée sans aucune action**
+- [ ] 17.10 `ext:sources:sync` (une / toutes), code retour non-zéro en échec, planification à 02:50, idempotence
+- [ ] **17.11 Audit : une ligne par acte réel, no-op muet, `source_sync_failed` UNE seule fois par transition, acteur `system` en planifié, trace survivant au retrait**
+- [ ] 17.12 `last_error` sans URL ni jeton ; URL avec query ou identifiants refusée à la saisie

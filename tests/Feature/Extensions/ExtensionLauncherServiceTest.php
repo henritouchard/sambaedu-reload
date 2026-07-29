@@ -7,6 +7,7 @@ namespace Tests\Feature\Extensions;
 use App\Enums\ExtensionType;
 use App\Enums\SambaRole;
 use App\Models\Extension;
+use App\Models\ExtensionSource;
 use App\Models\User;
 use App\Services\Extensions\ExtensionLauncherService;
 use Database\Seeders\PermissionSeeder;
@@ -193,5 +194,64 @@ class ExtensionLauncherServiceTest extends TestCase
         $eleve = $this->makeUser('eleve');
 
         $this->assertSame([], $this->service->tilesFor($eleve));
+    }
+
+    // ── Story 56.1 — l'état de la SOURCE ne retire jamais une tuile ────────
+    //
+    // Décision tranchée en 56.1 (report explicite de 54.3) : une extension
+    // INTÉGRÉE garde sa tuile quel que soit l'état de sa source. Doctrine
+    // « rupture = figer l'état » + invariant 54.1 #4 (jamais de dé-intégration
+    // silencieuse). Faire disparaître une tuile parce qu'un dépôt distant est
+    // tombé transformerait un incident de catalogue en panne visible pour les
+    // profs et les élèves — l'exact contraire de NFR7.
+
+    #[Test]
+    public function an_integrated_extension_of_a_disabled_source_keeps_its_tile(): void
+    {
+        $source = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = $this->integratedLink('agenda', 'Agenda', ['admin']);
+        $extension->extension_source_id = $source->id;
+        $extension->save();
+
+        $admin = $this->makeUser('autre');
+        $admin->assignRole(SambaRole::SuperAdmin->value);
+
+        $this->assertSame(['agenda'], array_column($this->service->tilesFor($admin), 'key'));
+    }
+
+    #[Test]
+    public function an_integrated_extension_of_a_source_in_signature_error_keeps_its_tile(): void
+    {
+        $source = ExtensionSource::factory()->remote()->syncError()->create();
+        $extension = $this->integratedLink('agenda', 'Agenda', ['admin']);
+        $extension->extension_source_id = $source->id;
+        $extension->save();
+
+        $admin = $this->makeUser('autre');
+        $admin->assignRole(SambaRole::SuperAdmin->value);
+
+        $this->assertSame(['agenda'], array_column($this->service->tilesFor($admin), 'key'));
+    }
+
+    #[Test]
+    public function an_available_extension_of_an_active_source_never_becomes_a_tile(): void
+    {
+        // Contre-épreuve de la décision ci-dessus : « intégrée » reste la SEULE
+        // condition d'apparition. (Déjà couvert par les tests d'état 54.3 ; on
+        // le REDIT ici avec une source explicitement active, pour que la
+        // décision 56.1 soit lisible d'un seul tenant.)
+        $source = ExtensionSource::factory()->remote()->create();
+        Extension::factory()
+            ->link('/agenda')
+            ->create([
+                'key' => 'agenda',
+                'extension_source_id' => $source->id,
+                'manifest' => $this->manifestFor('agenda', ExtensionType::Link->value, ['admin']),
+            ]);
+
+        $admin = $this->makeUser('autre');
+        $admin->assignRole(SambaRole::SuperAdmin->value);
+
+        $this->assertSame([], $this->service->tilesFor($admin));
     }
 }

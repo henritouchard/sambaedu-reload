@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Extensions;
 
 use App\Enums\ExtensionSourceKind;
+use App\Enums\ExtensionSourceSyncStatus;
 use App\Enums\ExtensionStatus;
 use App\Enums\ExtensionType;
 use App\Exceptions\InvalidExtensionManifestException;
@@ -16,13 +17,15 @@ use Illuminate\Support\Facades\Log;
  * Story 54.1 — Service de catalogue du registre d'extensions.
  *
  * Unique point d'entrée des pages `/admin/extensions` (NFR15 : les SFC Livewire
- * ne touchent JAMAIS Eloquent directement) et unique écrivain du registre pour
- * la source EMBARQUÉE.
+ * ne touchent JAMAIS Eloquent directement) et unique écrivain du registre —
+ * pour la source EMBARQUÉE (`syncBundled()`) comme pour les sources DISTANTES
+ * (`syncManifestsForSource()`, appelée par {@see RemoteCatalogSyncService}).
  *
  * ## `syncBundled()` — chargement de la source embarquée (AC1/AC2)
  *
- * Parcourt `config('extensions.bundled_path')/<id>/manifest.json`, valide chaque
- * manifest ({@see ExtensionManifestValidator}, pur) et l'upsert sur la clé
+ * Parcourt `config('extensions.bundled_path')/<id>/manifest.json`, décode
+ * chaque fichier, puis délègue à {@see self::syncManifestsForSource()} qui
+ * valide ({@see ExtensionManifestValidator}, pur) et upsert sur la clé
  * naturelle `(extension_source_id, key)`.
  *
  * Invariants :
@@ -46,11 +49,41 @@ use Illuminate\Support\Facades\Log;
  *     mal résolu), la synchro sort en no-op bruyant SANS pruner — sinon un
  *     accident de chemin viderait tout le catalogue.
  *
+ * ## Story 56.1 — `syncManifestsForSource()` : le MÊME moteur pour toute source
+ *
+ * Les invariants #1 à #4 ci-dessus ne sont pas propres à la source embarquée :
+ * ils décrivent ce que « charger un lot de manifests dans le registre » doit
+ * garantir, d'où que viennent ces manifests. Ils ont donc été extraits
+ * VERBATIM dans une méthode publique que {@see RemoteCatalogSyncService}
+ * consomme une fois — et une fois SEULEMENT — la signature du catalogue
+ * distant vérifiée. Le comportement de `syncBundled()` est inchangé : ce
+ * refactor est une extraction, pas une évolution (les tests 54.1 passent
+ * inchangés).
+ *
+ * L'invariant #5 (« rien observé ⇒ aucun prune ») reste, lui, du ressort de
+ * l'APPELANT : c'est lui seul qui sait s'il a réellement observé un catalogue
+ * complet. `syncBundled()` sort en no-op quand la racine des manifests est
+ * introuvable ; `RemoteCatalogSyncService` n'appelle cette méthode que sur le
+ * chemin de SUCCÈS vérifié — jamais sur un dépôt injoignable ni sur une
+ * signature invalide.
+ *
  * ## Lecture
  *
  * `library()` (liste) et `find()` (fiche) renvoient des **tableaux plats**
  * prêts à afficher — aucune entité Eloquent ne remonte dans un composant
  * Livewire.
+ *
+ * **Story 56.1 — filtrage par l'état de la SOURCE** (dette explicite de
+ * l'Epic 54, soldée ici) : une extension `available` n'est proposée que si sa
+ * source est ACTIVE et que son dernier catalogue a été VÉRIFIÉ. Une source
+ * désactivée par l'admin, ou dont la signature ne se vérifie plus, ne propose
+ * plus rien (fail-closed NFR2) — sa fiche répond 404. Une extension
+ * **`integrated` reste TOUJOURS listée**, avec les drapeaux qui disent l'état
+ * de sa source (`source_enabled`, `source_sync_status`) : on ne dé-intègre
+ * jamais silencieusement (invariant #4), c'est l'admin qui désinstalle.
+ *
+ * Un dépôt momentanément INJOIGNABLE ne masque rien : le registre EST le cache
+ * local, ses lignes sont le dernier catalogue *vérifié* (NFR7).
  *
  * ⚠️ Vocabulaire : « amont » / `Upstream`, jamais « central ». Ce service n'a
  * AUCUN lien avec la sync amont controlHub (isolement NFR14).
@@ -97,7 +130,6 @@ class ExtensionCatalogService
         $stats = ['loaded' => 0, 'created' => 0, 'updated' => 0, 'skipped' => 0, 'pruned' => 0];
 
         $source = $this->ensureBundledSource();
-        $seenKeys = [];
 
         $paths = $this->discoverBundledManifestPaths();
 
@@ -120,9 +152,67 @@ class ExtensionCatalogService
             return $stats;
         }
 
+        // Décodage des FICHIERS (spécifique à la source embarquée : un manifest
+        // illisible ou au JSON invalide est ignoré comme un manifest fautif).
+        // Les manifests décodés sont indexés par leur chemin, qui sert d'ORIGINE
+        // dans les journaux de la boucle de validation.
+        $decodedManifests = [];
+        $unreadable = 0;
         foreach ($paths as $path) {
             $decoded = $this->decodeManifestFile($path);
             if ($decoded === null) {
+                $unreadable++;
+
+                continue;
+            }
+
+            $decodedManifests[$path] = $decoded;
+        }
+
+        $stats = $this->syncManifestsForSource($source, $decodedManifests);
+        $stats['skipped'] += $unreadable;
+
+        Log::info('[Extensions] Synchro de la source embarquée terminée', $stats + ['source' => $source->key]);
+
+        return $stats;
+    }
+
+    /**
+     * Story 56.1 — Charge un lot de manifests DÉCODÉS dans le registre, pour
+     * une source quelconque : valide, upsert, puis prune borné.
+     *
+     * **Extraction verbatim des invariants #1 à #4** de `syncBundled()` — voir
+     * le docblock de classe. Le contenu du lot n'est PAS de la responsabilité
+     * de cette méthode : pour une source distante, l'appelant a déjà vérifié la
+     * signature du catalogue AVANT de le décoder, et ne l'appelle QUE sur le
+     * chemin de succès (invariant #5 : on ne prune jamais ce qu'on n'a pas
+     * observé).
+     *
+     * ⚠️ Cette méthode n'écrit JAMAIS `extensions.status` (invariant #2) : le
+     * seul écrivain de cette colonne reste {@see ExtensionLifecycleService}.
+     *
+     * @param  array<string, mixed>  $decodedManifests  manifests décodés, indexés
+     *                                                  par une ORIGINE lisible
+     *                                                  (chemin de fichier, ou
+     *                                                  `index.json#3`) reportée
+     *                                                  telle quelle dans les
+     *                                                  journaux de rejet
+     * @return array{loaded: int, created: int, updated: int, skipped: int, pruned: int}
+     */
+    public function syncManifestsForSource(ExtensionSource $source, array $decodedManifests): array
+    {
+        $stats = ['loaded' => 0, 'created' => 0, 'updated' => 0, 'skipped' => 0, 'pruned' => 0];
+        $seenKeys = [];
+
+        foreach ($decodedManifests as $origin => $decoded) {
+            // Une entrée qui n'est même pas un objet JSON (nombre, chaîne,
+            // `null`) : même traitement qu'un manifest fautif — ignorée seule.
+            if (! is_array($decoded)) {
+                Log::warning('[Extensions] Entrée de catalogue non exploitable — extension ignorée', [
+                    'origin' => (string) $origin,
+                    'source' => $source->key,
+                    'type' => get_debug_type($decoded),
+                ]);
                 $stats['skipped']++;
 
                 continue;
@@ -133,7 +223,7 @@ class ExtensionCatalogService
             } catch (InvalidExtensionManifestException $e) {
                 // Invariant #1 : on ignore CE manifest, jamais les autres.
                 Log::warning('[Extensions] Manifest rejeté — extension ignorée', [
-                    'path' => $path,
+                    'origin' => (string) $origin,
                     'source' => $source->key,
                     'field' => $e->field,
                     'reason' => $e->reason,
@@ -150,8 +240,6 @@ class ExtensionCatalogService
         }
 
         $stats['pruned'] = $this->pruneDisappeared($source, $seenKeys);
-
-        Log::info('[Extensions] Synchro de la source embarquée terminée', $stats + ['source' => $source->key]);
 
         return $stats;
     }
@@ -256,10 +344,13 @@ class ExtensionCatalogService
     }
 
     /**
-     * Supprime les extensions bundled `available` dont le manifest a disparu.
+     * Supprime les extensions `available` DE CETTE SOURCE dont le manifest a
+     * disparu du lot observé.
      *
      * Invariant #4 : une extension `integrated` n'est jamais supprimée — elle
-     * est signalée et conservée.
+     * est signalée et conservée. Le prune est BORNÉ à la source passée en
+     * paramètre : la synchro d'un dépôt ne touche jamais le catalogue d'un
+     * autre.
      *
      * @param  list<string>  $seenKeys
      */
@@ -298,7 +389,13 @@ class ExtensionCatalogService
     // =====================================================================
 
     /**
-     * La bibliothèque : toutes les extensions du registre, prêtes à afficher.
+     * La bibliothèque : les extensions du registre PROPOSABLES, prêtes à
+     * afficher.
+     *
+     * Story 56.1 — les extensions `available` d'une source désactivée ou dont
+     * le dernier catalogue a été refusé sont MASQUÉES (voir
+     * {@see self::isProposable()}). Les `integrated` restent toutes listées,
+     * quel que soit l'état de leur source.
      *
      * @return list<array<string, mixed>>
      */
@@ -308,12 +405,17 @@ class ExtensionCatalogService
             ->with('source')
             ->orderBy('name')
             ->get()
+            ->filter(fn (Extension $extension): bool => $this->isProposable($extension))
             ->map(fn (Extension $extension): array => $this->toListRow($extension))
+            ->values()
             ->all();
     }
 
     /**
-     * La fiche d'une extension, ou `null` si l'identifiant est inconnu.
+     * La fiche d'une extension, ou `null` si l'identifiant est inconnu — ou si
+     * l'extension n'est plus proposable (source désactivée / catalogue refusé) :
+     * la fiche répond alors 404, exactement comme si la ligne n'existait pas.
+     * Une extension masquée ne doit pas rester intégrable par son URL directe.
      *
      * @return array<string, mixed>|null
      */
@@ -321,17 +423,61 @@ class ExtensionCatalogService
     {
         $extension = Extension::query()->with('source')->find($id);
 
-        return $extension === null ? null : $this->toDetail($extension);
+        if ($extension === null || ! $this->isProposable($extension)) {
+            return null;
+        }
+
+        return $this->toDetail($extension);
+    }
+
+    /**
+     * Story 56.1 — Cette extension a-t-elle sa place dans la bibliothèque ?
+     *
+     * - Une extension **`integrated`** : TOUJOURS. La désactivation d'une
+     *   source gèle ce qu'elle propose, elle ne dé-intègre pas ce qui a été
+     *   installé (invariant #4, doctrine « rupture = figer l'état »). La carte
+     *   porte des drapeaux qui disent l'état de sa source ; c'est l'admin qui
+     *   décide de désinstaller.
+     * - Une extension **`available`** : seulement si sa source est ACTIVE et
+     *   que son dernier catalogue a été VÉRIFIÉ. Une source en `error`
+     *   (signature invalide) ne propose plus rien — fail-closed NFR2. Une
+     *   source `unreachable` continue, elle, de proposer son dernier catalogue
+     *   vérifié : le registre EST le cache local (NFR7).
+     * - Source manquante (ligne orpheline — la FK `cascadeOnDelete` rend le cas
+     *   théorique) : on masque. On ne propose pas une extension dont on ne peut
+     *   plus dire d'où elle vient.
+     */
+    private function isProposable(Extension $extension): bool
+    {
+        if (($extension->status ?? ExtensionStatus::Available) !== ExtensionStatus::Available) {
+            return true;
+        }
+
+        $source = $extension->source;
+        if ($source === null) {
+            return false;
+        }
+
+        // Règle unique, portée par le modèle : ce qui s'affiche et ce qui
+        // s'intègre doivent dire la même chose (review 56.1 #1).
+        return $source->offersAvailableExtensions();
     }
 
     /**
      * Ligne de LISTE (dénormalisations + libellés).
+     *
+     * Story 56.1 — la ligne porte désormais la PROVENANCE complète
+     * (`source_is_official`, `source_host`) et l'état de la source
+     * (`source_enabled`, `source_sync_status`) : la carte doit pouvoir afficher
+     * un badge « Tierce » et un avertissement sans jamais retoucher la base, et
+     * la modale d'avertissement doit nommer l'hôte réel du dépôt (FR4/UX-DR4).
      *
      * @return array<string, mixed>
      */
     private function toListRow(Extension $extension): array
     {
         $source = $extension->source;
+        $syncStatus = $source?->syncStatus() ?? ExtensionSourceSyncStatus::Ok;
 
         return [
             'id' => (int) $extension->id,
@@ -349,6 +495,12 @@ class ExtensionCatalogService
             'status_badge' => ($extension->status ?? ExtensionStatus::Available)->badgeClass(),
             'source_key' => (string) ($source?->key ?? ''),
             'source_name' => (string) ($source?->name ?? ''),
+            'source_is_official' => (bool) ($source?->is_official ?? false),
+            'source_host' => $source?->host() ?? '',
+            'source_enabled' => (bool) ($source?->enabled ?? false),
+            'source_sync_status' => $syncStatus->value,
+            'source_sync_label' => $syncStatus->label(),
+            'source_sync_badge' => $syncStatus->badgeClass(),
         ];
     }
 
@@ -368,7 +520,8 @@ class ExtensionCatalogService
             'visibility_roles' => $extension->visibilityRoles(),
             'manifest_version' => (int) ($extension->manifest['manifest_version'] ?? 0),
             'source_kind_label' => $source?->kind?->label() ?? '',
-            'source_is_official' => (bool) ($source?->is_official ?? false),
+            'source_url' => (string) ($source?->baseUrl() ?? ''),
+            // `source_is_official` / `source_host` viennent déjà de `toListRow()`.
         ];
     }
 }

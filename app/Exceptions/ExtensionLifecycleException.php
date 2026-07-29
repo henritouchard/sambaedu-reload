@@ -38,4 +38,19 @@ final class ExtensionLifecycleException extends RuntimeException
             "Type d'extension « {$typeValue} » non pris en charge par cette action — Epic 56."
         );
     }
+
+    /**
+     * Story 56.1 (review #1) — L'extension existe et est `available`, mais sa
+     * source ne la propose plus : source gelée par l'admin, ou dernier
+     * catalogue non vérifié (`error`). Le fail-closed NFR2 doit tenir même
+     * quand l'appel ne vient pas du rendu de la bibliothèque (appel Livewire
+     * direct sur un identifiant connu, écran périmé, futur canal artisan).
+     */
+    public static function sourceNoLongerOffers(string $extensionName): self
+    {
+        return new self(
+            "« {$extensionName} » n'est plus proposée par sa source (source désactivée, "
+            .'ou catalogue non vérifié) — intégration refusée.'
+        );
+    }
 }

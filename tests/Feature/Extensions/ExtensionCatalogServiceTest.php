@@ -439,4 +439,94 @@ class ExtensionCatalogServiceTest extends TestCase
     {
         self::assertNull($this->service()->find(999_999));
     }
+
+    // ── Story 56.1 — filtrage par l'état de la SOURCE (dette 54.x soldée) ──
+    //
+    // `library()` / `find()` PROPOSENT : ils doivent donc taire ce qu'une
+    // source désactivée ou dont le catalogue a été refusé n'a plus le droit de
+    // proposer. Ils ne doivent EN REVANCHE jamais faire disparaître une
+    // extension déjà intégrée : ce serait dé-intégrer silencieusement
+    // (invariant #4), et l'admin ne verrait plus le bouton pour la désinstaller.
+
+    #[Test]
+    public function an_available_extension_of_a_disabled_source_disappears_from_the_library(): void
+    {
+        $source = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        self::assertSame([], $this->service()->library());
+        self::assertNull($this->service()->find((int) $extension->id), 'sa fiche répond 404');
+    }
+
+    #[Test]
+    public function an_available_extension_of_a_source_in_error_disappears_from_the_library(): void
+    {
+        // Fail-closed NFR2 : un catalogue dont la signature ne se vérifie plus
+        // ne propose plus rien, même si ses lignes sont encore en base.
+        $source = ExtensionSource::factory()->remote()->syncError()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        self::assertSame([], $this->service()->library());
+        self::assertNull($this->service()->find((int) $extension->id));
+    }
+
+    #[Test]
+    public function an_unreachable_source_keeps_proposing_its_last_verified_catalog(): void
+    {
+        // NFR7 : le registre EST le cache local. Un dépôt momentanément
+        // injoignable ne doit RIEN changer pour l'admin.
+        $source = ExtensionSource::factory()->remote()->unreachable()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        self::assertCount(1, $this->service()->library());
+        self::assertNotNull($this->service()->find((int) $extension->id));
+    }
+
+    #[Test]
+    public function an_integrated_extension_stays_listed_whatever_the_state_of_its_source(): void
+    {
+        $disabled = ExtensionSource::factory()->remote()->disabled()->create();
+        $broken = ExtensionSource::factory()->remote()->syncError()->create();
+
+        $fromDisabled = Extension::factory()->integrated()->create(['extension_source_id' => $disabled->id, 'name' => 'A']);
+        $fromBroken = Extension::factory()->integrated()->create(['extension_source_id' => $broken->id, 'name' => 'B']);
+
+        $rows = $this->service()->library();
+        self::assertCount(2, $rows);
+
+        self::assertFalse($rows[0]['source_enabled'], 'la carte SIGNALE que la source est désactivée');
+        self::assertSame('error', $rows[1]['source_sync_status']);
+
+        self::assertNotNull($this->service()->find((int) $fromDisabled->id));
+        self::assertNotNull($this->service()->find((int) $fromBroken->id));
+    }
+
+    #[Test]
+    public function list_rows_carry_the_provenance_needed_by_the_warning(): void
+    {
+        $source = ExtensionSource::factory()
+            ->remote('https://depot.example.test/extensions')
+            ->create(['name' => 'Dépôt partenaire']);
+        Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        $row = $this->service()->library()[0];
+
+        self::assertFalse($row['source_is_official']);
+        self::assertSame('depot.example.test', $row['source_host'], 'l\'hôte est résolu CÔTÉ SERVEUR');
+        self::assertTrue($row['source_enabled']);
+        self::assertSame('ok', $row['source_sync_status']);
+        self::assertSame('Dépôt partenaire', $row['source_name']);
+    }
+
+    #[Test]
+    public function a_bundled_extension_is_flagged_official_with_no_host(): void
+    {
+        $this->writeManifest('doc', $this->manifest('doc'));
+        $this->service()->syncBundled();
+
+        $row = $this->service()->library()[0];
+
+        self::assertTrue($row['source_is_official']);
+        self::assertSame('', $row['source_host']);
+    }
 }

@@ -53,12 +53,31 @@ use App\Models\User;
  * artificiellement `integrated`, ex. en factory de test) n'apparaît jamais
  * non plus : aucun moteur `app` n'existe avant l'Epic 56 (AR1).
  *
- * ## Report Story 56.1
+ * ## L'état de la SOURCE ne retire jamais une tuile (décision Story 56.1)
  *
- * Comme `library()`/`find()` d'{@see ExtensionCatalogService}, `tilesFor()`
- * ne filtre PAS `extension_sources.enabled` — reporté à la Story 56.1, qui
- * devra aussi trancher le sort d'une extension déjà intégrée d'une source
- * désactivée.
+ * La Story 54.3 avait reporté à la 56.1 la question du filtre
+ * `extension_sources.enabled`. Elle est tranchée, et la réponse est **aucun
+ * diff fonctionnel ici** :
+ *
+ *  - `tilesFor()` ne montre QUE des `integrated` : « les extensions non
+ *    installées n'apparaissent pas au lanceur » est donc vrai PAR
+ *    CONSTRUCTION, quel que soit l'état de leur source. C'est
+ *    `library()`/`find()` d'{@see ExtensionCatalogService} qui filtrent
+ *    réellement, parce que ce sont eux qui PROPOSENT.
+ *  - une extension **déjà intégrée** dont la source est désactivée, en erreur
+ *    de signature ou en cours de retrait **GARDE sa tuile**. Deux raisons
+ *    convergentes : la doctrine projet « rupture = figer l'état » (un lien
+ *    coupé n'annule pas ce qui était en service), et l'invariant 54.1 #4 qui
+ *    interdit de dé-intégrer silencieusement. Faire disparaître une tuile
+ *    parce qu'un dépôt distant est tombé transformerait un incident de
+ *    catalogue en panne visible pour les enseignants et les élèves — l'exact
+ *    contraire de NFR7.
+ *
+ * L'admin, lui, VOIT l'état : la bibliothèque signale « source désactivée » /
+ * « catalogue refusé » sur la carte, et c'est lui qui décide de désinstaller.
+ * Un test de régression verrouille cette décision (une intégrée d'une source
+ * désactivée conserve sa tuile) ; l'absence de tuile pour une `available`
+ * reste couverte par les tests 54.3.
  */
 class ExtensionLauncherService
 {

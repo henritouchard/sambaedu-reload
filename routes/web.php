@@ -522,6 +522,16 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('extensions');
 
+    // Story 56.1 — `/admin/extensions/sources` : gestion des SOURCES de
+    // catalogue (ajout d'un dépôt tiers avec pin de clé Ed25519, activation,
+    // retrait, actualisation). ⚠️ Déclarée AVANT `/extensions/{id}` :
+    // `whereNumber('id')` borne déjà l'identifiant, mais la convention
+    // « statique avant paramétrée » reste la garde qui survit à une évolution
+    // de la contrainte.
+    Route::livewire('/extensions/sources', 'pages::admin.extensions.sources.index')
+        ->middleware('can:server.admin')
+        ->name('extensions.sources');
+
     Route::livewire('/extensions/{id}', 'pages::admin.extensions.[id].index')
         ->middleware('can:server.admin')
         ->whereNumber('id')

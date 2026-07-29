@@ -24,6 +24,14 @@ use Livewire\Component;
  * (`wire:click`) — le service REVALIDE tout côté serveur (existence, type,
  * état), jamais de confiance aveugle dans un paramètre client.
  *
+ * **Story 56.1 — la provenance est impossible à ignorer (FR4, UX-DR4)** :
+ * chaque carte porte un badge « Officielle » ou « Tierce » (icône + libellé,
+ * jamais une couleur seule), et intégrer une extension d'une source TIERCE
+ * passe par une modale d'avertissement nommant l'hôte réel du dépôt. Le
+ * un-clic reste réservé aux extensions officielles. Cet avertissement est une
+ * garde d'ATTENTION, pas une garde de sécurité : le service d'intégration est
+ * inchangé et ne connaît pas la notion de source tierce.
+ *
  * NFR15 — 3 couches strictes : toute la donnée vient des services
  * ({@see ExtensionCatalogService} lecture, {@see ExtensionLifecycleService}
  * écriture), aucun Eloquent dans le composant.
@@ -51,6 +59,17 @@ new #[Title('Extensions')] class extends Component {
 
     /** Nom affiché dans la modale (affichage uniquement, jamais utilisé pour l'action). */
     public string $uninstallTargetName = '';
+
+    /** Modale d'avertissement « source non officielle » (Story 56.1, AC2). */
+    public bool $isThirdPartyWarningOpen = false;
+
+    /** Cible de l'intégration en attente de confirmation (id CLIENT — revalidé par le service). */
+    public int $integrateTargetId = 0;
+
+    public string $integrateTargetName = '';
+
+    /** Hôte du dépôt d'origine, résolu CÔTÉ SERVEUR (jamais depuis le snapshot client). */
+    public string $integrateTargetHost = '';
 
     public function mount(): void
     {
@@ -97,6 +116,69 @@ new #[Title('Extensions')] class extends Component {
 
         $this->loadExtensions();
         $this->toastSuccess('Extension intégrée.');
+    }
+
+    // ── Story 56.1 AC2 — Intégrer une extension TIERCE (avertissement) ──
+
+    /**
+     * Ouvre l'avertissement « source non officielle » avant l'intégration.
+     *
+     * La cible et l'hôte sont résolus CÔTÉ SERVEUR (même raison qu'en 54.2,
+     * review #6) : `$this->extensions` est réhydraté depuis le snapshot client
+     * à chaque requête, et faire confirmer un avertissement sous un hôte que le
+     * client a fourni viderait l'avertissement de son sens.
+     */
+    public function askIntegrate(int $extensionId): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $target = app(ExtensionCatalogService::class)->find($extensionId);
+
+        if ($target === null) {
+            $this->loadExtensions();
+            $this->toastError('Extension introuvable — la bibliothèque a été rechargée.');
+
+            return;
+        }
+
+        // Extension officielle atteinte par ce chemin (écran périmé, source
+        // devenue officielle) : rien à avertir, on intègre directement.
+        if ((bool) $target['source_is_official']) {
+            $this->integrate($extensionId);
+
+            return;
+        }
+
+        $this->integrateTargetId = $extensionId;
+        $this->integrateTargetName = (string) $target['name'];
+        $this->integrateTargetHost = (string) $target['source_host'];
+        $this->isThirdPartyWarningOpen = true;
+    }
+
+    public function confirmIntegrate(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $extensionId = $this->integrateTargetId;
+
+        // ⚠️ Même piège qu'en 54.2 (review #1) : on ferme VISUELLEMENT sans
+        // remettre la cible à zéro, sinon un double-clic rejoue l'appel avec
+        // `integrateTargetId = 0`.
+        $this->isThirdPartyWarningOpen = false;
+
+        if ($extensionId === 0) {
+            return;
+        }
+
+        $this->integrate($extensionId);
+    }
+
+    public function closeThirdPartyWarning(): void
+    {
+        $this->isThirdPartyWarningOpen = false;
+        $this->integrateTargetId = 0;
+        $this->integrateTargetName = '';
+        $this->integrateTargetHost = '';
     }
 
     // ── AC2 — Désinstaller (confirmation par modale) ────────────────────
@@ -190,6 +272,13 @@ new #[Title('Extensions')] class extends Component {
 <x-organisms.page title="Extensions" icon="fa-solid fa-puzzle-piece"
     description="Bibliothèque des extensions disponibles pour cette instance : ce que vous pouvez intégrer, d'où ça vient et ce que ça demande.">
 
+    <x-slot:actions>
+        <a href="{{ route('admin.extensions.sources') }}" class="btn btn-ghost" wire:navigate
+            data-testid="manage-sources">
+            <i class="fa-solid fa-box-archive"></i> Gérer les sources
+        </a>
+    </x-slot:actions>
+
     <div class="flex flex-col gap-6 pt-2">
 
         <div class="alert alert-info shadow-sm">
@@ -272,6 +361,42 @@ new #[Title('Extensions')] class extends Component {
                                     <i class="fa-solid fa-box-archive text-[10px]"></i>
                                     {{ $extension['source_name'] }}
                                 </span>
+
+                                {{--
+                                    Story 56.1 (FR4/UX-DR4) — la provenance ne
+                                    doit jamais être ambiguë : icône + libellé,
+                                    jamais une couleur seule.
+                                --}}
+                                @if ($extension['source_is_official'])
+                                    <span class="badge badge-sm badge-success gap-1"
+                                        data-testid="official-badge-{{ $extension['id'] }}"
+                                        title="Source officielle SambaEdu">
+                                        <i class="fa-solid fa-certificate text-[10px]"></i> Officielle
+                                    </span>
+                                @else
+                                    <span class="badge badge-sm badge-warning gap-1"
+                                        data-testid="third-party-badge-{{ $extension['id'] }}"
+                                        title="Source tierce — hors périmètre SambaEdu">
+                                        <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Tierce
+                                    </span>
+                                @endif
+
+                                {{-- État de la source, discret : une intégrée survit à
+                                     la désactivation de sa source, mais l'admin doit
+                                     le SAVOIR (c'est lui qui décide de désinstaller). --}}
+                                @unless ($extension['source_enabled'])
+                                    <span class="badge badge-sm badge-neutral gap-1"
+                                        data-testid="source-disabled-badge-{{ $extension['id'] }}">
+                                        <i class="fa-solid fa-pause text-[10px]"></i> Source désactivée
+                                    </span>
+                                @elseif ($extension['source_sync_status'] !== 'ok')
+                                    <span class="badge badge-sm {{ $extension['source_sync_badge'] }} gap-1"
+                                        data-testid="source-sync-badge-{{ $extension['id'] }}">
+                                        <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+                                        {{ $extension['source_sync_label'] }}
+                                    </span>
+                                @endunless
+
                                 @if ($extension['version'] !== '')
                                     <span class="text-base-content/40 font-mono">v{{ $extension['version'] }}</span>
                                 @endif
@@ -281,8 +406,10 @@ new #[Title('Extensions')] class extends Component {
                         @if ($extension['type'] === 'link')
                             <div class="card-actions justify-end px-6 pb-4 pt-2">
                                 @if ($extension['status'] === 'available')
+                                    {{-- Officielle : un clic (comportement 54.2 inchangé).
+                                         Tierce : avertissement de provenance d'abord. --}}
                                     <button type="button" class="btn btn-primary btn-sm"
-                                        wire:click="integrate({{ $extension['id'] }})"
+                                        wire:click="{{ $extension['source_is_official'] ? 'integrate' : 'askIntegrate' }}({{ $extension['id'] }})"
                                         data-testid="integrate-{{ $extension['id'] }}">
                                         <i class="fa-solid fa-plug"></i> Intégrer
                                     </button>
@@ -320,6 +447,32 @@ new #[Title('Extensions')] class extends Component {
                 <button type="button" class="btn btn-error" wire:click="confirmUninstall"
                     data-testid="confirm-uninstall">
                     <i class="fa-solid fa-trash-can"></i> Désinstaller
+                </button>
+            </x-slot:footer>
+        </x-molecules.modal>
+
+        {{-- ============ Modale : avertissement de source tierce (56.1 AC2) ============ --}}
+        <x-molecules.modal wire:model="isThirdPartyWarningOpen" size="max-w-lg" height="h-auto"
+            close-method="closeThirdPartyWarning" title="Source non officielle"
+            icon="fa-triangle-exclamation text-warning">
+
+            <x-molecules.modal.section>
+                <p class="text-sm" data-testid="third-party-warning-text">
+                    <strong>Source non officielle : {{ $integrateTargetHost !== '' ? $integrateTargetHost : 'dépôt inconnu' }}</strong>
+                    — vous installez sous votre responsabilité.
+                </p>
+                <p class="text-sm text-base-content/60 mt-2">
+                    <strong>{{ $integrateTargetName }}</strong> provient d'un dépôt tiers. SE5 a vérifié que son
+                    catalogue est bien signé par la clé enregistrée pour cette source, mais cela n'engage que le
+                    dépôt : ni SambaEdu ni votre académie n'ont audité ce que fait cette extension.
+                </p>
+            </x-molecules.modal.section>
+
+            <x-slot:footer>
+                <button type="button" class="btn btn-ghost" wire:click="closeThirdPartyWarning">Annuler</button>
+                <button type="button" class="btn btn-warning" wire:click="confirmIntegrate"
+                    data-testid="confirm-third-party-integrate">
+                    <i class="fa-solid fa-plug"></i> Intégrer quand même
                 </button>
             </x-slot:footer>
         </x-molecules.modal>

@@ -34,3 +34,26 @@ Schedule::command('queue-task-runs:prune')
     ->dailyAt('02:40')
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Story 56.1 — Synchro quotidienne des sources d'extensions distantes
+|--------------------------------------------------------------------------
+| Récupère et VÉRIFIE (signature Ed25519, avant tout décodage) le catalogue de
+| chaque source distante active. Même moteur que le bouton « Actualiser » de
+| /admin/extensions/sources (doctrine AR1 : un seul chemin de synchro).
+|
+| NFR7 — son échec n'affecte ni le core ni les tuiles : un dépôt injoignable
+| laisse en place le dernier catalogue VÉRIFIÉ (le registre EST le cache
+| local), un catalogue refusé masque les extensions non installées de cette
+| source sans jamais toucher aux extensions intégrées. Aucun chemin d'échec ne
+| supprime quoi que ce soit.
+|
+| Slot 02:50 : discipline d'échelonnement de la fenêtre de maintenance
+| (02:00 trash, 02:30 federated, 02:35 agent:reports:prune, 02:40
+| queue-task-runs:prune).
+*/
+Schedule::command('ext:sources:sync')
+    ->dailyAt('02:50')
+    ->withoutOverlapping()
+    ->runInBackground();
