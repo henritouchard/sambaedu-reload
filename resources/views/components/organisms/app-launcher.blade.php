@@ -35,7 +35,7 @@ new class extends Component {
         // complet (`Auth::login($eloquentUser)` — `SambaEduAuthGuard.php:111-114`),
         // mais `auth()->user()` peut en théorie renvoyer un autre type
         // (ou `null`) — état vide propre plutôt qu'une erreur.
-        if (! $user instanceof User) {
+        if (!$user instanceof User) {
             $this->tiles = [];
 
             return;
@@ -74,10 +74,20 @@ new class extends Component {
     provoque un 500 au re-render du parent. Ce composant est un parent rendu
     sur TOUTES les pages — c'est le pire endroit possible pour ce piège.
 --}}
-<div class="dropdown dropdown-end">
+<div class="dropdown dropdown-start">
     <div tabindex="0" role="button" class="btn btn-ghost btn-circle" title="Applications"
         aria-label="Ouvrir le lanceur d'applications">
-        <i class="fa-solid fa-table-cells text-xl"></i>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" class="fill-primary">
+            <circle cx="4" cy="4" r="2.6" />
+            <circle cx="12" cy="4" r="2.6" />
+            <circle cx="20" cy="4" r="2.6" />
+            <circle cx="4" cy="12" r="2.6" />
+            <circle cx="12" cy="12" r="2.6" />
+            <circle cx="20" cy="12" r="2.6" />
+            <circle cx="4" cy="20" r="2.6" />
+            <circle cx="12" cy="20" r="2.6" />
+            <circle cx="20" cy="20" r="2.6" />
+        </svg>
     </div>
     <div tabindex="0"
         class="dropdown-content z-[1] w-80 p-3 shadow-lg border border-base-300 bg-base-100 rounded-box">
@@ -90,7 +100,8 @@ new class extends Component {
                 <a href="{{ $tile['entry_url'] }}" target="_blank" rel="noopener"
                     data-testid="launcher-tile-{{ $tile['key'] }}"
                     class="flex flex-col items-center gap-1 p-2 rounded-lg text-center hover:bg-base-200 transition-colors">
-                    <i class="{{ $tile['icon'] !== '' ? $tile['icon'] : 'fa-solid fa-puzzle-piece' }} text-2xl text-primary"></i>
+                    <i
+                        class="{{ $tile['icon'] !== '' ? $tile['icon'] : 'fa-solid fa-puzzle-piece' }} text-2xl text-primary"></i>
                     <span class="text-xs w-full truncate">{{ $tile['name'] }}</span>
                 </a>
             @endforeach

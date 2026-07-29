@@ -66,6 +66,45 @@ class OidcWitnessCommandsTest extends TestCase
     // enable
     // =====================================================================
 
+    /**
+     * Le dossier de destination peut ne pas exister (chemin surchargé par
+     * `OIDC_WITNESS_CREDENTIALS_PATH`, `storage/app/` fraîchement recréé). Le
+     * cas est distinct du nominal : c'est la branche où la commande CRÉE un
+     * répertoire, donc celle où elle lui impose une identité et des droits.
+     *
+     * Un dossier 0700 appartenant au mauvais utilisateur rendrait le fichier
+     * inatteignable même correctement chowné — la traversée échouerait avant
+     * la lecture, et le témoin répondrait le même 503 opaque.
+     */
+    #[Test]
+    public function enable_creates_the_destination_directory_when_it_is_missing(): void
+    {
+        $dir = sys_get_temp_dir() . '/oidc-witness-dir-' . getmypid() . '-' . bin2hex(random_bytes(6));
+        $path = $dir . '/nested/oidc-witness.json';
+
+        self::assertDirectoryDoesNotExist($dir);
+
+        config(['oidc.witness.credentials_path' => $path]);
+
+        $this->seedRegistry();
+
+        try {
+            $this->artisan('oidc:witness:enable')->assertExitCode(0);
+
+            self::assertDirectoryExists(dirname($path));
+            self::assertFileExists($path);
+            self::assertSame('0600', substr(sprintf('%o', fileperms($path)), -4));
+
+            // Le fichier est RELISIBLE par le processus courant : la création
+            // du dossier n'a pas produit une arborescence intraversable.
+            self::assertNotNull(WitnessCredentials::load());
+        } finally {
+            @unlink($path);
+            @rmdir(dirname($path));
+            @rmdir($dir);
+        }
+    }
+
     #[Test]
     public function enable_registers_a_client_and_writes_a_0600_credentials_file(): void
     {

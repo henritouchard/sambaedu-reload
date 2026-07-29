@@ -7,9 +7,10 @@
         </svg>
     </label>
 
+    <livewire:organisms.app-launcher />
     <livewire:organisms.search-modal />
     <div class="gap-2  flex items-center justify-beetween w-fit">
-        <livewire:organisms.app-launcher />
+        
 
         <x-atoms.theme-toggle size="md" position="relative" />
 

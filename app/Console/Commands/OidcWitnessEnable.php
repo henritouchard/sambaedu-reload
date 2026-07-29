@@ -138,7 +138,7 @@ class OidcWitnessEnable extends Command
         $this->line('client_id    : ' . $result['client_id']);
         $this->line('redirect_uri : ' . self::REDIRECT_URI);
         $this->line('issuer       : ' . $credentials->issuer);
-        $this->line('credentials  : ' . WitnessCredentials::path() . ' (0600)');
+        $this->line('credentials  : ' . WitnessCredentials::path() . ' (0600, ' . $this->ownerOf(WitnessCredentials::path()) . ')');
         $this->line('');
         $this->warn('Le client_secret n\'est PAS affiché : il n\'existe que dans ce fichier (NFR3).');
         $this->line('');
@@ -149,6 +149,59 @@ class OidcWitnessEnable extends Command
         $this->info('Désactivation : php artisan oidc:witness:disable');
         $this->line('');
 
+        $this->warnIfNotWebOwner(WitnessCredentials::path());
+
         return 0;
+    }
+
+    /**
+     * Nom du propriétaire d'un fichier, `?` si indéterminable (posix absent,
+     * uid sans entrée passwd). Affichage seulement — jamais une décision.
+     */
+    private function ownerOf(string $path): string
+    {
+        if (! function_exists('posix_getpwuid')) {
+            return '?';
+        }
+
+        $uid = @fileowner($path);
+
+        if ($uid === false) {
+            return '?';
+        }
+
+        $info = @posix_getpwuid($uid);
+
+        return is_array($info) && isset($info['name']) ? (string) $info['name'] : (string) $uid;
+    }
+
+    /**
+     * Dernier filet : {@see WitnessCredentials::write()} aligne déjà la
+     * propriété sur `oidc.web_owner`, mais un `chown` peut échouer (systèmes de
+     * fichiers exotiques, conteneur sans CAP_CHOWN). Le seul scénario où cela
+     * compte est ASYMÉTRIQUE et silencieux : le fichier reste illisible par
+     * PHP-FPM, la commande a annoncé un succès, et `/sso-demo` répond 503
+     * `witness.credentials_unreadable` sans que rien ne relie les deux.
+     *
+     * On le dit ici, à l'endroit où l'exploitant regarde, en plus du journal.
+     */
+    private function warnIfNotWebOwner(string $path): void
+    {
+        $webOwner = (string) config('oidc.web_owner', '');
+
+        if ($webOwner === '' || ! function_exists('posix_getpwnam')) {
+            return;
+        }
+
+        $expected = @posix_getpwnam($webOwner);
+        $actual = @fileowner($path);
+
+        if ($expected === false || $actual === false || $actual === $expected['uid']) {
+            return;
+        }
+
+        $this->error('⚠️  ' . $path . ' n\'appartient PAS à ' . $webOwner . ' (propriétaire : ' . $this->ownerOf($path) . ').');
+        $this->line('  PHP-FPM ne pourra pas le lire (0600) et /sso-demo répondra 503 witness.credentials_unreadable.');
+        $this->line('  Corriger : chown ' . $webOwner . ' ' . $path);
     }
 }

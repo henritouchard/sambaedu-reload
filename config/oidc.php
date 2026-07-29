@@ -126,6 +126,11 @@ return [
     | pool `www-admin` (le défaut Debian `www-data` reste valide). Vide = no-op.
     | Iso `auth_v1.pki.web_owner`.
     |
+    | Couvre AUSSI le fichier de credentials de l'app-témoin (`witness` plus
+    | bas) : même runtime web, même conséquence d'un 0600 mal attribué (503
+    | `witness.credentials_unreadable` après un `enable` lancé en root). Une
+    | instance n'a qu'UN utilisateur runtime — une clé pour les deux.
+    |
     */
 
     'web_owner' => env('OIDC_KEY_WEB_OWNER', 'www-admin'),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\OidcWitness\Support;
 
+use Illuminate\Support\Facades\Log;
 use JsonException;
 use RuntimeException;
 
@@ -23,6 +24,14 @@ use RuntimeException;
  * **NFR3** : le fichier est écrit en 0600 sous `umask(0077)` (aucune fenêtre
  * pendant laquelle le secret serait lisible par un autre processus local), et
  * le secret n'est ni affiché, ni journalisé, ni sérialisé ailleurs.
+ *
+ * ⚠️ **0600 impose de fixer le PROPRIÉTAIRE** : `oidc:witness:enable` est une
+ * commande d'exploitation, donc lancée en root neuf fois sur dix. Un fichier
+ * 0600 `root:root` est ILLISIBLE par PHP-FPM (`www-admin`) — `load()` renvoie
+ * `null` et le témoin part en 503 `witness.credentials_unreadable`, alors que
+ * la commande vient d'annoncer un succès. C'est un incident CONSTATÉ, pas une
+ * hypothèse. La propriété est donc alignée à l'écriture, patron littéral de
+ * `OidcKeyManager::applyWebOwnership()` / `CaInitializer::applyWebOwnership()`.
  */
 final class WitnessCredentials
 {
@@ -97,18 +106,31 @@ final class WitnessCredentials
     }
 
     /**
-     * Écrit le fichier en 0600. Le dossier est créé si nécessaire.
+     * Écrit le fichier en 0600, propriété alignée sur le runtime web. Le
+     * dossier est créé si nécessaire.
      *
-     * ⚠️ Ne retourne rien et n'écrit RIEN au journal : le secret ne doit pas
-     * transiter par un canal de plus que le fichier lui-même.
+     * ⚠️ Le SECRET ne transite par aucun canal de plus que le fichier
+     * lui-même. Seuls les échecs d'alignement de propriété sont journalisés
+     * (chemin + owner attendu, jamais le contenu) : un chown silencieux qui
+     * échoue redonnerait exactement le 503 opaque que ce code corrige.
      */
     public function write(): void
     {
         $path = self::path();
         $dir = dirname($path);
 
-        if (! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir)) {
-            throw new RuntimeException('Création du dossier de credentials du témoin impossible : ' . $dir);
+        // Le dossier créé ici hérite lui aussi de l'identité de l'appelant :
+        // un `storage/app/` 0700 root:root rendrait le fichier inatteignable
+        // même correctement chowné (traversée impossible). On l'aligne donc
+        // dès qu'on est celui qui l'a créé.
+        $createdDir = false;
+
+        if (! is_dir($dir)) {
+            $createdDir = @mkdir($dir, 0700, true);
+
+            if (! $createdDir && ! is_dir($dir)) {
+                throw new RuntimeException('Création du dossier de credentials du témoin impossible : ' . $dir);
+            }
         }
 
         $payload = json_encode([
@@ -132,6 +154,61 @@ final class WitnessCredentials
             @chmod($path, 0600);
         } finally {
             umask($previousUmask);
+        }
+
+        if ($createdDir) {
+            self::applyWebOwnership($dir);
+        }
+
+        self::applyWebOwnership($path);
+    }
+
+    /**
+     * Aligne la propriété sur l'utilisateur runtime du serveur web
+     * (`oidc.web_owner` — même notion, même clé que les clés du fournisseur :
+     * il n'y a qu'UN runtime web sur l'instance).
+     *
+     * No-op silencieux quand la question ne se pose pas : owner non configuré,
+     * environnement de test, ou posix indisponible (dev macOS/Windows). No-op
+     * BRUYANT quand elle se pose et qu'on échoue — un `chown` raté en root est
+     * précisément le cas qui casse le témoin sans rien laisser voir.
+     *
+     * Lancée en `www-admin`, la commande passe ici avec un fichier DÉJÀ au bon
+     * propriétaire : `chown` vers soi-même réussit, aucun bruit.
+     */
+    private static function applyWebOwnership(string $path): void
+    {
+        $webOwner = (string) config('oidc.web_owner', '');
+
+        // ⚠️ `config('app.env')` et NON le helper d'environnement du
+        // conteneur employé par le patron copié : la quarantaine FR24 interdit
+        // toute résolution par le conteneur depuis `app/OidcWitness/` (règle
+        // « résolution par le conteneur », `ExtensionIsolationTest`) — et elle
+        // scanne le TEXTE, commentaires compris, donc le nom même de ce helper
+        // ne peut pas figurer ici. Même sémantique, sans atteindre le
+        // conteneur de SE5.
+        if ($webOwner === '' || (string) config('app.env') === 'testing' || ! function_exists('posix_getpwnam')) {
+            return;
+        }
+
+        $info = @posix_getpwnam($webOwner);
+
+        if ($info === false) {
+            Log::channel('oidc')->warning('[WitnessCredentials] web_owner inconnu — chown ignoré', [
+                'action_type' => 'oidc.witness.chown_skipped',
+                'web_owner' => $webOwner,
+                'path' => $path,
+            ]);
+
+            return;
+        }
+
+        if (! @chown($path, $info['uid']) || ! @chgrp($path, $info['gid'])) {
+            Log::channel('oidc')->warning('[WitnessCredentials] chown vers web_owner échoué', [
+                'action_type' => 'oidc.witness.chown_failed',
+                'web_owner' => $webOwner,
+                'path' => $path,
+            ]);
         }
     }
 
