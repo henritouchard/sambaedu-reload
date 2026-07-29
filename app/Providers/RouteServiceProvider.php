@@ -36,6 +36,26 @@ class RouteServiceProvider extends ServiceProvider
         // sur un `delete` n'est jamais rejoué (aucun renouvellement derrière).
         RateLimiter::for('ddns', fn (Request $request) => Limit::perMinute(2000)->by('ddns'));
 
+        // Story 56.4 (review #3) — API extensions. MÊME motif que `ddns` :
+        // toutes les extensions `app` tournent sur CET hôte, derrière le
+        // reverse-proxy Apache — leurs appels arrivent donc tous de la même IP.
+        // Le limiteur anonyme aurait fait partager un unique seau de 60/min à
+        // TOUTES les extensions du serveur : une extension bavarde, ou en
+        // boucle d'erreur, aurait mis les autres en 429. Le seau est donc par
+        // CLIENT OIDC — l'identité posée par `ext.token` juste avant (ce
+        // limiteur ne s'applique qu'APRÈS ce middleware).
+        //
+        // Repli sur l'IP : impossible en pratique (sans client résolu, la
+        // requête a déjà été refusée en 401), gardé par prudence — un limiteur
+        // dont la clé peut être vide plafonnerait tout le monde ensemble.
+        RateLimiter::for('ext-api', function (Request $request) {
+            $clientId = $request->attributes->get('ext.client')?->client_id;
+
+            return Limit::perMinute(60)->by(is_string($clientId) && $clientId !== ''
+                ? 'ext-api:'.$clientId
+                : 'ext-api:ip:'.$request->ip());
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

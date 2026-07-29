@@ -35,6 +35,17 @@ class OidcClientFactory extends Factory
             'client_id' => bin2hex(random_bytes(16)),
             'client_secret_hash' => hash('sha256', self::DEFAULT_SECRET),
             'redirect_uris' => ['https://ext.example.test/callback'],
+            // Story 56.4 — un client de test est PLEINEMENT CONSENTI par
+            // défaut : c'est ce que représentent les clients des suites 55.x
+            // (une extension qu'on vient d'installer avec ses deux scopes).
+            //
+            // ⚠️ Ce défaut n'est pas une commodité : sans lui, tout flux
+            // demandant `openid profile groups` serait DOWNSCOPÉ à `openid` et
+            // la moitié des tests OIDC rougirait — non parce que le code est
+            // faux, mais parce que la fixture décrirait un client à qui l'admin
+            // n'a rien accordé. Les cas de restriction utilisent l'état
+            // EXPLICITE {@see self::grantedScopes()}.
+            'granted_scopes' => ['profile', 'groups'],
             'enabled' => true,
         ];
     }
@@ -56,6 +67,17 @@ class OidcClientFactory extends Factory
                 'extension_key' => $extension->key,
             ];
         });
+    }
+
+    /**
+     * Story 56.4 — Scopes ACCORDÉS explicites, `[]` compris (fail-closed : le
+     * client n'obtiendra alors que `sub`).
+     *
+     * @param  list<string>  $scopes
+     */
+    public function grantedScopes(array $scopes): static
+    {
+        return $this->state(fn (): array => ['granted_scopes' => array_values($scopes)]);
     }
 
     /** Surcharge des URI de redirection déclarées (liste stricte). */

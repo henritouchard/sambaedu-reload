@@ -169,6 +169,7 @@ class ExtensionInstallServiceTest extends TestCase
         ?string $body = null,
         array $installOverrides = [],
         string $base = self::BASE,
+        array $scopes = [],
     ): Extension {
         $source ??= $this->source();
         $body ??= self::PACKAGE_BODY;
@@ -197,7 +198,9 @@ class ExtensionInstallServiceTest extends TestCase
                     'icon' => 'fa-solid fa-hand',
                     'publisher' => 'QA',
                     'description' => 'Extension de test.',
-                    'scopes' => [],
+                    // Story 56.4 — les scopes DEMANDÉS par le manifest sont
+                    // ce que l'installation accordera au client OIDC.
+                    'scopes' => $scopes,
                     'dependencies' => [],
                     'visibility' => ['roles' => ['admin']],
                     'install' => $install,
@@ -1096,5 +1099,76 @@ class ExtensionInstallServiceTest extends TestCase
         $result = $this->service()->install('hello');
 
         self::assertSame(8600, $result['port']);
+    }
+
+    // =====================================================================
+    // Story 56.4 — l'OCTROI des scopes à l'installation
+    // =====================================================================
+
+    #[Test]
+    public function the_installation_grants_exactly_the_scopes_of_the_manifest(): void
+    {
+        $this->installable(scopes: ['groups', 'profile']);
+
+        $this->service()->install('hello');
+
+        $client = OidcClient::where('extension_key', 'hello')->firstOrFail();
+
+        self::assertSame(['groups', 'profile'], $client->grantedScopes());
+    }
+
+    /**
+     * Contrôle NÉGATIF adossé : un manifest sans scope n'accorde RIEN — le
+     * client existe, mais son porteur n'obtiendra que son identifiant.
+     */
+    #[Test]
+    public function a_manifest_without_scopes_grants_nothing(): void
+    {
+        $this->installable();
+
+        $this->service()->install('hello');
+
+        self::assertSame([], OidcClient::where('extension_key', 'hello')->firstOrFail()->grantedScopes());
+    }
+
+    /**
+     * Fail-closed AVANT toute action : un scope que SE5 ne sait pas accorder
+     * fait échouer l'installation — jamais un octroi tronqué en silence, qui
+     * donnerait une extension à moitié fonctionnelle sans que rien ne le dise.
+     */
+    #[Test]
+    public function a_manifest_asking_for_an_unsupported_scope_is_refused_before_anything_happens(): void
+    {
+        $this->installable(scopes: ['profile', 'directory']);
+
+        $result = $this->service()->install('hello');
+
+        self::assertFalse($result['changed']);
+        self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $result['error']);
+
+        // ZÉRO appel privilégié, ZÉRO client : le refus est sans trace système.
+        self::assertSame([], $this->helper->calls);
+        self::assertSame(0, OidcClient::count());
+        self::assertSame(ExtensionStatus::Available, Extension::where('key', 'hello')->firstOrFail()->status);
+
+        $log = ExtensionAuditLog::where('action', ExtensionAuditLog::ACTION_INSTALL_FAILED)->firstOrFail();
+        self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $log->details);
+    }
+
+    /**
+     * `openid` est le plancher du protocole : il ne s'accorde pas. Un manifest
+     * qui le demanderait explicitement est donc refusé comme n'importe quel
+     * scope non accordable — plutôt que d'être ignoré, ce qui laisserait croire
+     * qu'il a été « accordé ».
+     */
+    #[Test]
+    public function a_manifest_asking_for_openid_is_refused_too(): void
+    {
+        $this->installable(scopes: ['openid', 'profile']);
+
+        $result = $this->service()->install('hello');
+
+        self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $result['error']);
+        self::assertSame(0, OidcClient::count());
     }
 }

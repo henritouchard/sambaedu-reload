@@ -92,6 +92,7 @@ class ExtensionCatalogService
 {
     public function __construct(
         private readonly ExtensionManifestValidator $validator,
+        private readonly ExtensionScopeService $scopes,
     ) {
     }
 
@@ -596,6 +597,10 @@ class ExtensionCatalogService
         return $this->toListRow($extension) + [
             'entry_url' => $extension->entryUrl(),
             'scopes' => $extension->requestedScopes(),
+            // Story 56.4 — les scopes RÉELLEMENT ACCORDÉS (`null` = aucun
+            // client OIDC actif : la fiche n'affiche alors pas de volet).
+            // Résolu ICI, par le service : une vue ne requête pas la base.
+            'granted_scopes' => $this->scopes->grantedScopesFor($extension),
             'dependencies' => $extension->dependencies(),
             'visibility_roles' => $extension->visibilityRoles(),
             'manifest_version' => (int) ($extension->manifest['manifest_version'] ?? 0),

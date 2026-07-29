@@ -7,6 +7,7 @@ use App\Models\ExtensionInstallRun;
 use App\Services\Extensions\ExtensionCatalogService;
 use App\Services\Extensions\ExtensionLifecycleService;
 use App\Services\Extensions\ExtensionOperationRunner;
+use App\Services\Extensions\ExtensionScopeService;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -23,9 +24,12 @@ use Livewire\Component;
  * Les listes vides sont rendues PROPREMENT (« Aucun scope demandé », « Aucune
  * dépendance ») : jamais une section cassée.
  *
- * ⚠️ Les `scopes` sont une INFORMATION admin (FR3) : ils ne sont ni accordés ni
- * consommés en 54.1 (Epics 55/56). Les rôles de visibilité sont STOCKÉS ici,
- * RÉSOLUS par le lanceur en Story 54.3.
+ * ⚠️ Les `scopes` du manifest sont une INFORMATION admin (FR3) : ce que
+ * l'extension DEMANDE. **Story 56.4** ajoute le second volet — ce qui lui est
+ * réellement ACCORDÉ (`granted_scopes`, l'état du client OIDC actif), avec un
+ * bouton de révocation par scope. Les deux ne doivent jamais être confondus :
+ * l'écart entre les deux listes est précisément l'information utile.
+ * Les rôles de visibilité sont STOCKÉS ici, RÉSOLUS par le lanceur en 54.3.
  *
  * Story 54.2 ajoute « Intégrer » / « Désinstaller » dans `<x-slot:actions>`
  * pour le type `link` uniquement (patron `app-profiles/index.blade.php:319`),
@@ -98,6 +102,18 @@ new #[Title('Extension')] class extends Component {
     public int $trackedRunId = 0;
 
     public string $trackedRunStatus = '';
+
+    // ── Story 56.4 — révocation d'un scope accordé ──────────────────────
+
+    /** Modale de confirmation de la révocation d'un scope. */
+    public bool $isRevokeScopeOpen = false;
+
+    /**
+     * Scope visé par la modale — mémorisé CÔTÉ SERVEUR entre l'ouverture et la
+     * confirmation (patron `appOperation`). Revalidé par le service de toute
+     * façon : l'entrée client n'est jamais crue sur parole.
+     */
+    public string $scopeToRevoke = '';
 
     public function mount(string $id): void
     {
@@ -294,6 +310,93 @@ new #[Title('Extension')] class extends Component {
         $this->isAppOperationOpen = false;
         $this->appOperation = '';
         $this->appTarget = [];
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 56.4 — révoquer un scope accordé (FR23)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Ouvre la confirmation. Le scope est mémorisé côté serveur, et vérifié
+     * contre les scopes RÉELLEMENT ACCORDÉS tels que le service vient de les
+     * lire — pas contre le snapshot de la page, qui peut être périmé.
+     */
+    public function askRevokeScope(string $scope): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $target = app(ExtensionCatalogService::class)->find($this->id);
+
+        if ($target === null) {
+            $this->redirect(route('admin.extensions'), navigate: true);
+
+            return;
+        }
+
+        $this->extension = $target;
+
+        if (! in_array($scope, (array) ($this->extension['granted_scopes'] ?? []), true)) {
+            // Écran périmé (autre admin, autre onglet) : rien à confirmer.
+            $this->toastInfo('Ce scope n\'est plus accordé à cette extension.');
+
+            return;
+        }
+
+        $this->scopeToRevoke = $scope;
+        $this->isRevokeScopeOpen = true;
+    }
+
+    public function confirmRevokeScope(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $scope = $this->scopeToRevoke;
+
+        $this->closeRevokeScope();
+
+        if ($scope === '') {
+            return;
+        }
+
+        try {
+            $result = app(ExtensionScopeService::class)->revokeScope($this->id, $scope, auth()->user());
+        } catch (ExtensionLifecycleException $e) {
+            $this->toastError($e->getMessage());
+            $this->refreshAfterAction();
+
+            return;
+        }
+
+        if (! $result['changed']) {
+            // No-op ou refus : dans les deux cas l'écran doit repartir de
+            // l'état réel — un toast qui contredirait la page serait pire que
+            // pas de toast (patron review 54.2 #2).
+            $this->toastInfo(match ($result['status']) {
+                ExtensionScopeService::STATUS_UNSUPPORTED => 'Ce scope n\'est pas révocable.',
+                ExtensionScopeService::STATUS_NO_CLIENT => 'Cette extension n\'a plus de client OIDC actif : il n\'y a rien à révoquer.',
+                default => 'Ce scope n\'était déjà plus accordé.',
+            });
+            $this->refreshAfterAction();
+
+            return;
+        }
+
+        $this->loadExtension();
+        $this->toastSuccess('Autorisation « '.$scope.' » révoquée.');
+    }
+
+    /**
+     * ⚠️ Garde présente ICI aussi, contrairement aux autres `close*()` de cette
+     * page : les leurs ne font que fermer une modale, celle-ci efface EN PLUS
+     * la cible mémorisée côté serveur. Aucun état d'une révocation ne doit être
+     * pilotable par quelqu'un qui n'a pas le droit de révoquer.
+     */
+    public function closeRevokeScope(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        $this->isRevokeScopeOpen = false;
+        $this->scopeToRevoke = '';
     }
 
     /**
@@ -649,27 +752,83 @@ new #[Title('Extension')] class extends Component {
         {{-- ===================== Ce que l'extension demande ===================== --}}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            {{-- Scopes demandés (information admin — jamais consommés en 54.1). --}}
+            {{--
+                Autorisations — DEUX volets distincts (Story 56.4, FR23) :
+
+                  • DEMANDÉS  : ce que le manifest déclare. Information, jamais
+                    un droit — une extension peut demander ce qu'elle veut.
+                  • ACCORDÉS  : l'état RÉEL du client OIDC actif. C'est ce qui
+                    est servi, et c'est ce qui se révoque.
+
+                Le volet « accordés » n'est rendu que si l'extension a un client
+                OIDC actif (`granted_scopes !== null`) : une `link` ou une `app`
+                non installée n'a rien accordé — et « rien » n'est pas « une
+                liste vide ».
+            --}}
             <div class="card bg-base-100 border border-base-300">
                 <div class="card-body">
                     <h3 class="card-title text-base">
-                        <i class="fa-solid fa-shield-halved text-primary"></i> Autorisations demandées
-                        <span class="badge badge-neutral badge-sm">{{ count($extension['scopes']) }}</span>
+                        <i class="fa-solid fa-shield-halved text-primary"></i> Autorisations
                     </h3>
-                    <p class="text-xs text-base-content/50">
-                        Ce que l'extension déclare vouloir consulter. Rien n'est accordé aujourd'hui :
-                        c'est une information de transparence.
-                    </p>
-                    @if (count($extension['scopes']) === 0)
-                        <p class="text-sm text-base-content/50 py-3" data-testid="no-scopes">Aucun scope demandé.</p>
-                    @else
-                        <ul class="flex flex-wrap gap-2 pt-2" data-testid="scopes-list">
-                            @foreach ($extension['scopes'] as $scope)
-                                <li wire:key="scope-{{ $loop->index }}">
-                                    <span class="badge badge-outline font-mono text-xs">{{ $scope }}</span>
-                                </li>
-                            @endforeach
-                        </ul>
+
+                    {{-- ── Demandés (manifest) ───────────────────────────── --}}
+                    <div class="pt-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium">Demandées par le manifest</span>
+                            <span class="badge badge-neutral badge-sm">{{ count($extension['scopes']) }}</span>
+                        </div>
+                        <p class="text-xs text-base-content/50 mt-1">
+                            Ce que l'extension déclare vouloir consulter — une information de transparence,
+                            pas un droit.
+                        </p>
+                        @if (count($extension['scopes']) === 0)
+                            <p class="text-sm text-base-content/50 py-3" data-testid="no-scopes">Aucun scope demandé.</p>
+                        @else
+                            <ul class="flex flex-wrap gap-2 pt-2" data-testid="scopes-list">
+                                @foreach ($extension['scopes'] as $scope)
+                                    <li wire:key="scope-{{ $loop->index }}">
+                                        <span class="badge badge-outline font-mono text-xs">{{ $scope }}</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
+                    </div>
+
+                    {{-- ── Accordés (client OIDC actif) ──────────────────── --}}
+                    @if (($extension['granted_scopes'] ?? null) !== null)
+                        <div class="divider my-2"></div>
+                        <div data-testid="granted-scopes-block">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium">Réellement accordées</span>
+                                <span class="badge badge-success badge-sm">{{ count($extension['granted_scopes']) }}</span>
+                            </div>
+                            <p class="text-xs text-base-content/50 mt-1">
+                                Ce que l'extension reçoit aujourd'hui. Révoquer une autorisation prend effet
+                                immédiatement, y compris pour les sessions en cours ; le geste est
+                                irréversible (ré-accorder = désinstaller puis réinstaller).
+                            </p>
+                            @if (count($extension['granted_scopes']) === 0)
+                                <p class="text-sm text-base-content/50 py-3" data-testid="no-granted-scopes">
+                                    Aucun scope accordé : l'extension ne reçoit que l'identifiant de l'utilisateur connecté.
+                                </p>
+                            @else
+                                <ul class="flex flex-wrap gap-2 pt-2" data-testid="granted-scopes-list">
+                                    @foreach ($extension['granted_scopes'] as $granted)
+                                        <li wire:key="granted-scope-{{ $granted }}">
+                                            <span class="badge badge-success badge-outline gap-2 font-mono text-xs">
+                                                {{ $granted }}
+                                                <button type="button" class="text-error hover:opacity-70"
+                                                    title="Révoquer « {{ $granted }} »"
+                                                    wire:click="askRevokeScope('{{ $granted }}')"
+                                                    data-testid="revoke-scope-{{ $granted }}">
+                                                    <i class="fa-solid fa-xmark"></i>
+                                                </button>
+                                            </span>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            @endif
+                        </div>
                     @endif
                 </div>
             </div>
@@ -770,6 +929,36 @@ new #[Title('Extension')] class extends Component {
             <button type="button" class="btn btn-warning" wire:click="confirmIntegrate"
                 data-testid="confirm-third-party-integrate">
                 <i class="fa-solid fa-plug"></i> Intégrer quand même
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- ========== Modale : révoquer une autorisation (56.4, FR23) ========== --}}
+    <x-molecules.modal wire:model="isRevokeScopeOpen" size="max-w-lg" height="h-auto"
+        close-method="closeRevokeScope" title="Révoquer une autorisation"
+        icon="fa-shield-halved text-error">
+
+        <x-molecules.modal.section>
+            <p class="text-sm" data-testid="revoke-scope-text">
+                Révoquer <span class="badge badge-outline font-mono text-xs">{{ $scopeToRevoke }}</span>
+                pour <strong>{{ $extension['name'] }}</strong> ?
+            </p>
+            <p class="text-sm text-base-content/60 mt-2">
+                L'extension ne recevra plus ces données — <strong>y compris pour ses jetons en cours</strong> :
+                l'effet est immédiat, sans attendre la prochaine connexion.
+            </p>
+            <p class="text-sm text-base-content/60 mt-2">
+                Ses utilisateurs continuent de s'y connecter normalement : c'est une donnée qui est
+                retirée, pas l'accès. <strong>Le geste est irréversible</strong> — pour ré-accorder cette
+                autorisation, il faudra désinstaller puis réinstaller l'extension.
+            </p>
+        </x-molecules.modal.section>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeRevokeScope">Annuler</button>
+            <button type="button" class="btn btn-error" wire:click="confirmRevokeScope"
+                data-testid="confirm-revoke-scope">
+                <i class="fa-solid fa-ban"></i> Révoquer
             </button>
         </x-slot:footer>
     </x-molecules.modal>

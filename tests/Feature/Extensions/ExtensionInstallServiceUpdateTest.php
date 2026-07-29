@@ -971,4 +971,39 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         self::assertSame('', $extension->installed_sha256);
         self::assertDirectoryDoesNotExist($this->staging.'/hello');
     }
+
+    /**
+     * Story 56.4 — les scopes ACCORDÉS sont un invariant de la clé, comme le
+     * client lui-même : une mise à jour ne les touche pas.
+     *
+     * Le cas qui compte : un manifest de nouvelle version qui demande PLUS que
+     * ce qui a été accordé. Il ne l'obtient pas — l'écart reste visible sur la
+     * fiche, et re-consentir passe par une réinstallation (même doctrine que
+     * `redirect_paths_changed`). Sinon, publier une version suffirait à
+     * reprendre un scope que l'admin vient de révoquer.
+     */
+    #[Test]
+    public function the_update_never_touches_the_granted_scopes_even_if_the_new_manifest_asks_for_more(): void
+    {
+        $this->installed();
+
+        // L'admin a révoqué `groups` depuis l'installation.
+        OidcClient::query()->where('extension_key', 'hello')
+            ->update(['granted_scopes' => json_encode(['profile'])]);
+
+        $extension = $this->publish();
+        $manifest = $extension->manifest;
+        $manifest['scopes'] = ['profile', 'groups'];
+        $extension->fill(['manifest' => $manifest])->save();
+
+        $result = $this->service()->update('hello');
+
+        self::assertSame('', $result['error']);
+        self::assertTrue($result['changed']);
+        self::assertSame(
+            ['profile'],
+            OidcClient::where('extension_key', 'hello')->firstOrFail()->grantedScopes(),
+            'Une mise à jour ne re-consent RIEN.',
+        );
+    }
 }

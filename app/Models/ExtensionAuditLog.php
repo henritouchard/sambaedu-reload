@@ -115,6 +115,16 @@ class ExtensionAuditLog extends Model
 
     public const ACTION_UPDATE_FAILED = 'update_failed';
 
+    /**
+     * Story 56.4 — RÉVOCATION d'un scope accordé à une extension (FR23/FR36).
+     *
+     * `details` porte le scope révoqué, et rien d'autre : ni URL, ni
+     * `client_id`, ni secret. C'est un acte de confidentialité — « qui a retiré
+     * quoi, à quelle extension, quand » — et il n'y a pas d'action inverse :
+     * ré-accorder, c'est réinstaller l'extension.
+     */
+    public const ACTION_SCOPE_REVOKE = 'scope_revoke';
+
     /** Acteur conventionnel d'une synchro planifiée (aucun utilisateur connecté). */
     public const ACTOR_SYSTEM = 'system';
 

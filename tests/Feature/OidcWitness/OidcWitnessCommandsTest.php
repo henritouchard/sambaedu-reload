@@ -313,4 +313,54 @@ class OidcWitnessCommandsTest extends TestCase
         self::assertTrue(WitnessCredentials::isProvisioned(), 'le fichier existe');
         self::assertNull(WitnessCredentials::load(), 'mais il est inexploitable');
     }
+
+    // =====================================================================
+    // Story 56.4 — l'octroi des scopes du témoin
+    // =====================================================================
+
+    /**
+     * Le témoin affiche « Bonjour {name}, rôle {role}, groupes {groups} » : son
+     * client doit donc RECEVOIR `profile` et `groups`. Sans cet octroi, il se
+     * connecterait toujours mais n'afficherait plus que son identifiant — un
+     * downscope silencieux qu'on prendrait pour une régression du contrat de
+     * claims.
+     *
+     * Les scopes sont DÉRIVÉS de `oidc.witness.scope` (moins `openid`, plancher
+     * du protocole) : une règle, un seul énoncé.
+     */
+    #[Test]
+    public function enable_grants_the_scopes_the_witness_actually_asks_for(): void
+    {
+        $this->seedRegistry();
+
+        $this->artisan('oidc:witness:enable')->assertExitCode(0);
+
+        self::assertSame(['groups', 'profile'], OidcClient::query()->firstOrFail()->grantedScopes());
+        self::assertSame(['profile', 'groups'], OidcWitnessEnable::grantedScopes());
+    }
+
+    #[Test]
+    public function rotate_re_grants_the_same_scopes(): void
+    {
+        $this->seedRegistry();
+        $this->artisan('oidc:witness:enable')->assertExitCode(0);
+
+        $this->artisan('oidc:witness:enable', ['--rotate' => true])->assertExitCode(0);
+
+        $client = OidcClient::query()->where('enabled', true)->firstOrFail();
+        self::assertSame(['groups', 'profile'], $client->grantedScopes());
+    }
+
+    /**
+     * `openid` seul dans la configuration : le témoin n'obtient AUCUN octroi —
+     * la dérivation ne fabrique jamais un consentement que la configuration ne
+     * demande pas.
+     */
+    #[Test]
+    public function a_witness_configured_with_openid_only_is_granted_nothing(): void
+    {
+        config(['oidc.witness.scope' => 'openid']);
+
+        self::assertSame([], OidcWitnessEnable::grantedScopes());
+    }
 }

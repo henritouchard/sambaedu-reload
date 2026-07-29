@@ -13,9 +13,12 @@
         quatrième fois garantissait qu'une seule serait corrigée le jour où il
         change (leçon review 56.1 #3 : une règle, un énoncé).
 
-    ⚠️ CETTE MODALE N'ACCORDE RIEN. Les scopes y sont AFFICHÉS parce que
-    l'admin doit savoir ce que l'extension déclare vouloir ; le consentement
-    révocable et les jetons de service sont la Story 56.4.
+    ⚠️ CE QUE CETTE MODALE ANNONCE, L'INSTALLATION L'ACCORDE (Story 56.4).
+    Les scopes affichés ici sont EXACTEMENT ceux que le client OIDC recevra à
+    l'installation — ni plus, ni moins : confirmer, c'est consentir. Ils
+    restent ensuite révocables un par un depuis la fiche de l'extension, et un
+    scope hors du vocabulaire supporté fait échouer l'installation plutôt que
+    d'être accordé en partie.
 
     Contrat attendu du composant hôte (identique sur les deux pages) :
       - `bool   $isAppOperationOpen`
@@ -120,7 +123,7 @@
         @endunless
     </x-molecules.modal.section>
 
-    {{-- ── Scopes DEMANDÉS (affichés, jamais accordés — 56.4) ───────────── --}}
+    {{-- ── Scopes demandés = ce que l'installation ACCORDERA (56.4) ─────── --}}
     @if ($operation !== 'remove')
         <x-molecules.modal.section title="Autorisations demandées">
             @if (count($scopes) === 0)
@@ -133,7 +136,13 @@
                 </ul>
             @endif
             <p class="text-xs text-base-content/50 mt-2">
-                Ce que l'extension déclare vouloir consulter. Rien n'est accordé par cette confirmation.
+                @if ($operation === 'install')
+                    Ce que l'extension déclare vouloir consulter, et exactement ce qui lui sera accordé
+                    en confirmant. Chaque autorisation reste révocable ensuite depuis sa fiche.
+                @else
+                    Ce que l'extension déclare vouloir consulter. Une mise à jour ne modifie AUCUNE
+                    autorisation accordée : elles sont fixées à l'installation.
+                @endif
             </p>
         </x-molecules.modal.section>
     @endif

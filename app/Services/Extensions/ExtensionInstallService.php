@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Extensions;
 
 use App\Auth\Oidc\Services\OidcClientRegistry;
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Enums\ExtensionStatus;
 use App\Enums\ExtensionType;
 use App\Exceptions\ExtensionInstallException;
@@ -232,6 +233,21 @@ class ExtensionInstallService
      * l'outil de nettoyage prévu pour cet état (ses étapes sont idempotentes).
      */
     public const ERROR_CLEANUP_INCOMPLETE = 'installation échouée et nettoyage incomplet — relancer « ext:remove » pour repartir d\'un état propre';
+
+    /**
+     * Story 56.4 — le manifest demande un scope que SE5 ne sait pas accorder.
+     *
+     * Refus FAIL-CLOSED, avant toute action : ni client OIDC, ni appel helper,
+     * ni composant système. Accorder « ce qu'on a compris » d'une demande qu'on
+     * ne comprend pas donnerait une extension à moitié fonctionnelle, sans que
+     * rien ne le dise — alors que l'écart, ici, se voit et se corrige (mettre à
+     * jour l'extension, ou SE5).
+     *
+     * ⚠️ La garde vit à l'OCTROI, jamais dans le validateur de manifest : le
+     * champ `scopes` reste à vocabulaire ouvert côté catalogue (54.1), sinon
+     * un manifest déjà publié cesserait d'être synchronisable (NFR11).
+     */
+    public const ERROR_UNSUPPORTED_SCOPES = 'scope demandé non supporté par SE5 — mettre à jour l\'extension ou le serveur';
 
     public function __construct(
         private readonly ExtensionHelperRunner $runner,
@@ -502,6 +518,25 @@ class ExtensionInstallService
             }
         }
 
+        // ── 2b. Story 56.4 — les scopes DEMANDÉS sont-ils accordables ? ────
+        //
+        // C'est ici, et pas ailleurs, que les scopes du manifest deviennent un
+        // consentement réel. La vérification arrive AVANT toute action — avant
+        // l'allocation de port, avant le téléchargement, avant le moindre appel
+        // helper : un refus doit être sans trace système.
+        //
+        // Fail-closed plutôt que troncature : une extension qui demande
+        // `calendar` et qu'on installerait en lui accordant `profile` seul
+        // échouerait à l'usage, pour une raison que rien n'aurait annoncée.
+        $requestedScopes = $extension->requestedScopes();
+        $accordable = array_keys(OidcClaimsResolver::CLAIMS_BY_SCOPE);
+
+        foreach ($requestedScopes as $requestedScope) {
+            if (! in_array($requestedScope, $accordable, true)) {
+                return $this->fail($extension, self::ERROR_UNSUPPORTED_SCOPES, $actor);
+            }
+        }
+
         $port = $this->allocatePort();
         if ($port === null) {
             return $this->fail($extension, 'plage de ports épuisée', $actor);
@@ -525,7 +560,16 @@ class ExtensionInstallService
         try {
             // ── 4. Client OIDC ─────────────────────────────────────────────
             $redirectUris = $this->redirectUrisFor((string) $extension->key, $install['redirect_paths']);
-            $registration = $this->registry->register((string) $extension->name, $redirectUris, (string) $extension->key);
+            // Story 56.4 — l'OCTROI : exactement les scopes du manifest, ni
+            // plus ni moins. Ils ont été vérifiés accordables à l'étape 2b ;
+            // le registre les revérifie (il ne fait jamais confiance à son
+            // appelant) et les persiste normalisés.
+            $registration = $this->registry->register(
+                (string) $extension->name,
+                $redirectUris,
+                (string) $extension->key,
+                $requestedScopes,
+            );
             $clientId = (string) $registration['client_id'];
             $undo[] = function () use ($clientId): void {
                 $this->registry->revoke($clientId);

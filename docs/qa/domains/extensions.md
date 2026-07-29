@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. **56.1 (sources tierces + catalogue signé Ed25519 : format de dépôt v1 contrat public, pin de clé TOFU, fail-closed NFR2, dégradation NFR7, provenance impossible à ignorer FR4/UX-DR4, audit des sources FR36, `ext:sources:sync`) — OUVRE l'Epic 56** — **Section 17**. _Suite de l'Epic 56 (installation `app`, UI de progression/màj, scopes consentis et API, santé + journal d'audit UI) à ajouter en sections suivantes quand livré._
+**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. **56.1 (sources tierces + catalogue signé Ed25519 : format de dépôt v1 contrat public, pin de clé TOFU, fail-closed NFR2, dégradation NFR7, provenance impossible à ignorer FR4/UX-DR4, audit des sources FR36, `ext:sources:sync`) — OUVRE l'Epic 56** — **Section 17** ; 56.2 (installation signée d'une `app` : moteur `ext:install`/`ext:remove`, seam privilégié unique, secret OIDC par stdin, compensations, NFR8) — **Section 18** ; 56.3 (installation, mise à jour et retrait depuis l'UI : tâche de fond, progression persistée, rollback vérifié avant d'agir, verrou global reflété par l'UI) — **Section 19** ; **56.4 (scopes ACCORDÉS `oidc_clients.granted_scopes` octroyés à l'installation, révocation individuelle à effet IMMÉDIAT sur les jetons vivants FR23, API extensions `/api/ext/v1/` au format maison FR21/FR22, refus 401/403 sans fuite, FR24 prouvé, contrat v1 GELÉ NFR11) — **Section 20**, avec une REMISE À NIVEAU obligatoire des clients OIDC existants (`granted_scopes` vide après migration ⇒ fail-closed)**. _Reste de l'Epic 56 (page santé + journal d'audit UI, 56.5) à ajouter en section suivante quand livré._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -2047,6 +2047,219 @@ SELECT count(*) FROM extension_install_runs WHERE extension_id = (SELECT id FROM
 Deux onglets sur `/admin/extensions`. Désinstaller `hello` dans l'onglet A. Dans l'onglet B (périmé), cliquer « Mettre à jour » puis confirmer.
 
 **Attendu** : toast d'information ou d'erreur métier, **page rechargée et remise en phase**, aucune 500, aucune ligne d'audit parasite. Même contrôle depuis la fiche : si l'extension a été prunée entre-temps, retour à la bibliothèque.
+
+---
+
+## Section 20 — Scopes accordés et API extensions (Story 56.4)
+
+> **Ce que cette section valide.** Les Sections 18/19 ont livré l'installation d'une extension `app` ; la Section 13 a livré le contrat de claims. La 56.4 relie les deux : ce que l'extension DEMANDE devient ce qu'elle REÇOIT, ce qu'elle reçoit devient **révocable**, et elle dispose enfin d'une **API** pour le consommer.
+>
+> Trois propriétés portent toute la valeur, et ce sont les seules à vérifier vraiment :
+>
+> 1. **la révocation est IMMÉDIATE sur les jetons déjà émis.** Pas de purge, pas de ré-authentification : le scope effectif est recalculé à chaque usage. C'est ce qu'il faut voir de ses yeux, avec un `curl` et le *même* Bearer avant et après ;
+> 2. **le refus ne renseigne pas.** Cinq causes de 401, un seul corps. Un 403 qui ne nomme aucun scope. Les codes fins ne vivent que dans `storage/logs/oidc-*.log` ;
+> 3. **rien de la base ni de l'annuaire ne sort** (FR24) : ni `ad_guid`, ni `dn`, ni `users.id`, ni email.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (downscope à l'émission, liste exacte des clés de chaque réponse, 401 indistincts × 5 causes, 403 hors scope, jeton en query ignoré, octroi fail-closed à l'installation, idempotence de la révocation, invariance des grants à l'update, gardes Livewire) n'a **pas** à être rejoué ici. Cette section couvre ce qu'une doublure ne peut pas prouver : **Apache devant l'API, un vrai navigateur pour révoquer, le throttle réel, et la remise à niveau des clients OIDC déjà présents sur la VM.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1-56.3** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui migre — la colonne `granted_scopes` est ajoutée à ce moment-là).
+
+### Pré-requis — ⚠️ REMISE À NIVEAU DES CLIENTS OIDC EXISTANTS
+
+La migration ajoute `oidc_clients.granted_scopes` avec le défaut `[]`, **volontairement fail-closed** : les clients créés par les runbooks des Sections 11 à 19 (app-témoin, clients de test déclarés à la main, extensions installées avant la migration) se retrouvent **sans aucun scope accordé**. Symptôme attendu si l'on saute cette étape : le SSO fonctionne toujours, mais l'app-témoin n'affiche plus ni nom, ni rôle, ni groupes — et `/oidc/userinfo` ne rend que `{"sub": "..."}`.
+
+Ce n'est **pas** une régression : c'est le fail-closed qui fait son travail. Un consentement que personne n'a donné ne s'hérite pas.
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh
+
+# 1. Constater l'état après migration (tous les clients à `[]`)
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT client_id, extension_key, enabled, granted_scopes FROM oidc_clients ORDER BY id;"
+
+# 2. Ré-octroyer au témoin (rejoue l'enregistrement ET le fichier de credentials)
+php artisan oidc:witness:disable
+php artisan oidc:witness:enable          # affiche désormais « scopes : profile groups »
+
+# 3. Ré-enregistrer les clients de test des Sections 11-13 au besoin
+php artisan oidc:client:register "Client QA" --redirect-uri=https://qa.example.test/cb
+#   → sans --scope : profile ET groups accordés (défaut opérateur)
+#   → --scope=profile : restreint à profile
+#   → --scope=directory ou --scope=openid : REFUSÉ, exit 1, aucun client créé
+
+# 4. Une extension `app` déjà installée AVANT la migration n'a pas de grants :
+#    la seule façon de les lui rendre est de la réinstaller (le consentement est
+#    un acte d'installation). `ext:update` n'y touche pas — c'est voulu.
+php artisan ext:remove hello && php artisan ext:install hello --source=<clé-source>
+```
+
+**Attendu** : après ces gestes, `granted_scopes` vaut `["groups","profile"]` pour le témoin, et `["profile","groups"]` (dans l'ordre du manifest, normalisé) pour `hello` si son manifest les demande.
+
+### Scénario 20.1 — L'octroi à l'installation, observé
+
+Servir depuis le dépôt de test une extension `hello` dont le `manifest.json` déclare `"scopes": ["profile", "groups"]` (`scripts/qa/build-test-extension.sh`, puis re-signer l'index). Synchroniser la source, puis installer depuis l'UI.
+
+```bash
+php artisan ext:sources:sync
+php artisan ext:install hello --source=<clé-source>
+
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT extension_key, granted_scopes FROM oidc_clients WHERE extension_key='hello';"
+```
+
+**Attendu** : `["groups", "profile"]` — trié, dédupliqué, exactement les scopes du manifest. Ni plus (pas d'`openid`, qui n'est jamais listé), ni moins.
+
+### Scénario 20.2 — Un scope non supporté fait ÉCHOUER l'installation
+
+Republier `hello` avec `"scopes": ["profile", "calendar"]` dans son manifest (index re-signé), re-synchroniser, puis tenter l'installation.
+
+```bash
+php artisan ext:install hello --source=<clé-source>; echo "exit=$?"
+
+# Aucun composant système ne doit avoir été touché :
+grep -c sambaedu-ext-helper /var/log/auth.log      # inchangé par rapport à avant la tentative
+sudo -u postgres psql -d sambaedu -c "SELECT count(*) FROM oidc_clients WHERE extension_key='hello';"
+```
+
+**Attendu** : exit ≠ 0, message « scope demandé non supporté par SE5 — mettre à jour l'extension ou le serveur », **aucun appel au helper**, **aucun client créé**, et une ligne `install_failed` en base portant cette catégorie. Refuser vaut mieux qu'accorder à moitié : une extension installée avec `profile` seul échouerait à l'usage sans que rien ne l'explique.
+
+### Scénario 20.3 — La fiche : demandées vs réellement accordées
+
+Ouvrir `/admin/extensions/<id>` de `hello` (installée avec ses deux scopes) dans un vrai navigateur.
+
+**Attendu** : la carte « Autorisations » montre **deux blocs distincts** — « Demandées par le manifest » (badges neutres) et « Réellement accordées » (badges verts, chacun avec sa croix de révocation). Sur une extension de type `link` (Documentation), le second bloc est **absent** : elle n'a aucun client OIDC.
+
+### Scénario 20.4 — LE scénario : révoquer, et le constater sur un jeton VIVANT
+
+C'est le cœur de la story. Il faut un access token réel, obtenu par un vrai flux SSO.
+
+```bash
+# 1. Se connecter à l'app-témoin dans un navigateur (tuile « Démo SSO »), puis
+#    récupérer l'access token le plus récent de son client :
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT id, scope, expires_at FROM oidc_access_tokens ORDER BY id DESC LIMIT 1;"
+```
+
+Le jeton CLAIR n'est jamais stocké (seul son sha256 l'est) : pour disposer du clair, dérouler le flux à la main (Section 11 / Scénario 11.6) ou instrumenter le témoin. Poser ensuite :
+
+```bash
+TOKEN='<access_token clair>'
+
+# 2. AVANT — contrôle POSITIF, indispensable : sans lui, l'étape 4 ne prouverait rien
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/oidc/userinfo | jq
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me | jq
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me/groups | jq
+```
+
+**Attendu (avant)** : `/oidc/userinfo` rend `sub`, `name`, `role`, `groups` ; `me` rend `{success, message, sub, name, role}` ; `me/groups` rend `{success, message, sub, groups}` — clés métier **à la racine**, aucun wrapper `data`, en-tête `Cache-Control: no-store`.
+
+```
+3. Depuis le NAVIGATEUR, sur la fiche de l'extension : cliquer la croix de « groups »,
+   lire la modale (« y compris pour ses jetons en cours », « irréversible »), confirmer.
+```
+
+**Attendu (modale + toast)** : toast vert « Autorisation « groups » révoquée. », le badge disparaît du bloc « accordées » et **reste** dans « demandées ».
+
+```bash
+# 4. APRÈS — le MÊME jeton, sans reconnexion, sans attendre
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/oidc/userinfo | jq
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  https://<serveur>/api/ext/v1/me/groups
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  https://<serveur>/api/ext/v1/me
+```
+
+**Attendu (après)** : `/oidc/userinfo` ne rend plus `groups` (mais toujours `sub`, `name`, `role`) ; `me/groups` → **403** ; `me` → **200**. On a révoqué une DONNÉE, pas l'accès.
+
+```bash
+# 5. La trace d'audit (FR36) et le journal
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT action, details, actor_login, created_at FROM extension_audit_logs
+   WHERE action='scope_revoke' ORDER BY id DESC LIMIT 3;"
+grep -h 'oidc.client.scope_revoked\|oidc.ext_api.rejected' storage/logs/oidc-*.log | tail -5
+```
+
+**Attendu** : une ligne `scope_revoke` dont `details` vaut `groups` et `actor_login` l'admin connecté (jamais `system` pour un acte d'UI) ; au journal, `oidc.client.scope_revoked` puis `oidc.ext_api.rejected` avec le code `oidc.access_token_scope_insufficient`. **Aucun secret, aucun jeton, aucun nom d'utilisateur** dans ces lignes.
+
+### Scénario 20.5 — Un nouveau flux est RÉDUIT, pas refusé
+
+Après la révocation du 20.4, se reconnecter à l'app-témoin.
+
+**Attendu** : la connexion **aboutit** (le SSO n'est pas cassé — c'est tout l'intérêt de réduire plutôt que de refuser), la page témoin affiche nom et rôle mais plus de groupes, et la réponse du token endpoint annonce la réduction :
+
+```bash
+grep -h 'oidc.token.issued' storage/logs/oidc-*.log | tail -1
+sudo -u postgres psql -d sambaedu -c "SELECT scope FROM oidc_access_tokens ORDER BY id DESC LIMIT 1;"
+```
+
+**Attendu** : le jeton nouvellement émis porte `openid profile` — pas `openid profile groups`.
+
+⚠️ **Résidu assumé, à ne pas prendre pour un bug** : l'**id_token** déjà délivré à un navigateur porte ses claims jusqu'à son `exp` (300 s) — un JWT est auto-porteur, rien ne peut le rappeler. Seuls les access tokens (opaques) sont réduits instantanément. Une page témoin ouverte peut donc encore afficher les groupes pendant moins de cinq minutes ; un rechargement après expiration ne les montre plus.
+
+### Scénario 20.6 — `openid` n'est pas révocable
+
+**Attendu** : aucune croix n'est proposée pour `openid` — il n'apparaît pas dans « accordées », puisqu'il n'est jamais accordé. Un appel forgé (console navigateur) ne le retire pas davantage : toast d'information, aucune ligne d'audit, `granted_scopes` inchangé. Retirer l'identité, c'est désinstaller l'extension (FR10), pas révoquer un scope.
+
+### Scénario 20.7 — Les familles de refus, à travers Apache
+
+```bash
+API=https://<serveur>/api/ext/v1/me
+
+curl -sk -i $API | head -5                                        # aucun jeton
+curl -sk -i -H "Authorization: Bearer inconnu" $API | head -5      # jeton inconnu
+curl -sk -i -H "Authorization: Bearer $TOKEN_EXPIRE" $API | head -5 # jeton périmé (> 600 s)
+curl -sk -i "$API?access_token=$TOKEN" | head -5                   # jeton en query
+```
+
+**Attendu** : `401` dans les quatre cas, avec le **même corps** `{"success":false,"message":"Jeton d'accès absent, invalide ou expiré.","error":"invalid_token"}` et l'en-tête `WWW-Authenticate: Bearer realm="ext-api"` (avec `error="invalid_token"` dès qu'un jeton a été présenté). Le jeton passé en query est traité comme **absent** : il ne doit jamais atterrir dans les logs d'Apache comme un identifiant valide.
+
+Les causes ne se distinguent QUE dans `storage/logs/oidc-*.log` :
+
+```bash
+grep -h 'oidc.ext_api.rejected' storage/logs/oidc-*.log | tail -6
+```
+
+**Attendu** : des codes `oidc.access_token_missing`, `oidc.access_token_invalid`, `oidc.access_token_expired`, avec un `token_hash_prefix` de 8 caractères pour corréler — jamais le jeton complet.
+
+### Scénario 20.8 — Client révoqué : l'accès entier tombe
+
+```bash
+php artisan oidc:client:revoke <client_id>
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me
+```
+
+**Attendu** : `401` (et non 403) — un client révoqué n'a plus d'accès du tout, ses jetons meurent avec lui. Même corps que les autres 401. C'est aussi ce qui se passe après `ext:remove` : la désinstallation emporte le client, donc les grants et les jetons.
+
+### Scénario 20.9 — Throttle réel
+
+```bash
+for i in $(seq 1 70); do
+  curl -sk -o /dev/null -w '%{http_code} ' -H "Authorization: Bearer $TOKEN" \
+    https://<serveur>/api/ext/v1/me
+done; echo
+```
+
+**Attendu** : les premières requêtes en `200`, puis des `429` au-delà de 60 par minute. Le canal est ouvert à du code tiers : il est borné.
+
+### Scénario 20.10 — FR24 : ce que l'API ne dira jamais
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me > /tmp/me.json
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me/groups > /tmp/groups.json
+grep -Ei 'ad_guid|CN=|dc=|memberOf|@|"id"' /tmp/me.json /tmp/groups.json
+```
+
+**Attendu** : aucune correspondance. Et le contrôle POSITIF adossé, sans lequel deux fichiers vides passeraient aussi : `jq -r .name /tmp/me.json` rend le nom affiché, `jq -r '.groups | length' /tmp/groups.json` rend le nombre de classes. Le contrat v1 tient en cinq clés côté `me` et quatre côté `me/groups` — **rien d'autre ne doit y figurer**, jamais (NFR11 : ce qui entre dans v1 n'en sort plus).
+
+### Scénario 20.11 — Le contrat v1 est versionné
+
+```bash
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v2/me
+curl -sk -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me
+```
+
+**Attendu** : `404` pour `/v2` (il n'existe pas — il n'existera que le jour d'une rupture, et le v1 continuera alors d'être servi à côté) et `405` pour un POST sur `me` (le v1 est en lecture seule).
 
 ---
 
