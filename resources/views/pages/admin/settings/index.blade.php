@@ -201,6 +201,21 @@ new #[Title('Réglages')] class extends Component {
                     testid="card-app-profiles" />
             @endcan
 
+            {{-- Règles d'accès aux dossiers : la page vit sur `/app/folder-rules`
+                 (permissions DÉDIÉES `folderrule.*`) — cette carte en est le SEUL
+                 point d'entrée en navigation. Gate `viewAny-folderrule` et non
+                 `server.admin` : la page accepte aussi le délégué scopé parc. --}}
+            @can('viewAny-folderrule')
+                <x-molecules.settings-card
+                    href="{{ route('app.folder-rules') }}"
+                    icon="fa-solid fa-folder-closed"
+                    iconColor="info"
+                    title="Règles d'accès aux dossiers"
+                    description="Interdire ou autoriser un dossier des postes à un groupe d'utilisateurs, parc par parc."
+                    badge="Fichiers"
+                    testid="card-folder-rules" />
+            @endcan
+
             <x-molecules.settings-card
                 href="{{ route('admin.controlHub.control-hub') }}"
                 icon="fa-solid fa-satellite-dish"

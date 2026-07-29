@@ -43,6 +43,8 @@ class AdminSettingsPageTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('delegations');
+            Schema::dropIfExists('workstation_groups');
             Schema::dropIfExists('system_settings');
             Schema::dropIfExists('quota_settings');
             Schema::dropIfExists('model_has_permissions');
@@ -138,6 +140,42 @@ class AdminSettingsPageTest extends TestCase
                 $table->unsignedBigInteger('permission_id');
                 $table->unsignedBigInteger('role_id');
                 $table->primary(['permission_id', 'role_id']);
+            });
+            $this->createdTables = true;
+        }
+
+        // La carte « Règles d'accès aux dossiers » est gardée par le gate
+        // policy-backed `viewAny-folderrule`, qui retombe sur la délégation
+        // scopée par parc quand le droit global manque : le rendu du landing
+        // touche donc `delegations` × `workstation_groups`.
+        if (!Schema::hasTable('workstation_groups')) {
+            Schema::create('workstation_groups', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->boolean('is_physical')->default(false);
+                $table->boolean('is_active')->default(true);
+                $table->unsignedBigInteger('parent_id')->nullable();
+                $table->string('locked')->nullable();
+                $table->text('description')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('delegations')) {
+            Schema::create('delegations', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('user_id');
+                $table->unsignedBigInteger('workstation_group_id');
+                $table->unsignedBigInteger('permission_id');
+                $table->boolean('is_negative')->default(false);
+                $table->unsignedBigInteger('granted_by')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->timestamps();
+                $table->unique(
+                    ['user_id', 'workstation_group_id', 'permission_id', 'is_negative'],
+                    'asp_delegations_unique'
+                );
             });
             $this->createdTables = true;
         }

@@ -31,5 +31,7 @@ indique son point d'entrée exact.
   accorder, ajuster et retirer les accès en distinguant lecture et écriture.
 - [Limiter l'espace de stockage](/admin/fichiers/limiter-l-espace-de-stockage) —
   fixer un quota à un compte ou à un groupe.
+- [Règles d'accès aux dossiers](/admin/fichiers/regles-d-acces-aux-dossiers) —
+  interdire ou autoriser un dossier des postes à un groupe, salle par salle.
 - [En cas de problème](/admin/fichiers/en-cas-de-probleme) — un espace qui
   n'apparaît pas, un accès refusé malgré l'appartenance à un groupe.

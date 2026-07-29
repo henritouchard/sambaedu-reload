@@ -16,7 +16,7 @@ ici, on gère les postes et les groupes eux-mêmes.
 
 Tout se traite depuis une seule page : menu **Parc & postes**, entrée
 **Gestion du parc**. Elle présente trois onglets — **Groupes**, **Postes** et
-**Imprimantes** ; les deux premiers reviennent au long de ce domaine.
+**Imprimantes** — qui reviennent tous les trois au long de ce domaine.
 
 ## Les fiches de ce domaine
 
@@ -30,5 +30,7 @@ Tout se traite depuis une seule page : menu **Parc & postes**, entrée
   groupe, choisir son type, gérer ses postes, le supprimer.
 - [Salle ou parc logique](/admin/parc/salle-ou-parc-logique) — comprendre les
   deux façons de regrouper les postes et laquelle l'emporte sur l'autre.
+- [Gérer les imprimantes](/admin/parc/imprimantes) — déclarer une imprimante,
+  la rattacher aux salles, publier son pilote Windows.
 - [En cas de problème](/admin/parc/en-cas-de-probleme) — un poste qui ne répond
   pas, une action sans effet visible, un poste absent de la liste.
