@@ -527,6 +527,74 @@ init_auth_v1_pki() {
 }
 
 # ============================================================================
+# Registre d'extensions — catalogue embarqué (Epic 54)
+# ============================================================================
+# Enregistre les manifests livrés avec le code (`resources/extensions/*`) dans
+# le registre : la source `bundled` et ses extensions.
+#
+# ⚠️ POURQUOI CE N'EST PAS COUVERT PAR run_migrations : en `APP_ENV=production`,
+# `run_migrations` fait `migrate --force` SANS seed (seul le chemin non-prod
+# passe par `migrate:fresh --seed`). Sur une installation de production, le
+# registre resterait donc VIDE et le lanceur « gaufre » n'afficherait jamais
+# rien — sans aucune erreur pour le signaler.
+#
+# Le seeder est IDEMPOTENT (re-jouable sans effet de bord) : il ne duplique
+# rien, et le `status = integrated` d'une extension déjà intégrée par
+# l'administrateur SURVIT à une réexécution. Il est donc appelé
+# inconditionnellement, y compris quand `migrate:fresh --seed` vient déjà de
+# le jouer.
+
+seed_bundled_extensions() {
+  log "Enregistrement du catalogue d'extensions embarqué (Epic 54)..."
+  cd "$APP_DIR"
+
+  if [[ ! -f "$APP_DIR/database/seeders/BundledExtensionSeeder.php" ]]; then
+    log_warning "BundledExtensionSeeder absent (Epic 54 pas déployé) — étape ignorée"
+    return 0
+  fi
+
+  if ! php artisan db:seed --class=BundledExtensionSeeder --force; then
+    log_error "Échec du seed des extensions embarquées — le lanceur restera vide"
+    return 1
+  fi
+
+  log_success "Catalogue d'extensions embarqué enregistré"
+}
+
+# ============================================================================
+# Fournisseur OIDC — paire de clés de signature (Epic 55)
+# ============================================================================
+# Génère, si absente, la paire RS256 DÉDIÉE qui signe les `id_token` servis aux
+# extensions (`storage/keys/oidc/`), et publie la clé publique au JWKS.
+#
+# ⚠️ Paire DISTINCTE de celle d'Auth V1 : le JWKS OIDC est un endpoint PUBLIC,
+# la clé « workstation » n'est publiée nulle part. Ne jamais les confondre.
+#
+# Sans cette étape, `/oidc/authorize` et `/oidc/token` échouent en
+# `oidc.keys_unavailable` et le JWKS répond 503 (fail-closed volontaire : mieux
+# vaut un refus franc qu'un `{"keys":[]}` en 200 que les clients mettraient en
+# cache). La commande est IDEMPOTENTE : no-op si la paire existe déjà, elle ne
+# régénère JAMAIS en silence — une rotation exige `--force`, qui invaliderait
+# tous les jetons en circulation.
+
+init_oidc_provider_keys() {
+  log "Initialisation des clés du fournisseur OIDC (Epic 55)..."
+  cd "$APP_DIR"
+
+  if ! php artisan list 2>/dev/null | grep -q 'oidc:keys:init'; then
+    log_warning "Commande oidc:keys:init non disponible (Epic 55 pas déployé) — étape ignorée"
+    return 0
+  fi
+
+  if ! php artisan oidc:keys:init --no-interaction; then
+    log_error "Échec init des clés OIDC — vérifier storage/keys/ + extension OpenSSL"
+    return 1
+  fi
+
+  log_success "Fournisseur OIDC prêt (paire RS256 + JWKS)"
+}
+
+# ============================================================================
 # Configuration Apache
 # ============================================================================
 
@@ -1042,11 +1110,13 @@ main() {
 
   # Phase 5: Optimisation
   echo ""
-  log "Phase 5/8: Optimisation applicative + PKI Auth V1..."
+  log "Phase 5/8: Optimisation applicative + PKI Auth V1 + extensions/OIDC..."
   echo ""
 
   run_application_update
   init_auth_v1_pki
+  seed_bundled_extensions
+  init_oidc_provider_keys
 
   # Phase 6: Apache
   echo ""

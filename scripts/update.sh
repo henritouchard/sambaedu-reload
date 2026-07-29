@@ -391,6 +391,101 @@ ensure_auth_v1_pki() {
 }
 
 # ============================================================================
+# Registre d'extensions — catalogue embarqué (Epic 54)
+# ============================================================================
+# Rejoue `BundledExtensionSeeder` à CHAQUE update, et c'est délibéré : une
+# release peut livrer de NOUVEAUX manifests dans `resources/extensions/*`
+# (la tuile Documentation en 54.2, « Démo SSO » en 55.3, les suivantes ensuite).
+# Sans ce rejeu, une extension livrée par une mise à jour n'apparaîtrait jamais
+# dans la bibliothèque — sans la moindre erreur pour l'expliquer.
+#
+# Le seeder est IDEMPOTENT : aucun doublon, et le `status = integrated` d'une
+# extension déjà intégrée par l'administrateur SURVIT au rejeu (c'est un
+# invariant testé, cf. `docs/qa/domains/extensions.md` scénario 1.3). Il ne
+# ré-intègre jamais de lui-même une extension désinstallée.
+#
+# NON-FATAL : un registre incomplet dégrade le lanceur, il ne casse pas le
+# serveur — le composant de navbar tombe en état vide (garde try/catch, review
+# 54.3). Bloquer un update serveur pour ça serait disproportionné.
+
+ensure_bundled_extensions() {
+    log "Catalogue d'extensions embarqué (Epic 54)..."
+    cd "$APP_DIR"
+
+    if [[ ! -f "$APP_DIR/database/seeders/BundledExtensionSeeder.php" ]]; then
+        log_warning "BundledExtensionSeeder absent (Epic 54 pas déployé) — étape ignorée"
+        return 0
+    fi
+
+    if id www-admin >/dev/null 2>&1; then
+        sudo -u www-admin php artisan db:seed --class=BundledExtensionSeeder --force || \
+            log_warning "Seed des extensions embarquées en échec — bibliothèque potentiellement incomplète"
+    else
+        php artisan db:seed --class=BundledExtensionSeeder --force || \
+            log_warning "Seed des extensions embarquées en échec — bibliothèque potentiellement incomplète"
+    fi
+
+    log_success "Catalogue d'extensions embarqué à jour"
+}
+
+# ============================================================================
+# Fournisseur OIDC — paire de clés de signature (Epic 55)
+# ============================================================================
+# Génère la paire RS256 DÉDIÉE qui signe les `id_token` servis aux extensions
+# (`storage/keys/oidc/`), si elle est absente. Distincte de celle d'Auth V1 :
+# le JWKS OIDC est PUBLIC, la clé « workstation » n'est publiée nulle part.
+#
+# Pré-check sur la présence du fichier plutôt qu'appel systématique — même
+# parti-pris que `ensure_auth_v1_pki` : la commande est idempotente, mais un
+# no-op explicite vaut mieux qu'un appel muet à chaque update.
+#
+# ⚠️ AUCUNE rotation automatique ici. `oidc:keys:init --force` régénère la
+# paire et invalide TOUS les jetons en circulation, y compris ceux d'extensions
+# tierces qui ne sauraient pas pourquoi elles cessent de fonctionner. Une
+# rotation est une décision d'exploitation, jamais un effet de bord d'update.
+
+ensure_oidc_provider_keys() {
+    log "Vérification des clés du fournisseur OIDC (Epic 55)..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'oidc:keys:init'; then
+        log_warning "Commande oidc:keys:init non disponible (Epic 55 pas déployé) — étape ignorée"
+        return 0
+    fi
+
+    # Chemin par défaut de `config/oidc.php` (`keys.rs256.private`). Surchargeable
+    # par `OIDC_PRIVATE_KEY_PATH` : si c'est le cas, cette sentinelle dira « absent »
+    # à tort et la commande sera appelée pour rien — elle est idempotente, donc
+    # sans conséquence. Ce pré-check est un confort de log, pas une garantie.
+    local private_key="$APP_DIR/storage/keys/oidc/private.pem"
+
+    if [[ -f "$private_key" ]]; then
+        log_success "Clés OIDC déjà en place (rotation = décision d'exploitation, jamais automatique)"
+        return 0
+    fi
+
+    log "Paire de clés OIDC absente — génération"
+
+    # ⚠️ Propriété des fichiers : la clé privée est écrite en 0600. Générée par
+    # root, elle serait ILLISIBLE par PHP-FPM (www-admin) — le JWKS répondrait
+    # 503 et le SSO serait mort, sans que rien ne pointe vers la cause. On génère
+    # donc sous l'identité du runtime dès qu'elle existe.
+    if id www-admin >/dev/null 2>&1; then
+        sudo -u www-admin php artisan oidc:keys:init --no-interaction || {
+            log_error "Échec init des clés OIDC — le SSO extensions restera indisponible (JWKS en 503)"
+            return 1
+        }
+    else
+        php artisan oidc:keys:init --no-interaction || {
+            log_error "Échec init des clés OIDC — le SSO extensions restera indisponible (JWKS en 503)"
+            return 1
+        }
+    fi
+
+    log_success "Fournisseur OIDC prêt (paire RS256 + JWKS)"
+}
+
+# ============================================================================
 # PFX code-signing agent (Story 24.5) — émission conditionnelle
 # ============================================================================
 # Délègue à scripts/emit-codesign-pfx.sh (idempotent : no-op si le PFX existe,
@@ -1699,6 +1794,12 @@ main() {
 
     echo ""
     ensure_auth_v1_pki
+
+    echo ""
+    ensure_bundled_extensions
+
+    echo ""
+    ensure_oidc_provider_keys
 
     echo ""
     ensure_codesign_pfx
