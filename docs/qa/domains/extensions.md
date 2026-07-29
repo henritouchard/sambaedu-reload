@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** (mise à jour 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)**. _Stories 55.2 (claims métier + `/userinfo`), 55.3 (app-témoin + suite d'attaque) et Epic 56 (scopes consentis, sources distantes, type `app`) à ajouter en sections suivantes quand livrées._
+**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. _Epic 56 (scopes consentis, sources distantes, type `app`, provisioning automatique des clients) à ajouter en sections suivantes quand livré._
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -47,6 +47,19 @@
 - `app/Http/Middleware/Auth/SambaEduAuthGuard.php` — `url.intended` passe de `path()` à `fullUrl()` (55.1, piège n°1)
 - `config/oidc.php`, `config/logging.php` (channel `oidc`), `resources/views/oidc/authorize-error.blade.php`
 - `tests/Feature/Oidc/*`, `tests/Architecture/OidcRoutesTest.php` — flux, refus, discovery/JWKS, commandes, reprise post-login, garde-fous d'ordre et de frontière crypto (55.1)
+- `app/OidcWitness/README.md` — **la charte de quarantaine** de l'app-témoin : ce qu'elle s'interdit, pourquoi, et ses limites assumées (55.3)
+- `app/OidcWitness/Http/Controllers/WitnessController.php` — `GET /sso-demo` + `GET /sso-demo/callback`, état par cookie chiffré dédié (55.3)
+- `app/OidcWitness/Jwt/WitnessIdTokenVerifier.php` — vérificateur client durci : RS256 pinné par key-map construite depuis le JWKS, `iss`/`aud`/`exp`/`nbf`/`nonce`, **germe du SDK Epic 58** (55.3)
+- `app/OidcWitness/Jwt/WitnessJtiReplayGuard.php` — anti-rejeu `jti` CLIENT, cache seul (jamais la base — FR24), fail-closed (55.3)
+- `app/OidcWitness/Support/{WitnessCredentials,WitnessProviderMetadata,WitnessHttpClient,WitnessErrorCodes}.php` — fichier 0600, discovery/JWKS par HTTP, unique canal de données (55.3)
+- `app/Console/Commands/{OidcWitnessEnable,OidcWitnessDisable}.php` — provisioning idempotent ; le secret n'est **jamais** affiché (55.3)
+- `resources/extensions/sso-demo/manifest.json` — la tuile « Démo SSO » (`link` → `/sso-demo`, scopes `profile`+`groups`)
+- `resources/views/oidc-witness/{claims,error}.blade.php` — vues autonomes, sans layout SE5
+- `config/oidc.php` § `witness` — chemin des credentials, store d'anti-rejeu, timeout HTTP, TTL du cookie d'état
+- `tests/Unit/OidcWitness/WitnessIdTokenVerifierTest.php` — **la suite d'attaque NFR1** + sa table de traçabilité (ce qui est déjà couvert par 55.1/55.2 n'y est PAS dupliqué)
+- `tests/Feature/OidcWitness/WitnessFlowTest.php` + `Concerns/ReentersTheTestKernel.php` — parcours complet par HTTP (transport substitué, protocole intact)
+- `tests/Feature/OidcWitness/{OidcWitnessCommandsTest,ExtensionIdentityLeakTest}.php` — provisioning, et « aucun identifiant de base ni d'annuaire ne fuit »
+- `tests/Architecture/ExtensionIsolationTest.php` — **FR24** : quarantaine du témoin (avec méta-test anti-tautologie), manifest sans champ exécutable, autoload sans répertoire d'extensions
 
 ---
 
@@ -1064,9 +1077,169 @@ curl -s https://<host>/.well-known/openid-configuration | jq
 
 ---
 
+## Section 15 — App-témoin SSO et validation sécurité (Story 55.3) — **CLÔT l'Epic 55**
+
+> **Ce que cette section valide, et qui n'est pas une fonctionnalité produit.** L'app-témoin est une **sonde de contrat** : la seule question qu'elle répond est « le contrat public OIDC suffit-il à une application qui n'a QUE le contrat ? ». Elle vit en quarantaine dans `app/OidcWitness/` et n'obtient RIEN de SE5 autrement que par les endpoints publics, appelés en HTTP — aucun modèle, aucune base, aucun annuaire, aucun accès à la session SE5. La quarantaine n'est pas une convention de style : elle est verrouillée par `tests/Architecture/ExtensionIsolationTest.php`, parce qu'**un témoin qui triche ne prouve rien**.
+>
+> **Dette worktree assumée, iso 55.1/55.2** : la story a été développée dans un worktree git non synchronisé vers la VM. Toute la suite automatisée tourne sur l'HÔTE ; les scénarios navigateur ci-dessous sont à jouer **au merge sur `main`**, comme les Sections 11 à 14.
+
+### Pré-requis de la section
+
+```bash
+cd /var/www/sambaedu-reload
+php artisan migrate
+php artisan oidc:keys:init                       # idempotente (Section 11.1)
+php artisan db:seed --class=BundledExtensionSeeder --force
+php artisan oidc:witness:enable
+```
+
+Puis, en tant qu'admin : `/admin/extensions` → **Démo SSO** → « Intégrer ».
+
+### Scénario 15.1 — Provisioning : idempotent, 0600, et le secret n'est nulle part
+
+1. `php artisan oidc:witness:enable` sur une instance vierge.
+2. `ls -l storage/app/oidc-witness.json` et `cat` du fichier.
+3. Relancer **la même** commande.
+4. `psql` : `SELECT name, client_id, extension_key, enabled FROM oidc_clients;`
+5. Chercher le secret ailleurs : `grep -r "$(python3 -c "import json;print(json.load(open('storage/app/oidc-witness.json'))['client_secret'])")" storage/logs/ ; echo "code retour grep : $?"`
+
+**Attendu** :
+- (2) fichier en **`-rw------- (0600)`**, propriétaire = utilisateur qui a lancé la commande ; il contient `client_id`, `client_secret`, `issuer`, `redirect_uri` et **rien d'autre**.
+- (1) et (3) : la sortie console affiche `client_id`, `redirect_uri`, `issuer` et le chemin du fichier — **jamais le secret** ; le message est explicite (`Le client_secret n'est PAS affiché`).
+- (3) **no-op signalé** (« App-témoin déjà provisionnée — aucune action »), code retour 0, aucun second client, secret inchangé.
+- (4) exactement **une** ligne, `name = App-témoin SSO`, `extension_key = sso-demo`, `enabled = t`.
+- (5) `grep` ne trouve **rien** (code retour 1). Le journal `oidc` porte bien `oidc.witness.provisioned` — donc l'absence n'est pas celle d'un journal muet.
+
+**Pourquoi cette différence de doctrine avec `oidc:client:register`** : celle-là AFFICHE le secret une fois, parce que son destinataire est un humain qui doit le recopier dans une configuration tierce. Ici le destinataire est un **fichier que la commande écrit elle-même** : afficher un secret que personne n'a besoin de lire, c'est l'exposer à l'historique du terminal et aux journaux d'exploitation pour rien.
+
+### Scénario 15.2 — `--rotate` : l'ancien client meurt vraiment
+
+1. Noter le `client_id` courant (`cat storage/app/oidc-witness.json`).
+2. `php artisan oidc:witness:enable --rotate`.
+3. Comparer l'ancien et le nouveau `client_id` / `client_secret`.
+4. `SELECT client_id, enabled FROM oidc_clients ORDER BY id;`
+
+**Attendu** : nouveau `client_id` ET nouveau secret ; l'ancienne ligne existe toujours mais `enabled = f` (révocation = désactivation, **jamais** suppression — la trace reste, patron 11.10) ; la nouvelle est active. Le parcours 15.4 refonctionne immédiatement avec les nouveaux credentials.
+
+### Scénario 15.3 — Cas incohérent : fichier présent, client révoqué
+
+1. Après un `enable` réussi, révoquer le client à la main : `php artisan oidc:client:revoke <client_id>`.
+2. Relancer `php artisan oidc:witness:enable`.
+
+**Attendu** : **échec bruyant** (code retour 1) nommant le remède (`--rotate` ou `oidc:witness:disable`), **aucun** client fantôme créé. Puis `php artisan oidc:witness:enable --rotate` répare.
+
+**Pourquoi ce scénario existe** : réenregistrer en douce masquerait la cause (quelqu'un a révoqué ce client, et il avait peut-être une raison). Un provisioning idempotent doit rester idempotent sur l'état NOMINAL, pas « auto-réparant » sur un état que personne n'a expliqué.
+
+### Scénario 15.4 — Le parcours complet : clic sur la tuile → claims, sans re-login
+
+**Compte** : un **prof** authentifié, avec un `display_name` renseigné et au moins deux classes (`4B`, `3A`).
+
+1. Se connecter à SE5 normalement.
+2. Ouvrir la gaufre du lanceur (navbar) → cliquer **Démo SSO**.
+3. Observer la barre d'adresse pendant la navigation (ou ouvrir les outils réseau).
+4. Lire la page finale.
+
+**Attendu** :
+- Nouvel onglet (comportement 54.3, `target="_blank" rel="noopener"`).
+- Enchaînement : `/sso-demo` → **302** vers `/oidc/authorize?...` portant `response_type=code`, `scope=openid profile groups`, `state`, `nonce`, `code_challenge` et `code_challenge_method=S256` — **jamais** de `code_verifier` dans l'URL.
+- **Aucun formulaire de connexion** : la session SE5 est déjà active (FR17). `/oidc/authorize` → **302** vers `/sso-demo/callback?code=…&state=…`.
+- Page finale : « **Bonjour Professeur Dupont** », rôle `prof`, groupes `3A` et `4B` en badges, lien « ← Retour au lanceur » qui ramène à `/` (FR16).
+- Journal `oidc` : `oidc.witness.start`, `oidc.authorize.granted`, `oidc.token.issued`, `oidc.witness.verified` — **et aucune PII** (ni `name`, ni groupes, ni `sub`).
+- Cookie `oidc_witness_state` : `HttpOnly`, `SameSite=Lax`, `Path=/sso-demo`, valeur **chiffrée** (illisible), disparu après le callback.
+
+**Ce que ce scénario prouve, et que rien d'autre ne prouve** : que le contrat de claims v1 est réellement consommable par une application qui n'a pas accès à SE5. L'Epic 57 (BigBlueButton) s'écrira contre un contrat **démontré**, pas supposé.
+
+### Scénario 15.5 — Un rôle non résolu s'affiche comme absent, jamais inventé
+
+1. Choisir (ou créer) un compte dont `businessRoles()` est vide — typiquement `users.role = 'autre'` sans délégation `super-admin` (cf. Scénario 13.4).
+2. Faire le parcours 15.4 avec ce compte.
+
+**Attendu** : « Bonjour <nom> » s'affiche (contrôle positif : le `name`, lui, est bien transmis), et la ligne **Rôle** indique **« (non résolu) »**. Jamais `autre`, jamais `null`, jamais une case vide muette.
+
+### Scénario 15.6 — `state` altéré au retour : refus AVANT tout échange
+
+1. Faire le parcours 15.4 jusqu'à la redirection vers `/sso-demo/callback?code=…&state=…`.
+2. Recopier l'URL en **modifiant le `state`**, puis la charger dans le même onglet (le cookie est toujours là).
+3. Recharger ensuite l'URL **d'origine**, intacte.
+
+**Attendu** :
+- (2) page d'erreur sobre du témoin en **400**, code `witness.id_token`/`witness.state_mismatch` affiché ; **aucun appel au token endpoint** (rien dans le journal `oidc` côté `oidc.token.*` pour cet instant). Le code d'autorisation n'a **pas** été consommé.
+- (3) contrôle **POSITIF** : le bon `state` passe et rend les claims. Sans lui, le refus (2) pourrait n'être que le symptôme d'une plomberie cassée.
+
+**Ce que ce vecteur recouvre** : c'est le pendant CLIENT de la `redirect_uri` altérée (déjà couverte côté serveur en 55.1, Scénario 11.6). Une injection de code d'autorisation consiste à faire consommer à la victime un code obtenu par un tiers — c'est le `state`, et lui seul, qui l'attrape côté client.
+
+### Scénario 15.7 — Rejeu du callback : le code est à usage unique
+
+1. Faire un parcours 15.4 complet et **conserver** l'URL de callback.
+2. Recharger exactement la même URL (cookie d'état toujours présent).
+
+**Attendu** : **502** avec le code `witness.token_exchange_failed`, **aucune** ligne « Bonjour ». Journal `oidc` : `oidc.token.rejected` avec le code interne du code déjà consommé (Scénario 11.5). Le témoin n'affiche **jamais** de claims issus d'un échange raté.
+
+### Scénario 15.8 — Client révoqué : le parcours devient impossible, explicitement
+
+1. Parcours 15.4 nominal (contrôle positif).
+2. `php artisan oidc:client:revoke <client_id du témoin>`.
+3. Recliquer sur la tuile **Démo SSO**.
+
+**Attendu** : `/sso-demo` redirige toujours (le témoin ne sait pas encore que son client est mort — c'est normal, il ne lit pas le registre), puis `/oidc/authorize` répond **400 local sans en-tête `Location`** (règle cardinale 11.6 : on ne redirige jamais vers une `redirect_uri` d'un client non validé). Aucun jeton n'est délivré.
+
+### Scénario 15.9 — Témoin non provisionné : 503 explicite, jamais une 500 brute
+
+1. `php artisan oidc:witness:disable` (ou instance neuve).
+2. Ouvrir `/sso-demo` directement.
+
+**Attendu** : **503**, page sobre du témoin portant le code `witness.not_provisioned` et la commande de remède (`php artisan oidc:witness:enable`) ; **aucun** appel sortant (rien de nouveau dans le journal `oidc` côté fournisseur) ; aucune trace d'exception non gérée dans `laravel.log`.
+
+### Scénario 15.10 — `oidc:witness:disable` : idempotente, et elle ferme la porte
+
+1. `php artisan oidc:witness:disable` après un `enable`.
+2. Vérifier `ls storage/app/oidc-witness.json` et `SELECT enabled FROM oidc_clients WHERE name = 'App-témoin SSO';`
+3. Relancer la commande.
+4. Cas dégradé : `echo '{ pas du json' > storage/app/oidc-witness.json` puis relancer.
+
+**Attendu** : (2) fichier supprimé, client `enabled = f` ; (3) « App-témoin déjà retirée — aucune action », code retour 0 ; (4) le fichier illisible est **supprimé** avec un avertissement — sinon il bloquerait `enable` indéfiniment.
+
+### Scénario 15.11 — La quarantaine, vérifiée à la main
+
+1. `grep -rnE "App.(Models|Services)|Illuminate.Database|LdapRecord|DB::|Auth::" app/OidcWitness/ --include='*.php'`
+2. Sur l'HÔTE : `php vendor/bin/phpunit tests/Architecture/ExtensionIsolationTest.php`
+
+**Attendu** : (1) **aucune correspondance** ; (2) suite verte, dont le **méta-test** `the_quarantine_scanner_actually_detects_a_violation` — qui prouve que le scan mordrait si quelqu'un franchissait la ligne.
+
+**Pourquoi le méta-test compte autant que le test** : une assertion d'absence qui n'inspecte rien passe éternellement au vert. Le méta-test injecte les aiguilles dans une chaîne de test (jamais dans le code du témoin) et exige que **chaque** règle les détecte, plus un contrôle inverse sur du code honnête.
+
+### Scénario 15.12 — La suite d'attaque NFR1 (hôte)
+
+```bash
+php vendor/bin/phpunit tests/Unit/OidcWitness/WitnessIdTokenVerifierTest.php
+php vendor/bin/phpunit tests/Feature/OidcWitness
+```
+
+**Attendu** : tout vert. La suite couvre, **un test par vecteur nommé** : `alg: none` ; confusion d'algorithme symétrique (HS256 signé avec la clé publique comme secret) ; `aud` d'un autre client ; `iss` d'une autre instance ; signature par la clé d'une autre instance ; `kid` inconnu ; JWKS vide ou annonçant un algorithme symétrique ; jeton expiré au-delà de la tolérance **et** accepté dans la tolérance ; `nbf` futur ; `exp`/`sub`/`jti`/`aud` manquants ; `nonce` divergent ou absent ; `jti` rejoué ; chaîne malformée ou tronquée.
+
+**Ce qui n'y est PAS, et pourquoi** : `redirect_uri` altérée, PKCE absent ou `plain`, `code_verifier` faux, code rejoué, secret client faux, scope inconnu, compte désactivé — **tous déjà couverts par les 102 tests OIDC de 55.1/55.2** (Sections 11 à 14). Ils sont **référencés** dans la table de traçabilité du docblock de la suite, jamais dupliqués : une seconde source de vérité sur les mêmes refus se désynchroniserait le jour où l'une des deux évoluerait.
+
+### Scénario 15.13 — Aucun identifiant interne ne fuit dans le canal extensions (FR24)
+
+1. Choisir un compte dont `ad_guid` et `dn` sont renseignés (`SELECT id, login, dn, ad_guid FROM users WHERE login = '<login>';`).
+2. Faire un flux SSO complet, capturer l'`id_token` et l'`access_token` (Scénario 11.4 pour la méthode `curl`).
+3. Décoder le **payload brut** de l'id_token (`echo <payload> | base64 -d`) et appeler `/oidc/userinfo` avec le Bearer.
+4. Chercher dans les DEUX corps : la valeur de l'`ad_guid`, un fragment du `dn` (`OU=`, `DC=`), et la valeur de `users.id`.
+
+**Attendu** : le `sub` vaut le **`login`** (jamais `users.id`) ; `name`, `role` et `groups` sont bien là (contrôle positif) ; **aucune** occurrence d'`ad_guid`, de `dn`, de `memberOf`, de `sAMAccountName`, ni d'une clé interne du registre (`extension_id`, `oidc_client_id`, `*_hash`).
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Section 14.1 — l'état du compte se vérifie à CHAQUE maillon, pas une fois pour toutes** : la chaîne OIDC part d'un code ou d'un jeton, jamais d'une session — aucun middleware d'authentification ne la protège. Toute donnée d'identité servie doit donc revérifier l'état du sujet (`users.is_active`) **et** celui du client (`oidc_clients.enabled`) au moment où elle est servie. Piège de fond : `SambaEduAuthGuard` contrôle l'état côté **LDAP/AD**, pas la colonne PostgreSQL — supposer que « le guard s'en occupe » est faux hors du web classique. La même vigilance vaudra pour les tokens de service de l'Epic 56.
+- **Section 15.11 — une sonde qui triche ne prouve rien** : la valeur démonstrative de l'app-témoin repose ENTIÈREMENT sur le fait qu'elle n'a que le contrat public. Toute story future qui « simplifierait » le témoin en lui faisant lire un modèle, la base ou la session SE5 le transformerait en validation de la connexion SE5 — c'est-à-dire en rien. Corollaire pour les Epics 56/57 : le jour où une vraie extension ne pourrait pas être écrite sans franchir cette ligne, ce n'est pas la ligne qu'il faut déplacer, c'est le **contrat public** qu'il faut compléter (et documenter comme tel, NFR11 : additivement).
+- **Section 15.12 — le contrôle POSITIF est la condition de validité de tous les refus** : chaque famille d'attaque ouvre sur un jeton nominal accepté, et la tolérance d'horloge est prouvée dans les DEUX sens (rejeté au-delà, accepté en deçà). Sans cela, un refus n'est peut-être que le symptôme d'une plomberie cassée — mauvais PEM, mauvais `kid`, JWKS mal reconstruit — et la suite entière passerait au vert en ne protégeant rien.
+- **Section 15.12 — ne jamais dupliquer un refus déjà couvert** : la traçabilité NFR1 (« chaque cas = un test ») se satisfait d'un **renvoi documenté** vers le test qui l'exerce déjà. Re-tester côté client ce que le serveur refuse crée une seconde source de vérité qui se désynchronisera. La table cas→test vit dans le docblock de `WitnessIdTokenVerifierTest`.
+- **Section 15.6 — le `state` est le pendant CLIENT de la `redirect_uri`** : le serveur ne peut rien contre une injection de code d'autorisation ; seul le client sait s'il a demandé ce retour. La règle qui en découle vaut pour toute extension future : **vérifier le `state` AVANT de présenter le code au token endpoint**, jamais après — sinon le code est consommé pour le compte de l'attaquant.
+- **Section 15.1 — un secret dont personne n'a besoin ne s'affiche pas** : `oidc:client:register` affiche le sien parce qu'un humain doit le recopier ; `oidc:witness:enable` ne l'affiche pas parce que son destinataire est le fichier qu'il écrit. Généralisation pour le provisioning automatique de l'Epic 56 (56.2) : dès lors que le secret est posé par la machine, il ne doit apparaître ni à l'écran, ni au journal, ni en base.
+- **Section 15.1 / 15.10 — l'anti-rejeu `jti` du témoin est volontairement LIMITÉ** : cache local (`file`), aucun filet en base — parce que le témoin n'a pas le droit d'y toucher (FR24). Lui donner un stockage partagé lui prêterait une capacité qu'une vraie extension n'a pas, et la sonde mentirait. Une extension répartie devra porter le sien (SDK, Epic 58).
+- **Section 15.12 — la consommation du `jti` est le DERNIER geste de la vérification** : miroir inversé de la décision M1 de l'Epic 20. Là-bas, le contrôleur consommait après le provisioning pour ne pas brûler un `jti` sur un échec ultérieur ; ici il n'y a pas d'étape ultérieure faillible, mais la position reste la même — sinon un jeton contrefait portant le `jti` d'un jeton légitime le brûlerait par avance (déni de service silencieux sur le SSO d'un utilisateur précis).
 - **Section 14.2 — un `catch` best-effort doit rester bavard hors du cas qu'il vise** : intercepter `\Throwable` pour absorber une limite connue de SQLite absorbe aussi les vraies erreurs PostgreSQL. La règle : restreindre au driver concerné, ou au minimum journaliser — sinon la migration se déclare réussie en laissant fausse une garantie annoncée.
 
 - **Section 1.3 / 5.x — « le catalogue local effacé par la sync amont »** : incident réel du projet sur `applications`. Le registre d'extensions est isolé par construction ; les scénarios 1.3 (le `status` survit à un re-seed) et 5.1→5.3 (la sync amont ne touche pas les tables) sont les deux faces du même garde-fou. Toute story future qui ajouterait un listener ou une FK entre les deux mondes doit faire échouer `UpstreamSyncExtensionsBoundaryTest`.
@@ -1173,3 +1346,16 @@ curl -s https://<host>/.well-known/openid-configuration | jq
 - [ ] 13.11 ~40 groupes : id_token émis et vérifiable, `/userinfo` rend la même liste
 - [ ] **14.1 Compte désactivé : `/userinfo` en 401 indistinct et échange de code en `invalid_grant`, réactivation OK**
 - [ ] 14.2 FK `oidc_tokens_user_fk` présente en PostgreSQL, aucun log `oidc.migration.foreign_key_skipped`
+- [ ] 15.1 `oidc:witness:enable` idempotente : fichier **0600**, secret **jamais affiché ni journalisé**, un seul client
+- [ ] 15.2 `--rotate` : nouveau `client_id` + nouveau secret, ancien client `enabled = f` (jamais supprimé)
+- [ ] 15.3 Fichier présent + client révoqué : échec bruyant nommant `--rotate`, aucun client fantôme
+- [ ] **15.4 Clic sur la tuile « Démo SSO » : PKCE S256, aucun formulaire de login, « Bonjour {name} » + rôle + groupes, retour au lanceur**
+- [ ] 15.5 Rôle non résoluble : « (non résolu) » affiché, jamais une valeur inventée
+- [ ] **15.6 `state` altéré : refus 400 SANS échange de code (+ contrôle positif avec le bon `state`)**
+- [ ] 15.7 Rejeu du callback : 502 explicite, aucune ligne « Bonjour »
+- [ ] 15.8 Client révoqué : `/oidc/authorize` en 400 local **sans** `Location`
+- [ ] 15.9 Témoin non provisionné : 503 sobre citant `oidc:witness:enable`, aucun appel sortant
+- [ ] 15.10 `oidc:witness:disable` idempotente, et nettoie un fichier illisible
+- [ ] **15.11 Quarantaine : `grep` sans correspondance + `ExtensionIsolationTest` vert (méta-test compris)**
+- [ ] 15.12 Suite d'attaque NFR1 verte : `alg:none`, HS256/clé publique, `aud`/`iss`/clé étrangère, `kid` inconnu, expiration (+ tolérance), `nbf`, `nonce`, `jti` rejoué, malformé
+- [ ] **15.13 Ni `ad_guid`, ni `dn`, ni `users.id` dans l'id_token et `/userinfo` ; `sub` = `login`**

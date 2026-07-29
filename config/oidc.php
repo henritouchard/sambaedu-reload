@@ -148,4 +148,51 @@ return [
     'safety' => [
         'forbid_test_keys_in_production' => (bool) env('OIDC_FORBID_TEST_KEYS_IN_PROD', true),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | App-témoin SSO (Story 55.3) — section ADDITIVE
+    |--------------------------------------------------------------------------
+    |
+    | Le témoin (`app/OidcWitness/`) est un CLIENT du fournisseur ci-dessus, pas
+    | une partie de celui-ci : il ne lit que ce qu'une extension tierce pourrait
+    | lire. Sa configuration est donc volontairement pauvre.
+    |
+    | `credentials_path` — POURQUOI UN FICHIER, ET PAS LA BASE.
+    | Une extension ne lit pas la base de SE5 : elle reçoit sa configuration
+    | À L'INSTALLATION et la garde chez elle (FR24). Le fichier de credentials
+    | du témoin préfigure exactement ce que l'Epic 56 posera automatiquement au
+    | moment d'installer une extension `app` — un `client_id`, un
+    | `client_secret`, un `issuer` et une `redirect_uri`, écrits une fois par
+    | l'opérateur, jamais relus depuis `oidc_clients`. Le jour où le témoin
+    | irait chercher son client en base, il cesserait de prouver quoi que ce
+    | soit.
+    |
+    | ⚠️ Le fichier contient un SECRET : écrit en 0600, jamais affiché, jamais
+    | journalisé (NFR3). Il vit sous `storage/app/` — non versionné.
+    |
+    | `replay_cache_store` — store de l'anti-rejeu `jti` CLIENT. `file` en
+    | production (le témoin n'a pas le droit de toucher la base — FR24), `array`
+    | en tests. Patron `federated_auth.replay.cache_store`.
+    |
+    | `http_timeout` — le témoin appelle le fournisseur PAR HTTP (discovery,
+    | JWKS, token). Timeout court : une page de démonstration ne doit jamais
+    | rester pendue sur un endpoint muet.
+    |
+    | `state_ttl` — durée de vie du cookie qui porte `state`/`nonce`/verifier
+    | PKCE entre `/sso-demo` et `/sso-demo/callback`.
+    |
+    */
+
+    'witness' => [
+        'credentials_path' => env('OIDC_WITNESS_CREDENTIALS_PATH', storage_path('app/oidc-witness.json')),
+        'replay_cache_store' => env('OIDC_WITNESS_REPLAY_CACHE_STORE', 'file'),
+        'replay_cache_prefix' => env('OIDC_WITNESS_REPLAY_CACHE_PREFIX', 'oidc-witness:jti:'),
+        'http_timeout' => (int) env('OIDC_WITNESS_HTTP_TIMEOUT', 5),
+        'state_ttl' => (int) env('OIDC_WITNESS_STATE_TTL', 300),
+
+        // Scopes demandés par le témoin. Exactement l'ensemble fermé publié par
+        // la discovery : le témoin AFFICHE le contrat, il n'en invente rien.
+        'scope' => env('OIDC_WITNESS_SCOPE', 'openid profile groups'),
+    ],
 ];

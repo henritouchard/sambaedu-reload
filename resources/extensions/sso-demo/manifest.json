@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "id": "sso-demo",
+  "type": "link",
+  "name": "Démo SSO",
+  "version": "1.0.0",
+  "entry_url": "/sso-demo",
+  "icon": "fa-solid fa-id-badge",
+  "publisher": "SambaEdu",
+  "description": "App-témoin : affiche vos claims SSO (nom, rôle, groupes) — outil de validation du fournisseur d'identité.",
+  "scopes": ["profile", "groups"],
+  "dependencies": [],
+  "visibility": {
+    "roles": ["admin", "prof", "eleve", "administratif"]
+  }
+}

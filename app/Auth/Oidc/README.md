@@ -1,6 +1,6 @@
 # `App\Auth\Oidc` — SE5 fournisseur d'identité OIDC
 
-**Stories 55.1 et 55.2** (Epic 55 — SSO des extensions). Document d'accueil pour 55.3 et l'Epic 56.
+**Stories 55.1, 55.2 et 55.3** (Epic 55 — SSO des extensions, **CLOS**). Document d'accueil pour l'Epic 56.
 
 ## Où ce namespace se situe
 
@@ -20,15 +20,16 @@ Règles communes : frontière d'import `Firebase\JWT`, channel de log dédié, a
 
 **55.2** : le **contrat de claims v1** (`name`, `role`, `groups`, scope-gatés), `GET|POST /oidc/userinfo`, l'ensemble **fermé** des scopes (`openid`, `profile`, `groups` — l'inconnu est refusé), `userinfo_endpoint` à la discovery.
 
+**55.3** : l'**app-témoin** — un client OIDC honnête, en quarantaine, qui ne consomme QUE ce contrat public par HTTP. Elle vit dans `app/OidcWitness/` (voir son README : la charte de quarantaine, ce qu'elle s'interdit et pourquoi), s'atteint par sa tuile « Démo SSO » du lanceur, et s'accompagne de la suite d'attaque cliente (NFR1) plus du test d'architecture FR24. **Ce namespace-ci est resté à ZÉRO diff** — c'est précisément ce qui donne sa valeur à la démonstration : le contrat n'a pas eu besoin d'être élargi pour qu'un client honnête l'utilise.
+
 Non livré, volontairement :
 
-- app-témoin et suite de tests d'attaque → **Story 55.3** ;
 - scopes consentis, `client_credentials`, provisioning automatique du client à l'installation d'une extension `app`, UI admin → **Epic 56** ;
 - écran de consentement utilisateur : **il n'y en a pas**. Le consentement des scopes est un acte admin à l'installation, pas un dialogue.
 
 ## Pourquoi fait main et pas `laravel/passport`
 
-Le périmètre est minuscule et fermé : **un** grant, des clients déclarés par nous, un id_token RS256. Passport apporterait des dizaines de tables, d'endpoints et de grants à désactiver, plus une dépendance structurante à suivre — et il n'est pas OIDC-complet nativement. Le projet possédait déjà les deux moitiés du problème (`App\Auth\V1` émet du RS256 durci, `App\Auth\Federated` consomme du JWT durci). `league/oauth2-client`, déjà en dépendance, est une bibliothèque **cliente** : elle servira à l'app-témoin 55.3, pas ici.
+Le périmètre est minuscule et fermé : **un** grant, des clients déclarés par nous, un id_token RS256. Passport apporterait des dizaines de tables, d'endpoints et de grants à désactiver, plus une dépendance structurante à suivre — et il n'est pas OIDC-complet nativement. Le projet possédait déjà les deux moitiés du problème (`App\Auth\V1` émet du RS256 durci, `App\Auth\Federated` consomme du JWT durci). `league/oauth2-client`, déjà en dépendance, est une bibliothèque **cliente** : elle sert à l'app-témoin 55.3 (`app/OidcWitness/`), pas ici.
 
 Toute réouverture de ce choix est un arbitrage utilisateur, pas une décision de développement.
 

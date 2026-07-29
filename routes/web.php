@@ -1345,6 +1345,47 @@ Route::match(['get', 'post'], '/oidc/userinfo', \App\Auth\Oidc\Http\Controllers\
 
 /*
 |--------------------------------------------------------------------------
+| Story 55.3 — APP-TÉMOIN SSO (`app/OidcWitness/`) — CLIENT du bloc ci-dessus
+|--------------------------------------------------------------------------
+| Deux routes, une page « Bonjour {name}, rôle {role}, groupes {groups} ». Le
+| témoin est un CLIENT OIDC honnête en quarantaine : il n'obtient RIEN de SE5
+| autrement que par les endpoints publics déclarés au-dessus, appelés en HTTP.
+| Sa frontière d'imports est verrouillée par
+| `tests/Architecture/ExtensionIsolationTest.php` (FR24).
+|
+| **PAS de `sambaedu.auth`** — et c'est le cœur de la démonstration : c'est
+| `/oidc/authorize` qui authentifie l'utilisateur. Un témoin placé derrière le
+| guard rendrait la preuve « sans re-saisie d'identifiants » circulaire. Donc
+| pas de `federated.audit` non plus : l'invariant `FederatedAuditCoverageTest`
+| ne vise que les routes du guard, et l'imputabilité est déjà écrite à
+| l'autorisation (review 55.1 #1).
+|
+| **Le groupe `web` est CONSERVÉ** (contrairement aux routes OIDC machine) :
+| le témoin a besoin d'`EncryptCookies` + `AddQueuedCookiesToResponse` pour
+| porter `state`/`nonce`/verifier PKCE entre les deux routes — c'est ce qu'une
+| extension ferait avec son propre magasin d'état côté client.
+|
+| **Noms de routes SANS préfixe `oidc.`** : ces routes ne font pas partie du
+| fournisseur (elles le consomment), et `OidcRoutesTest` compte exactement CINQ
+| routes `oidc.*`.
+|
+| **ORDRE STRICT** : avant le catchall `{path}`, et AVANT le bloc DDNS
+| ci-dessous — la fenêtre d'inspection de `DhcpDnsUpdateRoutesTest::ddnsBlock()`
+| court de la première route DDNS jusqu'au catchall.
+|
+| Prérequis d'exploitation : `php artisan oidc:witness:enable` (idempotent).
+| Sans lui, les deux routes répondent une page d'erreur EXPLICITE en 503.
+*/
+Route::get('/sso-demo', [\App\OidcWitness\Http\Controllers\WitnessController::class, 'start'])
+    ->middleware('throttle:60,1')
+    ->name('sso-demo.start');
+
+Route::get('/sso-demo/callback', [\App\OidcWitness\Http\Controllers\WitnessController::class, 'callback'])
+    ->middleware('throttle:60,1')
+    ->name('sso-demo.callback');
+
+/*
+|--------------------------------------------------------------------------
 | DDNS piloté par DHCP (Story 8.4) — port natif de `dhcp/dnsupdate.php`
 |--------------------------------------------------------------------------
 | Appelé par `/usr/share/sambaedu/sbin/dhcp-dyndns.sh`, déclenché par les
