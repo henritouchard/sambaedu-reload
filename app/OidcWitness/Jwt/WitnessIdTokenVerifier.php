@@ -98,6 +98,20 @@ class WitnessIdTokenVerifier
             throw $this->reject(InvalidWitnessIdTokenException::malformed(), $idToken);
         }
 
+        // Correctif review 55.3 (#4) — défense en profondeur, PAS un correctif
+        // de faille : `WitnessCredentials::load()` refuse déjà tout champ vide,
+        // donc `clientId` ne peut pas être vide ici aujourd'hui.
+        //
+        // Mais si cet invariant tombait un jour, la comparaison d'audience
+        // deviendrait silencieusement permissive : `audClaim()` rend `''`
+        // lorsqu'aucune entrée d'un `aud` tableau ne correspond, et
+        // `hash_equals('', '')` vaut `true` — n'importe quelle audience serait
+        // acceptée. Une propriété de sécurité ne doit pas dépendre en silence
+        // d'une garde posée dans une autre classe.
+        if ($credentials->clientId === '') {
+            throw $this->reject(InvalidWitnessIdTokenException::malformed(), $idToken);
+        }
+
         // Tolérance d'horloge — variable STATIQUE de la bibliothèque.
         JWT::$leeway = (int) config('oidc.leeway', 60);
 

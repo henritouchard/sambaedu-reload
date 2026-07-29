@@ -382,6 +382,18 @@ class WitnessIdTokenVerifierTest extends TestCase
             $this->verifier()->verify($truncated, $this->credentials(), $this->jwks(), self::NONCE);
             self::fail('Un JWT tronqué doit être refusé');
         } catch (InvalidWitnessIdTokenException $e) {
+            // ⚠️ SEUL test de ce fichier à accepter deux codes, et c'est
+            // délibéré (relevé en review 55.3 #3). Le point de troncature à 60 %
+            // tombe à une position qui dépend de la longueur des claims : selon
+            // qu'il coupe AVANT ou APRÈS le 2ᵉ point, le jeton est soit
+            // structurellement invalide (`MALFORMED`), soit un JWT bien formé à
+            // signature tronquée (`SIGNATURE_INVALID`). Figer un code unique
+            // exigerait de figer la longueur du payload — donc de rendre le
+            // test sensible à toute évolution des claims, ce qui vaut moins que
+            // ce qu'il prouve ici : un jeton amputé ne passe JAMAIS.
+            //
+            // La latitude reste étroite : un basculement vers `MISSING_CLAIM`,
+            // `EXPIRED` ou une acceptation ferait toujours rougir ce test.
             self::assertContains($e->errorCode, [
                 WitnessErrorCodes::ID_TOKEN_MALFORMED,
                 WitnessErrorCodes::ID_TOKEN_SIGNATURE_INVALID,

@@ -92,6 +92,23 @@ jamais une 500 brute, jamais un contournement.
    par l'administrateur. Pour la réserver aux instances de développement, le
    retrait de `resources/extensions/sso-demo/manifest.json` suffit — aucun code
    à toucher.
+5. **La page d'erreur du témoin nomme la cause du refus** (`STATE_MISMATCH`,
+   `NONCE_MISMATCH`, `JTI_REPLAYED`, `AUD_MISMATCH`…), à l'inverse de la
+   doctrine « pas d'oracle » que le **fournisseur** applique (55.1 #1, 55.2 #1 :
+   réponse indistincte, diagnostic au journal seulement). Divergence **assumée**,
+   relevée en review 55.3 (#2) :
+   - le témoin n'est pas un fournisseur d'identité, c'est un **outil de
+     diagnostic d'intégration** : une page qui afficherait « erreur » sans plus
+     ne servirait à rien, et l'admin n'a pas accès aux journaux du témoin ;
+   - il ne protège **aucun secret** — il ne détient que ses propres credentials,
+     et aucun code ne dépend de l'opacité de ses messages ;
+   - le seul bucket réellement sensible est déjà **fusionné** : `alg: none`,
+     confusion d'algorithme, clé étrangère et `kid` inconnu rendent tous
+     `ID_TOKEN_SIGNATURE_INVALID`, jamais le détail de ce qui a échoué.
+
+   Si une extension réelle copie ce patron, c'est cette dernière règle qu'elle
+   doit reprendre — pas la granularité du reste. Le SDK (Epic 58) tranchera pour
+   les extensions distribuées.
 
 ## Les tests qui font foi
 

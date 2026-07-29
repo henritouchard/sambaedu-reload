@@ -57,9 +57,55 @@ class ExtensionIsolationTest extends TestCase
         'couche base de données' => '/Illuminate\\\\Database\\\\/',
         'appel direct au query builder' => '/\bDB::/',
         'annuaire LDAP' => '/LdapRecord/',
-        'utilisateur connecté (helper)' => '/(?<![\w\\\\])auth\s*\(/',
-        'utilisateur connecté (façade)' => '/(?<![\w\\\\])Auth::/',
-        'magasin d\'état serveur de SE5' => '/(?<![\w\\\\])session\s*\(/',
+
+        // ⚠️ Correctif review 55.3 (#1) — le lookbehind était `(?<![\w\\])`,
+        // c'est-à-dire qu'il excluait aussi un ANTISLASH de tête. Or
+        // `\auth()`, `\session()` et `\Illuminate\Support\Facades\Auth::` sont
+        // du PHP parfaitement légal (résolution globale / FQCN inline) : la
+        // règle laissait donc passer exactement la syntaxe qu'un contributeur
+        // pressé emploie. Le lookbehind ne doit exclure QUE les identifiants
+        // qui se terminent par le motif (`myAuth::`, `getauth(`), donc `\w`
+        // seul.
+        'utilisateur connecté (helper)' => '/(?<!\w)auth\s*\(/',
+        'utilisateur connecté (façade)' => '/(?<!\w)Auth::/',
+        'magasin d\'état serveur de SE5' => '/(?<!\w)session\s*\(/',
+
+        // Les règles ci-dessus portent sur le SITE D'APPEL ; un alias d'import
+        // (`use Illuminate\Support\Facades\Auth as CurrentUser;`) les esquive
+        // toutes. Mais un alias exige d'écrire le FQCN dans le `use` — ces
+        // règles-ci le cueillent là. Volontairement CIBLÉES et non un préfixe
+        // `Facades\` global : le témoin utilise légitimement `Cache`, `Log` et
+        // `Cookie`, qui ne donnent accès ni à l'identité SE5 ni à ses données.
+        'façade utilisateur (import)' => '/Illuminate\\\\Support\\\\Facades\\\\Auth\b/',
+        'façade session (import)' => '/Illuminate\\\\Support\\\\Facades\\\\Session\b/',
+        'contrats d\'authentification' => '/Illuminate\\\\Contracts\\\\Auth\\\\/',
+
+        // Le conteneur était un angle mort TOTAL : `app('db')`, `app(User::class)`
+        // ou `resolve(Guard::class)` atteignent n'importe quoi sans jamais
+        // écrire le nom interdit en toutes lettres. Le témoin n'en a aucun
+        // usage — il reçoit ses collaborateurs par injection de constructeur.
+        'résolution par le conteneur' => '/(?<!\w)app\s*\(/',
+        'résolution par le conteneur (resolve)' => '/(?<!\w)resolve\s*\(/',
+    ];
+
+    /**
+     * Formes d'ÉVASION connues, à faire mordre par le méta-test.
+     *
+     * Chaque entrée a été vérifiée comme NON détectée par le jeu de règles
+     * d'origine (review 55.3 #1). Les garder ici en dur est ce qui empêche la
+     * régression : quelqu'un qui « simplifierait » une regex sans y penser
+     * ferait rougir le méta-test, pas seulement le scan nominal.
+     *
+     * @var list<string>
+     */
+    private const KNOWN_EVASIONS = [
+        '$u = \auth()->user();',
+        '$u = \Illuminate\Support\Facades\Auth::user();',
+        '$v = \session()->get("x");',
+        'use Illuminate\Support\Facades\Auth as CurrentUser;',
+        'use Illuminate\Support\Facades\Session as Store;',
+        '$db = app("db");',
+        '$g = resolve(\Illuminate\Contracts\Auth\Guard::class);',
     ];
 
     /** Racine du dépôt (ce fichier vit dans `tests/Architecture/`). */
@@ -154,6 +200,11 @@ class ExtensionIsolationTest extends TestCase
             'utilisateur connecté (helper)' => '$user = au' . 'th()->user();',
             'utilisateur connecté (façade)' => '$user = Au' . 'th::user();',
             'magasin d\'état serveur de SE5' => 'ses' . 'sion()->put("k", 1);',
+            'façade utilisateur (import)' => 'use Illuminate' . '\\Support\\Facades\\Auth as CurrentUser;',
+            'façade session (import)' => 'use Illuminate' . '\\Support\\Facades\\Session as Store;',
+            'contrats d\'authentification' => 'use Illuminate' . '\\Contracts\\Auth\\Guard;',
+            'résolution par le conteneur' => '$db = ap' . 'p("db");',
+            'résolution par le conteneur (resolve)' => '$g = resol' . 've("auth.driver");',
         ];
 
         // Chaque règle est couverte par une aiguille : une règle sans aiguille
@@ -179,6 +230,59 @@ class ExtensionIsolationTest extends TestCase
             $this->quarantineViolations(
                 '<?php use GuzzleHttp\Client; $document = $this->http->getJson($issuer);'
             ),
+        );
+
+        // Correctif review 55.3 (#1) — LES FORMES D'ÉVASION.
+        //
+        // Les aiguilles ci-dessus prouvent que chaque règle mord sur SA syntaxe
+        // canonique. Elles ne prouvaient rien sur les variantes légales que PHP
+        // autorise — antislash de résolution globale, FQCN inline, alias
+        // d'import, conteneur. Le jeu de règles d'origine laissait passer les
+        // sept formes ci-dessous : le témoin pouvait lire la session SE5 sans
+        // qu'aucun test ne bronche, et la propriété centrale de la story
+        // (« la quarantaine est verrouillée par test, pas par convention »)
+        // était fausse.
+        //
+        // Chacune doit désormais produire AU MOINS une violation. On n'exige
+        // pas quelle règle mord : ce qui compte est qu'aucune de ces formes ne
+        // traverse le scan en silence.
+        foreach (self::KNOWN_EVASIONS as $evasion) {
+            self::assertNotSame(
+                [],
+                $this->quarantineViolations($evasion),
+                sprintf(
+                    'FORME D\'ÉVASION NON DÉTECTÉE : « %s ». Le scan est textuel, donc '
+                    . 'contournable par construction — mais pas par de la syntaxe PHP courante.',
+                    $evasion,
+                ),
+            );
+        }
+    }
+
+    /**
+     * La limite RÉSIDUELLE, écrite plutôt que tue.
+     *
+     * Un scan textuel ne peut pas être exhaustif : un FQCN concaténé à
+     * l'exécution (`("App"."\\Models\\User")::query()`), construit depuis une
+     * constante, ou reconstitué par `base64_decode()`, passera toujours. Ce
+     * test ne prétend donc pas rendre la triche impossible — il rend la triche
+     * DÉLIBÉRÉE ET VISIBLE EN REVUE, ce qui est l'objectif atteignable.
+     *
+     * Ce test documente ce résidu et échouerait si quelqu'un le supprimait en
+     * croyant la quarantaine hermétique. Même parti-pris que le canal de timing
+     * assumé en review 55.2 : un écart connu et écrit vaut mieux qu'une
+     * promesse absolue démentie par le code.
+     */
+    #[Test]
+    public function the_textual_scan_has_a_documented_residual_limit(): void
+    {
+        $obfuscated = '$fqcn = "App" . "\\\\Models\\\\User"; $rows = $fqcn::query()->get();';
+
+        self::assertSame(
+            [],
+            $this->quarantineViolations($obfuscated),
+            'Si cette forme est désormais détectée, tant mieux — mettre à jour '
+            . 'le commentaire de ce test plutôt que de le supprimer.',
         );
     }
 

@@ -1230,7 +1230,41 @@ php vendor/bin/phpunit tests/Feature/OidcWitness
 
 ---
 
+## Section 16 — Correctifs de review 55.3
+
+> Ajoutée après la review sonnet de la Story 55.3 (dev opus), findings évalués et **rejoués** par l'orchestrateur. Clôt l'Epic 55.
+
+### Scénario 16.1 — La quarantaine de l'app-témoin détecte réellement une triche
+
+**Contexte** : `ExtensionIsolationTest` verrouille la propriété centrale de l'Epic 55 — le témoin ne prouve que le contrat public **parce qu'il n'a accès à rien d'autre**. Ce verrou est un scan **textuel**, et trois de ses règles utilisaient un lookbehind qui excluait l'antislash de tête : `\auth()`, `\Illuminate\Support\Facades\Auth::`, un alias d'import et le conteneur (`app()`, `resolve()`) passaient sans être vus.
+
+Ce scénario est un **test de mutation manuel** : on casse volontairement, on vérifie que le garde-fou crie, on remet en état.
+
+1. Dans `app/OidcWitness/Http/Controllers/WitnessController.php`, ajouter une ligne : `$u = \Illuminate\Support\Facades\Auth::user();`
+2. `php artisan test --filter=ExtensionIsolation`
+3. Retirer la ligne. Recommencer avec `$db = app('db');`, puis avec `use Illuminate\Support\Facades\Auth as CurrentUser;`
+4. Retirer la ligne et relancer.
+
+**Attendu** :
+- (2) et (3) : **échec** de `the_witness_namespace_cannot_reach_anything_but_the_public_contract`, message « QUARANTAINE ROMPUE (FR24) » nommant le fichier et la règle violée.
+- (4) : suite **verte** à nouveau.
+
+**Pourquoi ce scénario existe** : avant le correctif, les trois manipulations ci-dessus laissaient la suite **entièrement verte**. Le témoin pouvait lire la session SE5 et la conclusion de l'epic — « le contrat public suffit à un client honnête » — devenait fausse sans que rien ne le signale. Un test de preuve qui ne prouve pas est pire qu'aucun test : il rassure.
+
+### Scénario 16.2 — La limite du scan textuel est connue, écrite, et assumée
+
+Lire `tests/Architecture/ExtensionIsolationTest.php::the_textual_scan_has_a_documented_residual_limit` et `app/OidcWitness/README.md`.
+
+**Attendu** : il est écrit noir sur blanc qu'un FQCN concaténé à l'exécution (`"App" . "\Models\User"`) **passera toujours**. Le scan ne rend pas la triche impossible — il la rend délibérée et visible en revue.
+
+**Pourquoi ce scénario existe** : pour que personne ne prenne ce garde-fou pour une barrière hermétique et ne cesse de relire les diffs du témoin. Si ce test venait à être supprimé au motif que « la quarantaine est étanche », c'est le raisonnement qu'il faudrait rouvrir.
+
+---
+
 ## Post-correctifs & non-régressions
+
+- **Section 16.1 — un garde-fou par scan textuel doit embarquer ses formes d'évasion connues** : une regex qui mord sur la syntaxe canonique (`auth(`) ne dit rien des variantes légales que PHP autorise — antislash de résolution globale, FQCN inline, alias d'import, conteneur. Sans un jeu de contre-exemples **figé en dur** dans le test, un tel garde-fou ne verrouille qu'une syntaxe, pas une propriété. Règle dérivée : toute règle portant sur un **site d'appel** doit être doublée d'une règle sur l'**import FQCN**, seule façon de fermer la voie de l'alias. Vaut pour tout futur test d'architecture du projet, pas seulement pour la quarantaine des extensions.
+- **Section 16.2 — écrire les résidus plutôt que les taire** : troisième occurrence sur cet epic (canal de timing en 55.2, limite du scan ici, granularité d'erreur du témoin). Un écart connu et documenté vaut mieux qu'une promesse absolue démentie par le code — et c'est ce qui permet à la revue suivante de ne pas le redécouvrir comme s'il était neuf.
 
 - **Section 14.1 — l'état du compte se vérifie à CHAQUE maillon, pas une fois pour toutes** : la chaîne OIDC part d'un code ou d'un jeton, jamais d'une session — aucun middleware d'authentification ne la protège. Toute donnée d'identité servie doit donc revérifier l'état du sujet (`users.is_active`) **et** celui du client (`oidc_clients.enabled`) au moment où elle est servie. Piège de fond : `SambaEduAuthGuard` contrôle l'état côté **LDAP/AD**, pas la colonne PostgreSQL — supposer que « le guard s'en occupe » est faux hors du web classique. La même vigilance vaudra pour les tokens de service de l'Epic 56.
 - **Section 15.11 — une sonde qui triche ne prouve rien** : la valeur démonstrative de l'app-témoin repose ENTIÈREMENT sur le fait qu'elle n'a que le contrat public. Toute story future qui « simplifierait » le témoin en lui faisant lire un modèle, la base ou la session SE5 le transformerait en validation de la connexion SE5 — c'est-à-dire en rien. Corollaire pour les Epics 56/57 : le jour où une vraie extension ne pourrait pas être écrite sans franchir cette ligne, ce n'est pas la ligne qu'il faut déplacer, c'est le **contrat public** qu'il faut compléter (et documenter comme tel, NFR11 : additivement).
@@ -1359,3 +1393,5 @@ php vendor/bin/phpunit tests/Feature/OidcWitness
 - [ ] **15.11 Quarantaine : `grep` sans correspondance + `ExtensionIsolationTest` vert (méta-test compris)**
 - [ ] 15.12 Suite d'attaque NFR1 verte : `alg:none`, HS256/clé publique, `aud`/`iss`/clé étrangère, `kid` inconnu, expiration (+ tolérance), `nbf`, `nonce`, `jti` rejoué, malformé
 - [ ] **15.13 Ni `ad_guid`, ni `dn`, ni `users.id` dans l'id_token et `/userinfo` ; `sub` = `login`**
+- [ ] **16.1 Test de mutation : injecter `\…\Auth::user()`, `app('db')` puis un alias dans le témoin ⇒ quarantaine ROMPUE à chaque fois, verte après retrait**
+- [ ] 16.2 La limite résiduelle du scan textuel est écrite (test dédié + README du témoin)
