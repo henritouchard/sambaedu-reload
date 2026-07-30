@@ -18,12 +18,19 @@ use Livewire\Component;
  * Livewire, pas de `WithToasts` : ce composant n'a rien à notifier, il
  * affiche.
  *
+ * **Story 56.5 (FR35)** : une tuile dont le backend a été observé INJOIGNABLE
+ * (état persisté par `ext:health:check`, LU dans la même requête — jamais
+ * mesuré ici) porte un badge « Indisponible ». Elle **reste cliquable** : l'état
+ * peut dater de 5 minutes, et bloquer transformerait un affichage en
+ * autorisation (FR14). Le non-admin ne voit aucun détail technique : ni
+ * catégorie d'incident, ni port, ni date.
+ *
  * **FR14** : ce composant décide UNIQUEMENT de la visibilité d'une tuile —
  * aucune route, aucun middleware, aucune garde n'est ajouté devant
  * `entry_url`. Masquer une tuile n'est PAS une protection.
  */
 new class extends Component {
-    /** @var list<array{key: string, name: string, icon: string, entry_url: string}> */
+    /** @var list<array{key: string, name: string, icon: string, entry_url: string, unavailable: bool}> */
     public array $tiles = [];
 
     public function mount(ExtensionLauncherService $launcher): void
@@ -87,11 +94,28 @@ new class extends Component {
 
         <div class="grid grid-cols-3 gap-2" data-testid="launcher-tiles">
             @foreach ($tiles as $tile)
+                {{--
+                    Story 56.5 — l'état conditionnel est porté par des CLASSES et
+                    un bloc INTERNE, jamais par la structure : la tuile reste un
+                    `<a href>` dans les deux états (FR14 — un badge n'est pas une
+                    garde), et le `@if` du badge est imbriqué, loin du premier
+                    niveau du SFC (piège maison de la racine stable).
+                --}}
+                @php $unavailable = (bool) ($tile['unavailable'] ?? false); @endphp
                 <a href="{{ $tile['entry_url'] }}" target="_blank" rel="noopener"
                     data-testid="launcher-tile-{{ $tile['key'] }}"
-                    class="flex flex-col items-center gap-1 p-2 rounded-lg text-center hover:bg-base-200 transition-colors">
-                    <i class="{{ $tile['icon'] !== '' ? $tile['icon'] : 'fa-solid fa-puzzle-piece' }} text-2xl text-primary"></i>
+                    title="{{ $unavailable ? $tile['name'].' — indisponible actuellement' : $tile['name'] }}"
+                    class="relative flex flex-col items-center gap-1 p-2 rounded-lg text-center hover:bg-base-200 transition-colors {{ $unavailable ? 'opacity-60' : '' }}">
+                    <i
+                        class="{{ $tile['icon'] !== '' ? $tile['icon'] : 'fa-solid fa-puzzle-piece' }} text-2xl {{ $unavailable ? 'text-base-content/40' : 'text-primary' }}"></i>
                     <span class="text-xs w-full truncate">{{ $tile['name'] }}</span>
+                    @if ($unavailable)
+                        <span class="absolute top-0.5 right-0.5 leading-none text-warning"
+                            data-testid="launcher-tile-unavailable-{{ $tile['key'] }}"
+                            title="Indisponible actuellement" aria-label="Indisponible actuellement">
+                            <i class="fa-solid fa-circle-exclamation text-xs"></i>
+                        </span>
+                    @endif
                 </a>
             @endforeach
         </div>

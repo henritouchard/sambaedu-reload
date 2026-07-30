@@ -1427,6 +1427,15 @@ class ExtensionInstallService
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
             ]);
+
+            // Story 56.5 — legs review 56.3 #4 : le compromis ci-dessus reste
+            // entier (un refus déjà compensé ne redevient jamais une exception
+            // nue), mais l'incident cesse d'être invisible. Le marqueur est
+            // SURFACÉ par `ExtensionsAuditTrailCheck` (doctor + page d'état
+            // système) et par un bandeau sur `/admin/extensions/journal` —
+            // plutôt qu'un grep de logs. Pose best-effort : la méthode avale
+            // ses propres échecs.
+            ExtensionAuditLog::recordWriteFailure();
         }
 
         return $this->result(false, $extension, $steps, null, $category);

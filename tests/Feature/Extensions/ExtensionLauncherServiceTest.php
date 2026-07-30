@@ -313,4 +313,104 @@ class ExtensionLauncherServiceTest extends TestCase
 
         $this->assertSame([], $this->service->tilesFor($this->makeUser('eleve')));
     }
+
+    // =====================================================================
+    // Story 56.5 (AC2, FR35) — la tuile PORTE l'état de santé, LU
+    // =====================================================================
+    //
+    // ⚠️ Ajouts en FIN de fichier, aucune assertion existante retouchée : le
+    // socle 54.3/56.1/56.2 doit rester vrai verbatim.
+
+    /** Une `app` installée sondée injoignable RÉCEMMENT est marquée. */
+    #[Test]
+    public function a_freshly_unreachable_installed_app_is_marked_unavailable(): void
+    {
+        Extension::factory()->app()->installed(8600)->unreachable()->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $tiles = $this->service->tilesFor($this->makeUser('prof'));
+
+        $this->assertSame(['hello'], array_column($tiles, 'key'));
+        $this->assertTrue($tiles[0]['unavailable']);
+    }
+
+    /**
+     * Un état PÉRIMÉ ne se signale pas : un scheduler arrêté n'est pas une
+     * extension morte, et badger 30 tuiles pour cette raison serait pire que le
+     * silence (c'est le doctor qui porte CE diagnostic).
+     */
+    #[Test]
+    public function a_stale_unreachable_state_is_not_marked(): void
+    {
+        Extension::factory()
+            ->app()
+            ->installed(8600)
+            ->unreachable(now()->subHours(3))
+            ->create([
+                'key' => 'hello',
+                'name' => 'Hello',
+                'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+            ]);
+
+        $tiles = $this->service->tilesFor($this->makeUser('prof'));
+
+        $this->assertSame(['hello'], array_column($tiles, 'key'), 'la tuile RESTE : la santé ne retire jamais une tuile');
+        $this->assertFalse($tiles[0]['unavailable']);
+    }
+
+    /** Jamais sondée ⇒ on ne SAIT pas ⇒ aucun signal. */
+    #[Test]
+    public function a_never_probed_app_is_not_marked(): void
+    {
+        Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $this->assertFalse($this->service->tilesFor($this->makeUser('prof'))[0]['unavailable']);
+    }
+
+    /** CONTRE-ÉPREUVE : un backend joignable n'est jamais marqué. */
+    #[Test]
+    public function a_healthy_installed_app_is_not_marked(): void
+    {
+        Extension::factory()->app()->installed(8600)->healthy()->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $this->assertFalse($this->service->tilesFor($this->makeUser('prof'))[0]['unavailable']);
+    }
+
+    /**
+     * Une `link` ne peut PAS être marquée, même si des colonnes de santé
+     * traînaient sur sa ligne : elle n'a aucun backend. La règle unique
+     * (`isFlaggedUnreachable()`) exige `isHealthMonitored()`.
+     */
+    #[Test]
+    public function a_link_extension_is_never_marked_unavailable(): void
+    {
+        $extension = $this->integratedLink('doc', 'Documentation', ['prof']);
+        $extension->health_status = \App\Models\Extension::HEALTH_UNREACHABLE;
+        $extension->health_checked_at = now();
+        $extension->save();
+
+        $this->assertFalse($this->service->tilesFor($this->makeUser('prof'))[0]['unavailable']);
+    }
+
+    #[Test]
+    public function every_tile_carries_the_unavailable_key(): void
+    {
+        $this->integratedLink('doc', 'Documentation', ['prof']);
+
+        foreach ($this->service->tilesFor($this->makeUser('prof')) as $tile) {
+            $this->assertArrayHasKey('unavailable', $tile);
+            $this->assertIsBool($tile['unavailable']);
+        }
+    }
 }

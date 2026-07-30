@@ -509,6 +509,11 @@ new #[Title('Extensions')] class extends Component {
     description="Bibliothèque des extensions disponibles pour cette instance : ce que vous pouvez intégrer, d'où ça vient et ce que ça demande.">
 
     <x-slot:actions>
+        {{-- Story 56.5 — le journal d'audit FR36, enfin consultable. --}}
+        <a href="{{ route('admin.extensions.journal') }}" class="btn btn-ghost" wire:navigate
+            data-testid="open-journal">
+            <i class="fa-solid fa-clipboard-list"></i> Journal
+        </a>
         <a href="{{ route('admin.extensions.sources') }}" class="btn btn-ghost" wire:navigate
             data-testid="manage-sources">
             <i class="fa-solid fa-box-archive"></i> Gérer les sources
@@ -637,6 +642,22 @@ new #[Title('Extensions')] class extends Component {
                                     <i class="fa-solid fa-box-archive text-[10px]"></i>
                                     {{ $extension['source_name'] }}
                                 </span>
+
+                                {{--
+                                    Story 56.5 (FR35) — backend observé
+                                    injoignable (état PERSISTÉ, jamais mesuré
+                                    ici). Même règle unique que la tuile du
+                                    lanceur : la bibliothèque et la navbar ne
+                                    peuvent pas se contredire. Un état périmé ou
+                                    jamais mesuré n'affiche RIEN.
+                                --}}
+                                @if ($extension['unavailable'] ?? false)
+                                    <span class="badge badge-sm badge-error gap-1"
+                                        data-testid="unavailable-badge-{{ $extension['id'] }}"
+                                        title="Le backend de cette extension ne répondait pas à la dernière mesure">
+                                        <i class="fa-solid fa-circle-exclamation text-[10px]"></i> Indisponible
+                                    </span>
+                                @endif
 
                                 {{--
                                     Story 56.1 (FR4/UX-DR4) — la provenance ne

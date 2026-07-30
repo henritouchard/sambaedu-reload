@@ -1171,4 +1171,81 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $result['error']);
         self::assertSame(0, OidcClient::count());
     }
+
+    // =====================================================================
+    // Story 56.5 (AC6) — legs review 56.3 #4 : un échec d'écriture d'audit
+    // laisse un SIGNAL exploitable
+    // =====================================================================
+    //
+    // ⚠️ Ajouts en FIN de fichier, aucune assertion existante retouchée. Le
+    // comportement arbitré en 56.3 est CONSERVÉ à l'identique : un refus déjà
+    // compensé ne redevient jamais une exception nue. Ce qui change, c'est que
+    // l'incident de journalisation cesse d'être invisible.
+
+    #[Test]
+    public function an_audit_write_failure_posts_a_marker_and_still_reports_the_refusal(): void
+    {
+        ExtensionAuditLog::acknowledgeWriteFailure();
+
+        $this->installable(scopes: ['pas-un-scope']);
+
+        // La table d'audit disparaît : `ExtensionAuditLog::log()` lèvera.
+        Schema::drop('extension_audit_logs');
+
+        $result = $this->service()->install('hello');
+
+        // 1. Le refus est TOUJOURS rapporté, avec la MÊME catégorie qu'avec la
+        //    table présente (comportement 56.3 inchangé).
+        self::assertFalse($result['changed']);
+        self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $result['error']);
+
+        // 2. Et l'incident de journalisation est désormais SIGNALÉ.
+        $marker = ExtensionAuditLog::writeFailureMarker();
+        self::assertNotNull($marker, 'une ligne d\'audit perdue doit laisser un signal exploitable (FR36)');
+        self::assertSame(1, $marker['count']);
+        self::assertNotSame('', $marker['first_at']);
+        self::assertNotSame('', $marker['last_at']);
+
+        ExtensionAuditLog::acknowledgeWriteFailure();
+    }
+
+    /**
+     * CONTRE-ÉPREUVE indispensable : un refus dont la trace s'écrit NORMALEMENT
+     * ne pose JAMAIS le marqueur. Sans elle, un marqueur posé à chaque refus
+     * passerait le test précédent tout en rendant le signal inutilisable (il
+     * crierait au loup en permanence).
+     */
+    #[Test]
+    public function a_refusal_whose_audit_line_is_written_never_posts_the_marker(): void
+    {
+        ExtensionAuditLog::acknowledgeWriteFailure();
+
+        $this->installable(scopes: ['pas-un-scope']);
+
+        $result = $this->service()->install('hello');
+
+        self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $result['error']);
+        self::assertSame(
+            ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES,
+            ExtensionAuditLog::where('action', ExtensionAuditLog::ACTION_INSTALL_FAILED)->firstOrFail()->details,
+        );
+        self::assertNull(ExtensionAuditLog::writeFailureMarker());
+    }
+
+    /** Le compteur CUMULE : deux pertes ne se confondent pas avec une seule. */
+    #[Test]
+    public function successive_audit_write_failures_accumulate_in_the_marker(): void
+    {
+        ExtensionAuditLog::acknowledgeWriteFailure();
+
+        $this->installable(scopes: ['pas-un-scope']);
+        Schema::drop('extension_audit_logs');
+
+        $this->service()->install('hello');
+        $this->service()->install('hello');
+
+        self::assertSame(2, ExtensionAuditLog::writeFailureMarker()['count']);
+
+        ExtensionAuditLog::acknowledgeWriteFailure();
+    }
 }

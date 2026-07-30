@@ -33,9 +33,32 @@ use App\Models\User;
  * économiser une requête gratuite. « Pas de sur-conçu » : la solution simple
  * est la bonne, verrouillée par un test de comptage de requêtes.
  *
- * Les tuiles renvoyées sont des `<a>` STATIQUES (aucun `Http::`, aucun ping,
- * aucun état de santé — FR35 = Story 56.5) : zéro requête HTTP sortante par
- * construction.
+ * Les tuiles renvoyées sont des `<a>` STATIQUES (aucun `Http::`, aucun ping) :
+ * zéro requête HTTP sortante par construction.
+ *
+ * ## Story 56.5 (FR35) — l'état de santé est LU, jamais MESURÉ
+ *
+ * La promesse « aucun état de santé » de 54.3 devient « état de santé LU dans la
+ * MÊME requête, jamais mesuré ». La nuance est toute la conception :
+ *
+ *  - la MESURE appartient à `ext:health:check` (planifiée toutes les 5 min) et à
+ *    {@see ExtensionHealthService}, son écrivain unique ;
+ *  - ce service ne fait que LIRE `health_status`/`health_checked_at`, déjà
+ *    chargées par le `->get()` existant. **Toujours 1 requête, toujours 0
+ *    HTTP** — les tests NFR9 de 54.3 restent verts sans être affaiblis (ils
+ *    gagnent une assertion, ils n'en perdent aucune).
+ *
+ * ⚠️ Le `->get()` sélectionne `*` : AUCUNE colonne n'est nommée dans la requête.
+ * Ce n'est pas un détail de style, c'est la protection contre la fenêtre
+ * `update.sh` (le code neuf est servi plusieurs minutes AVANT
+ * `migrate --force`) : sans colonne nommée, la requête passe même quand
+ * `health_status` n'existe pas encore, et l'accès PHP rend `null` ⇒ pas de
+ * badge, pas de 500. Ne JAMAIS introduire de `->select([...])` ici. Le try/catch
+ * du `mount()` reste le filet — pas le plan.
+ *
+ * ⚠️ Le badge « Indisponible » ne BLOQUE rien : la tuile reste un `<a>`
+ * cliquable (FR14 — un affichage n'est pas une autorisation, et l'état peut
+ * dater de 5 minutes).
  *
  * ## FR14 — un filtre d'AFFICHAGE, jamais une autorisation
  *
@@ -108,7 +131,12 @@ class ExtensionLauncherService
      * Toujours UNE SEULE requête (NFR9) : la condition de type reste dans le
      * `WHERE`, elle n'a pas migré vers un filtre PHP.
      *
-     * @return list<array{key: string, name: string, icon: string, entry_url: string}>
+     * Story 56.5 — chaque tuile porte `unavailable` : l'état de santé PERSISTÉ,
+     * LU (jamais mesuré) via la règle unique
+     * {@see \App\Models\Extension::isFlaggedUnreachable()}. Un état périmé ou
+     * jamais sondé ⇒ `false` : on ne signale que ce qu'on SAIT.
+     *
+     * @return list<array{key: string, name: string, icon: string, entry_url: string, unavailable: bool}>
      */
     public function tilesFor(User $user): array
     {
@@ -133,6 +161,7 @@ class ExtensionLauncherService
                 'name' => (string) $extension->name,
                 'icon' => (string) $extension->icon,
                 'entry_url' => $extension->entryUrl(),
+                'unavailable' => $extension->isFlaggedUnreachable(),
             ])
             ->values()
             ->all();

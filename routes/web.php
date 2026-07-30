@@ -532,6 +532,16 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('extensions.sources');
 
+    // Story 56.5 — `/admin/extensions/journal` : le journal d'audit FR36 en
+    // LECTURE (intégrations, installations, échecs, mises à jour, révocations,
+    // actes de source). ⚠️ Déclarée AVANT `/extensions/{id}`, même raison que
+    // `/sources` ci-dessus : `whereNumber('id')` borne déjà l'identifiant, mais
+    // « statique avant paramétrée » est la garde qui survit à une évolution de
+    // la contrainte.
+    Route::livewire('/extensions/journal', 'pages::admin.extensions.journal.index')
+        ->middleware('can:server.admin')
+        ->name('extensions.journal');
+
     Route::livewire('/extensions/{id}', 'pages::admin.extensions.[id].index')
         ->middleware('can:server.admin')
         ->whereNumber('id')

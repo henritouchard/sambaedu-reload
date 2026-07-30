@@ -45,6 +45,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $installed_sha256
  * @property int|null $installed_port
  * @property \Illuminate\Support\Carbon|null $installed_at
+ * @property string $health_status  '' (jamais sondé) | 'ok' | 'unreachable' (56.5)
+ * @property \Illuminate\Support\Carbon|null $health_checked_at
+ * @property \Illuminate\Support\Carbon|null $health_last_incident_at
+ * @property string $health_last_incident_detail
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read ExtensionSource|null $source
@@ -73,6 +77,15 @@ class Extension extends Model
      * été vérifié. Une re-synchro de catalogue met à jour `version` (ce que la
      * source PUBLIE) sans jamais toucher `installed_version` (ce qui TOURNE).
      *
+     * ⚠️ Story 56.5 : `health_status` / `health_checked_at` /
+     * `health_last_incident_at` / `health_last_incident_detail` sont absentes
+     * POUR LA MÊME RAISON, et c'est ici que l'enjeu est le plus direct — un
+     * manifest hostile qui pourrait se déclarer `health_status = 'ok'`
+     * effacerait le seul signal disant que son backend est mort. La santé n'est
+     * pas déclarée, elle est OBSERVÉE : seul
+     * {@see \App\Services\Extensions\ExtensionHealthService} écrit ces
+     * colonnes, par assignation de propriété explicite.
+     *
      * @var list<string>
      */
     protected $fillable = [
@@ -94,7 +107,22 @@ class Extension extends Model
         'manifest' => 'array',
         'installed_port' => 'integer',
         'installed_at' => 'datetime',
+        'health_checked_at' => 'datetime',
+        'health_last_incident_at' => 'datetime',
     ];
+
+    // ========================================================================
+    // SANTÉ (Story 56.5) — état OBSERVÉ, jamais déclaré
+    // ========================================================================
+
+    /** Jamais sondée : l'état est INCONNU (et se dit tel quel, pas « ok »). */
+    public const HEALTH_UNKNOWN = '';
+
+    /** Le backend a répondu au dernier passage de la sonde. */
+    public const HEALTH_OK = 'ok';
+
+    /** Erreur RÉSEAU au dernier passage : aucune réponse HTTP du backend. */
+    public const HEALTH_UNREACHABLE = 'unreachable';
 
     /** La source d'où provient cette extension. */
     public function source(): BelongsTo
@@ -196,6 +224,111 @@ class Extension extends Model
     {
         return $this->type === ExtensionType::App
             && ($this->status ?? ExtensionStatus::Available) === ExtensionStatus::Integrated;
+    }
+
+    /**
+     * Story 56.5 — Cette extension a-t-elle un backend à SONDER ?
+     *
+     * `isInstalledApp()` ne suffit pas : sans `installed_port`, il n'y a aucune
+     * adresse de boucle locale à interroger (même doctrine que « pas de tuile
+     * sans port », 56.2 — une ligne fabriquée à la main n'a rien derrière elle).
+     * C'est le périmètre EXACT de la sonde planifiée, de la carte « Santé » de
+     * la fiche et du check doctor : un seul énoncé, trois consommateurs.
+     */
+    public function isHealthMonitored(): bool
+    {
+        return $this->isInstalledApp() && $this->installed_port !== null;
+    }
+
+    /**
+     * Story 56.5 — L'état de santé PERSISTÉ est-il périmé (ou inexistant) ?
+     *
+     * Périmé ⇒ on ne SAIT plus. Un scheduler mort n'est pas une extension
+     * morte : la tuile ne dit alors rien (afficher « indisponible » sur 30
+     * tuiles parce que le cron est arrêté serait pire que le silence), et c'est
+     * le doctor qui porte CE diagnostic-là (`warn` « état périmé — vérifier le
+     * scheduler »).
+     *
+     * ⚠️ Comparaison CÔTÉ PHP, jamais en SQL (calque du docblock
+     * d'{@see ExtensionInstallRun::isStale()}) : les sessions Postgres sont en
+     * UTC et l'application à Paris — un `where('health_checked_at', '<', ...)`
+     * décalerait le verdict de deux heures (fiche « Fuseau session Postgres »).
+     *
+     * Seuil : `config('extensions.health.stale_after')`, dérivé de la période de
+     * sonde (voir le commentaire de la config).
+     */
+    public function healthIsStale(): bool
+    {
+        $checkedAt = $this->health_checked_at;
+
+        if ($checkedAt === null) {
+            return true;
+        }
+
+        $staleAfter = max(1, (int) config('extensions.health.stale_after', 900));
+
+        return $checkedAt->lt(now()->subSeconds($staleAfter));
+    }
+
+    /**
+     * Story 56.5 (FR35) — **LA règle d'affichage « Indisponible »**, en UN SEUL
+     * énoncé (patron {@see ExtensionSource::offersAvailableExtensions()}, leçon
+     * la plus répétée de l'epic : review 56.1 #1 « une garantie qui n'existe que
+     * dans la vue n'est pas une garantie », #3 « une règle, un seul énoncé »).
+     *
+     * Consommée par le lanceur
+     * ({@see \App\Services\Extensions\ExtensionLauncherService::tilesFor()}), la
+     * bibliothèque et la fiche
+     * ({@see \App\Services\Extensions\ExtensionCatalogService}) — et personne
+     * d'autre.
+     *
+     * Trois conditions, aucune facultative :
+     *  1. c'est une `app` réellement installée (rien d'autre n'a de backend) ;
+     *  2. la dernière observation dit `unreachable` ;
+     *  3. cette observation est FRAÎCHE — on ne signale que ce qu'on SAIT.
+     *
+     * ⚠️ Un badge n'est JAMAIS une autorisation (FR14) : la tuile marquée reste
+     * un lien cliquable. L'état peut dater de 5 minutes, et bloquer
+     * transformerait un AFFICHAGE en AUTORISATION.
+     *
+     * ⚠️ Fenêtre `update.sh` : avant `migrate --force`, la colonne n'existe pas
+     * et l'accès rend `null` — la comparaison est alors fausse et la méthode
+     * rend `false` (pas de badge) SANS lever. La condition 2 court-circuite
+     * avant tout calcul de fraîcheur : c'est voulu.
+     */
+    public function isFlaggedUnreachable(): bool
+    {
+        return $this->isHealthMonitored()
+            && $this->health_status === self::HEALTH_UNREACHABLE
+            && ! $this->healthIsStale();
+    }
+
+    /**
+     * Story 56.5 — ÉCART BRUT entre la version qui TOURNE et celle que le
+     * catalogue PUBLIE. C'est un **fait**, pas une décision.
+     *
+     * ⚠️ Ne pas confondre avec
+     * `ExtensionCatalogService::hasUpdateAvailable()` (56.3), qui est la
+     * **décision** « une mise à jour est PROPOSABLE » : ce fait-ci PLUS l'état
+     * de la source (une source gelée ou dont le catalogue n'a pas pu être
+     * vérifié ne propose plus rien). Les deux ne disent pas la même chose et ne
+     * doivent pas être interchangés : le doctor CONSTATE un écart de versions
+     * (l'opérateur veut le savoir même si la source est tombée), l'UI PROPOSE un
+     * bouton.
+     *
+     * Depuis la review 56.5 #5, `hasUpdateAvailable()` **compose** cette
+     * méthode au lieu de recopier son expression : le fait n'a qu'un énoncé,
+     * la décision l'utilise.
+     */
+    public function hasVersionDrift(): bool
+    {
+        if (! $this->isInstalledApp()) {
+            return false;
+        }
+
+        $installed = (string) $this->installed_version;
+
+        return $installed !== '' && $installed !== (string) $this->version;
     }
 
     /**

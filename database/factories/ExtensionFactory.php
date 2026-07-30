@@ -176,6 +176,51 @@ class ExtensionFactory extends Factory
     }
 
     /**
+     * Story 56.5 — État de santé OBSERVÉ « le backend répond ».
+     *
+     * ⚠️ Les colonnes `health_*` sont HORS `$fillable` (un manifest hostile ne
+     * doit pas pouvoir se déclarer sain) — et pourtant `state()` suffit :
+     * `Factory::make()` instancie le modèle dans un `Model::unguarded()`
+     * (`vendor/laravel/framework/.../Factories/Factory.php`), exactement comme
+     * pour `status` (54.2) et `installed_*` (56.2). On garde donc le patron
+     * `installed()` de 56.2 plutôt qu'un `afterCreating` + `save()` : une
+     * fabrique qui divergerait des précédents du même fichier serait un piège
+     * pour la prochaine story.
+     *
+     * À combiner avec `->app()->installed($port)` : sonder une extension sans
+     * port n'aurait aucun sens (`isHealthMonitored()` le refuse).
+     */
+    public function healthy(?\Illuminate\Support\Carbon $checkedAt = null): static
+    {
+        return $this->state(fn (): array => [
+            'health_status' => Extension::HEALTH_OK,
+            'health_checked_at' => $checkedAt ?? now(),
+        ]);
+    }
+
+    /**
+     * Story 56.5 — État de santé OBSERVÉ « le backend ne répond pas », avec son
+     * incident.
+     *
+     * `$checkedAt` permet de fabriquer un état PÉRIMÉ (`now()->subHour()`) :
+     * c'est ce qui distingue « indisponible » (frais, badge affiché) de « on ne
+     * sait plus » (périmé, aucun badge — le doctor s'en charge).
+     */
+    public function unreachable(
+        ?\Illuminate\Support\Carbon $checkedAt = null,
+        string $detail = 'backend injoignable (connexion refusée ou expirée)',
+    ): static {
+        $at = $checkedAt ?? now();
+
+        return $this->state(fn (): array => [
+            'health_status' => Extension::HEALTH_UNREACHABLE,
+            'health_checked_at' => $at,
+            'health_last_incident_at' => $at,
+            'health_last_incident_detail' => $detail,
+        ]);
+    }
+
+    /**
      * Manifest enrichi : scopes demandés + dépendances (fiche non vide).
      *
      * @param  list<string>  $scopes

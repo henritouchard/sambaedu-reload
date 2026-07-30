@@ -510,6 +510,13 @@ class ExtensionCatalogService
             'installed_version' => (string) $extension->installed_version,
             'update_available' => $this->hasUpdateAvailable($extension),
             'installable' => $this->isAppInstallable($extension),
+
+            // ── Story 56.5 — santé (LUE, jamais mesurée ici) ────────────────
+            // Badge discret sur la carte d'une `app` installée dont le backend a
+            // été observé injoignable. MÊME règle unique que la tuile du
+            // lanceur ({@see \App\Models\Extension::isFlaggedUnreachable()}) :
+            // la bibliothèque et la navbar ne peuvent pas se contredire.
+            'unavailable' => $extension->isFlaggedUnreachable(),
             // ⚠️ `installed_sha256` n'a RIEN à faire ici : c'est une donnée
             // interne de rollback, sans aucune valeur pour l'admin.
         ];
@@ -538,24 +545,23 @@ class ExtensionCatalogService
      */
     private function hasUpdateAvailable(Extension $extension): bool
     {
-        if ($extension->type !== ExtensionType::App) {
+        // Une DÉCISION = un FAIT + une AUTORISATION, et chacun a un seul
+        // énoncé (review 56.5 #5) :
+        //
+        //  - le FAIT « ce qui tourne n'est pas ce que le catalogue publie » est
+        //    porté par {@see Extension::hasVersionDrift()} — c'est aussi ce que
+        //    le doctor veut savoir, écart de version compris quand la source
+        //    est gelée ;
+        //  - l'AUTORISATION « cette source propose encore quelque chose » est
+        //    portée par {@see ExtensionSource::offersAvailableExtensions()}, la
+        //    même que pour l'affichage et l'intégration (review 56.1 #1).
+        //
+        // Les deux énoncés vivaient dupliqués ici. Une règle recopiée est une
+        // règle qui divergera : c'est la leçon la plus répétée de cet epic.
+        if (! $extension->hasVersionDrift()) {
             return false;
         }
 
-        if (($extension->status ?? ExtensionStatus::Available) !== ExtensionStatus::Integrated) {
-            return false;
-        }
-
-        $installed = (string) $extension->installed_version;
-
-        if ($installed === '' || $installed === (string) $extension->version) {
-            return false;
-        }
-
-        // Une source gelée ou dont le catalogue n'a pas pu être VÉRIFIÉ ne
-        // propose plus rien — y compris une nouvelle version. Même règle
-        // UNIQUE que l'affichage et que l'intégration (review 56.1 #1), portée
-        // par le modèle.
         return $extension->source?->offersAvailableExtensions() === true;
     }
 
@@ -607,6 +613,42 @@ class ExtensionCatalogService
             'source_kind_label' => $source?->kind?->label() ?? '',
             'source_url' => (string) ($source?->baseUrl() ?? ''),
             // `source_is_official` / `source_host` viennent déjà de `toListRow()`.
+        ] + $this->healthKeys($extension);
+    }
+
+    /**
+     * Story 56.5 (AC4) — La carte « Santé » de la fiche, prête à afficher.
+     *
+     * Tout est calculé ICI : une vue ne décide pas si un horodatage est périmé et
+     * ne formate pas de date métier (NFR15 — 3 couches). La fiche n'a plus qu'à
+     * choisir un badge.
+     *
+     * `health_monitored` est la CONDITION d'affichage de la carte : une `link` ou
+     * une `app` non installée n'a rien à sonder, donc pas de carte — pas une
+     * carte vide. Règle portée par le modèle
+     * ({@see \App\Models\Extension::isHealthMonitored()}), la même que celle qui
+     * définit le périmètre de la sonde planifiée.
+     *
+     * ⚠️ La version installée vs disponible n'est PAS recalculée ici : elle vient
+     * de `toListRow()` (`installed_version`, `version`, `update_available`) —
+     * réutiliser, jamais redire (leçon review 56.1 #3).
+     *
+     * @return array<string, mixed>
+     */
+    private function healthKeys(Extension $extension): array
+    {
+        $checkedAt = $extension->health_checked_at;
+        $incidentAt = $extension->health_last_incident_at;
+
+        return [
+            'health_monitored' => $extension->isHealthMonitored(),
+            'health_status' => (string) $extension->health_status,
+            'health_stale' => $extension->healthIsStale(),
+            'health_unavailable' => $extension->isFlaggedUnreachable(),
+            'health_checked_at' => $checkedAt?->format('d/m/Y H:i:s') ?? '',
+            'health_checked_human' => $checkedAt?->diffForHumans() ?? '',
+            'health_last_incident_at' => $incidentAt?->format('d/m/Y H:i') ?? '',
+            'health_last_incident_detail' => (string) $extension->health_last_incident_detail,
         ];
     }
 }

@@ -57,3 +57,30 @@ Schedule::command('ext:sources:sync')
     ->dailyAt('02:50')
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Story 56.5 — Sonde de SANTÉ des extensions `app` installées
+|--------------------------------------------------------------------------
+| Sonde `http://127.0.0.1:<installed_port>/` pour chaque `app` installée et
+| PERSISTE l'état observé sur `extensions.health_*`.
+|
+| NFR9 — c'est ICI qu'on mesure, et NULLE PART AILLEURS au fil de l'eau : la
+| navbar (rendue sur TOUTE page authentifiée), la bibliothèque et la fiche
+| LISENT l'état persisté. Une sonde au rendu coûterait une requête HTTP par
+| tuile et par page vue.
+|
+| Période de 5 minutes : elle est DÉRIVÉE par
+| `config('extensions.health.stale_after')` (900 s = 3 passages tolérés).
+| Changer la période ici, c'est changer ce seuil là-bas — les deux réglages
+| sont liés et l'énoncé de la dérivation vit dans la config (leçon review
+| 56.3 #2).
+|
+| NFR6/NFR7 — son échec n'affecte rien : une sonde qui échoue écrit
+| `unreachable` (un fait), n'audite rien, ne redémarre rien et ne supprime
+| rien. Le doctor porte le verdict, l'admin décide.
+*/
+Schedule::command('ext:health:check')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

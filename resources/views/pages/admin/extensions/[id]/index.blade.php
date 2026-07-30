@@ -5,6 +5,7 @@ use App\Exceptions\ExtensionLifecycleException;
 use App\Exceptions\ExtensionOperationException;
 use App\Models\ExtensionInstallRun;
 use App\Services\Extensions\ExtensionCatalogService;
+use App\Services\Extensions\ExtensionHealthService;
 use App\Services\Extensions\ExtensionLifecycleService;
 use App\Services\Extensions\ExtensionOperationRunner;
 use App\Services\Extensions\ExtensionScopeService;
@@ -46,6 +47,13 @@ use Livewire\Component;
  * pendant un run actif.
  *
  * Le cycle `link` est INCHANGÉ, verbatim.
+ *
+ * **Story 56.5 — carte « Santé » (FR34)** : pour une `app` réellement installée
+ * seulement (rien à sonder ailleurs). Elle affiche l'état PERSISTÉ par
+ * `ext:health:check` — joignabilité, fraîcheur de la mesure, versions, dernier
+ * incident — et un bouton « Sonder maintenant » qui, lui, mesure en direct et
+ * persiste ({@see ExtensionHealthService}, écrivain unique). Le rendu de la fiche
+ * ne sonde JAMAIS. Un lien mène au journal d'audit, pré-filtré sur l'extension.
  *
  * Sécurité : `can:server.admin` sur la route + garde `Gate::allows()` DANS
  * `mount()` ET DANS CHAQUE méthode d'action (defense-in-depth). Identifiant
@@ -444,6 +452,55 @@ new #[Title('Extension')] class extends Component {
         }
     }
 
+    // ── Story 56.5 — sonder la santé À LA DEMANDE ───────────────────────
+
+    /**
+     * Sonde le backend MAINTENANT et persiste le résultat.
+     *
+     * C'est le SEUL chemin de sonde à la demande — jamais le rendu (NFR9 : la
+     * fiche, comme la navbar, LIT l'état persisté). Ce bouton existe parce qu'un
+     * admin qui vient de redémarrer un service ne doit pas attendre 5 minutes
+     * pour le constater.
+     *
+     * Contrairement au check doctor (read-only strict), cette sonde PERSISTE :
+     * c'est tout son intérêt, et l'admin qui clique demande explicitement une
+     * mesure. Le service reste l'écrivain unique des colonnes `health_*`.
+     */
+    public function probeNow(): void
+    {
+        abort_unless(Gate::allows('server.admin'), 403);
+
+        try {
+            $result = app(ExtensionHealthService::class)->checkById($this->id);
+        } catch (\Throwable $e) {
+            // Une sonde qui explose (cache, DB) ne doit pas casser la fiche.
+            report($e);
+            $this->toastError('La sonde n\'a pas pu être exécutée.');
+
+            return;
+        }
+
+        if ($result === null) {
+            // Écran périmé : l'extension a été désinstallée entre-temps (ou
+            // n'avait rien à sonder). On remet la fiche en phase plutôt que
+            // d'afficher un verdict inventé.
+            $this->refreshAfterAction();
+            $this->toastInfo('Cette extension n\'a pas de backend à sonder.');
+
+            return;
+        }
+
+        $this->loadExtension();
+
+        if ($result['reachable']) {
+            $this->toastSuccess('Le backend répond.');
+
+            return;
+        }
+
+        $this->toastError('Le backend ne répond pas : '.$result['category']);
+    }
+
     /** Lecture UNIQUE des runs, centralisée dans l'orchestrateur. */
     private function loadRun(): void
     {
@@ -748,6 +805,106 @@ new #[Title('Extension')] class extends Component {
                 </div>
             </div>
         </div>
+
+        {{--
+            Story 56.5 — accès au journal d'audit, PRÉ-FILTRÉ sur cette
+            extension. Hors du `<x-slot:actions>` volontairement : ce slot n'est
+            rendu que s'il y a un acte à proposer (56.3), alors qu'un journal se
+            consulte toujours — y compris pour une extension qui n'a plus aucune
+            action possible.
+        --}}
+        <div class="flex justify-end">
+            <a href="{{ route('admin.extensions.journal', ['ext' => $extension['key']]) }}"
+                class="btn btn-ghost btn-sm" wire:navigate data-testid="extension-journal-link">
+                <i class="fa-solid fa-clipboard-list"></i> Journal de cette extension
+            </a>
+        </div>
+
+        {{-- ===================== Santé (56.5, FR34) ===================== --}}
+        @if ($extension['health_monitored'] ?? false)
+            @php
+                // Trois états, JAMAIS deux : « ok », « indisponible », et
+                // « inconnu ou périmé » — qui n'est pas une panne (un scheduler
+                // arrêté n'arrête pas une extension) et ne doit donc pas se
+                // peindre comme telle.
+                $healthStale = (bool) ($extension['health_stale'] ?? true);
+                $healthStatus = (string) ($extension['health_status'] ?? '');
+                $healthBadge = match (true) {
+                    $healthStale || $healthStatus === '' => ['badge-ghost', 'fa-circle-question', 'Inconnu ou périmé'],
+                    $healthStatus === 'unreachable' => ['badge-error', 'fa-circle-exclamation', 'Indisponible'],
+                    default => ['badge-success', 'fa-circle-check', 'Joignable'],
+                };
+            @endphp
+            <div class="card bg-base-100 shadow" data-testid="health-card">
+                <div class="card-body">
+                    <div class="flex items-start justify-between gap-4 flex-wrap">
+                        <h3 class="card-title text-base flex items-center gap-2">
+                            <i class="fa-solid fa-heart-pulse opacity-60"></i> Santé
+                            <span class="badge badge-sm {{ $healthBadge[0] }} gap-1" data-testid="health-badge">
+                                <i class="fa-solid {{ $healthBadge[1] }} text-[10px]"></i> {{ $healthBadge[2] }}
+                            </span>
+                        </h3>
+                        <button type="button" class="btn btn-ghost btn-sm" wire:click="probeNow"
+                            data-testid="health-probe-now">
+                            <i class="fa-solid fa-stethoscope"></i> Sonder maintenant
+                        </button>
+                    </div>
+
+                    <dl class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                        <div class="flex items-center gap-2 text-base-content/70 flex-wrap">
+                            <i class="fa-solid fa-clock w-4 text-center opacity-50"></i>
+                            <span>Dernière mesure</span>
+                            <span data-testid="health-checked-at">
+                                @if (($extension['health_checked_at'] ?? '') !== '')
+                                    {{ $extension['health_checked_at'] }}
+                                    <span class="text-xs text-base-content/50">({{ $extension['health_checked_human'] }})</span>
+                                @else
+                                    Jamais sondée
+                                @endif
+                            </span>
+                        </div>
+
+                        <div class="flex items-center gap-2 text-base-content/70 flex-wrap">
+                            <i class="fa-solid fa-code-branch w-4 text-center opacity-50"></i>
+                            <span>Version</span>
+                            <span class="font-mono" data-testid="health-installed-version">
+                                {{ ($extension['installed_version'] ?? '') !== '' ? $extension['installed_version'] : '—' }}
+                            </span>
+                            {{-- Badge « mise à jour disponible » RÉUTILISÉ de 56.3 : la
+                                 règle n'est pas recalculée ici (review 56.1 #3). --}}
+                            @if (($extension['update_available'] ?? false))
+                                <span class="badge badge-sm badge-info gap-1" data-testid="health-update-badge">
+                                    <i class="fa-solid fa-arrow-up text-[10px]"></i>
+                                    catalogue : {{ $extension['version'] }}
+                                </span>
+                            @endif
+                        </div>
+
+                        <div class="flex items-start gap-2 text-base-content/70 sm:col-span-2">
+                            <i class="fa-solid fa-triangle-exclamation w-4 text-center opacity-50 mt-0.5"></i>
+                            <span>Dernier incident</span>
+                            <span data-testid="health-last-incident">
+                                @if (($extension['health_last_incident_at'] ?? '') !== '')
+                                    {{ $extension['health_last_incident_at'] }}
+                                    @if (($extension['health_last_incident_detail'] ?? '') !== '')
+                                        — {{ $extension['health_last_incident_detail'] }}
+                                    @endif
+                                @else
+                                    Aucun incident enregistré
+                                @endif
+                            </span>
+                        </div>
+                    </dl>
+
+                    @if ($healthStale)
+                        <p class="text-xs text-base-content/50 mt-2" data-testid="health-stale-note">
+                            L'état affiché n'est plus à jour : la sonde planifiée (toutes les 5 minutes) n'a pas
+                            tourné récemment. Vérifiez le planificateur de tâches, ou sondez maintenant.
+                        </p>
+                    @endif
+                </div>
+            </div>
+        @endif
 
         {{-- ===================== Ce que l'extension demande ===================== --}}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

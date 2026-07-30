@@ -122,4 +122,52 @@ return [
         'job_timeout' => (int) env('EXTENSIONS_INSTALL_JOB_TIMEOUT', 1800),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | SANTÉ des extensions `app` installées (Story 56.5)
+    |--------------------------------------------------------------------------
+    |
+    | Bornes TECHNIQUES de la sonde de joignabilité. Comme les blocs `remote` et
+    | `install`, rien ici n'est un réglage métier : aucun `SystemSetting`
+    | (AR14 — on n'invente pas un réglage admin là où il n'y en a pas).
+    |
+    | « Joignable » = le backend RÉPOND sur `http://127.0.0.1:<installed_port>/`.
+    | N'importe quelle réponse HTTP — 4xx et 5xx comprises — prouve la
+    | joignabilité (le service répond) ; seule une erreur réseau compte comme
+    | injoignable. Patron LITTÉRAL de `ControlHubReachableCheck`.
+    |
+    | La sonde ne sort JAMAIS de la boucle locale et ne suit aucune redirection :
+    | `installed_port` n'est écrit que par `markAppInstalled()`, jamais par un
+    | manifest (hors `$fillable`).
+    |
+    */
+    'health' => [
+
+        // Établissement de la connexion sur la boucle locale : si 2 s ne
+        // suffisent pas à joindre 127.0.0.1, le backend n'écoute pas.
+        'connect_timeout' => (int) env('EXTENSIONS_HEALTH_CONNECT_TIMEOUT', 2),
+
+        // Durée totale d'une sonde. Sonder 5 backends morts coûte au pire
+        // ~15 s au scheduler — et JAMAIS rien à une page (la navbar LIT l'état
+        // persisté, elle ne sonde pas : NFR9).
+        'timeout' => (int) env('EXTENSIONS_HEALTH_TIMEOUT', 3),
+
+        // Budget de temps du CHECK DOCTOR (review 56.5 #1). Lui, contrairement
+        // au scheduler, tourne dans une requête HTTP bornée par
+        // `max_execution_time`, à côté des autres checks réseau : au-delà de ce
+        // budget il rend un verdict PARTIEL en nommant ce qu'il n'a pas mesuré,
+        // plutôt que de risquer une 500 sur la page de diagnostic — celle qu'on
+        // ouvre justement quand quelque chose va mal. `0` désactive la borne.
+        'doctor_probe_budget' => (int) env('EXTENSIONS_HEALTH_DOCTOR_PROBE_BUDGET', 20),
+
+        // Au-delà de ce délai, l'état persisté n'est plus une information : on
+        // ne SAIT plus. DÉRIVÉ de la période de sonde — `ext:health:check` passe
+        // toutes les 5 minutes (`routes/console.php`), on tolère 3 passages
+        // manqués : 3 × 300 s = 900 s. Les deux réglages sont liés et l'énoncé
+        // est ici (leçon review 56.3 #2 : deux valeurs liées qui vivent chacune
+        // de son côté finissent par diverger en silence). Changer la période du
+        // scheduler, c'est changer cette valeur.
+        'stale_after' => (int) env('EXTENSIONS_HEALTH_STALE_AFTER', 900),
+    ],
+
 ];

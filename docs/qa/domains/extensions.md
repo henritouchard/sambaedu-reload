@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. **56.1 (sources tierces + catalogue signé Ed25519 : format de dépôt v1 contrat public, pin de clé TOFU, fail-closed NFR2, dégradation NFR7, provenance impossible à ignorer FR4/UX-DR4, audit des sources FR36, `ext:sources:sync`) — OUVRE l'Epic 56** — **Section 17** ; 56.2 (installation signée d'une `app` : moteur `ext:install`/`ext:remove`, seam privilégié unique, secret OIDC par stdin, compensations, NFR8) — **Section 18** ; 56.3 (installation, mise à jour et retrait depuis l'UI : tâche de fond, progression persistée, rollback vérifié avant d'agir, verrou global reflété par l'UI) — **Section 19** ; **56.4 (scopes ACCORDÉS `oidc_clients.granted_scopes` octroyés à l'installation, révocation individuelle à effet IMMÉDIAT sur les jetons vivants FR23, API extensions `/api/ext/v1/` au format maison FR21/FR22, refus 401/403 sans fuite, FR24 prouvé, contrat v1 GELÉ NFR11) — **Section 20**, avec une REMISE À NIVEAU obligatoire des clients OIDC existants (`granted_scopes` vide après migration ⇒ fail-closed)**. _Reste de l'Epic 56 (page santé + journal d'audit UI, 56.5) à ajouter en section suivante quand livré._
+**Stories couvertes** (mise à jour **56.5 — Section 21** : sonde de santé persistée `ext:health:check` toutes les 5 min, tuile dégradée « Indisponible » qui SIGNALE sans jamais bloquer FR35/FR14, trois checks doctor auto-découverts `--tag=extensions`, carte « Santé » + « Sonder maintenant » sur la fiche, journal d'audit FR36 enfin consultable `/admin/extensions/journal`, signal d'échec d'écriture d'audit — **DERNIÈRE story, CLÔT l'Epic 56** ; antérieur 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. **56.1 (sources tierces + catalogue signé Ed25519 : format de dépôt v1 contrat public, pin de clé TOFU, fail-closed NFR2, dégradation NFR7, provenance impossible à ignorer FR4/UX-DR4, audit des sources FR36, `ext:sources:sync`) — OUVRE l'Epic 56** — **Section 17** ; 56.2 (installation signée d'une `app` : moteur `ext:install`/`ext:remove`, seam privilégié unique, secret OIDC par stdin, compensations, NFR8) — **Section 18** ; 56.3 (installation, mise à jour et retrait depuis l'UI : tâche de fond, progression persistée, rollback vérifié avant d'agir, verrou global reflété par l'UI) — **Section 19** ; **56.4 (scopes ACCORDÉS `oidc_clients.granted_scopes` octroyés à l'installation, révocation individuelle à effet IMMÉDIAT sur les jetons vivants FR23, API extensions `/api/ext/v1/` au format maison FR21/FR22, refus 401/403 sans fuite, FR24 prouvé, contrat v1 GELÉ NFR11) — **Section 20**, avec une REMISE À NIVEAU obligatoire des clients OIDC existants (`granted_scopes` vide après migration ⇒ fail-closed)**. **56.5 (santé des extensions et tolérance aux pannes : colonnes `health_*` écrites par un service unique, commande planifiée `ext:health:check`, badge de tuile lu et jamais mesuré NFR9, checks doctor `ExtensionsReachable`/`ExtensionsAuditTrail`/`ExtensionsOidcClients`, page journal `/admin/extensions/journal` au rendu tolérant, marqueur d'échec d'écriture d'audit acquittable) — **Section 21**, qui CLÔT l'Epic 56**.
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -28,6 +28,13 @@
 - `resources/views/components/organisms/app-launcher.blade.php` — SFC Livewire du lanceur « gaufre » (54.3)
 - `resources/views/components/organisms/navbar.blade.php` — insertion `<livewire:organisms.app-launcher />` (54.3)
 - `tests/Unit/Models/UserBusinessRolesTest.php`, `tests/Feature/Extensions/ExtensionLauncherServiceTest.php`, `tests/Feature/Livewire/AppLauncherTest.php` — matrice rôles×visibilités, fail-closed `app`/`available`, NFR9, FR14 (54.3)
+- `database/migrations/2026_08_07_100000_add_health_columns_to_extensions.php` — colonnes `health_*` additives, hors `$fillable` (56.5)
+- `app/Services/Extensions/ExtensionHealthService.php` — sonde `127.0.0.1:<port>` + persistance, **écrivain unique** des colonnes de santé, zéro audit (56.5)
+- `app/Console/Commands/ExtensionHealthCheck.php` + `routes/console.php` — `ext:health:check {key?}`, planifiée `everyFiveMinutes` (56.5)
+- `app/Models/Extension.php` — `isHealthMonitored()` / `healthIsStale()` / `isFlaggedUnreachable()` : LA règle du badge, un seul énoncé (56.5)
+- `app/Doctor/Checks/Extensions/{ExtensionsReachableCheck,ExtensionsAuditTrailCheck,ExtensionsOidcClientsCheck}.php` — tag `extensions`, read-only strict (56.5)
+- `app/Services/Extensions/ExtensionAuditJournalService.php` + `resources/views/pages/admin/extensions/journal/index.blade.php` — lecture FR36, rendu tolérant, aucune purge (56.5)
+- `app/Models/ExtensionAuditLog.php` — `recordWriteFailure()` / `writeFailureMarker()` / `acknowledgeWriteFailure()`, cache FICHIER (legs review 56.3 #4)
 - `app/Auth/Oidc/README.md` — topologie du namespace, invariants, catalogue `action_type` (55.1)
 - `database/migrations/2026_07_28_300000_create_oidc_provider_tables.php` — `oidc_clients`, `oidc_authorization_codes`, `oidc_access_tokens` (55.1)
 - `app/Models/{OidcClient,OidcAuthorizationCode,OidcAccessToken}.php` — colonnes de hash en `$hidden` (NFR3)
@@ -2260,6 +2267,226 @@ curl -sk -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $TOK
 ```
 
 **Attendu** : `404` pour `/v2` (il n'existe pas — il n'existera que le jour d'une rupture, et le v1 continuera alors d'être servi à côté) et `405` pour un POST sur `me` (le v1 est en lecture seule).
+
+---
+
+## Section 21 — Santé des extensions, tuile dégradée et journal d'audit (Story 56.5)
+
+> **Ce que cette section valide.** Les Sections 17 à 20 ont livré les sources signées, le moteur d'installation, l'UI d'opération et les scopes. La 56.5 est la **dernière de l'Epic 56** : elle rend l'état des extensions OBSERVABLE, et elle prouve que la panne d'une extension n'emporte rien d'autre qu'elle-même.
+>
+> Trois propriétés portent toute la valeur :
+>
+> 1. **la sonde MESURE, la navbar LIT** (NFR9). L'état vit dans quatre colonnes de `extensions`, écrites par `ext:health:check` toutes les 5 minutes et par ce seul chemin. Aucune page de SE5 n'émet la moindre requête vers une extension pour se rendre — c'est vérifiable en coupant tous les backends et en constatant que rien ne ralentit ;
+> 2. **la tuile SIGNALE, elle ne bloque jamais** (FR35 sous contrainte FR14). Une extension arrêtée porte un badge « Indisponible » et **reste cliquable** : l'état peut dater de 5 minutes, et bloquer transformerait un affichage en autorisation ;
+> 3. **le journal d'audit FR36 est enfin LISIBLE** — et il ne montrera jamais une URL de dépôt, un secret ni une empreinte de paquet.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (transitions de la sonde, incident écrit à la transition seulement et conservé au retour du backend, 4xx/5xx = joignable, catégorie sans URL ni message Guzzle, zéro ligne d'audit pour la santé, badge absent si l'état est périmé ou inconnu, 1 requête SQL / 0 HTTP au rendu du lanceur badgé, survie sans les colonnes `health_*`, verdicts des trois checks doctor, absence de side effect du check, carte « Santé » et `probeNow()`, pagination et filtres du journal, action inconnue rendue telle quelle, aucune URL en base rendue à l'écran, bandeau et acquittement du marqueur) n'a **pas** à être rejoué ici. Cette section couvre ce qu'une doublure ne peut pas prouver : **un vrai `systemctl stop`, un vrai cron Laravel, un vrai Apache en 503, et un parcours d'admin dans un navigateur.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1-56.4** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui joue la migration ajoutant les colonnes `health_*`).
+
+### Pré-requis de la section
+
+Les Sections 18 et 19 doivent avoir été jouées : il faut **au moins une extension `app` réellement installée** (`sambaedu-ext-hello` dans les runbooks précédents), avec son unité systemd, son fragment Apache et sa tuile visible pour un prof réel.
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh
+php artisan tinker --execute="dump(\App\Models\Extension::where('type','app')->where('status','integrated')->pluck('installed_port','key')->all());"
+```
+
+**Attendu** : au moins une clé avec un port dans `8600-8699`. Sans cela, tous les scénarios de sonde rendent « Aucune extension `app` installée » — ce qui est un résultat correct, mais ne prouve rien.
+
+### Scénario 21.1 — ⭐ LE scénario : une extension tombe, SE5 ne bouge pas (NFR6)
+
+C'est le scénario le plus important de la section, et le pendant direct du **10.1** (« SE5 debout sans la table `extensions` »). L'incident fondateur de l'Epic 54 était un lanceur capable de mettre **toutes** les pages du produit en 500 ; on vérifie ici la même promesse face à une panne réelle, pas à une table absente.
+
+```bash
+systemctl stop sambaedu-ext-hello
+systemctl is-active sambaedu-ext-hello        # inactive
+```
+
+1. **Le core répond, entièrement.** Dans un navigateur, en admin, parcourir au moins : `/app/dashboard`, `/app/users`, `/admin/extensions`, `/admin/settings/system-status`, et une page **legacy embarquée** (elle rend aussi le lanceur, via `layouts::legacy-embed`). Aucune 500, aucun ralentissement perceptible.
+2. **La cible, elle, est franchement en erreur.** `curl -sk -o /dev/null -w '%{http_code} %{time_total}\n' https://<serveur>/ext/hello` doit rendre **503 en quelques millisecondes** — le `retry=0` du fragment Apache empêche toute attente. Un 503 lent serait un défaut de fragment, pas de cette story.
+3. **Aucune autre extension n'est affectée** : si une seconde `app` est installée, sa tuile et sa cible fonctionnent normalement (NFR4/NFR6 — les extensions ne se couplent pas entre elles).
+
+```bash
+systemctl start sambaedu-ext-hello
+```
+
+### Scénario 21.2 — La sonde marque l'indisponibilité, et l'admin le voit
+
+```bash
+systemctl stop sambaedu-ext-hello
+php artisan ext:health:check
+```
+
+**Attendu** : `1 extension(s) sondée(s) — 1 injoignable(s).`, puis `Injoignable(s) : hello` et la ligne de diagnostic `systemctl status sambaedu-ext-<clé>`. **Code retour 0** (`echo $?`) : la commande CONSTATE, elle ne porte pas de verdict — c'est le doctor qui le fait.
+
+```bash
+php artisan tinker --execute="\$e=\App\Models\Extension::where('key','hello')->first(); dump(\$e->health_status, (string)\$e->health_checked_at, (string)\$e->health_last_incident_at, \$e->health_last_incident_detail);"
+```
+
+**Attendu** : `unreachable`, un horodatage à l'instant, un incident daté, et une catégorie **courte** du type `backend injoignable (connexion refusée ou expirée)`. ⚠️ Vérifier de ses yeux qu'il n'y a **ni URL, ni port, ni message cURL** dans `health_last_incident_detail` : cette colonne s'affiche sur la fiche, lisible par tout admin.
+
+Dans le navigateur :
+
+- **fiche `/admin/extensions/<id>`** : la carte « Santé » porte le badge **Indisponible**, la date de mesure, la version installée, et le dernier incident ;
+- **bibliothèque `/admin/extensions`** : la carte de l'extension porte le badge discret **Indisponible** ;
+- **lanceur (gaufre de la navbar)** : la tuile porte le point d'alerte, avec l'infobulle « Indisponible actuellement ».
+
+### Scénario 21.3 — ⭐ Le badge n'est pas une garde (FR14), et le prof le voit aussi
+
+Deux vérifications à faire dans le **même** état (backend arrêté), avec un **compte prof réel** (pas un admin) :
+
+1. la tuile de l'extension est présente et **badgée**, et elle **s'ouvre** au clic (elle mène à `/ext/hello`, qui rend 503 — c'est la cible qui est en panne, pas le lien qui est retiré) ;
+2. la tuile n'affiche **aucun détail technique** : pas de catégorie d'incident, pas de port, pas d'horodatage. Un élève ou un professeur n'a pas à lire un diagnostic système.
+
+⚠️ Le second point se contrôle par « affichage du code source de la page » sur la vue du prof : chercher `connexion refusée`, `8600`, `127.0.0.1` — **aucune** occurrence.
+
+```bash
+systemctl start sambaedu-ext-hello
+php artisan ext:health:check hello
+```
+
+**Attendu** : `hello : joignable.` La fiche repasse au badge **Joignable** — et **le dernier incident reste affiché** : c'est sa raison d'être (« ça a été indisponible, voici quand »). Le badge de la tuile disparaît.
+
+### Scénario 21.4 — La sonde tourne toute seule (scheduler réel)
+
+```bash
+php artisan schedule:list | grep ext:health:check
+```
+
+**Attendu** : `*/5 * * * *  php artisan ext:health:check`.
+
+Puis, **sans jamais lancer la commande à la main** :
+
+```bash
+systemctl stop sambaedu-ext-hello
+date; sleep 330; php artisan tinker --execute="\$e=\App\Models\Extension::where('key','hello')->first(); dump(\$e->health_status, (string)\$e->health_checked_at);"
+```
+
+**Attendu** : `unreachable`, horodaté dans les 5 dernières minutes — donc écrit par le cron Laravel de la VM, pas par vous. Si l'état ne bouge pas, le cron `schedule:run` n'est pas installé : c'est un défaut d'exploitation de la VM, et le doctor le dira au scénario suivant.
+
+### Scénario 21.5 — Le doctor : trois checks, et un `warn` de scheduler mort
+
+```bash
+php artisan sambaedu:doctor --tag=extensions
+php artisan sambaedu:doctor --tag=extensions --json | jq .
+```
+
+Trois lignes attendues : **Extensions (backends)**, **Extensions (journal d'audit)**, **Extensions (clients OIDC)**.
+
+| État de la VM | Verdict attendu sur « backends » |
+|---|---|
+| tout tourne, cron actif | `ok` — « N extension(s) app installée(s), toutes joignables », plus l'écart de version s'il y en a un |
+| `systemctl stop sambaedu-ext-hello` | `error` — nomme `hello`, et le `fix` donne `systemctl status sambaedu-ext-hello` |
+| tout tourne mais cron arrêté depuis > 15 min | `warn` — « l'état persisté n'est pas exploitable », `fix` = vérifier le scheduler |
+| extension installée à l'instant, jamais encore mesurée | **le même `warn`** — le libellé dit « jamais mesuré, **ou** mesuré il y a plus de 900 s », parce qu'affirmer « le scheduler est muet » serait faux ici. Se résout seul au passage suivant, ou tout de suite avec `php artisan ext:health:check` |
+| aucune `app` installée | `ok` — « aucune extension app installée » |
+
+Le `warn` de péremption se provoque proprement :
+
+```bash
+# Neutraliser temporairement le cron Laravel (selon l'installation : crontab -e, ou le timer systemd)
+crontab -l | grep schedule:run
+# … le commenter, attendre > 15 minutes, puis :
+php artisan sambaedu:doctor --tag=extensions
+```
+
+**Attendu** : `warn` sur « backends » **alors que les services tournent**. C'est exactement l'information utile : ce n'est pas l'extension qui va mal, c'est la mesure. ⚠️ **Rétablir le cron** ensuite.
+
+Deux contrôles complémentaires :
+
+1. **le doctor n'écrit RIEN.** Noter `health_checked_at` avant, lancer le doctor trois fois, revérifier : la valeur **n'a pas bougé** (règle d'or : un check est read-only ; la persistance appartient à `ext:health:check` et au bouton de la fiche).
+2. **le `fix` ne redémarre rien.** Aucun message du doctor ne propose `systemctl restart` : SE5 ne relance jamais un backend tout seul.
+
+Même vérification dans l'UI : `/admin/settings/system-status`, section **Extensions**. Les checks s'exécutent **après** le premier rendu (`wire:init`) : la page doit s'afficher instantanément, backends arrêtés compris.
+
+### Scénario 21.6 — « Sonder maintenant » : le seul chemin de mesure à la demande
+
+Sur la fiche d'une `app` installée, avec le backend **arrêté** :
+
+1. cliquer **Sonder maintenant** ⇒ toast rouge « Le backend ne répond pas : … », badge **Indisponible**, date de mesure = maintenant ;
+2. `systemctl start sambaedu-ext-hello`, cliquer de nouveau ⇒ toast vert « Le backend répond. », badge **Joignable**, incident **conservé**.
+
+Contrôle négatif : une extension de type **`link`** (la tuile Documentation) et une `app` **non installée** n'affichent **aucune** carte « Santé » — il n'y a rien à sonder, et une carte vide serait un artefact.
+
+### Scénario 21.7 — Le journal d'audit, en vrai
+
+`/admin/extensions` → bouton **Journal** (ou `/admin/extensions/journal`).
+
+**Attendu** : le journal reflète **tout ce que les Sections 17 à 20 ont réellement joué** — sources ajoutées/activées/retirées, catalogues refusés, intégrations, installations et leurs échecs, mises à jour, retraits, révocations de scope. Vérifier :
+
+1. **tri du plus récent au plus ancien**, pagination par 25 ;
+2. **filtre par action** et **filtre par extension**, combinables ; le compteur d'entrées suit ;
+3. les lignes de **source** (acteur `system` pour la synchro planifiée) et les lignes d'**extension** coexistent proprement ;
+4. **lien depuis la fiche** : « Journal de cette extension » ⇒ le filtre extension est déjà positionné (`?ext=<clé>`) ;
+5. ⚠️ **aucune URL de dépôt, aucun jeton, aucune empreinte de paquet.** Contrôle par affichage du code source de la page, en cherchant l'hôte de votre dépôt tiers et `private_token`. **Aucune** occurrence — y compris sur les lignes `source_sync_failed`, dont la cible est justement ce dépôt.
+
+**Rétention** : aucune purge automatique — décision assumée, documentée dans `ExtensionAuditJournalService`. Le volume est structurellement borné (actes humains + échecs par tentative + transitions dédupliquées ; la santé, elle, n'écrit rien). Rien à vérifier ici, sinon qu'aucune tâche planifiée ne touche à cette table (`php artisan schedule:list | grep -i audit` ⇒ aucune ligne).
+
+### Scénario 21.8 — Le signal « journal d'audit incomplet » (legs review 56.3 #4)
+
+Ce chemin nécessite une base en échec : il est **prouvé sur l'hôte** (table d'audit supprimée + refus d'installation ⇒ marqueur posé, refus toujours rapporté ; et la contre-épreuve : refus normal ⇒ ligne écrite, aucun marqueur). Sur la VM, on valide seulement la **surface d'exploitation**, en posant le marqueur à la main :
+
+```bash
+php artisan tinker --execute="\App\Models\ExtensionAuditLog::recordWriteFailure();"
+php artisan sambaedu:doctor --tag=extensions
+```
+
+**Attendu** : « Extensions (journal d'audit) » passe en **error** — « le journal d'audit peut être INCOMPLET : 1 écriture(s) perdue(s) depuis le … », avec un `fix` qui nomme les logs Laravel **et** la page journal.
+
+Dans l'UI : `/admin/extensions/journal` affiche un **bandeau rouge** avec le compteur et les deux dates. Cliquer **Acquitter** ⇒ modale de confirmation ⇒ le bandeau disparaît, toast de confirmation.
+
+```bash
+php artisan sambaedu:doctor --tag=extensions
+php artisan tinker --execute="dump(\App\Models\ExtensionAuditLog::where('action','like','%')->count());"
+```
+
+**Attendu** : le check est revenu à `ok`, et le **nombre de lignes du journal n'a pas changé** — l'acquittement n'écrit **aucune** ligne d'audit (c'est un signal d'exploitation, pas une donnée de conformité ; l'auditer créerait une boucle).
+
+⚠️ Le marqueur vit dans le cache **fichier** (`storage/framework/cache`), délibérément : si une écriture d'audit échoue, la cause plausible est la base — un signal stocké en base coulerait avec elle. Corollaire d'exploitation : un `php artisan cache:clear` efface le marqueur sans acquittement. Acceptable (le doctor et les logs restent), mais à savoir.
+
+### Scénario 21.9 — Clients OIDC fantômes (legs review 56.4 #4)
+
+Le check « Extensions (clients OIDC) » détecte un état anormal que l'UI des scopes ne peut pas montrer : **plusieurs clients OIDC actifs pour la même extension**, dont un porterait des scopes que la fiche n'affiche pas (la fiche montre le plus récent, la révocation agit sur tous).
+
+```bash
+php artisan sambaedu:doctor --tag=extensions | grep -i 'clients OIDC'
+```
+
+**Attendu en régime normal** : `ok` — « un seul client OIDC actif par extension (aucun fantôme) ». ⚠️ **Y compris avec l'app-témoin `sso-demo` activée** : c'est une extension `link` avec un client légitime, et la signaler serait un faux positif permanent.
+
+Provocation contrôlée (VM de test uniquement), pour voir le verdict `error` :
+
+```bash
+php artisan tinker
+>>> $c = \App\Models\OidcClient::where('extension_key','hello')->where('enabled',true)->first();
+>>> $ghost = $c->replicate(); $ghost->client_id = $c->client_id.'-ghost'; $ghost->granted_scopes = ['profile','groups']; $ghost->save();
+```
+
+**Attendu** : `error` nommant `hello` et le scope **invisible**, avec un `fix` qui renvoie vers `ext:remove` puis `ext:install` (le retrait révoque **tous** les clients). ⚠️ Le détail ne doit **jamais** contenir un `client_id` (NFR3). **Supprimer le fantôme** ensuite : `\App\Models\OidcClient::where('client_id','like','%-ghost')->delete();`
+
+### Scénario 21.10 — Fenêtre `update.sh` : observation au déploiement
+
+Rien à provoquer — c'est une **observation** à faire au moment du merge, pendant que `scripts/update.sh` enchaîne composer, npm et le build VitePress **avant** `migrate --force` :
+
+- pendant toute cette fenêtre (plusieurs minutes), les pages de SE5 continuent de répondre et **le lanceur affiche ses tuiles**, alors que les colonnes `health_*` n'existent pas encore ;
+- aucun badge « Indisponible » n'apparaît pendant la fenêtre (l'état est lu comme inconnu, et on ne signale que ce qu'on sait).
+
+C'est la raison pour laquelle `tilesFor()` fait un `SELECT *` et ne nomme **aucune** colonne de santé : un `->select([...])` échouerait en SQL pendant toute la fenêtre. Le `try/catch` du `mount()` reste le filet — pas le plan.
+
+### Scénario 21.11 — Aucune surface privilégiée nouvelle
+
+Contrôle de non-régression, à faire une fois :
+
+```bash
+sudo -l -U www-admin | grep -i sambaedu-ext
+grep -c '' /etc/sudoers.d/sambaedu-ext
+/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh 2>&1 | head -5
+```
+
+**Attendu** : la ligne sudoers est **exactement** celle de la Section 18, et le helper expose **exactement** les mêmes sous-commandes qu'en 56.2 — `write-env`, `remove-env`, `install-package`, `remove-package`, `enable-service`, `disable-service`, `restart-service`, `write-fragment`, `remove-fragment`, `reload-apache`. **Aucune** sous-commande de lecture d'état n'a été ajoutée : la sonde de santé est un `GET http://127.0.0.1:<port>/` émis par `www-admin`, sans le moindre privilège. C'est la décision n° 1 de la story, et elle se vérifie ici en une commande.
 
 ---
 
