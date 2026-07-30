@@ -6,10 +6,15 @@
     <label for="drawer-toggle" aria-label="close sidebar" class="drawer-overlay"></label>
     <aside class="min-h-full w-80 border-r border-base-300 bg-base-100 shadow-xl">
         <!-- Sidebar header -->
-        <div class="p-6 backdrop-blur-sm">
+        <div class="relative p-6 backdrop-blur-sm">
             <h2 class="text-xl font-bold text-base-content flex items-center justify-center">
                 <x-atoms.logo class="w-72 h-auto object-contain" />
             </h2>
+            {{-- Repli manuel : uniquement sous `lg`, où le drawer n'est pas en `drawer-open`. --}}
+            <label for="drawer-toggle" aria-label="Replier le menu"
+                class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 lg:hidden">
+                <i class="fa-solid fa-xmark"></i>
+            </label>
         </div>
 
         <!-- Sidebar content -->

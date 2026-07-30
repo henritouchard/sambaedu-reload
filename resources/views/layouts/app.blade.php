@@ -133,7 +133,7 @@
 }" @keydown.ctrl.k.prevent="searchOpen = true">
 
 
-    <div class="drawer relative lg:drawer-open">
+    <div class="drawer relative 2xl:drawer-open">
         <input id="drawer-toggle" type="checkbox" class="drawer-toggle" />
         <!-- Main content -->
         <div class="drawer-content  flex flex-col max-h-screen">

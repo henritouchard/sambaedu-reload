@@ -17,27 +17,115 @@
             </div>
         </div>
 
-        @if (count($listCurrentGroups) > 0)
-            <div class="space-y-2 flex-1 overflow-y-auto pr-1 min-h-0 max-h-72">
-                @foreach ($listCurrentGroups as $group)
-                    @php
-                        $groupLabel = str_replace('_', ' ', $group);
-                    @endphp
-                    <div class="flex group items-center justify-between gap-3 p-2 bg-info/5 rounded-lg border border-info/10 w-full h-8 text-left hover:bg-info/10 transition-colors">
-                        <span class="text-sm">{{ $groupLabel }}</span>
-                        @can('update-user')
-                            <button type="button" title="Retirer du groupe"
-                                wire:click="removeFromGroup('{{ addslashes($group) }}')"
-                                wire:confirm="Retirer {{ $groupLabel }} de cet utilisateur ?"
-                                class="btn btn-xs btn-error hidden group-hover:flex items-center justify-center rounded-full size-6 text-base hover:bg-error/10 hover:text-error">
-                                <i class="fas fa-trash text-xs"></i>
-                            </button>
-                        @endcan
-                    </div>
-                @endforeach
+        @php
+            // Provenance transportée vers la fiche groupe : chemin RELATIF (voir
+            // WithReturnBack — un absolu serait rejeté), et route() plutôt que
+            // request()->fullUrl() qui vaudrait /livewire/update au re-render.
+            $backToProfile = route('app.user.show', array_filter([
+                'login' => $user->login,
+                'from' => $from,
+            ]), false);
+        @endphp
+
+        @if (count($groupDetails) > 0)
+            {{-- Hauteur bornée à ~5-6 lignes puis scroll, en-tête sticky pour
+                 rester lisible pendant le défilement. `table-fixed` + largeurs
+                 explicites : sans elles, un nom long élargit la colonne ou passe
+                 à la ligne (lignes mesurées jusqu'à 105 px) et le tableau
+                 n'affichait plus que 3 lignes. --}}
+            <div class="flex-1 overflow-auto min-h-0 max-h-80 rounded-xl border border-info/10 bg-base-100/60">
+                <table class="table table-sm table-pin-rows table-fixed">
+                    <thead>
+                        <tr class="bg-base-200/50">
+                            <th>Groupe</th>
+                            <th class="w-24">Type</th>
+                            <th class="w-24">Rôle</th>
+                            <th class="w-20 text-right">Membres</th>
+                            @can('update-user')
+                                <th class="w-12 px-1"></th>
+                            @endcan
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($groupDetails as $group)
+                            <tr wire:key="group-{{ $group['cn'] }}" class="group hover:bg-info/10">
+                                <td>
+                                    {{-- Lien vers la fiche groupe : seul endroit qui
+                                         détaille membres, quota et partage.
+                                         `truncate` (+ title) plutôt que le retour à
+                                         la ligne : garde une hauteur de ligne
+                                         constante, donc un nombre de lignes
+                                         visibles prévisible. --}}
+                                    @if ($group['id'])
+                                        <a href="{{ route('app.users.groups.edit', ['id' => $group['id'], 'from' => $backToProfile]) }}"
+                                            title="{{ $group['label'] }}"
+                                            class="block font-medium truncate link link-hover">{{ $group['label'] }}</a>
+                                    @else
+                                        <span class="block font-medium truncate" title="{{ $group['label'] }}">{{ $group['label'] }}</span>
+                                    @endif
+
+                                    {{-- Le CN n'est rappelé que s'il diffère du nom
+                                         affiché : sinon la ligne se répète. --}}
+                                    @if ($group['label'] !== $group['cn'])
+                                        <code class="block text-xs font-mono text-base-content/50 truncate">{{ $group['cn'] }}</code>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if ($group['type_label'])
+                                        <span class="badge badge-sm {{ $group['type_badge'] }}">{{ $group['type_label'] }}</span>
+                                    @else
+                                        <span class="text-base-content/30">—</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if ($group['edge_role_label'])
+                                        <span class="badge badge-sm badge-outline gap-1">
+                                            <i class="fa-solid fa-chalkboard-user text-[9px]"></i>
+                                            {{ $group['edge_role_label'] }}
+                                        </span>
+                                    @else
+                                        <span class="text-base-content/30">—</span>
+                                    @endif
+                                </td>
+                                <td class="text-right whitespace-nowrap">
+                                    @if ($group['members_count'] !== null)
+                                        {{ $group['members_count'] }}
+                                    @else
+                                        <span class="text-warning"
+                                            title="Groupe présent dans l'annuaire mais absent du référentiel SE5">
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                            non référencé
+                                        </span>
+                                    @endif
+                                </td>
+                                @can('update-user')
+                                    <td class="text-right px-1">
+                                        <button type="button" title="Retirer du groupe"
+                                            wire:click="removeFromGroup('{{ addslashes($group['cn']) }}')"
+                                            wire:confirm="Retirer {{ $group['label'] }} de cet utilisateur ?"
+                                            class="btn btn-ghost btn-xs btn-square text-error opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <i class="fas fa-trash text-xs"></i>
+                                        </button>
+                                    </td>
+                                @endcan
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
-            <div class="mt-3 text-xs text-base-content/50">
-                {{ count($listCurrentGroups) }} groupe(s)
+            @php
+                // Répartition par type, pour lire l'appartenance d'un coup d'œil
+                // (« Classe ×3, Projet ×1 ») sans dérouler la liste.
+                $byType = collect($groupDetails)
+                    ->groupBy(fn($g) => $g['type_label'] ?? 'Non référencé')
+                    ->map->count()
+                    ->sortDesc();
+            @endphp
+            <div class="mt-3 flex items-center gap-1.5 flex-wrap text-xs text-base-content/50">
+                <span>{{ count($groupDetails) }} groupe(s)</span>
+                @foreach ($byType as $typeLabel => $count)
+                    <span class="badge badge-xs badge-ghost">{{ $typeLabel }} ×{{ $count }}</span>
+                @endforeach
             </div>
         @else
             <div class="text-center py-6">

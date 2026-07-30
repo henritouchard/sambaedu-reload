@@ -14,6 +14,7 @@ use App\Repositories\UserRepository;
 use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\Wallpaper;
 use App\Models\Delegation;
 use Illuminate\Support\Facades\Gate;
@@ -46,6 +47,15 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     private ?string $resetPasswordValue = null;
     public ?array $localAdminInfo = null;
     public array $listCurrentGroups = [];
+    /**
+     * Vue enrichie des groupes de la card « Groupes » : un item par CN de
+     * $listCurrentGroups, complété depuis SQL (nom affiché, type, effectif,
+     * rôle d'arête). Un CN sans ligne `user_groups` (groupe AD non importé)
+     * garde une entrée minimale plutôt que de disparaître de la card.
+     *
+     * @var list<array{cn:string,label:string,type:?string,type_label:?string,type_badge:string,members_count:?int,edge_role:string,edge_role_label:?string,id:?int}>
+     */
+    public array $groupDetails = [];
     public array $listCurrentRights = [];
 
     // Story 7.x — Permissions Spatie + délégations (remplace le bitmask legacy
@@ -114,6 +124,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         // Groupes et droits (legacy — toujours utilisé pour l'en-tête)
         $this->listCurrentGroups = $this->user->groups;
         $this->listCurrentRights = $this->user->rights;
+        $this->refreshGroupDetails();
 
         // Story 7.x — charger l'état Spatie pour la card Permissions.
         $this->loadSpatieState();
@@ -171,6 +182,120 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         $this->loadSpatieState();
     }
 
+    /**
+     * Recharge $groupDetails à partir de $listCurrentGroups (les CN restent la
+     * source de vérité des actions : retrait, sync AD). Les infos affichables
+     * viennent de SQL — nom affiché, type, effectif, rôle de l'utilisateur DANS
+     * le groupe — pour que la card dise la même chose que le drawer d'édition.
+     */
+    private function refreshGroupDetails(): void
+    {
+        if (empty($this->listCurrentGroups) || !$this->sqlUserModel) {
+            $this->groupDetails = [];
+            return;
+        }
+
+        $known = $this->sqlUserModel
+            ->userGroups()
+            ->withCount('users')
+            ->get()
+            ->keyBy('name');
+
+        $details = [];
+
+        foreach ($this->listCurrentGroups as $cn) {
+            $group = $known->get($cn);
+
+            if (!$group) {
+                // Groupe présent côté AD mais absent de `user_groups` : on
+                // n'invente ni type ni effectif, on affiche le CN seul.
+                $details[] = [
+                    'id' => null,
+                    'cn' => $cn,
+                    'label' => str_replace('_', ' ', $cn),
+                    'type' => null,
+                    'type_label' => null,
+                    'type_badge' => 'badge-ghost',
+                    'members_count' => null,
+                    'edge_role' => UserGroupUserPivot::ROLE_MEMBER,
+                    'edge_role_label' => null,
+                ];
+                continue;
+            }
+
+            $edgeRoleRaw = (string) ($group->pivot->role ?? '');
+            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::ROLES, true)
+                ? $edgeRoleRaw
+                : UserGroupUserPivot::ROLE_MEMBER;
+
+            $details[] = [
+                'id' => $group->id,
+                'cn' => $cn,
+                'label' => $group->display_name ?: str_replace('_', ' ', $cn),
+                'type' => $group->type,
+                'type_label' => self::groupTypeLabel((string) $group->type),
+                'type_badge' => self::groupTypeBadgeClass((string) $group->type),
+                'members_count' => (int) $group->users_count,
+                'edge_role' => $edgeRole,
+                // Membre simple : pas de badge (c'est le cas par défaut, le
+                // signaler noierait les rôles qui, eux, sont informatifs).
+                'edge_role_label' => $edgeRole === UserGroupUserPivot::ROLE_MEMBER
+                    ? null
+                    : self::edgeRoleLabel($edgeRole),
+            ];
+        }
+
+        // Classes d'abord (l'appartenance structurante), puis alphabétique.
+        usort($details, function (array $a, array $b): int {
+            $rank = fn(array $g): int => $g['type'] === 'classe' ? 0 : ($g['type'] === null ? 2 : 1);
+
+            return [$rank($a), mb_strtolower($a['label'])] <=> [$rank($b), mb_strtolower($b['label'])];
+        });
+
+        $this->groupDetails = $details;
+    }
+
+    /** Libellé FR du type de groupe — aligné sur la fiche groupe. */
+    private static function groupTypeLabel(string $type): string
+    {
+        return match ($type) {
+            'classe' => 'Classe',
+            'cours' => 'Cours',
+            'matiere' => 'Matière',
+            'matiere_classe' => 'Matière / Classe',
+            'projet' => 'Projet',
+            'equipe' => 'Équipe',
+            'role' => 'Rôle',
+            'function' => 'Fonction',
+            'custom' => 'Personnalisé',
+            'other_group' => 'Autre',
+            default => $type === '' ? 'Autre' : ucfirst($type),
+        };
+    }
+
+    /** Couleur de badge du type de groupe — aligné sur la fiche groupe. */
+    private static function groupTypeBadgeClass(string $type): string
+    {
+        return match ($type) {
+            'classe' => 'badge-info',
+            'cours' => 'badge-success',
+            'matiere', 'matiere_classe' => 'badge-warning',
+            'projet' => 'badge-secondary',
+            'equipe' => 'badge-accent',
+            default => 'badge-ghost',
+        };
+    }
+
+    /** Libellé FR du rôle d'arête — aligné sur la table des membres du groupe. */
+    private static function edgeRoleLabel(string $role): string
+    {
+        return match ($role) {
+            UserGroupUserPivot::ROLE_MANAGER => 'Prof',
+            UserGroupUserPivot::ROLE_OWNER => 'Prof principal',
+            default => 'Élève',
+        };
+    }
+
     public function removeFromGroup(string $group): void
     {
         if (!Gate::allows('update-user')) {
@@ -202,6 +327,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             $this->listCurrentGroups,
             fn($g) => $g !== $group
         ));
+        $this->refreshGroupDetails();
 
         ToastMagic::success("Retiré du groupe « {$groupCn} ».");
     }
@@ -247,6 +373,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         $this->listCurrentGroups = $sqlUser
             ? $sqlUser->userGroups()->pluck('name')->all()
             : [];
+        $this->refreshGroupDetails();
 
         ToastMagic::success('Groupes synchronisés depuis l\'AD.');
     }
@@ -544,9 +671,9 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         <!-- En-tête avec actions principales -->
         @include('pages.users.[login]._partials.user-header', ['resetPasswordValue' => $this->getPasswordForDisplay()])
 
-        <!-- Changement de rôle/catégorie -->
-        <div class="mb-8">
-            @livewire('pages::users.[login]._partials.role-change-form', ['user' => $user], key('role-change-' . $user->login))
+        <!-- Profil : identité + rattachement (catégorie / fonction) -->
+        <div class="mb-6">
+            @livewire('pages::users.[login]._partials.profile-form', ['user' => $user], key('profile-' . $user->login))
         </div>
 
         <!-- Groupes et Permissions -->

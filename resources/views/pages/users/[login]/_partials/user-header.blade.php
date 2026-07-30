@@ -215,8 +215,6 @@
                         @endonce
                     @endif
 
-                    <!-- Informations personnelles -->
-                    @livewire('pages::users.[login]._partials.personal-info-form', ['user' => $user], key('personal-info-' . $user->login))
                 </div>
             </div>
         </div>

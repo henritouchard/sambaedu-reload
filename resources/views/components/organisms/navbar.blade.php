@@ -1,13 +1,15 @@
 <!-- Navbar -->
 <div class="top-2 p-2 border-b border-base-300 flex items-center justify-between shadow-none bg-base-100">
     <!-- Mobile menu button - visible only on small screens -->
-    <label for="drawer-toggle" class="btn btn-ghost btn-circle lg:hidden">
+    <div class="flex items-center gap-2">
+    <label for="drawer-toggle" class="btn btn-ghost btn-circle 2xl:hidden">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
         </svg>
     </label>
 
     <livewire:organisms.app-launcher />
+    </div>
     <livewire:organisms.search-modal />
     <div class="gap-2  flex items-center justify-beetween w-fit">
         
