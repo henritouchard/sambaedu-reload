@@ -194,4 +194,56 @@ class ExtensionLauncherServiceTest extends TestCase
 
         $this->assertSame([], $this->service->tilesFor($eleve));
     }
+
+    // ── Instances servies sous un sous-chemin (reverse proxy) ─────────────
+
+    /**
+     * Régression terrain (lab1, `APP_URL=https://lab1.sambaedu.org/0991229y`) :
+     * la tuile portait le chemin de manifest BRUT (`/sso-demo`), que le
+     * navigateur résolvait contre la racine du host — le clic partait sur
+     * `https://lab1.sambaedu.org/sso-demo`, sans le préfixe d'instance, en 404.
+     * Le préfixe est porté par `URL::forceRootUrl()`, donc par `url()`, jamais
+     * par une chaîne recopiée dans un `href`.
+     */
+    #[Test]
+    public function a_manifest_path_is_resolved_against_the_instance_root_url(): void
+    {
+        // Les DEUX appels que fait `AppServiceProvider` quand `APP_URL` porte un
+        // chemin : `forceRootUrl` ne transporte pas le schéma.
+        \Illuminate\Support\Facades\URL::forceRootUrl('https://lab1.sambaedu.org/0991229y');
+        \Illuminate\Support\Facades\URL::forceScheme('https');
+
+        $this->integratedLink('sso-demo', 'Démo SSO', ['prof']);
+
+        $tiles = $this->service->tilesFor($this->makeUser('prof'));
+
+        $this->assertSame(
+            'https://lab1.sambaedu.org/0991229y/sso-demo',
+            $tiles[0]['entry_url'],
+        );
+    }
+
+    /**
+     * Symétrique du test ci-dessus : une extension hébergée AILLEURS déclare
+     * une URL absolue. La préfixer la casserait — elle doit traverser telle
+     * quelle. Les deux cas sont exhaustifs, `ExtensionManifestValidator`
+     * n'acceptant que `/…` ou `http(s)://` (review 54.3).
+     */
+    #[Test]
+    public function an_absolute_http_entry_url_is_left_untouched(): void
+    {
+        \Illuminate\Support\Facades\URL::forceRootUrl('https://lab1.sambaedu.org/0991229y');
+
+        $manifest = $this->manifestFor('bbb', ExtensionType::Link->value, ['prof']);
+        $manifest['entry_url'] = 'https://bbb.example.org/rooms';
+
+        Extension::factory()
+            ->link('https://bbb.example.org/rooms')
+            ->integrated()
+            ->create(['key' => 'bbb', 'name' => 'BigBlueButton', 'manifest' => $manifest]);
+
+        $tiles = $this->service->tilesFor($this->makeUser('prof'));
+
+        $this->assertSame('https://bbb.example.org/rooms', $tiles[0]['entry_url']);
+    }
 }

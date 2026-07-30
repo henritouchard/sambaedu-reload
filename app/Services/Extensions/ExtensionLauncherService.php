@@ -83,9 +83,35 @@ class ExtensionLauncherService
                 'key' => (string) $extension->key,
                 'name' => (string) $extension->name,
                 'icon' => (string) $extension->icon,
-                'entry_url' => $extension->entryUrl(),
+                'entry_url' => $this->absoluteEntryUrl($extension->entryUrl()),
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Résout un `entry_url` de manifest en URL réellement cliquable.
+     *
+     * ⚠️ Un chemin absolu de manifest (`/sso-demo`) est absolu pour L'INSTANCE,
+     * pas pour l'origine HTTP. Injecté brut dans un `href`, le navigateur le
+     * résout contre la racine du host et PERD le préfixe de chemin des
+     * instances servies sous un sous-chemin par reverse proxy (`APP_URL` du
+     * type `https://lab1.sambaedu.org/0991229y`) : le clic partait sur
+     * `https://lab1.sambaedu.org/sso-demo` → 404. `url()` applique le
+     * `URL::forceRootUrl(config('app.url'))` posé par `AppServiceProvider`,
+     * qui est précisément ce qui porte ce préfixe.
+     *
+     * Les URL absolues `http(s)://` (extension hébergée ailleurs) traversent
+     * INCHANGÉES : les préfixer serait les casser. Le schéma a déjà été borné
+     * à `/…` ou `http(s)://` par {@see ExtensionManifestValidator} (review
+     * 54.3, anti `javascript:`/`data:`), donc ces deux cas sont exhaustifs.
+     */
+    private function absoluteEntryUrl(string $entryUrl): string
+    {
+        if ($entryUrl === '' || preg_match('#^https?://#i', $entryUrl) === 1) {
+            return $entryUrl;
+        }
+
+        return url($entryUrl);
     }
 }

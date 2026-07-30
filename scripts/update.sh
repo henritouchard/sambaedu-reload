@@ -249,6 +249,66 @@ run_laravel_update() {
 }
 
 # ============================================================================
+# Cache de routes Laravel — invalidation puis reconstruction
+# ============================================================================
+# `bootstrap/cache/routes-v7.php` n'était régénéré par AUCUNE étape de ce
+# script : le seul `route:cache` du dépôt vit dans `setupApache.sh`, qui n'est
+# rejoué QUE si le vhost est détecté non conforme. Une release qui ajoute des
+# routes sur une instance au vhost déjà à jour laissait donc en place le cache
+# du dernier `setupApache.sh` — les routes neuves répondaient 404, sans aucun
+# signal. Constaté sur lab1 (0991229y) : cache figé au 21/07, les cinq routes
+# `oidc.*` + `/sso-demo` d'Epic 55 invisibles alors que le code était déployé
+# et les migrations passées.
+#
+# Deux temps, volontairement dissociés :
+#   - `flush_route_cache` — TÔT (juste après composer) : le cache périmé
+#     disparaît avant toute autre étape. Si la suite du script échoue, l'app
+#     sert en routage dynamique : plus lent, jamais faux.
+#   - `rebuild_route_cache` — TARD (après `update_apache`) : reconstruit sous
+#     l'identité du runtime. L'ordre est CONTRAINT — `setupApache.sh`, quand il
+#     est rejoué par `update_apache`, écrit son propre cache en root:root ;
+#     reconstruire avant lui le ferait écraser par un fichier que PHP-FPM ne
+#     pourra plus réécrire.
+
+flush_route_cache() {
+    log "Invalidation du cache de routes..."
+    cd "$APP_DIR"
+
+    if php artisan route:clear >/dev/null 2>&1; then
+        log_success "Cache de routes vidé (routage dynamique jusqu'à la reconstruction)"
+    else
+        # Ni fatal ni silencieux : un cache périmé qui survit à l'update est
+        # exactement le défaut que cette étape existe pour éliminer.
+        log_warning "route:clear en échec — vérifier bootstrap/cache/routes-v7.php (cache potentiellement périmé)"
+    fi
+}
+
+rebuild_route_cache() {
+    log "Reconstruction du cache de routes..."
+    cd "$APP_DIR"
+
+    # Écrit par root, `routes-v7.php` resterait illisible en écriture pour
+    # PHP-FPM (www-admin) : même piège que la clé privée OIDC ci-dessous, et
+    # même parade — on écrit sous l'identité du runtime dès qu'elle existe.
+    local artisan=(php)
+    if id www-admin >/dev/null 2>&1; then
+        artisan=(sudo -u www-admin php)
+    fi
+
+    if "${artisan[@]}" artisan route:cache >/dev/null 2>&1; then
+        log_success "Cache de routes reconstruit"
+        return 0
+    fi
+
+    # ⚠️ Fail-soft ASYMÉTRIQUE : on ne laisse JAMAIS derrière soi un cache
+    # à moitié écrit ou hérité de la version précédente. Mieux vaut aucun
+    # cache (routage dynamique, correct) qu'un cache faux (404 fantômes).
+    log_warning "route:cache en échec — cache re-vidé, l'app sert en routage dynamique"
+    "${artisan[@]}" artisan route:clear >/dev/null 2>&1 || true
+    log_warning "  → cause probable : route sur closure non sérialisable, ou nom de route dupliqué"
+}
+
+# ============================================================================
 # APCu CLI — activation automatique
 # ============================================================================
 # APCu est typiquement installé pour PHP-FPM mais désactivé en CLI sur
@@ -1718,6 +1778,7 @@ show_summary() {
     echo "  ✓ Bundle WPKG natif (généré sous www-admin)"
     echo "  ✓ Outils agent obligatoires (Rainmeter embarqué)"
     echo "  ✓ Permissions partage [install]"
+    echo "  ✓ Cache de routes reconstruit"
     echo ""
 }
 
@@ -1779,6 +1840,9 @@ main() {
 
     echo ""
     update_composer
+
+    echo ""
+    flush_route_cache
 
     echo ""
     update_npm
@@ -1863,6 +1927,9 @@ main() {
 
     echo ""
     ensure_install_permissions
+
+    echo ""
+    rebuild_route_cache
 
     echo ""
     run_doctor_check
