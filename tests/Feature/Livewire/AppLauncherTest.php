@@ -341,10 +341,10 @@ class AppLauncherTest extends TestCase
     #[Test]
     public function the_component_root_stays_stable_across_states(): void
     {
-        // ⚠️ Asserter la seule présence de la chaîne « dropdown dropdown-end »
+        // ⚠️ Asserter la seule présence de la chaîne « dropdown dropdown-start »
         // ne détectait PAS l'anti-patron visé : un template écrit
-        // `@if (...) <div class="dropdown dropdown-end">…@else <div
-        // class="dropdown dropdown-end">…@endif` — soit exactement le `@if` de
+        // `@if (...) <div class="dropdown dropdown-start">…@else <div
+        // class="dropdown dropdown-start">…@endif` — soit exactement le `@if` de
         // premier niveau qui provoque un 500 au re-render du parent — passait
         // dans les deux états. C'est la STRUCTURE qu'il faut vérifier.
         $this->actingAs($this->makeUser('prof'));
@@ -355,13 +355,13 @@ class AppLauncherTest extends TestCase
 
         foreach (['vide' => $emptyHtml, 'rempli' => $filledHtml] as $state => $html) {
             self::assertStringContainsString(
-                'class="dropdown dropdown-end"',
+                'class="dropdown dropdown-start"',
                 $this->rootTag($html),
                 "état {$state} : la RACINE elle-même porte les classes attendues",
             );
             self::assertSame(
                 1,
-                substr_count($html, 'class="dropdown dropdown-end"'),
+                substr_count($html, 'class="dropdown dropdown-start"'),
                 "état {$state} : une seule racine dans tout le rendu",
             );
         }
@@ -439,7 +439,7 @@ class AppLauncherTest extends TestCase
             $this->emptyBlockTag($html),
             'registre illisible ⇒ état vide propre, jamais une 500',
         );
-        self::assertStringContainsString('class="dropdown dropdown-end"', $this->rootTag($html));
+        self::assertStringContainsString('class="dropdown dropdown-start"', $this->rootTag($html));
     }
 
     // ── FR14 — aucune route, aucun middleware, aucune garde ──────────────────
@@ -581,7 +581,10 @@ class AppLauncherTest extends TestCase
             preg_match('/<a\b[^>]*data-testid="launcher-tile-hello"[^>]*>/s', $html, $m),
             'la tuile indisponible doit rester une balise <a>',
         );
-        self::assertStringContainsString('href="/ext/hello"', $m[0], 'la cible reste atteignable (FR14)');
+        // `absoluteEntryUrl()` résout le chemin de manifest contre la racine de
+        // l'instance (régression lab1 sous-chemin) : la cible reste la même,
+        // exprimée en URL réellement cliquable.
+        self::assertStringContainsString('href="'.url('/ext/hello').'"', $m[0], 'la cible reste atteignable (FR14)');
     }
 
     #[Test]
