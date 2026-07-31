@@ -295,7 +295,24 @@ class ContractV1Test extends TestCase
     // champ est ajouté à un item existant), hash d'item RECALCULÉ
     // (1ff7dadf… → e3fa179d…) et hash d'état RECALCULÉ. Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = '34b4f15b5a9e7cf5f0883d24c52bc6deb5b4d65582eee1c6502c89264b28b869';
+    // Re-bumpé SCIEMMENT par la Story 58.1 (évolution MINEURE du contrat, §9) :
+    // AJOUT d'UN item `folders` (§7.12 — REDIRECTION du dossier shell Bureau,
+    // `HKCU\…\Explorer\User Shell Folders`, exclusive) en portée MACHINE_USER →
+    // machine_user = 2 items, 20 items au total, hash d'état RECALCULÉ. Le golden
+    // illustre le MÊME parc `shared_local` que l'item `shortcuts` voisin, donc le
+    // MÊME chemin (`\\<se4fs>\users\<user>\Bureau\`) : c'est l'invariant de la
+    // story — l'endroit où l'agent POSE les `.lnk` et celui vers lequel il
+    // REDIRIGE le shell sont un seul chemin, résolu une seule fois
+    // (DesktopPathResolver). Les voir diverger dans ce golden serait le signe que
+    // la panne de juillet 2026 est de retour : des raccourcis déposés dans un
+    // dossier que le shell ne regarde pas.
+    // Type AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
+    // major : un binaire ≤ 2.15.0 IGNORE le type EN SILENCE (§8 — aucun statut au
+    // rapport) et se comporte exactement comme aujourd'hui, d'où publication de
+    // release 2.16.0 obligatoire. Le type entre dans ReportRequest via
+    // Rule::in(RESOURCE_TYPES). Le jumeau Go (hasher_test.go::frozenStateHash)
+    // porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'e2c85df80a0a69e4b5065cbb0718c1e626c5bf13be57c03aa2db16f46017bdb3';
 
     private StateHasher $hasher;
 

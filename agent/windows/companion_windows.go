@@ -267,6 +267,21 @@ func runCompanion() error {
 					Ops: &appProfileOps{log: logger},
 					Log: logger,
 				},
+				// Story 58.1 — folders (exclusive par dossier / machine_user) :
+				// le COMPAGNON redirige les dossiers shell (User Shell Folders)
+				// vers le chemin emis par le serveur — le MEME que celui ou
+				// `shortcuts` ci-dessus pose les `.lnk`. Successeur du script GPO
+				// legacy `folders/bureau_samba`, coupe le 2026-07-20 sans
+				// remplacant : depuis, tout profil itinerant NEUF gardait un
+				// Bureau local et n'affichait AUCUN raccourci pose en reseau.
+				// HKCU + cible atteinte avec l'identite de l'utilisateur => le
+				// compagnon, jamais le service SYSTEM. Le registre passe par le
+				// MEME registryOps que `registry` (une seule implementation).
+				"folders": &shared.FoldersHandler{
+					Ops:      &folderOps{log: logger},
+					Registry: &registryOps{log: logger},
+					Log:      logger,
+				},
 				// Story 27.3 — registre HKCU (exclusive par cle / session) : le
 				// COMPAGNON applique les reglages de la ruche utilisateur (effet
 				// Explorer immediat). Les items HKLM (portee machine) sont

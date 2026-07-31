@@ -190,7 +190,15 @@ import (
 // où l'agent POSE). Nombre d'items INCHANGÉ (19), hash d'item et hash d'état
 // RECALCULÉS, bumpés à l'IDENTIQUE côté PHP
 // (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "34b4f15b5a9e7cf5f0883d24c52bc6deb5b4d65582eee1c6502c89264b28b869"
+// Story 58.1 : +1 item `folders` (REDIRECTION du dossier shell Bureau vers
+// `User Shell Folders`, exclusive, §7.12) en portée MACHINE_USER → 20 items,
+// hash d'état RECALCULÉ, bumpé à l'IDENTIQUE côté PHP
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13). Le golden illustre
+// le MÊME chemin que l'item `shortcuts` voisin : POSER les `.lnk` et REDIRIGER
+// le shell sont deux moitiés d'un même geste, résolues une seule fois côté
+// serveur. Les voir diverger ici signalerait le retour de la panne de juillet
+// 2026 (raccourcis posés dans un dossier que le shell ne regarde pas).
+const frozenStateHash = "e2c85df80a0a69e4b5065cbb0718c1e626c5bf13be57c03aa2db16f46017bdb3"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -320,8 +328,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 19 {
-		t.Errorf("19 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3 + registry_list session 43.2 + app_profile session 36.5), %d vérifiés", checked)
+	if checked != 20 {
+		t.Errorf("20 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3 + registry_list session 43.2 + app_profile session 36.5 + folders machine_user 58.1), %d vérifiés", checked)
 	}
 }
 

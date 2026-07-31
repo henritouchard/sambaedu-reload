@@ -16,6 +16,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\DesktopPathResolver;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
@@ -59,7 +60,7 @@ class ShortcutsStateProviderTest extends TestCase
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
 
-        $this->provider = new ShortcutsStateProvider(new WorkstationEnvironmentResolver());
+        $this->provider = new ShortcutsStateProvider(new WorkstationEnvironmentResolver(), new DesktopPathResolver());
         $this->ws = Workstation::factory()->create();
         $this->room = WorkstationGroup::factory()->create();
         $this->parc = WorkstationGroup::factory()->logical()->create();

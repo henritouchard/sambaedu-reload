@@ -4876,3 +4876,132 @@ contient, la dérivation serveur `desktopSweepPathsFor()` est en cause, pas l'ag
       est une EXCEPTION : son « ancien balayage » est le balayage réseau
       INCONDITIONNEL du finding #1 (guerre de suppression inter-postes) ⇒
       **répudiée, ne JAMAIS la construire ni la déployer** (cf. `version.go`).
+
+## Story 58.1 — Redirection du Bureau portée par l'agent (`folders`)
+
+Type `folders` (contrat §7.12) : l'agent écrit
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders\Desktop`
+vers le MÊME dossier que celui où `shortcuts` pose les `.lnk`. Portée
+`machine_user`, appliquée par le **COMPAGNON**. Release agent **2.16.0** requise
+(un binaire antérieur ignore le type EN SILENCE).
+
+**Le trou qu'on bouche.** Cette valeur était écrite par le script de la GPO
+legacy « Bureau » (paquet `folders`, `bureau_samba` / `bureau_local`, discriminés
+par le groupe `Port_perdir`). Cet émetteur a été **coupé le 2026-07-20** : l'OU
+des comptes de l'établissement porte `gPOptions: 1` (héritage bloqué) sans
+`gPLink`, donc plus aucune GPO legacy n'atteint les utilisateurs. Aucun
+successeur SE5 n'existait.
+
+**Pourquoi ça n'a pas sauté aux yeux.** La valeur est écrite UNE fois puis
+**figée dans le profil itinérant** (`/home/profiles/<user>.V6/NTUSER.DAT`). Les
+profils créés AVANT la coupure la conservent indéfiniment et paraissent
+corrects ; ceux créés APRÈS ne l'ont jamais eue. Constat lab1 du 2026-07-30 :
+`se4install` / `admin` / `adrien.andre` (juin) l'ont, `paul.letaulier` /
+`mickael.barbier` / `zelia.bertin` (29/07) ne l'ont pas — un écart qui ressemblait
+à une différence prof / administratif et n'en était pas. Pendant ce temps
+`shortcuts` déposait consciencieusement les `.lnk` dans le Bureau réseau : **tout
+raccourci `place=desktop` invisible**, sans erreur, sans item non conforme, sans
+trace serveur.
+
+> ⚠️ **Avant de mesurer quoi que ce soit**, relever la **date de création du
+> profil itinérant** des comptes de test. Un compte de juin masque le symptôme.
+
+### Scénario 58.1.1 — Profil neuf sur parc partagé : la redirection se pose
+
+1. Parc `shared_local`, politique de fichiers `home` **activée**
+   (`/admin/settings/files`). Agent ≥ 2.16.0 déployé.
+2. Supprimer (ou renommer) le profil itinérant d'un compte de test, puis ouvrir
+   une session sur un poste du parc.
+3. Observer `companion.log` : `Dossier desktop redirigé vers \\<se4fs>\users\<user>\Bureau`,
+   puis un redémarrage d'Explorer.
+
+**Attendu** : `User Shell Folders\Desktop` = `\\<se4fs>\users\<user>\Bureau`
+(type `REG_EXPAND_SZ`, **sans** backslash final) ; le dossier `Bureau` existe dans
+le home ; les raccourcis `place=desktop` sont **visibles** sur le bureau.
+
+### Scénario 58.1.2 — Idempotence : pas de bureau qui clignote
+
+1. Laisser tourner 3 cycles de convergence sur la session du scénario précédent.
+
+**Attendu** : après la première convergence, l'item `folders` rapporte
+`compliant` ; **zéro** écriture registre, **zéro** création de dossier, **zéro**
+redémarrage d'Explorer aux cycles suivants. Un Explorer qui se relance à chaque
+cycle = régression du trim de séparateur final ou de l'expansion des `%VAR%`.
+
+### Scénario 58.1.3 — Poste perdir : le Bureau local est ÉCRIT, pas tu
+
+1. Même utilisateur, poste d'un parc `personal_local` (ou `nomade`).
+2. Ouvrir une session APRÈS avoir utilisé un poste `shared_local` (le profil
+   itinérant porte donc le Bureau réseau).
+
+**Attendu** : la valeur est **réécrite** en `%USERPROFILE%\Desktop` (littéral,
+`%VAR%` NON expansé) et Explorer redémarre une fois. Sans cette écriture
+explicite, le portable perdir hériterait du Bureau réseau du poste de classe et
+réciproquement — la règle des maps symétriques.
+
+> ⚠️ **Conséquence à connaître avant déploiement** : un compte dont le profil
+> date d'AVANT le 2026-07-20 et qui utilise un poste perdir voit son Bureau
+> basculer du réseau vers le local à la première convergence. C'est le
+> comportement correct au regard de `WorkstationGroup.environment` — mais il rend
+> ce réglage **structurant**. Vérifier l'environnement déclaré des parcs avant de
+> publier la 2.16.0.
+
+### Scénario 58.1.4 — Bascule de la politique home
+
+1. Parc `shared_local`, session ouverte et convergée (Bureau réseau).
+2. Couper `home` dans `/admin/settings/files`, attendre un cycle.
+
+**Attendu** : `path` passe à `%USERPROFILE%\Desktop\`, la valeur est réécrite,
+Explorer redémarre. Le Bureau réseau vit DANS le home : le laisser pointer là
+serait rediriger vers un dossier devenu inatteignable. `shortcuts` bascule sa
+POSE au même cycle (même résolution serveur) — les deux ne peuvent pas diverger.
+
+### Scénario 58.1.5 — Dossier absent, valeur correcte
+
+1. Session convergée sur parc partagé. Supprimer `\\<se4fs>\users\<user>\Bureau`
+   côté serveur SANS toucher au registre.
+
+**Attendu** : l'item repasse **non conforme** (une redirection vers un dossier
+absent n'est jamais « conforme »), le dossier est recréé, **aucune** écriture
+registre (la valeur était déjà bonne) et Explorer redémarre quand même — il avait
+démarré sur un emplacement de repli.
+
+### Scénario 58.1.6 — Serveur de fichiers injoignable
+
+1. Parc `shared_local`. Couper l'accès SMB au serveur de fichiers depuis le poste
+   (pare-feu), puis forcer une convergence.
+
+**Attendu** : l'item `folders` rapporte **`error`** — jamais `compliant`, et
+**aucune** valeur n'est écrite. Confondre « injoignable » et « absent » ferait
+basculer l'utilisateur sur un Bureau local le jour où le partage tousse, et la
+valeur le suivrait ensuite sur TOUS ses postes. Les autres types continuent de
+converger (isolation par type).
+
+### Scénario 58.1.7 — Poste hors-domaine
+
+1. Poste où ni `SE4FS` ni `LOGONSERVER` ne sont résolubles.
+
+**Attendu** : item en `error` avec « chemin non résoluble localement » ; **aucune**
+écriture. On refuse d'écrire `\\\users\…`, qui donnerait un Bureau mort gravé dans
+le profil itinérant.
+
+### Check-list
+
+- [ ] 58.1.1 — Profil NEUF sur parc partagé : redirection posée, dossier créé,
+      raccourcis `place=desktop` enfin visibles.
+- [ ] 58.1.2 — Idempotence : 0 écriture / 0 relance d'Explorer au régime stable.
+- [ ] 58.1.3 — Perdir : `%USERPROFILE%\Desktop` ÉCRIT explicitement ; contrôler
+      au préalable l'`environment` déclaré des parcs.
+- [ ] 58.1.4 — Bascule `home` : redirection ET pose de raccourcis basculent
+      ensemble (jamais l'une sans l'autre).
+- [ ] 58.1.5 — Dossier absent + valeur correcte ⇒ recréation + relance, sans
+      écriture registre.
+- [ ] 58.1.6 — Serveur muet ⇒ `error`, zéro écriture (jamais un `compliant`
+      menteur).
+- [ ] 58.1.7 — Hors-domaine ⇒ `error`, zéro écriture.
+- [ ] Contrat wire : type `folders` (§7.12) ; golden `state.v1.json` +1 item
+      `folders` en portée `machine_user` ; `FROZEN_STATE_HASH` = `e2c85df8…`
+      cohérent PHP + Go.
+- [ ] Version cible **agent 2.16.0**. Un agent **≤ 2.15.0** ignore le type EN
+      SILENCE : symptôme = comportement d'aujourd'hui (raccourcis invisibles pour
+      les profils postérieurs au 2026-07-20). La publication n'est pas optionnelle.

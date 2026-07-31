@@ -310,6 +310,56 @@ Quand c'est un nom nu **ET** qu'un asset content-addressed existe en base
   icônes uploadées **existantes** (name-addressed `<name>.ico` → `<sha>.ico`,
   copie jamais déplacement, dédup checksum) et renseigne les colonnes.
 
+### `folders` — `exclusive` PAR DOSSIER / `machine_user`
+
+Un item par dossier shell géré — aujourd'hui le seul `desktop` :
+
+```json
+{ "folder": "desktop",
+  "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\" }
+```
+
+**Le pendant indispensable de `shortcuts`.** Le provider précédent décide OÙ
+poser les `.lnk` ; celui-ci fait pointer le shell de la session sur ce même
+dossier (`HKCU\…\Explorer\User Shell Folders\Desktop`). Sans lui, les raccourcis
+sont déposés dans un dossier que Windows ne regarde pas.
+
+Ce n'est pas une hypothèse : jusqu'à la Story 58.1 **personne** n'écrivait cette
+valeur côté SE5. Elle venait du script de la GPO legacy « Bureau » (paquet
+`folders`, `bureau_samba` / `bureau_local`), coupé le **2026-07-20** quand l'OU
+des comptes a reçu `gPOptions: 1` (héritage bloqué) sans `gPLink`. Comme la
+valeur est écrite UNE fois puis **figée dans le profil itinérant**, les comptes
+antérieurs la conservaient et le parc paraissait sain ; tout profil créé après
+n'a jamais vu un seul raccourci `place=desktop` — sans erreur, sans item non
+conforme, sans trace serveur.
+
+- **Un seul chemin de vérité** : `path` est le `desktop_path` de `shortcuts`,
+  littéralement — même appel à `App\Services\Agent\DesktopPathResolver::pathFor()`,
+  donc même croisement {environnement du parc} × {politique `home`}. Ce résolveur
+  a été extrait de `ShortcutsStateProvider` **pour cette raison** : deux mappings
+  jumeaux qui dérivent, c'est la panne reproduite à l'identique. Un test croisé
+  (`ShellFoldersStateProviderTest::redirection_target_equals_the_path_where_shortcuts_are_dropped`)
+  verrouille l'égalité sur les six configurations.
+- **Le Bureau local s'ÉCRIT** : un parc `personal_local`/`nomade` émet
+  explicitement `%USERPROFILE%\Desktop\`, il ne se tait pas. Le profil itinérant
+  est partagé entre tous les postes de l'utilisateur — sans écriture explicite,
+  un portable perdir hériterait du Bureau réseau laissé par le poste de classe.
+  « Ne pas gérer » (§8) laisserait la mauvaise valeur en place (règle des maps
+  symétriques).
+- **Lecture PURE** : aucune table d'authoring, aucun AD. Tout vient du
+  `TargetContext` déjà résolu et de la capacité globale
+  `FilePolicyService::capabilities()['home']`. Maille `Broadcast` — la valeur
+  dérive du parc et d'un réglage global, jamais d'une assignation.
+- **`scope=machine_user`** (iso `shortcuts`) : la valeur s'écrit dans la ruche de
+  l'UTILISATEUR (compagnon, HKCU) mais se calcule à partir du POSTE. Contexte
+  machine seul ⇒ **aucun item** (pas de ruche à écrire).
+- **Côté agent** (handler Go `folders`, ≥ 2.16.0) : crée le dossier cible **PUIS**
+  écrit la valeur en `REG_EXPAND_SZ` — rediriger vers un dossier absent donne un
+  Bureau vide. Un dossier absent est une **dérive**, un serveur muet une
+  **erreur** (aucune redirection posée). Un changement effectif demande un
+  **redémarrage d'Explorer** (il ne relit `User Shell Folders` qu'au démarrage) ;
+  au régime stable, zéro écriture ⇒ zéro relance. Voir contrat §7.12.
+
 ### `printers` — `aggregate` / `session`
 
 Un item **par (imprimante × maille POSTE applicable)** — union des mailles
