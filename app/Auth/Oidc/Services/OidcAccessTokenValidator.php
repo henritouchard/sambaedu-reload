@@ -55,7 +55,7 @@ use Illuminate\Support\Carbon;
 class OidcAccessTokenValidator
 {
     /**
-     * @return array{ok: true, record: OidcAccessToken, user: User}
+     * @return array{ok: true, record: OidcAccessToken, user: User, effective_scope: string}
      *         |array{ok: false, code: string, presented: bool, token_hash_prefix: string}
      */
     public function validate(?string $bearer): array
@@ -113,7 +113,22 @@ class OidcAccessTokenValidator
             return $this->refusal(OidcErrorCodes::USER_INACTIVE, true, $prefix);
         }
 
-        return ['ok' => true, 'record' => $record, 'user' => $user];
+        // Story 56.4 — clé ADDITIVE : le scope EFFECTIF, recalculé À CHAQUE
+        // usage depuis les scopes accordés du client
+        // ({@see \App\Models\OidcClient::effectiveScopeFor()}).
+        //
+        // C'est ce recalcul — et non une purge de jetons — qui rend une
+        // révocation immédiate sur les jetons DÉJÀ ÉMIS : le scope STOCKÉ sur
+        // la ligne reste ce qui a été émis, l'effectif est ce qui vaut
+        // maintenant. Tout consommateur du verdict doit lire cette clé, jamais
+        // `$record->scope` : c'est la seule différence entre une révocation
+        // réelle et une révocation qui ment pendant les 600 s du jeton.
+        return [
+            'ok' => true,
+            'record' => $record,
+            'user' => $user,
+            'effective_scope' => $client->effectiveScopeFor((string) $record->scope),
+        ];
     }
 
     /**

@@ -157,10 +157,29 @@ class TokenController extends Controller
             );
         }
 
-        // Claims MÉTIER, filtrés par le scope LIÉ AU CODE (celui qui a été
-        // validé et consenti à l'autorisation), jamais par un scope renvoyé au
-        // token endpoint par le client.
-        $businessClaims = OidcClaimsResolver::claimsFor($user, $record->scope);
+        // ── Story 56.4 — LE DOWNSCOPING (RFC 6749 §3.3) ──────────────────
+        //
+        // Le code d'autorisation porte le scope DEMANDÉ (validé contre le
+        // catalogue fermé à l'autorisation). Ce qui est ÉMIS, lui, est borné
+        // par ce que l'admin a réellement accordé au client :
+        //
+        //     effectif = scope du code ∩ (granted_scopes + openid)
+        //
+        // Le calcul a UN SEUL énoncé ({@see \App\Models\OidcClient::effectiveScopeFor()}),
+        // partagé avec `/userinfo` et l'API extensions — sans quoi une
+        // révocation mordrait à un endroit et pas à l'autre.
+        //
+        // Pourquoi RÉDUIRE et non refuser `invalid_scope` : révoquer une DONNÉE
+        // (FR23) ne doit pas provoquer une panne de SSO. Le fail-closed du
+        // projet vise le scope INCONNU — toujours refusé à l'autorisation. Le
+        // non-accordé est réduit, et la réduction est ANNONCÉE par le paramètre
+        // `scope` de la réponse : c'est le mécanisme standard, que tout client
+        // OIDC sait lire — pas une ignorance silencieuse.
+        $effectiveScope = $client->effectiveScopeFor((string) $record->scope);
+
+        // Claims MÉTIER, filtrés par le scope EFFECTIF (issu du scope LIÉ AU
+        // CODE — jamais d'un scope renvoyé au token endpoint par le client).
+        $businessClaims = OidcClaimsResolver::claimsFor($user, $effectiveScope);
 
         // ── 5. L'émission ────────────────────────────────────────────────
         try {
@@ -170,10 +189,14 @@ class TokenController extends Controller
                 $record->nonce,
                 $businessClaims,
             );
+            // Le jeton PERSISTE le scope effectif : ce qu'il ouvre au moment de
+            // son émission. Une révocation ultérieure le réduira encore, à
+            // chaque usage — l'inverse (persister le demandé) obligerait chaque
+            // consommateur à refaire l'intersection contre le code d'origine.
             $accessToken = $this->issuer->issueAccessToken(
                 $client,
                 $record->user_login,
-                $record->scope,
+                $effectiveScope,
                 (int) $user->id,
             );
         } catch (Throwable $e) {
@@ -195,7 +218,12 @@ class TokenController extends Controller
             'token_type' => 'Bearer',
             'expires_in' => $accessToken['expires_in'],
             'id_token' => $idToken['token'],
-            'scope' => $record->scope,
+            // RFC 6749 §3.3 : quand le scope délivré diffère du scope demandé,
+            // le serveur DOIT l'annoncer ici. C'est le canal par lequel une
+            // extension apprend ses scopes réels — raison pour laquelle aucune
+            // variable d'environnement ne les fige côté extension (décision
+            // 56.4 n° 5 : une valeur statique mentirait dès la 1ʳᵉ révocation).
+            'scope' => $effectiveScope,
         ])->withHeaders([
             'Cache-Control' => 'no-store',
             'Pragma' => 'no-cache',

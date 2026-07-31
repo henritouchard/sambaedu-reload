@@ -399,6 +399,13 @@ class ExtensionIsolationTest extends TestCase
 
         foreach ($files as $name => $content) {
             foreach ($dangerous as $label => $pattern) {
+                if ($label === 'exécution système' && $name === self::PRIVILEGED_SEAM) {
+                    // Exemption UNIQUE, NOMMÉE et compensée (Story 56.2) — voir
+                    // le test suivant, qui impose à ce fichier des contraintes
+                    // PLUS strictes que la règle générale.
+                    continue;
+                }
+
                 self::assertSame(
                     0,
                     preg_match($pattern, $content),
@@ -406,6 +413,54 @@ class ExtensionIsolationTest extends TestCase
                 );
             }
         }
+    }
+
+    /**
+     * Le SEUL fichier du registre autorisé à exécuter une commande système
+     * (Story 56.2) : l'implémentation réelle du seam privilégié.
+     */
+    private const PRIVILEGED_SEAM = 'SudoExtensionHelperRunner.php';
+
+    #[Test]
+    public function the_only_privileged_seam_never_touches_a_manifest_and_escapes_everything(): void
+    {
+        // ── Pourquoi une exemption, et pourquoi elle ne trahit pas la règle ──
+        //
+        // La règle FR24 dit : « un manifest ne doit JAMAIS devenir du code ».
+        // Le moteur d'installation (56.2) DOIT pourtant exécuter des commandes
+        // privilégiées (apt, systemd, Apache) — mais il les exécute par UN seul
+        // point de passage, dont le binaire est FIXE (une clé de configuration,
+        // pas une donnée de manifest) et dont chaque argument est échappé.
+        //
+        // Plutôt que de relâcher la règle générale, on exempte ce fichier
+        // NOMMÉMENT et on lui impose ici des contraintes que les autres n'ont
+        // pas. Si un jour ce fichier interpolait quoi que ce soit venant d'un
+        // manifest, ce test tomberait.
+        $path = realpath(self::repoPath('app/Services/Extensions/'.self::PRIVILEGED_SEAM));
+        self::assertNotFalse($path, 'le seam privilégié doit exister');
+
+        $content = (string) file_get_contents($path);
+
+        // 1. Il ne connaît PAS la notion de manifest, ni le modèle Extension.
+        foreach (['manifest', 'Extension::', 'installBlock'] as $forbidden) {
+            self::assertStringNotContainsString(
+                $forbidden,
+                $content,
+                'le seam privilégié ne doit rien savoir des manifests',
+            );
+        }
+
+        // 2. Le binaire exécuté vient de la CONFIGURATION, jamais d'une donnée.
+        self::assertStringContainsString("config(\n", $content);
+        self::assertStringContainsString('extensions.install.helper_path', $content);
+
+        // 3. Chaque argument est échappé, et l'appel passe par `sudo -n`.
+        self::assertStringContainsString('escapeshellarg', $content);
+        self::assertStringContainsString("'sudo', '-n'", $content);
+
+        // 4. Un seul `proc_open`, pas une bibliothèque d'exécution.
+        self::assertSame(1, preg_match_all('/\bproc_open\s*\(/', $content));
+        self::assertSame(0, preg_match('/\b(shell_exec|passthru|popen|system)\s*\(/', $content));
     }
 
     // =====================================================================

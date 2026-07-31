@@ -90,13 +90,18 @@ class ExtensionCatalogServiceTest extends TestCase
 
     private function manifest(string $id, array $overrides = []): array
     {
+        // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` (chemin
+        // provisionné par SE5) ; une `link` pointe où elle veut. La fixture
+        // suit le contrat, sinon elle fabriquerait un manifest impossible.
+        $type = (string) ($overrides['type'] ?? 'link');
+
         return array_merge([
             'manifest_version' => 1,
             'id' => $id,
             'type' => 'link',
             'name' => ucfirst($id),
             'version' => '1.0.0',
-            'entry_url' => '/'.$id,
+            'entry_url' => $type === 'app' ? '/ext/'.$id : '/'.$id,
             'icon' => 'fa-solid fa-puzzle-piece',
             'publisher' => 'SambaEdu',
             'description' => 'Extension '.$id.'.',
@@ -424,7 +429,7 @@ class ExtensionCatalogServiceTest extends TestCase
         $detail = $this->service()->find($id);
 
         self::assertNotNull($detail);
-        self::assertSame('/bbb', $detail['entry_url']);
+        self::assertSame('/ext/bbb', $detail['entry_url']);
         self::assertSame(['profile', 'groups'], $detail['scopes']);
         self::assertSame(['doc'], $detail['dependencies']);
         self::assertSame(['admin', 'prof'], $detail['visibility_roles']);
@@ -438,5 +443,133 @@ class ExtensionCatalogServiceTest extends TestCase
     public function find_returns_null_for_an_unknown_id(): void
     {
         self::assertNull($this->service()->find(999_999));
+    }
+
+    // ── Story 56.1 — filtrage par l'état de la SOURCE (dette 54.x soldée) ──
+    //
+    // `library()` / `find()` PROPOSENT : ils doivent donc taire ce qu'une
+    // source désactivée ou dont le catalogue a été refusé n'a plus le droit de
+    // proposer. Ils ne doivent EN REVANCHE jamais faire disparaître une
+    // extension déjà intégrée : ce serait dé-intégrer silencieusement
+    // (invariant #4), et l'admin ne verrait plus le bouton pour la désinstaller.
+
+    #[Test]
+    public function an_available_extension_of_a_disabled_source_disappears_from_the_library(): void
+    {
+        $source = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        self::assertSame([], $this->service()->library());
+        self::assertNull($this->service()->find((int) $extension->id), 'sa fiche répond 404');
+    }
+
+    #[Test]
+    public function an_available_extension_of_a_source_in_error_disappears_from_the_library(): void
+    {
+        // Fail-closed NFR2 : un catalogue dont la signature ne se vérifie plus
+        // ne propose plus rien, même si ses lignes sont encore en base.
+        $source = ExtensionSource::factory()->remote()->syncError()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        self::assertSame([], $this->service()->library());
+        self::assertNull($this->service()->find((int) $extension->id));
+    }
+
+    #[Test]
+    public function an_unreachable_source_keeps_proposing_its_last_verified_catalog(): void
+    {
+        // NFR7 : le registre EST le cache local. Un dépôt momentanément
+        // injoignable ne doit RIEN changer pour l'admin.
+        $source = ExtensionSource::factory()->remote()->unreachable()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        self::assertCount(1, $this->service()->library());
+        self::assertNotNull($this->service()->find((int) $extension->id));
+    }
+
+    #[Test]
+    public function an_integrated_extension_stays_listed_whatever_the_state_of_its_source(): void
+    {
+        $disabled = ExtensionSource::factory()->remote()->disabled()->create();
+        $broken = ExtensionSource::factory()->remote()->syncError()->create();
+
+        $fromDisabled = Extension::factory()->integrated()->create(['extension_source_id' => $disabled->id, 'name' => 'A']);
+        $fromBroken = Extension::factory()->integrated()->create(['extension_source_id' => $broken->id, 'name' => 'B']);
+
+        $rows = $this->service()->library();
+        self::assertCount(2, $rows);
+
+        self::assertFalse($rows[0]['source_enabled'], 'la carte SIGNALE que la source est désactivée');
+        self::assertSame('error', $rows[1]['source_sync_status']);
+
+        self::assertNotNull($this->service()->find((int) $fromDisabled->id));
+        self::assertNotNull($this->service()->find((int) $fromBroken->id));
+    }
+
+    #[Test]
+    public function list_rows_carry_the_provenance_needed_by_the_warning(): void
+    {
+        $source = ExtensionSource::factory()
+            ->remote('https://depot.example.test/extensions')
+            ->create(['name' => 'Dépôt partenaire']);
+        Extension::factory()->create(['extension_source_id' => $source->id]);
+
+        $row = $this->service()->library()[0];
+
+        self::assertFalse($row['source_is_official']);
+        self::assertSame('depot.example.test', $row['source_host'], 'l\'hôte est résolu CÔTÉ SERVEUR');
+        self::assertTrue($row['source_enabled']);
+        self::assertSame('ok', $row['source_sync_status']);
+        self::assertSame('Dépôt partenaire', $row['source_name']);
+    }
+
+    #[Test]
+    public function a_bundled_extension_is_flagged_official_with_no_host(): void
+    {
+        $this->writeManifest('doc', $this->manifest('doc'));
+        $this->service()->syncBundled();
+
+        $row = $this->service()->library()[0];
+
+        self::assertTrue($row['source_is_official']);
+        self::assertSame('', $row['source_host']);
+    }
+
+    // =====================================================================
+    // Story 56.2 — le catalogue ne touche JAMAIS ce qui est installé
+    // =====================================================================
+
+    #[Test]
+    public function a_catalog_resync_updates_the_published_version_but_never_the_installed_one(): void
+    {
+        // Le scénario qui compte : une `app` tourne en 1.0.0, la source publie
+        // 2.0.0. La synchro doit mettre à jour ce que la source PUBLIE
+        // (`version`) sans jamais toucher ce qui TOURNE (`installed_*`) —
+        // sinon la détection de mise à jour de la 56.3 mentirait, et une
+        // simple re-synchro effacerait la trace de l'installation réelle.
+        $source = ExtensionSource::factory()->remote('https://depot.example.test/extensions')->create();
+
+        $extension = Extension::factory()->app()->installed(8600, '1.0.0')->create([
+            'key' => 'hello',
+            'version' => '1.0.0',
+            'extension_source_id' => $source->id,
+        ]);
+
+        $this->service()->syncManifestsForSource($source, [
+            'index.json#0' => $this->manifest('hello', [
+                'type' => 'app',
+                'version' => '2.0.0',
+                // Un manifest HOSTILE tente en prime de se déclarer installé.
+                'installed_version' => '9.9.9',
+                'installed_port' => 8666,
+                'status' => 'integrated',
+            ]),
+        ]);
+
+        $fresh = $extension->fresh();
+        self::assertSame('2.0.0', $fresh->version, 'la version PUBLIÉE suit le catalogue');
+        self::assertSame('1.0.0', $fresh->installed_version, 'la version INSTALLÉE est intouchable');
+        self::assertSame(8600, $fresh->installed_port);
+        self::assertSame(ExtensionStatus::Integrated, $fresh->status);
     }
 }

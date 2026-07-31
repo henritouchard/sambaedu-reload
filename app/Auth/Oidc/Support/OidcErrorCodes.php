@@ -85,6 +85,18 @@ final class OidcErrorCodes
     public const ACCESS_TOKEN_INVALID = 'oidc.access_token_invalid';
     public const ACCESS_TOKEN_EXPIRED = 'oidc.access_token_expired';
 
+    /**
+     * Story 56.4 — le jeton est VALIDE, mais le scope requis par l'endpoint
+     * appelé n'est pas dans son scope EFFECTIF (jamais demandé, ou accordé puis
+     * RÉVOQUÉ depuis l'émission).
+     *
+     * ⚠️ Seul code de ce catalogue qui n'accompagne PAS un 401 : l'API
+     * extensions répond 403 `insufficient_scope` (RFC 6750 §3.1). La nuance
+     * compte pour l'intégrateur — « ré-authentifie-toi » ne réparerait rien,
+     * puisque le nouveau jeton serait downscopé de la même façon.
+     */
+    public const ACCESS_TOKEN_SCOPE_INSUFFICIENT = 'oidc.access_token_scope_insufficient';
+
     // --- Session / configuration.
     public const NO_SESSION = 'oidc.no_session';
     public const KEYS_UNAVAILABLE = 'oidc.keys_unavailable';
@@ -121,6 +133,7 @@ final class OidcErrorCodes
             self::ACCESS_TOKEN_MISSING,
             self::ACCESS_TOKEN_INVALID,
             self::ACCESS_TOKEN_EXPIRED,
+            self::ACCESS_TOKEN_SCOPE_INSUFFICIENT,
             self::NO_SESSION,
             self::KEYS_UNAVAILABLE,
         ];

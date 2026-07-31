@@ -118,6 +118,16 @@ class AppServiceProvider extends ServiceProvider
             \App\Services\Print\RealCommandRunner::class,
         );
 
+        // Story 56.2 — LE seam privilégié du moteur d'installation d'extensions
+        // (patron CommandRunner ci-dessus). Toute la surface root du système
+        // d'extensions passe par cette interface : les tests la remplacent par
+        // `FakeExtensionHelperRunner` et observent la séquence exacte des appels
+        // (apt, systemd, Apache) sans jamais exécuter quoi que ce soit.
+        $this->app->bind(
+            \App\Services\Extensions\Contracts\ExtensionHelperRunner::class,
+            \App\Services\Extensions\SudoExtensionHelperRunner::class,
+        );
+
         // Alias pour faciliter l'utilisation via app('sambaedu.config') qui fournit l'instance singleton de SambaeduConfig
         $this->app->alias(AdDataTransformer::class, 'sambaedu.transformer');
         $this->app->alias(AuthenticationService::class, 'sambaedu.auth');

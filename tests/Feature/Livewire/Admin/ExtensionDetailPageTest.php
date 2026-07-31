@@ -7,6 +7,7 @@ namespace Tests\Feature\Livewire\Admin;
 use App\Enums\ExtensionType;
 use App\Models\Extension;
 use App\Models\ExtensionAuditLog;
+use App\Models\ExtensionSource;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
@@ -322,5 +323,124 @@ class ExtensionDetailPageTest extends TestCase
 
         self::assertSame('integrated', $extension->fresh()->status->value);
         self::assertSame(0, ExtensionAuditLog::query()->count());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 56.1 — provenance sur la fiche (AC2) et 404 des masquées (AC3/AC4)
+    // ══════════════════════════════════════════════════════════════════════
+
+    #[Test]
+    public function a_third_party_extension_shows_a_provenance_warning_naming_the_host(): void
+    {
+        $this->grant(['server.admin']);
+
+        $remote = ExtensionSource::factory()->remote('https://depot.example.test/extensions')->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $remote->id]);
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])
+            ->assertOk()
+            ->assertSeeHtml('data-testid="third-party-alert"')
+            ->assertSee('Source non officielle')
+            ->assertSee('depot.example.test');
+    }
+
+    #[Test]
+    public function an_official_extension_shows_no_provenance_warning(): void
+    {
+        $this->grant(['server.admin']);
+
+        $extension = Extension::factory()->fromBundled()->create();
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])
+            ->assertOk()
+            ->assertDontSeeHtml('data-testid="third-party-alert"');
+    }
+
+    #[Test]
+    public function integrating_a_third_party_link_from_the_detail_page_requires_confirmation(): void
+    {
+        $this->grant(['server.admin']);
+
+        $remote = ExtensionSource::factory()->remote('https://depot.example.test/extensions')->create();
+        $extension = Extension::factory()->link()->create(['extension_source_id' => $remote->id]);
+
+        $component = Livewire::test(self::PAGE, ['id' => $extension->id])
+            ->call('askIntegrate')
+            ->assertSet('isThirdPartyWarningOpen', true);
+
+        self::assertSame('available', $extension->fresh()->status->value);
+
+        $component->call('confirmIntegrate')
+            ->assertSet('isThirdPartyWarningOpen', false)
+            ->assertDispatched('toastMagic');
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function an_official_link_is_still_integrated_in_a_single_click_from_the_detail_page(): void
+    {
+        $this->grant(['server.admin']);
+
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])
+            ->call('integrate')
+            ->assertSet('isThirdPartyWarningOpen', false)
+            ->assertDispatched('toastMagic');
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function asking_to_integrate_an_official_link_never_opens_the_warning(): void
+    {
+        $this->grant(['server.admin']);
+
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])
+            ->call('askIntegrate')
+            ->assertSet('isThirdPartyWarningOpen', false);
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function the_detail_of_an_available_extension_of_a_disabled_source_is_a_404(): void
+    {
+        // Une extension masquée de la bibliothèque ne doit pas rester
+        // intégrable par son URL directe.
+        $this->grant(['server.admin']);
+
+        $disabled = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $disabled->id]);
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])->assertNotFound();
+    }
+
+    #[Test]
+    public function the_detail_of_an_available_extension_of_a_source_in_error_is_a_404(): void
+    {
+        $this->grant(['server.admin']);
+
+        $broken = ExtensionSource::factory()->remote()->syncError()->create();
+        $extension = Extension::factory()->create(['extension_source_id' => $broken->id]);
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])->assertNotFound();
+    }
+
+    #[Test]
+    public function the_detail_of_an_integrated_extension_of_a_disabled_source_stays_reachable(): void
+    {
+        // Elle DOIT rester atteignable : c'est là que l'admin la désinstalle.
+        $this->grant(['server.admin']);
+
+        $disabled = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = Extension::factory()->link()->integrated()->create(['extension_source_id' => $disabled->id]);
+
+        Livewire::test(self::PAGE, ['id' => $extension->id])
+            ->assertOk()
+            ->assertSeeHtml('data-testid="uninstall-action"');
     }
 }

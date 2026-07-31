@@ -409,4 +409,177 @@ class ExtensionsLibraryPageTest extends TestCase
         self::assertSame('integrated', $extension->fresh()->status->value);
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 56.1 — provenance impossible à ignorer (AC2) et filtrage (AC3/AC4)
+    // ══════════════════════════════════════════════════════════════════════
+
+    #[Test]
+    public function every_card_carries_an_unambiguous_provenance_badge(): void
+    {
+        // FR4/UX-DR4 : icône + libellé, jamais une couleur seule.
+        $this->grant(['server.admin']);
+
+        $bundled = ExtensionSource::factory()->bundled()->create();
+        $remote = ExtensionSource::factory()->remote()->create(['name' => 'Dépôt partenaire']);
+
+        $official = Extension::factory()->create(['extension_source_id' => $bundled->id, 'name' => 'Documentation']);
+        $thirdParty = Extension::factory()->create(['extension_source_id' => $remote->id, 'name' => 'Extension tierce']);
+
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertSeeHtml('data-testid="official-badge-'.$official->id.'"')
+            ->assertSeeHtml('data-testid="third-party-badge-'.$thirdParty->id.'"')
+            ->assertSee('Tierce')
+            ->assertSee('Officielle');
+    }
+
+    #[Test]
+    public function integrating_a_third_party_link_goes_through_the_warning_modal(): void
+    {
+        $this->grant(['server.admin']);
+
+        $remote = ExtensionSource::factory()->remote('https://depot.example.test/extensions')->create();
+        $extension = Extension::factory()->link()->create([
+            'extension_source_id' => $remote->id,
+            'name' => 'Extension tierce',
+        ]);
+
+        Livewire::test(self::PAGE)
+            ->call('askIntegrate', $extension->id)
+            ->assertSet('isThirdPartyWarningOpen', true)
+            ->assertSet('integrateTargetName', 'Extension tierce')
+            ->assertSet('integrateTargetHost', 'depot.example.test')
+            ->assertSee('Source non officielle');
+
+        self::assertSame('available', $extension->fresh()->status->value, 'ouvrir l\'avertissement n\'intègre rien');
+    }
+
+    #[Test]
+    public function confirming_the_warning_integrates_the_third_party_extension(): void
+    {
+        $this->grant(['server.admin']);
+
+        $remote = ExtensionSource::factory()->remote()->create();
+        $extension = Extension::factory()->link()->create(['extension_source_id' => $remote->id]);
+
+        Livewire::test(self::PAGE)
+            ->call('askIntegrate', $extension->id)
+            ->call('confirmIntegrate')
+            ->assertSet('isThirdPartyWarningOpen', false)
+            ->assertDispatched('toastMagic');
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+        self::assertSame(1, ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_INTEGRATE)->count());
+    }
+
+    #[Test]
+    public function a_double_click_on_the_warning_confirmation_is_a_clean_no_op(): void
+    {
+        // Piège review 54.2 #1 reproduit : la cible n'est PAS remise à zéro
+        // avant l'appel, sinon le second clic parle de l'extension #0.
+        $this->grant(['server.admin']);
+
+        $remote = ExtensionSource::factory()->remote()->create();
+        $extension = Extension::factory()->link()->create(['extension_source_id' => $remote->id]);
+
+        Livewire::test(self::PAGE)
+            ->call('askIntegrate', $extension->id)
+            ->call('confirmIntegrate')
+            ->call('confirmIntegrate')
+            ->assertDispatched('toastMagic');
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+        self::assertSame(
+            1,
+            ExtensionAuditLog::query()->where('action', ExtensionAuditLog::ACTION_INTEGRATE)->count(),
+            'le rejeu ne fabrique pas une seconde ligne d\'audit',
+        );
+    }
+
+    #[Test]
+    public function an_official_extension_is_still_integrated_in_a_single_click(): void
+    {
+        // Comportement 54.2 INCHANGÉ pour la source officielle.
+        $this->grant(['server.admin']);
+
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        Livewire::test(self::PAGE)
+            ->call('integrate', $extension->id)
+            ->assertSet('isThirdPartyWarningOpen', false)
+            ->assertDispatched('toastMagic');
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function asking_to_integrate_an_official_extension_never_opens_the_warning(): void
+    {
+        $this->grant(['server.admin']);
+
+        $extension = Extension::factory()->fromBundled()->link()->create();
+
+        Livewire::test(self::PAGE)
+            ->call('askIntegrate', $extension->id)
+            ->assertSet('isThirdPartyWarningOpen', false);
+
+        self::assertSame('integrated', $extension->fresh()->status->value);
+    }
+
+    #[Test]
+    public function asking_to_integrate_an_unknown_extension_never_produces_a_500(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::PAGE)
+            ->call('askIntegrate', 999_999)
+            ->assertOk()
+            ->assertSet('isThirdPartyWarningOpen', false)
+            ->assertDispatched('toastMagic', status: 'error');
+    }
+
+    #[Test]
+    public function the_library_hides_available_extensions_of_a_disabled_source(): void
+    {
+        $this->grant(['server.admin']);
+
+        $disabled = ExtensionSource::factory()->remote()->disabled()->create();
+        Extension::factory()->create(['extension_source_id' => $disabled->id, 'name' => 'Masquée']);
+
+        $integrated = Extension::factory()->integrated()->create([
+            'extension_source_id' => $disabled->id,
+            'name' => 'Conservée',
+        ]);
+
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertDontSee('Masquée')
+            ->assertSee('Conservée')
+            ->assertSeeHtml('data-testid="source-disabled-badge-'.$integrated->id.'"');
+    }
+
+    #[Test]
+    public function the_library_hides_available_extensions_of_a_source_in_error(): void
+    {
+        $this->grant(['server.admin']);
+
+        $broken = ExtensionSource::factory()->remote()->syncError()->create();
+        Extension::factory()->create(['extension_source_id' => $broken->id, 'name' => 'Masquée']);
+
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertDontSee('Masquée');
+    }
+
+    #[Test]
+    public function the_library_offers_a_link_to_the_sources_page(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::PAGE)
+            ->assertOk()
+            ->assertSeeHtml('data-testid="manage-sources"')
+            ->assertSee('Gérer les sources');
+    }
 }

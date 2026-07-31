@@ -341,10 +341,14 @@ class AppLauncherTest extends TestCase
     #[Test]
     public function the_component_root_stays_stable_across_states(): void
     {
-        // ⚠️ Asserter la seule présence de la chaîne « dropdown dropdown-end »
+        // ⚠️ Les classes attendues suivent le DESIGN en vigueur (passées de
+        // `dropdown-end` à `dropdown-start` au redesign de la navbar) : ce
+        // test ne verrouille pas une esthétique, il verrouille une STRUCTURE.
+        //
+        // ⚠️ Asserter la seule présence de la chaîne « dropdown dropdown-start »
         // ne détectait PAS l'anti-patron visé : un template écrit
-        // `@if (...) <div class="dropdown dropdown-end">…@else <div
-        // class="dropdown dropdown-end">…@endif` — soit exactement le `@if` de
+        // `@if (...) <div class="dropdown dropdown-start">…@else <div
+        // class="dropdown dropdown-start">…@endif` — soit exactement le `@if` de
         // premier niveau qui provoque un 500 au re-render du parent — passait
         // dans les deux états. C'est la STRUCTURE qu'il faut vérifier.
         $this->actingAs($this->makeUser('prof'));
@@ -355,13 +359,13 @@ class AppLauncherTest extends TestCase
 
         foreach (['vide' => $emptyHtml, 'rempli' => $filledHtml] as $state => $html) {
             self::assertStringContainsString(
-                'class="dropdown dropdown-end"',
+                'class="dropdown dropdown-start"',
                 $this->rootTag($html),
                 "état {$state} : la RACINE elle-même porte les classes attendues",
             );
             self::assertSame(
                 1,
-                substr_count($html, 'class="dropdown dropdown-end"'),
+                substr_count($html, 'class="dropdown dropdown-start"'),
                 "état {$state} : une seule racine dans tout le rendu",
             );
         }
@@ -439,7 +443,7 @@ class AppLauncherTest extends TestCase
             $this->emptyBlockTag($html),
             'registre illisible ⇒ état vide propre, jamais une 500',
         );
-        self::assertStringContainsString('class="dropdown dropdown-end"', $this->rootTag($html));
+        self::assertStringContainsString('class="dropdown dropdown-start"', $this->rootTag($html));
     }
 
     // ── FR14 — aucune route, aucun middleware, aucune garde ──────────────────
@@ -524,5 +528,201 @@ class AppLauncherTest extends TestCase
                 "Le lanceur ne doit déclarer AUCUNE méthode d'action publique — trouvé : {$name}",
             );
         }
+    }
+
+    // =====================================================================
+    // Story 56.5 (AC2, FR35) — badge « Indisponible », et NFR9 RENFORCÉ
+    // =====================================================================
+    //
+    // ⚠️ Ajouts en FIN de fichier. Les tests 54.3 — dont
+    // `rendering_the_launcher_emits_exactly_one_extensions_query_and_no_http`
+    // et `an_unreadable_registry_degrades_to_the_empty_state_instead_of_500ing`
+    // — restent VERBATIM : aucune assertion existante n'a été retouchée ni
+    // relâchée. Ce que 56.5 ajoute, ce sont des tests PLUS forts, pas des
+    // assouplissements.
+
+    /** Une `app` installée dont l'état persisté dit `unreachable` (frais). */
+    private function unreachableApp(string $key, string $name, array $roles, ?\Illuminate\Support\Carbon $at = null): Extension
+    {
+        $manifest = $this->manifestFor($key, \App\Enums\ExtensionType::App->value, $roles);
+        $manifest['entry_url'] = '/ext/'.$key;
+
+        return Extension::factory()
+            ->fromBundled()
+            ->app()
+            ->installed(8600)
+            ->unreachable($at)
+            ->create(['key' => $key, 'name' => $name, 'manifest' => $manifest]);
+    }
+
+    #[Test]
+    public function an_unreachable_tile_carries_the_unavailable_badge(): void
+    {
+        $this->unreachableApp('hello', 'Hello', ['prof']);
+        $this->actingAs($this->makeUser('prof'));
+
+        Livewire::test(self::COMPONENT)
+            ->assertSeeHtml('data-testid="launcher-tile-hello"')
+            ->assertSeeHtml('data-testid="launcher-tile-unavailable-hello"')
+            ->assertSeeHtml('title="Indisponible actuellement"');
+    }
+
+    /**
+     * ⚠️ FR14 — un badge n'est PAS une garde. L'état peut dater de 5 minutes, et
+     * bloquer transformerait un AFFICHAGE en AUTORISATION : la tuile marquée
+     * reste un `<a href>` qui pointe la cible provisionnée.
+     */
+    #[Test]
+    public function an_unreachable_tile_stays_a_clickable_link_to_its_target(): void
+    {
+        $this->unreachableApp('hello', 'Hello', ['prof']);
+        $this->actingAs($this->makeUser('prof'));
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertSame(
+            1,
+            preg_match('/<a\b[^>]*data-testid="launcher-tile-hello"[^>]*>/s', $html, $m),
+            'la tuile indisponible doit rester une balise <a>',
+        );
+        // L'URL est résolue contre la racine de l'instance depuis le fix
+        // « extensions bad url » de main (une instance servie sous un
+        // sous-chemin perdait son préfixe). Ce que ce test verrouille est
+        // inchangé : la tuile reste un lien vers sa cible, un badge n'est pas
+        // une garde (FR14).
+        self::assertStringContainsString('href="'.url('/ext/hello').'"', $m[0], 'la cible reste atteignable (FR14)');
+    }
+
+    #[Test]
+    public function a_healthy_tile_carries_no_badge(): void
+    {
+        $manifest = $this->manifestFor('hello', \App\Enums\ExtensionType::App->value, ['prof']);
+        $manifest['entry_url'] = '/ext/hello';
+
+        Extension::factory()->fromBundled()->app()->installed(8600)->healthy()->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $manifest,
+        ]);
+
+        $this->actingAs($this->makeUser('prof'));
+
+        Livewire::test(self::COMPONENT)
+            ->assertSeeHtml('data-testid="launcher-tile-hello"')
+            ->assertDontSeeHtml('data-testid="launcher-tile-unavailable-hello"');
+    }
+
+    /** Périmé ⇒ pas de badge : on ne signale que ce qu'on SAIT. */
+    #[Test]
+    public function a_stale_unreachable_state_shows_no_badge(): void
+    {
+        $this->unreachableApp('hello', 'Hello', ['prof'], now()->subHours(3));
+        $this->actingAs($this->makeUser('prof'));
+
+        Livewire::test(self::COMPONENT)
+            ->assertSeeHtml('data-testid="launcher-tile-hello"')
+            ->assertDontSeeHtml('data-testid="launcher-tile-unavailable-hello"');
+    }
+
+    /**
+     * Le non-admin voit « Indisponible » et RIEN d'autre : ni catégorie
+     * d'incident, ni port, ni horodatage. Un élève n'a pas à lire un diagnostic
+     * système.
+     */
+    #[Test]
+    public function a_non_admin_sees_no_technical_detail_on_a_marked_tile(): void
+    {
+        $extension = $this->unreachableApp('hello', 'Hello', ['eleve']);
+        $extension->health_last_incident_detail = 'backend injoignable (connexion refusée ou expirée)';
+        $extension->save();
+
+        $this->actingAs($this->makeUser('eleve'));
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('data-testid="launcher-tile-unavailable-hello"', $html);
+        self::assertStringNotContainsString('connexion refusée', $html);
+        self::assertStringNotContainsString('8600', $html);
+        self::assertStringNotContainsString('127.0.0.1', $html);
+    }
+
+    /**
+     * NFR9 RENFORCÉ — la contrainte centrale de la story : l'état de santé est
+     * LU dans la MÊME requête unique, et le rendu n'émet toujours AUCUNE requête
+     * HTTP. C'est ce test qui interdit à quiconque de « juste sonder au rendu ».
+     *
+     * Test NOUVEAU plutôt que modification de celui de 54.3 : le socle reste
+     * intact et cette version-ci est strictement plus forte (elle rend une tuile
+     * BADGÉE, donc elle traverse le chemin de code qui aurait besoin de sonder).
+     */
+    #[Test]
+    public function rendering_a_launcher_with_a_marked_tile_still_emits_one_query_and_zero_http(): void
+    {
+        $this->unreachableApp('hello', 'Hello', ['prof']);
+        $this->integratedLink('doc', 'Documentation', ['prof']);
+
+        $this->actingAs($this->makeUser('prof'));
+
+        Http::preventStrayRequests();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $component = Livewire::test(self::COMPONENT);
+
+        $log = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        // La preuve doit porter sur un rendu qui AFFICHE réellement le badge.
+        $component->assertSeeHtml('data-testid="launcher-tile-unavailable-hello"');
+
+        Http::assertNothingSent();
+
+        // Needles QUOTÉS (même discipline que le test 54.3).
+        $extensionsHits = array_filter(
+            $log,
+            static fn (array $q): bool => str_contains((string) $q['query'], '"extensions"'),
+        );
+
+        self::assertCount(
+            1,
+            $extensionsHits,
+            'l\'état de santé est LU dans la requête unique — jamais mesuré au rendu (NFR9)',
+        );
+    }
+
+    /**
+     * La fenêtre `update.sh` : le code neuf est servi plusieurs minutes AVANT
+     * `migrate --force`. Les colonnes `health_*` sont alors ABSENTES — et le
+     * lanceur, rendu sur toute page authentifiée, doit continuer de fonctionner
+     * (pas seulement de ne pas planter : afficher ses tuiles).
+     *
+     * C'est la raison pour laquelle `tilesFor()` fait un `SELECT *` et ne nomme
+     * AUCUNE colonne : un `->select([...])` ici échouerait en SQL pendant toute
+     * la fenêtre.
+     */
+    #[Test]
+    public function the_launcher_survives_the_pre_migration_window_without_the_health_columns(): void
+    {
+        $this->integratedLink('doc', 'Documentation', ['prof']);
+        $this->actingAs($this->makeUser('prof'));
+
+        Schema::table('extensions', function ($table): void {
+            $table->dropColumn([
+                'health_status',
+                'health_checked_at',
+                'health_last_incident_at',
+                'health_last_incident_detail',
+            ]);
+        });
+
+        $html = Livewire::test(self::COMPONENT)
+            ->assertSeeHtml('data-testid="launcher-tile-doc"')
+            ->assertDontSeeHtml('data-testid="launcher-tile-unavailable-doc"')
+            ->html();
+
+        // Le message d'état vide reste MASQUÉ : les tuiles sont bien rendues,
+        // ce n'est pas une dégradation silencieuse.
+        self::assertStringContainsString('hidden', $this->emptyBlockTag($html));
     }
 }

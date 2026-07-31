@@ -16,6 +16,8 @@ use App\Http\Controllers\Api\v1\ControlHub\ApplicationController;
 use App\Http\Controllers\Api\v1\ControlHub\AppProfileController;
 use App\Http\Controllers\Api\v1\ControlHub\SyncManifestController;
 use App\Http\Controllers\Api\WpkgReportController;
+// Story 56.4 — API extensions v1 (contrat public consommé par les extensions)
+use App\Http\Controllers\Api\Ext\V1\MeController as ExtV1MeController;
 
 // Story 16.10 — Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
 use App\Auth\V1\Http\Controllers\EnrollController as AuthV1EnrollController;
@@ -424,6 +426,57 @@ Route::post('/v1/controlhub/contract', ContractIngestionController::class)
 
 /*
 |--------------------------------------------------------------------------
+| Story 56.4 — API EXTENSIONS v1 (`/api/ext/v1/`) — contrat PUBLIC gelé
+|--------------------------------------------------------------------------
+| Deux endpoints en LECTURE SEULE, consommés par une extension avec son propre
+| access token opaque (« token de service » FR22, émis au token endpoint et lié
+| au client — donc à l'extension). Les valeurs rendues sont EXACTEMENT celles du
+| contrat de claims v1 : identité, rôle, groupes du contexte — jamais un
+| identifiant de base ni d'annuaire (FR24).
+|
+| Le scope requis est déclaré SUR LA ROUTE (`ext.token:profile`), pas enfoui
+| dans le contrôleur : la règle se lit ici et se vérifie par la table des
+| routes. Un jeton valide mais hors scope reçoit 403 `insufficient_scope` ;
+| absent/inconnu/expiré/révoqué reçoit 401 `invalid_token` INDISTINCT.
+|
+| Versionnation (NFR11) : `/v1/` est GELÉ. Une évolution est ADDITIVE, une
+| rupture se livre en `/api/ext/v2/` À CÔTÉ — jamais en modifiant ces deux
+| réponses, que l'Epic 57 (BBB) et l'Epic 58 (SDK) consommeront.
+|
+| Placé ICI, à la FIN du fichier (APRÈS le groupe 16.12), pour la fenêtre
+| 1500 chars de `ScriptsOsNamespaceTest` (mémoire api_routes_arch_test_window).
+| ⚠️ Le middleware est ALIASÉ (`ext.token`) et le contrôleur vit hors du
+| namespace du fournisseur d'identité : ce fichier ne doit citer NI le préfixe
+| d'URL de ce fournisseur, NI son namespace PHP — même en commentaire, les
+| assertions négatives d'`OidcRoutesTest` et d'`ExtApiRoutesTest` portent sur
+| le TEXTE du fichier.
+*/
+/*
+| DEUX seaux, et pas un seul (review 56.4 #3) :
+|
+|  - `throttle:600,1` sur le GROUPE, clé anonyme (IP) : garde-fou contre un
+|    flot NON authentifié, dont le coût est la validation du jeton. Large, car
+|    toutes les extensions du serveur partagent forcément cette IP — elles
+|    tournent sur cet hôte, derrière le reverse-proxy.
+|  - `throttle:ext-api` sur CHAQUE ROUTE, donc APRÈS `ext.token` qui résout le
+|    client : c'est là qu'est la vraie limite, 60/min PAR EXTENSION. Sans elle,
+|    une extension en boucle d'erreur mettait toutes les autres en 429.
+*/
+Route::prefix('ext/v1')
+    ->middleware(['throttle:600,1'])
+    ->name('ext.v1.')
+    ->group(function () {
+        Route::get('/me', [ExtV1MeController::class, 'me'])
+            ->middleware(['ext.token:profile', 'throttle:ext-api'])
+            ->name('me');
+
+        Route::get('/me/groups', [ExtV1MeController::class, 'groups'])
+            ->middleware(['ext.token:groups', 'throttle:ext-api'])
+            ->name('me.groups');
+    });
+
+/*
+|--------------------------------------------------------------------------
 | Story 27.14 — Canal de config legacy `/api/v1/workstation-config/*` ÉTEINT
 |--------------------------------------------------------------------------
 | Le groupe `v1/workstation-config` (9 routes `agent.v1.config.*`, story 16.13)
@@ -435,5 +488,3 @@ Route::post('/v1/controlhub/contract', ContractIngestionController::class)
 | (`routes/web.php`), et les endpoints WPKG `linux_out`/`winget_out` restent
 | natifs, protégés par `local.request` + `throttle`.
 */
-
-

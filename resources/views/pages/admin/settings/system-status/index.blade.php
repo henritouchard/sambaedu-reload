@@ -5,6 +5,9 @@ use App\Doctor\Checks\Ad\LdapBindCheck;
 use App\Doctor\Checks\Apache\ApacheConfigCheck;
 use App\Doctor\Checks\ControlHub\ControlHubReachableCheck;
 use App\Doctor\Checks\Database\PostgresConnectionCheck;
+use App\Doctor\Checks\Extensions\ExtensionsAuditTrailCheck;
+use App\Doctor\Checks\Extensions\ExtensionsOidcClientsCheck;
+use App\Doctor\Checks\Extensions\ExtensionsReachableCheck;
 use App\Doctor\Checks\Gpo\DcReachableCheck;
 use App\Doctor\Checks\Gpo\KerberosTicketCheck;
 use App\Doctor\Checks\Ipxe\IpxeConfigCheck;
@@ -50,6 +53,16 @@ new #[Title('État du système')] class extends Component {
         'controlHub' => [ControlHubReachableCheck::class],
         'Apache' => [ApacheConfigCheck::class],
         'iPXE' => [IpxeConfigCheck::class],
+        // Story 56.5 — santé du système d'extensions. Les trois checks sont
+        // read-only : le premier sonde les backends `127.0.0.1:<port>` en direct
+        // (comme controlHub fait son HEAD), les deux autres lisent un marqueur
+        // et le registre des clients. Exécution au `wire:init`, donc APRÈS le
+        // premier rendu — la sonde réseau n'allonge jamais le chargement.
+        'Extensions' => [
+            ExtensionsReachableCheck::class,
+            ExtensionsAuditTrailCheck::class,
+            ExtensionsOidcClientsCheck::class,
+        ],
     ];
 
     /**

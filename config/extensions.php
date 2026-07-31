@@ -26,4 +26,148 @@ return [
     // à des assets par extension plus tard (icônes, ressources statiques).
     'bundled_path' => env('EXTENSIONS_BUNDLED_PATH', base_path('resources/extensions')),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Sources DISTANTES (Story 56.1)
+    |--------------------------------------------------------------------------
+    |
+    | Bornes de la récupération HTTP d'un catalogue distant. Ce sont des bornes
+    | de SÉCURITÉ et de robustesse, pas des réglages métier : elles n'ont donc
+    | rien à faire dans `SystemSetting` (AR14 — on n'invente pas un réglage
+    | admin là où il n'y en a pas).
+    |
+    | ⚠️ Les redirections ne sont JAMAIS suivies (`allow_redirects => false`
+    | posé dans le service) : toute 3xx compte comme dépôt injoignable. C'est
+    | plus simple et plus sûr qu'une liste blanche d'hôtes — un dépôt ne peut
+    | pas emmener SE5 vers un autre serveur.
+    |
+    | ⚠️ Les bornes de taille sont vérifiées APRÈS téléchargement, sur les
+    | octets réellement reçus : ni un sha256 ni une signature ne bornent une
+    | taille (leçon `ArtifactPullService`, review 39.4 #3).
+    |
+    */
+    'remote' => [
+
+        // Établissement de la connexion (DNS + TCP + TLS).
+        'connect_timeout' => (int) env('EXTENSIONS_REMOTE_CONNECT_TIMEOUT', 5),
+
+        // Durée totale d'une requête.
+        'timeout' => (int) env('EXTENSIONS_REMOTE_TIMEOUT', 15),
+
+        // Taille maximale d'un `index.json` (1 MiB : un catalogue est du texte,
+        // quelques dizaines de manifests au plus).
+        'index_max_bytes' => (int) env('EXTENSIONS_REMOTE_INDEX_MAX_BYTES', 1_048_576),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Moteur d'INSTALLATION des extensions `app` (Story 56.2)
+    |--------------------------------------------------------------------------
+    |
+    | Bornes de SÉCURITÉ et chemins de déploiement du moteur
+    | `ext:install` / `ext:remove`. Comme le bloc `remote`, ce ne sont PAS des
+    | réglages métier : rien ici n'a sa place dans `SystemSetting` (AR14 — on
+    | n'invente pas un réglage admin là où il n'y en a pas). Un opérateur qui
+    | doit vraiment déplacer le staging ou la plage de ports le fait par `.env`,
+    | en connaissance de cause.
+    |
+    */
+    'install' => [
+
+        // Staging des paquets téléchargés, CONTENT-ADDRESSED
+        // (`<staging>/<key>/<sha256>.deb`). Un paquet vérifié y survit à un
+        // échec d'installation : la relance ne re-télécharge pas (NFR8). Le
+        // helper root REFUSE d'installer un `.deb` situé hors de ce répertoire.
+        'staging_path' => env('EXTENSIONS_INSTALL_STAGING_PATH', storage_path('app/extensions/packages')),
+
+        // Borne DURE de la taille d'un paquet (256 MiB). Appliquée à la LECTURE,
+        // pas après coup : une borne vérifiée quand les octets sont déjà arrivés
+        // ne borne rien, elle déplace juste l'épuisement de la RAM vers le
+        // disque (leçon review 56.1 #2).
+        'package_max_bytes' => (int) env('EXTENSIONS_INSTALL_PACKAGE_MAX_BYTES', 268_435_456),
+
+        // Durée totale du téléchargement d'un paquet (un `.deb` de plusieurs
+        // dizaines de Mo sur une liaison d'établissement).
+        'download_timeout' => (int) env('EXTENSIONS_INSTALL_DOWNLOAD_TIMEOUT', 300),
+
+        // Établissement de connexion — même valeur que le bloc `remote` :
+        // un dépôt injoignable doit le rester vite.
+        'connect_timeout' => (int) env('EXTENSIONS_INSTALL_CONNECT_TIMEOUT', 5),
+
+        // LE seul binaire privilégié du moteur : déployé par
+        // `ensure_extension_engine` (install.sh / update.sh) et autorisé par
+        // une ligne de `/etc/sudoers.d/sambaedu-ext`. Toutes les validations de
+        // sécurité vivent DEDANS, côté root — jamais dans l'appelant PHP.
+        //
+        // Sudoers attendu sur la VM :
+        //   www-admin ALL=(root) NOPASSWD: /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh
+        'helper_path' => env('EXTENSIONS_INSTALL_HELPER_PATH', '/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh'),
+
+        // Plage de ports de boucle locale ASSIGNÉS par SE5 aux backends
+        // d'extensions (jamais déclarés par un manifest — décision 56.2 #1).
+        // Le premier libre est pris sous le verrou global d'installation.
+        'port_range' => [
+            (int) env('EXTENSIONS_INSTALL_PORT_MIN', 8600),
+            (int) env('EXTENSIONS_INSTALL_PORT_MAX', 8699),
+        ],
+
+        // Story 56.3 — Durée maximale du Job de fond qui exécute une opération
+        // depuis l'UI (`RunExtensionOperationJob`). Téléchargement (300 s) +
+        // apt (dépendances, maintainer scripts) + redémarrage + marge large.
+        //
+        // Borne TECHNIQUE, pas un réglage métier : rien ici n'a sa place dans
+        // `SystemSetting` (AR14). Elle sert deux choses — le `timeout` du Job,
+        // et le seuil au-delà duquel un run resté actif est considéré
+        // INTERROMPU (un worker tué ne doit pas condamner la bibliothèque).
+        'job_timeout' => (int) env('EXTENSIONS_INSTALL_JOB_TIMEOUT', 1800),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | SANTÉ des extensions `app` installées (Story 56.5)
+    |--------------------------------------------------------------------------
+    |
+    | Bornes TECHNIQUES de la sonde de joignabilité. Comme les blocs `remote` et
+    | `install`, rien ici n'est un réglage métier : aucun `SystemSetting`
+    | (AR14 — on n'invente pas un réglage admin là où il n'y en a pas).
+    |
+    | « Joignable » = le backend RÉPOND sur `http://127.0.0.1:<installed_port>/`.
+    | N'importe quelle réponse HTTP — 4xx et 5xx comprises — prouve la
+    | joignabilité (le service répond) ; seule une erreur réseau compte comme
+    | injoignable. Patron LITTÉRAL de `ControlHubReachableCheck`.
+    |
+    | La sonde ne sort JAMAIS de la boucle locale et ne suit aucune redirection :
+    | `installed_port` n'est écrit que par `markAppInstalled()`, jamais par un
+    | manifest (hors `$fillable`).
+    |
+    */
+    'health' => [
+
+        // Établissement de la connexion sur la boucle locale : si 2 s ne
+        // suffisent pas à joindre 127.0.0.1, le backend n'écoute pas.
+        'connect_timeout' => (int) env('EXTENSIONS_HEALTH_CONNECT_TIMEOUT', 2),
+
+        // Durée totale d'une sonde. Sonder 5 backends morts coûte au pire
+        // ~15 s au scheduler — et JAMAIS rien à une page (la navbar LIT l'état
+        // persisté, elle ne sonde pas : NFR9).
+        'timeout' => (int) env('EXTENSIONS_HEALTH_TIMEOUT', 3),
+
+        // Budget de temps du CHECK DOCTOR (review 56.5 #1). Lui, contrairement
+        // au scheduler, tourne dans une requête HTTP bornée par
+        // `max_execution_time`, à côté des autres checks réseau : au-delà de ce
+        // budget il rend un verdict PARTIEL en nommant ce qu'il n'a pas mesuré,
+        // plutôt que de risquer une 500 sur la page de diagnostic — celle qu'on
+        // ouvre justement quand quelque chose va mal. `0` désactive la borne.
+        'doctor_probe_budget' => (int) env('EXTENSIONS_HEALTH_DOCTOR_PROBE_BUDGET', 20),
+
+        // Au-delà de ce délai, l'état persisté n'est plus une information : on
+        // ne SAIT plus. DÉRIVÉ de la période de sonde — `ext:health:check` passe
+        // toutes les 5 minutes (`routes/console.php`), on tolère 3 passages
+        // manqués : 3 × 300 s = 900 s. Les deux réglages sont liés et l'énoncé
+        // est ici (leçon review 56.3 #2 : deux valeurs liées qui vivent chacune
+        // de son côté finissent par diverger en silence). Changer la période du
+        // scheduler, c'est changer cette valeur.
+        'stale_after' => (int) env('EXTENSIONS_HEALTH_STALE_AFTER', 900),
+    ],
+
 ];

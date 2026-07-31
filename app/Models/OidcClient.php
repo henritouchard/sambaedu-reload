@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,6 +42,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $client_id
  * @property string $client_secret_hash
  * @property list<string> $redirect_uris
+ * @property list<string> $granted_scopes
  * @property bool $enabled
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
@@ -60,6 +62,7 @@ class OidcClient extends Model
         'client_id',
         'client_secret_hash',
         'redirect_uris',
+        'granted_scopes',
         'enabled',
     ];
 
@@ -76,6 +79,7 @@ class OidcClient extends Model
     /** @var array<string, string> */
     protected $casts = [
         'redirect_uris' => 'array',
+        'granted_scopes' => 'array',
         'enabled' => 'boolean',
     ];
 
@@ -123,5 +127,108 @@ class OidcClient extends Model
         }
 
         return array_values(array_map(static fn ($uri): string => (string) $uri, $uris));
+    }
+
+    /**
+     * Story 56.4 — Les scopes ACCORDÉS à ce client, normalisés.
+     *
+     * Normalisation : chaînes non vides, dédupliquées, triées — de sorte que
+     * l'affichage de la fiche, l'audit et l'intersection ci-dessous ne dépendent
+     * jamais de l'ordre d'écriture en base.
+     *
+     * ⚠️ **`openid` n'y figure JAMAIS.** C'est le plancher du protocole (le
+     * `sub` du SSO) : il n'est ni accordé, ni révocable. Révoquer l'identité,
+     * c'est désinstaller l'extension (FR10), pas révoquer un scope (FR23).
+     *
+     * ⚠️ Cette méthode NE filtre PAS sur le catalogue de scopes : la garde de
+     * vocabulaire vit à l'OCTROI
+     * ({@see \App\Auth\Oidc\Services\OidcClientRegistry::normalizeGrantedScopes()}),
+     * de sorte qu'une valeur aberrante posée à la main en base reste VISIBLE
+     * sur la fiche au lieu d'être silencieusement masquée. Elle ne peut de toute
+     * façon rien produire : {@see self::effectiveScopeFor()} l'intersecte avec
+     * un scope de jeton déjà validé contre le catalogue fermé.
+     *
+     * @return list<string>
+     */
+    public function grantedScopes(): array
+    {
+        $scopes = $this->granted_scopes;
+
+        if (! is_array($scopes)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($scopes as $scope) {
+            if (! is_string($scope)) {
+                continue;
+            }
+
+            $scope = trim($scope);
+
+            if ($scope === '') {
+                continue;
+            }
+
+            $normalized[] = $scope;
+        }
+
+        $normalized = array_values(array_unique($normalized));
+        sort($normalized);
+
+        return $normalized;
+    }
+
+    /**
+     * Story 56.4 — **LE POINT UNIQUE du scope EFFECTIF** (FR23).
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     *  UNE RÈGLE, UN SEUL ÉNONCÉ, TROIS CONSOMMATEURS
+     *
+     *  scope effectif = scope DU JETON ∩ (`granted_scopes` + `openid`)
+     *
+     *   1. l'ÉMISSION  ({@see \App\Auth\Oidc\Http\Controllers\TokenController})
+     *      — claims de l'id_token filtrés, access token persisté au scope
+     *      effectif, et paramètre `scope` de la réponse qui l'ANNONCE
+     *      (downscoping RFC 6749 §3.3) ;
+     *   2. `/userinfo` (via `OidcAccessTokenValidator`) ;
+     *   3. l'API extensions `/api/ext/v1/` (via le middleware `ext.token`).
+     *
+     *  Recalculé à CHAQUE usage : c'est ce qui rend une révocation immédiate
+     *  sur les jetons DÉJÀ ÉMIS, sans purge ni ré-émission. Un seul de ces
+     *  trois points qui lirait le scope stocké ferait mentir la révocation —
+     *  d'où l'énoncé unique ici plutôt que trois intersections recopiées
+     *  (leçon review 56.1 #3).
+     * ══════════════════════════════════════════════════════════════════════
+     *
+     * **L'ORDRE DU SCOPE DEMANDÉ EST PRÉSERVÉ**, et le résultat n'est PAS
+     * retrié : quand tout est accordé, l'effectif est alors identique CARACTÈRE
+     * POUR CARACTÈRE au scope demandé — ce qui garantit que cette story
+     * n'introduit aucune différence observable pour un client pleinement
+     * consenti (l'ordre d'un `scope` OAuth n'est pas significatif, mais il est
+     * observé : `oidc_access_tokens.scope` est asserté verbatim par les suites
+     * 55.x).
+     *
+     * ⚠️ Un scope demandé HORS catalogue n'arrive jamais ici : il est refusé
+     * `invalid_scope` à l'autorisation (invariant README #11). Le non-accordé,
+     * lui, n'est pas refusé — il est RÉDUIT (décision 56.4 n° 3 : révoquer une
+     * donnée ne doit pas provoquer une panne de SSO).
+     */
+    public function effectiveScopeFor(string $requestedScope): string
+    {
+        $requested = OidcClaimsResolver::parseScope($requestedScope);
+
+        $allowed = array_merge(['openid'], $this->grantedScopes());
+
+        $effective = [];
+
+        foreach ($requested as $scope) {
+            if (in_array($scope, $allowed, true) && ! in_array($scope, $effective, true)) {
+                $effective[] = $scope;
+            }
+        }
+
+        return implode(' ', $effective);
     }
 }
