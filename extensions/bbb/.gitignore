@@ -1,0 +1,12 @@
+# État local en développement (hors systemd) — jamais versionné.
+/var/
+
+# Dépendances installées par composer : embarquées dans le .deb à la
+# construction, jamais commitées.
+/vendor/
+
+# Sorties de construction du paquet.
+/build/
+
+# Cache de PHPUnit (résultats, ordre d'exécution).
+/.phpunit.cache/

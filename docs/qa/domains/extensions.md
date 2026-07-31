@@ -2705,3 +2705,225 @@ grep -c '' /etc/sudoers.d/sambaedu-ext
 - [ ] 19.12 Désinstallation `app` depuis l'UI : texte de purge des composants système (jamais le texte `link`), retrait complet, audit `remove`
 - [ ] **19.13 Cycle `link` inchangé : un clic, synchrone, aucun run créé**
 - [ ] 19.14 Écran périmé : no-op propre, page remise en phase, jamais une 500
+
+---
+
+## Section 22 — Extension « Visioconférences » (BBB) : première extension `app` réelle (Story 57.1)
+
+> **Ce que cette section valide.** Les Sections 17 à 21 ont éprouvé le canal d'extensions avec une extension de TEST (`hello`, un serveur Python de vingt lignes). La 57.1 y fait passer une **vraie application** : un backend PHP autonome, client OIDC, avec son état, sa page d'administration et ses appels sortants vers des serveurs tiers. C'est le critère d'acceptation final du système d'extensions — s'il ne suffit pas ici, il ne suffit nulle part.
+>
+> Quatre propriétés portent la valeur de cette section, et aucune n'est démontrable sur l'hôte :
+>
+> 1. **l'installation de bout en bout par le canal STANDARD** — même `index.json` signé, même `ext:install`, même helper root, même fragment Apache. Aucune procédure spéciale, aucun script d'extension privilégié ;
+> 2. **`StateDirectory=` + `DynamicUser=yes`** — l'UID du service est volatil. La base SQLite doit survivre à un `systemctl restart` ET à un reboot. C'est l'amendement instruit par la story à la lettre de la décision D3 (le postinst ne crée plus rien), et il ne se prouve que sur une machine qui redémarre ;
+> 3. **le SSO d'un compte RÉEL** — un prof, un élève, un admin, avec leurs vraies classes dans le claim `groups` ; et le refus d'un compte dont le rôle n'est pas résoluble ;
+> 4. **le test de connexion contre un vrai serveur BigBlueButton** — succès, mauvais secret, timeout.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué ici : la suite d'attaque du vérificateur d'id_token (`alg: none`, confusion HS256, clé étrangère, `kid` inconnu, `iss`/`aud`/`exp`/`nbf`/`nonce`, rejeu `jti`, tous les échecs de signature fusionnés en un code), la migration idempotente et le 0600 du fichier SQLite, le gating strict `role=admin` de la page serveurs, le secret jamais rendu dans une page, le mapping des quatre retours du test de connexion, la conformité du manifest v1, et la quarantaine FR33 avec ses méta-tests. Deux suites, deux commandes :
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && composer install && vendor/bin/phpunit   # 123 tests
+> cd /var/www/sambaedu-reload && php artisan test --filter ExtensionBbbIsolationTest     # 14 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+Le provisionnement ops de la Section 18.1 doit être en place (helper root, sudoers, `a2enmod proxy proxy_http headers`, `IncludeOptional /etc/apache2/sambaedu-ext.d/*.conf` dans le vhost `:80`). En plus, la cible doit disposer de PHP en ligne de commande avec SQLite — c'est ce que le paquet déclare en `Depends` :
+
+```bash
+dpkg -l | grep -E 'php-cli|php-sqlite3|php-curl|php-xml|php-mbstring'
+php -m | grep -E 'pdo_sqlite|curl|simplexml|openssl'
+```
+
+**Attendu** : `pdo_sqlite` présent **pour le PHP CLI**. Le PHP du core SE5 ne l'a pas — c'est précisément la dépendance `php-sqlite3` du paquet qui l'apporte, et `apt` l'installera si besoin au moment de l'intégration (scénario 22.2). S'il manque encore APRÈS l'installation du paquet, c'est un bug de `Depends`, pas une manipulation à faire à la main.
+
+### Scénario 22.1 — Publier l'extension dans un dépôt signé et l'ajouter comme source
+
+```bash
+cd /var/www/sambaedu-reload/extensions/bbb
+bash packaging/publish-test-repo.sh /tmp/ext-bbb
+# → paquet, sha256 réel, index.json + index.json.sig + source.pub, clé jetable
+
+# Servir le dépôt (garder ce terminal ouvert : son journal d'accès sert au 22.2)
+cd /tmp/ext-bbb/repo && python3 -m http.server 8099
+```
+
+Puis, dans SE5 : `/admin/extensions/sources` → « Ajouter une source », URL `http://<ip>:8099`, clé publique collée depuis `repo/source.pub` (**obligatoire en `http://`** — le TOFU ne s'applique qu'en https).
+
+```bash
+php artisan ext:sources:sync
+php artisan tinker --execute="dump(\App\Models\Extension::where('key','bbb')->first(['key','name','type','version','status'])?->toArray());"
+```
+
+**Attendu** :
+
+- le paquet s'appelle **exactement** `sambaedu-ext-bbb_1.0.0_all.deb`, et `dpkg-deb --field <deb> Package` vaut **exactement** `sambaedu-ext-bbb` (c'est ce que le helper root re-vérifie ; un écart = refus root, après téléchargement) ;
+- `install.sha256` dans `index.json` est celui du `.deb` réellement construit, en **64 hexadécimaux minuscules** — et surtout **pas** les 64 zéros du manifest commité (le remplissage est remplacé à la publication ; publier le manifest tel quel doit faire échouer l'installation à la frontière fail-closed, jamais après) ;
+- l'extension apparaît au catalogue en `available`, type `app`, avec les scopes `profile` **et** `groups` affichés dans la modale d'intégration ;
+- `entry_url` vaut `/ext/bbb`.
+
+**Contre-épreuve (2 minutes, elle vaut le coup)** : republier une version (`bash packaging/publish-test-repo.sh --version 1.0.1 /tmp/ext-bbb`) et vérifier que `source.pub` est **inchangé** — la clé est réutilisée, le pin TOFU de la source n'est pas invalidé.
+
+### Scénario 22.2 — ⭐ Installation de bout en bout par le canal standard (AC1)
+
+```bash
+php artisan ext:install bbb
+```
+
+**Attendu, dans cet ordre** (le journal de la commande nomme chaque étape) : sha256 vérifié → client OIDC enregistré → `write-env` → `apt` → `enable-service` → fragment + `reload-apache` → base + audit.
+
+Contrôles système :
+
+```bash
+systemctl is-active sambaedu-ext-bbb ; systemctl is-enabled sambaedu-ext-bbb
+ls -l /etc/sambaedu/extensions/bbb.env          # 0600 root:root
+cat /etc/apache2/sambaedu-ext.d/bbb.conf        # ProxyPass /ext/bbb → 127.0.0.1:<port>
+ss -lntp | grep 86                              # écoute 127.0.0.1 EXCLUSIVEMENT
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/
+curl -sS -o /dev/null -w '%{http_code}\n' http://<ip-serveur>/ext/bbb
+```
+
+**Attendu** :
+
+- l'unité est **active et enabled** — mais c'est SE5 qui l'a activée, pas le paquet. Vérification : `dpkg -e` du paquet montre un `postinst` sans le moindre `systemctl` ;
+- le fichier d'environnement contient **exactement 7 lignes** `SE5_*`, dont `SE5_EXT_BASE_PATH=/ext/bbb` et `SE5_OIDC_REDIRECT_URI=/ext/bbb/oidc/callback` (un **chemin**, pas une URL absolue) ;
+- l'écoute est sur `127.0.0.1`, **jamais** `0.0.0.0` ;
+- les deux `curl` rendent `200` : le backend répond sur `/` (chemin **nu**, le proxy a retiré le préfixe) et l'exposition publique fonctionne ;
+- **le secret client OIDC n'apparaît nulle part** sauf dans `/etc/sambaedu/extensions/bbb.env` : `grep -r "$(grep SE5_OIDC_CLIENT_SECRET /etc/sambaedu/extensions/bbb.env | cut -d= -f2)" /var/log /var/www/sambaedu-reload/storage/logs 2>/dev/null` doit ne rien rendre.
+
+**Contrôle de non-régression NFR16** : `/ipxe`, `/doc`, `/assets/*` et le vhost legacy `:8082` répondent exactement comme avant la pose du fragment.
+
+### Scénario 22.3 — La tuile « Visioconférences » (AC1)
+
+Se connecter à SE5 successivement en **prof**, en **élève**, en **administratif** et en **admin**, puis ouvrir le lanceur d'applications.
+
+**Attendu** : la tuile « Visioconférences » (icône `fa-solid fa-video`) est visible pour les **quatre** rôles — `visibility.roles` les déclare tous. Elle pointe `/ext/bbb`. Le lanceur n'émet **aucune** requête HTTP vers l'extension pour se rendre (l'état vient des colonnes `health_*`, cf. Section 21).
+
+### Scénario 22.4 — ⭐ SSO d'un compte réel, et ce que l'extension en apprend (AC3)
+
+Cliquer la tuile en tant que **prof réel**, puis « Se connecter ».
+
+**Attendu** :
+
+- redirection vers `/oidc/authorize` **avec** `code_challenge_method=S256` et `redirect_uri=/ext/bbb/oidc/callback` (visible dans la barre d'adresse ou l'inspecteur réseau) ;
+- après consentement implicite, retour sur `/ext/bbb/` : la page affiche le **nom d'affichage**, le **rôle** et **les classes réelles** du professeur, sous forme de puces ;
+- le cookie de session s'appelle `se5_ext_bbb` et son `Path` est `/ext/bbb` — il n'est **jamais** envoyé aux URL de SE5 (vérifiable dans l'inspecteur, onglet Application) ;
+- **aucune requête à la base ni à l'annuaire de SE5** : `tcpdump`/journal Postgres inutiles ici, c'est le test d'architecture qui le prouve — mais on vérifie l'équivalent observable, à savoir que l'extension fonctionne alors qu'elle n'a **aucun** identifiant de base dans son environnement (`grep -i 'db\|pgsql\|ldap' /etc/sambaedu/extensions/bbb.env` ne rend rien).
+
+Répéter en **élève** : la page affiche « sa » classe, et **aucun lien « Serveurs BBB »** n'apparaît. Répéter en **admin** : le lien apparaît.
+
+Sur toutes les pages, le pied de page porte « ← Retour à SambaEdu » (FR16), pointant l'issuer.
+
+### Scénario 22.5 — Un rôle non résoluble ne connecte personne
+
+Prendre un compte dont le profil métier ne se résout pas (le fournisseur omet alors le claim `role` — contrat 55.2 : « non résoluble ⇒ clé ABSENTE »), puis tenter la connexion à l'extension.
+
+**Attendu** : page d'erreur sobre, HTTP **403**, message « Votre profil ne permet pas d'utiliser cette extension », code de diagnostic `bbb.claims.role_unsupported`. **Aucune session ouverte** : revenir sur `/ext/bbb/` propose de nouveau « Se connecter ». Aucun repli sur un rôle par défaut, dans un sens comme dans l'autre.
+
+### Scénario 22.6 — Configuration des serveurs BBB (AC2)
+
+En **admin**, ouvrir « Serveurs BBB ».
+
+1. Ajouter un serveur : URL `https://<votre-bbb>/bigbluebutton/api`, secret partagé (valeur de `bbb_secret` sur le serveur BBB).
+2. Recharger la page.
+
+**Attendu** :
+
+- le secret est **masqué** en liste (`••••••••` + les 4 derniers caractères), et n'apparaît **nulle part** dans la source HTML — `Ctrl+U`, puis rechercher le secret : zéro occurrence ;
+- « Modifier » ne pré-remplit **jamais** le champ secret, et l'aide dit explicitement que le laisser vide conserve la valeur actuelle. Modifier l'URL seule et vérifier que le test de connexion passe **toujours** (le secret n'a pas été effacé) ;
+- saisir une URL en `http://` : l'ajout est accepté, mais un avertissement **affiché** signale que le secret circulera en clair. Il n'est jamais silencieux ;
+- saisir `pas-une-url`, `ftp://…`, ou une URL avec `?x=1` : refus explicite, rien n'est écrit ;
+- cocher « Scalelite » sans seuil, ou avec `0` : refus. Avec `120` : accepté, la liste affiche « Scalelite · seuil 120 ».
+
+**Contrôle du bug legacy** : déclarer trois serveurs, supprimer **celui du milieu**, en ajouter un quatrième, puis tester la connexion de chacun. Chaque serveur doit rester associé à SON secret. (SE4 tenait trois listes CSV indexées par position ; la suppression décalait les index et un serveur héritait du secret d'un autre.)
+
+### Scénario 22.7 — ⭐ Test de connexion contre un vrai serveur BBB (AC2)
+
+Pour chaque cas, cliquer « Tester » sur la ligne du serveur.
+
+| Situation | Attendu |
+|---|---|
+| URL et secret corrects | « Connexion réussie : URL et secret acceptés, N réunion(s) en cours. » |
+| Secret volontairement faux | « **Secret invalide** : le serveur a rejeté la signature de la requête (checksumError). » |
+| Hôte inexistant / port fermé | « **Serveur injoignable** : aucune réponse dans le délai imparti. » — et la réponse revient en **moins de 10 secondes** |
+| URL pointant une page web quelconque | « **Réponse inattendue** : l'adresse répond, mais ce n'est pas une API BigBlueButton. » |
+
+**Attendu, en plus** : le message nomme l'**hôte** du serveur testé, jamais son secret ni l'URL signée (qui porte le `checksum`). Et **aucun appel n'est émis au simple affichage de la page** — vérifiable en coupant le serveur BBB puis en rechargeant `/ext/bbb/admin/servers` : la page se rend instantanément.
+
+**Certificat auto-signé** : si votre BBB de test en porte un, le test doit rendre « Serveur injoignable ». C'est **correct et voulu** — le legacy désactivait la vérification TLS sur tous ses appels, ce qui exposait le secret partagé à n'importe quel intermédiaire. La correction est d'ajouter l'autorité au magasin du système, jamais de désactiver la vérification.
+
+### Scénario 22.8 — ⭐ `StateDirectory` + `DynamicUser` : l'état survit à l'UID volatil
+
+```bash
+ls -ld /var/lib/sambaedu-ext-bbb                 # 0700, propriétaire = utilisateur dynamique
+ls -l  /var/lib/sambaedu-ext-bbb/database.sqlite # 0600
+systemctl show sambaedu-ext-bbb -p DynamicUser -p StateDirectory
+stat -c '%U:%G' /var/lib/sambaedu-ext-bbb
+
+systemctl restart sambaedu-ext-bbb && sleep 2
+stat -c '%U:%G' /var/lib/sambaedu-ext-bbb        # peut avoir CHANGÉ : c'est normal
+```
+
+Puis **recharger la page des serveurs** : les serveurs déclarés doivent tous être là.
+
+**Enfin, le contrôle qui compte** : `reboot` la VM, attendre le démarrage, recharger la page.
+
+**Attendu** : `DynamicUser=yes`, `StateDirectory=sambaedu-ext-bbb`, et **les données présentes après le reboot**. Si elles ont disparu ou si le service tombe en boucle sur un `SQLSTATE[HY000] [14] unable to open database file`, c'est que la gestion du répertoire d'état a régressé vers un `chown` figé — l'exact scénario que l'amendement à D3 évite. Le `postinst` doit rester vide : `dpkg-deb -I <deb> postinst` ne contient ni `mkdir`, ni `chown`, ni `systemctl`.
+
+### Scénario 22.9 — Santé : la sonde voit l'extension, et la voit tomber
+
+```bash
+php artisan ext:health:check bbb
+php artisan tinker --execute="dump(\App\Models\Extension::where('key','bbb')->first(['health_status','health_checked_at'])?->toArray());"
+
+systemctl stop sambaedu-ext-bbb
+php artisan ext:health:check bbb
+# … puis regarder la tuile dans le lanceur, en prof
+
+systemctl start sambaedu-ext-bbb
+php artisan ext:health:check bbb
+```
+
+**Attendu** : `ok` → `unreachable` → `ok`. Extension arrêtée, la tuile porte le badge « Indisponible » et **reste cliquable** (FR35 sous contrainte FR14). Aucune page de SE5 ne ralentit pendant l'arrêt.
+
+**Contrôle spécifique à cette extension** : couper le **serveur BBB** (pas l'extension) et relancer `ext:health:check bbb`. L'état doit rester **`ok`** — la racine `/` ne dépend d'aucun tiers. Si elle passait à `unreachable`, c'est qu'un appel sortant a été introduit au rendu de la page d'accueil, et le serveur intégré de PHP étant mono-processus, il gèlerait pour tout le monde.
+
+### Scénario 22.10 — Comportement sous charge légère (la faiblesse assumée de D2)
+
+```bash
+# 20 requêtes concurrentes sur la racine, pendant qu'un test de connexion tourne
+# vers un serveur BBB volontairement injoignable (blackhole : IP non routée)
+for i in $(seq 1 20); do curl -s -o /dev/null -w '%{http_code} %{time_total}\n' http://127.0.0.1:<port>/ & done; wait
+```
+
+**Attendu** : toutes les requêtes rendent `200` en moins de deux secondes. Le test de connexion en cours ne doit pas les bloquer — c'est ce que garantissent `PHP_CLI_SERVER_WORKERS=4` et surtout la borne totale de 8 s sur l'appel BBB. Si l'ensemble se fige, la conclusion n'est pas « augmenter les workers » : c'est qu'un appel sortant a perdu sa borne.
+
+### Scénario 22.11 — Retrait propre
+
+```bash
+php artisan ext:remove bbb
+systemctl status sambaedu-ext-bbb ; dpkg -l | grep sambaedu-ext-bbb
+ls /etc/sambaedu/extensions/ /etc/apache2/sambaedu-ext.d/
+curl -sS -o /dev/null -w '%{http_code}\n' http://<ip-serveur>/ext/bbb
+```
+
+**Attendu** : unité disparue, paquet purgé, `bbb.env` et `bbb.conf` retirés, `/ext/bbb` en **404**, tuile disparue du lanceur, audit `remove`. Rejouer `ext:remove bbb` : no-op, sortie 0.
+
+**Point d'attention, à consigner** : `/var/lib/sambaedu-ext-bbb` est géré par systemd via `StateDirectory=`. Vérifier ce qu'il devient après le retrait, et **le noter dans la review** — la conservation des données (serveurs déclarés, et à partir de 57.2 les salons) après une désinstallation est une décision produit qui n'a pas encore été prise, pas un détail d'implémentation.
+
+### Checklist rapide — Section 22
+
+- [ ] **22.1 Dépôt signé publié : `Package` = `sambaedu-ext-bbb`, sha256 RÉEL (pas les 64 zéros), scopes `profile`+`groups`, `entry_url` `/ext/bbb` — et republication à clé CONSERVÉE**
+- [ ] **22.2 `ext:install bbb` de bout en bout : unité active (activée par SE5, pas par le paquet), env 0600 à 7 lignes, ProxyPass posé, écoute 127.0.0.1 seule, `/ext/bbb` en 200, secret nulle part ailleurs que dans l'env**
+- [ ] 22.2b Non-régression NFR16 : `/ipxe`, `/doc`, `/assets/*`, vhost legacy 8082 inchangés
+- [ ] 22.3 Tuile « Visioconférences » visible pour prof, élève, administratif et admin
+- [ ] **22.4 SSO réel : PKCE S256, `redirect_uri` = chemin, nom/rôle/classes réels affichés, cookie `se5_ext_bbb` limité au Path `/ext/bbb`, aucun identifiant de base ni d'annuaire dans l'environnement**
+- [ ] **22.5 Rôle non résoluble : 403, `bbb.claims.role_unsupported`, AUCUNE session ouverte, aucun repli**
+- [ ] **22.6 Page serveurs : secret jamais dans le HTML, édition qui ne l'efface pas, avertissement `http` affiché, URL invalides refusées, seuil Scalelite exigé — et suppression du serveur du milieu SANS décalage des secrets**
+- [ ] **22.7 Test de connexion réel : succès avec décompte, « Secret invalide » sur checksumError, « injoignable » sous 10 s, « réponse inattendue » sur une URL quelconque — et zéro appel au rendu de la page**
+- [ ] **22.8 `StateDirectory` + `DynamicUser` : base 0600 dans un répertoire 0700, données intactes après `restart` ET après reboot, postinst vide de tout mkdir/chown/systemctl**
+- [ ] **22.9 Santé : `ok` → `unreachable` → `ok` ; serveur BBB coupé ⇒ l'extension reste `ok` (la racine ne dépend de rien)**
+- [ ] 22.10 20 requêtes concurrentes en 200 pendant un appel BBB vers un trou noir
+- [ ] **22.11 `ext:remove bbb` : 404, unité et paquet partis, env et fragment retirés, tuile disparue, rejeu no-op — et sort du répertoire d'état CONSIGNÉ**

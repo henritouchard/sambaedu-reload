@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Story 57.1 — Suite de tests AUTONOME de l'extension.
+
+    Elle ne dépend ni du `phpunit.xml` du core, ni de son bootstrap, ni de sa
+    base : c'est la traduction en outillage de ce que FR33 affirme du code.
+    Elle se lance depuis `extensions/bbb/` :
+
+        composer install && vendor/bin/phpunit
+
+    Elle exige php 8.2+ avec `pdo_sqlite`, `openssl`, `curl` et `simplexml`.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="random"
+         failOnRisky="true"
+         failOnWarning="true"
+         beStrictAboutOutputDuringTests="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerErrors="true">
+    <testsuites>
+        <testsuite name="ext-bbb">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+
+    <php>
+        <!--
+            L'extension journalise ses refus par `error_log()` — en production
+            c'est le journal du service systemd. En test, la sortie standard de
+            PHPUnit n'est pas le bon endroit : les refus SONT le sujet de la
+            moitié des tests, et leur trace noierait le compte rendu.
+        -->
+        <ini name="error_log" value="/dev/null"/>
+    </php>
+
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+</phpunit>

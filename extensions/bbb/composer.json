@@ -1,0 +1,36 @@
+{
+    "name": "sambaedu/ext-bbb",
+    "description": "Extension SE5 « Visioconférences » — client BigBlueButton autonome, servi sous /ext/bbb",
+    "type": "project",
+    "license": "GPL-3.0-or-later",
+    "require": {
+        "php": ">=8.2",
+        "ext-curl": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-simplexml": "*",
+        "sambaedu/bigbluebutton-api-php": "2.0.12"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "SambaEdu\\ExtBbb\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SambaEdu\\ExtBbb\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable"
+}
