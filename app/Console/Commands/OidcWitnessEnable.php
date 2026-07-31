@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Auth\Oidc\Services\OidcClientRegistry;
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\OidcWitness\Support\WitnessCredentials;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -42,6 +43,31 @@ class OidcWitnessEnable extends Command
 
     /** `redirect_uri` STRICTE — chemin absolu de l'instance, égalité exacte. */
     public const REDIRECT_URI = '/sso-demo/callback';
+
+    /**
+     * Story 56.4 — Les scopes ACCORDÉS au témoin, DÉRIVÉS de ce qu'il demande.
+     *
+     * `config('oidc.witness.scope')` moins `openid` (plancher du protocole,
+     * jamais accordé explicitement) : le témoin obtient exactement ce que sa
+     * page affiche — nom, rôle, groupes. Dériver plutôt que recopier est ce qui
+     * empêche les deux réglages de diverger le jour où l'un change.
+     *
+     * ⚠️ Sans cet octroi, `oidc:witness:enable` provisionnerait un client à
+     * `granted_scopes = []` : le témoin se connecterait toujours, mais
+     * n'afficherait plus que son `sub` — un downscope silencieux qui ferait
+     * croire à une régression du contrat de claims.
+     *
+     * @return list<string>
+     */
+    public static function grantedScopes(): array
+    {
+        $requested = OidcClaimsResolver::parseScope((string) config('oidc.witness.scope', ''));
+
+        return array_values(array_filter(
+            $requested,
+            static fn (string $scope): bool => $scope !== 'openid',
+        ));
+    }
 
     /** @var string */
     protected $signature = 'oidc:witness:enable
@@ -91,7 +117,12 @@ class OidcWitnessEnable extends Command
 
         // ── Enregistrement ───────────────────────────────────────────────
         try {
-            $result = $registry->register(self::CLIENT_NAME, [self::REDIRECT_URI], self::EXTENSION_KEY);
+            $result = $registry->register(
+                self::CLIENT_NAME,
+                [self::REDIRECT_URI],
+                self::EXTENSION_KEY,
+                self::grantedScopes(),
+            );
         } catch (InvalidArgumentException $e) {
             $this->error($e->getMessage());
             $this->line('  L\'extension « ' . self::EXTENSION_KEY . ' » doit être au registre : '
@@ -137,6 +168,9 @@ class OidcWitnessEnable extends Command
         $this->info('============================================================');
         $this->line('client_id    : ' . $result['client_id']);
         $this->line('redirect_uri : ' . self::REDIRECT_URI);
+        $this->line('scopes       : ' . (self::grantedScopes() === []
+            ? '(aucun — le témoin ne recevra que son identifiant)'
+            : implode(' ', self::grantedScopes())));
         $this->line('issuer       : ' . $credentials->issuer);
         $this->line('credentials  : ' . WitnessCredentials::path() . ' (0600, ' . $this->ownerOf(WitnessCredentials::path()) . ')');
         $this->line('');

@@ -34,3 +34,53 @@ Schedule::command('queue-task-runs:prune')
     ->dailyAt('02:40')
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Story 56.1 — Synchro quotidienne des sources d'extensions distantes
+|--------------------------------------------------------------------------
+| Récupère et VÉRIFIE (signature Ed25519, avant tout décodage) le catalogue de
+| chaque source distante active. Même moteur que le bouton « Actualiser » de
+| /admin/extensions/sources (doctrine AR1 : un seul chemin de synchro).
+|
+| NFR7 — son échec n'affecte ni le core ni les tuiles : un dépôt injoignable
+| laisse en place le dernier catalogue VÉRIFIÉ (le registre EST le cache
+| local), un catalogue refusé masque les extensions non installées de cette
+| source sans jamais toucher aux extensions intégrées. Aucun chemin d'échec ne
+| supprime quoi que ce soit.
+|
+| Slot 02:50 : discipline d'échelonnement de la fenêtre de maintenance
+| (02:00 trash, 02:30 federated, 02:35 agent:reports:prune, 02:40
+| queue-task-runs:prune).
+*/
+Schedule::command('ext:sources:sync')
+    ->dailyAt('02:50')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Story 56.5 — Sonde de SANTÉ des extensions `app` installées
+|--------------------------------------------------------------------------
+| Sonde `http://127.0.0.1:<installed_port>/` pour chaque `app` installée et
+| PERSISTE l'état observé sur `extensions.health_*`.
+|
+| NFR9 — c'est ICI qu'on mesure, et NULLE PART AILLEURS au fil de l'eau : la
+| navbar (rendue sur TOUTE page authentifiée), la bibliothèque et la fiche
+| LISENT l'état persisté. Une sonde au rendu coûterait une requête HTTP par
+| tuile et par page vue.
+|
+| Période de 5 minutes : elle est DÉRIVÉE par
+| `config('extensions.health.stale_after')` (900 s = 3 passages tolérés).
+| Changer la période ici, c'est changer ce seuil là-bas — les deux réglages
+| sont liés et l'énoncé de la dérivation vit dans la config (leçon review
+| 56.3 #2).
+|
+| NFR6/NFR7 — son échec n'affecte rien : une sonde qui échoue écrit
+| `unreachable` (un fait), n'audite rien, ne redémarre rien et ne supprime
+| rien. Le doctor porte le verdict, l'admin décide.
+*/
+Schedule::command('ext:health:check')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

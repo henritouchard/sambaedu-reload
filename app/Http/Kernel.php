@@ -79,6 +79,14 @@ class Kernel extends HttpKernel
         // ControlHub middleware pour l'authentification API
         'controlhub.auth' => \App\Http\Middleware\ControlHubAuth::class,
 
+        // Story 56.4 — API extensions `/api/ext/v1/` : access token OPAQUE
+        // par-extension, avec le scope requis en paramètre (`ext.token:profile`).
+        //
+        // ⚠️ L'alias n'est pas cosmétique : c'est LUI qui permet à
+        // `routes/api.php` de ne contenir aucune chaîne `Auth\Oidc` — invariant
+        // verrouillé par `OidcRoutesTest` et `ExtApiRoutesTest`.
+        'ext.token' => \App\Auth\Oidc\Http\Middleware\EnsureExtensionApiToken::class,
+
         // WPKG middleware — restreint aux requêtes locales
         'local.request' => EnsureLocalRequest::class,
 

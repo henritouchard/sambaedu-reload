@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Auth\Oidc\Services;
 
+use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Auth\Oidc\Support\OidcErrorCodes;
 use App\Models\Extension;
 use App\Models\OidcClient;
@@ -19,7 +20,15 @@ use InvalidArgumentException;
  *    **une seule fois** ;
  *  - {@see self::authenticate()} — vérifie un couple `client_id`/secret au
  *    token endpoint ;
- *  - {@see self::revoke()}     — désactive un client (jamais de suppression).
+ *  - {@see self::revoke()}     — désactive un client (jamais de suppression) ;
+ *  - {@see self::revokeScope()} — Story 56.4 : retire UN scope accordé, sans
+ *    toucher au client ni à ses jetons (FR23).
+ *
+ * ⚠️ **Deux révocations, deux portées, à ne pas confondre.** `revoke()` coupe
+ * l'ACCÈS (le client ne peut plus rien obtenir, ses jetons meurent) ;
+ * `revokeScope()` coupe une DONNÉE (le SSO continue de fonctionner, l'extension
+ * n'apprend simplement plus cette information). Les confondre transformerait un
+ * réglage de confidentialité en panne de connexion.
  *
  * En 55.1, les clients sont déclarés par commande artisan. En Epic 56, c'est
  * l'installation d'une extension de type `app` qui appellera `register()` et sa
@@ -58,18 +67,29 @@ class OidcClientRegistry
      *
      * @param  list<string>  $redirectUris  Liste STRICTE — égalité exacte à l'usage.
      * @param  string|null   $extensionKey  Clé d'une extension du registre (facultatif).
+     * @param  list<string>  $grantedScopes Story 56.4 — scopes ACCORDÉS (⊆ catalogue
+     *                                      fermé). Défaut `[]` : fail-closed, le
+     *                                      client n'obtiendra que `sub`.
      * @return array{client: OidcClient, client_id: string, client_secret: string}
      *
-     * @throws InvalidArgumentException Si le nom, la liste d'URI ou l'extension sont invalides.
+     * @throws InvalidArgumentException Si le nom, la liste d'URI, l'extension ou un scope sont invalides.
      */
-    public function register(string $name, array $redirectUris, ?string $extensionKey = null): array
-    {
+    public function register(
+        string $name,
+        array $redirectUris,
+        ?string $extensionKey = null,
+        array $grantedScopes = [],
+    ): array {
         $name = trim($name);
         if ($name === '') {
             throw new InvalidArgumentException('Le nom du client est obligatoire.');
         }
 
         $normalizedUris = $this->validateRedirectUris($redirectUris);
+
+        // Story 56.4 — le vocabulaire est vérifié AVANT toute écriture : un
+        // octroi hors catalogue est un refus, jamais une troncature silencieuse.
+        $normalizedScopes = $this->normalizeGrantedScopes($grantedScopes);
 
         $extension = null;
         if ($extensionKey !== null && $extensionKey !== '') {
@@ -92,16 +112,20 @@ class OidcClientRegistry
             'client_id' => $clientId,
             'client_secret_hash' => hash('sha256', $secret),
             'redirect_uris' => $normalizedUris,
+            'granted_scopes' => $normalizedScopes,
             'enabled' => true,
         ]);
 
-        // ⚠️ Ni le secret ni son hash ne sont loggés (NFR3).
+        // ⚠️ Ni le secret ni son hash ne sont loggés (NFR3). Les scopes
+        // accordés, eux, ne sont PAS un secret : ce sont exactement ce que
+        // l'admin doit pouvoir auditer.
         Log::channel('oidc')->info('[OidcClientRegistry] oidc.client.registered', [
             'action_type' => 'oidc.client.registered',
             'client_id' => $clientId,
             'name' => $name,
             'extension_key' => $client->extension_key,
             'redirect_uris_count' => count($normalizedUris),
+            'granted_scopes' => $normalizedScopes,
         ]);
 
         return [
@@ -183,6 +207,105 @@ class OidcClientRegistry
         ]);
 
         return ['found' => true, 'changed' => true];
+    }
+
+    /**
+     * Story 56.4 — **Révoque UN scope accordé à un client** (FR23).
+     *
+     * IDEMPOTENT, exactement comme {@see self::revoke()} : un scope déjà absent
+     * est un no-op signalé (`changed: false`), pas une erreur — l'écran de
+     * l'admin peut être périmé, un second onglet peut avoir agi avant lui.
+     *
+     * ⚠️ Ne touche PAS au client lui-même : ses jetons vivants restent valides,
+     * ils cessent simplement de porter cette donnée (le scope effectif est
+     * recalculé à chaque usage). Révoquer l'ACCÈS, c'est {@see self::revoke()}.
+     *
+     * `openid` n'est pas révocable ici : il n'est jamais dans `granted_scopes`,
+     * donc une tentative retombe naturellement sur `changed: false`. Le refus
+     * EXPLICITE (message à l'admin) vit dans
+     * {@see \App\Services\Extensions\ExtensionScopeService::revokeScope()},
+     * seul appelant à disposer d'un interlocuteur humain.
+     *
+     * @return array{found: bool, changed: bool}
+     */
+    public function revokeScope(string $clientId, string $scope): array
+    {
+        $scope = trim($scope);
+
+        $client = OidcClient::query()->where('client_id', $clientId)->first();
+
+        if ($client === null) {
+            return ['found' => false, 'changed' => false];
+        }
+
+        $granted = $client->grantedScopes();
+
+        if ($scope === '' || ! in_array($scope, $granted, true)) {
+            return ['found' => true, 'changed' => false];
+        }
+
+        $client->granted_scopes = array_values(array_filter(
+            $granted,
+            static fn (string $granted): bool => $granted !== $scope,
+        ));
+        $client->save();
+
+        Log::channel('oidc')->warning('[OidcClientRegistry] oidc.client.scope_revoked', [
+            'action_type' => 'oidc.client.scope_revoked',
+            // `client_id` est PUBLIC ; le scope n'est ni un secret ni de la PII.
+            'client_id' => $clientId,
+            'extension_key' => $client->extension_key,
+            'scope' => $scope,
+        ]);
+
+        return ['found' => true, 'changed' => true];
+    }
+
+    /**
+     * Story 56.4 — Valide et normalise une liste de scopes à ACCORDER.
+     *
+     * Vocabulaire FERMÉ : les scopes à claims du catalogue
+     * ({@see OidcClaimsResolver::CLAIMS_BY_SCOPE}), donc `profile` et `groups`.
+     * `openid` est explicitement REFUSÉ : c'est le plancher du protocole, il
+     * n'est ni accordable ni révocable, et l'accepter ici laisserait croire
+     * qu'on pourrait le retirer.
+     *
+     * Refus plutôt que filtrage : accorder « ce qu'on a compris » d'une demande
+     * qu'on ne comprend pas produirait une extension à moitié fonctionnelle
+     * pour une raison invisible (doctrine README OIDC, invariant #11).
+     *
+     * @param  list<string>  $scopes
+     * @return list<string>
+     *
+     * @throws InvalidArgumentException
+     */
+    public function normalizeGrantedScopes(array $scopes): array
+    {
+        $supported = array_keys(OidcClaimsResolver::CLAIMS_BY_SCOPE);
+        $normalized = [];
+
+        foreach ($scopes as $scope) {
+            $scope = trim((string) $scope);
+
+            if ($scope === '') {
+                continue;
+            }
+
+            if (! in_array($scope, $supported, true)) {
+                throw new InvalidArgumentException(
+                    'Scope non accordable : « ' . $scope . ' ». Vocabulaire fermé : '
+                    . implode(', ', $supported)
+                    . ' (« openid » est le plancher du protocole : ni accordable, ni révocable).'
+                );
+            }
+
+            $normalized[] = $scope;
+        }
+
+        $normalized = array_values(array_unique($normalized));
+        sort($normalized);
+
+        return $normalized;
     }
 
     /**

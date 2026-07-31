@@ -246,4 +246,55 @@ class OidcClientCommandsTest extends TestCase
         self::assertNull($registry->authenticate($result['client_id'], $result['client_secret']));
         self::assertNull($registry->findEnabledByClientId($result['client_id']));
     }
+
+    // =====================================================================
+    // Story 56.4 — `--scope` : l'octroi à l'enregistrement MANUEL
+    // =====================================================================
+
+    /**
+     * Le DÉFAUT accorde tous les scopes à claims : l'enregistrement manuel est
+     * un acte d'opérateur, et ce défaut préserve verbatim le comportement
+     * observable des runbooks 55.x (un client déclaré à la main servait un flux
+     * complet). Restreindre est explicite.
+     */
+    #[Test]
+    public function register_grants_every_claim_scope_by_default(): void
+    {
+        $this->artisan('oidc:client:register', [
+            'name' => 'Client opérateur',
+            '--redirect-uri' => ['https://ops.example.test/callback'],
+        ])->assertExitCode(0);
+
+        self::assertSame(['groups', 'profile'], OidcClient::query()->firstOrFail()->grantedScopes());
+    }
+
+    #[Test]
+    public function register_grants_only_what_the_scope_option_asks_for(): void
+    {
+        $this->artisan('oidc:client:register', [
+            'name' => 'Client restreint',
+            '--redirect-uri' => ['https://ops.example.test/callback'],
+            '--scope' => ['profile'],
+        ])->assertExitCode(0);
+
+        self::assertSame(['profile'], OidcClient::query()->firstOrFail()->grantedScopes());
+    }
+
+    /**
+     * Vocabulaire FERMÉ, fail-closed : un scope inconnu — ou `openid`, qui est
+     * le plancher du protocole — fait échouer la commande sans rien créer.
+     */
+    #[Test]
+    public function register_refuses_a_scope_outside_the_closed_vocabulary_and_creates_nothing(): void
+    {
+        foreach ([['directory'], ['openid']] as $scopes) {
+            $this->artisan('oidc:client:register', [
+                'name' => 'Client hostile',
+                '--redirect-uri' => ['https://ops.example.test/callback'],
+                '--scope' => $scopes,
+            ])->assertExitCode(1);
+        }
+
+        self::assertSame(0, OidcClient::query()->count());
+    }
 }

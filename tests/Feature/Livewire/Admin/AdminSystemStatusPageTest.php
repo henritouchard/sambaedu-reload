@@ -216,4 +216,41 @@ class AdminSystemStatusPageTest extends TestCase
 
         rmdir($tmp);
     }
+
+    /**
+     * Story 56.5 (AC3) — la section « Extensions » est bien câblée dans
+     * `CHECK_SECTIONS`, avec ses trois checks.
+     *
+     * ⚠️ Ajout en fin de fichier : les tests ci-dessus restent verbatim. Le
+     * niveau n'est PAS asserté ici — ce fichier hand-roll son schéma et n'a pas
+     * les tables du registre d'extensions, ce qui est justement le cas qui doit
+     * produire un `warn` propre et jamais une exception (les verdicts eux-mêmes
+     * sont couverts par `Tests\Unit\Doctor\Checks\ExtensionsChecksTest`).
+     * Ce qu'on vérifie ici, c'est le CÂBLAGE : une section absente du tableau
+     * ne serait visible nulle part ailleurs.
+     */
+    public function test_it_wires_the_extensions_section_with_its_three_checks(): void
+    {
+        Process::fake(['*' => Process::result(output: 'Syntax OK')]);
+
+        $this->actingAs($this->makeAdmin('admin-sysstatus-extensions'));
+
+        $results = Livewire::test('pages::admin.settings.system-status.index')
+            ->call('runChecks')
+            ->assertSet('checksRan', true)
+            ->get('results');
+
+        self::assertArrayHasKey('Extensions', $results, 'Section Extensions absente des résultats.');
+        self::assertCount(3, $results['Extensions']);
+
+        $names = array_column($results['Extensions'], 'name');
+        self::assertContains('Extensions (backends)', $names);
+        self::assertContains('Extensions (journal d\'audit)', $names);
+        self::assertContains('Extensions (clients OIDC)', $names);
+
+        foreach ($results['Extensions'] as $check) {
+            self::assertNotSame('', $check['detail']);
+            self::assertContains($check['level'], ['ok', 'warn', 'error']);
+        }
+    }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Auth\Oidc\Http\Controllers;
 
 use App\Auth\Oidc\Services\OidcAccessTokenValidator;
+use App\Auth\Oidc\Support\OidcBearer;
 use App\Auth\Oidc\Support\OidcClaimsResolver;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
@@ -44,6 +45,10 @@ use Illuminate\Support\Facades\Log;
  *    jeton est donc visible ici ; la staleness inverse (id_token figé) est
  *    explicitement acceptée par l'architecture (option C1) et bornée par le
  *    TTL de 600 s.
+ *  • **Story 56.4 — filtrés par le scope EFFECTIF**, pas par le scope stocké
+ *    sur le jeton : `scope du jeton ∩ (scopes accordés au client + openid)`.
+ *    Un scope révoqué par l'admin cesse d'être servi ICI ET MAINTENANT, sans
+ *    attendre l'expiration du jeton ni exiger sa purge.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * ⚠️ **EXCEPTION ASSUMÉE AU FORMAT DE RÉPONSE MAISON**, iso `TokenController` :
@@ -85,8 +90,13 @@ class UserinfoController extends Controller
         // résolveur de claims ne produit jamais de `sub` (par construction),
         // mais l'identité servie ne doit dépendre d'aucune promesse tenue
         // ailleurs — même garantie qu'à l'émission de l'id_token.
+        // ⚠️ Story 56.4 — les claims sont filtrés par le scope EFFECTIF, pas par
+        // le scope STOCKÉ sur le jeton. Sans cette ligne, un scope révoqué
+        // continuerait de fuir par `/userinfo` pendant toute la vie du jeton
+        // (600 s) : la révocation FR23 promet un effet IMMÉDIAT, et `/userinfo`
+        // est l'un des trois points où elle doit mordre.
         $payload = array_merge(
-            OidcClaimsResolver::claimsFor($verdict['user'], $record->scope),
+            OidcClaimsResolver::claimsFor($verdict['user'], $verdict['effective_scope']),
             ['sub' => $record->user_login],
         );
 
@@ -114,21 +124,14 @@ class UserinfoController extends Controller
     /**
      * Extrait le jeton du SEUL en-tête `Authorization: Bearer …`.
      *
-     * Retourne `null` pour tout le reste (en-tête absent, schéma `Basic`,
-     * `Bearer` sans valeur) — et n'inspecte NI la query string, NI le corps :
-     * un jeton qui y figurerait est ignoré, donc refusé comme absent.
+     * ⚠️ Story 56.4 — la règle a été extraite dans {@see OidcBearer} pour que
+     * l'API extensions la PARTAGE au lieu de la recopier : c'est ici que se
+     * décide « un jeton en query est ignoré », et cette décision ne doit
+     * exister qu'à un seul endroit.
      */
     private function extractBearer(Request $request): ?string
     {
-        $header = trim((string) $request->header('Authorization', ''));
-
-        if (stripos($header, 'Bearer ') !== 0) {
-            return null;
-        }
-
-        $token = trim(substr($header, 7));
-
-        return $token !== '' ? $token : null;
+        return OidcBearer::fromRequest($request);
     }
 
     /**

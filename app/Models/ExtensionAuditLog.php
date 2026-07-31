@@ -7,7 +7,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use LogicException;
+use Throwable;
 
 /**
  * Story 54.2 (FR36 socle) — Entrée d'audit append-only du cycle de vie d'une
@@ -30,15 +34,37 @@ use LogicException;
  *
  * ⚠️ GARDE-FOU : aucun mot « central ». Vocabulaire « amont » / `Upstream`.
  *
+ * ## Story 56.1 — événements de SOURCE (FR36)
+ *
+ * La table est ÉTENDUE, pas doublée : `action` est un string libre
+ * EXPRESSÉMENT prévu extensible (docblock de la migration 54.2). Les actes
+ * d'administration d'une source (`source_add`, `source_enable`,
+ * `source_disable`, `source_remove`) et l'échec de vérification d'un catalogue
+ * (`source_sync_failed`) s'écrivent par la fabrique dédiée {@see self::logSource()},
+ * avec `extension_id = null` et `extension_key` / `extension_name` à `''` — la
+ * cible est la SOURCE, pas une extension.
+ *
+ * Même discipline que 54.2 : la trace est écrite DANS la transaction de l'acte,
+ * un no-op (désactiver une source déjà désactivée) n'écrit AUCUNE ligne, et
+ * `source_sync_failed` n'est consigné qu'à la **transition** vers l'état
+ * d'erreur — un re-échec quotidien de la synchro planifiée n'empile pas de
+ * lignes. Une synchro RÉUSSIE n'est pas auditée (c'est de la télémétrie :
+ * `last_synced_at` la porte), un dépôt injoignable non plus (transitoire
+ * réseau, porté par `sync_status`).
+ *
  * @property int $id
  * @property int|null $extension_id
  * @property string $extension_key
  * @property string $extension_name
- * @property string $action           'integrate' | 'uninstall' (string libre, extensible Epic 56)
+ * @property int|null $extension_source_id
+ * @property string $source_key
+ * @property string $action           'integrate' | 'uninstall' | 'source_*' | 'install' | 'remove' | 'install_failed' (string libre)
+ * @property string $details          catégorie COURTE d'échec — jamais d'URL, jamais de secret (56.2)
  * @property int|null $actor_user_id
  * @property string|null $actor_login
  * @property \Carbon\Carbon $created_at
  * @property-read Extension|null $extension
+ * @property-read ExtensionSource|null $source
  * @property-read User|null $actor
  */
 class ExtensionAuditLog extends Model
@@ -54,11 +80,79 @@ class ExtensionAuditLog extends Model
     public const ACTION_INTEGRATE = 'integrate';
     public const ACTION_UNINSTALL = 'uninstall';
 
+    // Story 56.1 — actes d'administration d'une SOURCE (fabrique `logSource()`).
+    public const ACTION_SOURCE_ADD = 'source_add';
+    public const ACTION_SOURCE_ENABLE = 'source_enable';
+    public const ACTION_SOURCE_DISABLE = 'source_disable';
+    public const ACTION_SOURCE_REMOVE = 'source_remove';
+
+    /** Échec de VÉRIFICATION d'un catalogue distant — consigné à la TRANSITION seulement. */
+    public const ACTION_SOURCE_SYNC_FAILED = 'source_sync_failed';
+
+    // Story 56.2 — cycle d'une extension `app` (moteur `ext:install` / `ext:remove`).
+    public const ACTION_INSTALL = 'install';
+    public const ACTION_REMOVE = 'remove';
+
+    /**
+     * Échec d'une TENTATIVE d'installation — signature/hash refusé, source
+     * inexploitable, ou échec à une étape privilégiée.
+     *
+     * ⚠️ Contrairement à `source_sync_failed`, il n'y a PAS de dédoublonnage à
+     * la transition : une synchro est une tâche planifiée qui se répète toute
+     * seule, une installation est un ACTE de l'opérateur. Chaque tentative
+     * mérite sa ligne (décision 56.2 #7).
+     */
+    public const ACTION_INSTALL_FAILED = 'install_failed';
+
+    /**
+     * Story 56.3 — mise à jour d'une extension `app` déjà installée
+     * (`ext:update` / bouton « Mettre à jour »).
+     *
+     * Acte à part entière, distinct d'`install` : ce qu'il change, c'est la
+     * VERSION qui tourne, pas la présence de l'extension. Les confondre
+     * rendrait le journal incapable de répondre à « depuis quand tourne-t-on
+     * cette version-là ». Même doctrine d'échec qu'`install_failed` : une ligne
+     * PAR TENTATIVE, catégorie courte, jamais d'URL ni de secret.
+     */
+    public const ACTION_UPDATE = 'update';
+
+    public const ACTION_UPDATE_FAILED = 'update_failed';
+
+    /**
+     * Story 56.4 — RÉVOCATION d'un scope accordé à une extension (FR23/FR36).
+     *
+     * `details` porte le scope révoqué, et rien d'autre : ni URL, ni
+     * `client_id`, ni secret. C'est un acte de confidentialité — « qui a retiré
+     * quoi, à quelle extension, quand » — et il n'y a pas d'action inverse :
+     * ré-accorder, c'est réinstaller l'extension.
+     */
+    public const ACTION_SCOPE_REVOKE = 'scope_revoke';
+
+    /** Acteur conventionnel d'une synchro planifiée (aucun utilisateur connecté). */
+    public const ACTOR_SYSTEM = 'system';
+
+    /**
+     * Story 56.5 — Clé du marqueur « une écriture d'audit a été perdue ».
+     *
+     * ⚠️ Store **fichier** DÉLIBÉRÉ (décision n° 5 de la story) : si `log()`
+     * lève, la cause plausible est la base de données elle-même — un signal
+     * stocké en DB coulerait avec elle. Le cache fichier est le store de secours
+     * établi du domaine (le verrou du moteur d'installation y vit déjà) ; APCu
+     * n'a ni `Cache::lock()` ni persistance (fiche mémoire).
+     */
+    public const WRITE_FAILURE_KEY = 'extensions:audit-write-failed';
+
+    /** Borne de la colonne `details` (alignée sur la migration 56.2). */
+    public const DETAILS_MAX = 500;
+
     protected $fillable = [
         'extension_id',
         'extension_key',
         'extension_name',
+        'extension_source_id',
+        'source_key',
         'action',
+        'details',
         'actor_user_id',
         'actor_login',
         'created_at',
@@ -66,6 +160,7 @@ class ExtensionAuditLog extends Model
 
     protected $casts = [
         'extension_id' => 'integer',
+        'extension_source_id' => 'integer',
         'actor_user_id' => 'integer',
         'created_at' => 'datetime',
     ];
@@ -99,6 +194,17 @@ class ExtensionAuditLog extends Model
     /**
      * Consigne une transition du cycle de vie. Appelée DANS la transaction de
      * la mutation `status` (atomicité acte ↔ trace).
+     *
+     * Story 56.2 — signature ÉLARGIE, jamais dupliquée : `$details` est
+     * optionnel (`''` pour les actes 54.2, une CATÉGORIE courte pour un
+     * `install_failed`) et `$actorUserId` accepte `null` avec
+     * `$actorLogin = self::ACTOR_SYSTEM` pour l'acteur CLI. Les appels 54.2
+     * existants continuent de passer un `int` et restent valides verbatim — on
+     * ne crée pas une seconde fabrique là où un paramètre par défaut suffit.
+     *
+     * ⚠️ `$details` ne doit JAMAIS porter d'URL ni de secret (règle `last_error`
+     * de 56.1) : le journal d'audit est lisible par tout admin, et une URL de
+     * dépôt peut porter un jeton. Le détail complet va dans `Log::`.
      */
     public static function log(
         ?int $extensionId,
@@ -107,11 +213,45 @@ class ExtensionAuditLog extends Model
         string $action,
         ?int $actorUserId,
         ?string $actorLogin,
+        string $details = '',
     ): self {
         return self::create([
             'extension_id' => $extensionId,
             'extension_key' => $extensionKey,
             'extension_name' => $extensionName,
+            'action' => $action,
+            'details' => Str::limit($details, self::DETAILS_MAX, ''),
+            'actor_user_id' => $actorUserId,
+            'actor_login' => $actorLogin,
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * Story 56.1 — Consigne un acte portant sur une SOURCE (ajout, activation,
+     * désactivation, retrait, échec de vérification du catalogue).
+     *
+     * Appelée DANS la transaction de l'acte (atomicité acte ↔ trace). Les
+     * colonnes d'extension restent VIDES : la cible est la source. `source_key`
+     * est dénormalisée pour que la trace d'un RETRAIT reste lisible une fois la
+     * ligne `extension_sources` disparue (la FK passe alors à `null`).
+     *
+     * `$actorLogin` vaut `'system'` pour une synchro planifiée (aucun
+     * utilisateur connecté), avec `$actorUserId = null`.
+     */
+    public static function logSource(
+        ?int $sourceId,
+        string $sourceKey,
+        string $action,
+        ?int $actorUserId,
+        ?string $actorLogin,
+    ): self {
+        return self::create([
+            'extension_id' => null,
+            'extension_key' => '',
+            'extension_name' => '',
+            'extension_source_id' => $sourceId,
+            'source_key' => $sourceKey,
             'action' => $action,
             'actor_user_id' => $actorUserId,
             'actor_login' => $actorLogin,
@@ -120,8 +260,111 @@ class ExtensionAuditLog extends Model
     }
 
     // ========================================================================
+    // MARQUEUR D'ÉCHEC D'ÉCRITURE (Story 56.5 — legs review 56.3 #4)
+    // ========================================================================
+    //
+    // « Exposer un signal “écriture d'audit en échec” plutôt que de compter sur
+    // un grep de logs. » Ces trois statiques vivent ICI, à côté des fabriques,
+    // par COHÉSION : qui écrit le journal sait signaler qu'il n'a pas pu.
+    //
+    // Le marqueur ne porte AUCUNE donnée métier — deux dates et un compteur.
+    // Ni clé d'extension, ni catégorie : le détail est déjà dans `Log::error`,
+    // et un signal d'exploitation n'a pas à devenir une seconde source de
+    // vérité (ni à recopier une donnée qu'on n'a justement pas pu écrire).
+
+    /**
+     * Consigne qu'une écriture d'audit a échoué (compteur cumulé + première et
+     * dernière occurrence).
+     *
+     * **Best-effort par construction** : appelée depuis un `catch`, elle
+     * n'aggrave JAMAIS l'incident qu'elle signale — toute défaillance du cache
+     * est avalée ici, silencieusement. Un signal qu'on ne peut pas poser ne doit
+     * pas transformer un refus déjà compensé en exception nue (c'était le
+     * finding #2 de la review 56.2, corrigé — on ne le réintroduit pas).
+     */
+    public static function recordWriteFailure(): void
+    {
+        try {
+            $store = Cache::store('file');
+
+            /** @var array{first_at: string, last_at: string, count: int}|null $marker */
+            $marker = $store->get(self::WRITE_FAILURE_KEY);
+
+            $now = now()->toIso8601String();
+
+            $store->forever(self::WRITE_FAILURE_KEY, [
+                'first_at' => is_array($marker) ? (string) ($marker['first_at'] ?? $now) : $now,
+                'last_at' => $now,
+                'count' => is_array($marker) ? ((int) ($marker['count'] ?? 0)) + 1 : 1,
+            ]);
+        } catch (Throwable $e) {
+            // Sans TTL et sans exception : le marqueur est un confort de
+            // diagnostic, pas une garantie. `Log::error` (posé par l'appelant)
+            // reste la trace de dernier recours.
+            Log::warning('[Extensions] Marqueur d\'échec d\'audit NON POSÉ', [
+                'exception' => $e::class,
+            ]);
+        }
+    }
+
+    /**
+     * Le marqueur, ou `null` s'il n'y en a pas (cas normal).
+     *
+     * Lecture DÉFENSIVE : un cache illisible rend `null` plutôt qu'une
+     * exception. Cette méthode est appelée par un check doctor et par une page
+     * d'administration — aucun des deux ne doit tomber parce que le répertoire
+     * de cache a un souci.
+     *
+     * @return array{first_at: string, last_at: string, count: int}|null
+     */
+    public static function writeFailureMarker(): ?array
+    {
+        try {
+            $marker = Cache::store('file')->get(self::WRITE_FAILURE_KEY);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! is_array($marker)) {
+            return null;
+        }
+
+        return [
+            'first_at' => (string) ($marker['first_at'] ?? ''),
+            'last_at' => (string) ($marker['last_at'] ?? ''),
+            'count' => (int) ($marker['count'] ?? 0),
+        ];
+    }
+
+    /**
+     * Acquittement admin : le marqueur est effacé.
+     *
+     * ⚠️ **N'écrit AUCUNE ligne d'audit** — et c'est une décision, pas un oubli
+     * (décision n° 5 de la story) : le marqueur est un signal d'EXPLOITATION
+     * (« va voir les logs, N lignes ont pu se perdre »), pas une donnée de
+     * conformité. L'auditer créerait une boucle absurde : que faire si l'audit
+     * de l'acquittement échoue à son tour ?
+     */
+    public static function acknowledgeWriteFailure(): void
+    {
+        try {
+            Cache::store('file')->forget(self::WRITE_FAILURE_KEY);
+        } catch (Throwable $e) {
+            Log::warning('[Extensions] Marqueur d\'échec d\'audit NON EFFACÉ', [
+                'exception' => $e::class,
+            ]);
+        }
+    }
+
+    // ========================================================================
     // RELATIONS
     // ========================================================================
+
+    /** La source concernée (peut être null si retirée du registre). */
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(ExtensionSource::class, 'extension_source_id');
+    }
 
     /** L'extension concernée (peut être null si supprimée du registre). */
     public function extension(): BelongsTo

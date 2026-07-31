@@ -262,6 +262,21 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         </FilesMatch>
     </Directory>
 
+    # /ext/<clé> : extensions de type « app » installées par SE5 (Story 56.2).
+    # Chaque installation pose UN fragment ProxyPass vers le backend local de
+    # l'extension (127.0.0.1:<port assigné>), généré et retiré par
+    # sambaedu-ext-helper.sh — jamais par PHP, jamais à la main.
+    #
+    # ⚠️ IncludeOptional DANS le vhost :80, et surtout PAS un a2enconf global :
+    # une conf globale s'appliquerait AUSSI au vhost legacy 8082, qui doit
+    # rester strictement inchangé (NFR16). « Optional » : aucune extension
+    # installée ⇒ aucun fichier ⇒ Apache démarre normalement.
+    #
+    # Le préfixe /ext/ n'entre en conflit avec aucun Alias existant (/ipxe,
+    # /assets/*, /install/iso, /wpkg/*, /doc) ; un chemin proxifié n'atteint
+    # jamais le FallbackResource de Laravel.
+    IncludeOptional /etc/apache2/sambaedu-ext.d/*.conf
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>

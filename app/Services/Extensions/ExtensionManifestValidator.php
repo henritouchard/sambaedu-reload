@@ -52,6 +52,54 @@ use App\Exceptions\InvalidExtensionManifestException;
  *    liste fermée de rôles. 54.1 stocke, 54.3 résout.
  * 3. **`scopes` affichés, jamais consommés** en 54.1 (FR3) — leur seule règle
  *    ici est d'être une liste de chaînes.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ *  STORY 56.2 — EXTENSION ADDITIVE DU FORMAT v1 (NFR11)
+ *
+ *  Deux ajouts, tous deux **additifs** : un manifest 54.x/56.1 sans bloc
+ *  `install` reste valide VERBATIM, et aucun manifest publié n'est cassé.
+ *
+ *  1. **Bloc `install` OPTIONNEL** — ce qui rend une `app` installable :
+ *
+ *  ```json
+ *  "install": {
+ *    "channel": "deb",
+ *    "package": "packages/sambaedu-ext-hello_1.0.0_all.deb",
+ *    "sha256": "b1946ac9…",
+ *    "redirect_paths": ["/ext/hello/oidc/callback"]
+ *  }
+ *  ```
+ *
+ *  - `channel` ∈ {@see self::SUPPORTED_INSTALL_CHANNELS} — STRICT, comme
+ *    `manifest_version` : un canal inconnu (`snap`, `oci`…) n'est pas un canal
+ *    `deb` dégradé, il est refusé. La liste est extensible sans rupture.
+ *  - `package` est un chemin RELATIF à l'URL de base de la source : ni schéma,
+ *    ni `..`, ni `//`, ni query, ni fragment, ni `/` initial. Le paquet se
+ *    télécharge donc TOUJOURS depuis le même hôte que l'index signé — pas de
+ *    dépôt « proxy », pas de SSRF par le manifest.
+ *  - `sha256` est le hash du paquet, en 64 hexadécimaux MINUSCULES. Étant porté
+ *    par l'index déjà signé Ed25519 (56.1), il est transitivement couvert par
+ *    la signature : le vérifier EST la vérification « contre la clé déclarée de
+ *    sa source » (NFR2), patron apt `Release` → `Packages` → `.deb`. Aucun
+ *    second format de signature n'est inventé.
+ *  - `redirect_paths` (optionnel) borne les URI de redirection OIDC au préfixe
+ *    `/ext/<id>/` — préfixe RECALCULÉ depuis l'`id` déjà validé, jamais lu du
+ *    manifest. Sans cette borne, un manifest hostile ferait enregistrer un
+ *    client dont le callback pointe une AUTRE extension (vol de code
+ *    d'autorisation).
+ *
+ *  2. **`type = app` ⇒ `entry_url === '/ext/<id>'`** (AR3). Contrainte posée
+ *  MAINTENANT parce qu'aucun manifest `app` n'a jamais été publié : la poser
+ *  après publication casserait ses consommateurs (NFR11), exactement comme le
+ *  durcissement d'`entry_url` de la review 54.3. C'est elle qui garantit que la
+ *  tuile du lanceur pointe l'exposition RÉELLEMENT provisionnée par
+ *  l'installation (le fragment Apache `ProxyPass /ext/<key>`) : sans elle, une
+ *  `app` installée pourrait afficher une tuile vers n'importe où.
+ *
+ *  ⚠️ Le bloc `install` n'est PAS exigé pour qu'un manifest `app` soit VALIDE :
+ *  le catalogue doit pouvoir AFFICHER une `app` non installable (56.1). C'est
+ *  `ext:install` qui refuse fail-closed une `app` sans bloc.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 class ExtensionManifestValidator
 {
@@ -62,8 +110,28 @@ class ExtensionManifestValidator
      */
     public const SUPPORTED_MANIFEST_VERSIONS = [1];
 
+    /**
+     * Canaux d'installation supportés (Story 56.2). STRICT : un canal inconnu
+     * est refusé, jamais dégradé. Extensible par ajout (AR2).
+     *
+     * @var list<string>
+     */
+    public const SUPPORTED_INSTALL_CHANNELS = ['deb'];
+
     /** Un `id` d'extension est un slug : minuscules, chiffres, `_` et `-`. */
     public const ID_PATTERN = '/^[a-z0-9][a-z0-9_-]*$/';
+
+    /**
+     * Un chemin de paquet : segments `[A-Za-z0-9._-]+` séparés par `/`, sans
+     * `/` initial ni final. Refuse par CONSTRUCTION tout schéma (`:`), toute
+     * URL protocol-relative (`//`), toute query (`?`) et tout fragment (`#`) —
+     * aucun de ces caractères n'appartient à la classe. Les segments `.` et
+     * `..` sont refusés séparément (ils passent la classe de caractères).
+     */
+    public const PACKAGE_PATH_PATTERN = '#^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$#';
+
+    /** Un sha256 : 64 hexadécimaux MINUSCULES (forme canonique, pas de casse mixte). */
+    public const SHA256_PATTERN = '/^[0-9a-f]{64}$/';
 
     /**
      * Valide un manifest décodé et renvoie sa forme normalisée.
@@ -82,6 +150,7 @@ class ExtensionManifestValidator
      *     scopes: list<string>,
      *     dependencies: list<string>,
      *     visibility: array{roles: list<string>},
+     *     install?: array{channel: string, package: string, sha256: string, redirect_paths: list<string>},
      * }
      *
      * @throws InvalidExtensionManifestException
@@ -119,10 +188,23 @@ class ExtensionManifestValidator
         $extensionVersion = $this->requiredString($manifest, 'version');
         $entryUrl = $this->assertEntryUrl($manifest);
 
+        // 4bis. Story 56.2 (AR3) — une `app` est SERVIE par SE5 sous `/ext/<id>`.
+        if ($type === ExtensionType::App && $entryUrl !== self::appEntryUrl($id)) {
+            throw InvalidExtensionManifestException::invalidField(
+                'entry_url',
+                'une extension de type « app » DOIT déclarer exactement « '.self::appEntryUrl($id).' » : '
+                .'c\'est le chemin que SE5 provisionne lui-même (ProxyPass vers le port assigné au backend). '
+                .'Une tuile pointant ailleurs afficherait autre chose que ce qui a été installé',
+            );
+        }
+
         // 5. Visibilité (rôles métier — décision #2).
         $roles = $this->assertVisibilityRoles($manifest);
 
-        return [
+        // 6. Story 56.2 — bloc `install` OPTIONNEL (additif, NFR11).
+        $install = $this->assertInstallBlock($manifest, $id);
+
+        $normalized = [
             'manifest_version' => $version,
             'id' => $id,
             'type' => $type,
@@ -136,6 +218,158 @@ class ExtensionManifestValidator
             'dependencies' => $this->optionalStringList($manifest, 'dependencies'),
             'visibility' => ['roles' => $roles],
         ];
+
+        // Bloc ABSENT ⇒ clé absente : la forme normalisée d'un manifest 54.x
+        // reste octet pour octet celle qu'elle était (aucune régression du
+        // snapshot persisté, aucun `install: null` parasite en base).
+        if ($install !== null) {
+            $normalized['install'] = $install;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Chemin d'exposition CANONIQUE d'une extension `app` (AR3).
+     *
+     * Une seule définition pour trois consommateurs : la règle `entry_url`
+     * ci-dessus, la borne des `redirect_paths`, et le fragment Apache généré à
+     * l'installation. Les faire diverger, c'est provisionner un proxy sur un
+     * chemin et afficher une tuile vers un autre.
+     */
+    public static function appEntryUrl(string $id): string
+    {
+        return '/ext/'.$id;
+    }
+
+    /**
+     * Bloc `install` (Story 56.2) — OPTIONNEL, strictement validé s'il est là.
+     *
+     * @param  array<string, mixed>  $manifest
+     * @return array{channel: string, package: string, sha256: string, redirect_paths: list<string>}|null
+     *
+     * @throws InvalidExtensionManifestException
+     */
+    private function assertInstallBlock(array $manifest, string $id): ?array
+    {
+        $install = $manifest['install'] ?? null;
+        if ($install === null) {
+            return null;
+        }
+
+        // Un objet JSON, jamais une liste (`array_is_list`) ni un scalaire —
+        // même règle que `visibility` : pas de repli tolérant.
+        if (! is_array($install) || array_is_list($install)) {
+            throw InvalidExtensionManifestException::invalidField(
+                'install',
+                'doit être un objet JSON ({"channel":…, "package":…, "sha256":…})',
+            );
+        }
+
+        // ── channel : liste FERMÉE ────────────────────────────────────────
+        $channel = $install['channel'] ?? null;
+        if (! is_string($channel) || ! in_array($channel, self::SUPPORTED_INSTALL_CHANNELS, true)) {
+            $known = implode(', ', self::SUPPORTED_INSTALL_CHANNELS);
+            throw InvalidExtensionManifestException::invalidField(
+                'install.channel',
+                'canal d\'installation non supporté par cette instance ; canaux connus : '.$known,
+            );
+        }
+
+        // ── package : chemin RELATIF borné ────────────────────────────────
+        $package = $install['package'] ?? null;
+        if (! is_string($package)) {
+            throw InvalidExtensionManifestException::missingField('install.package');
+        }
+        $package = trim($package);
+
+        $invalidPath = $package === ''
+            || preg_match(self::PACKAGE_PATH_PATTERN, $package) !== 1
+            || in_array('.', explode('/', $package), true)
+            || in_array('..', explode('/', $package), true);
+
+        if ($invalidPath) {
+            throw InvalidExtensionManifestException::invalidField(
+                'install.package',
+                'doit être un chemin RELATIF à l\'URL de base de la source (« packages/mon-paquet_1.0.0_all.deb ») : '
+                .'ni schéma, ni « .. », ni « / » initial, ni paramètre de requête, ni ancre — '
+                .'le paquet se télécharge toujours depuis l\'hôte qui a signé l\'index',
+            );
+        }
+
+        // ── sha256 : forme canonique stricte ──────────────────────────────
+        $sha256 = $install['sha256'] ?? null;
+        if (! is_string($sha256) || preg_match(self::SHA256_PATTERN, trim($sha256)) !== 1) {
+            throw InvalidExtensionManifestException::invalidField(
+                'install.sha256',
+                'doit être un sha256 de 64 caractères hexadécimaux MINUSCULES',
+            );
+        }
+
+        return [
+            'channel' => $channel,
+            'package' => $package,
+            'sha256' => trim($sha256),
+            'redirect_paths' => $this->assertRedirectPaths($install, $id),
+        ];
+    }
+
+    /**
+     * `install.redirect_paths` : chemins absolus BORNÉS au préfixe `/ext/<id>/`.
+     *
+     * Le préfixe est RECALCULÉ depuis l'`id` déjà validé — jamais lu du
+     * manifest. Une source tierce ne peut donc pas déclarer un callback OIDC
+     * pointant hors de SON extension : sinon un manifest hostile enregistrerait
+     * un client dont l'URI de redirection cible une autre application de
+     * l'instance, et récupérerait ses codes d'autorisation.
+     *
+     * Absent ou vide ⇒ `[]` : c'est l'appelant (le moteur d'installation) qui
+     * applique le défaut conventionnel `/ext/<id>/oidc/callback`.
+     *
+     * @param  array<string, mixed>  $install
+     * @return list<string>
+     *
+     * @throws InvalidExtensionManifestException
+     */
+    private function assertRedirectPaths(array $install, string $id): array
+    {
+        $paths = $install['redirect_paths'] ?? null;
+        if ($paths === null) {
+            return [];
+        }
+
+        if (! is_array($paths) || ! array_is_list($paths)) {
+            throw InvalidExtensionManifestException::invalidField(
+                'install.redirect_paths',
+                'doit être un tableau JSON de chemins — pas un objet',
+            );
+        }
+
+        $prefix = self::appEntryUrl($id).'/';
+
+        $normalized = [];
+        foreach ($paths as $path) {
+            if (! is_string($path) || trim($path) === '') {
+                throw InvalidExtensionManifestException::invalidField(
+                    'install.redirect_paths',
+                    'chaque entrée doit être une chaîne non vide',
+                );
+            }
+
+            $path = trim($path);
+
+            if (! str_starts_with($path, $prefix) || str_contains($path, '..')) {
+                throw InvalidExtensionManifestException::invalidField(
+                    'install.redirect_paths',
+                    'chaque chemin doit commencer par « '.$prefix.' » : une extension ne déclare '
+                    .'jamais un callback hors de son propre préfixe',
+                );
+            }
+
+            $normalized[] = $path;
+        }
+
+        return array_values(array_unique($normalized));
     }
 
     /**

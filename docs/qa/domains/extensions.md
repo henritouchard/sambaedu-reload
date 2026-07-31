@@ -2,7 +2,7 @@
 
 **Domaine** : système d'extensions SE5 — registre local multi-sources, manifest déclaratif (contrat public), bibliothèque d'administration et fiches d'extension.
 
-**Stories couvertes** (mise à jour 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. _Epic 56 (scopes consentis, sources distantes, type `app`, provisioning automatique des clients) à ajouter en sections suivantes quand livré._
+**Stories couvertes** (mise à jour **56.5 — Section 21** : sonde de santé persistée `ext:health:check` toutes les 5 min, tuile dégradée « Indisponible » qui SIGNALE sans jamais bloquer FR35/FR14, trois checks doctor auto-découverts `--tag=extensions`, carte « Santé » + « Sonder maintenant » sur la fiche, journal d'audit FR36 enfin consultable `/admin/extensions/journal`, signal d'échec d'écriture d'audit — **DERNIÈRE story, CLÔT l'Epic 56** ; antérieur 55.3 — **Section 15** : app-témoin SSO en quarantaine, suite d'attaque cliente NFR1, test d'architecture FR24, provisioning artisan idempotent — **DERNIÈRE story, CLÔT l'Epic 55** ; 55.2 — **Section 13** : contrat de claims v1 `name`/`role`/`groups` scope-gatés, `GET|POST /oidc/userinfo`, ensemble FERMÉ des scopes, fail-closed sur rôle et utilisateur irrésolus, discovery enrichie **additivement**) : 54.1 (socle : tables `extension_sources` + `extensions`, enums, validation du manifest v1, synchro de la source embarquée, pages `/admin/extensions` et `/admin/extensions/{id}`, frontière NFR14 avec la sync amont) ; 54.2 (intégrer/désinstaller le type `link` en un clic + confirmation par modale, journal d'audit `extension_audit_logs` FR36 socle, frontière NFR14 étendue à la 3ᵉ table) ; **54.3 (lanceur « gaufre » navbar : tuiles filtrées par rôle métier `User::businessRoles()`, ouverture nouvel onglet, état vide propre, NFR9 — 1 requête SQL / 0 HTTP) — DERNIÈRE story, clôt l'Epic 54**. **55.1 (SE5 fournisseur OIDC : registre des clients confidentiels, flux Authorization Code + PKCE S256, discovery et JWKS, id_token RS256, refus fail-closed journalisés, reprise du flux après login) — OUVRE l'Epic 55 (SSO)** ; 55.2 (contrat de claims v1 + `/userinfo`) ; **55.3 (app-témoin `app/OidcWitness/` atteinte par sa tuile, vérificateur client durci + anti-rejeu `jti`, suite d'attaque NFR1, quarantaine FR24, `oidc:witness:enable`/`disable`) — DERNIÈRE story, CLÔT l'Epic 55**. **56.1 (sources tierces + catalogue signé Ed25519 : format de dépôt v1 contrat public, pin de clé TOFU, fail-closed NFR2, dégradation NFR7, provenance impossible à ignorer FR4/UX-DR4, audit des sources FR36, `ext:sources:sync`) — OUVRE l'Epic 56** — **Section 17** ; 56.2 (installation signée d'une `app` : moteur `ext:install`/`ext:remove`, seam privilégié unique, secret OIDC par stdin, compensations, NFR8) — **Section 18** ; 56.3 (installation, mise à jour et retrait depuis l'UI : tâche de fond, progression persistée, rollback vérifié avant d'agir, verrou global reflété par l'UI) — **Section 19** ; **56.4 (scopes ACCORDÉS `oidc_clients.granted_scopes` octroyés à l'installation, révocation individuelle à effet IMMÉDIAT sur les jetons vivants FR23, API extensions `/api/ext/v1/` au format maison FR21/FR22, refus 401/403 sans fuite, FR24 prouvé, contrat v1 GELÉ NFR11) — **Section 20**, avec une REMISE À NIVEAU obligatoire des clients OIDC existants (`granted_scopes` vide après migration ⇒ fail-closed)**. **56.5 (santé des extensions et tolérance aux pannes : colonnes `health_*` écrites par un service unique, commande planifiée `ext:health:check`, badge de tuile lu et jamais mesuré NFR9, checks doctor `ExtensionsReachable`/`ExtensionsAuditTrail`/`ExtensionsOidcClients`, page journal `/admin/extensions/journal` au rendu tolérant, marqueur d'échec d'écriture d'audit acquittable) — **Section 21**, qui CLÔT l'Epic 56**.
 
 **Code de référence** :
 - `database/migrations/2026_07_28_100000_create_extension_registry_tables.php` — les 2 tables, branches `jsonb`/`json` et `timestampTz`/`timestamp`, clé naturelle `ext_natural_key`
@@ -28,6 +28,13 @@
 - `resources/views/components/organisms/app-launcher.blade.php` — SFC Livewire du lanceur « gaufre » (54.3)
 - `resources/views/components/organisms/navbar.blade.php` — insertion `<livewire:organisms.app-launcher />` (54.3)
 - `tests/Unit/Models/UserBusinessRolesTest.php`, `tests/Feature/Extensions/ExtensionLauncherServiceTest.php`, `tests/Feature/Livewire/AppLauncherTest.php` — matrice rôles×visibilités, fail-closed `app`/`available`, NFR9, FR14 (54.3)
+- `database/migrations/2026_08_07_100000_add_health_columns_to_extensions.php` — colonnes `health_*` additives, hors `$fillable` (56.5)
+- `app/Services/Extensions/ExtensionHealthService.php` — sonde `127.0.0.1:<port>` + persistance, **écrivain unique** des colonnes de santé, zéro audit (56.5)
+- `app/Console/Commands/ExtensionHealthCheck.php` + `routes/console.php` — `ext:health:check {key?}`, planifiée `everyFiveMinutes` (56.5)
+- `app/Models/Extension.php` — `isHealthMonitored()` / `healthIsStale()` / `isFlaggedUnreachable()` : LA règle du badge, un seul énoncé (56.5)
+- `app/Doctor/Checks/Extensions/{ExtensionsReachableCheck,ExtensionsAuditTrailCheck,ExtensionsOidcClientsCheck}.php` — tag `extensions`, read-only strict (56.5)
+- `app/Services/Extensions/ExtensionAuditJournalService.php` + `resources/views/pages/admin/extensions/journal/index.blade.php` — lecture FR36, rendu tolérant, aucune purge (56.5)
+- `app/Models/ExtensionAuditLog.php` — `recordWriteFailure()` / `writeFailureMarker()` / `acknowledgeWriteFailure()`, cache FICHIER (legs review 56.3 #4)
 - `app/Auth/Oidc/README.md` — topologie du namespace, invariants, catalogue `action_type` (55.1)
 - `database/migrations/2026_07_28_300000_create_oidc_provider_tables.php` — `oidc_clients`, `oidc_authorization_codes`, `oidc_access_tokens` (55.1)
 - `app/Models/{OidcClient,OidcAuthorizationCode,OidcAccessToken}.php` — colonnes de hash en `$hidden` (NFR3)
@@ -58,8 +65,48 @@
 - `config/oidc.php` § `witness` — chemin des credentials, store d'anti-rejeu, timeout HTTP, TTL du cookie d'état
 - `tests/Unit/OidcWitness/WitnessIdTokenVerifierTest.php` — **la suite d'attaque NFR1** + sa table de traçabilité (ce qui est déjà couvert par 55.1/55.2 n'y est PAS dupliqué)
 - `tests/Feature/OidcWitness/WitnessFlowTest.php` + `Concerns/ReentersTheTestKernel.php` — parcours complet par HTTP (transport substitué, protocole intact)
+- `database/migrations/2026_07_30_100000_add_remote_catalog_columns_to_extension_tables.php` — clé pinnée, état de synchro, audit de source (additive, 56.1)
+- `app/Enums/ExtensionSourceSyncStatus.php` — la table de sémantique `ok`/`unreachable`/`error` (ce qui est proposé, ce qui est prunable)
+- `app/Services/Extensions/CatalogSignatureVerifier.php` — vérification Ed25519 **pure**, base64 strict, fail-closed sans exception
+- `app/Services/Extensions/RemoteCatalogSyncService.php` — **l'ordre inviolable** octets → bornes → signature → décodage → version → manifests ; bornes HTTP, `allow_redirects => false`, `last_error` sans URL
+- `app/Services/Extensions/ExtensionSourceService.php` — add/enable/disable/remove/refresh, pin TOFU, gardes bundled et « intégrée bloque le retrait », audit
+- `app/Services/Extensions/ExtensionCatalogService.php` — `syncManifestsForSource()` extrait (invariants #1-#4 partagés) ; `library()`/`find()` filtrent l'état de la source
+- `app/Exceptions/ExtensionSourceException.php` — refus explicites destinés à l'admin
+- `app/Console/Commands/ExtensionSourcesSync.php` + `routes/console.php` — `ext:sources:sync {key?}`, planification 02:50 (moteur unique AR1)
+- `resources/views/pages/admin/extensions/sources/index.blade.php` — page des sources (ajout par modale, actualiser, activer/désactiver, retirer)
+- `config/extensions.php` § `remote` — timeouts et borne de taille de l'index (bornes de sécurité, pas de réglage métier)
+- `tests/Unit/Extensions/CatalogSignatureVerifierTest.php`, `tests/Feature/Extensions/{RemoteCatalogSyncServiceTest,ExtensionSourceServiceTest,ExtensionSourcesSyncCommandTest}.php`, `tests/Feature/Livewire/Admin/ExtensionSourcesPageTest.php` — signature, fail-closed, pin non renégocié, gardes, commande (56.1)
 - `tests/Feature/OidcWitness/{OidcWitnessCommandsTest,ExtensionIdentityLeakTest}.php` — provisioning, et « aucun identifiant de base ni d'annuaire ne fuit »
 - `tests/Architecture/ExtensionIsolationTest.php` — **FR24** : quarantaine du témoin (avec méta-test anti-tautologie), manifest sans champ exécutable, autoload sans répertoire d'extensions
+- `database/migrations/2026_08_01_100000_add_app_install_columns_to_extension_tables.php` — `installed_version`/`installed_port`/`installed_at` + `details` d'audit (additive, 56.2)
+- `app/Services/Extensions/ExtensionManifestValidator.php` § bloc `install` — canal fermé, chemin de paquet relatif borné, sha256 canonique, `redirect_paths` bornés à `/ext/<id>/`, règle AR3 `entry_url` des `app` (56.2)
+- `app/Services/Extensions/Contracts/ExtensionHelperRunner.php` — **le seul seam privilégié** du domaine (et pourquoi ce n'est pas `CommandRunner`) (56.2)
+- `app/Services/Extensions/SudoExtensionHelperRunner.php` — `sudo -n` + `proc_open`, stdin fermé avant lecture, chaque argument échappé (56.2)
+- `app/Services/Extensions/ExtensionInstallService.php` — **le moteur** : chaîne de confiance, ordre en 9 étapes, compensations inverses, verrou fichier global, allocation de port, contenu du fichier d'environnement (56.2)
+- `app/Services/Extensions/ExtensionLifecycleService.php` § `markAppInstalled`/`markAppRemoved` — transitions `app` ; `integrate()`/`uninstall()` restent `link`-only verbatim (56.2)
+- `app/Services/Extensions/ExtensionLauncherService.php` — levée BORNÉE du filtre `type = link` : une `app` n'est une tuile qu'avec un `installed_port` (56.2)
+- `app/Exceptions/ExtensionInstallException.php` — refus de CONTRAT (clé inconnue/ambiguë, moteur occupé, `link`) ; tous les autres refus passent par l'audit `install_failed`
+- `app/Console/Commands/{ExtensionInstall,ExtensionRemove}.php` — `ext:install {key} [--source=]` / `ext:remove {key}` (56.2)
+- `scripts/system/sambaedu-ext-helper.sh` — **la frontière de privilège** : namespace `sambaedu-ext-*`, chemins dérivés, `dpkg-deb --field`, fragment Apache généré, `configtest` avant reload (56.2)
+- `scripts/dev/build-test-extension.sh` — fabrique paquet + dépôt signé pour la QA, sans root (outil interne ; l'outillage éditeur est en 58.2)
+- `scripts/{install,update}.sh` § `ensure_extension_engine` — helper + sudoers validé `visudo -cf` + `a2enmod` + répertoires (56.2)
+- `scripts/setupApache.sh` + `config/apache/sambaedu.conf` — `IncludeOptional /etc/apache2/sambaedu-ext.d/*.conf` DANS le vhost :80, les deux en phase (56.2)
+- `config/extensions.php` § `install` — staging, borne de taille, timeouts, chemin du helper, plage de ports (bornes de sécurité, pas de réglage métier)
+- `tests/Support/FakeExtensionHelperRunner.php` — doublure enregistreuse : la séquence privilégiée devient une assertion
+- `tests/Unit/Extensions/{ExtensionManifestValidatorInstallBlockTest,SudoExtensionHelperRunnerTest}.php`, `tests/Feature/Extensions/{ExtensionInstallServiceTest,ExtensionInstallCommandsTest}.php` — bloc `install`, échappement/stdin, fail-closed, compensations par étape, no-op, unicité, ports, désinstallation (56.2)
+- `database/migrations/2026_08_05_100000_add_update_tracking_and_extension_install_runs.php` — `extensions.installed_sha256` (gage de rollback) + table `extension_install_runs` (additive, 56.3)
+- `app/Models/ExtensionInstallRun.php` — l'ÉTAT d'une opération (pas un journal d'audit) ; `isStale()` calculé côté PHP, jamais un `now()` SQL (56.3)
+- `app/Services/Extensions/ExtensionOperationRunner.php` — création du run + dispatch DANS la même transaction, garde de concurrence sous verrou fichier COURT, et **seul lecteur** des runs pour les deux pages (56.3)
+- `app/Jobs/RunExtensionOperationJob.php` — `tries = 1`, timeout configuré, **pas de `WithoutOverlapping`** (piège APCu daté), acteur rechargé par identifiant, les trois chemins d'erreur du moteur traités (56.3)
+- `app/Services/Extensions/ExtensionInstallService.php` § `update()` — périmètre minimal (paquet + service), `redirect_paths` et gage de rollback vérifiés AVANT d'agir, compensation par ré-installation du `.deb` antérieur (56.3)
+- `app/Services/Extensions/ExtensionInstallService.php` § `stepLabels()` / `mark()` — libellés d'étapes à un SEUL énoncé (4 consommateurs), rapport de progression isolé (il ne peut jamais faire échouer une opération) (56.3)
+- `app/Services/Extensions/ExtensionLifecycleService.php` § `markAppUpdated()` — version + empreinte, RIEN d'autre (`installed_port`/`installed_at` invariants de la clé) (56.3)
+- `app/Services/Extensions/ExtensionCatalogService.php` § `hasUpdateAvailable()` / `isAppInstallable()` — détection par ÉCART (jamais un ordre), calculée dans `toListRow()` donc héritée par la fiche (56.3)
+- `app/Console/Commands/ExtensionUpdate.php` — `ext:update {key}`, troisième façade sur le même moteur (AR1) (56.3)
+- `app/Exceptions/ExtensionOperationException.php` — refus de l'ORCHESTRATEUR (déjà en cours, écran périmé, type `link`) : toast, jamais une 500 (56.3)
+- `resources/views/pages/admin/extensions/_partials/app-operation-modal.blade.php` — LA modale à 3 usages, partagée par la bibliothèque et la fiche (avertissement tierce verbatim, scopes affichés et non accordés) (56.3)
+- `config/extensions.php` § `install.job_timeout` — borne technique du Job **et** seuil de staleness (AR14 : pas un réglage métier)
+- `tests/Feature/Extensions/{ExtensionInstallServiceUpdateTest,ExtensionOperationRunnerTest,RunExtensionOperationJobTest,ExtensionUpdateCommandTest}.php`, `tests/Feature/Livewire/Admin/ExtensionAppOperationsPageTest.php`, `tests/Unit/Extensions/ExtensionUpdateDetectionTest.php`, `tests/Unit/Models/ExtensionInstallRunTest.php` — update et ses refus, concurrence, couture Job/runs, UI et gardes (56.3)
 
 ---
 
@@ -1261,7 +1308,1232 @@ Lire `tests/Architecture/ExtensionIsolationTest.php::the_textual_scan_has_a_docu
 
 ---
 
+## Section 17 — Sources tierces et catalogue signé (Story 56.1) — **OUVRE l'Epic 56**
+
+> **Ce que cette section valide.** SE5 sait désormais tirer des extensions d'un dépôt qui n'est pas le sien. Toute la sûreté de cette ouverture tient à trois propriétés, et ce sont les trois seules choses à vérifier vraiment :
+>
+> 1. **la signature du catalogue est vérifiée AVANT que quoi que ce soit du contenu ne soit lu** ;
+> 2. **aucun chemin d'échec n'écrit ni ne supprime la moindre extension** (le registre EST le cache local — NFR7) ;
+> 3. **la clé publique d'une source est pinnée à son ajout et n'est jamais renégociée** (modèle `known_hosts` / keyring apt).
+>
+> Le reste — badges, avertissements, boutons — sert à ce que l'admin ne puisse pas installer une extension tierce en croyant installer une extension officielle (FR4/UX-DR4).
+>
+> **Dette worktree assumée, iso 54.x/55.x** : story développée dans un worktree git non synchronisé vers la VM. La suite automatisée tourne sur l'HÔTE ; les scénarios ci-dessous sont à jouer **au merge sur `main`**, après `php artisan migrate`.
+
+### Pré-requis de la section — fabriquer un dépôt de test signé
+
+Aucun outillage de publication n'existe encore (c'est la Story 58.2) : on le fait à la main, ce qui a l'avantage de montrer à quel point le format est simple.
+
+```bash
+cd /var/www/sambaedu-reload
+php artisan migrate
+php artisan db:seed --class=BundledExtensionSeeder --force
+
+# 1. La paire de la SOURCE (elle appartient à l'éditeur, jamais à SE5).
+php -r '$k=sodium_crypto_sign_keypair();
+  file_put_contents("/tmp/depot.sk", base64_encode(sodium_crypto_sign_secretkey($k)));
+  file_put_contents("/tmp/depot.pub", base64_encode(sodium_crypto_sign_publickey($k)));'
+
+# 2. Le dépôt statique : index.json + sa signature détachée + la clé publique.
+mkdir -p /var/www/depot-test
+cat > /var/www/depot-test/index.json <<'JSON'
+{
+  "index_version": 1,
+  "name": "Dépôt de test",
+  "publisher": "QA SambaEdu",
+  "extensions": [
+    { "manifest_version": 1, "id": "agenda-test", "type": "link", "name": "Agenda de test",
+      "version": "1.0.0", "entry_url": "https://example.org/agenda", "publisher": "QA",
+      "description": "Extension de test tierce.", "icon": "fa-solid fa-calendar",
+      "scopes": [], "dependencies": [], "visibility": { "roles": ["admin", "prof"] } },
+    { "manifest_version": 1, "id": "resa-test", "type": "app", "name": "Réservation (app)",
+      "version": "0.1.0", "entry_url": "/ext/resa-test", "publisher": "QA",
+      "scopes": ["profile"], "dependencies": [], "visibility": { "roles": ["prof"] } }
+  ]
+}
+JSON
+
+php -r 'file_put_contents("/var/www/depot-test/index.json.sig",
+  base64_encode(sodium_crypto_sign_detached(
+    file_get_contents("/var/www/depot-test/index.json"),
+    base64_decode(file_get_contents("/tmp/depot.sk"), true))));'
+cp /tmp/depot.pub /var/www/depot-test/source.pub
+```
+
+Publier ce dossier derrière un Alias Apache (ou n'importe quel serveur statique) : l'URL de BASE du dépôt est celle du **dossier**, jamais celle d'`index.json`.
+
+### Scénario 17.1 — Ajouter une source avec sa clé collée
+
+1. `/admin/extensions` → bouton **« Gérer les sources »** → `/admin/extensions/sources`.
+2. **« Ajouter une source »** : Nom = `Dépôt de test`, Adresse = l'URL du dossier, Clé publique = contenu de `/tmp/depot.pub`.
+3. Valider.
+
+**Attendu** :
+- toast de succès mentionnant **2 extensions** ; la carte de la source affiche le badge **« Tierce »** (icône + libellé), l'état **« Catalogue vérifié »**, la date de synchro et une empreinte abrégée de la clé ;
+- `/admin/extensions` liste **Agenda de test** ET **Réservation (app)**, chacune badgée **« Tierce »** ;
+- **Réservation (app)** n'a **aucun bouton d'action** : le type `app` s'affiche, il ne s'installe pas (Story 56.2) ;
+- `SELECT key, kind, is_official, enabled, sync_status, last_error FROM extension_sources;` → `is_official = f`, `sync_status = ok`, `last_error` vide.
+
+### Scénario 17.2 — Ajouter une source SANS coller la clé (TOFU https)
+
+1. Retirer la source du 17.1 (Scénario 17.9).
+2. La rajouter en laissant le champ **Clé publique VIDE**, avec une URL en **`https://`**.
+
+**Attendu** : SE5 lit `<url>/source.pub` **une seule fois** et la pinne. Le contrôle décisif est côté **journal d'accès du serveur du dépôt** : `grep source.pub /var/log/apache2/access.log` doit montrer **exactement une** requête, à l'ajout. Aucune actualisation ultérieure ne doit en produire d'autre (revérifier après le 17.5).
+
+### Scénario 17.3 — Un dépôt en `http://` sans clé collée est refusé
+
+1. Ajouter une source dont l'URL commence par `http://` en laissant la clé vide.
+
+**Attendu** : refus explicite (« un dépôt en http:// exige que vous colliez sa clé publique vous-même »), **la modale reste ouverte avec la saisie**, aucune ligne créée dans `extension_sources`, et **aucune requête sortante** (vérifiable au journal d'accès du dépôt).
+
+**Pourquoi** : sur un canal en clair, n'importe quel intermédiaire réseau servirait SA clé et signerait SON catalogue. La signature ne prouverait alors plus rien du tout. La contre-épreuve fait partie du scénario : la même URL `http://` **avec** la clé collée doit, elle, être **acceptée** — le miroir LAN hors ligne (AR9) reste un cas d'usage légitime.
+
+### Scénario 17.4 — Signature invalide ⇒ fail-closed, et rien n'est perdu
+
+1. Partir d'une source en état `ok` avec ses 2 extensions.
+2. Intégrer **Agenda de test** (voir 17.6) pour avoir une extension en service.
+3. Altérer le catalogue **sans le re-signer** : `sed -i 's/Agenda de test/Agenda PIRATÉ/' /var/www/depot-test/index.json`
+4. Sur `/admin/extensions/sources` → **« Actualiser »**.
+
+**Attendu** :
+- la source passe **« Catalogue refusé »** (badge rouge) avec un message court ;
+- `/admin/extensions` : l'extension **`available`** de cette source **disparaît** ; l'extension **intégrée reste listée**, avec un badge d'état signalant la source ;
+- la **tuile du lanceur de l'extension intégrée est intacte** (ouvrir la gaufre) ;
+- `SELECT count(*) FROM extensions;` : **le compte n'a pas bougé** — rien n'a été supprimé, rien n'a été écrit ;
+- le nom `Agenda PIRATÉ` n'apparaît **nulle part** : le contenu non vérifié n'a jamais été lu.
+
+Puis re-signer (`php -r` du pré-requis) et **« Actualiser »** : la source repasse « Catalogue vérifié » et le nouveau nom apparaît. Sans cette contre-épreuve, on n'a prouvé qu'une chose : que le bouton ne marche pas.
+
+### Scénario 17.5 — La clé pinnée ne se renégocie jamais
+
+1. Générer une **nouvelle paire** pour le dépôt, re-signer `index.json` avec elle, et remplacer `source.pub` par la nouvelle clé publique.
+2. **« Actualiser »**.
+
+**Attendu** : la source passe **« Catalogue refusé »**. `SELECT public_key FROM extension_sources WHERE key='depot-de-test';` → **la clé d'origine, inchangée**. `grep source.pub` dans le journal d'accès du dépôt → **aucune nouvelle requête**.
+
+**Le remède est un ACTE de l'admin** : retirer la source, la rajouter avec la nouvelle clé. Deux lignes d'audit, deux décisions humaines.
+
+**Pourquoi c'est le scénario le plus important de la section** : c'est exactement ce qui se passerait si le dépôt était compromis. Un système qui re-téléchargerait la clé accepterait la substitution sans broncher, et la signature ne serait plus qu'une décoration.
+
+### Scénario 17.6 — Provenance impossible à ignorer
+
+1. Sur `/admin/extensions`, comparer une carte **officielle** (Documentation, source embarquée) et une carte **tierce**.
+2. Cliquer **« Intégrer »** sur l'extension **tierce**.
+3. Ouvrir la **fiche** de l'extension tierce.
+4. Cliquer **« Intégrer »** sur l'extension **officielle**.
+
+**Attendu** :
+- (1) badge **« Officielle »** (certificat, vert) vs **« Tierce »** (triangle d'avertissement, orange) — **jamais** une simple différence de couleur ;
+- (2) une **modale d'avertissement** s'ouvre : « **Source non officielle : `<hôte du dépôt>`** — vous installez sous votre responsabilité ». L'hôte affiché est bien celui de l'URL de la source. Annuler ⇒ rien ne se passe ; confirmer ⇒ l'extension est intégrée et la tuile apparaît au lanceur pour les rôles visés ;
+- (3) la fiche porte le **même avertissement en encart** permanent ;
+- (4) l'extension **officielle** s'intègre toujours **en un clic**, sans modale (comportement 54.2 inchangé).
+
+Double-cliquer rapidement sur « Intégrer quand même » ne doit produire ni erreur ni double ligne d'audit (`SELECT action, count(*) FROM extension_audit_logs GROUP BY action;`).
+
+### Scénario 17.7 — Dépôt injoignable : dégradation propre (NFR7)
+
+1. Avec une extension tierce **intégrée** et en service, rendre le dépôt injoignable (arrêter le serveur statique, ou couper la résolution DNS de son hôte).
+2. **« Actualiser »**, puis recharger `/admin/extensions` et le lanceur.
+
+**Attendu** :
+- la source passe **« Dépôt injoignable »** (badge orange) ; `last_synced_at` **conserve la date de la dernière synchro RÉUSSIE** ;
+- **les extensions `available` restent proposées** : le dernier catalogue vérifié est toujours valable, le registre EST le cache local ;
+- la tuile de l'extension intégrée fonctionne ;
+- `SELECT count(*) FROM extensions;` inchangé.
+
+Contre-épreuve : rétablir le dépôt, « Actualiser », la source repasse au vert.
+
+**Différence à comprendre** : `unreachable` (réseau) ne masque rien ; `error` (signature) masque les `available`. C'est délibéré — un incident réseau ne doit rien changer pour l'admin, un contenu non authentifiable ne doit plus rien proposer.
+
+### Scénario 17.8 — Une redirection n'est jamais suivie
+
+1. Configurer le serveur du dépôt pour répondre `302` sur `index.json` vers une autre machine.
+2. **« Actualiser »**.
+
+**Attendu** : source **« Dépôt injoignable »** ; le journal d'accès de la machine CIBLE de la redirection ne montre **aucune** requête de SE5.
+
+**Pourquoi** : ne pas suivre les redirections du tout est plus simple ET plus sûr qu'une liste blanche d'hôtes — un dépôt ne peut pas se servir de SE5 comme d'un client HTTP vers un serveur qu'il choisit.
+
+### Scénario 17.9 — Désactiver, réactiver, retirer une source
+
+1. **Désactiver** la source (une de ses extensions étant intégrée).
+2. Recharger `/admin/extensions` et le lanceur.
+3. Tenter de **Retirer** la source.
+4. Désinstaller l'extension intégrée depuis la bibliothèque, puis **Retirer** à nouveau.
+5. Vérifier la source embarquée.
+
+**Attendu** :
+- (2) les extensions **non intégrées** de la source disparaissent de la bibliothèque et leur fiche répond **404** (tester l'URL directe `/admin/extensions/<id>`) ; l'extension **intégrée reste visible**, signalée « Source désactivée », et **garde sa tuile** ;
+- (3) **retrait REFUSÉ**, avec un message **nommant l'extension bloquante** ;
+- (4) le retrait passe ; `SELECT count(*) FROM extensions WHERE extension_source_id = <id>;` → 0 (cascade FK) ;
+- (5) la carte de la source **embarquée** n'expose **aucun bouton** (ni Actualiser, ni Désactiver, ni Retirer) et affiche pourquoi.
+
+**Pourquoi le refus (3)** : retirer la source emporterait ses extensions par cascade, donc des tuiles **en service**, sans que personne ne l'ait décidé. On ne dé-intègre jamais silencieusement.
+
+### Scénario 17.10 — Moteur unique : commande artisan et planification
+
+```bash
+php artisan ext:sources:sync                 # toutes les sources distantes ACTIVES
+php artisan ext:sources:sync depot-de-test   # une seule
+echo "code retour : $?"
+php artisan schedule:list | grep ext:sources:sync
+```
+
+**Attendu** :
+- tableau récapitulatif (source, statut, compteurs) ; **code retour 0** si tout est vérifié, **non-zéro** si au moins une source est en erreur ou injoignable ;
+- une source **désactivée** nommée explicitement est **refusée** (« réactivez-la avant de la synchroniser ») — la commande ne contourne pas la décision de l'admin, et le journal d'accès du dépôt le confirme (aucune requête) ;
+- `schedule:list` montre `ext:sources:sync` à **02:50** ;
+- rejouer la commande deux fois de suite ne modifie **aucune** ligne (`updated_at` des `extensions` inchangés) : la synchro est idempotente.
+
+### Scénario 17.11 — Le journal d'audit des sources (FR36)
+
+```sql
+SELECT action, source_key, actor_login, created_at
+FROM extension_audit_logs
+WHERE action LIKE 'source_%'
+ORDER BY id;
+```
+
+**Attendu** :
+- une ligne `source_add` / `source_enable` / `source_disable` / `source_remove` par acte **réel**, avec le **login de l'admin** ;
+- **désactiver une source déjà désactivée n'écrit RIEN** (no-op = zéro ligne, discipline 54.2) ;
+- `source_sync_failed` apparaît **une seule fois** par entrée en erreur, quel que soit le nombre de re-synchros ratées ensuite (rejouer `ext:sources:sync` trois fois sur un dépôt à signature invalide et recompter) ; l'acteur d'une synchro planifiée est **`system`** ;
+- une synchro **réussie** n'écrit **aucune** ligne (c'est de la télémétrie, `last_synced_at` la porte), un dépôt **injoignable** non plus ;
+- après le **retrait** d'une source, la ligne `source_remove` **subsiste** avec sa `source_key` lisible (`extension_source_id` passe à `NULL`).
+
+### Scénario 17.12 — Aucun secret dans ce qui est persisté ou affiché
+
+1. Enregistrer une source dont l'URL porterait un jeton — **elle doit être refusée à la saisie** (une URL avec `?` ou avec `user:pass@` n'est pas acceptée).
+2. Provoquer une panne réseau sur une source normale, puis lire ce qui est stocké :
+
+```sql
+SELECT key, last_error FROM extension_sources;
+```
+
+**Attendu** : `last_error` est une **catégorie courte** (« dépôt injoignable (HTTP 503 sur index.json) »), **jamais** une URL, jamais un message d'exception Guzzle. Le détail complet — URL comprise — n'existe que dans le journal serveur (`storage/logs/laravel.log`), qui n'est pas exposé à l'admin dans l'UI.
+
+**Pourquoi** : Guzzle suffixe systématiquement l'URI complète à ses messages d'erreur, et une URL de dépôt GitLab peut porter `?private_token=…`. Le piège est documenté depuis la review 39.4 #E11 d'`ArtifactPullService` ; il se rejoue à l'identique ici.
+
+---
+
+## Section 18 — Installation signée d'une extension `app` (Story 56.2)
+
+> **Ce que cette section valide.** SE5 sait maintenant *installer* — c'est-à-dire écrire dans `/etc`, faire tourner `apt`, activer une unité systemd et recharger Apache — à partir d'un manifest publié par un tiers. Trois propriétés portent toute la sûreté de cette ouverture, et ce sont les trois seules à vérifier vraiment :
+>
+> 1. **rien de tiers ne s'exécute avant que son hash n'ait été vérifié.** La première exécution de code tiers, c'est le maintainer script d'apt (`preinst`/`postinst`, en root). Le sha256 du paquet — porté par l'index déjà signé Ed25519 de la 56.1 — est comparé AVANT le premier appel au helper. Un sha qui ne colle pas ⇒ apt n'est jamais invoqué ;
+> 2. **un échec à mi-parcours ne laisse pas d'installation zombie.** Chaque étape a sa compensation, exécutées en ordre inverse ; la base est écrite en DERNIER ;
+> 3. **www-admin n'exécute jamais rien en root directement.** Il appelle UN script racine, qui re-valide tout ce qu'il reçoit et génère lui-même le fragment Apache.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (ordre des étapes, fail-closed, compensations par étape, idempotence, unicité des clés, allocation de port, contenu du fichier d'environnement, secret jamais en argv) n'a **pas** à être rejoué ici. Cette section couvre exactement ce qu'une doublure ne peut pas prouver : **le helper bash, le provisioning ops, et le parcours réel de bout en bout.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui déploie helper + sudoers + vhost, puis migre).
+
+### Pré-requis de la section — le dépôt de test et son paquet
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh          # déploie le helper, le sudoers, l'IncludeOptional, puis migre
+
+# Fabrique le paquet ET le dépôt signé (aucun privilège requis)
+bash scripts/dev/build-test-extension.sh /tmp/ext-hello
+
+# Sert le dépôt (garder ce terminal ouvert : son journal d'accès sert aux scénarios 18.6 et 18.9)
+cd /tmp/ext-hello/repo && python3 -m http.server 8099
+```
+
+Puis, dans SE5 (`/admin/extensions/sources`) → « Ajouter une source » :
+
+- **URL** : `http://<ip du serveur>:8099`
+- **Clé publique** : le contenu de `/tmp/ext-hello/repo/source.pub` — **obligatoire**, l'URL étant en `http://` (règle 17.3, inchangée).
+
+```bash
+php artisan ext:sources:sync
+```
+
+**Attendu** : l'extension « Hello (test) » apparaît dans la bibliothèque, badge **Tierce**, type **Application**, **sans aucun bouton d'action** (l'UI d'installation est la Story 56.3 ; en 56.2 le canal est la ligne de commande).
+
+### Scénario 18.1 — Le provisioning ops a bien eu lieu
+
+```bash
+ls -l /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh   # 0755 root:root
+cat /etc/sudoers.d/sambaedu-ext                          # une seule ligne www-admin
+ls -ld /etc/sudoers.d/sambaedu-ext                       # 0440
+ls -ld /etc/apache2/sambaedu-ext.d /etc/sambaedu/extensions
+apache2ctl -M | grep -E 'proxy_module|proxy_http_module|headers_module'
+grep -n 'IncludeOptional /etc/apache2/sambaedu-ext.d' /etc/apache2/sites-available/sambaedu.conf
+sudo -u www-admin sudo -n /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh 2>&1 | head -3
+```
+
+**Attendu** : helper exécutable, sudoers en **0440**, `/etc/sambaedu/extensions` en **0700 root** (www-admin ne doit PAS pouvoir lire un secret de client OIDC), `/etc/apache2/sambaedu-ext.d` en 0755, les trois modules chargés, l'`IncludeOptional` présent **dans le vhost :80** et **pas** dans le vhost legacy 8082. Le dernier appel doit afficher l'usage du helper (donc `sudo -n` fonctionne pour www-admin) et **pas** « a password is required ».
+
+**Rejouer `bash scripts/update.sh`** : tout doit être signalé « déjà à jour / déjà en place », sans réécriture.
+
+### Scénario 18.2 — Installation réelle de bout en bout
+
+```bash
+sudo -u www-admin php artisan ext:install hello
+```
+
+**Attendu** — la commande liste les étapes dans cet ordre, puis :
+
+```bash
+systemctl is-active sambaedu-ext-hello.service      # active
+systemctl is-enabled sambaedu-ext-hello.service     # enabled
+ls -l /etc/sambaedu/extensions/hello.env            # -rw------- root root
+cat /etc/apache2/sambaedu-ext.d/hello.conf          # ProxyPass /ext/hello -> 127.0.0.1:8600
+ss -lntp | grep 8600                                # écoute sur 127.0.0.1 SEULEMENT, jamais 0.0.0.0
+curl -s http://se4fs/ext/hello/                     # 200, « hello depuis l'extension de test SE5 »
+```
+
+**Attendu aussi** :
+
+- la tuile « Hello (test) » apparaît au lanceur (gaufre) pour un admin et un prof, et pointe **`/ext/hello`** ;
+- en base : `SELECT key, status, installed_version, installed_port, installed_at FROM extensions WHERE key='hello';` → `integrated`, `1.0.0`, `8600`, horodatage ;
+- une ligne d'audit : `SELECT action, details, actor_login FROM extension_audit_logs ORDER BY id DESC LIMIT 1;` → `install`, `details` vide, acteur **`system`** ;
+- un client OIDC actif : `SELECT client_id, extension_key, enabled FROM oidc_clients WHERE extension_key='hello';`.
+
+**Le secret** : `grep SE5_OIDC_CLIENT_SECRET /etc/sambaedu/extensions/hello.env` en tant que **root** le montre ; en tant que www-admin la lecture doit être **refusée**. Il ne doit apparaître ni dans la sortie de la commande, ni dans `storage/logs/laravel.log`, ni dans `journalctl -u sambaedu-ext-hello`, ni dans le journal de sudo (`/var/log/auth.log` : la ligne `sudo` ne porte que `write-env hello`).
+
+### Scénario 18.3 — Le no-op est vraiment un no-op
+
+```bash
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** : message « déjà installée », **exit 0**, **aucune** nouvelle ligne dans `extension_audit_logs`, **aucune** entrée `sudo` dans `/var/log/auth.log`, et aucune requête sur le journal du serveur de test (rien n'a été re-téléchargé).
+
+### Scénario 18.4 — Le helper refuse ce qu'il doit refuser
+
+À jouer **en root**, directement sur le helper : c'est la partie qu'aucune doublure ne peut valider.
+
+```bash
+H=/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh
+$H write-env '../evil'                    ; echo "exit=$?"   # clé invalide
+$H write-env 'hello; id'                  ; echo "exit=$?"   # clé invalide
+$H write-fragment hello 80                ; echo "exit=$?"   # port hors format
+$H write-fragment hello 'x'               ; echo "exit=$?"   # port hors format
+$H install-package hello /tmp/quelconque.deb ; echo "exit=$?" # hors staging
+$H sous-commande-inconnue                 ; echo "exit=$?"
+```
+
+**Attendu** : `exit=2` à chaque fois, message explicite en **stderr**, et **aucun fichier créé** dans `/etc/sambaedu/extensions` ni `/etc/apache2/sambaedu-ext.d`.
+
+Puis le contrôle qui protège les paquets système — un `.deb` parfaitement formé mais mal nommé :
+
+```bash
+cd /tmp && mkdir -p faux/DEBIAN && printf 'Package: openssh-server\nVersion: 9.9\nArchitecture: all\nMaintainer: x <x@x>\nDescription: faux\n' > faux/DEBIAN/control
+dpkg-deb --build --root-owner-group faux /var/www/sambaedu-reload/storage/app/extensions/packages/hello/faux.deb
+$H install-package hello /var/www/sambaedu-reload/storage/app/extensions/packages/hello/faux.deb ; echo "exit=$?"
+```
+
+**Attendu** : refus (`nom de paquet refusé : « openssh-server » (attendu « sambaedu-ext-hello »)`), **exit ≠ 0**, `apt-get` jamais invoqué. Nettoyer ensuite le faux `.deb`.
+
+Enfin, le lien symbolique — le contournement le plus naturel du contrôle de staging :
+
+```bash
+ln -s /etc/shadow /var/www/sambaedu-reload/storage/app/extensions/packages/hello/lien.deb
+$H install-package hello /var/www/sambaedu-reload/storage/app/extensions/packages/hello/lien.deb ; echo "exit=$?"
+rm -f /var/www/sambaedu-reload/storage/app/extensions/packages/hello/lien.deb
+```
+
+**Attendu** : refus (le chemin est comparé **après** `readlink -f`).
+
+### Scénario 18.5 — `configtest` protège Apache d'un fragment cassé
+
+```bash
+$H remove-fragment hello
+printf 'ProxyPass "/ext/hello" "ceci-nest-pas-une-url\n' > /etc/apache2/sambaedu-ext.d/zz-casse.conf
+$H reload-apache ; echo "exit=$?"
+systemctl is-active apache2
+rm -f /etc/apache2/sambaedu-ext.d/zz-casse.conf
+$H reload-apache ; echo "exit=$?"
+```
+
+**Attendu** : le premier `reload-apache` échoue (**exit ≠ 0**, sortie de `apache2ctl configtest` en erreur) **sans recharger**, Apache reste **actif** et sert toujours l'application. Après retrait du fragment fautif, le reload réussit. C'est la garantie qu'un fragment invalide ne peut jamais mettre le serveur à terre : le moteur voit l'échec et compense.
+
+### Scénario 18.6 — Signature invalide ⇒ fail-closed, sans la moindre trace système
+
+Altérer le paquet du dépôt **sans re-signer l'index**, puis réinstaller depuis zéro :
+
+```bash
+sudo -u www-admin php artisan ext:remove hello
+printf 'contenu-substitue' >> /tmp/ext-hello/repo/packages/sambaedu-ext-hello_1.0.0_all.deb
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** :
+
+- **exit 1**, message « sha256 du paquet non concordant » ;
+- `journalctl -u apache2 --since '2 min ago'` : **aucun** reload ; `/etc/apache2/sambaedu-ext.d/` : **vide** ;
+- `/etc/sambaedu/extensions/` : **vide** ; `dpkg -l | grep sambaedu-ext-hello` : rien ;
+- `grep sambaedu-ext-helper /var/log/auth.log | tail -5` : **aucune** invocation postérieure au `remove` — c'est la preuve terrain de « zéro exécution privilégiée » ;
+- `SELECT count(*) FROM oidc_clients WHERE extension_key='hello' AND enabled;` → **0** ;
+- audit : une ligne `install_failed`, `details = 'sha256 du paquet non concordant'`, **sans URL** ;
+- `storage/app/extensions/packages/hello/` : **aucun** fichier `.tmp` résiduel.
+
+**Contre-épreuve indispensable** : re-générer le dépôt (`bash scripts/dev/build-test-extension.sh /tmp/ext-hello`), re-synchroniser (`ext:sources:sync`) puis réinstaller — l'installation doit réussir. Sans elle, le refus ci-dessus pourrait n'être que le symptôme d'un dépôt cassé.
+
+### Scénario 18.7 — Échec à mi-parcours ⇒ état propre, relance sans intervention
+
+Provoquer un échec **après** la vérification, du côté apt. Le plus simple est de casser la dépendance du paquet de test :
+
+```bash
+sudo -u www-admin php artisan ext:remove hello
+# Rendre `apt-get install` impossible : verrou dpkg tenu par un autre processus
+( flock -x 9 ; sleep 120 ) 9>/var/lib/dpkg/lock-frontend &
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** :
+
+- **exit 1**, message « échec à l'étape apt_install » ;
+- `/etc/sambaedu/extensions/hello.env` : **absent** (compensation `remove-env` jouée) ;
+- `/etc/apache2/sambaedu-ext.d/` : vide ; aucune unité `sambaedu-ext-hello` ;
+- `SELECT status, installed_port FROM extensions WHERE key='hello';` → `available`, `NULL` — **aucune installation zombie** ;
+- `SELECT enabled FROM oidc_clients WHERE extension_key='hello';` → **`f`** (révoqué, jamais supprimé — doctrine 55.1) ;
+- **le paquet vérifié est CONSERVÉ** : `ls storage/app/extensions/packages/hello/` montre `<sha256>.deb`.
+
+Puis, une fois le verrou relâché :
+
+```bash
+sudo -u www-admin php artisan ext:install hello ; echo "exit=$?"
+```
+
+**Attendu** : succès **sans aucune intervention manuelle**, et **aucune nouvelle requête** dans le journal du serveur de test (`python3 -m http.server`) : le paquet content-addressed déjà vérifié est réutilisé.
+
+### Scénario 18.8 — Désinstallation, et ce qu'elle emporte
+
+```bash
+sudo -u www-admin php artisan ext:remove hello ; echo "exit=$?"
+curl -s -o /dev/null -w '%{http_code}\n' http://se4fs/ext/hello/   # 404
+systemctl status sambaedu-ext-hello.service 2>&1 | head -2          # unité inconnue
+dpkg -l | grep sambaedu-ext-hello                                   # rien
+ls /etc/sambaedu/extensions/ /etc/apache2/sambaedu-ext.d/           # vides
+ls /var/www/sambaedu-reload/storage/app/extensions/packages/        # plus de dossier hello
+```
+
+**Attendu aussi** : la tuile disparaît du lanceur ; `SELECT status, installed_version, installed_port, installed_at FROM extensions WHERE key='hello';` → `available`, `''`, `NULL`, `NULL` ; audit `remove` ; `SELECT enabled FROM oidc_clients WHERE extension_key='hello';` → **tous `f`**.
+
+**Idempotence** : rejouer `ext:remove hello` ⇒ message « n'est pas installée », **exit 0**, aucune ligne d'audit supplémentaire.
+
+**Refus du type `link`** : `php artisan ext:remove doc` ⇒ **exit 1** et message pointant la bibliothèque (le volet `link` de FR10 est livré depuis la 54.2 ; il ne doit pas exister deux chemins d'audit pour le même acte).
+
+### Scénario 18.9 — Les jetons de l'extension meurent avec elle
+
+Avant la désinstallation, obtenir un `access_token` pour l'extension (mécanique 55.2, cf. scénario 13.8), puis :
+
+```bash
+sudo -u www-admin php artisan ext:remove hello
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer <token>" http://se4fs/oidc/userinfo   # 401
+```
+
+**Attendu** : **401** immédiat. La révocation du client suffit — `ext:remove` n'a pas à purger les jetons, et c'est précisément pourquoi l'access token de SE5 est **opaque** et non auto-porteur.
+
+### Scénario 18.10 — NFR16 : le reste du serveur n'a pas bougé
+
+Pose du fragment (`ext:install hello`) puis retrait (`ext:remove hello`), en vérifiant **avant et après** :
+
+```bash
+curl -s -o /dev/null -w '/ipxe %{http_code}\n'  http://se4fs/ipxe/
+curl -s -o /dev/null -w '/doc %{http_code}\n'   http://se4fs/doc/
+curl -s -o /dev/null -w '/assets %{http_code}\n' http://se4fs/assets/wallpaper/
+curl -s -o /dev/null -w '/legacy %{http_code}\n' http://127.0.0.1:8082/
+curl -s -o /dev/null -w '/ext inexistante %{http_code}\n' http://se4fs/ext/nexiste-pas/
+```
+
+**Attendu** : codes **identiques** avant/après dans les deux sens. Vérifier aussi que `/etc/apache2/conf-enabled/` ne contient **rien** relatif aux extensions : l'inclusion est locale au vhost :80, jamais globale — une conf globale s'appliquerait aussi au vhost legacy 8082.
+
+### Scénario 18.11 — Unicité globale, ambiguïté, ports
+
+Publier le **même** `hello` depuis un second dépôt de test (`build-test-extension.sh /tmp/ext-hello-bis`, servi sur un autre port, ajouté comme seconde source) :
+
+```bash
+php artisan ext:sources:sync
+sudo -u www-admin php artisan ext:install hello                      # exit 1 : ambiguïté, message citant --source
+sudo -u www-admin php artisan ext:install hello --source=<clé A>     # exit 0
+sudo -u www-admin php artisan ext:install hello --source=<clé B>     # exit 1 : déjà installée depuis <clé A>
+```
+
+**Attendu** : le troisième appel refuse **en nommant la source déjà installée**, sans toucher à quoi que ce soit du système. Puis, port : installer une seconde extension de test (clé différente) ⇒ elle obtient **8601** ; désinstaller la première ⇒ une troisième installation reprend **8600** (les trous sont comblés).
+
+### Scénario 18.12 — Le catalogue ne réécrit jamais ce qui est installé
+
+Avec `hello` installée en `1.0.0`, publier une `2.0.0` au dépôt de test (modifier `version` dans `index.json`, re-signer avec `/tmp/ext-hello/source.key`), puis :
+
+```bash
+php artisan ext:sources:sync
+```
+
+**Attendu** : `SELECT version, installed_version FROM extensions WHERE key='hello';` → **`2.0.0`** et **`1.0.0`**. La version publiée bouge, la version installée non — c'est cet écart qui permettra à la Story 56.3 de proposer une mise à jour, et c'est ce qui garantit qu'une simple re-synchro n'efface pas la trace de ce qui tourne réellement. Vérifier au passage que `installed_port`, `installed_at` et `status` sont **inchangés**.
+
+## Section 19 — Installation, mise à jour et retrait depuis l'UI (Story 56.3)
+
+> **Ce que cette section valide.** La 56.2 a livré le canal : `ext:install` / `ext:remove` en ligne de commande. La 56.3 pose le bouton — et *rien d'autre*. Le moteur est le MÊME (doctrine AR1) ; ce qui est neuf, c'est la **tâche de fond**, l'**état de progression persisté** et la **mise à jour**.
+>
+> Trois propriétés portent toute la valeur de cette story, et ce sont les trois seules à vérifier vraiment :
+>
+> 1. **la progression est un FAIT en base, pas un état d'écran.** Un rechargement de page, un second onglet, un second admin voient exactement le même run. C'est ce qui distingue un suivi d'un effet visuel ;
+> 2. **la mise à jour sait revenir en arrière AVANT de partir.** Le `.deb` de la version installée est vérifié (présent, re-haché) *avant* qu'apt ne soit invoqué. Une mise à jour dont on ne sait pas revenir n'a pas le droit de commencer ;
+> 3. **le verrou est global, et l'UI le reflète sans le remplacer.** Deux admins, un double-clic, un rechargement : un seul run. Un worker tué ne condamne pas la bibliothèque.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (séquence privilégiée exacte de l'update, fail-closed du sha256, refus `redirect_paths_changed` et `rollback_package_missing` avant toute action, compensations, atomicité run⇒Job, trois chemins d'erreur du Job, matrice de détection de mise à jour, staleness, modale et gardes Livewire) n'a **pas** à être rejoué ici. Cette section couvre exactement ce qu'une doublure ne peut pas prouver : **la chaîne de file d'attente réelle, un apt réel qui rate à mi-parcours, deux navigateurs simultanés, et un worker qu'on arrête.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1/56.2** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui redéploie le helper — modifié — puis migre).
+
+### Pré-requis de la section
+
+La Section 18 doit avoir été jouée : dépôt de test servi, source ajoutée avec sa clé pinnée, extension `hello` visible au catalogue.
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh          # redéploie le helper (restart-service + --allow-downgrades), puis migre
+
+# Le helper doit avoir été RÉÉCRIT (le `cmp` de ensure_extension_engine détecte le changement)
+grep -c 'restart-service' /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh   # ≥ 3
+grep -c 'allow-downgrades' /usr/share/sambaedu/sbin/sambaedu-ext-helper.sh  # 1
+
+# Les workers de file doivent tourner : c'est EUX qui exécuteront les installations
+systemctl is-active laravel-queue-general laravel-queue-worker laravel-queue-sync
+php artisan queue:monitor default
+```
+
+Repartir d'un état propre : `php artisan ext:remove hello` si l'extension est encore installée depuis la Section 18.
+
+### Scénario 19.1 — Intégrer une `app` depuis la bibliothèque, progression observée
+
+Dans `/admin/extensions`, la carte « Hello (test) » porte désormais un bouton **« Intégrer »** (elle n'en avait aucun en 56.2).
+
+1. Cliquer sur **« Intégrer »**.
+
+**Attendu — la modale de confirmation** : titre « Intégrer l'extension », **provenance** (nom de la source, hôte réel du dépôt, badge **Tierce**), **bloc d'avertissement** « Source non officielle : `<hôte>` — vous installez sous votre responsabilité » au texte **identique** à celui de la 56.1, et la liste des **scopes demandés** (`profile` pour le dépôt de test). Une seule modale — jamais deux enchaînées.
+
+2. Cliquer **« Annuler »** : rien ne se passe.
+
+```sql
+SELECT count(*) FROM extension_install_runs;   -- 0
+```
+
+3. Rouvrir, puis **« Intégrer »**.
+
+**Attendu** : toast « Intégration en cours », bandeau d'opération en haut de page avec un spinner, et la carte qui affiche l'étape courante. Les étapes défilent avec les **mêmes libellés** que la CLI (« paquet téléchargé et sha256 vérifié », « client OIDC enregistré », …).
+
+```bash
+# Le Job est réellement passé par la file d'attente
+sudo -u www-admin php artisan tinker --execute="dump(DB::table('extension_install_runs')->latest('id')->first());"
+journalctl -u laravel-queue-general -n 30 --no-pager | grep -i RunExtensionOperationJob
+```
+
+**Attendu** : un run `operation=install`, `status` passant `pending → running → success`, `steps` remplies dans l'ordre, `requested_by_login` = votre login (**jamais** `system` — un acte d'UI a un auteur), `started_at` et `finished_at` renseignés.
+
+4. À la fin : toast de succès **une seule fois**, badge « Intégrée », tuile visible au lanceur, `curl -sI http://localhost/ext/hello` en 200.
+
+```sql
+SELECT action, actor_login, details FROM extension_audit_logs WHERE extension_key='hello' ORDER BY id DESC LIMIT 3;
+```
+
+**Attendu** : une ligne `install` avec **votre login** comme acteur.
+
+### Scénario 19.2 — Le monitoring des workers voit passer le Job (gratuitement)
+
+```
+/admin/workers
+```
+
+**Attendu** : le Job apparaît dans le suivi générique `queue_task_runs` (hooks `Queue::before/after` d'`AppServiceProvider`) — **sans que la Story 56.3 n'y écrive quoi que ce soit**. Vérifier que la file consommée est bien `default`.
+
+```sql
+SELECT job_name, queue, status FROM queue_task_runs ORDER BY id DESC LIMIT 5;
+```
+
+### Scénario 19.3 — Deux admins, deux navigateurs : un seul run
+
+Deux sessions simultanées (deux navigateurs, ou un mode privé), toutes deux sur `/admin/extensions`.
+
+1. Admin A lance une **désinstallation** de `hello`.
+2. **Sans attendre**, admin B tente une opération sur n'importe quelle extension.
+
+**Attendu** :
+- chez B, **tous** les boutons d'opération `app` sont **désactivés** — de toutes les cartes, pas seulement celle de `hello` (le verrou du moteur est global, la page le reflète) ;
+- si B force malgré tout (double-clic rapide avant rafraîchissement), il reçoit le toast « **Une opération d'extension est déjà en cours** » et **aucun second run n'est créé** ;
+- B voit **la même progression** que A, avec « Demandée par `<login de A>` ».
+
+```sql
+SELECT id, operation, status, requested_by_login FROM extension_install_runs ORDER BY id DESC LIMIT 3;
+```
+
+**Attendu** : **une seule** ligne active.
+
+3. Recharger la page de A en pleine opération (F5) : la progression **reprend là où elle en est** — l'état vit en base, pas dans le composant.
+
+### Scénario 19.4 — Zéro polling au repos
+
+Console réseau du navigateur ouverte, sur `/admin/extensions`, **aucune opération en cours**.
+
+**Attendu** : **aucune** requête Livewire périodique. Le `wire:poll` n'est rendu que lorsqu'il y a quelque chose à suivre — une page d'administration ouverte toute la journée ne doit pas marteler le serveur.
+
+Relancer une opération : les requêtes reprennent toutes les 3 s, puis **cessent** à la fin du run.
+
+### Scénario 19.5 — Publier une 1.1.0 et mettre à jour depuis l'UI
+
+`hello` doit être installée en `1.0.0`.
+
+```bash
+# Republie dans LE MÊME dépôt, avec LA MÊME clé (le pin TOFU de la source reste valide)
+bash scripts/dev/build-test-extension.sh --version 1.1.0 /tmp/ext-hello
+# (le serveur http.server de la Section 18 continue de servir /tmp/ext-hello/repo)
+
+php artisan ext:sources:sync
+```
+
+```sql
+SELECT version, installed_version, installed_sha256 FROM extensions WHERE key='hello';
+```
+
+**Attendu** : `1.1.0` publiée, `1.0.0` installée, `installed_sha256` = le sha du `.deb` de la 1.0.0 (`sha256sum /tmp/ext-hello/repo/packages/sambaedu-ext-hello_1.0.0_all.deb`).
+
+Dans `/admin/extensions` :
+
+**Attendu** : badge **« Mise à jour disponible »** sur la carte et bouton **« Mettre à jour »**. Sur la fiche : ligne « Version installée : 1.0.0 (catalogue : 1.1.0) ».
+
+Cliquer **« Mettre à jour »** → la modale nomme **les deux versions** et récapitule la provenance et les scopes du **nouveau** manifest.
+
+Confirmer, puis observer :
+
+```bash
+journalctl -u sambaedu-ext-hello -n 20 --no-pager    # un RESTART, pas un reload
+curl -s http://localhost/ext/hello                    # sert toujours
+sudo -u www-admin ls -l /var/www/sambaedu-reload/storage/app/extensions/packages/hello/
+```
+
+**Attendu** :
+- séquence privilégiée **minimale** : `install-package` puis `restart-service`, **rien d'autre** — pas de `write-env`, pas de `write-fragment`, pas de `reload-apache` (`grep sambaedu-ext-helper /var/log/auth.log | tail`) ;
+- `installed_version = 1.1.0`, `installed_sha256` = sha du nouveau `.deb`, **`installed_port` et `installed_at` inchangés** ;
+- **DEUX** `.deb` en staging (l'ancien reste : c'est le gage de rollback de la prochaine mise à jour) ;
+- audit `update` avec votre login ;
+- le client OIDC est le **même** (`SELECT client_id, enabled FROM oidc_clients WHERE extension_key='hello';`) — donc la session SSO déjà ouverte dans l'extension continue de fonctionner ;
+- `/etc/sambaedu/extensions/hello.env` : `mtime` **inchangé**.
+
+### Scénario 19.6 — Mise à jour déjà à jour : no-op signalé
+
+Recliquer « Mettre à jour » n'est pas possible (le bouton a disparu). En ligne de commande :
+
+```bash
+php artisan ext:update hello ; echo "exit=$?"
+```
+
+**Attendu** : « déjà à la version publiée par sa source — aucune action », **exit 0**, **aucune** invocation du helper (`/var/log/auth.log`), **aucune** ligne d'audit.
+
+### Scénario 19.7 — Rollback RÉEL : casser apt à mi-mise-à-jour
+
+Republier une `1.2.0` dont le paquet est **installable mais dont le maintainer script échoue** :
+
+```bash
+bash scripts/dev/build-test-extension.sh --version 1.2.0 /tmp/ext-hello
+
+# Saboter le postinst du paquet 1.2.0 puis re-signer l'index
+cd /tmp/ext-hello
+mkdir -p broken && dpkg-deb -R repo/packages/sambaedu-ext-hello_1.2.0_all.deb broken
+printf '#!/bin/sh\nexit 1\n' > broken/DEBIAN/postinst && chmod 0755 broken/DEBIAN/postinst
+dpkg-deb --build --root-owner-group broken repo/packages/sambaedu-ext-hello_1.2.0_all.deb
+NEW_SHA=$(sha256sum repo/packages/sambaedu-ext-hello_1.2.0_all.deb | cut -d' ' -f1)
+python3 - "$NEW_SHA" <<'PY'
+import json, sys
+p = "/tmp/ext-hello/repo/index.json"
+d = json.load(open(p))
+d["extensions"][0]["install"]["sha256"] = sys.argv[1]
+json.dump(d, open(p, "w"), ensure_ascii=False, indent=2)
+PY
+php -r '
+  $sk = base64_decode(trim(file_get_contents("/tmp/ext-hello/source.key")));
+  $i  = file_get_contents("/tmp/ext-hello/repo/index.json");
+  file_put_contents("/tmp/ext-hello/repo/index.json.sig", base64_encode(sodium_crypto_sign_detached($i, $sk)));
+'
+cd /var/www/sambaedu-reload && php artisan ext:sources:sync
+```
+
+Lancer la mise à jour **depuis l'UI**.
+
+**Attendu** :
+- le run termine **`failed`**, la carte affiche « Mise à jour en échec : échec à l'étape apt_install » ;
+- `journalctl -u sambaedu-ext-hello` montre un **redémarrage** après la compensation ;
+- `dpkg-query -W -f='${Version}\n' sambaedu-ext-hello` → **1.1.0** : l'ancienne version est **re-servie** ;
+- `curl -s http://localhost/ext/hello` répond toujours ;
+- en base : `installed_version = 1.1.0`, `installed_sha256` inchangé — **la base dit ce qui tourne** ;
+- audit `update_failed` avec la catégorie d'étape, **sans URL** ;
+- les boutons redeviennent cliquables, la mise à jour est **rejouable**.
+
+> C'est le scénario le plus important de la section : sans lui, « rollback » n'est qu'une intention écrite dans un docblock.
+
+### Scénario 19.8 — `--allow-downgrades` : republier une version antérieure
+
+```bash
+bash scripts/dev/build-test-extension.sh --version 1.0.0 /tmp/ext-hello
+php artisan ext:sources:sync
+```
+
+**Attendu** : la bibliothèque propose une « Mise à jour disponible » vers `1.0.0` — la règle est un **écart**, pas un ordre (la source est l'autorité de sa fraîcheur, modèle apt). La mise à jour aboutit : sans `--allow-downgrades`, apt aurait refusé — et ce même drapeau est ce qui rend le rollback du 19.7 exécutable.
+
+### Scénario 19.9 — `redirect_paths` modifiés : refus AVANT toute action
+
+Republier une version dont le manifest déclare un `redirect_paths` différent :
+
+```bash
+python3 - <<'PY'
+import json
+p = "/tmp/ext-hello/repo/index.json"
+d = json.load(open(p))
+d["extensions"][0]["version"] = "1.3.0"
+d["extensions"][0]["install"]["redirect_paths"] = ["/ext/hello/nouveau/callback"]
+json.dump(d, open(p, "w"), ensure_ascii=False, indent=2)
+PY
+php -r '
+  $sk = base64_decode(trim(file_get_contents("/tmp/ext-hello/source.key")));
+  $i  = file_get_contents("/tmp/ext-hello/repo/index.json");
+  file_put_contents("/tmp/ext-hello/repo/index.json.sig", base64_encode(sodium_crypto_sign_detached($i, $sk)));
+'
+cd /var/www/sambaedu-reload && php artisan ext:sources:sync
+```
+
+**Attendu** : la mise à jour est **refusée avant toute action** — carte en erreur « URI de redirection modifiées — désinstaller puis réinstaller », **aucune** invocation du helper dans `/var/log/auth.log`, **aucun** téléchargement dans le journal d'accès du dépôt, audit `update_failed`. L'extension tourne toujours dans sa version d'avant.
+
+### Scénario 19.10 — Gage de rollback absent : la mise à jour ne démarre pas
+
+```bash
+sudo -u www-admin rm -f /var/www/sambaedu-reload/storage/app/extensions/packages/hello/*.deb
+```
+
+Republier une version supérieure, re-synchroniser, puis tenter la mise à jour depuis l'UI.
+
+**Attendu** : refus immédiat, « paquet de la version installée absent ou corrompu — désinstaller puis réinstaller », **zéro** appel au helper, **zéro** téléchargement. Reproduire avec un `.deb` **corrompu** (`truncate -s 10 …/<sha>.deb`) : même refus — le nom du fichier ne fait jamais foi, il est re-haché.
+
+### Scénario 19.11 — Worker arrêté : le run attend, puis cesse de bloquer
+
+```bash
+systemctl stop laravel-queue-general laravel-queue-worker laravel-queue-sync
+```
+
+Lancer une intégration depuis l'UI.
+
+**Attendu** :
+- le run reste **`pending`**, la page affiche « en attente », les boutons sont gelés ;
+- **rien** n'est installé (aucune ligne helper dans `auth.log`).
+
+```bash
+systemctl start laravel-queue-general laravel-queue-worker laravel-queue-sync
+```
+
+**Attendu** : le Job est repris, l'opération se termine normalement, le toast de fin arrive.
+
+**Variante « worker tué en plein travail »** : relancer une opération, puis `systemctl kill -s SIGKILL laravel-queue-general` pendant l'exécution. Le run reste `running`. Au-delà de `job_timeout + 300 s` (30 min + 5 min par défaut), l'UI l'affiche « **Interrompue** », les boutons **redeviennent cliquables**, et le run n'est **ni retraité ni réécrit**. Pour raccourcir l'attente en QA : `EXTENSIONS_INSTALL_JOB_TIMEOUT=60` dans `.env` + `php artisan config:clear`.
+
+> ⚠️ Le verrou du **moteur** expire seul au bout de 600 s : c'est lui, et non la staleness, qui arbitre réellement. La staleness ne fait que libérer l'**interface**.
+
+### Scénario 19.12 — Désinstaller une `app` depuis l'UI
+
+Cliquer **« Désinstaller »** sur `hello`.
+
+**Attendu — la modale** : elle dit que **le paquet, son service, l'exposition `/ext/hello` et le client SSO** seront retirés et que **les données de l'extension seront purgées**. Surtout **PAS** le texte du type `link` (« il n'y a rien à nettoyer »).
+
+Confirmer, puis vérifier comme au 18.8 : unité disparue, paquet purgé, fragment retiré, staging nettoyé, tuile disparue du lanceur, badge « Disponible », audit `remove` avec **votre login**, run `operation=remove` en `success`.
+
+### Scénario 19.13 — Le cycle `link` n'a pas bougé d'un pixel
+
+Sur la tuile **Documentation** (`link`, source officielle) :
+
+**Attendu** : « Intégrer » reste **un clic**, **synchrone et instantané** — aucune modale, aucun run, aucun Job. La modale de désinstallation `link` conserve son texte « il n'y a rien à nettoyer ».
+
+```sql
+SELECT count(*) FROM extension_install_runs WHERE extension_id = (SELECT id FROM extensions WHERE key='doc');
+```
+
+**Attendu** : `0`. Le canal de fond n'existe que pour le type `app`.
+
+### Scénario 19.14 — Écran périmé : no-op propre, jamais une 500
+
+Deux onglets sur `/admin/extensions`. Désinstaller `hello` dans l'onglet A. Dans l'onglet B (périmé), cliquer « Mettre à jour » puis confirmer.
+
+**Attendu** : toast d'information ou d'erreur métier, **page rechargée et remise en phase**, aucune 500, aucune ligne d'audit parasite. Même contrôle depuis la fiche : si l'extension a été prunée entre-temps, retour à la bibliothèque.
+
+---
+
+## Section 20 — Scopes accordés et API extensions (Story 56.4)
+
+> **Ce que cette section valide.** Les Sections 18/19 ont livré l'installation d'une extension `app` ; la Section 13 a livré le contrat de claims. La 56.4 relie les deux : ce que l'extension DEMANDE devient ce qu'elle REÇOIT, ce qu'elle reçoit devient **révocable**, et elle dispose enfin d'une **API** pour le consommer.
+>
+> Trois propriétés portent toute la valeur, et ce sont les seules à vérifier vraiment :
+>
+> 1. **la révocation est IMMÉDIATE sur les jetons déjà émis.** Pas de purge, pas de ré-authentification : le scope effectif est recalculé à chaque usage. C'est ce qu'il faut voir de ses yeux, avec un `curl` et le *même* Bearer avant et après ;
+> 2. **le refus ne renseigne pas.** Cinq causes de 401, un seul corps. Un 403 qui ne nomme aucun scope. Les codes fins ne vivent que dans `storage/logs/oidc-*.log` ;
+> 3. **rien de la base ni de l'annuaire ne sort** (FR24) : ni `ad_guid`, ni `dn`, ni `users.id`, ni email.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (downscope à l'émission, liste exacte des clés de chaque réponse, 401 indistincts × 5 causes, 403 hors scope, jeton en query ignoré, octroi fail-closed à l'installation, idempotence de la révocation, invariance des grants à l'update, gardes Livewire) n'a **pas** à être rejoué ici. Cette section couvre ce qu'une doublure ne peut pas prouver : **Apache devant l'API, un vrai navigateur pour révoquer, le throttle réel, et la remise à niveau des clients OIDC déjà présents sur la VM.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1-56.3** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui migre — la colonne `granted_scopes` est ajoutée à ce moment-là).
+
+### Pré-requis — ⚠️ REMISE À NIVEAU DES CLIENTS OIDC EXISTANTS
+
+La migration ajoute `oidc_clients.granted_scopes` avec le défaut `[]`, **volontairement fail-closed** : les clients créés par les runbooks des Sections 11 à 19 (app-témoin, clients de test déclarés à la main, extensions installées avant la migration) se retrouvent **sans aucun scope accordé**. Symptôme attendu si l'on saute cette étape : le SSO fonctionne toujours, mais l'app-témoin n'affiche plus ni nom, ni rôle, ni groupes — et `/oidc/userinfo` ne rend que `{"sub": "..."}`.
+
+Ce n'est **pas** une régression : c'est le fail-closed qui fait son travail. Un consentement que personne n'a donné ne s'hérite pas.
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh
+
+# 1. Constater l'état après migration (tous les clients à `[]`)
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT client_id, extension_key, enabled, granted_scopes FROM oidc_clients ORDER BY id;"
+
+# 2. Ré-octroyer au témoin (rejoue l'enregistrement ET le fichier de credentials)
+php artisan oidc:witness:disable
+php artisan oidc:witness:enable          # affiche désormais « scopes : profile groups »
+
+# 3. Ré-enregistrer les clients de test des Sections 11-13 au besoin
+php artisan oidc:client:register "Client QA" --redirect-uri=https://qa.example.test/cb
+#   → sans --scope : profile ET groups accordés (défaut opérateur)
+#   → --scope=profile : restreint à profile
+#   → --scope=directory ou --scope=openid : REFUSÉ, exit 1, aucun client créé
+
+# 4. Une extension `app` déjà installée AVANT la migration n'a pas de grants :
+#    la seule façon de les lui rendre est de la réinstaller (le consentement est
+#    un acte d'installation). `ext:update` n'y touche pas — c'est voulu.
+php artisan ext:remove hello && php artisan ext:install hello --source=<clé-source>
+```
+
+**Attendu** : après ces gestes, `granted_scopes` vaut `["groups","profile"]` pour le témoin, et `["profile","groups"]` (dans l'ordre du manifest, normalisé) pour `hello` si son manifest les demande.
+
+### Scénario 20.1 — L'octroi à l'installation, observé
+
+Servir depuis le dépôt de test une extension `hello` dont le `manifest.json` déclare `"scopes": ["profile", "groups"]` (`scripts/qa/build-test-extension.sh`, puis re-signer l'index). Synchroniser la source, puis installer depuis l'UI.
+
+```bash
+php artisan ext:sources:sync
+php artisan ext:install hello --source=<clé-source>
+
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT extension_key, granted_scopes FROM oidc_clients WHERE extension_key='hello';"
+```
+
+**Attendu** : `["groups", "profile"]` — trié, dédupliqué, exactement les scopes du manifest. Ni plus (pas d'`openid`, qui n'est jamais listé), ni moins.
+
+### Scénario 20.2 — Un scope non supporté fait ÉCHOUER l'installation
+
+Republier `hello` avec `"scopes": ["profile", "calendar"]` dans son manifest (index re-signé), re-synchroniser, puis tenter l'installation.
+
+```bash
+php artisan ext:install hello --source=<clé-source>; echo "exit=$?"
+
+# Aucun composant système ne doit avoir été touché :
+grep -c sambaedu-ext-helper /var/log/auth.log      # inchangé par rapport à avant la tentative
+sudo -u postgres psql -d sambaedu -c "SELECT count(*) FROM oidc_clients WHERE extension_key='hello';"
+```
+
+**Attendu** : exit ≠ 0, message « scope demandé non supporté par SE5 — mettre à jour l'extension ou le serveur », **aucun appel au helper**, **aucun client créé**, et une ligne `install_failed` en base portant cette catégorie. Refuser vaut mieux qu'accorder à moitié : une extension installée avec `profile` seul échouerait à l'usage sans que rien ne l'explique.
+
+### Scénario 20.3 — La fiche : demandées vs réellement accordées
+
+Ouvrir `/admin/extensions/<id>` de `hello` (installée avec ses deux scopes) dans un vrai navigateur.
+
+**Attendu** : la carte « Autorisations » montre **deux blocs distincts** — « Demandées par le manifest » (badges neutres) et « Réellement accordées » (badges verts, chacun avec sa croix de révocation). Sur une extension de type `link` (Documentation), le second bloc est **absent** : elle n'a aucun client OIDC.
+
+### Scénario 20.4 — LE scénario : révoquer, et le constater sur un jeton VIVANT
+
+C'est le cœur de la story. Il faut un access token réel, obtenu par un vrai flux SSO.
+
+```bash
+# 1. Se connecter à l'app-témoin dans un navigateur (tuile « Démo SSO »), puis
+#    récupérer l'access token le plus récent de son client :
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT id, scope, expires_at FROM oidc_access_tokens ORDER BY id DESC LIMIT 1;"
+```
+
+Le jeton CLAIR n'est jamais stocké (seul son sha256 l'est) : pour disposer du clair, dérouler le flux à la main (Section 11 / Scénario 11.6) ou instrumenter le témoin. Poser ensuite :
+
+```bash
+TOKEN='<access_token clair>'
+
+# 2. AVANT — contrôle POSITIF, indispensable : sans lui, l'étape 4 ne prouverait rien
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/oidc/userinfo | jq
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me | jq
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me/groups | jq
+```
+
+**Attendu (avant)** : `/oidc/userinfo` rend `sub`, `name`, `role`, `groups` ; `me` rend `{success, message, sub, name, role}` ; `me/groups` rend `{success, message, sub, groups}` — clés métier **à la racine**, aucun wrapper `data`, en-tête `Cache-Control: no-store`.
+
+```
+3. Depuis le NAVIGATEUR, sur la fiche de l'extension : cliquer la croix de « groups »,
+   lire la modale (« y compris pour ses jetons en cours », « irréversible »), confirmer.
+```
+
+**Attendu (modale + toast)** : toast vert « Autorisation « groups » révoquée. », le badge disparaît du bloc « accordées » et **reste** dans « demandées ».
+
+```bash
+# 4. APRÈS — le MÊME jeton, sans reconnexion, sans attendre
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/oidc/userinfo | jq
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  https://<serveur>/api/ext/v1/me/groups
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  https://<serveur>/api/ext/v1/me
+```
+
+**Attendu (après)** : `/oidc/userinfo` ne rend plus `groups` (mais toujours `sub`, `name`, `role`) ; `me/groups` → **403** ; `me` → **200**. On a révoqué une DONNÉE, pas l'accès.
+
+```bash
+# 5. La trace d'audit (FR36) et le journal
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT action, details, actor_login, created_at FROM extension_audit_logs
+   WHERE action='scope_revoke' ORDER BY id DESC LIMIT 3;"
+grep -h 'oidc.client.scope_revoked\|oidc.ext_api.rejected' storage/logs/oidc-*.log | tail -5
+```
+
+**Attendu** : une ligne `scope_revoke` dont `details` vaut `groups` et `actor_login` l'admin connecté (jamais `system` pour un acte d'UI) ; au journal, `oidc.client.scope_revoked` puis `oidc.ext_api.rejected` avec le code `oidc.access_token_scope_insufficient`. **Aucun secret, aucun jeton, aucun nom d'utilisateur** dans ces lignes.
+
+### Scénario 20.5 — Un nouveau flux est RÉDUIT, pas refusé
+
+Après la révocation du 20.4, se reconnecter à l'app-témoin.
+
+**Attendu** : la connexion **aboutit** (le SSO n'est pas cassé — c'est tout l'intérêt de réduire plutôt que de refuser), la page témoin affiche nom et rôle mais plus de groupes, et la réponse du token endpoint annonce la réduction :
+
+```bash
+grep -h 'oidc.token.issued' storage/logs/oidc-*.log | tail -1
+sudo -u postgres psql -d sambaedu -c "SELECT scope FROM oidc_access_tokens ORDER BY id DESC LIMIT 1;"
+```
+
+**Attendu** : le jeton nouvellement émis porte `openid profile` — pas `openid profile groups`.
+
+⚠️ **Résidu assumé, à ne pas prendre pour un bug** : l'**id_token** déjà délivré à un navigateur porte ses claims jusqu'à son `exp` (300 s) — un JWT est auto-porteur, rien ne peut le rappeler. Seuls les access tokens (opaques) sont réduits instantanément. Une page témoin ouverte peut donc encore afficher les groupes pendant moins de cinq minutes ; un rechargement après expiration ne les montre plus.
+
+### Scénario 20.6 — `openid` n'est pas révocable
+
+**Attendu** : aucune croix n'est proposée pour `openid` — il n'apparaît pas dans « accordées », puisqu'il n'est jamais accordé. Un appel forgé (console navigateur) ne le retire pas davantage : toast d'information, aucune ligne d'audit, `granted_scopes` inchangé. Retirer l'identité, c'est désinstaller l'extension (FR10), pas révoquer un scope.
+
+### Scénario 20.7 — Les familles de refus, à travers Apache
+
+```bash
+API=https://<serveur>/api/ext/v1/me
+
+curl -sk -i $API | head -5                                        # aucun jeton
+curl -sk -i -H "Authorization: Bearer inconnu" $API | head -5      # jeton inconnu
+curl -sk -i -H "Authorization: Bearer $TOKEN_EXPIRE" $API | head -5 # jeton périmé (> 600 s)
+curl -sk -i "$API?access_token=$TOKEN" | head -5                   # jeton en query
+```
+
+**Attendu** : `401` dans les quatre cas, avec le **même corps** `{"success":false,"message":"Jeton d'accès absent, invalide ou expiré.","error":"invalid_token"}` et l'en-tête `WWW-Authenticate: Bearer realm="ext-api"` (avec `error="invalid_token"` dès qu'un jeton a été présenté). Le jeton passé en query est traité comme **absent** : il ne doit jamais atterrir dans les logs d'Apache comme un identifiant valide.
+
+Les causes ne se distinguent QUE dans `storage/logs/oidc-*.log` :
+
+```bash
+grep -h 'oidc.ext_api.rejected' storage/logs/oidc-*.log | tail -6
+```
+
+**Attendu** : des codes `oidc.access_token_missing`, `oidc.access_token_invalid`, `oidc.access_token_expired`, avec un `token_hash_prefix` de 8 caractères pour corréler — jamais le jeton complet.
+
+### Scénario 20.8 — Client révoqué : l'accès entier tombe
+
+```bash
+php artisan oidc:client:revoke <client_id>
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me
+```
+
+**Attendu** : `401` (et non 403) — un client révoqué n'a plus d'accès du tout, ses jetons meurent avec lui. Même corps que les autres 401. C'est aussi ce qui se passe après `ext:remove` : la désinstallation emporte le client, donc les grants et les jetons.
+
+### Scénario 20.9 — Throttle réel
+
+```bash
+for i in $(seq 1 70); do
+  curl -sk -o /dev/null -w '%{http_code} ' -H "Authorization: Bearer $TOKEN" \
+    https://<serveur>/api/ext/v1/me
+done; echo
+```
+
+**Attendu** : les premières requêtes en `200`, puis des `429` au-delà de 60 par minute. Le canal est ouvert à du code tiers : il est borné.
+
+### Scénario 20.10 — FR24 : ce que l'API ne dira jamais
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me > /tmp/me.json
+curl -sk -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me/groups > /tmp/groups.json
+grep -Ei 'ad_guid|CN=|dc=|memberOf|@|"id"' /tmp/me.json /tmp/groups.json
+```
+
+**Attendu** : aucune correspondance. Et le contrôle POSITIF adossé, sans lequel deux fichiers vides passeraient aussi : `jq -r .name /tmp/me.json` rend le nom affiché, `jq -r '.groups | length' /tmp/groups.json` rend le nombre de classes. Le contrat v1 tient en cinq clés côté `me` et quatre côté `me/groups` — **rien d'autre ne doit y figurer**, jamais (NFR11 : ce qui entre dans v1 n'en sort plus).
+
+### Scénario 20.11 — Le contrat v1 est versionné
+
+```bash
+curl -sk -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v2/me
+curl -sk -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" https://<serveur>/api/ext/v1/me
+```
+
+**Attendu** : `404` pour `/v2` (il n'existe pas — il n'existera que le jour d'une rupture, et le v1 continuera alors d'être servi à côté) et `405` pour un POST sur `me` (le v1 est en lecture seule).
+
+---
+
+## Section 21 — Santé des extensions, tuile dégradée et journal d'audit (Story 56.5)
+
+> **Ce que cette section valide.** Les Sections 17 à 20 ont livré les sources signées, le moteur d'installation, l'UI d'opération et les scopes. La 56.5 est la **dernière de l'Epic 56** : elle rend l'état des extensions OBSERVABLE, et elle prouve que la panne d'une extension n'emporte rien d'autre qu'elle-même.
+>
+> Trois propriétés portent toute la valeur :
+>
+> 1. **la sonde MESURE, la navbar LIT** (NFR9). L'état vit dans quatre colonnes de `extensions`, écrites par `ext:health:check` toutes les 5 minutes et par ce seul chemin. Aucune page de SE5 n'émet la moindre requête vers une extension pour se rendre — c'est vérifiable en coupant tous les backends et en constatant que rien ne ralentit ;
+> 2. **la tuile SIGNALE, elle ne bloque jamais** (FR35 sous contrainte FR14). Une extension arrêtée porte un badge « Indisponible » et **reste cliquable** : l'état peut dater de 5 minutes, et bloquer transformerait un affichage en autorisation ;
+> 3. **le journal d'audit FR36 est enfin LISIBLE** — et il ne montrera jamais une URL de dépôt, un secret ni une empreinte de paquet.
+>
+> Ce que la suite automatisée prouve déjà sur l'hôte (transitions de la sonde, incident écrit à la transition seulement et conservé au retour du backend, 4xx/5xx = joignable, catégorie sans URL ni message Guzzle, zéro ligne d'audit pour la santé, badge absent si l'état est périmé ou inconnu, 1 requête SQL / 0 HTTP au rendu du lanceur badgé, survie sans les colonnes `health_*`, verdicts des trois checks doctor, absence de side effect du check, carte « Santé » et `probeNow()`, pagination et filtres du journal, action inconnue rendue telle quelle, aucune URL en base rendue à l'écran, bandeau et acquittement du marqueur) n'a **pas** à être rejoué ici. Cette section couvre ce qu'une doublure ne peut pas prouver : **un vrai `systemctl stop`, un vrai cron Laravel, un vrai Apache en 503, et un parcours d'admin dans un navigateur.**
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.1-56.4** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh` (qui joue la migration ajoutant les colonnes `health_*`).
+
+### Pré-requis de la section
+
+Les Sections 18 et 19 doivent avoir été jouées : il faut **au moins une extension `app` réellement installée** (`sambaedu-ext-hello` dans les runbooks précédents), avec son unité systemd, son fragment Apache et sa tuile visible pour un prof réel.
+
+```bash
+cd /var/www/sambaedu-reload
+bash scripts/update.sh
+php artisan tinker --execute="dump(\App\Models\Extension::where('type','app')->where('status','integrated')->pluck('installed_port','key')->all());"
+```
+
+**Attendu** : au moins une clé avec un port dans `8600-8699`. Sans cela, tous les scénarios de sonde rendent « Aucune extension `app` installée » — ce qui est un résultat correct, mais ne prouve rien.
+
+### Scénario 21.1 — ⭐ LE scénario : une extension tombe, SE5 ne bouge pas (NFR6)
+
+C'est le scénario le plus important de la section, et le pendant direct du **10.1** (« SE5 debout sans la table `extensions` »). L'incident fondateur de l'Epic 54 était un lanceur capable de mettre **toutes** les pages du produit en 500 ; on vérifie ici la même promesse face à une panne réelle, pas à une table absente.
+
+```bash
+systemctl stop sambaedu-ext-hello
+systemctl is-active sambaedu-ext-hello        # inactive
+```
+
+1. **Le core répond, entièrement.** Dans un navigateur, en admin, parcourir au moins : `/app/dashboard`, `/app/users`, `/admin/extensions`, `/admin/settings/system-status`, et une page **legacy embarquée** (elle rend aussi le lanceur, via `layouts::legacy-embed`). Aucune 500, aucun ralentissement perceptible.
+2. **La cible, elle, est franchement en erreur.** `curl -sk -o /dev/null -w '%{http_code} %{time_total}\n' https://<serveur>/ext/hello` doit rendre **503 en quelques millisecondes** — le `retry=0` du fragment Apache empêche toute attente. Un 503 lent serait un défaut de fragment, pas de cette story.
+3. **Aucune autre extension n'est affectée** : si une seconde `app` est installée, sa tuile et sa cible fonctionnent normalement (NFR4/NFR6 — les extensions ne se couplent pas entre elles).
+
+```bash
+systemctl start sambaedu-ext-hello
+```
+
+### Scénario 21.2 — La sonde marque l'indisponibilité, et l'admin le voit
+
+```bash
+systemctl stop sambaedu-ext-hello
+php artisan ext:health:check
+```
+
+**Attendu** : `1 extension(s) sondée(s) — 1 injoignable(s).`, puis `Injoignable(s) : hello` et la ligne de diagnostic `systemctl status sambaedu-ext-<clé>`. **Code retour 0** (`echo $?`) : la commande CONSTATE, elle ne porte pas de verdict — c'est le doctor qui le fait.
+
+```bash
+php artisan tinker --execute="\$e=\App\Models\Extension::where('key','hello')->first(); dump(\$e->health_status, (string)\$e->health_checked_at, (string)\$e->health_last_incident_at, \$e->health_last_incident_detail);"
+```
+
+**Attendu** : `unreachable`, un horodatage à l'instant, un incident daté, et une catégorie **courte** du type `backend injoignable (connexion refusée ou expirée)`. ⚠️ Vérifier de ses yeux qu'il n'y a **ni URL, ni port, ni message cURL** dans `health_last_incident_detail` : cette colonne s'affiche sur la fiche, lisible par tout admin.
+
+Dans le navigateur :
+
+- **fiche `/admin/extensions/<id>`** : la carte « Santé » porte le badge **Indisponible**, la date de mesure, la version installée, et le dernier incident ;
+- **bibliothèque `/admin/extensions`** : la carte de l'extension porte le badge discret **Indisponible** ;
+- **lanceur (gaufre de la navbar)** : la tuile porte le point d'alerte, avec l'infobulle « Indisponible actuellement ».
+
+### Scénario 21.3 — ⭐ Le badge n'est pas une garde (FR14), et le prof le voit aussi
+
+Deux vérifications à faire dans le **même** état (backend arrêté), avec un **compte prof réel** (pas un admin) :
+
+1. la tuile de l'extension est présente et **badgée**, et elle **s'ouvre** au clic (elle mène à `/ext/hello`, qui rend 503 — c'est la cible qui est en panne, pas le lien qui est retiré) ;
+2. la tuile n'affiche **aucun détail technique** : pas de catégorie d'incident, pas de port, pas d'horodatage. Un élève ou un professeur n'a pas à lire un diagnostic système.
+
+⚠️ Le second point se contrôle par « affichage du code source de la page » sur la vue du prof : chercher `connexion refusée`, `8600`, `127.0.0.1` — **aucune** occurrence.
+
+```bash
+systemctl start sambaedu-ext-hello
+php artisan ext:health:check hello
+```
+
+**Attendu** : `hello : joignable.` La fiche repasse au badge **Joignable** — et **le dernier incident reste affiché** : c'est sa raison d'être (« ça a été indisponible, voici quand »). Le badge de la tuile disparaît.
+
+### Scénario 21.4 — La sonde tourne toute seule (scheduler réel)
+
+```bash
+php artisan schedule:list | grep ext:health:check
+```
+
+**Attendu** : `*/5 * * * *  php artisan ext:health:check`.
+
+Puis, **sans jamais lancer la commande à la main** :
+
+```bash
+systemctl stop sambaedu-ext-hello
+date; sleep 330; php artisan tinker --execute="\$e=\App\Models\Extension::where('key','hello')->first(); dump(\$e->health_status, (string)\$e->health_checked_at);"
+```
+
+**Attendu** : `unreachable`, horodaté dans les 5 dernières minutes — donc écrit par le cron Laravel de la VM, pas par vous. Si l'état ne bouge pas, le cron `schedule:run` n'est pas installé : c'est un défaut d'exploitation de la VM, et le doctor le dira au scénario suivant.
+
+### Scénario 21.5 — Le doctor : trois checks, et un `warn` de scheduler mort
+
+```bash
+php artisan sambaedu:doctor --tag=extensions
+php artisan sambaedu:doctor --tag=extensions --json | jq .
+```
+
+Trois lignes attendues : **Extensions (backends)**, **Extensions (journal d'audit)**, **Extensions (clients OIDC)**.
+
+| État de la VM | Verdict attendu sur « backends » |
+|---|---|
+| tout tourne, cron actif | `ok` — « N extension(s) app installée(s), toutes joignables », plus l'écart de version s'il y en a un |
+| `systemctl stop sambaedu-ext-hello` | `error` — nomme `hello`, et le `fix` donne `systemctl status sambaedu-ext-hello` |
+| tout tourne mais cron arrêté depuis > 15 min | `warn` — « l'état persisté n'est pas exploitable », `fix` = vérifier le scheduler |
+| extension installée à l'instant, jamais encore mesurée | **le même `warn`** — le libellé dit « jamais mesuré, **ou** mesuré il y a plus de 900 s », parce qu'affirmer « le scheduler est muet » serait faux ici. Se résout seul au passage suivant, ou tout de suite avec `php artisan ext:health:check` |
+| aucune `app` installée | `ok` — « aucune extension app installée » |
+
+Le `warn` de péremption se provoque proprement :
+
+```bash
+# Neutraliser temporairement le cron Laravel (selon l'installation : crontab -e, ou le timer systemd)
+crontab -l | grep schedule:run
+# … le commenter, attendre > 15 minutes, puis :
+php artisan sambaedu:doctor --tag=extensions
+```
+
+**Attendu** : `warn` sur « backends » **alors que les services tournent**. C'est exactement l'information utile : ce n'est pas l'extension qui va mal, c'est la mesure. ⚠️ **Rétablir le cron** ensuite.
+
+Deux contrôles complémentaires :
+
+1. **le doctor n'écrit RIEN.** Noter `health_checked_at` avant, lancer le doctor trois fois, revérifier : la valeur **n'a pas bougé** (règle d'or : un check est read-only ; la persistance appartient à `ext:health:check` et au bouton de la fiche).
+2. **le `fix` ne redémarre rien.** Aucun message du doctor ne propose `systemctl restart` : SE5 ne relance jamais un backend tout seul.
+
+Même vérification dans l'UI : `/admin/settings/system-status`, section **Extensions**. Les checks s'exécutent **après** le premier rendu (`wire:init`) : la page doit s'afficher instantanément, backends arrêtés compris.
+
+### Scénario 21.6 — « Sonder maintenant » : le seul chemin de mesure à la demande
+
+Sur la fiche d'une `app` installée, avec le backend **arrêté** :
+
+1. cliquer **Sonder maintenant** ⇒ toast rouge « Le backend ne répond pas : … », badge **Indisponible**, date de mesure = maintenant ;
+2. `systemctl start sambaedu-ext-hello`, cliquer de nouveau ⇒ toast vert « Le backend répond. », badge **Joignable**, incident **conservé**.
+
+Contrôle négatif : une extension de type **`link`** (la tuile Documentation) et une `app` **non installée** n'affichent **aucune** carte « Santé » — il n'y a rien à sonder, et une carte vide serait un artefact.
+
+### Scénario 21.7 — Le journal d'audit, en vrai
+
+`/admin/extensions` → bouton **Journal** (ou `/admin/extensions/journal`).
+
+**Attendu** : le journal reflète **tout ce que les Sections 17 à 20 ont réellement joué** — sources ajoutées/activées/retirées, catalogues refusés, intégrations, installations et leurs échecs, mises à jour, retraits, révocations de scope. Vérifier :
+
+1. **tri du plus récent au plus ancien**, pagination par 25 ;
+2. **filtre par action** et **filtre par extension**, combinables ; le compteur d'entrées suit ;
+3. les lignes de **source** (acteur `system` pour la synchro planifiée) et les lignes d'**extension** coexistent proprement ;
+4. **lien depuis la fiche** : « Journal de cette extension » ⇒ le filtre extension est déjà positionné (`?ext=<clé>`) ;
+5. ⚠️ **aucune URL de dépôt, aucun jeton, aucune empreinte de paquet.** Contrôle par affichage du code source de la page, en cherchant l'hôte de votre dépôt tiers et `private_token`. **Aucune** occurrence — y compris sur les lignes `source_sync_failed`, dont la cible est justement ce dépôt.
+
+**Rétention** : aucune purge automatique — décision assumée, documentée dans `ExtensionAuditJournalService`. Le volume est structurellement borné (actes humains + échecs par tentative + transitions dédupliquées ; la santé, elle, n'écrit rien). Rien à vérifier ici, sinon qu'aucune tâche planifiée ne touche à cette table (`php artisan schedule:list | grep -i audit` ⇒ aucune ligne).
+
+### Scénario 21.8 — Le signal « journal d'audit incomplet » (legs review 56.3 #4)
+
+Ce chemin nécessite une base en échec : il est **prouvé sur l'hôte** (table d'audit supprimée + refus d'installation ⇒ marqueur posé, refus toujours rapporté ; et la contre-épreuve : refus normal ⇒ ligne écrite, aucun marqueur). Sur la VM, on valide seulement la **surface d'exploitation**, en posant le marqueur à la main :
+
+```bash
+php artisan tinker --execute="\App\Models\ExtensionAuditLog::recordWriteFailure();"
+php artisan sambaedu:doctor --tag=extensions
+```
+
+**Attendu** : « Extensions (journal d'audit) » passe en **error** — « le journal d'audit peut être INCOMPLET : 1 écriture(s) perdue(s) depuis le … », avec un `fix` qui nomme les logs Laravel **et** la page journal.
+
+Dans l'UI : `/admin/extensions/journal` affiche un **bandeau rouge** avec le compteur et les deux dates. Cliquer **Acquitter** ⇒ modale de confirmation ⇒ le bandeau disparaît, toast de confirmation.
+
+```bash
+php artisan sambaedu:doctor --tag=extensions
+php artisan tinker --execute="dump(\App\Models\ExtensionAuditLog::where('action','like','%')->count());"
+```
+
+**Attendu** : le check est revenu à `ok`, et le **nombre de lignes du journal n'a pas changé** — l'acquittement n'écrit **aucune** ligne d'audit (c'est un signal d'exploitation, pas une donnée de conformité ; l'auditer créerait une boucle).
+
+⚠️ Le marqueur vit dans le cache **fichier** (`storage/framework/cache`), délibérément : si une écriture d'audit échoue, la cause plausible est la base — un signal stocké en base coulerait avec elle. Corollaire d'exploitation : un `php artisan cache:clear` efface le marqueur sans acquittement. Acceptable (le doctor et les logs restent), mais à savoir.
+
+### Scénario 21.9 — Clients OIDC fantômes (legs review 56.4 #4)
+
+Le check « Extensions (clients OIDC) » détecte un état anormal que l'UI des scopes ne peut pas montrer : **plusieurs clients OIDC actifs pour la même extension**, dont un porterait des scopes que la fiche n'affiche pas (la fiche montre le plus récent, la révocation agit sur tous).
+
+```bash
+php artisan sambaedu:doctor --tag=extensions | grep -i 'clients OIDC'
+```
+
+**Attendu en régime normal** : `ok` — « un seul client OIDC actif par extension (aucun fantôme) ». ⚠️ **Y compris avec l'app-témoin `sso-demo` activée** : c'est une extension `link` avec un client légitime, et la signaler serait un faux positif permanent.
+
+Provocation contrôlée (VM de test uniquement), pour voir le verdict `error` :
+
+```bash
+php artisan tinker
+>>> $c = \App\Models\OidcClient::where('extension_key','hello')->where('enabled',true)->first();
+>>> $ghost = $c->replicate(); $ghost->client_id = $c->client_id.'-ghost'; $ghost->granted_scopes = ['profile','groups']; $ghost->save();
+```
+
+**Attendu** : `error` nommant `hello` et le scope **invisible**, avec un `fix` qui renvoie vers `ext:remove` puis `ext:install` (le retrait révoque **tous** les clients). ⚠️ Le détail ne doit **jamais** contenir un `client_id` (NFR3). **Supprimer le fantôme** ensuite : `\App\Models\OidcClient::where('client_id','like','%-ghost')->delete();`
+
+### Scénario 21.10 — Fenêtre `update.sh` : observation au déploiement
+
+Rien à provoquer — c'est une **observation** à faire au moment du merge, pendant que `scripts/update.sh` enchaîne composer, npm et le build VitePress **avant** `migrate --force` :
+
+- pendant toute cette fenêtre (plusieurs minutes), les pages de SE5 continuent de répondre et **le lanceur affiche ses tuiles**, alors que les colonnes `health_*` n'existent pas encore ;
+- aucun badge « Indisponible » n'apparaît pendant la fenêtre (l'état est lu comme inconnu, et on ne signale que ce qu'on sait).
+
+C'est la raison pour laquelle `tilesFor()` fait un `SELECT *` et ne nomme **aucune** colonne de santé : un `->select([...])` échouerait en SQL pendant toute la fenêtre. Le `try/catch` du `mount()` reste le filet — pas le plan.
+
+### Scénario 21.11 — Aucune surface privilégiée nouvelle
+
+Contrôle de non-régression, à faire une fois :
+
+```bash
+sudo -l -U www-admin | grep -i sambaedu-ext
+grep -c '' /etc/sudoers.d/sambaedu-ext
+/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh 2>&1 | head -5
+```
+
+**Attendu** : la ligne sudoers est **exactement** celle de la Section 18, et le helper expose **exactement** les mêmes sous-commandes qu'en 56.2 — `write-env`, `remove-env`, `install-package`, `remove-package`, `enable-service`, `disable-service`, `restart-service`, `write-fragment`, `remove-fragment`, `reload-apache`. **Aucune** sous-commande de lecture d'état n'a été ajoutée : la sonde de santé est un `GET http://127.0.0.1:<port>/` émis par `www-admin`, sans le moindre privilège. C'est la décision n° 1 de la story, et elle se vérifie ici en une commande.
+
+---
+
 ## Post-correctifs & non-régressions
+
+- **Section 19.7 / 19.10 — un rollback n'est utile que s'il est GARANTI D'AVANCE** : le `.deb` de la version installée est exigé présent ET re-haché **avant** qu'apt ne soit invoqué (`installed_sha256` le désigne dans un staging content-addressed). Absent ou corrompu ⇒ refus, sans avoir rien entrepris. La formulation compte : ce n'est pas « on essaiera de revenir en arrière », c'est « on ne part pas sans savoir revenir ». Corollaire d'exploitation : le helper pose `--allow-downgrades`, sans quoi apt refuserait précisément la commande qui constitue la compensation. Toute story future qui remplacerait un artefact déployé (agent, paquet, image) doit vérifier sa réversibilité **avant** l'acte, pas après.
+- **Section 19.5 — la mise à jour ne touche QUE ce qui change d'une version à l'autre** : le port, le fragment Apache, le fichier d'environnement et le client OIDC sont des invariants de la **clé**, pas de la version. Les régénérer serait du churn à risque — le `client_secret` OIDC n'est pas récupérable (seul son sha256 est en base), donc re-enregistrer le client imposerait de réécrire l'env ET de redémarrer, avec une compensation impossible à garantir si l'une des deux échoue. L'unique cas où un invariant devrait bouger — des `redirect_paths` différents — est refusé fail-closed (19.9), chemin de secours documenté dans le message lui-même.
+- **Section 19.1 / 19.3 — une progression qui vit dans le composant n'est pas une progression** : rechargement de page, second onglet, second admin, consultation après coup — quatre exigences qu'aucun état d'écran ni cache ne couvre. D'où la table `extension_install_runs`. Elle n'est pas un journal d'audit pour autant : `extension_audit_logs` répond à « qui a décidé quoi » (append-only, conservé), les runs à « où en est-on » (mutable, lu quelques minutes). Confondre les deux ferait soit un journal pollué par des états transitoires, soit un suivi qu'on n'ose plus purger.
+- **Section 19.1 — le moteur reste MUET sur les runs** : le seul pont est un callback `?callable $onStep` additif. C'est ce qui garde `ext:install`/`ext:update`/`ext:remove` fonctionnels sans aucune ligne de run, et le moteur testable sans base de runs. ⚠️ Ce callback écrit en base : son échec est **isolé et journalisé**, jamais propagé — sinon une panne du canal d'AFFICHAGE déclencherait les compensations d'une installation pourtant réussie, et désinstallerait ce qui vient d'être posé.
+- **Section 19.3 / 19.11 — trois couches de concurrence, chacune à sa place** : (1) l'UI gèle les boutons — confort, ne garantit rien ; (2) l'orchestrateur re-vérifie sous verrou fichier COURT avant de créer le run — intégrité des runs ; (3) le verrou global du moteur — **la vérité**. L'UI REFLÈTE ce verrou (désactivation de TOUTES les cartes, puisqu'il est global), elle ne le remplace ni ne le contourne. Et « il y a un run actif » n'a qu'UNE définition, partagée par la garde de l'orchestrateur et par l'affichage : deux définitions finiraient par se contredire, et l'écran dirait alors le contraire de ce que le serveur applique (leçon review 56.1 #1).
+- **Section 19.11 — un worker mort ne doit pas condamner la bibliothèque** : passé `job_timeout + marge`, un run resté actif est affiché « Interrompue » et cesse de bloquer l'UI. On ne le « répare » pas et on ne le retraite pas — pas de janitor, ce serait de la sur-conception pour un cas rare. La staleness libère l'**interface** ; l'arbitre réel reste le verrou du moteur, qui expire seul à 600 s. La comparaison se fait **côté PHP** : les sessions PostgreSQL du projet sont en UTC alors que l'application vit à Paris, et un `now()` SQL décalerait le verdict de deux heures.
+- **Section 19.5 / 19.8 — la détection de mise à jour est un ÉCART, jamais un ORDRE** : `version` est une chaîne LIBRE du manifest (le validateur ne lui impose aucun format) — inventer un tri sémantique mentirait sur un « 2024-annexe-b ». Une republication antérieure est donc proposée comme un changement : c'est voulu, la source est l'autorité de sa propre fraîcheur (modèle apt). La règle vit dans `toListRow()`, dont `toDetail()` hérite par construction : la liste et la fiche ne PEUVENT pas diverger.
+- **Section 19.1 — l'acteur d'un acte d'UI n'est jamais `system`** : le Job recharge l'admin **par identifiant** (jamais un modèle sérialisé dans le payload : un admin supprimé entre le clic et le pickup ferait exploser le `unserialize`, hors de tout filet applicatif). S'il a disparu, on retombe sur `system` — ce qui reste vrai, faute d'humain à qui attribuer l'acte.
+- **Section 19.4 — un `wire:poll` inconditionnel est une fuite silencieuse** : une page d'administration reste ouverte des heures. Le poll n'est **rendu** que lorsqu'il y a quelque chose à suivre, et l'intervalle est de 3 s (une installation dure des minutes ; 1 s martèlerait le serveur pour rien). Patron repris de `iso-windows`.
+- **Section 19.11 — `WithoutOverlapping` est INTERDIT sur ce Job** : le middleware s'appuie sur le cache PAR DÉFAUT (APCu ici), qui n'implémente pas `lock()` — il lève « undefined method ApcStore::lock() » **au pickup**, et n'expose aucune API pour lui passer un store lock-capable. Il a été retiré de `DownloadWindowsIsoJob` pour cette raison exacte le 2026-06-22. Tout verrou de ce projet passe par `Cache::store('file')->lock()`.
+- **Section 19.13 — ouvrir un cycle ne doit pas en modifier un autre** : le type `link` reste synchrone, un clic, sans run ni Job ; ses modales et ses textes sont inchangés. La preuve n'est pas une relecture mais le fait que les suites 54.2/56.1 passent **sans qu'une seule assertion ait été touchée** — les tests de la 56.3 vivent dans des fichiers séparés, précisément pour que cette preuve reste lisible.
+
+- **Section 18.6 — « avant toute exécution » n'est pas une figure de style, c'est un point précis dans le temps** : pour un canal `deb`, la première exécution de code tiers est le maintainer script d'apt, en root. La vérification du hash doit donc précéder le **premier appel au helper**, pas seulement l'appel à `apt`. La preuve terrain est l'absence de toute ligne `sambaedu-ext-helper` dans `/var/log/auth.log` après un refus ; la preuve automatisée est `assertSame([], $helper->calls)`. Toute story qui ajouterait un canal d'installation (Epic 57/58) devra identifier SON premier point d'exécution et placer la vérification avant.
+- **Section 18.4 — la frontière de privilège valide, elle ne fait pas confiance** : le code PHP valide déjà tout ce qu'il envoie, et le helper re-valide tout comme si l'appelant était hostile. Trois contrôles portent l'essentiel : la clé est re-validée par regex, les chemins (unité, env, fragment) sont **dérivés** de la clé au lieu d'être reçus, et le nom de paquet déclaré dans le `.deb` doit appartenir au namespace `sambaedu-ext-<clé>`. Ce dernier est ce qui empêche un manifest tiers — même parfaitement signé — de faire installer ou écraser un paquet système. Le contrôle de staging est fait **après `readlink -f`** : sans ça, un lien symbolique posé dans le staging le contournerait.
+- **Section 18.4 / 18.5 — le fragment Apache est GÉNÉRÉ par le helper, jamais reçu** : accepter du contenu de configuration arbitraire depuis www-admin serait un équivalent-root (un `SetHandler` ou un `Alias` suffirait). Le helper ne reçoit que `<clé>` et `<port>`, tous deux re-validés, et compose lui-même le fragment. Corollaire opérationnel : `reload-apache` fait `apache2ctl configtest` **d'abord** et ne fait jamais de `restart` — un fragment invalide fait échouer l'étape (le moteur compense) au lieu d'empêcher Apache de redémarrer plus tard, éventuellement des jours après, sans lien visible avec la cause.
+- **Section 18.2 — un secret transmis par argument est un secret publié** : `argv` est lisible dans `/proc/<pid>/cmdline`, dans un `ps` de n'importe quel utilisateur de la machine, et sudo journalise la commande complète. Le `client_secret` du client OIDC d'une extension ne transite donc que par le **stdin** de `write-env`. C'est aussi la raison pour laquelle le seam privilégié des extensions n'est pas `CommandRunner` (6.1), qui prend une chaîne déjà composée et n'a pas de stdin. Généralisation : tout futur canal d'exploitation qui doit convoyer un secret doit prévoir stdin dès sa conception, pas l'ajouter après.
+- **Section 18.2 — le fichier d'environnement est le canal par lequel une extension apprend son issuer** : c'est la réponse à la friction n° 3 relevée en clôture de l'Epic 55 (« rien ne dit comment une extension apprend son issuer »). Sept variables, un contrat, un seul canal — sinon chaque éditeur en inventerait un. Permissions **0600 root:root** : systemd lit le fichier en root **avant** le drop de privilèges, donc l'utilisateur de service n'a pas besoin d'y accéder, et www-admin — qui a pourtant provoqué son écriture — ne peut pas le relire.
+- **Section 18.7 — la base s'écrit en DERNIER, et c'est ce qui interdit le zombie** : l'ordre est « réversible-et-local d'abord, privilégié ensuite, base à la fin ». Si la base échoue, les compensations ramènent le système à l'état propre ; si l'ordre était inversé, on obtiendrait une extension marquée installée avec un système en vrac — exactement ce que NFR8 interdit. Corollaire moins évident : le fragment Apache est le **dernier geste système**, pour qu'on n'expose jamais `/ext/<clé>` avant que son backend ne tourne (pas de 502 provisionné).
+- **Section 18.7 — une compensation qui échoue ne doit pas arrêter les suivantes** : chaque `undo` a son propre `try/catch` et journalise. Interrompre la chaîne au premier échec de compensation garantirait précisément l'état résiduel qu'on cherche à éviter. Best effort **explicite**, pas par accident.
+- **Section 18.7 — le paquet vérifié survit à l'échec, pas à la désinstallation** : après un échec, le `.deb` content-addressed déjà vérifié épargne le re-téléchargement à la relance (NFR8 : « relancer réussit sans intervention ») ; après un `remove`, le conserver ferait un cache orphelin. Et un paquet trouvé en cache est **re-haché** avant réutilisation : un fichier corrompu est re-téléchargé, jamais refusé et jamais fait confiance sur son seul nom.
+- **Section 18.8 — `ext:remove` est à la fois la désinstallation nominale et l'outil de nettoyage** : chaque sous-commande de retrait du helper est idempotente (absent ⇒ exit 0), et un échec en cours de route laisse l'extension marquée installée pour que la commande se rejoue. C'est délibéré : un `remove` qui « réussit » à moitié en marquant l'extension désinstallée abandonnerait des composants système sans plus aucun outil pour les retirer.
+- **Section 18.8 — révoquer TOUS les clients de la clé, pas le dernier connu** : une installation avortée peut laisser un client actif que plus personne ne référence (register réussi, étape suivante en échec, compensation elle-même en échec). `remove()` révoque tous les clients `enabled` de l'`extension_key` — l'état final est sûr même après plusieurs échecs partiels. Et rien n'est jamais supprimé : la révocation est un `enabled = false` (doctrine 55.1).
+- **Section 18.11 — le port est assigné par SE5, jamais déclaré par le manifest** : un éditeur tiers qui choisirait son port garantirait les collisions inter-éditeurs et ouvrirait le squat d'un port système. La colonne `installed_port` EST le registre d'allocation, et l'allocation se fait sous le **verrou fichier global** du moteur (`Cache::store('file')->lock()` — jamais `Cache::lock()`, APCu n'ayant pas de support de lock dans ce projet). Le verrou est global plutôt que par clé : les installations sont des actes d'administration rares, et un verrou unique rend l'allocation de port et l'unicité des clés triviales, sans course.
+- **Section 18.11 — une clé publiée par plusieurs sources est une AMBIGUÏTÉ, pas un choix à faire** : la collision de clés est tolérée au catalogue (décision 56.1) parce que chaque carte affiche sa provenance ; à l'installation, elle doit être tranchée par l'opérateur (`--source`). Arbitrer en silence, c'est installer le paquet d'une source que personne n'a choisie — l'exact contraire de ce à quoi sert la chaîne de confiance.
+- **Section 18.12 — `version` (publiée) et `installed_version` (posée) sont deux colonnes parce que ce sont deux faits différents** : les confondre rendrait la détection de mise à jour impossible (56.3) et ferait effacer la trace de ce qui tourne par une simple re-synchro. Les trois colonnes `installed_*` sont **hors `$fillable`**, comme `status` : le `fill()` de l'upsert de catalogue reçoit un manifest de source tierce, et une clé `installed_port` parasite ferait passer une extension pour installée — donc afficher une tuile — sans qu'aucun paquet n'ait jamais été vérifié.
+- **Section 18.2 — la tuile d'une `app` ne s'affiche qu'avec un `installed_port`** : c'est la levée **bornée** du filtre `type = link` de la 54.3. Le port n'est écrit que par `markAppInstalled()`, en dernière étape d'une installation dont l'avant-dernière a posé le `ProxyPass`. Le tester revient à exiger que l'exposition ait été réellement provisionnée avant d'afficher un lien vers elle : une `app` marquée `integrated` à la main n'a aucun backend derrière `/ext/<clé>`, sa tuile serait morte. La règle AR3 (`entry_url === /ext/<id>`, imposée par le validateur) garantit le reste : la tuile pointe le chemin que l'installation provisionne, et pas un autre.
+- **Section 18.1 / 18.10 — `IncludeOptional` DANS le vhost, jamais un `a2enconf`** : une conf globale s'appliquerait aussi au vhost legacy 8082, qui doit rester strictement inchangé (NFR16). « Optional » : aucune extension installée ⇒ aucun fichier ⇒ Apache démarre normalement. Et `config/apache/sambaedu.conf` (fallback) doit rester **en phase** avec `scripts/setupApache.sh` — exigence inscrite dans l'en-tête du fallback, à revérifier à chaque modification de vhost.
+- **Section 18.1 — un fragment sudoers se valide AVANT d'être posé** : `visudo -cf` sur un fichier temporaire, puis `install -m 0440`. Un `/etc/sudoers.d/*` invalide casse `sudo` pour **toute la machine**, y compris pour l'administrateur qui vient de lancer l'update — c'est-à-dire au pire moment possible. Vaut pour tout futur fragment sudoers du projet.
+- **Section 18.6 / 18.7 — `details` d'audit = une catégorie, jamais un message** : troisième déclinaison de la règle `last_error` (39.4 #E11, puis 56.1). Le journal d'audit est lisible par tout admin ; un message d'exception Guzzle porte l'URI complète, qui peut porter un jeton. Nuance propre à 56.2 : contrairement à `source_sync_failed`, il n'y a **pas** de dédoublonnage à la transition — une synchro planifiée se répète toute seule, une installation est un acte volontaire de l'opérateur, et chaque tentative mérite sa ligne.
+- **Section 18 — la chaîne de confiance du paquet ne crée AUCUN second format de signature** : le `sha256` du paquet est porté par l'index déjà signé Ed25519 (56.1), donc transitivement couvert par cette signature. Le vérifier EST la vérification « contre la clé déclarée de sa source » (NFR2) — modèle apt `Release` → `Packages` → `.deb`. Une signature détachée par paquet aurait été un second vérificateur, pour la même clé, à zéro gain de sécurité et à coût non nul pour chaque éditeur. Corollaire : le paquet se télécharge **depuis l'URL de base de la source**, chemin relatif validé, redirections jamais suivies — même hôte que l'index, par construction.
+- **Section 18 — l'exemption d'`ExtensionIsolationTest` est nommée et compensée** : la règle FR24 « aucune exécution système dans `app/Services/Extensions` » a exactement une exception, `SudoExtensionHelperRunner`, qui gagne en échange des contraintes plus strictes que la règle générale (il ne connaît ni `manifest`, ni le modèle `Extension` ; son binaire vient de la configuration ; chaque argument est échappé ; un seul `proc_open`). Exempter sans compenser aurait transformé un garde-fou en formalité.
+
+- **Section 17.4 / 17.5 — l'ordre « vérifier PUIS lire » est la seule chose qui rende une source tierce acceptable** : la signature se vérifie sur les octets **verbatim** téléchargés, avant tout `json_decode`. Un test le prouve par la négative (index à la fois mal signé ET malformé : le refus est motivé par la SIGNATURE, jamais par le JSON). Toute story future qui aurait besoin de « jeter un œil » au contenu avant de le vérifier — pour choisir un parseur, deviner une version, journaliser un nom — rouvrirait la faille : c'est le contenu vérifié qui décide, jamais l'inverse.
+- **Section 17.4 / 17.7 — aucun chemin d'échec ne prune, jamais** : c'est l'invariant #5 de 54.1 (« racine introuvable ≠ catalogue vide ») étendu au réseau. Un dépôt injoignable ou un catalogue refusé ne sont pas des observations : on ne peut rien conclure de ce qu'on n'a pas lu. Le sinistre de référence du projet reste le catalogue applicatif local effacé par une synchro amont ; la règle vaut pour tout futur canal de catalogue (56.2 et au-delà).
+- **Section 17.5 — pinner, c'est refuser la renégociation** : la clé d'une source est lue AU PLUS UNE fois, à l'ajout, et jamais réécrite par une synchro. Un dépôt qui change de clé DOIT tomber en erreur — c'est le comportement, pas un défaut. Corollaire pour 56.2 (signature des paquets) : le paquet se vérifie contre la clé **déjà pinnée de sa source**, jamais contre une clé livrée avec lui.
+- **Section 17.3 — le TOFU réseau n'a de sens que sous TLS** : récupérer `source.pub` en clair reviendrait à demander à l'attaquant potentiel de fournir la clé qui l'authentifiera. D'où la règle asymétrique : `http://` reste permis (miroir LAN, AR9) mais impose la clé collée à la main. Ne pas « assouplir » cette règle pour simplifier une installation.
+- **Section 17.7 — `unreachable` et `error` ne sont pas deux nuances du même échec** : le premier est un incident réseau (rien ne change pour l'admin, NFR7), le second un refus de contenu (fail-closed, NFR2). Les fusionner en un seul état « KO » ferait soit disparaître un catalogue valide sur une coupure réseau, soit continuer à proposer un catalogue non authentifiable. La table de sémantique est dans le docblock de `ExtensionSourceSyncStatus`.
+- **Section 17.9 — désactiver GÈLE, ça ne dé-intègre pas** : les `available` d'une source désactivée disparaissent (et leur fiche répond 404, pour qu'une URL directe ne les rende pas intégrables), mais une extension déjà intégrée garde sa place ET sa tuile. `ExtensionLauncherService` n'a donc **aucun** filtre de source — décision explicite qui solde le report de 54.3, verrouillée par un test de régression. Faire disparaître une tuile parce qu'un dépôt distant est tombé transformerait un incident de catalogue en panne visible pour les profs et les élèves.
+- **Section 17.8 — ne pas suivre les redirections vaut mieux qu'une liste blanche** : `allow_redirects => false` rend structurellement impossible qu'un dépôt oriente les requêtes sortantes de SE5 vers un hôte de son choix. Une allowlist d'hôtes aurait la même intention et beaucoup plus de façons d'être contournée.
+- **Section 17.11 — `source_sync_failed` trace une TRANSITION, pas un symptôme** : une synchro planifiée quotidienne sur un dépôt cassé empilerait 365 lignes identiques par an et noierait les vrais actes. Même discipline que le no-op de 54.2. Corollaire : la synchro réussie n'est pas auditée du tout (`last_synced_at` suffit) — le journal d'audit répond à « qui a décidé quoi », pas à « que s'est-il passé cette nuit ».
+- **Section 17.12 — un message d'erreur persisté est une surface d'exposition** : ce qui est écrit en base est lu par une UI ; ce qui vient d'une exception HTTP porte l'URI complète. Toute colonne `last_error`/`*_error` du projet doit recevoir une **catégorie** produite par le code, jamais un `$e->getMessage()`. Troisième occurrence de ce piège (39.4 #E11, puis ici) : il mérite d'être vérifié par défaut en review.
+- **Section 17.1 — le format de catalogue v1 est un CONTRAT PUBLIC (NFR11)** : `index.json` + `index.json.sig` + `source.pub`, manifests embarqués inline, `index_version` strict. Des éditeurs tiers vont l'implémenter ; il n'évoluera qu'**additivement** (56.2 y ajoutera un bloc `install` par manifest). Le durcir après publication casserait ses consommateurs — c'est la raison pour laquelle `ExtensionManifestValidator` avait déjà été durci en 54.1/54.3 *avant* qu'aucune source distante n'existe.
 
 - **Section 16.1 — un garde-fou par scan textuel doit embarquer ses formes d'évasion connues** : une regex qui mord sur la syntaxe canonique (`auth(`) ne dit rien des variantes légales que PHP autorise — antislash de résolution globale, FQCN inline, alias d'import, conteneur. Sans un jeu de contre-exemples **figé en dur** dans le test, un tel garde-fou ne verrouille qu'une syntaxe, pas une propriété. Règle dérivée : toute règle portant sur un **site d'appel** doit être doublée d'une règle sur l'**import FQCN**, seule façon de fermer la voie de l'alias. Vaut pour tout futur test d'architecture du projet, pas seulement pour la quarantaine des extensions.
 - **Section 16.2 — écrire les résidus plutôt que les taire** : troisième occurrence sur cet epic (canal de timing en 55.2, limite du scan ici, granularité d'erreur du témoin). Un écart connu et documenté vaut mieux qu'une promesse absolue démentie par le code — et c'est ce qui permet à la revue suivante de ne pas le redécouvrir comme s'il était neuf.
@@ -1395,3 +2667,41 @@ Lire `tests/Architecture/ExtensionIsolationTest.php::the_textual_scan_has_a_docu
 - [ ] **15.13 Ni `ad_guid`, ni `dn`, ni `users.id` dans l'id_token et `/userinfo` ; `sub` = `login`**
 - [ ] **16.1 Test de mutation : injecter `\…\Auth::user()`, `app('db')` puis un alias dans le témoin ⇒ quarantaine ROMPUE à chaque fois, verte après retrait**
 - [ ] 16.2 La limite résiduelle du scan textuel est écrite (test dédié + README du témoin)
+- [ ] **17.1 Ajout d'une source avec clé collée : 2 extensions au catalogue, badge « Tierce », `is_official = f`**
+- [ ] 17.2 Ajout TOFU https : `source.pub` lu **exactement une fois** (journal d'accès du dépôt)
+- [ ] **17.3 `http://` sans clé collée : REFUSÉ, aucune requête sortante — et accepté AVEC la clé collée**
+- [ ] **17.4 Catalogue altéré non re-signé : source « Catalogue refusé », `available` masquées, intégrée + tuile intactes, `count(extensions)` inchangé, nom piraté nulle part**
+- [ ] **17.5 Dépôt qui change de clé : erreur, `public_key` inchangée, aucun nouveau GET sur `source.pub`**
+- [ ] 17.6 Badges Officielle/Tierce (icône + libellé) ; modale d'avertissement nommant l'hôte ; un-clic conservé pour l'officielle ; double-clic sans double audit
+- [ ] **17.7 Dépôt injoignable : `available` toujours proposées, tuile intacte, `last_synced_at` conservé, aucun prune**
+- [ ] 17.8 Redirection 302 : jamais suivie, aucune requête vers la cible
+- [ ] **17.9 Désactivation : `available` masquées + fiche 404, intégrée conservée avec sa tuile ; retrait refusé tant qu'une intégrée existe ; source embarquée sans aucune action**
+- [ ] 17.10 `ext:sources:sync` (une / toutes), code retour non-zéro en échec, planification à 02:50, idempotence
+- [ ] **17.11 Audit : une ligne par acte réel, no-op muet, `source_sync_failed` UNE seule fois par transition, acteur `system` en planifié, trace survivant au retrait**
+- [ ] 17.12 `last_error` sans URL ni jeton ; URL avec query ou identifiants refusée à la saisie
+- [ ] **18.1 Provisioning ops : helper 0755, sudoers 0440 validé, modules proxy/headers, `/etc/sambaedu/extensions` en 0700 root, `IncludeOptional` dans le vhost :80 SEULEMENT — et `update.sh` rejouable en no-op**
+- [ ] **18.2 Installation réelle : unité active, env 0600 root, ProxyPass posé, `curl /ext/hello` en 200, tuile au lanceur, DB + audit `install` (acteur `system`), secret nulle part sauf dans le fichier**
+- [ ] 18.3 No-op : « déjà installée », exit 0, zéro `sudo`, zéro audit, zéro requête au dépôt
+- [ ] **18.4 Le helper refuse : clé invalide, port hors format, `.deb` hors staging, `.deb` au nom d'un paquet système, lien symbolique — exit ≠ 0, aucun fichier créé**
+- [ ] **18.5 `configtest` : un fragment invalide fait échouer `reload-apache` SANS recharger ; Apache reste actif**
+- [ ] **18.6 sha256 altéré : exit 1, AUCUNE invocation du helper dans `auth.log`, rien dans `/etc`, aucun client OIDC actif, audit `install_failed` sans URL, aucun `.tmp` résiduel — + contre-épreuve après régénération du dépôt**
+- [ ] **18.7 Échec apt à mi-parcours : compensations jouées, `status=available`, client révoqué, paquet vérifié conservé, relance réussie SANS re-téléchargement**
+- [ ] 18.8 `ext:remove` : 404, unité disparue, paquet purgé, env et fragment retirés, staging nettoyé, tuile disparue, audit `remove` ; rejeu = no-op exit 0 ; `link` refusée
+- [ ] 18.9 Jeton déjà émis mort immédiatement après `ext:remove` (401 sur `/userinfo`)
+- [ ] **18.10 NFR16 : `/ipxe`, `/doc`, `/assets/*` et le vhost legacy 8082 identiques avant/après pose ET retrait du fragment ; rien dans `conf-enabled/`**
+- [ ] 18.11 Ambiguïté ⇒ `--source` ; clé déjà installée depuis une autre source refusée en la nommant ; ports 8600/8601 et trous comblés
+- [ ] **18.12 Re-synchro du catalogue : `version` passe à 2.0.0, `installed_version` reste 1.0.0, `installed_port`/`installed_at`/`status` inchangés**
+- [ ] **19.1 Intégration depuis l'UI : modale (provenance + scopes + avertissement tierce), run `pending→running→success` en base, étapes aux libellés de la CLI, audit `install` à VOTRE login**
+- [ ] 19.2 Le Job apparaît dans `/admin/workers` (`queue_task_runs`), file `default`, sans que 56.3 n'y écrive rien
+- [ ] **19.3 Deux navigateurs : un seul run, tous les boutons gelés chez l'autre, même progression, F5 sans perte**
+- [ ] 19.4 Aucune requête périodique au repos ; polling 3 s uniquement pendant un run
+- [ ] **19.5 Update 1.0.0 → 1.1.0 : `install-package` + `restart-service` SEULEMENT, port/env/fragment/client OIDC intacts, deux `.deb` en staging, audit `update`**
+- [ ] 19.6 `ext:update` sur une extension à jour : exit 0, zéro helper, zéro audit
+- [ ] **19.7 apt cassé à mi-update : ancienne version RE-SERVIE (`dpkg-query` + `curl`), base inchangée, audit `update_failed`, opération rejouable**
+- [ ] 19.8 Republication d'une version antérieure : proposée comme changement et exécutée (`--allow-downgrades`)
+- [ ] **19.9 `redirect_paths` modifiés : refus AVANT toute action — aucun appel helper, aucun téléchargement**
+- [ ] **19.10 Gage de rollback absent ou corrompu : la mise à jour ne démarre pas**
+- [ ] **19.11 Workers arrêtés : run `pending`, rien d'installé, reprise au redémarrage ; worker tué ⇒ « Interrompue » et boutons libérés après le seuil**
+- [ ] 19.12 Désinstallation `app` depuis l'UI : texte de purge des composants système (jamais le texte `link`), retrait complet, audit `remove`
+- [ ] **19.13 Cycle `link` inchangé : un clic, synchrone, aucun run créé**
+- [ ] 19.14 Écran périmé : no-op propre, page remise en phase, jamais une 500

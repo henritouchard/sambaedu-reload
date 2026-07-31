@@ -7,6 +7,7 @@ namespace Tests\Feature\Extensions;
 use App\Enums\ExtensionType;
 use App\Enums\SambaRole;
 use App\Models\Extension;
+use App\Models\ExtensionSource;
 use App\Models\User;
 use App\Services\Extensions\ExtensionLauncherService;
 use Database\Seeders\PermissionSeeder;
@@ -46,7 +47,9 @@ class ExtensionLauncherServiceTest extends TestCase
             'type' => $type,
             'name' => $key,
             'version' => '1.0.0',
-            'entry_url' => '/'.$key,
+            // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` — c'est le
+            // chemin que l'installation provisionne (ProxyPass).
+            'entry_url' => $type === ExtensionType::App->value ? '/ext/'.$key : '/'.$key,
             'icon' => 'fa-solid fa-puzzle-piece',
             'publisher' => 'SambaEdu',
             'description' => 'Extension de test.',
@@ -139,8 +142,11 @@ class ExtensionLauncherServiceTest extends TestCase
     #[Test]
     public function an_integrated_app_type_extension_is_never_returned_fail_closed(): void
     {
-        // Type `app` artificiellement `integrated` (factory) : AUCUN moteur
-        // `app` n'existe avant l'Epic 56 — fail-closed testé explicitement.
+        // Type `app` artificiellement `integrated` (factory) SANS port : rien
+        // n'a été provisionné derrière `/ext/<clé>`, la tuile mènerait à un
+        // 404 — fail-closed testé explicitement. Story 56.2 : c'est le
+        // `installed_port` qui distingue une installation réelle d'une ligne
+        // fabriquée, pas le type.
         Extension::factory()->integrated()->create([
             'key' => 'app-ext',
             'type' => ExtensionType::App,
@@ -245,5 +251,221 @@ class ExtensionLauncherServiceTest extends TestCase
         $tiles = $this->service->tilesFor($this->makeUser('prof'));
 
         $this->assertSame('https://bbb.example.org/rooms', $tiles[0]['entry_url']);
+    }
+
+    // ── Story 56.1 — l'état de la SOURCE ne retire jamais une tuile ────────
+    //
+    // Décision tranchée en 56.1 (report explicite de 54.3) : une extension
+    // INTÉGRÉE garde sa tuile quel que soit l'état de sa source. Doctrine
+    // « rupture = figer l'état » + invariant 54.1 #4 (jamais de dé-intégration
+    // silencieuse). Faire disparaître une tuile parce qu'un dépôt distant est
+    // tombé transformerait un incident de catalogue en panne visible pour les
+    // profs et les élèves — l'exact contraire de NFR7.
+
+    #[Test]
+    public function an_integrated_extension_of_a_disabled_source_keeps_its_tile(): void
+    {
+        $source = ExtensionSource::factory()->remote()->disabled()->create();
+        $extension = $this->integratedLink('agenda', 'Agenda', ['admin']);
+        $extension->extension_source_id = $source->id;
+        $extension->save();
+
+        $admin = $this->makeUser('autre');
+        $admin->assignRole(SambaRole::SuperAdmin->value);
+
+        $this->assertSame(['agenda'], array_column($this->service->tilesFor($admin), 'key'));
+    }
+
+    #[Test]
+    public function an_integrated_extension_of_a_source_in_signature_error_keeps_its_tile(): void
+    {
+        $source = ExtensionSource::factory()->remote()->syncError()->create();
+        $extension = $this->integratedLink('agenda', 'Agenda', ['admin']);
+        $extension->extension_source_id = $source->id;
+        $extension->save();
+
+        $admin = $this->makeUser('autre');
+        $admin->assignRole(SambaRole::SuperAdmin->value);
+
+        $this->assertSame(['agenda'], array_column($this->service->tilesFor($admin), 'key'));
+    }
+
+    #[Test]
+    public function an_available_extension_of_an_active_source_never_becomes_a_tile(): void
+    {
+        // Contre-épreuve de la décision ci-dessus : « intégrée » reste la SEULE
+        // condition d'apparition. (Déjà couvert par les tests d'état 54.3 ; on
+        // le REDIT ici avec une source explicitement active, pour que la
+        // décision 56.1 soit lisible d'un seul tenant.)
+        $source = ExtensionSource::factory()->remote()->create();
+        Extension::factory()
+            ->link('/agenda')
+            ->create([
+                'key' => 'agenda',
+                'extension_source_id' => $source->id,
+                'manifest' => $this->manifestFor('agenda', ExtensionType::Link->value, ['admin']),
+            ]);
+
+        $admin = $this->makeUser('autre');
+        $admin->assignRole(SambaRole::SuperAdmin->value);
+
+        $this->assertSame([], $this->service->tilesFor($admin));
+    }
+
+    // =====================================================================
+    // Story 56.2 — une `app` RÉELLEMENT installée obtient sa tuile
+    // =====================================================================
+
+    #[Test]
+    public function an_installed_app_gets_a_tile_pointing_at_its_provisioned_path(): void
+    {
+        // Levée MAÎTRISÉE du filtre `type = link` de 54.3 : le moteur
+        // d'installation existe désormais, et `installed_port` atteste que
+        // l'exposition `/ext/<clé>` a bien été provisionnée.
+        Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $prof = $this->makeUser('prof');
+        $tiles = $this->service->tilesFor($prof);
+
+        $this->assertSame(['hello'], array_column($tiles, 'key'));
+        // Le chemin de manifest est résolu contre la racine de l'INSTANCE
+        // (`absoluteEntryUrl()`, régression lab1 sous-chemin) : la tuile porte
+        // l'URL réellement cliquable, pas la chaîne brute du manifest.
+        $this->assertSame(url('/ext/hello'), $tiles[0]['entry_url']);
+    }
+
+    #[Test]
+    public function a_removed_app_loses_its_tile(): void
+    {
+        $extension = Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $prof = $this->makeUser('prof');
+        $this->assertSame(['hello'], array_column($this->service->tilesFor($prof), 'key'));
+
+        // Exactement ce que fait `markAppRemoved()` : statut ET colonnes
+        // d'installation remis à zéro.
+        app(\App\Services\Extensions\ExtensionLifecycleService::class)->markAppRemoved($extension->id, null);
+
+        $this->assertSame([], $this->service->tilesFor($prof));
+    }
+
+    #[Test]
+    public function an_installed_app_still_respects_role_visibility(): void
+    {
+        Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['admin']),
+        ]);
+
+        $this->assertSame([], $this->service->tilesFor($this->makeUser('eleve')));
+    }
+
+    // =====================================================================
+    // Story 56.5 (AC2, FR35) — la tuile PORTE l'état de santé, LU
+    // =====================================================================
+    //
+    // ⚠️ Ajouts en FIN de fichier, aucune assertion existante retouchée : le
+    // socle 54.3/56.1/56.2 doit rester vrai verbatim.
+
+    /** Une `app` installée sondée injoignable RÉCEMMENT est marquée. */
+    #[Test]
+    public function a_freshly_unreachable_installed_app_is_marked_unavailable(): void
+    {
+        Extension::factory()->app()->installed(8600)->unreachable()->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $tiles = $this->service->tilesFor($this->makeUser('prof'));
+
+        $this->assertSame(['hello'], array_column($tiles, 'key'));
+        $this->assertTrue($tiles[0]['unavailable']);
+    }
+
+    /**
+     * Un état PÉRIMÉ ne se signale pas : un scheduler arrêté n'est pas une
+     * extension morte, et badger 30 tuiles pour cette raison serait pire que le
+     * silence (c'est le doctor qui porte CE diagnostic).
+     */
+    #[Test]
+    public function a_stale_unreachable_state_is_not_marked(): void
+    {
+        Extension::factory()
+            ->app()
+            ->installed(8600)
+            ->unreachable(now()->subHours(3))
+            ->create([
+                'key' => 'hello',
+                'name' => 'Hello',
+                'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+            ]);
+
+        $tiles = $this->service->tilesFor($this->makeUser('prof'));
+
+        $this->assertSame(['hello'], array_column($tiles, 'key'), 'la tuile RESTE : la santé ne retire jamais une tuile');
+        $this->assertFalse($tiles[0]['unavailable']);
+    }
+
+    /** Jamais sondée ⇒ on ne SAIT pas ⇒ aucun signal. */
+    #[Test]
+    public function a_never_probed_app_is_not_marked(): void
+    {
+        Extension::factory()->app()->installed(8600)->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $this->assertFalse($this->service->tilesFor($this->makeUser('prof'))[0]['unavailable']);
+    }
+
+    /** CONTRE-ÉPREUVE : un backend joignable n'est jamais marqué. */
+    #[Test]
+    public function a_healthy_installed_app_is_not_marked(): void
+    {
+        Extension::factory()->app()->installed(8600)->healthy()->create([
+            'key' => 'hello',
+            'name' => 'Hello',
+            'manifest' => $this->manifestFor('hello', ExtensionType::App->value, ['prof']),
+        ]);
+
+        $this->assertFalse($this->service->tilesFor($this->makeUser('prof'))[0]['unavailable']);
+    }
+
+    /**
+     * Une `link` ne peut PAS être marquée, même si des colonnes de santé
+     * traînaient sur sa ligne : elle n'a aucun backend. La règle unique
+     * (`isFlaggedUnreachable()`) exige `isHealthMonitored()`.
+     */
+    #[Test]
+    public function a_link_extension_is_never_marked_unavailable(): void
+    {
+        $extension = $this->integratedLink('doc', 'Documentation', ['prof']);
+        $extension->health_status = \App\Models\Extension::HEALTH_UNREACHABLE;
+        $extension->health_checked_at = now();
+        $extension->save();
+
+        $this->assertFalse($this->service->tilesFor($this->makeUser('prof'))[0]['unavailable']);
+    }
+
+    #[Test]
+    public function every_tile_carries_the_unavailable_key(): void
+    {
+        $this->integratedLink('doc', 'Documentation', ['prof']);
+
+        foreach ($this->service->tilesFor($this->makeUser('prof')) as $tile) {
+            $this->assertArrayHasKey('unavailable', $tile);
+            $this->assertIsBool($tile['unavailable']);
+        }
     }
 }
