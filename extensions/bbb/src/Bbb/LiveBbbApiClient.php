@@ -68,6 +68,17 @@ use Throwable;
  *  ⚠️ **La valeur retournée par `joinUrl()` porte un mot de passe** : elle ne
  *  se journalise pas, ne s'affiche pas, ne se met pas dans un `href`.
  * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ *  Story 57.4 — UNE SONDE DE CHARGE, ET LE MÊME APPEL QUE LE TEST DE CONNEXION
+ *
+ *  `measureLoad` réutilise `getMeetings` : c'est le même aller-retour signé,
+ *  mais deux mappings différents — l'un compte des conférences pour le dire à
+ *  un administrateur, l'autre somme des participants pour choisir un serveur.
+ *  Ce qui les sépare vraiment est la BORNE : 3 s pour la sonde, 8 s pour tout
+ *  le reste, parce que la sonde se paie une fois par serveur configuré à chaque
+ *  démarrage de salon.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 final class LiveBbbApiClient implements BbbApiClient
 {
@@ -76,6 +87,24 @@ final class LiveBbbApiClient implements BbbApiClient
 
     /** Borne TOTALE : au-delà, on rend la main plutôt que de tenir le processus. */
     public const TOTAL_TIMEOUT_MS = 8000;
+
+    /**
+     * Story 57.4 — **BORNE DÉDIÉE À LA SONDE DE CHARGE, et volontairement plus
+     * courte que tout le reste.**
+     *
+     * Le démarrage d'un salon interroge TOUS les serveurs normaux avant d'en
+     * choisir un : la borne se paie donc autant de fois qu'il y a de serveurs,
+     * avant même la première tentative de création. Trois secondes disent la
+     * chose suivante, et rien d'autre : un serveur incapable d'annoncer sa
+     * charge en 3 s n'est pas un bon hôte pour une classe qui commence — et
+     * l'écarter n'est pas une erreur, c'est la mesure.
+     *
+     * ⚠️ Rappel de 57.1, à ne pas ré-instruire : le fork re-pose lui-même
+     * `CURLOPT_CONNECTTIMEOUT = 10` après nos options. C'est
+     * `CURLOPT_TIMEOUT_MS` — qu'il ne touche pas — qui tient réellement cette
+     * borne.
+     */
+    public const PROBE_TIMEOUT_MS = 3000;
 
     /**
      * Durée maximale d'un meeting, en minutes. **Codée en dur dans le legacy**
@@ -100,7 +129,15 @@ final class LiveBbbApiClient implements BbbApiClient
      */
     public const RECORDINGS_STATE = 'published';
 
-    /** @var callable(string, string): GetMeetingsResponse */
+    /**
+     * ⚠️ Le troisième paramètre (borne totale, en millisecondes) est arrivé avec
+     * la story 57.4 : le MÊME appel `getMeetings` sert le test de connexion
+     * (8 s) et la sonde de charge (3 s). Les doublures de test qui n'en
+     * déclarent que deux — ou aucun — continuent de fonctionner : PHP autorise
+     * les arguments surnuméraires sur une fonction utilisateur.
+     *
+     * @var callable(string, string, int): GetMeetingsResponse
+     */
     private $meetingsTransport;
 
     /** @var callable(string, string, CreateMeetingParameters): CreateMeetingResponse */
@@ -116,7 +153,7 @@ final class LiveBbbApiClient implements BbbApiClient
     private $deleteRecordingTransport;
 
     /**
-     * @param  (callable(string, string): GetMeetingsResponse)|null  $transport
+     * @param  (callable(string, string, int): GetMeetingsResponse)|null  $transport
      *         Le transport réel par défaut ; une doublure en test, pour prouver
      *         le MAPPING sans réseau.
      * @param  (callable(string, string, CreateMeetingParameters): CreateMeetingResponse)|null  $createTransport
@@ -141,7 +178,7 @@ final class LiveBbbApiClient implements BbbApiClient
     public function testConnection(string $baseUrl, string $secret): ConnectionResult
     {
         try {
-            $response = ($this->meetingsTransport)($baseUrl, $secret);
+            $response = ($this->meetingsTransport)($baseUrl, $secret, self::TOTAL_TIMEOUT_MS);
         } catch (BadResponseException $e) {
             // Quelque chose a répondu, mais hors 2xx : une URL de base erronée
             // (page d'accueil, reverse-proxy, 404) plutôt qu'un serveur absent.
@@ -168,7 +205,7 @@ final class LiveBbbApiClient implements BbbApiClient
         }
 
         try {
-            $count = count($response->getMeetings());
+            $count = count(self::meetingsOf($response));
         } catch (Throwable) {
             // `SUCCESS` sans nœud `meetings` : la connexion est prouvée, le
             // décompte ne l'est pas.
@@ -176,6 +213,91 @@ final class LiveBbbApiClient implements BbbApiClient
         }
 
         return ConnectionResult::ok($count);
+    }
+
+    /**
+     * Story 57.4 — **LA CHARGE, MESURÉE COMME LE LEGACY LA MESURAIT.**
+     *
+     * `load_server_bbb()` (SE4) faisait exactement cela pour un serveur normal :
+     * `getMeetings()`, puis la somme des `participantCount`. C'est cette partie
+     * du legacy qui « se reprend telle quelle » (D5) — le reste de sa mécanique
+     * (cache en mémoire partagée, compteur d'échecs, nettoyage cron-only) est
+     * explicitement NON portée.
+     *
+     * ⚠️ Le seuil des serveurs Scalelite ne passe JAMAIS par ici : il n'est pas
+     * une mesure, et le sélecteur n'appelle pas cette méthode pour eux.
+     */
+    public function measureLoad(string $baseUrl, string $secret): LoadResult
+    {
+        try {
+            $response = ($this->meetingsTransport)($baseUrl, $secret, self::PROBE_TIMEOUT_MS);
+        } catch (BadResponseException $e) {
+            return LoadResult::invalidResponse($e->getMessage());
+        } catch (RuntimeException) {
+            // Hôte inconnu, port fermé, TLS refusé, borne de sonde dépassée.
+            return LoadResult::unreachable();
+        } catch (Throwable) {
+            return LoadResult::invalidResponse();
+        }
+
+        if ($response->failed()) {
+            return $response->getMessageKey() === 'checksumError'
+                ? LoadResult::invalidSecret()
+                : LoadResult::invalidResponse($response->getMessageKey());
+        }
+
+        if (! $response->success()) {
+            return LoadResult::invalidResponse();
+        }
+
+        $participants = 0;
+
+        foreach (self::meetingsOf($response) as $meeting) {
+            try {
+                $participants += (int) $meeting->getParticipantCount();
+            } catch (Throwable) {
+                // ⚠️ TROISIÈME rendez-vous avec le défaut de famille du fork
+                // (après `getMeetingLayout` en 57.2 et `Record::playback` en
+                // 57.3) : un accesseur typé sur une propriété sans valeur par
+                // défaut. Un meeting illisible ne doit pas emporter la mesure
+                // des autres — au pire il est sous-compté, ce qui rend son
+                // serveur un peu plus attractif, jamais indisponible. Le
+                // correctif de fond appartient au fork, pas à cette story.
+                continue;
+            }
+        }
+
+        return LoadResult::ok($participants);
+    }
+
+    /**
+     * Les meetings d'une réponse `getMeetings`, **sans réveiller le fork sur un
+     * XML licite mais dépourvu de nœud `meetings`.**
+     *
+     * ⚠️ Relevé sur pièce en 57.4 : `GetMeetingsResponse::getMeetings()` fait
+     * `foreach ($this->rawXml->meetings->children() …)` — et `children()` sur un
+     * enfant ABSENT rend `null`, ce qui déclenche un avertissement PHP
+     * (« foreach() argument must be of type array|object ») à chaque appel. Ce
+     * n'est pas une exception : aucun `catch` ne l'attrape, elle part dans le
+     * journal du service et, en test, fait échouer la suite (`failOnWarning`).
+     *
+     * ⚠️ `isset()`, et surtout PAS `=== null` : SimpleXML rend un ÉLÉMENT VIDE
+     * pour un enfant absent, jamais `null` — piège déjà relevé en 57.3.
+     *
+     * `SUCCESS` sans nœud `meetings`, c'est un serveur SANS AUCUNE conférence :
+     * une charge de zéro, donc le meilleur candidat possible.
+     *
+     * @return array<int, \BigBlueButton\Core\Meeting>
+     */
+    private static function meetingsOf(GetMeetingsResponse $response): array
+    {
+        $xml = $response->getRawXml();
+
+        if (! isset($xml->meetings)) {
+            return [];
+        }
+
+        return $response->getMeetings();
     }
 
     public function createMeeting(string $baseUrl, string $secret, RoomMeeting $meeting): CreateResult
@@ -471,9 +593,12 @@ final class LiveBbbApiClient implements BbbApiClient
         return $parameters;
     }
 
-    private static function defaultTransport(string $baseUrl, string $secret): GetMeetingsResponse
-    {
-        return self::client($baseUrl, $secret)->getMeetings();
+    private static function defaultTransport(
+        string $baseUrl,
+        string $secret,
+        int $totalTimeoutMs = self::TOTAL_TIMEOUT_MS,
+    ): GetMeetingsResponse {
+        return self::client($baseUrl, $secret, $totalTimeoutMs)->getMeetings();
     }
 
     private static function defaultCreateTransport(
@@ -508,13 +633,22 @@ final class LiveBbbApiClient implements BbbApiClient
         return self::client($baseUrl, $secret)->deleteRecordings($parameters);
     }
 
-    /** Constructeur du fork : ($baseUrl, $secret, $opts) — les options cURL vivent sous la clé `curl`. */
-    private static function client(string $baseUrl, string $secret): BigBlueButton
-    {
+    /**
+     * Constructeur du fork : ($baseUrl, $secret, $opts) — les options cURL vivent
+     * sous la clé `curl`.
+     *
+     * `$totalTimeoutMs` est paramétré depuis 57.4 : la sonde de charge se borne
+     * plus court que les appels qui font vraiment quelque chose.
+     */
+    private static function client(
+        string $baseUrl,
+        string $secret,
+        int $totalTimeoutMs = self::TOTAL_TIMEOUT_MS,
+    ): BigBlueButton {
         return new BigBlueButton(self::apiBase($baseUrl), $secret, [
             'curl' => [
                 CURLOPT_CONNECTTIMEOUT_MS => self::CONNECT_TIMEOUT_MS,
-                CURLOPT_TIMEOUT_MS => self::TOTAL_TIMEOUT_MS,
+                CURLOPT_TIMEOUT_MS => $totalTimeoutMs,
                 CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_SSL_VERIFYHOST => 2,
             ],

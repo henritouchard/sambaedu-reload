@@ -86,6 +86,38 @@ final class SessionLockReleasedBeforeNetworkTest extends TestCase
     }
 
     #[Test]
+    public function starting_a_room_releases_the_lock_before_the_very_first_load_probe(): void
+    {
+        // ⚠️ Story 57.4 — la règle se durcit d'elle-même : le démarrage ne fait
+        // plus UN appel de 8 s mais N sondes de 3 s PUIS jusqu'à deux créations.
+        // Tenir le verrou pendant tout cela bloquerait les autres onglets de la
+        // même personne pendant une demi-minute. Compter les relâchements après
+        // coup ne prouverait rien de leur ORDRE : on observe donc l'état du
+        // verrou à l'instant même de la première sonde.
+        $this->bench->store->addServer('https://bbb2.example.test/bigbluebutton/api', 'secret-2');
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $before = $session->closes;
+
+        $closesAtFirstProbe = -1;
+
+        $this->bench->api->onMeasure = static function (int $alreadyProbed) use ($session, &$closesAtFirstProbe): void {
+            if ($alreadyProbed === 0) {
+                $closesAtFirstProbe = $session->closes;
+            }
+        };
+
+        $this->bench->post($session, '/rooms/start', ['token' => $this->token]);
+
+        self::assertCount(2, $this->bench->api->measured, 'les deux serveurs doivent avoir été sondés');
+        self::assertGreaterThan(
+            $before,
+            $closesAtFirstProbe,
+            'verrou encore tenu au moment de la PREMIÈRE sonde',
+        );
+    }
+
+    #[Test]
     public function joining_a_room_releases_the_lock_before_calling_bigbluebutton(): void
     {
         $session = $this->bench->sessionFor('eleve', 'paul.durand', 'Paul Durand', ['4B']);

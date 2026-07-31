@@ -85,4 +85,19 @@ interface BbbApiClient
 
     /** Supprime UN enregistrement. **Appel SORTANT, borné, et irréversible.** */
     public function deleteRecording(string $baseUrl, string $secret, string $recordId): DeleteResult;
+
+    /**
+     * Story 57.4 — La CHARGE d'un serveur. **Appel SORTANT, borné plus court.**
+     *
+     * Son SEUL appelant légitime est {@see ServerSelector} : c'est une sonde de
+     * répartition, jamais un élément de rendu. Aucune page ne l'appelle, aucune
+     * jonction, aucune liste — le seul moment où la question se pose est le
+     * démarrage d'un salon, c'est-à-dire un acte explicite du créateur.
+     *
+     * La borne de temps est **plus courte** que celle des autres appels (voir
+     * `LiveBbbApiClient::PROBE_TIMEOUT_MS`) : un serveur qui n'arrive pas à dire
+     * combien de monde il héberge n'est pas un bon hôte pour un meeting neuf, et
+     * l'attendre coûterait à chaque démarrage la somme de toutes les sondes.
+     */
+    public function measureLoad(string $baseUrl, string $secret): LoadResult;
 }

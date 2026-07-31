@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SambaEdu\ExtBbb\Tests\Support;
 
+use SambaEdu\ExtBbb\Bbb\ServerSelector;
 use SambaEdu\ExtBbb\Env;
 use SambaEdu\ExtBbb\Guest\GuestController;
 use SambaEdu\ExtBbb\Http\ArraySessionStore;
@@ -52,7 +53,23 @@ final class RoomsWorkbench
 
     public function controller(): RoomsController
     {
-        return new RoomsController($this->store, $this->api, new View(dirname(__DIR__, 2) . '/views'), $this->env);
+        return new RoomsController(
+            $this->store,
+            $this->api,
+            new View(dirname(__DIR__, 2) . '/views'),
+            $this->env,
+            $this->selector(),
+        );
+    }
+
+    /**
+     * Story 57.4 — le sélecteur de serveur, câblé sur le MÊME magasin et le même
+     * client enregistreur : les sondes de charge se comptent donc avec les
+     * autres appels sortants, et se différencient serveur par serveur.
+     */
+    public function selector(): ServerSelector
+    {
+        return new ServerSelector($this->store, $this->api);
     }
 
     /** @param  list<string>  $groups */

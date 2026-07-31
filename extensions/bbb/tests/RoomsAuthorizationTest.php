@@ -6,11 +6,14 @@ namespace SambaEdu\ExtBbb\Tests;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use SambaEdu\ExtBbb\Bbb\CreateResult;
+use SambaEdu\ExtBbb\Bbb\LoadResult;
 use SambaEdu\ExtBbb\Bbb\RunningResult;
 use SambaEdu\ExtBbb\Http\ArraySessionStore;
 use SambaEdu\ExtBbb\Http\Request;
 use SambaEdu\ExtBbb\Identity;
 use SambaEdu\ExtBbb\Rooms\Room;
+use SambaEdu\ExtBbb\Rooms\RoomsController;
 use SambaEdu\ExtBbb\Tests\Support\RoomsWorkbench;
 
 /**
@@ -417,6 +420,208 @@ final class RoomsAuthorizationTest extends TestCase
     }
 
     // =====================================================================
+    // Story 57.4 — La répartition au démarrage, et la bascule sur panne
+    // =====================================================================
+
+    /** Ajoute un second et un troisième serveur ACTIFS à la fixture. */
+    private function addSpareServers(): array
+    {
+        return [
+            $this->bench->store->addServer('https://bbb2.example.test/bigbluebutton/api', 'secret-2'),
+            $this->bench->store->addServer('https://bbb3.example.test/bigbluebutton/api', 'secret-3'),
+        ];
+    }
+
+    #[Test]
+    public function the_meeting_is_created_on_the_least_loaded_server(): void
+    {
+        // AC1, vu du contrôleur : la mesure décide, et rien d'autre. Le serveur
+        // d'origine du salon (celui de la fixture) n'a aucun privilège.
+        [$second] = $this->addSpareServers();
+
+        $this->bench->api->loadByServer = [
+            'https://bbb.example.test/bigbluebutton/api' => LoadResult::ok(40),
+            'https://bbb2.example.test/bigbluebutton/api' => LoadResult::ok(2),
+            'https://bbb3.example.test/bigbluebutton/api' => LoadResult::ok(11),
+        ];
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $response = $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertSame(302, $response->status);
+        self::assertCount(3, $this->bench->api->measured, 'les trois serveurs sont sondés');
+        self::assertCount(1, $this->bench->api->created, 'un seul est retenu');
+        self::assertSame('https://bbb2.example.test/bigbluebutton/api', $this->bench->api->created[0]['url']);
+
+        // Et le salon RETIENT ce serveur : c'est lui que la jonction suivra.
+        self::assertSame($second, $this->bench->store->roomByToken($this->token4B)?->serverId);
+    }
+
+    #[Test]
+    public function a_server_that_falls_between_the_probe_and_the_creation_makes_the_start_switch_over(): void
+    {
+        // AC3 — LA bascule. Le moins chargé a répondu à la sonde puis est tombé :
+        // le cours s'ouvre quand même, sur le suivant, sans que le professeur
+        // ait rien à faire.
+        [$second] = $this->addSpareServers();
+
+        $this->bench->api->loadByServer = [
+            'https://bbb.example.test/bigbluebutton/api' => LoadResult::ok(5),
+            'https://bbb2.example.test/bigbluebutton/api' => LoadResult::ok(1),
+            'https://bbb3.example.test/bigbluebutton/api' => LoadResult::ok(9),
+        ];
+        $this->bench->api->createByServer = [
+            'https://bbb2.example.test/bigbluebutton/api' => CreateResult::unreachable(),
+        ];
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $response = $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertSame(302, $response->status);
+        self::assertCount(2, $this->bench->api->created, 'exactement DEUX créations : une bascule, pas une cascade');
+        self::assertSame('https://bbb2.example.test/bigbluebutton/api', $this->bench->api->created[0]['url']);
+        self::assertSame('https://bbb.example.test/bigbluebutton/api', $this->bench->api->created[1]['url']);
+
+        // ⚠️ Le serveur mémorisé est celui qui a RÉELLEMENT ouvert le meeting.
+        self::assertSame(1, $this->bench->store->roomByToken($this->token4B)?->serverId);
+        self::assertNotSame($second, $this->bench->store->roomByToken($this->token4B)?->serverId);
+
+        // Et le créateur entre bien en modérateur, comme un démarrage ordinaire.
+        self::assertSame($this->secretsOf($this->room4BId)['moderator'], $this->lastJoinPassword());
+    }
+
+    #[Test]
+    public function a_refused_secret_never_triggers_a_switch_over(): void
+    {
+        // « Essayer ailleurs » masquerait une erreur de CONFIGURATION : elle ne
+        // se découvrirait que le jour où il ne resterait plus un serveur sain.
+        $this->addSpareServers();
+
+        $this->bench->api->createByServer = [
+            'https://bbb.example.test/bigbluebutton/api' => CreateResult::invalidSecret(),
+        ];
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertCount(1, $this->bench->api->created, 'UNE seule tentative');
+        self::assertStringContainsString('refusé le secret', $this->bench->get($session)->body);
+        self::assertSame([], $this->bench->api->joins, 'rien n\'a été ouvert, donc rien à rejoindre');
+    }
+
+    #[Test]
+    public function an_unexpected_response_never_triggers_a_switch_over_either(): void
+    {
+        $this->addSpareServers();
+
+        $this->bench->api->createByServer = [
+            'https://bbb.example.test/bigbluebutton/api' => CreateResult::invalidResponse('notFound'),
+        ];
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertCount(1, $this->bench->api->created);
+        self::assertStringContainsString('inattendue', $this->bench->get($session)->body);
+    }
+
+    #[Test]
+    public function a_second_network_failure_ends_in_a_plain_message_and_never_in_a_blank_page(): void
+    {
+        // AC3, second volet. TROIS serveurs, tous morts au moment de créer : la
+        // bascule reste bornée à un réessai, et la réponse est complète —
+        // redirection puis message. Jamais une page blanche, jamais une attente
+        // de 24 s.
+        $this->addSpareServers();
+
+        $this->bench->api->createResult = CreateResult::unreachable();
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $response = $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertCount(2, $this->bench->api->created, 'DEUX tentatives au maximum, pas trois');
+        self::assertSame(302, $response->status);
+        self::assertSame('/ext/bbb/rooms', $response->headers['Location']);
+
+        $body = $this->bench->get($session)->body;
+
+        self::assertNotSame('', $body, 'la page suivante est une VRAIE page');
+        self::assertStringContainsString('injoignable', $body);
+        self::assertSame([], $this->bench->api->joins, 'aucune URL de jonction fabriquée');
+    }
+
+    #[Test]
+    public function every_server_being_unreachable_at_probe_time_is_said_plainly(): void
+    {
+        $this->addSpareServers();
+
+        $this->bench->api->loadResult = LoadResult::unreachable();
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $response = $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertSame(302, $response->status);
+        self::assertSame([], $this->bench->api->created, 'aucun candidat : rien à tenter');
+
+        // ⚠️ L'apostrophe est échappée par la vue (`&#039;`) : on cherche donc
+        // un fragment qui n'en porte pas — le message reste affirmé mot pour
+        // mot par `ServerSelectorTest`.
+        self::assertStringContainsString('joignable actuellement', $this->bench->get($session)->body);
+    }
+
+    #[Test]
+    public function a_scalelite_that_is_down_is_covered_by_the_switch_over_and_by_nothing_else(): void
+    {
+        // Le Scalelite n'est JAMAIS sondé : son seuil est une configuration, pas
+        // une mesure de santé. La seule chose qui protège d'un Scalelite éteint
+        // est donc la bascule au moment de créer — et c'est exactement pourquoi
+        // elle existe.
+        $this->bench->store->addServer('https://scalelite.example.test/bigbluebutton/api', 'secret-sl', 1);
+
+        $this->bench->api->loadByServer = [
+            'https://bbb.example.test/bigbluebutton/api' => LoadResult::ok(30),
+        ];
+        $this->bench->api->createByServer = [
+            'https://scalelite.example.test/bigbluebutton/api' => CreateResult::unreachable(),
+        ];
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->post($session, '/rooms/start', ['token' => $this->token4B]);
+
+        self::assertSame(
+            ['https://bbb.example.test/bigbluebutton/api'],
+            $this->bench->api->probedUrls(),
+            'le Scalelite n\'est pas sondé, même pour vérifier qu\'il est vivant',
+        );
+        self::assertCount(2, $this->bench->api->created);
+        self::assertSame('https://bbb.example.test/bigbluebutton/api', $this->bench->api->created[1]['url']);
+        self::assertSame(1, $this->bench->store->roomByToken($this->token4B)?->serverId);
+    }
+
+    #[Test]
+    public function a_refusal_never_emits_a_single_load_probe(): void
+    {
+        // L'ordre « gardes d'abord, réseau ensuite » de 57.2 vaut aussi pour la
+        // sonde de charge : ni un non-créateur, ni un formulaire sans jeton
+        // anti-CSRF ne doivent pouvoir faire interroger le parc de serveurs.
+        $this->addSpareServers();
+
+        $colleague = $this->bench->sessionFor('prof', 'prof.bernard', 'Monsieur Bernard', ['4B']);
+        self::assertSame(404, $this->bench->post($colleague, '/rooms/start', ['token' => $this->token4B])->status);
+
+        $owner = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->csrf($owner);
+        $refused = $this->bench->post($owner, '/rooms/start', [
+            '_token' => 'jeton-fabrique-ailleurs',
+            'token' => $this->token4B,
+        ]);
+
+        self::assertSame(403, $refused->status);
+        self::assertSame([], $this->bench->api->measured, 'aucune sonde sur un refus');
+        self::assertSame(0, $this->bench->api->outboundCalls());
+    }
+
+    // =====================================================================
     // AC3 — pas d'identité, pas de salon
     // =====================================================================
 
@@ -477,5 +682,83 @@ final class RoomsAuthorizationTest extends TestCase
 
         self::assertSame(302, $response->status);
         self::assertSame('/ext/bbb/login', $response->headers['Location']);
+    }
+
+    // ── Review 57.4 #1 — « ça a marché ailleurs » ne doit pas être silencieux ─
+    //
+    // Le sélecteur écartait un serveur au secret refusé et le SIGNALAIT, mais
+    // le signal n'était lu que lorsqu'il ne restait plus aucun candidat. Avec
+    // deux serveurs déclarés dont un au secret périmé, tout démarrait sur le
+    // second, indéfiniment, sans une trace nulle part — l'administrateur ne
+    // l'aurait découvert qu'en testant la connexion à la main, ce que rien ne
+    // l'incite à faire tant que les cours ont lieu.
+
+    #[Test]
+    public function a_refused_secret_is_reported_even_when_the_room_opens_elsewhere(): void
+    {
+        // Le serveur du `setUp` est écarté : on veut exactement DEUX candidats,
+        // l'un sain et l'autre au secret périmé, sans qu'un troisième vienne
+        // gagner l'égalité de charge.
+        $this->bench->store->setServerEnabled(1, false);
+
+        $sain = $this->bench->store->addServer('https://bbb-sain.example.test/bigbluebutton/api', 'secret-bon');
+        $this->bench->store->addServer('https://bbb-perime.example.test/bigbluebutton/api', 'secret-perime');
+
+        $this->bench->api->loadByServer = [
+            'https://bbb-perime.example.test/bigbluebutton/api' => LoadResult::invalidSecret(),
+            'https://bbb-sain.example.test/bigbluebutton/api' => LoadResult::ok(0),
+        ];
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->store->addRoom(
+            'Salon à démarrer',
+            'prof.martin',
+            'Madame Martin',
+            Room::VISIBILITY_ETAB,
+        );
+
+        $token = $this->tokenOf('Salon à démarrer', $this->owner());
+
+        $response = $this->bench->post($session, '/rooms/start', ['token' => $token]);
+
+        // Le salon DOIT ouvrir : rien n'a échoué pour le professeur.
+        self::assertSame(302, $response->status);
+        self::assertNotSame([], $this->bench->api->created);
+
+        $started = null;
+        foreach ($this->bench->store->roomsOwnedBy('prof.martin') as $candidate) {
+            if ($candidate->token === $token) {
+                $started = $candidate;
+            }
+        }
+
+        self::assertNotNull($started);
+        self::assertSame($sain, $started->serverId, 'le salon ouvre sur le serveur au secret valide');
+
+        // Et le secret refusé DOIT être dit — en `warning`, pas en `error`.
+        $flash = (array) $session->get('rooms.flash', []);
+        $types = array_column($flash, 'type');
+        $messages = array_column($flash, 'message');
+
+        self::assertContains('warning', $types, 'le secret refusé doit être signalé');
+        self::assertContains(RoomsController::SECRET_REFUSED_ELSEWHERE, $messages);
+        self::assertNotContains('error', $types, 'rien n\'a échoué pour le professeur');
+    }
+
+    #[Test]
+    public function a_start_with_every_secret_valid_says_nothing_at_all(): void
+    {
+        // CONTRÔLE POSITIF : sans lui, le test ci-dessus passerait tout aussi
+        // bien si l'avertissement était posé à CHAQUE démarrage.
+        $this->bench->store->addServer('https://bbb-sain.example.test/bigbluebutton/api', 'secret-bon');
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->store->addRoom('Salon serein', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $this->bench->post($session, '/rooms/start', [
+            'token' => $this->tokenOf('Salon serein', $this->owner()),
+        ]);
+
+        self::assertSame([], (array) $session->get('rooms.flash', []), 'aucun message quand tout va bien');
     }
 }

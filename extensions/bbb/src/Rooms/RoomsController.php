@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace SambaEdu\ExtBbb\Rooms;
 
 use SambaEdu\ExtBbb\Bbb\BbbApiClient;
+use SambaEdu\ExtBbb\Bbb\CallOutcome;
 use SambaEdu\ExtBbb\Bbb\RoomMeeting;
+use SambaEdu\ExtBbb\Bbb\ServerSelector;
 use SambaEdu\ExtBbb\Env;
 use SambaEdu\ExtBbb\Http\Csrf;
 use SambaEdu\ExtBbb\Http\Request;
@@ -70,6 +72,24 @@ final class RoomsController
     /** Un nom de salon est un intitulé, pas un texte. */
     public const MAX_NAME_LENGTH = 100;
 
+    /**
+     * Story 57.4 — **La bascule sur panne, bornée à UN réessai.**
+     *
+     * Deux tentatives de création au maximum, jamais « tant qu'il reste des
+     * serveurs » : chaque tentative coûte jusqu'à 8 s sur un serveur HTTP
+     * mono-processus, et une salle de classe n'attend pas une cascade.
+     */
+    public const START_ATTEMPTS = 2;
+
+    /**
+     * Story 57.4, review #1 — ce que voit le professeur quand un serveur a été
+     * écarté pour secret invalide **mais que le salon a quand même ouvert**.
+     *
+     * Il n'a rien à corriger, lui : le message le dit, et nomme qui doit agir.
+     */
+    public const SECRET_REFUSED_ELSEWHERE = 'Le salon a bien ouvert. Un des serveurs de visioconférence a toutefois '
+        . 'refusé son secret et a été écarté : signalez-le à votre administrateur.';
+
     private const FLASH = 'rooms.flash';
 
     private const CSRF = 'rooms.csrf';
@@ -79,6 +99,7 @@ final class RoomsController
         private readonly BbbApiClient $api,
         private readonly View $view,
         private readonly Env $env,
+        private readonly ServerSelector $selector,
     ) {
     }
 
@@ -277,6 +298,24 @@ final class RoomsController
      * C'est cette propriété de l'API qui remplace, à elle seule, le miroir en
      * mémoire du legacy et son ramasse-miettes — il n'y a aucun état de
      * fonctionnement à réconcilier, donc aucun état à désynchroniser.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     *  Story 57.4 — **C'EST ICI, ET NULLE PART AILLEURS, QUE LA RÉPARTITION SE
+     *  JOUE.**
+     *
+     *  Le démarrage est le seul instant où le serveur d'un salon se décide :
+     *  la jonction, la page « pas ouvert » et les enregistrements suivent
+     *  ensuite `rooms.server_id`, sans jamais rien re-choisir. Un salon démarré
+     *  garde donc son serveur — et c'est le prochain démarrage, seulement lui,
+     *  qui pourra le changer.
+     *
+     *  **Budget de temps, assumé et écrit.** Pire cas : N serveurs normaux
+     *  sondés à 3 s pièce, puis deux tentatives de création à 8 s. Pour trois
+     *  serveurs dont deux morts : ~25 s. Ce budget est acceptable parce qu'il
+     *  est payé sur un POST explicite du créateur, une fois par ouverture de
+     *  cours, verrou d'état relâché — et pas au rendu d'une page que tout
+     *  l'établissement recharge.
+     * ══════════════════════════════════════════════════════════════════════
      */
     private function start(Request $request, SessionStore $session, Identity $identity): Response
     {
@@ -286,52 +325,103 @@ final class RoomsController
             return $this->notFound($identity);
         }
 
-        $server = $this->store->firstEnabledServer();
-
-        if ($server === null) {
-            $this->flash(
-                $session,
-                'error',
-                'Aucun serveur de visioconférence configuré — prévenez l\'administrateur.',
-            );
-
-            return Response::redirect('/rooms');
-        }
-
         $secrets = $this->store->roomSecrets($room->id);
 
         if ($secrets === null) {
             return $this->notFound($identity);
         }
 
-        $baseUrl = (string) $server['base_url'];
-        $secret = (string) $server['secret'];
-
-        // Verrou d'état relâché AVANT le réseau (review 57.2 #1) : le tenir
-        // pendant les 8 s de borne bloquerait les autres onglets de la même
-        // personne, et immobiliserait un worker de plus que nécessaire.
+        // Verrou d'état relâché AVANT le réseau (review 57.2 #1), et donc avant
+        // la PREMIÈRE sonde de charge : le tenir pendant N sondes puis deux
+        // créations bloquerait les autres onglets de la même personne pendant
+        // tout ce temps, et immobiliserait un worker de plus que nécessaire.
         $session->close();
 
-        $result = $this->api->createMeeting($baseUrl, $secret, new RoomMeeting(
+        $selection = $this->selector->select();
+
+        if ($selection->isEmpty()) {
+            // Aucun serveur configuré, aucun joignable, ou secret refusé
+            // partout : trois causes, trois messages, une seule chose en
+            // commun — une réponse HTTP complète, jamais une page blanche.
+            $this->flash($session, 'error', $selection->message);
+
+            return Response::redirect('/rooms');
+        }
+
+        $meeting = new RoomMeeting(
             meetingId: $room->token,
             name: $room->name,
             attendeePassword: $secrets['attendee'],
             moderatorPassword: $secrets['moderator'],
             logoutUrl: Url::absolute($this->env, '/rooms'),
-        ));
+        );
 
-        if (! $result->isOk()) {
-            $this->flash($session, 'error', $result->message);
+        $attempts = 0;
+        $failure = '';
 
-            return Response::redirect('/rooms');
+        foreach ($selection->candidates as $candidate) {
+            $attempts++;
+
+            $result = $this->api->createMeeting($candidate->baseUrl, $candidate->secret, $meeting);
+
+            if ($result->isOk()) {
+                // Le serveur mémorisé est celui qui a RÉELLEMENT ouvert le
+                // meeting — celui de la bascule, le cas échéant. Pointer le
+                // premier choix théorique enverrait les élèves frapper à une
+                // porte qui n'existe pas.
+                $this->store->markStarted($room->id, $candidate->id);
+
+                // ═══════════════════════════════════════════════════════════
+                //  « ÇA A MARCHÉ AILLEURS » NE DOIT PAS ÊTRE SILENCIEUX
+                //  (review 57.4 #1)
+                //
+                //  Le sélecteur écarte un serveur dont le secret est refusé et
+                //  le SIGNALE. Ce signal n'était lu que lorsqu'il ne restait
+                //  plus AUCUN candidat : avec deux serveurs déclarés dont un au
+                //  secret périmé, tout démarrait normalement sur le second,
+                //  indéfiniment, sans une trace nulle part. L'administrateur ne
+                //  l'aurait découvert qu'en testant la connexion à la main —
+                //  ce que rien ne l'incite à faire tant que les cours ont lieu.
+                //
+                //  Un `warning`, pas une `error` : le salon EST ouvert, rien
+                //  n'a échoué pour le professeur. Ce qui est cassé appelle un
+                //  administrateur, pas une inquiétude.
+                // ═══════════════════════════════════════════════════════════
+                if ($selection->secretRefused) {
+                    $this->flash($session, 'warning', self::SECRET_REFUSED_ELSEWHERE);
+                }
+
+                return $this->redirectToConference(
+                    $candidate->baseUrl,
+                    $candidate->secret,
+                    $room,
+                    $identity,
+                    $secrets['moderator'],
+                );
+            }
+
+            $failure = $result->message;
+
+            // ═══════════════════════════════════════════════════════════════
+            //  SEUL UN ÉCHEC RÉSEAU DONNE DROIT À LA BASCULE
+            //
+            //  Un serveur tombé entre la sonde et la création — ou un Scalelite,
+            //  qui n'est jamais sondé et dont la santé n'a donc rien prouvé —
+            //  est un aléa d'infrastructure : on réessaie ailleurs, une fois.
+            //
+            //  Un secret refusé ou une réponse inattendue, NON : ce sont des
+            //  erreurs de configuration ou de protocole, et « essayer ailleurs »
+            //  les masquerait — l'administrateur ne les découvrirait que le jour
+            //  où il ne reste plus un seul serveur sain.
+            // ═══════════════════════════════════════════════════════════════
+            if ($result->outcome !== CallOutcome::Unreachable || $attempts >= self::START_ATTEMPTS) {
+                break;
+            }
         }
 
-        // Le serveur du salon n'est mémorisé qu'après un démarrage RÉUSSI :
-        // pointer un serveur qui n'a rien ouvert ferait attendre les élèves
-        // devant une porte qui n'existe pas.
-        $this->store->markStarted($room->id, (int) $server['id']);
+        $this->flash($session, 'error', $failure);
 
-        return $this->redirectToConference($baseUrl, $secret, $room, $identity, $secrets['moderator']);
+        return Response::redirect('/rooms');
     }
 
     // =====================================================================

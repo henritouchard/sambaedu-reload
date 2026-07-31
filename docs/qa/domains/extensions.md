@@ -3398,3 +3398,199 @@ Supprimer un salon qui a **une invitation active** et **au moins un enregistreme
 - [ ] 24.9b Fluidité même-session pendant un `/recordings` qui traîne
 - [ ] **24.10 Suppression d'un salon : confirmation qui prévient, invitation morte, enregistrement invisible côté SE5 mais TOUJOURS présent côté BBB**
 - [ ] 24.11 Droits `0600`/`0700` après update et reboot ; sort de `/var/lib/sambaedu-ext-bbb` à `ext:remove` CONSIGNÉ (il porte maintenant des mots de passe d'invitation en clair)
+
+## Section 25 — Équilibrage multi-serveurs et extinction du BBB legacy (Story 57.4)
+
+> **Ce que cette section valide, et pourquoi elle clôt l'Epic 57.** La 57.4 a **deux volets étanches**. Le premier vit entièrement dans l'extension : le salon ne part plus sur « le premier serveur actif » mais sur **le moins chargé**, avec **bascule sur panne** — l'algorithme de SE4, repris tel quel (D5), y compris sa sémantique Scalelite. Le second vit dans le core et n'a rien à voir : il **éteint** la surface BBB legacy de SE5, ce qui est le critère d'acceptation final du système d'extensions (AR12) — « l'accès à la visioconférence passe exclusivement par la tuile ».
+>
+> Le contre-modèle est nommé, et il est instructif : SE4 répartissait sur la foi d'un `server_bbb_is_up()` qui n'était **qu'un GET sur l'URL de base** — il déclarait vivant un serveur dont le secret était faux, et vivant aussi un Scalelite éteint. Il gardait ses mesures dans un cache en mémoire partagée, avec un compteur d'échecs jamais purgé hors cron. Rien de tout cela n'est porté : la sonde est **signée**, elle est **bornée à 3 s**, elle n'a **aucune mémoire**, et ce qui protège vraiment d'un serveur tombé est la **bascule au moment de créer** — le seul instant qui compte.
+>
+> Quatre choses ne se prouvent QUE sur une VM avec **deux serveurs BigBlueButton réels** :
+>
+> 1. **la répartition observée** : le meeting apparaît dans la console du serveur le moins chargé, et pas dans l'autre ;
+> 2. **la bascule réelle**, serveur coupé entre la sonde et le clic — le cours s'ouvre quand même, **sans que le professeur fasse quoi que ce soit** ;
+> 3. **le budget de temps sous mono-processus** : pendant qu'un démarrage sonde un serveur mort, le reste de l'établissement navigue ;
+> 4. **l'extinction traversée pour de vrai**, y compris sur une instance où `/var/www/sambaedu` existe encore — c'est là, et seulement là, que le repli vers le système de fichiers SE4 se vérifie fermé.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué à la main : toute la matrice du choix (moins chargé gagne, égalité départagée par le plus petit identifiant, Scalelite **jamais sondé** mais délégable, serveur désactivé ni sondé ni candidat, `SUCCESS` sans conférence = charge 0), la bascule bornée à **exactement deux** tentatives, l'absence de bascule sur secret refusé ou réponse inattendue, le verrou d'état relâché **avant la toute première sonde**, l'absence de sonde au rendu de la moindre page, le mapping de `measureLoad` sur de vraies réponses XML, les redirections `/bbb/*` et `/visio` (préfixe UAI compris), et le « grep = 0 » avec ses méta-tests.
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && vendor/bin/phpunit         # 331 tests
+> cd /var/www/sambaedu-reload && php artisan test --testsuite=Architecture # 153 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x/57.1/57.2/57.3** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+Les Sections 22 à 24 doivent être passées. Prévoir en plus, et c'est le vrai coût de cette section : **deux serveurs BigBlueButton joignables** depuis l'instance, tous deux déclarés et testés verts sur `/ext/bbb/admin/servers`, avec un accès aux **consoles ou aux journaux des deux** (`bbb-conf --check`, ou la liste des conférences actives).
+
+À défaut d'un second serveur BBB, les scénarios 25.1 à 25.3 restent jouables en **dégradé** : déclarer deux fois le même serveur ne prouverait rien, mais déclarer un serveur réel et une **adresse morte** (`https://bbb-absent.invalid/bigbluebutton/api`, secret quelconque) prouve l'exclusion et la bascule, qui sont l'essentiel.
+
+### Scénario 25.1 — ⭐ Le meeting part sur le serveur le MOINS CHARGÉ
+
+Ouvrir une conférence de charge sur le **premier** serveur (par exemple depuis une autre instance, ou en y faisant entrer deux ou trois participants), et laisser le **second** vide.
+
+En **prof.martin**, sur `/ext/bbb/rooms`, cliquer **« Démarrer ou entrer »** sur un salon.
+
+**Attendu** :
+
+- la conférence apparaît dans la console du **second** serveur (le vide), **pas** dans celle du premier ;
+- la page revient sur la conférence, la professeure y est **modérateur**, comme d'habitude ;
+- côté base, le salon a mémorisé le serveur qui l'a réellement ouvert :
+
+```bash
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "SELECT r.name, r.server_id, s.base_url FROM rooms r JOIN servers s ON s.id = r.server_id;"
+```
+
+Inverser ensuite les charges (vider le premier, charger le second) et démarrer un **autre** salon : il doit partir sur le premier. C'est la mesure qui décide, à chaque démarrage, et rien d'autre.
+
+**Contrôle qui compte** : dans le journal Apache du serveur BBB **le moins chargé**, on doit voir **deux** requêtes — un `getMeetings` (la sonde) puis un `create`. Sur l'autre, **un seul** `getMeetings`. La sonde interroge tout le monde ; la création ne s'adresse qu'au vainqueur.
+
+### Scénario 25.2 — ⭐ Un serveur tombe entre la sonde et le clic : la bascule
+
+C'est le scénario que la 57.4 existe pour rendre indolore.
+
+1. laisser les deux serveurs joignables et **peu chargés**, le second étant le moins chargé ;
+2. **couper le second** (`systemctl stop bbb-*`, ou couper le réseau vers lui) ;
+3. démarrer un salon.
+
+**Attendu** : le salon **s'ouvre quand même**, sur le premier serveur, et le professeur **n'a rien à faire** — pas de message d'erreur, pas de second clic. Le temps d'ouverture est simplement plus long (une sonde qui expire à 3 s, puis une création).
+
+Deux vérifications qui distinguent les deux lignes de défense :
+
+- si le serveur est coupé **avant** le clic, il est écarté dès la **sonde** — le journal du serveur vivant montre alors `getMeetings` puis `create`, et un seul `create` a été émis en tout ;
+- si le serveur tombe **entre** la sonde et la création (le cas rare, à simuler en le coupant pendant l'ouverture), l'extension émet **deux** `create` : un vers le mort, un vers le vivant. C'est la bascule, et elle est **bornée à un seul réessai**.
+
+Et dans les deux cas, le salon mémorise **le serveur qui a réellement ouvert** (requête SQL du 25.1) : c'est lui que la jonction des élèves suivra.
+
+### Scénario 25.3 — ⭐ Tous les serveurs coupés : un message, jamais une page blanche
+
+Couper **les deux** serveurs, puis démarrer un salon.
+
+**Attendu** : retour sur `/ext/bbb/rooms` avec un message explicite — « Aucun serveur de visioconférence n'est joignable actuellement. Réessayez dans un instant, puis prévenez l'administrateur. » La page est **complète** : liste des salons, entête, pied de page. Jamais une page blanche, jamais une erreur 500, jamais un navigateur qui tourne indéfiniment.
+
+Trois messages doivent être **distincts**, et c'est le point de ce scénario — trois causes, trois remèdes :
+
+| Situation | Message attendu |
+|---|---|
+| Aucun serveur déclaré, ou tous désactivés | « Aucun serveur de visioconférence **configuré** — prévenez l'administrateur. » |
+| Des serveurs déclarés, aucun ne répond | « Aucun serveur de visioconférence n'est **joignable actuellement**. » |
+| Le ou les serveurs refusent le secret | « … le **secret enregistré a été refusé** — prévenez l'administrateur. » |
+
+Pour le troisième : modifier le secret d'un serveur sur `/ext/bbb/admin/servers` en une valeur fausse, désactiver l'autre, et démarrer. Le message doit **nommer le secret** — un serveur mal configuré ne se signale jamais tout seul, et « injoignable » enverrait l'administrateur vérifier son réseau pendant des heures.
+
+### Scénario 25.4 — ⭐ Délégation Scalelite : le seuil, jamais la mesure
+
+À défaut d'un vrai Scalelite, un **serveur BBB ordinaire déclaré avec un seuil** le simule exactement : c'est la même sémantique, et c'est tout l'intérêt du contrat repris de SE4.
+
+Déclarer le second serveur avec un **seuil de délégation à 5**, puis :
+
+1. charger le premier serveur avec **moins de 5 participants** ⇒ démarrer un salon : il part sur le **premier** ;
+2. charger le premier serveur à **plus de 5 participants** ⇒ démarrer un autre salon : il part sur le **serveur à seuil**.
+
+**Le contrôle qui porte la sémantique** : dans le journal Apache du serveur à seuil, **aucun `getMeetings` n'apparaît jamais**, dans aucun des deux cas. Il n'est **pas sondé** — sa valeur n'est pas une mesure de sa charge, c'est un **point de délégation** choisi par l'administrateur. C'est exactement ce que faisait `load_server_bbb()` dans SE4, et c'est délibéré.
+
+**Corollaire à vérifier une fois** : couper le serveur à seuil et démarrer un salon dans le cas 2. Comme il n'est jamais sondé, il **est** choisi, la création échoue, et **la bascule le rattrape** — le salon s'ouvre sur l'autre. C'est la seule protection qu'un Scalelite éteint puisse avoir, et c'est pour cela que la bascule existe.
+
+### Scénario 25.5 — Le budget de temps, sous serveur mono-processus
+
+Pendant qu'un démarrage sonde un serveur **mort** (donc ~3 s d'attente, plus la création), depuis **un autre onglet de la MÊME personne** et depuis **une autre session** :
+
+```bash
+for i in $(seq 1 20); do curl -sS -o /dev/null -w '%{http_code} %{time_total}\n' \
+  -b "se5_ext_bbb=<cookie>" 'https://<instance>/ext/bbb/rooms'; done
+```
+
+**Attendu** : toutes les requêtes rendent `200` **rapidement** (quelques dizaines de millisecondes). C'est ce que garantit le relâchement du verrou d'état avant la première sonde : le professeur dont le démarrage traîne peut **quand même** recharger sa liste de salons dans un autre onglet. Un blocage ici signifie que le verrou est retenu pendant les appels sortants — la régression exacte que la revue 57.2 avait fait corriger.
+
+Chronométrer aussi le pire cas assumé : trois serveurs déclarés dont deux morts ⇒ le démarrage peut prendre ~20 à 25 s. C'est **long, et normal** : il est payé sur un acte explicite, une fois par ouverture de cours. Si le parc réel montre que c'est trop, la réponse est une borne de sonde plus courte ou un sondage concurrent — **pas** un cache.
+
+### Scénario 25.6 — Un salon démarré GARDE son serveur
+
+Démarrer un salon (il part, disons, sur le serveur B). Puis, **sans le refermer** :
+
+1. charger fortement le serveur B et laisser A vide ;
+2. faire **rejoindre un élève** ⇒ il entre sur **B**, pas sur A. La jonction suit `rooms.server_id`, elle ne re-choisit jamais ;
+3. ouvrir l'onglet **Enregistrements** ⇒ les enregistrements du salon sont demandés à **B**.
+
+**Pourquoi c'est voulu** : BigBlueButton ne déplace pas une conférence en cours. Rééquilibrer un salon vivant reviendrait à envoyer la moitié de la classe dans une salle vide. Seul le **prochain démarrage** peut changer de serveur — y compris pour un salon dont le serveur a été supprimé ou désactivé depuis (comportement de la 57.2, conservé).
+
+### Scénario 25.7 — ⭐ Extinction traversée : les anciennes URL ne mènent plus nulle part
+
+Depuis un navigateur connecté à SE5, visiter **une par une** :
+
+```
+/bbb/config.php   /bbb/create.php   /bbb/join.php   /bbb/launch.php   /bbb/records.php   /bbb/refresh.php
+/visio            /visio/           /visio/?salon=prof.martin
+```
+
+**Attendu, pour chacune** : une redirection **302 vers l'accueil SE5** (`/`), où vit le lanceur. Jamais l'interface legacy, jamais une page d'erreur, jamais un formulaire BigBlueButton.
+
+Puis la **forme préfixée par l'UAI**, celle que le legacy fabriquait lui-même :
+
+```
+/<uai>/bbb/create.php      /<uai>/visio/
+```
+
+**Attendu** : même redirection. Le préfixe est retiré avant l'évaluation des routes bloquées.
+
+**Le contrôle le plus important de la section**, et il ne se joue que sur une instance où **`/var/www/sambaedu` existe encore** (Epic 38 non débranché) :
+
+```bash
+ls -la /var/www/sambaedu/bbb/     # le code SE4 d'origine est bien là
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' 'https://<instance>/bbb/create.php'
+```
+
+**Attendu** : `302` vers `/`. **Surtout pas `200`.** Un `200` signifierait que le repli vers le système de fichiers SE4 s'est rouvert — c'est-à-dire l'interface SE4 d'origine ressuscitée, avec ses mots de passe en champs cachés et sa vérification TLS désactivée. C'est précisément ce que les deux entrées de `blocked_legacy_routes` empêchent, et ce qu'aucun test hors VM ne peut constater.
+
+### Scénario 25.8 — La modale de recherche ne propose plus « Visioconférences »
+
+Sur n'importe quelle page de SE5, ouvrir la **recherche globale** (la modale du bandeau) et taper `visio`, puis `salon`, puis `bbb`.
+
+**Attendu** : **aucune** entrée « Créer un salon », « Rejoindre un salon » ni « Enregistrements ». La catégorie entière a disparu.
+
+Et la contre-épreuve, tout aussi importante : le **lanceur d'applications** propose bien la tuile « Visioconférences », et c'est **le seul chemin** vers la visio depuis SE5. Vérifier aussi, sur une instance où l'extension **n'est pas installée**, qu'aucun lien mort ne subsiste nulle part — c'est la raison pour laquelle la catégorie n'a **pas** été remplacée par un lien en dur vers `/ext/bbb` : la tuile, elle, est conditionnée à l'installation réelle.
+
+### Scénario 25.9 — Non-régression de l'Epic 38 : l'observation du canal legacy
+
+```bash
+php artisan se4:extinction-report      # ou l'équivalent 38.6 de l'instance
+```
+
+**Attendu** : la commande tourne, et son verdict n'est pas perturbé. Deux points à consigner :
+
+1. les répertoires `bbb` et `visio` **restent** dans l'inventaire du canal legacy de l'Epic 38 : cette liste décrit le **système de fichiers SE4**, pas la surface SE5. Les en retirer fausserait le verdict sur une instance non débranchée ;
+2. en revanche, les requêtes `/bbb/*` et `/visio/*` **cessent d'apparaître** dans `legacy_catchall_logs` — une route **migrée** est redirigée avant journalisation (comportement existant du catchall). C'est correct et assumé : une route migrée n'est plus un accès au canal legacy, et le verdict GO/NO-GO ne doit plus la compter.
+
+```sql
+SELECT path, COUNT(*) FROM legacy_catchall_logs WHERE path LIKE 'bbb%' OR path LIKE 'visio%' GROUP BY path;
+```
+
+**Attendu** : aucune ligne **nouvelle** après les visites du scénario 25.7 (les lignes historiques, elles, restent — c'est un journal).
+
+### Scénario 25.10 — Le module legacy a bien disparu du disque
+
+```bash
+ls /var/www/sambaedu-reload/legacy/modules/          # plus de répertoire bbb
+ls /var/www/sambaedu-reload/legacy/stubs/ | grep -i bbb   # rien
+php artisan test --testsuite=Architecture            # dont LegacyBbbLinkExtinctionTest
+```
+
+**Attendu** : le répertoire `legacy/modules/bbb/` et les deux stubs dédiés ont disparu ; le module `dhcp` et les stubs **partagés** (`functions.inc.php`, `sites.inc.php`, `ent.inc.php`, `cloud.inc.php`, `fonc_parc.inc.php`) sont **intacts** — le module dhcp les consomme, et les supprimer le casserait.
+
+Contrôle croisé : `/dhcp/baux.php` répond toujours comme avant.
+
+### Checklist rapide — Section 25
+
+- [ ] **25.1 Répartition observée : le meeting apparaît dans la console du serveur le MOINS chargé ; sonde sur tous, création sur un seul ; `rooms.server_id` mémorise le bon**
+- [ ] **25.2 Bascule : serveur coupé ⇒ le salon s'ouvre quand même sans action de l'utilisateur ; exactement DEUX `create` quand la panne survient après la sonde**
+- [ ] **25.3 Tous coupés ⇒ message clair, page complète, jamais blanche ; les TROIS messages (non configuré / non joignable / secret refusé) sont distincts**
+- [ ] **25.4 Délégation Scalelite : choisi quand les mesurés dépassent son seuil, et JAMAIS sondé (zéro `getMeetings` dans son journal) ; s'il est mort, la bascule le rattrape**
+- [ ] 25.5 Fluidité même-session pendant un démarrage qui sonde un serveur mort ; pire cas ~25 s chronométré et assumé
+- [ ] **25.6 Un salon démarré garde son serveur : jonction et enregistrements suivent `server_id`, quelle que soit la charge**
+- [ ] **25.7 `/bbb/*.php` et `/visio` (avec ET sans préfixe UAI) ⇒ 302 vers l'accueil SE5 — y compris sur une instance où `/var/www/sambaedu/bbb/` existe encore**
+- [ ] **25.8 La recherche globale ne propose plus « Visioconférences » ; la tuile du lanceur est le seul chemin ; aucun lien mort là où l'extension n'est pas installée**
+- [ ] 25.9 `se4:extinction-report` tourne ; `bbb`/`visio` restent dans l'inventaire du FS SE4 ; plus de hits `/bbb/*` dans `legacy_catchall_logs`
+- [ ] 25.10 `legacy/modules/bbb/` et les 2 stubs dédiés absents ; stubs partagés et module dhcp intacts (`/dhcp/baux.php` répond)

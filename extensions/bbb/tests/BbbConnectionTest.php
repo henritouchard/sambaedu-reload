@@ -193,6 +193,173 @@ final class BbbConnectionTest extends TestCase
     }
 
     // =====================================================================
+    // Story 57.4 — La sonde de charge, sur de VRAIES réponses de la biblio
+    // =====================================================================
+
+    #[Test]
+    public function the_load_is_the_sum_of_the_participants_of_every_running_meeting(): void
+    {
+        // C'est mot pour mot ce que faisait `load_server_bbb()` dans SE4 pour un
+        // serveur normal : `getMeetings`, puis la somme des `participantCount`.
+        $client = $this->clientReturning(<<<'XML'
+            <response>
+                <returncode>SUCCESS</returncode>
+                <meetings>
+                    <meeting><meetingID>salon-1</meetingID><participantCount>12</participantCount></meeting>
+                    <meeting><meetingID>salon-2</meetingID><participantCount>7</participantCount></meeting>
+                    <meeting><meetingID>salon-3</meetingID><participantCount>0</participantCount></meeting>
+                </meetings>
+            </response>
+        XML);
+
+        $result = $client->measureLoad('https://bbb.example.test/api', 'secret');
+
+        self::assertSame(CallOutcome::Ok, $result->outcome);
+        self::assertSame(19, $result->participants);
+    }
+
+    #[Test]
+    public function an_empty_server_is_a_load_of_zero_and_the_best_candidate_there_is(): void
+    {
+        // Les DEUX formes qu'un serveur au repos peut prendre — le nœud
+        // `meetings` vide, et le nœud absent avec `messageKey=noMeetings`.
+        foreach ([
+            '<response><returncode>SUCCESS</returncode><meetings></meetings></response>',
+            '<response><returncode>SUCCESS</returncode><messageKey>noMeetings</messageKey>'
+                . '<message>no meetings were found on this server</message></response>',
+        ] as $xml) {
+            $result = $this->clientReturning($xml)->measureLoad('https://bbb.example.test/api', 'secret');
+
+            self::assertTrue($result->isOk(), $xml);
+            self::assertSame(0, $result->participants, $xml);
+        }
+    }
+
+    #[Test]
+    public function a_meeting_without_a_participant_count_does_not_break_the_measurement(): void
+    {
+        // ⚠️ TROISIÈME rendez-vous avec le défaut de famille du fork. Ici il ne
+        // mord pas — `(int) $xml->participantCount` sur un enfant absent vaut
+        // zéro — mais c'est justement ce qu'il fallait vérifier plutôt que
+        // supposer : `getMeetingLayout()` (57.2) et `Record::playback` (57.3)
+        // avaient l'air tout aussi inoffensifs.
+        $client = $this->clientReturning(<<<'XML'
+            <response>
+                <returncode>SUCCESS</returncode>
+                <meetings>
+                    <meeting><meetingID>salon-sans-compteur</meetingID></meeting>
+                    <meeting><meetingID>salon-2</meetingID><participantCount>4</participantCount></meeting>
+                    <meeting/>
+                </meetings>
+            </response>
+        XML);
+
+        $result = $client->measureLoad('https://bbb.example.test/api', 'secret');
+
+        self::assertTrue($result->isOk());
+        self::assertSame(4, $result->participants, 'les meetings muets comptent pour zéro, ils n\'annulent rien');
+    }
+
+    #[Test]
+    public function a_refused_secret_on_a_load_probe_is_never_taken_for_an_outage(): void
+    {
+        // La distinction porte toute la conduite du sélecteur : « injoignable »
+        // s'écarte en silence, « secret refusé » s'écarte ET se signale.
+        $refused = $this->clientReturning(
+            '<response><returncode>FAILED</returncode><messageKey>checksumError</messageKey></response>'
+        )->measureLoad('https://bbb.example.test/api', 'mauvais-secret');
+
+        self::assertSame(CallOutcome::InvalidSecret, $refused->outcome);
+        self::assertFalse($refused->isOk());
+        self::assertStringContainsString('secret', $refused->message);
+
+        $down = $this->clientThrowing(new RuntimeException('Unhandled curl error: Operation timed out'))
+            ->measureLoad('https://absent.example.test/api', 'secret');
+
+        self::assertSame(CallOutcome::Unreachable, $down->outcome);
+        self::assertStringNotContainsString('curl', $down->message);
+
+        $garbage = $this->clientThrowing(new BadResponseException('Bad response, HTTP code: 404'))
+            ->measureLoad('https://portail.example.test/', 'secret');
+
+        self::assertSame(CallOutcome::InvalidResponse, $garbage->outcome);
+    }
+
+    #[Test]
+    public function a_failed_probe_never_reports_a_load(): void
+    {
+        // Une charge de zéro sur un serveur en panne en ferait le FAVORI de
+        // toute répartition — le pire résultat possible.
+        foreach ([
+            $this->clientThrowing(new RuntimeException('timeout'))->measureLoad('https://x.example.test/api', 's'),
+            $this->clientReturning('<response><returncode>FAILED</returncode><messageKey>checksumError</messageKey></response>')
+                ->measureLoad('https://x.example.test/api', 's'),
+            $this->clientReturning('<response><returncode>PEUT-ETRE</returncode></response>')
+                ->measureLoad('https://x.example.test/api', 's'),
+        ] as $result) {
+            self::assertFalse($result->isOk());
+            self::assertSame(0, $result->participants);
+            self::assertNotSame('', $result->message);
+        }
+    }
+
+    #[Test]
+    public function the_probe_is_bounded_shorter_than_every_other_call(): void
+    {
+        // La sonde se paie une fois par serveur configuré, à chaque démarrage de
+        // salon : elle ne peut pas porter la même borne qu'un appel qui fait
+        // vraiment quelque chose.
+        self::assertSame(3000, LiveBbbApiClient::PROBE_TIMEOUT_MS);
+        self::assertLessThan(LiveBbbApiClient::TOTAL_TIMEOUT_MS, LiveBbbApiClient::PROBE_TIMEOUT_MS);
+    }
+
+    #[Test]
+    public function the_probe_really_asks_for_the_shorter_bound_and_the_connection_test_does_not(): void
+    {
+        // ⚠️ La borne ne vaut que si elle atteint vraiment le transport. Le
+        // MÊME appel `getMeetings` sert les deux usages : c'est le troisième
+        // argument qui les distingue, et sans ce test il pourrait être perdu en
+        // route sans qu'aucune assertion ne bouge.
+        $bounds = [];
+
+        $client = new LiveBbbApiClient(
+            static function (string $url, string $secret, int $timeoutMs) use (&$bounds): GetMeetingsResponse {
+                $bounds[] = $timeoutMs;
+
+                return new GetMeetingsResponse(new SimpleXMLElement(
+                    '<response><returncode>SUCCESS</returncode><meetings></meetings></response>'
+                ));
+            },
+        );
+
+        $client->measureLoad('https://bbb.example.test/api', 'secret');
+        $client->testConnection('https://bbb.example.test/api', 'secret');
+
+        self::assertSame(
+            [LiveBbbApiClient::PROBE_TIMEOUT_MS, LiveBbbApiClient::TOTAL_TIMEOUT_MS],
+            $bounds,
+        );
+    }
+
+    #[Test]
+    public function no_load_message_ever_carries_the_secret(): void
+    {
+        $secret = 'secret-partage-de-la-sonde-4c7e';
+
+        $messages = [
+            $this->clientThrowing(new RuntimeException('curl error with ' . $secret))
+                ->measureLoad('https://bbb.example.test/api', $secret)->message,
+            $this->clientReturning('<response><returncode>FAILED</returncode><messageKey>checksumError</messageKey></response>')
+                ->measureLoad('https://bbb.example.test/api', $secret)->message,
+        ];
+
+        foreach ($messages as $message) {
+            self::assertNotSame('', $message);
+            self::assertStringNotContainsString($secret, $message);
+        }
+    }
+
+    // =====================================================================
     // Story 57.2 — Ouverture d'un meeting
     // =====================================================================
 

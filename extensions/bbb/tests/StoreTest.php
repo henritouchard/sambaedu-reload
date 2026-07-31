@@ -826,17 +826,31 @@ final class StoreTest extends TestCase
     }
 
     #[Test]
-    public function the_first_active_server_is_the_one_that_gets_used(): void
+    public function the_servers_are_listed_in_a_stable_order_and_say_whether_they_are_active(): void
     {
+        // ⚠️ Story 57.4 — CE test remplace `the_first_active_server_is_the_one_that_gets_used`,
+        // en même temps que `Store::firstEnabledServer()` a disparu. Choisir un
+        // serveur n'est plus une requête SQL : c'est une décision qui MESURE, et
+        // elle vit dans `Bbb\ServerSelector` (voir `ServerSelectorTest`, qui
+        // couvre « désactivé ⇒ ni sondé ni candidat » et « aucun serveur ⇒ un
+        // message, pas une erreur »).
+        //
+        // Ce qui reste du magasin, et que le sélecteur consomme : une liste
+        // ORDONNÉE par identifiant — c'est elle qui rend le départage à charge
+        // égale déterministe — et un `enabled` typé en booléen.
         $store = new Store($this->path());
 
-        self::assertNull($store->firstEnabledServer(), 'aucun serveur : rien à choisir, et surtout pas une erreur');
+        self::assertSame([], $store->servers(), 'aucun serveur : une liste vide, et surtout pas une erreur');
 
-        $store->addServer('https://bbb1.example.test/api', 'secret-1', 0, false);
+        $first = $store->addServer('https://bbb1.example.test/api', 'secret-1', 0, false);
         $second = $store->addServer('https://bbb2.example.test/api', 'secret-2', 0, true);
-        $store->addServer('https://bbb3.example.test/api', 'secret-3', 0, true);
+        $third = $store->addServer('https://bbb3.example.test/api', 'secret-3', 50, true);
 
-        self::assertSame($second, $store->firstEnabledServer()['id'], 'le premier ACTIF, pas le premier tout court');
+        $servers = $store->servers();
+
+        self::assertSame([$first, $second, $third], array_column($servers, 'id'));
+        self::assertSame([false, true, true], array_column($servers, 'enabled'));
+        self::assertSame([0, 0, 50], array_column($servers, 'scalelite_threshold'));
     }
 
     #[Test]

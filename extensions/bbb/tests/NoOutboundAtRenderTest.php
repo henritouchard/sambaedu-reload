@@ -92,15 +92,21 @@ final class NoOutboundAtRenderTest extends TestCase
     }
 
     #[Test]
-    public function starting_a_room_emits_exactly_one_call(): void
+    public function starting_a_room_emits_one_load_probe_per_server_and_one_creation(): void
     {
+        // ⚠️ Story 57.4 — ce test comptait UN appel jusqu'ici. Le démarrage en
+        // émet désormais DEUX avec un seul serveur configuré : la sonde de
+        // charge, puis la création. C'est le prix ASSUMÉ de la répartition, et
+        // il se paie sur un POST explicite — jamais au rendu d'une page, ce que
+        // tout le reste de ce fichier continue d'affirmer.
         $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
 
         $this->bench->post($session, '/rooms/start', ['token' => $this->token]);
 
+        self::assertCount(1, $this->bench->api->measured, 'un serveur en fixture, donc une sonde');
         self::assertCount(1, $this->bench->api->created);
         self::assertSame([], $this->bench->api->probed);
-        self::assertSame(1, $this->bench->api->outboundCalls());
+        self::assertSame(2, $this->bench->api->outboundCalls());
         self::assertCount(1, $this->bench->api->joins, 'la fabrique d\'URL est LOCALE : elle ne compte pas');
     }
 
@@ -124,6 +130,24 @@ final class NoOutboundAtRenderTest extends TestCase
         $this->bench->post($session, '/rooms/delete', ['token' => $this->token]);
 
         self::assertSame(0, $this->bench->api->outboundCalls());
+    }
+
+    #[Test]
+    public function no_page_render_ever_probes_a_server_for_its_load(): void
+    {
+        // Story 57.4 — la répartition ajoute un appel sortant de plus à
+        // l'extension ; ce test affirme qu'elle n'en a ajouté AUCUN au rendu.
+        // Un sondage de charge à l'affichage de la liste ferait payer à chaque
+        // consultation le temps de tous les serveurs configurés.
+        $this->bench->store->addServer('https://bbb2.example.test/bigbluebutton/api', 'secret-2');
+
+        $prof = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+
+        $this->bench->get($prof);
+        $this->bench->getRecordings($prof);
+        $this->bench->getGuest('jeton-quelconque');
+
+        self::assertSame([], $this->bench->api->measured, 'aucune sonde de charge au rendu');
     }
 
     // ── Story 57.3 ───────────────────────────────────────────────────────

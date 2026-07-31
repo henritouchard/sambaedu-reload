@@ -85,11 +85,13 @@
             { title: 'Configuration des applications Wine', description: 'Configurer Wine', url: '/gpo/wine.php' },
             { title: 'Sources Windows', description: 'Gérer les images Windows', url: '/ipxe/Win10/win_iso.php' }
         ],
-        'Visioconférences': [
-            { title: 'Créer un salon', description: 'Créer une room BigBlueButton', url: '/bbb/create.php' },
-            { title: 'Rejoindre un salon', description: 'Rejoindre une room existante', url: '/bbb/join.php' },
-            { title: 'Enregistrements', description: 'Gérer les enregistrements', url: '/bbb/records.php' }
-        ],
+        // Story 57.4 / AR12 — la catégorie « Visioconférences » et ses trois
+        // liens en dur vers le BBB legacy ont été RETIRÉS : l'extension
+        // « Visioconférences » (sambaedu-ext-bbb) en est le successeur intégral.
+        // Elle n'est PAS remplacée par un lien vers /ext/bbb : la tuile du
+        // lanceur est conditionnée à l'installation réelle de l'extension, alors
+        // qu'un lien écrit ici s'afficherait même là où elle n'est pas installée
+        // — c'est-à-dire exactement le défaut qu'on éteint.
         'Serveur DHCP': [
             { title: 'Gestion des baux', description: 'Gérer les baux DHCP', url: '/dhcp/baux.php' }
         ],

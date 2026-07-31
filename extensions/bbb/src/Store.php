@@ -133,8 +133,7 @@ final class Store
      * `PRAGMA user_version` n'accepte pas de paramètre lié (c'est une directive,
      * pas une requête) : la valeur interpolée est une CONSTANTE de classe
      * entière, jamais une donnée d'entrée.
-     */
-    /**
+     *
      * ══════════════════════════════════════════════════════════════════════
      *  LA MIGRATION EST UN ACTE UNIQUE, PAS UNE SUITE D'INSTRUCTIONS
      *  (review 57.3 #1 — le seul 🔴 de l'epic)
@@ -432,21 +431,10 @@ final class Store
             ->execute(['enabled' => $enabled ? 1 : 0, 'updated_at' => self::now(), 'id' => $id]);
     }
 
-    /**
-     * Le premier serveur ACTIF, par ordre d'insertion.
-     *
-     * Story 57.2 : c'est tout ce dont cette story a besoin. Le choix du serveur
-     * le moins chargé, et la bascule sur panne, sont le sujet entier de la
-     * story 57.4 — les écrire ici les écrirait à moitié.
-     *
-     * @return array<string, mixed>|null
-     */
-    public function firstEnabledServer(): ?array
-    {
-        $row = $this->pdo->query('SELECT * FROM servers WHERE enabled = 1 ORDER BY id LIMIT 1')?->fetch();
-
-        return is_array($row) ? self::hydrateServer($row) : null;
-    }
+    // ⚠️ `firstEnabledServer()` a vécu de 57.2 à 57.4, et son docblock annonçait
+    // sa propre fin : le choix d'un serveur n'est plus une requête SQL mais une
+    // décision qui MESURE (`Bbb\ServerSelector`). Le magasin, lui, se contente
+    // de rendre les serveurs ; il ne choisit plus.
 
     // =====================================================================
     // Salons

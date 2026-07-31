@@ -8,6 +8,7 @@ use SambaEdu\ExtBbb\Bbb\BbbApiClient;
 use SambaEdu\ExtBbb\Bbb\ConnectionResult;
 use SambaEdu\ExtBbb\Bbb\CreateResult;
 use SambaEdu\ExtBbb\Bbb\DeleteResult;
+use SambaEdu\ExtBbb\Bbb\LoadResult;
 use SambaEdu\ExtBbb\Bbb\RecordingItem;
 use SambaEdu\ExtBbb\Bbb\RecordingsResult;
 use SambaEdu\ExtBbb\Bbb\RoomMeeting;
@@ -58,11 +59,20 @@ final class RecordingBbbApiClient implements BbbApiClient
         return $this->result ?? ConnectionResult::ok(3);
     }
 
+    /**
+     * Story 57.4 — ce que CHAQUE serveur répond à une création, indexé par URL
+     * de base. C'est ce qui rend la bascule exerçable : le premier candidat
+     * tombe, le suivant ouvre le meeting.
+     *
+     * @var array<string, CreateResult>
+     */
+    public array $createByServer = [];
+
     public function createMeeting(string $baseUrl, string $secret, RoomMeeting $meeting): CreateResult
     {
         $this->created[] = ['url' => $baseUrl, 'secret' => $secret, 'meeting' => $meeting];
 
-        return $this->createResult ?? CreateResult::started();
+        return $this->createByServer[$baseUrl] ?? $this->createResult ?? CreateResult::started();
     }
 
     public function isMeetingRunning(string $baseUrl, string $secret, string $meetingId): RunningResult
@@ -155,6 +165,56 @@ final class RecordingBbbApiClient implements BbbApiClient
         return $this->deleteResult ?? DeleteResult::deleted();
     }
 
+    // =====================================================================
+    // Story 57.4 — La sonde de charge
+    // =====================================================================
+
+    /** @var list<array{url: string, secret: string}> */
+    public array $measured = [];
+
+    /**
+     * La charge que CHAQUE serveur annonce, indexée par URL de base : c'est
+     * elle qui décide du vainqueur, donc c'est elle qui doit se différencier
+     * serveur par serveur dans les tests.
+     *
+     * @var array<string, LoadResult>
+     */
+    public array $loadByServer = [];
+
+    public ?LoadResult $loadResult = null;
+
+    /**
+     * Observateur appelé AU DÉBUT de chaque sonde, avant tout enregistrement.
+     *
+     * Il sert à une seule chose, mais elle compte : constater l'état du verrou
+     * **au moment précis** du premier appel sortant. Compter les relâchements
+     * après coup ne dirait pas s'ils ont eu lieu AVANT ou APRÈS.
+     *
+     * @var (\Closure(int): void)|null
+     */
+    public ?\Closure $onMeasure = null;
+
+    public function measureLoad(string $baseUrl, string $secret): LoadResult
+    {
+        if ($this->onMeasure !== null) {
+            ($this->onMeasure)(count($this->measured));
+        }
+
+        $this->measured[] = ['url' => $baseUrl, 'secret' => $secret];
+
+        return $this->loadByServer[$baseUrl] ?? $this->loadResult ?? LoadResult::ok(0);
+    }
+
+    /**
+     * Les URL de base RÉELLEMENT sondées, dans l'ordre.
+     *
+     * @return list<string>
+     */
+    public function probedUrls(): array
+    {
+        return array_map(static fn (array $call): string => $call['url'], $this->measured);
+    }
+
     /** Le nombre d'appels qui SORTENT réellement du serveur (la fabrique d'URL n'en est pas un). */
     public function outboundCalls(): int
     {
@@ -162,6 +222,7 @@ final class RecordingBbbApiClient implements BbbApiClient
             + count($this->created)
             + count($this->probed)
             + count($this->listed)
-            + count($this->deleted);
+            + count($this->deleted)
+            + count($this->measured);
     }
 }

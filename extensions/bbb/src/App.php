@@ -7,6 +7,7 @@ namespace SambaEdu\ExtBbb;
 use SambaEdu\ExtBbb\Admin\ServersController;
 use SambaEdu\ExtBbb\Bbb\BbbApiClient;
 use SambaEdu\ExtBbb\Bbb\LiveBbbApiClient;
+use SambaEdu\ExtBbb\Bbb\ServerSelector;
 use SambaEdu\ExtBbb\Guest\GuestController;
 use SambaEdu\ExtBbb\Http\NativeSessionStore;
 use SambaEdu\ExtBbb\Http\Request;
@@ -202,9 +203,23 @@ final class App
         return $controller->handle($request, $this->sessionStore);
     }
 
+    /**
+     * Story 57.4 — le sélecteur de serveur est câblé ICI, à la main, comme le
+     * reste : il prend le magasin et le client BBB, et rien d'autre. C'est ce
+     * qui le rend exerçable sans réseau, et extractible tel quel le jour où le
+     * kit de démarrage de l'Epic 58 le réclamera.
+     */
     private function rooms(Request $request): Response
     {
-        $controller = new RoomsController($this->store(), $this->api, $this->view, $this->env);
+        $store = $this->store();
+
+        $controller = new RoomsController(
+            $store,
+            $this->api,
+            $this->view,
+            $this->env,
+            new ServerSelector($store, $this->api),
+        );
 
         return $controller->handle($request, $this->sessionStore);
     }
