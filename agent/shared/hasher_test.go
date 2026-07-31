@@ -198,7 +198,10 @@ import (
 // le shell sont deux moitiés d'un même geste, résolues une seule fois côté
 // serveur. Les voir diverger ici signalerait le retour de la panne de juillet
 // 2026 (raccourcis posés dans un dossier que le shell ne regarde pas).
-const frozenStateHash = "e2c85df80a0a69e4b5065cbb0718c1e626c5bf13be57c03aa2db16f46017bdb3"
+// Amendement 58.1 : le payload `folders` gagne `quick_access` (champ additif
+// §9, absent = `unmanaged`) — l'entrée d'Accès rapide suit la redirection.
+// Hash d'item et hash d'état RECALCULÉS, bumpés à l'IDENTIQUE côté PHP.
+const frozenStateHash = "8940e34ff63824c37bad3b2e22d9151016d1661f90a099cc6736977690ac4e7e"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).

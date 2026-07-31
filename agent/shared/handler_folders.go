@@ -69,11 +69,27 @@ var shellFolderValueNames = map[string]string{
 	"desktop": "Desktop",
 }
 
+// Verbes du champ `quick_access` (contrat §7.12) : optionnel, absence =
+// unmanaged. `pinned` = l'entrée d'Accès rapide de ce dossier SUIT la
+// redirection ; `unmanaged` = on n'y touche pas (discipline §8).
+const (
+	quickAccessPinned    = "pinned"
+	quickAccessUnmanaged = "unmanaged"
+)
+
 // FolderSpec : une redirection cible (un item du payload `folders`). Tous les
 // champs sont des strings (contrat §4.1).
 type FolderSpec struct {
 	Folder string // mot métier du dossier shell, ex. "desktop"
 	Path   string // gabarit à tokens `\\<se4fs>\users\<user>\Bureau\` | `%USERPROFILE%\Desktop\`
+	// QuickAccess : verbe optionnel. "" ou "unmanaged" = l'Accès rapide n'est
+	// pas géré (comportement d'un agent antérieur, additif sûr §9).
+	QuickAccess string
+}
+
+// pinsQuickAccess : l'item demande-t-il que l'Accès rapide suive ?
+func (s FolderSpec) pinsQuickAccess() bool {
+	return s.QuickAccess == quickAccessPinned
 }
 
 // identity : clé d'identité (le dossier) — insensible à la casse.
@@ -109,6 +125,20 @@ type FolderOps interface {
 
 	// EnsureDir crée le dossier cible (et ses parents manquants). Idempotent.
 	EnsureDir(value string) error
+
+	// QuickAccessPinned : `value` figure-t-il dans les emplacements ÉPINGLÉS de
+	// l'Accès rapide ? La comparaison se fait sur le chemin RÉSOLU (les `%VAR%`
+	// sont expansés par l'op) : Windows enregistre dans sa jumplist le chemin
+	// concret, jamais le gabarit.
+	QuickAccessPinned(value string) (bool, error)
+
+	// QuickAccessPin épingle `value`. Idempotent : déjà épinglé = no-op.
+	QuickAccessPin(value string) error
+
+	// QuickAccessUnpin retire l'épingle de `value`. Idempotent : absent = no-op.
+	// N'est JAMAIS appelé sur un emplacement dérivé : uniquement sur la valeur
+	// que le handler vient lui-même de remplacer (cf. applyTarget).
+	QuickAccessUnpin(value string) error
 }
 
 // FoldersHandler : handler exclusive-par-dossier branché dans le moteur
@@ -210,6 +240,19 @@ func (h *FoldersHandler) Test(items []StateItem) (bool, error) {
 		if !present || !actual.Equal(expandSzValue(target.value)) {
 			return false, nil
 		}
+
+		// L'Accès rapide fait partie de la cible quand l'item le demande : une
+		// redirection juste dont l'épingle mène encore à l'ancien dossier n'est
+		// pas « appliquée », elle est à moitié appliquée.
+		if target.spec.pinsQuickAccess() {
+			pinned, err := h.Ops.QuickAccessPinned(target.value)
+			if err != nil {
+				return false, fmt.Errorf("lecture de l'Accès rapide pour %q : %w", target.spec.Folder, err)
+			}
+			if !pinned {
+				return false, nil
+			}
+		}
 	}
 
 	return true, nil
@@ -277,9 +320,22 @@ func (h *FoldersHandler) applyTarget(target folderTarget) error {
 
 		return fmt.Errorf("lecture de la redirection %q : %w", target.valueName, err)
 	}
+
 	if present && actual.Equal(spec.Value) {
-		return nil // déjà conforme → idempotence (aucune écriture, aucun geste)
+		// Valeur déjà conforme → aucune écriture, aucun geste. Reste à vérifier
+		// l'Accès rapide : l'utilisateur a pu désépingler à la main, ou Windows
+		// a pu recréer ses épingles par défaut après un reset de la jumplist.
+		return h.convergeQuickAccess(target, "")
 	}
+
+	// L'ANCIENNE valeur, lue à l'instant, est le SEUL emplacement que le handler
+	// s'autorise à désépingler (voir convergeQuickAccess). On la capture avant
+	// de l'écraser.
+	previous := ""
+	if present {
+		previous = actual.Str
+	}
+
 	if err := h.Registry.Write(spec); err != nil {
 		logError(h.Log, "Écriture de la redirection %s en échec : %v", target.valueName, err)
 
@@ -291,6 +347,59 @@ func (h *FoldersHandler) applyTarget(target folderTarget) error {
 	// suffit pas, il faut le relancer. Accumulé ici, exécuté UNE fois en fin de
 	// passe par le compagnon (43.1) — jamais inline (une seule voie d'émission).
 	h.refreshWanted = maxRefreshLevel(h.refreshWanted, RefreshExplorerRestart)
+
+	return h.convergeQuickAccess(target, previous)
+}
+
+// convergeQuickAccess : fait suivre l'entrée d'Accès rapide.
+//
+// `previous` = la valeur de registre que l'Apply vient de REMPLACER (vide si
+// aucune, ou si la valeur était déjà conforme).
+//
+// **Pourquoi on ne désépingle QUE `previous`.** La jumplist d'épingles vit dans
+// `%APPDATA%` — donc dans le PROFIL ITINÉRANT, partagé entre TOUS les postes de
+// l'utilisateur, alors que le desired-state est compilé par couple (poste,
+// user). Un handler qui déciderait seul de « nettoyer les emplacements
+// concurrents » retirerait l'épingle qu'un AUTRE poste du même utilisateur vient
+// légitimement de poser (c'est exactement le finding 🔴 de la review 27.21, sur
+// `desktop_sweep_paths`). `previous` échappe à ce piège : ce n'est pas un
+// emplacement dérivé ni deviné, c'est la valeur que CE poste remplace à
+// l'instant — l'agent ne retire que sa propre trace.
+//
+// Le legacy faisait plus grossier (`bureau_samba.ps1` désépinglait le littéral
+// `%USERPROFILE%\Desktop`, quoi qu'il arrive) ; on garde l'intention, pas
+// l'imprécision.
+func (h *FoldersHandler) convergeQuickAccess(target folderTarget, previous string) error {
+	if !target.spec.pinsQuickAccess() {
+		return nil // `unmanaged` (ou champ absent) : on ne touche à rien (§8).
+	}
+
+	// Désépinglage de l'emplacement abandonné, AVANT d'épingler le nouveau :
+	// sinon l'Accès rapide affiche brièvement deux « Bureau ».
+	if previous != "" && !strings.EqualFold(previous, target.value) {
+		if err := h.Ops.QuickAccessUnpin(previous); err != nil {
+			logError(h.Log, "Désépinglage de %s en échec : %v", previous, err)
+
+			return fmt.Errorf("désépinglage de %q : %w", previous, err)
+		}
+		logInfo(h.Log, "Accès rapide : ancien emplacement désépinglé (%s)", previous)
+	}
+
+	pinned, err := h.Ops.QuickAccessPinned(target.value)
+	if err != nil {
+		logError(h.Log, "Lecture de l'Accès rapide pour %s en échec : %v", target.spec.Folder, err)
+
+		return fmt.Errorf("lecture de l'Accès rapide pour %q : %w", target.spec.Folder, err)
+	}
+	if pinned {
+		return nil // idempotence : aucun geste sur un Accès rapide déjà conforme
+	}
+	if err := h.Ops.QuickAccessPin(target.value); err != nil {
+		logError(h.Log, "Épinglage de %s en échec : %v", target.value, err)
+
+		return fmt.Errorf("épinglage de %q : %w", target.value, err)
+	}
+	logInfo(h.Log, "Accès rapide : %s épinglé sur %s", target.spec.Folder, target.value)
 
 	return nil
 }
@@ -323,5 +432,19 @@ func parseFolderSpec(raw any) (FolderSpec, bool) {
 		return FolderSpec{}, false
 	}
 
-	return FolderSpec{Folder: folder, Path: path}, true
+	// `quick_access` OPTIONNEL (champ additif §9) — lecture INDULGENTE : absent,
+	// vide ou non-string ⇒ `unmanaged`, JAMAIS une enveloppe invalide (un agent
+	// futur doit pouvoir ignorer un champ qu'il ne connaît pas). En revanche un
+	// verbe INCONNU est refusé : « pinned » mal orthographié doit se voir, pas
+	// se traduire silencieusement en « on ne fait rien ».
+	quickAccess, _ := payload["quick_access"].(string)
+	switch quickAccess {
+	case "", quickAccessUnmanaged:
+		quickAccess = quickAccessUnmanaged
+	case quickAccessPinned:
+	default:
+		return FolderSpec{}, false
+	}
+
+	return FolderSpec{Folder: folder, Path: path, QuickAccess: quickAccess}, true
 }

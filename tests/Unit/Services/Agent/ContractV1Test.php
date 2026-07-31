@@ -312,7 +312,15 @@ class ContractV1Test extends TestCase
     // release 2.16.0 obligatoire. Le type entre dans ReportRequest via
     // Rule::in(RESOURCE_TYPES). Le jumeau Go (hasher_test.go::frozenStateHash)
     // porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'e2c85df80a0a69e4b5065cbb0718c1e626c5bf13be57c03aa2db16f46017bdb3';
+    // Amendement 58.1 (même story, agent 2.16.0 NON encore publiée — le champ
+    // est donc fondu dans la même version) : le payload `folders` gagne
+    // `quick_access` (3 clés), qui fait SUIVRE l'entrée d'Accès rapide. Windows
+    // épingle les dossiers standards en enregistrant le CHEMIN résolu à la
+    // création du profil, pas un KNOWNFOLDERID : rediriger ensuite laisse une
+    // entrée « Bureau » qui mène à l'ancien emplacement — la même panne que
+    // celle qu'on répare, en plus discret. Champ additif §9 (absent =
+    // `unmanaged`), hash d'item et hash d'état RECALCULÉS.
+    private const FROZEN_STATE_HASH = '8940e34ff63824c37bad3b2e22d9151016d1661f90a099cc6736977690ac4e7e';
 
     private StateHasher $hasher;
 

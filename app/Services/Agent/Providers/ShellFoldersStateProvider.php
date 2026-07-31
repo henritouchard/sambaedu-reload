@@ -81,9 +81,9 @@ use Illuminate\Support\Collection;
  * Keycloak). Tout vient du {@see TargetContext} déjà résolu et de la capacité
  * globale {@see FilePolicyService::capabilities()}.
  *
- * Payload v1 : `{folder, path}` — exactement 2 clés, toujours des strings
- * (§4.1). Tokens `<se4fs>` / `<user>` substitués LOCALEMENT par l'agent, jamais
- * résolus ici (iso `drives`, `shortcuts`, `app_profile`).
+ * Payload v1 : `{folder, path, quick_access}` — exactement 3 clés, toujours des
+ * strings (§4.1). Tokens `<se4fs>` / `<user>` substitués LOCALEMENT par l'agent,
+ * jamais résolus ici (iso `drives`, `shortcuts`, `app_profile`).
  */
 final class ShellFoldersStateProvider implements StateProvider
 {
@@ -96,6 +96,30 @@ final class ShellFoldersStateProvider implements StateProvider
      * jamais de chemin de clé (invariant capability-first 27.12).
      */
     public const FOLDER_DESKTOP = 'desktop';
+
+    /**
+     * L'entrée d'Accès rapide de ce dossier SUIT la redirection.
+     *
+     * Windows épingle les dossiers standards à la CRÉATION du profil, en
+     * enregistrant le chemin RÉSOLU de l'époque dans sa jumplist — pas un
+     * KNOWNFOLDERID. Rediriger le Bureau ensuite laisse donc dans l'Accès
+     * rapide une entrée « Bureau » qui pointe l'ANCIEN emplacement : le
+     * raccourci de barre latérale le plus visible de l'explorateur mène au
+     * mauvais dossier. C'est la même classe de panne que celle qu'on répare,
+     * en plus discret.
+     *
+     * Le legacy le corrigeait dans `bureau_samba.ps1` (désépingler le Bureau
+     * local, épingler le Bureau résolu).
+     */
+    public const QUICK_ACCESS_PINNED = 'pinned';
+
+    /**
+     * Sentinelle « on ne touche pas à l'Accès rapide » (discipline §8 —
+     * l'absence du champ vaut `unmanaged` pour un agent antérieur). Non émise
+     * aujourd'hui : la porte existe pour qu'un futur réglage puisse rendre la
+     * main sans changer le contrat.
+     */
+    public const QUICK_ACCESS_UNMANAGED = 'unmanaged';
 
     public function __construct(
         private readonly WorkstationEnvironmentResolver $environmentResolver,
@@ -152,6 +176,13 @@ final class ShellFoldersStateProvider implements StateProvider
                 payload: [
                     'folder' => self::FOLDER_DESKTOP,
                     'path' => $path,
+                    // Émis inconditionnellement, y compris quand `path` est le
+                    // Bureau LOCAL : là, la valeur est déjà celle que Windows a
+                    // épinglée d'office ⇒ conforme au premier Test, zéro geste.
+                    // Le legacy, lui, ne gérait l'épingle que hors `Port_perdir`
+                    // (le `bureau_samba.ps1` excluait ce groupe) — une asymétrie
+                    // sans objet dès lors que la convergence est idempotente.
+                    'quick_access' => self::QUICK_ACCESS_PINNED,
                 ],
                 updatedAt: null,
                 sourceId: 1,

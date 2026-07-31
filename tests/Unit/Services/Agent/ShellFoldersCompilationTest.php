@@ -38,7 +38,7 @@ class ShellFoldersCompilationTest extends TestCase
     use RefreshDatabase;
 
     /** Hash de l'item `folders` du golden `state.v1.json` (jumelage croisé PHP↔Go). */
-    private const GOLDEN_ITEM_HASH = 'b45b37cc5f345ca8b079c26d5a77c3d26864b14450da6c66dc22e4a494f17bb7';
+    private const GOLDEN_ITEM_HASH = '4e7caf3747ee9b8f1edf1143dd022f3f8204b46d795de532e563d6dbf3890b73';
 
     private Workstation $ws;
 
@@ -95,7 +95,11 @@ class ShellFoldersCompilationTest extends TestCase
         self::assertCount(1, $items);
         self::assertSame('exclusive', $items[0]['semantics']);
         self::assertSame(
-            ['folder' => 'desktop', 'path' => '\\\\<se4fs>\\users\\<user>\\Bureau\\'],
+            [
+                'folder' => 'desktop',
+                'path' => '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+                'quick_access' => 'pinned',
+            ],
             $items[0]['payload'],
         );
         // Jumelage croisé : le hash compilé est BYTE-IDENTIQUE à celui de

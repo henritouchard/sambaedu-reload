@@ -1315,7 +1315,8 @@ portée **`machine_user`**, appliquée par le **COMPAGNON**. Sémantique
   "semantics": "exclusive",
   "payload": {
     "folder": "desktop",
-    "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\"
+    "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+    "quick_access": "pinned"
   }
 }
 ```
@@ -1324,6 +1325,35 @@ portée **`machine_user`**, appliquée par le **COMPAGNON**. Sémantique
 |---|---|---|
 | `folder` | string | Dossier shell visé — **enum FERMÉ** de mots MÉTIER : `desktop` (seule valeur publiée). Le serveur n'émet **jamais** de nom de valeur de registre (`Desktop`) ni de chemin de clé : la traduction mot → mécanisme appartient à l'agent (invariant capability-first). Un `folder` inconnu = enveloppe invalide, jamais une écriture dans une valeur devinée. |
 | `path` | string | Gabarit du dossier cible, à **tokens** — `\\<se4fs>\users\<user>\Bureau\` (Bureau réseau) ou `%USERPROFILE%\Desktop\` (Bureau local). **Jamais résolu côté serveur** (mêmes tokens que `drives`, `shortcuts`, `app_profile`). Le `%VAR%` reste **littéral** : la valeur est écrite en `REG_EXPAND_SZ`, Windows l'expanse à la lecture. |
+| `quick_access` | string | **Optionnel**, enum FERMÉ `pinned` \| `unmanaged`. Absent ⇒ `unmanaged` (comportement d'un agent antérieur — champ additif §9). Un verbe INCONNU est en revanche refusé : `pined` doit se voir, pas se traduire en silence par « on ne fait rien ». |
+
+**`quick_access` — pourquoi l'épingle fait partie de la cible.** Windows épingle
+les dossiers standards à la **création du profil**, en enregistrant dans sa
+jumplist le chemin **résolu** de l'époque — pas un `KNOWNFOLDERID`. Rediriger le
+Bureau ensuite laisse donc dans l'Accès rapide une entrée « Bureau » qui pointe
+l'ANCIEN emplacement : le raccourci de barre latérale le plus visible de
+l'explorateur mène au mauvais dossier. C'est la même classe de panne que celle
+que ce type répare, en plus discret. Le legacy le corrigeait dans
+`bureau_samba.ps1` (désépingler le Bureau local, épingler le Bureau résolu).
+
+Une redirection juste dont l'épingle mène encore à l'ancien dossier n'est donc
+pas « appliquée », elle est **à moitié appliquée** : `Test` l'inclut, et un
+désépinglage manuel de l'utilisateur ramène l'item en dérive (level-triggered).
+
+> ⚠️ **Le handler ne désépingle QUE l'emplacement qu'il vient lui-même de
+> remplacer.** La jumplist d'épingles vit dans `%APPDATA%`, donc dans le **profil
+> itinérant**, partagé entre TOUS les postes de l'utilisateur — alors que l'état
+> est compilé par couple (poste, user). Un handler qui « nettoierait les
+> emplacements concurrents » retirerait l'épingle qu'un AUTRE poste vient
+> légitimement de poser : c'est exactement le finding 🔴 de la review 27.21 sur
+> `desktop_sweep_paths`, transposé. La valeur précédente, elle, n'est ni dérivée
+> ni devinée — l'agent ne retire que sa propre trace.
+
+**Mécanisme** : `pintohome` n'existe que comme verbe d'automation sur
+`Shell.Application` (IDispatch, sans interface à vtable) — l'agent l'invoque donc
+via `powershell.exe`, comme le faisait le legacy et comme il le fait déjà
+ailleurs (`legacy_cleanup`, `tasks`, `smbios`). C'est un verbe **bascule** :
+chaque op teste l'état avant d'invoquer, ce qui rend `Pin`/`Unpin` idempotents.
 
 **Le trou que ce type bouche.** `\\<se4fs>\users\<user>\Bureau\` n'est le Bureau
 de l'utilisateur QUE si la valeur `User Shell Folders\Desktop` pointe dessus.

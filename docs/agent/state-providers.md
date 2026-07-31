@@ -316,7 +316,8 @@ Un item par dossier shell géré — aujourd'hui le seul `desktop` :
 
 ```json
 { "folder": "desktop",
-  "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\" }
+  "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+  "quick_access": "pinned" }
 ```
 
 **Le pendant indispensable de `shortcuts`.** Le provider précédent décide OÙ
@@ -353,6 +354,14 @@ conforme, sans trace serveur.
 - **`scope=machine_user`** (iso `shortcuts`) : la valeur s'écrit dans la ruche de
   l'UTILISATEUR (compagnon, HKCU) mais se calcule à partir du POSTE. Contexte
   machine seul ⇒ **aucun item** (pas de ruche à écrire).
+- **`quick_access: pinned`** — l'entrée d'Accès rapide suit la redirection.
+  Windows épingle les dossiers standards en enregistrant le **chemin résolu** à
+  la création du profil, pas un `KNOWNFOLDERID` : sans ça, le raccourci de barre
+  latérale le plus visible de l'explorateur continue de mener à l'ancien dossier.
+  Émis inconditionnellement — sur un parc perdir la cible est déjà celle que
+  Windows a épinglée d'office, donc conforme au premier `Test`, zéro geste. Le
+  legacy ne le gérait que hors `Port_perdir` (`bureau_samba.ps1`), une asymétrie
+  sans objet dès lors que la convergence est idempotente.
 - **Côté agent** (handler Go `folders`, ≥ 2.16.0) : crée le dossier cible **PUIS**
   écrit la valeur en `REG_EXPAND_SZ` — rediriger vers un dossier absent donne un
   Bureau vide. Un dossier absent est une **dérive**, un serveur muet une

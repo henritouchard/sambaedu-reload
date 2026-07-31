@@ -105,11 +105,15 @@ class ShellFoldersStateProviderTest extends TestCase
         // précédence n'a lieu d'être.
         self::assertSame(StateMaille::Broadcast, $candidate->maille);
         self::assertSame(
-            ['folder', 'path'],
+            ['folder', 'path', 'quick_access'],
             array_keys($candidate->payload),
-            'le payload §7.12 porte EXACTEMENT 2 clés, dans cet ordre',
+            'le payload §7.12 porte EXACTEMENT 3 clés, dans cet ordre',
         );
         self::assertSame('desktop', $candidate->payload['folder']);
+        // L'entrée d'Accès rapide suit la redirection : sans elle, le raccourci
+        // de barre latérale le plus visible de l'explorateur continue de mener
+        // à l'ancien dossier (Windows épingle un CHEMIN, pas un KNOWNFOLDERID).
+        self::assertSame('pinned', $candidate->payload['quick_access']);
     }
 
     #[Test]

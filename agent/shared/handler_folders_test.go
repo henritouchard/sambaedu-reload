@@ -28,8 +28,18 @@ type fakeFolderOps struct {
 	se4fs string
 	user  string
 
-	statCnt  int
-	mkdirCnt int
+	// pins : emplacements épinglés dans l'Accès rapide (clés = chemins tels que
+	// le handler les passe, la résolution des %VAR% étant l'affaire de l'op
+	// Windows). pinErr / pinnedErr simulent une panne du shell.
+	pins      map[string]bool
+	pinErr    error
+	pinnedErr error
+
+	statCnt   int
+	mkdirCnt  int
+	pinCnt    int
+	unpinCnt  int
+	pinnedCnt int
 }
 
 func newFakeFolderOps() *fakeFolderOps {
@@ -37,9 +47,39 @@ func newFakeFolderOps() *fakeFolderOps {
 		dirs:     map[string]bool{},
 		statErr:  map[string]error{},
 		mkdirErr: map[string]error{},
+		pins:     map[string]bool{},
 		se4fs:    "se4fs-0991229y",
 		user:     "mickael.barbier",
 	}
+}
+
+func (o *fakeFolderOps) QuickAccessPinned(value string) (bool, error) {
+	o.pinnedCnt++
+	if o.pinnedErr != nil {
+		return false, o.pinnedErr
+	}
+
+	return o.pins[value], nil
+}
+
+func (o *fakeFolderOps) QuickAccessPin(value string) error {
+	o.pinCnt++
+	if o.pinErr != nil {
+		return o.pinErr
+	}
+	o.pins[value] = true
+
+	return nil
+}
+
+func (o *fakeFolderOps) QuickAccessUnpin(value string) error {
+	o.unpinCnt++
+	if o.pinErr != nil {
+		return o.pinErr
+	}
+	delete(o.pins, value)
+
+	return nil
 }
 
 func (o *fakeFolderOps) ResolvePath(path string) (string, error) {
@@ -85,6 +125,17 @@ func folderItem(folder, path string) StateItem {
 		Semantics: "exclusive",
 		Hash:      "h",
 		Payload:   map[string]any{"folder": folder, "path": path},
+	}
+}
+
+// pinnedFolderItem : l'item tel que le SERVEUR l'émet réellement (§7.12) —
+// avec `quick_access: pinned`, pour que l'Accès rapide suive la redirection.
+func pinnedFolderItem(folder, path string) StateItem {
+	return StateItem{
+		Type:      "folders",
+		Semantics: "exclusive",
+		Hash:      "h",
+		Payload:   map[string]any{"folder": folder, "path": path, "quick_access": "pinned"},
 	}
 }
 
@@ -427,5 +478,170 @@ func TestFoldersHandlerConvergesThroughEngine(t *testing.T) {
 	}
 	if reports[0].Status == "error" {
 		t.Errorf("verdict inattendu : %s (%s)", reports[0].Status, reports[0].Detail)
+	}
+}
+
+// --- Accès rapide -------------------------------------------------------------
+
+func TestFoldersPinsQuickAccessAndUnpinsTheReplacedLocation(t *testing.T) {
+	h, ops, reg := newFoldersHandler()
+	items := []StateItem{pinnedFolderItem("desktop", networkDesktopTemplate)}
+
+	// État de départ = un profil vanilla : Bureau LOCAL, épinglé d'office par
+	// Windows à la création du profil. C'est cette épingle-là qui devient
+	// menteuse dès qu'on redirige.
+	reg.values[keyID("HKCU", userShellFoldersPath, "Desktop")] = RegistryValue{
+		Kind: "REG_EXPAND_SZ", Str: `%USERPROFILE%\Desktop`,
+	}
+	ops.pins[`%USERPROFILE%\Desktop`] = true
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("Apply : %v", err)
+	}
+
+	if ops.pins[`%USERPROFILE%\Desktop`] {
+		t.Error("l'épingle de l'emplacement REMPLACÉ doit avoir été retirée")
+	}
+	if !ops.pins[resolvedNetworkDesktop] {
+		t.Errorf("le nouvel emplacement %q doit être épinglé", resolvedNetworkDesktop)
+	}
+}
+
+func TestFoldersNeverUnpinsALocationItDidNotReplace(t *testing.T) {
+	h, ops, reg := newFoldersHandler()
+	items := []StateItem{pinnedFolderItem("desktop", networkDesktopTemplate)}
+	ops.dirs[resolvedNetworkDesktop] = true
+	// Valeur déjà conforme : ce poste ne remplace RIEN.
+	reg.values[keyID("HKCU", userShellFoldersPath, "Desktop")] = RegistryValue{
+		Kind: "REG_EXPAND_SZ", Str: resolvedNetworkDesktop,
+	}
+	// Une épingle posée par un AUTRE poste du même utilisateur (la jumplist vit
+	// dans %APPDATA%, donc dans le profil itinérant PARTAGÉ).
+	ops.pins[`C:\Users\mickael.barbier\Desktop`] = true
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("Apply : %v", err)
+	}
+
+	// LE point (finding 🔴 de la review 27.21, transposé) : sans `previous`, le
+	// handler « nettoierait » un emplacement partagé et déclencherait une guerre
+	// de désépinglage entre les postes de l'utilisateur.
+	if !ops.pins[`C:\Users\mickael.barbier\Desktop`] {
+		t.Error("une épingle que ce poste n'a pas remplacée ne doit JAMAIS être retirée")
+	}
+	if ops.unpinCnt != 0 {
+		t.Errorf("aucun désépinglage attendu, %d effectué(s)", ops.unpinCnt)
+	}
+}
+
+func TestFoldersRepinsWhenUserUnpinnedByHand(t *testing.T) {
+	h, ops, reg := newFoldersHandler()
+	items := []StateItem{pinnedFolderItem("desktop", networkDesktopTemplate)}
+	ops.dirs[resolvedNetworkDesktop] = true
+	reg.values[keyID("HKCU", userShellFoldersPath, "Desktop")] = RegistryValue{
+		Kind: "REG_EXPAND_SZ", Str: resolvedNetworkDesktop,
+	}
+	// Registre conforme, mais plus d'épingle : l'utilisateur l'a retirée.
+
+	compliant, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("Test : %v", err)
+	}
+	if compliant {
+		t.Fatal("une redirection juste dont l'épingle a disparu n'est qu'à moitié appliquée")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("Apply : %v", err)
+	}
+	if !ops.pins[resolvedNetworkDesktop] {
+		t.Error("l'épingle doit être reposée (convergence level-triggered)")
+	}
+	// La valeur registre était bonne : aucune écriture, donc aucune relance
+	// d'Explorer pour ce seul repinning.
+	if reg.writeCnt != 0 {
+		t.Error("aucune écriture registre attendue")
+	}
+}
+
+func TestFoldersQuickAccessIsIdempotent(t *testing.T) {
+	h, ops, _ := newFoldersHandler()
+	items := []StateItem{pinnedFolderItem("desktop", networkDesktopTemplate)}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("Apply n°1 : %v", err)
+	}
+	pinsAfterFirst := ops.pinCnt
+
+	compliant, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("Test : %v", err)
+	}
+	if !compliant {
+		t.Fatal("après convergence, l'état doit être conforme (épingle comprise)")
+	}
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("Apply n°2 : %v", err)
+	}
+
+	if ops.pinCnt != pinsAfterFirst {
+		t.Errorf("2e passe : %d épinglage(s) de trop", ops.pinCnt-pinsAfterFirst)
+	}
+	if ops.unpinCnt != 0 {
+		t.Errorf("2e passe : %d désépinglage(s) inattendu(s)", ops.unpinCnt)
+	}
+}
+
+func TestFoldersUnmanagedQuickAccessTouchesNothing(t *testing.T) {
+	h, ops, _ := newFoldersHandler()
+	// Champ absent = `unmanaged` : comportement d'un agent antérieur, et porte
+	// de sortie si un réglage rend un jour la main sur l'Accès rapide.
+	items := []StateItem{folderItem("desktop", networkDesktopTemplate)}
+	ops.pins[`%USERPROFILE%\Desktop`] = true
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("Apply : %v", err)
+	}
+
+	if ops.pinCnt != 0 || ops.unpinCnt != 0 || ops.pinnedCnt != 0 {
+		t.Error("`unmanaged` ⇒ l'Accès rapide n'est ni lu ni modifié (§8)")
+	}
+	if !ops.pins[`%USERPROFILE%\Desktop`] {
+		t.Error("aucune épingle existante ne doit être touchée")
+	}
+	// La redirection, elle, s'applique normalement.
+	compliant, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("Test : %v", err)
+	}
+	if !compliant {
+		t.Error("sans gestion de l'Accès rapide, la redirection seule suffit à être conforme")
+	}
+}
+
+func TestFoldersQuickAccessFailureIsReported(t *testing.T) {
+	h, ops, _ := newFoldersHandler()
+	ops.pinErr = errors.New("shell indisponible")
+
+	// Un échec d'épinglage n'est pas avalé : sans remontée, l'entrée d'Accès
+	// rapide pourrirait en silence — précisément le mode de panne qu'on répare.
+	if err := h.Apply([]StateItem{pinnedFolderItem("desktop", networkDesktopTemplate)}); err == nil {
+		t.Fatal("un épinglage en échec doit remonter")
+	}
+}
+
+func TestFoldersRejectsUnknownQuickAccessVerb(t *testing.T) {
+	h, _, _ := newFoldersHandler()
+	items := []StateItem{{
+		Type: "folders", Semantics: "exclusive", Hash: "h",
+		Payload: map[string]any{
+			"folder": "desktop", "path": localDesktopTemplate, "quick_access": "pined",
+		},
+	}}
+
+	// Verbe mal orthographié : refusé franchement. Le traduire silencieusement
+	// en « on ne fait rien » rendrait la faute de frappe invisible.
+	if _, err := h.Test(items); err == nil {
+		t.Error("un verbe quick_access inconnu est une enveloppe invalide")
 	}
 }

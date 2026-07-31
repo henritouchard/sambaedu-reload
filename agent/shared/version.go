@@ -566,6 +566,16 @@ package shared
 // Folders` qu'à son démarrage — un SHChangeNotify ne suffit pas) ; au régime
 // stable, zéro écriture ⇒ zéro relance.
 //
+// L'item porte AUSSI `quick_access: pinned` : Windows épingle les dossiers
+// standards en enregistrant le CHEMIN résolu à la création du profil, jamais un
+// KNOWNFOLDERID — rediriger ensuite laisse dans l'Accès rapide une entrée
+// « Bureau » qui mène à l'ancien emplacement. Le handler la fait suivre (verbe
+// bascule `pintohome` via powershell.exe, iso `bureau_samba.ps1`), et ne
+// désépingle QUE la valeur qu'il vient lui-même de remplacer : la jumplist vit
+// dans %APPDATA%, donc dans le profil itinérant PARTAGÉ entre tous les postes de
+// l'utilisateur — « nettoyer les emplacements concurrents » rejouerait le
+// finding 🔴 de la 27.21.
+//
 // CONTRAT WIRE : type AJOUTÉ = évolution mineure §9, forward-compatible. Un agent
 // ≤ 2.15.0 IGNORE `folders` EN SILENCE (contrat §8) — il continue de poser les
 // `.lnk` au bon endroit sans que le shell les regarde, soit exactement le

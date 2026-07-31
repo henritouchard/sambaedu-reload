@@ -4985,8 +4985,44 @@ converger (isolation par type).
 écriture. On refuse d'écrire `\\\users\…`, qui donnerait un Bureau mort gravé dans
 le profil itinérant.
 
+### Scénario 58.1.8 — L'Accès rapide suit la redirection
+
+1. Profil NEUF sur parc partagé (donc Accès rapide contenant le Bureau LOCAL,
+   épinglé d'office par Windows à la création du profil).
+2. Laisser converger, puis ouvrir l'explorateur.
+
+**Attendu** : l'entrée « Bureau » de l'Accès rapide pointe
+`\\<se4fs>\users\<user>\Bureau` ; l'ancienne entrée locale a disparu. Sans ça,
+le raccourci de barre latérale le plus visible de l'explorateur continue de mener
+au mauvais dossier — la même panne que celle qu'on répare, en plus discret.
+
+3. Désépingler « Bureau » à la main, forcer une convergence.
+
+**Attendu** : l'item repasse **non conforme** et l'épingle est reposée
+(level-triggered). Aucune écriture registre au passage (la valeur était bonne),
+donc pas de redémarrage d'Explorer pour ce seul repinning.
+
+### Scénario 58.1.9 — Pas de guerre d'épingles entre postes
+
+1. Même utilisateur, deux postes : un `shared_local` (A) et un `personal_local`
+   (B). Ouvrir une session sur A, converger, puis sur B, converger, puis revenir
+   sur A.
+
+**Attendu** : chaque poste épingle SA cible ; **aucun** ne retire une épingle
+qu'il n'a pas lui-même remplacée. La jumplist d'épingles vit dans `%APPDATA%`,
+donc dans le profil itinérant PARTAGÉ : un handler qui « nettoierait les
+emplacements concurrents » rejouerait le finding 🔴 de la review 27.21. Les deux
+entrées peuvent coexister — c'est voulu, et bénin.
+
+**Diagnostic si régression** : chercher dans `companion.log` un désépinglage
+d'un emplacement que ce poste n'a pas écrit à la passe courante.
+
 ### Check-list
 
+- [ ] 58.1.8 — Accès rapide : suit la redirection, se repose après désépinglage
+      manuel, ne relance pas Explorer inutilement.
+- [ ] 58.1.9 — Deux postes d'un même utilisateur : aucune épingle retirée par
+      un poste qui ne l'a pas remplacée.
 - [ ] 58.1.1 — Profil NEUF sur parc partagé : redirection posée, dossier créé,
       raccourcis `place=desktop` enfin visibles.
 - [ ] 58.1.2 — Idempotence : 0 écriture / 0 relance d'Explorer au régime stable.
@@ -5000,7 +5036,7 @@ le profil itinérant.
       menteur).
 - [ ] 58.1.7 — Hors-domaine ⇒ `error`, zéro écriture.
 - [ ] Contrat wire : type `folders` (§7.12) ; golden `state.v1.json` +1 item
-      `folders` en portée `machine_user` ; `FROZEN_STATE_HASH` = `e2c85df8…`
+      `folders` en portée `machine_user` ; `FROZEN_STATE_HASH` = `8940e34f…`
       cohérent PHP + Go.
 - [ ] Version cible **agent 2.16.0**. Un agent **≤ 2.15.0** ignore le type EN
       SILENCE : symptôme = comportement d'aujourd'hui (raccourcis invisibles pour
