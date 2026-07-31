@@ -1,0 +1,22 @@
+{
+  "manifest_version": 1,
+  "id": "bbb",
+  "type": "app",
+  "name": "Visioconférences",
+  "version": "1.0.0",
+  "entry_url": "/ext/bbb",
+  "icon": "fa-solid fa-video",
+  "publisher": "SambaEdu",
+  "description": "Visioconférences BigBlueButton : salons de classe, invités externes et enregistrements, adossés aux serveurs BBB de l'établissement.",
+  "scopes": ["profile", "groups"],
+  "dependencies": [],
+  "visibility": {
+    "roles": ["admin", "prof", "eleve", "administratif"]
+  },
+  "install": {
+    "channel": "deb",
+    "package": "packages/sambaedu-ext-bbb_1.0.0_all.deb",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "redirect_paths": ["/ext/bbb/oidc/callback"]
+  }
+}

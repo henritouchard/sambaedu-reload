@@ -75,7 +75,7 @@ new class extends Component {
 ?>
 
 {{--
-    Racine UNIQUE et STABLE : ce `<div class="dropdown dropdown-end">` est
+    Racine UNIQUE et STABLE : ce `<div class="dropdown dropdown-start">` est
     TOUJOURS rendu, quel que soit l'état (tuiles présentes ou état vide).
     Piège connu (fiche mémoire) : un `@if` au premier niveau d'un SFC enfant
     provoque un 500 au re-render du parent. Ce composant est un parent rendu

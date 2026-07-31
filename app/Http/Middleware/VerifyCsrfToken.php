@@ -26,7 +26,11 @@ class VerifyCsrfToken extends Middleware
         'auth/federated/*',
         'auth.php*',
         'barre.php*',
-        'bbb*',
+        // Story 57.4 / AR12 — `bbb*` et `visio*` RETIRÉS avec le module legacy
+        // qu'ils exemptaient. Sans consommateur, une exception de vérification
+        // anti-CSRF n'est pas un vestige inoffensif : c'est une porte ouverte à
+        // la première route SE5 native dont le chemin commencerait par `bbb` ou
+        // `visio`, qui perdrait sa protection sans que personne ne s'en aperçoive.
         'blank.php*',
         'cas*',
         'central*',
@@ -57,7 +61,6 @@ class VerifyCsrfToken extends Middleware
         'test.php*',
         'tests*',
         'user*',
-        'visio*',
         'wait.php*',
         'wpkg*',
     ];

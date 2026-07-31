@@ -2705,3 +2705,892 @@ grep -c '' /etc/sudoers.d/sambaedu-ext
 - [ ] 19.12 Désinstallation `app` depuis l'UI : texte de purge des composants système (jamais le texte `link`), retrait complet, audit `remove`
 - [ ] **19.13 Cycle `link` inchangé : un clic, synchrone, aucun run créé**
 - [ ] 19.14 Écran périmé : no-op propre, page remise en phase, jamais une 500
+
+---
+
+## Section 22 — Extension « Visioconférences » (BBB) : première extension `app` réelle (Story 57.1)
+
+> **Ce que cette section valide.** Les Sections 17 à 21 ont éprouvé le canal d'extensions avec une extension de TEST (`hello`, un serveur Python de vingt lignes). La 57.1 y fait passer une **vraie application** : un backend PHP autonome, client OIDC, avec son état, sa page d'administration et ses appels sortants vers des serveurs tiers. C'est le critère d'acceptation final du système d'extensions — s'il ne suffit pas ici, il ne suffit nulle part.
+>
+> Quatre propriétés portent la valeur de cette section, et aucune n'est démontrable sur l'hôte :
+>
+> 1. **l'installation de bout en bout par le canal STANDARD** — même `index.json` signé, même `ext:install`, même helper root, même fragment Apache. Aucune procédure spéciale, aucun script d'extension privilégié ;
+> 2. **`StateDirectory=` + `DynamicUser=yes`** — l'UID du service est volatil. La base SQLite doit survivre à un `systemctl restart` ET à un reboot. C'est l'amendement instruit par la story à la lettre de la décision D3 (le postinst ne crée plus rien), et il ne se prouve que sur une machine qui redémarre ;
+> 3. **le SSO d'un compte RÉEL** — un prof, un élève, un admin, avec leurs vraies classes dans le claim `groups` ; et le refus d'un compte dont le rôle n'est pas résoluble ;
+> 4. **le test de connexion contre un vrai serveur BigBlueButton** — succès, mauvais secret, timeout.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué ici : la suite d'attaque du vérificateur d'id_token (`alg: none`, confusion HS256, clé étrangère, `kid` inconnu, `iss`/`aud`/`exp`/`nbf`/`nonce`, rejeu `jti`, tous les échecs de signature fusionnés en un code), la migration idempotente et le 0600 du fichier SQLite, le gating strict `role=admin` de la page serveurs, le secret jamais rendu dans une page, le mapping des quatre retours du test de connexion, la conformité du manifest v1, et la quarantaine FR33 avec ses méta-tests. Deux suites, deux commandes :
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && composer install && vendor/bin/phpunit   # 123 tests
+> cd /var/www/sambaedu-reload && php artisan test --filter ExtensionBbbIsolationTest     # 14 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+Le provisionnement ops de la Section 18.1 doit être en place (helper root, sudoers, `a2enmod proxy proxy_http headers`, `IncludeOptional /etc/apache2/sambaedu-ext.d/*.conf` dans le vhost `:80`). En plus, la cible doit disposer de PHP en ligne de commande avec SQLite — c'est ce que le paquet déclare en `Depends` :
+
+```bash
+dpkg -l | grep -E 'php-cli|php-sqlite3|php-curl|php-xml|php-mbstring'
+php -m | grep -E 'pdo_sqlite|curl|simplexml|openssl'
+```
+
+**Attendu** : `pdo_sqlite` présent **pour le PHP CLI**. Le PHP du core SE5 ne l'a pas — c'est précisément la dépendance `php-sqlite3` du paquet qui l'apporte, et `apt` l'installera si besoin au moment de l'intégration (scénario 22.2). S'il manque encore APRÈS l'installation du paquet, c'est un bug de `Depends`, pas une manipulation à faire à la main.
+
+### Scénario 22.1 — Publier l'extension dans un dépôt signé et l'ajouter comme source
+
+```bash
+cd /var/www/sambaedu-reload/extensions/bbb
+bash packaging/publish-test-repo.sh /tmp/ext-bbb
+# → paquet, sha256 réel, index.json + index.json.sig + source.pub, clé jetable
+
+# Servir le dépôt (garder ce terminal ouvert : son journal d'accès sert au 22.2)
+cd /tmp/ext-bbb/repo && python3 -m http.server 8099
+```
+
+Puis, dans SE5 : `/admin/extensions/sources` → « Ajouter une source », URL `http://<ip>:8099`, clé publique collée depuis `repo/source.pub` (**obligatoire en `http://`** — le TOFU ne s'applique qu'en https).
+
+```bash
+php artisan ext:sources:sync
+php artisan tinker --execute="dump(\App\Models\Extension::where('key','bbb')->first(['key','name','type','version','status'])?->toArray());"
+```
+
+**Attendu** :
+
+- le paquet s'appelle **exactement** `sambaedu-ext-bbb_1.0.0_all.deb`, et `dpkg-deb --field <deb> Package` vaut **exactement** `sambaedu-ext-bbb` (c'est ce que le helper root re-vérifie ; un écart = refus root, après téléchargement) ;
+- `install.sha256` dans `index.json` est celui du `.deb` réellement construit, en **64 hexadécimaux minuscules** — et surtout **pas** les 64 zéros du manifest commité (le remplissage est remplacé à la publication ; publier le manifest tel quel doit faire échouer l'installation à la frontière fail-closed, jamais après) ;
+- l'extension apparaît au catalogue en `available`, type `app`, avec les scopes `profile` **et** `groups` affichés dans la modale d'intégration ;
+- `entry_url` vaut `/ext/bbb`.
+
+**Contre-épreuve (2 minutes, elle vaut le coup)** : republier une version (`bash packaging/publish-test-repo.sh --version 1.0.1 /tmp/ext-bbb`) et vérifier que `source.pub` est **inchangé** — la clé est réutilisée, le pin TOFU de la source n'est pas invalidé.
+
+### Scénario 22.2 — ⭐ Installation de bout en bout par le canal standard (AC1)
+
+```bash
+php artisan ext:install bbb
+```
+
+**Attendu, dans cet ordre** (le journal de la commande nomme chaque étape) : sha256 vérifié → client OIDC enregistré → `write-env` → `apt` → `enable-service` → fragment + `reload-apache` → base + audit.
+
+Contrôles système :
+
+```bash
+systemctl is-active sambaedu-ext-bbb ; systemctl is-enabled sambaedu-ext-bbb
+ls -l /etc/sambaedu/extensions/bbb.env          # 0600 root:root
+cat /etc/apache2/sambaedu-ext.d/bbb.conf        # ProxyPass /ext/bbb → 127.0.0.1:<port>
+ss -lntp | grep 86                              # écoute 127.0.0.1 EXCLUSIVEMENT
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/
+curl -sS -o /dev/null -w '%{http_code}\n' http://<ip-serveur>/ext/bbb
+```
+
+**Attendu** :
+
+- l'unité est **active et enabled** — mais c'est SE5 qui l'a activée, pas le paquet. Vérification : `dpkg -e` du paquet montre un `postinst` sans le moindre `systemctl` ;
+- le fichier d'environnement contient **exactement 7 lignes** `SE5_*`, dont `SE5_EXT_BASE_PATH=/ext/bbb` et `SE5_OIDC_REDIRECT_URI=/ext/bbb/oidc/callback` (un **chemin**, pas une URL absolue) ;
+- l'écoute est sur `127.0.0.1`, **jamais** `0.0.0.0` ;
+- les deux `curl` rendent `200` : le backend répond sur `/` (chemin **nu**, le proxy a retiré le préfixe) et l'exposition publique fonctionne ;
+- **le secret client OIDC n'apparaît nulle part** sauf dans `/etc/sambaedu/extensions/bbb.env` : `grep -r "$(grep SE5_OIDC_CLIENT_SECRET /etc/sambaedu/extensions/bbb.env | cut -d= -f2)" /var/log /var/www/sambaedu-reload/storage/logs 2>/dev/null` doit ne rien rendre.
+
+**Contrôle de non-régression NFR16** : `/ipxe`, `/doc`, `/assets/*` et le vhost legacy `:8082` répondent exactement comme avant la pose du fragment.
+
+### Scénario 22.3 — La tuile « Visioconférences » (AC1)
+
+Se connecter à SE5 successivement en **prof**, en **élève**, en **administratif** et en **admin**, puis ouvrir le lanceur d'applications.
+
+**Attendu** : la tuile « Visioconférences » (icône `fa-solid fa-video`) est visible pour les **quatre** rôles — `visibility.roles` les déclare tous. Elle pointe `/ext/bbb`. Le lanceur n'émet **aucune** requête HTTP vers l'extension pour se rendre (l'état vient des colonnes `health_*`, cf. Section 21).
+
+### Scénario 22.4 — ⭐ SSO d'un compte réel, et ce que l'extension en apprend (AC3)
+
+Cliquer la tuile en tant que **prof réel**, puis « Se connecter ».
+
+**Attendu** :
+
+- redirection vers `/oidc/authorize` **avec** `code_challenge_method=S256` et `redirect_uri=/ext/bbb/oidc/callback` (visible dans la barre d'adresse ou l'inspecteur réseau) ;
+- après consentement implicite, retour sur `/ext/bbb/` : la page affiche le **nom d'affichage**, le **rôle** et **les classes réelles** du professeur, sous forme de puces ;
+- le cookie de session s'appelle `se5_ext_bbb` et son `Path` est `/ext/bbb` — il n'est **jamais** envoyé aux URL de SE5 (vérifiable dans l'inspecteur, onglet Application) ;
+- **aucune requête à la base ni à l'annuaire de SE5** : `tcpdump`/journal Postgres inutiles ici, c'est le test d'architecture qui le prouve — mais on vérifie l'équivalent observable, à savoir que l'extension fonctionne alors qu'elle n'a **aucun** identifiant de base dans son environnement (`grep -i 'db\|pgsql\|ldap' /etc/sambaedu/extensions/bbb.env` ne rend rien).
+
+Répéter en **élève** : la page affiche « sa » classe, et **aucun lien « Serveurs BBB »** n'apparaît. Répéter en **admin** : le lien apparaît.
+
+Sur toutes les pages, le pied de page porte « ← Retour à SambaEdu » (FR16), pointant l'issuer.
+
+### Scénario 22.5 — Un rôle non résoluble ne connecte personne
+
+Prendre un compte dont le profil métier ne se résout pas (le fournisseur omet alors le claim `role` — contrat 55.2 : « non résoluble ⇒ clé ABSENTE »), puis tenter la connexion à l'extension.
+
+**Attendu** : page d'erreur sobre, HTTP **403**, message « Votre profil ne permet pas d'utiliser cette extension », code de diagnostic `bbb.claims.role_unsupported`. **Aucune session ouverte** : revenir sur `/ext/bbb/` propose de nouveau « Se connecter ». Aucun repli sur un rôle par défaut, dans un sens comme dans l'autre.
+
+### Scénario 22.6 — Configuration des serveurs BBB (AC2)
+
+En **admin**, ouvrir « Serveurs BBB ».
+
+1. Ajouter un serveur : URL `https://<votre-bbb>/bigbluebutton/api`, secret partagé (valeur de `bbb_secret` sur le serveur BBB).
+2. Recharger la page.
+
+**Attendu** :
+
+- le secret est **masqué** en liste (`••••••••` + les 4 derniers caractères), et n'apparaît **nulle part** dans la source HTML — `Ctrl+U`, puis rechercher le secret : zéro occurrence ;
+- « Modifier » ne pré-remplit **jamais** le champ secret, et l'aide dit explicitement que le laisser vide conserve la valeur actuelle. Modifier l'URL seule et vérifier que le test de connexion passe **toujours** (le secret n'a pas été effacé) ;
+- saisir une URL en `http://` : l'ajout est accepté, mais un avertissement **affiché** signale que le secret circulera en clair. Il n'est jamais silencieux ;
+- saisir `pas-une-url`, `ftp://…`, ou une URL avec `?x=1` : refus explicite, rien n'est écrit ;
+- cocher « Scalelite » sans seuil, ou avec `0` : refus. Avec `120` : accepté, la liste affiche « Scalelite · seuil 120 ».
+
+**Contrôle du bug legacy** : déclarer trois serveurs, supprimer **celui du milieu**, en ajouter un quatrième, puis tester la connexion de chacun. Chaque serveur doit rester associé à SON secret. (SE4 tenait trois listes CSV indexées par position ; la suppression décalait les index et un serveur héritait du secret d'un autre.)
+
+### Scénario 22.7 — ⭐ Test de connexion contre un vrai serveur BBB (AC2)
+
+Pour chaque cas, cliquer « Tester » sur la ligne du serveur.
+
+| Situation | Attendu |
+|---|---|
+| URL et secret corrects | « Connexion réussie : URL et secret acceptés, N réunion(s) en cours. » |
+| Secret volontairement faux | « **Secret invalide** : le serveur a rejeté la signature de la requête (checksumError). » |
+| Hôte inexistant / port fermé | « **Serveur injoignable** : aucune réponse dans le délai imparti. » — et la réponse revient en **moins de 10 secondes** |
+| URL pointant une page web quelconque | « **Réponse inattendue** : l'adresse répond, mais ce n'est pas une API BigBlueButton. » |
+
+**Attendu, en plus** : le message nomme l'**hôte** du serveur testé, jamais son secret ni l'URL signée (qui porte le `checksum`). Et **aucun appel n'est émis au simple affichage de la page** — vérifiable en coupant le serveur BBB puis en rechargeant `/ext/bbb/admin/servers` : la page se rend instantanément.
+
+**Certificat auto-signé** : si votre BBB de test en porte un, le test doit rendre « Serveur injoignable ». C'est **correct et voulu** — le legacy désactivait la vérification TLS sur tous ses appels, ce qui exposait le secret partagé à n'importe quel intermédiaire. La correction est d'ajouter l'autorité au magasin du système, jamais de désactiver la vérification.
+
+### Scénario 22.8 — ⭐ `StateDirectory` + `DynamicUser` : l'état survit à l'UID volatil
+
+```bash
+ls -ld /var/lib/sambaedu-ext-bbb                 # 0700, propriétaire = utilisateur dynamique
+ls -l  /var/lib/sambaedu-ext-bbb/database.sqlite # 0600
+systemctl show sambaedu-ext-bbb -p DynamicUser -p StateDirectory
+stat -c '%U:%G' /var/lib/sambaedu-ext-bbb
+
+systemctl restart sambaedu-ext-bbb && sleep 2
+stat -c '%U:%G' /var/lib/sambaedu-ext-bbb        # peut avoir CHANGÉ : c'est normal
+```
+
+Puis **recharger la page des serveurs** : les serveurs déclarés doivent tous être là.
+
+**Enfin, le contrôle qui compte** : `reboot` la VM, attendre le démarrage, recharger la page.
+
+**Attendu** : `DynamicUser=yes`, `StateDirectory=sambaedu-ext-bbb`, et **les données présentes après le reboot**. Si elles ont disparu ou si le service tombe en boucle sur un `SQLSTATE[HY000] [14] unable to open database file`, c'est que la gestion du répertoire d'état a régressé vers un `chown` figé — l'exact scénario que l'amendement à D3 évite. Le `postinst` doit rester vide : `dpkg-deb -I <deb> postinst` ne contient ni `mkdir`, ni `chown`, ni `systemctl`.
+
+### Scénario 22.9 — Santé : la sonde voit l'extension, et la voit tomber
+
+```bash
+php artisan ext:health:check bbb
+php artisan tinker --execute="dump(\App\Models\Extension::where('key','bbb')->first(['health_status','health_checked_at'])?->toArray());"
+
+systemctl stop sambaedu-ext-bbb
+php artisan ext:health:check bbb
+# … puis regarder la tuile dans le lanceur, en prof
+
+systemctl start sambaedu-ext-bbb
+php artisan ext:health:check bbb
+```
+
+**Attendu** : `ok` → `unreachable` → `ok`. Extension arrêtée, la tuile porte le badge « Indisponible » et **reste cliquable** (FR35 sous contrainte FR14). Aucune page de SE5 ne ralentit pendant l'arrêt.
+
+**Contrôle spécifique à cette extension** : couper le **serveur BBB** (pas l'extension) et relancer `ext:health:check bbb`. L'état doit rester **`ok`** — la racine `/` ne dépend d'aucun tiers. Si elle passait à `unreachable`, c'est qu'un appel sortant a été introduit au rendu de la page d'accueil, et le serveur intégré de PHP étant mono-processus, il gèlerait pour tout le monde.
+
+### Scénario 22.10 — Comportement sous charge légère (la faiblesse assumée de D2)
+
+```bash
+# 20 requêtes concurrentes sur la racine, pendant qu'un test de connexion tourne
+# vers un serveur BBB volontairement injoignable (blackhole : IP non routée)
+for i in $(seq 1 20); do curl -s -o /dev/null -w '%{http_code} %{time_total}\n' http://127.0.0.1:<port>/ & done; wait
+```
+
+**Attendu** : toutes les requêtes rendent `200` en moins de deux secondes. Le test de connexion en cours ne doit pas les bloquer — c'est ce que garantissent `PHP_CLI_SERVER_WORKERS=4` et surtout la borne totale de 8 s sur l'appel BBB. Si l'ensemble se fige, la conclusion n'est pas « augmenter les workers » : c'est qu'un appel sortant a perdu sa borne.
+
+### Scénario 22.11 — Retrait propre
+
+```bash
+php artisan ext:remove bbb
+systemctl status sambaedu-ext-bbb ; dpkg -l | grep sambaedu-ext-bbb
+ls /etc/sambaedu/extensions/ /etc/apache2/sambaedu-ext.d/
+curl -sS -o /dev/null -w '%{http_code}\n' http://<ip-serveur>/ext/bbb
+```
+
+**Attendu** : unité disparue, paquet purgé, `bbb.env` et `bbb.conf` retirés, `/ext/bbb` en **404**, tuile disparue du lanceur, audit `remove`. Rejouer `ext:remove bbb` : no-op, sortie 0.
+
+**Point d'attention, à consigner** : `/var/lib/sambaedu-ext-bbb` est géré par systemd via `StateDirectory=`. Vérifier ce qu'il devient après le retrait, et **le noter dans la review** — la conservation des données (serveurs déclarés, et à partir de 57.2 les salons) après une désinstallation est une décision produit qui n'a pas encore été prise, pas un détail d'implémentation.
+
+### Checklist rapide — Section 22
+
+- [ ] **22.1 Dépôt signé publié : `Package` = `sambaedu-ext-bbb`, sha256 RÉEL (pas les 64 zéros), scopes `profile`+`groups`, `entry_url` `/ext/bbb` — et republication à clé CONSERVÉE**
+- [ ] **22.2 `ext:install bbb` de bout en bout : unité active (activée par SE5, pas par le paquet), env 0600 à 7 lignes, ProxyPass posé, écoute 127.0.0.1 seule, `/ext/bbb` en 200, secret nulle part ailleurs que dans l'env**
+- [ ] 22.2b Non-régression NFR16 : `/ipxe`, `/doc`, `/assets/*`, vhost legacy 8082 inchangés
+- [ ] 22.3 Tuile « Visioconférences » visible pour prof, élève, administratif et admin
+- [ ] **22.4 SSO réel : PKCE S256, `redirect_uri` = chemin, nom/rôle/classes réels affichés, cookie `se5_ext_bbb` limité au Path `/ext/bbb`, aucun identifiant de base ni d'annuaire dans l'environnement**
+- [ ] **22.5 Rôle non résoluble : 403, `bbb.claims.role_unsupported`, AUCUNE session ouverte, aucun repli**
+- [ ] **22.6 Page serveurs : secret jamais dans le HTML, édition qui ne l'efface pas, avertissement `http` affiché, URL invalides refusées, seuil Scalelite exigé — et suppression du serveur du milieu SANS décalage des secrets**
+- [ ] **22.7 Test de connexion réel : succès avec décompte, « Secret invalide » sur checksumError, « injoignable » sous 10 s, « réponse inattendue » sur une URL quelconque — et zéro appel au rendu de la page**
+- [ ] **22.8 `StateDirectory` + `DynamicUser` : base 0600 dans un répertoire 0700, données intactes après `restart` ET après reboot, postinst vide de tout mkdir/chown/systemctl**
+- [ ] **22.9 Santé : `ok` → `unreachable` → `ok` ; serveur BBB coupé ⇒ l'extension reste `ok` (la racine ne dépend de rien)**
+- [ ] 22.10 20 requêtes concurrentes en 200 pendant un appel BBB vers un trou noir
+- [ ] **22.11 `ext:remove bbb` : 404, unité et paquet partis, env et fragment retirés, tuile disparue, rejeu no-op — et sort du répertoire d'état CONSIGNÉ**
+
+---
+
+## Section 23 — Salons BBB : création, visibilité et jonction (Story 57.2)
+
+> **Ce que cette section valide, et pourquoi elle ne ressemble à aucune autre.** La 57.2 déplace l'autorisation **du client vers le serveur**. SE4 n'en avait aucune : son formulaire de jonction portait `meetingId`, `attendedPW` **et** `moderatorPW` en champs cachés dans le HTML servi à tout le monde, et son lancement donnait le mot de passe modérateur à **tout non-élève**, sur n'importe quel salon — y compris celui d'un collègue. Il suffisait d'un `Ctrl+U`.
+>
+> Trois propriétés portent donc cette section, et **deux d'entre elles se vérifient en regardant ce qui N'ARRIVE PAS** :
+>
+> 1. **le rôle observé DANS la conférence** — le créateur est modérateur, tout le monde d'autre est participant, y compris un professeur co-membre de la classe et un administrateur. Cela ne se lit que dans BigBlueButton, sur un vrai serveur ;
+> 2. **l'élève d'une autre classe ne voit rien et n'entre pas**, même en rejouant la requête à la main ;
+> 3. **la migration v1 → v2 sur la base RÉELLE de l'instance** : les serveurs déclarés en 57.1 doivent survivre à la mise à jour du paquet.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué ici : la matrice d'autorisation complète au niveau contrôleur (élève de la classe / élève d'une autre classe / collègue / administratif / administrateur / créateur, sur les trois visibilités), le refus **indistinct** entre jeton inconnu et salon interdit, la garde « groupes soumis ⊆ claim » avec son contournement de formulaire simulé, l'absence de tout mot de passe dans le HTML de chaque page, l'absence de tout appel sortant au rendu, l'anti-CSRF, le schéma v2 avec sa cascade, et le mapping des réponses `createMeeting` / `isMeetingRunning` sur du vrai XML.
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && vendor/bin/phpunit        # 213 tests
+> cd /var/www/sambaedu-reload && php artisan test --testsuite=Architecture # 145 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x/57.1** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+La Section 22 doit être passée : extension installée par le canal standard, SSO fonctionnel, **et au moins un serveur BigBlueButton déclaré et testé vert** (scénario 22.7). Sans serveur actif, seuls les scénarios 23.1, 23.2 et 23.7 sont jouables.
+
+Prévoir **quatre comptes réels** : une professeure de 4ᵉB (`prof.martin` ci-dessous), un second professeur de la même 4ᵉB, un élève de 4ᵉB, un élève de 5ᵉA. Plus un compte administratif et un compte `admin` pour les contre-épreuves.
+
+### Scénario 23.1 — ⭐ Migration v1 → v2 sur la base de l'instance
+
+À jouer **avant** toute autre chose, sur une instance où la 57.1 tournait déjà avec ses serveurs configurés.
+
+```bash
+# AVANT la mise à jour du paquet
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT id, base_url, enabled FROM servers;"
+
+php artisan ext:update bbb     # ou ext:install si l'extension n'était pas posée
+
+# APRÈS
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT id, base_url, enabled FROM servers; .tables"
+```
+
+**Attendu** : `user_version` passe de `1` à `2` ; la table `servers` est **inchangée, ligne pour ligne, secret pour secret** ; les tables `rooms` et `room_groups` apparaissent, vides. Redémarrer le service (`systemctl restart sambaedu-ext-bbb`) et relire : `user_version` vaut toujours `2` et rien n'a bougé — la migration est rejouable, et le service redémarre à chaque mise à jour de paquet.
+
+> Si `sqlite3` n'est pas installé, `php -r` avec PDO fait l'affaire ; l'important est de **lire la base avant et après**, pas l'outil.
+
+### Scénario 23.2 — Création d'un salon par une vraie professeure (AC1)
+
+Se connecter en **prof.martin**, ouvrir la tuile, cliquer « Voir les salons ».
+
+**Attendu sur la page d'accueil** : une carte « Salons » avec un **lien** vers `/ext/bbb/rooms` — jamais une liste incorporée. C'est délibéré : la racine est la sonde de santé, elle n'ouvre pas la base (contrôle en 23.8).
+
+Sur `/ext/bbb/rooms` :
+
+1. le formulaire « Créer un salon » est présent ;
+2. la liste des cases à cocher « Mes classes et équipes » contient **exactement les classes et équipes réelles** de cette professeure — celles de son claim `groups`, ni plus ni moins. Aucune classe d'un collègue, aucun balayage d'annuaire ;
+3. créer un salon « Cours de mathématiques », visibilité « une ou plusieurs de mes classes », case 4ᵉB.
+
+**Attendu** : retour à la liste, message « Salon créé », le salon apparaît sous « Mes salons » avec « Visible par : 4B » et « Dernière ouverture : jamais ouvert ». **Aucun meeting n'a été créé côté BigBlueButton** — `créer ≠ démarrer` (vérifiable : la liste des réunions du serveur BBB est inchangée).
+
+**Contre-épreuves à faire dans la foulée** :
+
+- se connecter en **élève**, en **administratif**, en **admin** : le formulaire de création n'apparaît pour aucun des trois. Seuls les professeurs créent ;
+- en prof.martin, soumettre le formulaire avec un nom vide, puis avec « classes » sans cocher de case : refus explicite, la saisie est conservée, rien n'est écrit.
+
+### Scénario 23.3 — ⭐ Le contournement du formulaire, joué pour de vrai
+
+C'est **le** scénario de la story. Le `<select>` ne protège rien ; ce qui protège est la comparaison faite au serveur.
+
+Depuis la console du navigateur, connecté en **prof.martin**, sur `/ext/bbb/rooms` :
+
+```js
+// On fabrique une soumission portant une classe qui n'est PAS la sienne.
+const f = document.querySelector('form[action$="/rooms"]');
+const i = document.createElement('input');
+i.type = 'hidden'; i.name = 'groups[]'; i.value = '6C';   // ← classe d'un collègue
+f.appendChild(i);
+f.querySelector('[name=name]').value = 'Salon volé';
+f.querySelector('[value=classe]').checked = true;
+f.submit();
+```
+
+**Attendu** : la page revient en **422** avec « Vous ne pouvez ouvrir un salon que pour vos propres classes et équipes. » **Rien n'est écrit** — ni le salon, ni sa partie légitime. Vérifier en base :
+
+```bash
+sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite "SELECT name FROM rooms; SELECT * FROM room_groups;"
+```
+
+**Attendu** : aucune trace de « Salon volé ». Le refus est **explicite**, pas un filtrage silencieux : une valeur qu'un utilisateur légitime ne peut pas produire est une tentative, et elle se voit.
+
+### Scénario 23.4 — ⭐ Démarrage, et le rôle observé DANS la conférence (AC1)
+
+En **prof.martin**, cliquer « Démarrer ou entrer » sur « Cours de mathématiques ».
+
+**Attendu** :
+
+- redirection immédiate vers le serveur BigBlueButton, la conférence s'ouvre ;
+- **dans la conférence**, la professeure est **modérateur** : elle a l'icône de modération, peut couper les micros, gérer la présentation, créer des groupes (« breakout rooms ») ;
+- l'enregistrement est **possible** (bouton présent — `record=true` + `allowStartStopRecording=true`, iso-legacy) ;
+- le **chat privé est désactivé** (`lockSettingsDisablePrivateChat`, iso-legacy) ;
+- en quittant la conférence, le retour se fait sur **`/ext/bbb/rooms`** (`logoutUrl`).
+
+**Ce qu'il faut regarder dans la barre d'adresse** : l'URL de jonction contient bien un `password=` et un `checksum=`. **C'est normal, et c'est le seul endroit où un mot de passe apparaît.** Il a été fabriqué par le serveur, dans un `Location:`, et il n'est écrit nulle part ailleurs.
+
+**Le contrôle qui compte, à faire juste après** : revenir sur `/ext/bbb/rooms`, faire `Ctrl+U`, chercher le mot de passe relevé dans l'URL. **Zéro occurrence.** Chercher aussi `moderatorPW`, `attendeePW`, `password` : rien. C'est exactement ce que SE4 servait à tout le monde.
+
+Vérifier enfin que la liste affiche maintenant une date sous « Dernière ouverture ».
+
+### Scénario 23.5 — ⭐ L'élève de 4ᵉB entre en participant, celui de 5ᵉA n'entre pas (AC2)
+
+**Élève de 4ᵉB** — ouvrir la tuile, « Voir les salons ».
+
+**Attendu** : « Cours de mathématiques » apparaît sous « Salons accessibles », avec le nom de la professeure et « Visible par : 4B ». Cliquer « Rejoindre ».
+
+- la conférence s'ouvre et l'élève y est **participant** : aucune icône de modération, pas de gestion de présentation, pas de coupure de micro d'autrui ;
+- il n'a saisi **aucun mot de passe**, et n'en a jamais vu passer un.
+
+**Élève de 5ᵉA** — même parcours.
+
+**Attendu** : « Cours de mathématiques » **n'apparaît pas** dans sa liste. Puis, le contrôle réel — récupérer le jeton du salon (visible dans la source de la page de l'élève de 4ᵉB, champ `token`) et le rejouer depuis le compte de l'élève de 5ᵉA :
+
+```js
+// Console du navigateur, connecté en élève de 5eA, sur /ext/bbb/rooms
+const t = document.querySelector('[name=_token]').value;
+fetch('/ext/bbb/rooms/join', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+  body: '_token=' + t + '&token=<LE-JETON-DU-SALON-4B>',
+  redirect: 'manual',
+}).then(r => console.log(r.status));
+```
+
+**Attendu** : **404**, page « Ce salon n'existe pas, ou ne vous est pas accessible », code `bbb.rooms.not_found`. Recommencer avec un jeton **totalement inventé** (32 caractères au hasard) : **exactement la même réponse**, même code, même texte. C'est voulu — deux réponses différentes diraient « ce salon existe, mais pas pour vous ».
+
+**Contrôle du bug legacy `[0]`** : si vous disposez d'un élève inscrit dans **plusieurs** classes dont la 4ᵉB, vérifier qu'il voit le salon même si la 4ᵉB n'est pas sa première classe. SE4 ne comparait que la première et l'excluait à tort.
+
+### Scénario 23.6 — ⭐ Le « non-élève = modérateur » du legacy est bien mort
+
+Le défaut §9.2 de la carte du legacy, éprouvé de face. Pour chacun de ces comptes, rejoindre « Cours de mathématiques » et **regarder le rôle dans la conférence** :
+
+| Compte | Attendu DANS BigBlueButton |
+|---|---|
+| **prof.martin** (créatrice) | **modérateur** |
+| Second professeur, co-membre de la 4ᵉB | **participant** |
+| Compte `administratif` (sur un salon `Tout l'établissement`) | **participant** |
+| Compte `admin` de SambaEdu (sur un salon `Tout l'établissement`) | **participant** |
+
+**Attendu** : une seule personne est modérateur, et c'est celle qui a créé le salon. Un compte `admin` administre SambaEdu et la configuration des serveurs BBB ; il ne modère pas le cours d'un professeur. Si l'un de ces trois comptes arrive avec les droits de modération, **la story a échoué** — c'est très exactement le comportement de SE4.
+
+**Salon privé** : créer en prof.martin un salon « Entretien » en visibilité « Privé », le démarrer. Vérifier qu'il **n'apparaît chez personne d'autre** (ni le collègue, ni l'élève, ni l'admin) et que rejouer son jeton depuis un autre compte rend 404. Le `private` de SE4 signifiait « tous les personnels » — ici il veut dire ce qu'il dit.
+
+### Scénario 23.7 — Salon fermé, meeting expiré, serveur absent
+
+Quatre situations, quatre messages, et aucune page blanche.
+
+1. **Salon jamais démarré** — créer un salon « Atelier » en visibilité établissement, ne PAS le démarrer, puis cliquer « Rejoindre » depuis un autre compte.
+   **Attendu** : page « Ce salon n'est pas ouvert », qui nomme le salon et son créateur, avec un retour vers la liste. Ce n'est **pas** une erreur : ni 4xx, ni 5xx, c'est un état normal. **Aucun appel n'est émis vers BigBlueButton** (vérifiable en coupant le serveur BBB : la page reste instantanée).
+
+2. **Meeting terminé** — sur un salon démarré, terminer la conférence côté BigBlueButton (`endMeeting` par la modératrice, ou attendre la fin des **quatre heures** de `duration`), puis « Rejoindre » depuis un compte élève.
+   **Attendu** : même page « Ce salon n'est pas ouvert ». Le salon (durable) a survécu au meeting (éphémère), et rien n'a eu besoin d'être nettoyé — c'est ce qui remplace le cache et son ramasse-miettes de SE4.
+
+3. **Re-démarrage par la créatrice** — cliquer de nouveau « Démarrer ou entrer ».
+   **Attendu** : la conférence se ré-ouvre, en modérateur, **sans erreur de doublon**. `createMeeting` est idempotent : le même bouton crée, re-crée ou rejoint.
+
+4. **Aucun serveur actif** — désactiver tous les serveurs sur `/ext/bbb/admin/servers`, puis « Démarrer ou entrer ».
+   **Attendu** : « Aucun serveur de visioconférence configuré — prévenez l'administrateur ». Et côté élève, « Rejoindre » rend « Ce salon n'est pas ouvert ». Réactiver ensuite.
+
+5. **Serveur injoignable** — pointer un serveur actif vers une IP non routée, puis « Rejoindre » côté élève.
+   **Attendu** : « Serveur de visioconférence injoignable » — **et surtout pas** « Ce salon n'est pas ouvert », qui enverrait une classe entière attendre pour rien. La réponse revient en **moins de 10 secondes**.
+
+### Scénario 23.8 — La sonde de santé n'a pas bougé, et les actions restent des POST
+
+```bash
+# La racine ne dépend toujours de rien : serveur BBB coupé, elle reste verte.
+systemctl stop <votre-bbb>   # ou couper le réseau vers lui
+php artisan ext:health:check bbb
+php artisan tinker --execute="dump(\App\Models\Extension::where('key','bbb')->first(['health_status'])?->toArray());"
+```
+
+**Attendu** : `health_status` reste **`ok`**. La page `/ext/bbb/` se rend instantanément et propose le lien « Voir les salons ». Si l'état bascule en `unreachable`, c'est qu'un appel sortant a été introduit au rendu de la racine.
+
+```bash
+# Les actions sont des POST, et rien d'autre.
+curl -sS -o /dev/null -w '%{http_code}\n' 'http://<ip>/ext/bbb/rooms/start?token=xxx'
+curl -sS -o /dev/null -w '%{http_code}\n' 'http://<ip>/ext/bbb/rooms/join?token=xxx'
+curl -sS -o /dev/null -w '%{http_code}\n' 'http://<ip>/ext/bbb/rooms/delete?token=xxx'
+```
+
+**Attendu** : **405** sur les trois. Un GET mutateur serait préchargé au survol d'un lien par un navigateur ou un antivirus, et ouvrirait des conférences tout seul.
+
+**Contrôle de fluidité (garde D2)** : pendant qu'un « Démarrer » tourne vers un serveur BBB injoignable, charger 20 fois `/ext/bbb/` et `/ext/bbb/rooms` en parallèle. Toutes les requêtes doivent rendre `200` rapidement — la liste se rend depuis SQLite, elle n'attend personne.
+
+### Scénario 23.9 — Suppression, et ce qui part avec
+
+En prof.martin, supprimer « Cours de mathématiques » (confirmation demandée).
+
+**Attendu** : le salon disparaît de sa liste **et de celle de ses élèves**. En base :
+
+```bash
+sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "SELECT COUNT(*) FROM rooms; SELECT COUNT(*) FROM room_groups;"
+```
+
+**Attendu** : les lignes `room_groups` du salon sont parties avec lui (`ON DELETE CASCADE`, qui ne fonctionne que parce que `PRAGMA foreign_keys` est activé à l'ouverture — ce n'est pas le défaut de SQLite).
+
+**Contre-épreuve** : depuis le compte du **second professeur**, rejouer une suppression sur le jeton d'un salon de prof.martin (même méthode qu'en 23.5). **Attendu** : 404 indistinct, et le salon **intact**.
+
+### Scénario 23.10 — Point d'attention à consigner, hérité de la 22.11
+
+`/var/lib/sambaedu-ext-bbb` porte désormais **les salons de l'établissement**, et plus seulement la liste des serveurs. Ce que devient ce répertoire après `php artisan ext:remove bbb` **n'est toujours pas spécifié** par le contrat du canal d'installation. Le vérifier et le **consigner dans la review** : c'est une décision produit (conserver ? purger ? demander ?), pas un détail d'implémentation, et elle pèse plus lourd qu'à la 57.1.
+
+### Checklist rapide — Section 23
+
+- [ ] **23.1 Migration v1 → v2 sur la base RÉELLE : `user_version` 1 → 2, serveurs intacts ligne pour ligne, `rooms`/`room_groups` créées, redémarrage sans effet**
+- [ ] 23.2 Création par une vraie professeure : cases = ses classes réelles, salon créé, AUCUN meeting côté BBB
+- [ ] 23.2b Formulaire de création absent pour élève, administratif et admin
+- [ ] **23.3 Contournement du formulaire avec une classe étrangère : 422 explicite, RIEN en base**
+- [ ] **23.4 Démarrage : modératrice DANS la conférence, retour sur `/rooms` en sortant, et zéro mot de passe dans la source de la page**
+- [ ] **23.5 Élève 4ᵉB participant sans mot de passe ; élève 5ᵉA : salon absent + 404 sur rejeu de la requête, identique à un jeton inventé**
+- [ ] 23.5b Élève multi-classes : le salon de sa 2ᵉ classe lui est bien visible
+- [ ] **23.6 Collègue, administratif et admin rejoignent en PARTICIPANT — le « non-élève = modérateur » du legacy est mort**
+- [ ] **23.6b Salon privé : invisible et injoignable pour tout autre que son créateur**
+- [ ] 23.7 Salon jamais démarré / meeting expiré ⇒ « pas ouvert » sans appel inutile ; re-démarrage idempotent ; aucun serveur actif et serveur injoignable ⇒ deux messages DIFFÉRENTS
+- [ ] **23.8 Serveur BBB coupé ⇒ santé toujours `ok` ; `/rooms/start|join|delete` en GET ⇒ 405 ; navigation fluide pendant un appel qui traîne**
+- [ ] 23.9 Suppression par le créateur : cascade des groupes ; suppression par un tiers ⇒ 404 et salon intact
+- [ ] **23.10 Sort de `/var/lib/sambaedu-ext-bbb` après `ext:remove` : CONSIGNÉ dans la review (il porte maintenant les salons)**
+
+---
+
+## Section 24 — Invités externes et enregistrements BBB (Story 57.3)
+
+> **Ce que cette section valide, et pourquoi elle est la plus exposée de l'epic.** La 57.3 ouvre **la seule surface non authentifiée de l'extension** : `GET/POST /ext/bbb/visio`, hors SSO, atteignable par n'importe qui. Tout ce que la 57.2 a gagné en déplaçant l'autorisation côté serveur doit y tenir dans un contexte plus hostile, et **la moitié des propriétés se vérifient en regardant ce qui N'ARRIVE PAS**.
+>
+> Le contre-modèle est nommé : le `CONF_HASH` de SE4 était **le login du créateur, en clair**, dans l'URL publique — énumérable, un seul salon invitable par personne, aucune révocation, comparaison du secret en clair et **sans aucune limite de tentatives** (`visio/index.php:27`), plus une page d'attente en `Refresh: 15` qui faisait de chaque invité un générateur d'appels sortants. Rien de tout cela n'est porté.
+>
+> Trois choses ne se prouvent QUE sur une VM avec un vrai serveur BigBlueButton :
+>
+> 1. **la jonction effective d'un invité SANS COMPTE**, depuis un navigateur en navigation privée, à travers le proxy Apache réel (`/ext/bbb/visio` → chemin nu côté backend) — et son apparition **en participant**, nom suffixé « (invité) », dans la liste de la conférence ;
+> 2. **le cycle réel d'un enregistrement** : une séance enregistrée par BigBlueButton, son passage par l'état `processing` puis `published`, son apparition dans l'onglet, sa lecture, sa suppression ;
+> 3. **la migration v2 → v3 sur la base RÉELLE** de l'instance, qui porte désormais les salons ET leurs invitations.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué à la main : l'égalité **octet pour octet** des quatre refus de la route publique (jeton inconnu / invitation révoquée / mot de passe faux / fenêtre saturée), l'absence de tout appel sortant dans ces quatre cas, la comparaison en temps constant contre une valeur factice, l'absence structurelle de magasin d'état sur le parcours invité (prouvée par le typage du contrôleur ET par l'absence de tout `Set-Cookie`), le fait qu'`attendee_pw` soit le seul mot de passe atteignable depuis `/visio`, le filtrage puis le **re-filtrage** des enregistrements, le refus de suppression d'un `recordID` étranger **sans qu'aucun appel de suppression ne soit émis**, le schéma v3 et son idempotence, et le mapping `getRecordings` / `deleteRecordings` sur de vraies réponses XML — enregistrement sans bloc `playback` compris.
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && vendor/bin/phpunit         # 296 tests
+> cd /var/www/sambaedu-reload && php artisan test --testsuite=Architecture # 145 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x/57.1/57.2** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+Les Sections 22 et 23 doivent être passées : extension installée par le canal standard, SSO fonctionnel, **au moins un serveur BigBlueButton déclaré et testé vert**, et **au moins un salon réel appartenant à une vraie professeure** (`prof.martin` ci-dessous), déjà démarré une fois — sans quoi il n'a pas de serveur mémorisé et rien n'est jouable.
+
+Prévoir en plus : **un poste ou un navigateur SANS session SambaEdu** (fenêtre de navigation privée suffit, à condition de ne s'y connecter à rien), et un second professeur pour les contre-épreuves.
+
+### Scénario 24.1 — ⭐ Migration v2 → v3 sur la base de l'instance
+
+À jouer **avant** toute autre chose, sur une instance où la 57.2 tournait déjà avec ses salons.
+
+```bash
+# AVANT la mise à jour du paquet
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT COUNT(*) FROM servers; SELECT id, name, owner_sub, server_id FROM rooms;"
+
+php artisan ext:update bbb
+
+# APRÈS
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT COUNT(*) FROM servers; SELECT id, name, owner_sub, server_id, guest_token, guest_failures FROM rooms;"
+```
+
+**Attendu** : `user_version` passe de `2` à `3` ; `servers` **inchangée** ; `rooms` inchangée **ligne pour ligne**, avec quatre colonnes de plus — `guest_token` et `guest_password` à `NULL`, `guest_failures` à `0`, `guest_window_started_at` à `NULL`. Les salons et leurs groupes de visibilité sont intacts.
+
+Puis `systemctl restart sambaedu-ext-bbb` et relire : `user_version` vaut toujours `3`, rien n'a bougé, **et le service est bien reparti**. C'est le point qui compte : `ALTER TABLE … ADD COLUMN` échoue si la colonne existe, et seule la garde `user_version` empêche le palier d'être rejoué. Un service qui ne redémarre pas après la deuxième mise à jour est le symptôme exact d'une migration non idempotente.
+
+Vérifier enfin l'index unique :
+
+```bash
+sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite ".indexes rooms"
+```
+
+**Attendu** : `rooms_guest_token` figure dans la liste.
+
+### Scénario 24.2 — ⭐ Un invité SANS COMPTE rejoint la conférence
+
+C'est **le** scénario de la story.
+
+En **prof.martin**, sur `/ext/bbb/rooms`, dans la colonne « Invitation externe » du salon, cliquer **« Activer l'invitation »**.
+
+**Attendu** : la page affiche un **lien absolu** de la forme `https://<instance>/ext/bbb/visio?g=<32 caractères hexadécimaux>` **et** un **mot de passe de 8 caractères** en majuscules et chiffres, sans `0`, `O`, `1`, `I` ni `l` — il doit pouvoir se dicter au téléphone.
+
+Contrôles immédiats :
+
+- le lien est **absolu** et porte le nom d'hôte réel de l'instance, pas `127.0.0.1` ni le port interne — il dérive de l'issuer OIDC, jamais d'un en-tête `Host:` ;
+- le jeton ne contient **ni le login de la professeure, ni le nom du salon, ni la classe**. Il ne veut rien dire, et c'est sa qualité.
+
+Puis démarrer le salon (bouton « Démarrer ou entrer »), et **depuis un navigateur en navigation privée** :
+
+1. ouvrir le lien. **Attendu** : un formulaire « Rejoindre une visioconférence », deux champs (nom, mot de passe du salon), **aucun bouton de connexion SambaEdu proéminent**, aucune barre de navigation de SE5 ;
+2. saisir un nom (« Monsieur Durand ») et le mot de passe affiché à la professeure ;
+3. **Attendu** : redirection directe **dans la conférence**, sans compte, sans inscription.
+
+**Dans BigBlueButton, côté professeure** : le nouvel arrivant apparaît **en participant** (pas modérateur : ni micro forcé, ni contrôle de présentation, ni pouvoir d'éjection) et son nom est **« Monsieur Durand (invité) »**. Le suffixe n'est pas cosmétique : un externe ne doit pas pouvoir se présenter sous l'apparence d'un membre de l'établissement.
+
+**Contre-épreuve à ne pas sauter** : dans le navigateur privé, `Ctrl+U` sur la page du formulaire **et** sur la page de refus. Aucun mot de passe BigBlueButton ne doit y figurer — ni participant, ni modérateur. Le seul secret que la page manipule est le mot de passe d'invitation, et elle le **demande**, elle ne le donne pas.
+
+### Scénario 24.3 — ⭐ La route publique n'est pas un oracle
+
+Toujours en navigation privée. Comparer **quatre** réponses, dans cet ordre :
+
+```bash
+BASE=https://<instance>/ext/bbb/visio
+G=<le jeton affiché à la professeure>
+
+# a) jeton inventé de toutes pièces
+curl -sS -o /tmp/a.html -w '%{http_code}\n' -X POST "$BASE" -d "g=jeton-invente" -d "name=Intrus" -d "password=x"
+
+# b) bon jeton, mauvais mot de passe
+curl -sS -o /tmp/b.html -w '%{http_code}\n' -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=FAUXFAUX"
+
+# c) dix échecs de plus, puis le BON mot de passe (fenêtre saturée)
+for i in $(seq 1 10); do curl -sS -o /dev/null -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=ENCOREFX"; done
+curl -sS -o /tmp/c.html -w '%{http_code}\n' -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=<LE BON>"
+
+# d) après révocation depuis la page de la professeure
+curl -sS -o /tmp/d.html -w '%{http_code}\n' -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=<LE BON>"
+
+md5sum /tmp/a.html /tmp/b.html /tmp/c.html /tmp/d.html
+```
+
+**Attendu** : **403** quatre fois, et **quatre empreintes identiques**. Aucune des pages ne dit « lien inconnu », « trop de tentatives » ni « invitation révoquée » : un message distinct confirmerait l'existence du salon à quelqu'un qui n'a pas le mot de passe.
+
+**Attendu aussi, et c'est la moitié du scénario** : dans le journal du serveur BigBlueButton, **aucune requête** n'est arrivée pendant ces quatorze appels. Un refus ne parle jamais au serveur distant — il ne se trahit donc pas par sa durée, et la route publique ne peut pas servir à faire travailler l'infrastructure.
+
+Vérifier enfin qu'**aucun cookie** n'est posé sur ce parcours :
+
+```bash
+curl -sS -D - -o /dev/null "$BASE?g=$G" | grep -i set-cookie
+curl -sS -D - -o /dev/null -X POST "$BASE" -d "g=$G" -d "name=X" -d "password=y" | grep -i set-cookie
+```
+
+**Attendu** : aucune ligne. Le parcours invité n'ouvre aucun état par visiteur, ni avant ni après la vérification.
+
+### Scénario 24.4 — Fenêtre anti-bourrinage, observée en vrai
+
+Après le scénario 24.3, l'invitation a été révoquée : la **régénérer** depuis la page de la professeure (bouton « Régénérer »), ce qui remet aussi les compteurs à zéro.
+
+1. depuis le navigateur privé, saisir **dix fois** un mauvais mot de passe ;
+2. saisir ensuite le **bon** : **refusé**, avec la même page que d'habitude ;
+3. attendre **plus de quinze minutes** sans rien tenter ;
+4. resaisir le bon mot de passe : **la jonction passe**.
+
+**Attendu complémentaire** : pendant la période bloquée, la professeure, elle, **ne subit rien** — elle démarre, entre, régénère et révoque normalement. La fenêtre est **par salon et par invité**, elle ne ferme pas le salon.
+
+**Et surtout** : aucune requête ne doit avoir mis 2, 5 ou 10 secondes à revenir. Il n'y a **pas** de temporisation : sur un serveur HTTP intégré mono-processus, faire attendre un attaquant reviendrait à bloquer tout l'établissement.
+
+### Scénario 24.5 — Révocation et régénération, constatées depuis le poste invité
+
+Deux allers-retours, à faire les deux :
+
+- **Régénérer** : le poste invité recharge l'ancien lien et saisit l'ancien mot de passe ⇒ **refus immédiat**, la même page que d'habitude. Le **nouveau** lien avec le **nouveau** mot de passe fonctionne aussitôt. SE4 n'avait aucune régénération ;
+- **Révoquer** : la colonne « Invitation externe » repasse à « Aucune invitation active », et l'ancien lien meurt **à la seconde**, sans attendre l'expiration de quoi que ce soit. SE4 n'avait aucune révocation non plus — le lien expirait tout seul au bout de quatre heures, ou disparaissait quand le meeting s'éteignait.
+
+**Contre-épreuve d'étanchéité** : se connecter en **élève de la classe** puis en **second professeur**, ouvrir `/ext/bbb/rooms` et faire `Ctrl+U`. **Attendu** : ni le jeton d'invitation, ni le mot de passe d'invitation n'apparaissent dans la source. Ils ne sont lus, côté serveur, que pour les salons dont la personne connectée est le créateur.
+
+### Scénario 24.6 — ⭐ Un enregistrement réel : liste, lecture, suppression
+
+`record=true` est posé depuis la 57.2 : tout meeting démarré par l'extension est enregistrable.
+
+1. en **prof.martin**, démarrer le salon, **lancer l'enregistrement** dans BigBlueButton, parler une minute, l'arrêter, puis **terminer la conférence** (bouton de fin, pas seulement fermer l'onglet — un meeting qui se referme tout seul met plus longtemps) ;
+2. ouvrir **`/ext/bbb/recordings`** (lien « Enregistrements » sur la page des salons) **tout de suite**.
+
+**Attendu à ce stade** : l'enregistrement **n'apparaît pas encore**, et la page ne montre **aucune erreur** — BigBlueButton le traite (`processing`), et seuls les enregistrements `published` sont demandés. C'est un contrôle en soi : un enregistrement en cours de traitement n'a pas de bloc de lecture, et il ne doit **ni apparaître, ni faire disparaître les autres**.
+
+3. attendre la fin du traitement (de quelques minutes à un quart d'heure selon le serveur), recharger.
+
+**Attendu** : une ligne avec le **nom du salon tel que la professeure l'a écrit** (pas le nom rapporté par BigBlueButton), la date et l'heure de la séance, sa durée, et deux boutons.
+
+4. **« Lire »** : ouvre un **nouvel onglet** sur l'URL de lecture BigBlueButton, la séance se rejoue. L'extension ne rediffuse rien elle-même ;
+5. **« Supprimer »** : confirmation demandée, puis message « Enregistrement supprimé », et la ligne disparaît.
+
+**Attendu côté serveur BBB** : l'enregistrement a réellement disparu (`bbb-record --list` ou l'interface d'administration du serveur). Une suppression annoncée qui n'aurait pas eu lieu serait le pire des résultats.
+
+### Scénario 24.7 — ⭐ « SES salons uniquement », et le bug legacy qu'on enterre
+
+Le filtre du legacy lisait le segment n°2 d'un `meetingID` fabriqué par concaténation de hashes — position fausse **dès qu'un salon portait des classes**, c'est-à-dire pour les salons les plus courants.
+
+1. faire enregistrer une séance par le **second professeur**, sur un salon **à lui**, portant lui aussi des classes ;
+2. en **prof.martin**, ouvrir `/ext/bbb/recordings`.
+
+**Attendu** : elle voit ses enregistrements, **et uniquement les siens** — y compris ceux de salons portant des classes, qui étaient précisément ceux que SE4 perdait. L'enregistrement du collègue n'apparaît nulle part.
+
+3. tenter la suppression croisée. Récupérer un `recordID` du collègue (visible dans son propre onglet), et le poster depuis la session de prof.martin sur **son** salon à elle :
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://<instance>/ext/bbb/recordings/delete \
+  -b cookies-prof-martin.txt \
+  -d "_token=<le jeton du formulaire>" \
+  -d "token=<jeton public d'un salon de prof.martin>" \
+  -d "record=<recordID du collègue>"
+```
+
+**Attendu** : redirection, message « Cet enregistrement n'appartient pas à ce salon », **et l'enregistrement du collègue toujours présent** sur le serveur BBB. Le serveur a interrogé BigBlueButton pour vérifier l'appartenance, et **n'a émis aucune demande de suppression**.
+
+4. rejouer la même requête avec le **jeton d'un salon du collègue** : **404**, indistinct, et **aucun appel** vers BigBlueButton.
+
+### Scénario 24.8 — Rôles et surfaces des enregistrements
+
+- **élève**, **administratif**, **admin** : `/ext/bbb/recordings` en accès direct ⇒ **403** propre, page d'erreur de l'extension. Le lien « Enregistrements » n'apparaît d'ailleurs pas sur leur page des salons — mais c'est la garde serveur qui compte, pas l'affichage ;
+- **non connecté** : redirection vers `/ext/bbb/login` (parcours SSO), jamais la liste.
+
+Et les méthodes :
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://<instance>/ext/bbb/recordings/delete?token=x&record=y'
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://<instance>/ext/bbb/rooms/guest/enable?token=x'
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://<instance>/ext/bbb/rooms/guest/revoke?token=x'
+```
+
+**Attendu** : **405** sur les trois — les actes mutants sont des POST, jetonnés.
+
+### Scénario 24.9 — Pannes : ce qui doit rester debout
+
+- **serveur BBB éteint** pendant que la professeure ouvre `/ext/bbb/recordings` ⇒ un message « injoignable », **la page se rend quand même**, et la santé de l'extension reste `ok` côté SambaEdu (`/admin/extensions`). Une extension vivante ne doit pas être déclarée morte parce qu'un tiers l'est ;
+- **deux serveurs déclarés**, l'un injoignable : les enregistrements de l'autre **s'affichent quand même**, avec un message pour le serveur en panne ;
+- **serveur désactivé par l'admin** : il n'est **pas interrogé du tout**, un message le dit, et les enregistrements réapparaissent tels quels après réactivation — rien n'a été perdu ni supprimé ;
+- **salon jamais démarré** : il n'a pas de serveur mémorisé, aucune requête n'est émise pour lui ;
+- **invité pendant que le salon est fermé** : après le bon mot de passe, page « La visioconférence n'est pas encore ouverte », avec un bouton « Réessayer ». **Vérifier qu'aucun rafraîchissement automatique n'a lieu** (laisser l'onglet ouvert cinq minutes et surveiller le journal d'accès Apache : une seule requête). Le `Refresh: 15` du legacy transformait chaque invité laissé sur un onglet en cron d'appels sortants.
+
+**Contrôle de fluidité (garde D2)** : pendant qu'un `/ext/bbb/recordings` traîne vers un serveur lent, charger 20 fois `/ext/bbb/` et `/ext/bbb/rooms` en parallèle depuis **la même session** (mêmes cookies). Toutes doivent rendre `200` rapidement : le verrou d'état est relâché avant chaque appel sortant, y compris entre deux serveurs.
+
+### Scénario 24.10 — Suppression d'un salon : ce que l'utilisateur a été prévenu de perdre
+
+Supprimer un salon qui a **une invitation active** et **au moins un enregistrement**.
+
+**Attendu** : la demande de confirmation dit explicitement que l'invitation cessera de fonctionner **et** que les enregistrements ne seront plus accessibles depuis SambaEdu. Après suppression :
+
+- l'ancien lien d'invitation rend le refus indistinct ;
+- l'enregistrement **disparaît de l'onglet** — c'est une conséquence, pas un filtre : sans ligne `rooms`, il n'existe plus de requête qui le trouve ;
+- **l'enregistrement est TOUJOURS sur le serveur BigBlueButton** (`bbb-record --list`). C'est délibéré : supprimer les enregistrements d'un salon à sa suppression serait destructeur et irréversible.
+
+> **À consigner** : reprendre un enregistrement devenu orphelin est un **acte d'exploitant**, qui passe par l'interface ou les outils du serveur BigBlueButton lui-même. L'extension n'offre pas de vue d'administration pour cela, et c'est une décision, pas un oubli.
+
+### Scénario 24.11 — Point d'attention, hérité de la 22.11 et de la 23.10
+
+`/var/lib/sambaedu-ext-bbb` porte désormais **les salons, leurs invitations et les mots de passe d'invitation en clair**. Deux choses à vérifier et à consigner :
+
+1. les droits du fichier restent `0600`, et le répertoire `0700`, après la mise à jour du paquet et après un redémarrage (`DynamicUser=yes` ⇒ UID volatil, remap par `StateDirectory=`) ;
+2. ce que devient ce répertoire après `php artisan ext:remove bbb` **n'est toujours pas spécifié** par le contrat du canal d'installation. La question pèse un cran de plus qu'à la 57.2.
+
+### Checklist rapide — Section 24
+
+- [ ] **24.1 Migration v2 → v3 sur la base RÉELLE : `user_version` 2 → 3, serveurs et salons intacts ligne pour ligne, 4 colonnes neuves à NULL/0, index `rooms_guest_token`, redémarrage sans effet**
+- [ ] **24.2 Invité SANS COMPTE : lien absolu + mot de passe dictable, jonction effective, PARTICIPANT dans la conférence, nom suffixé « (invité) »**
+- [ ] 24.2b `Ctrl+U` sur formulaire et refus : aucun mot de passe BigBlueButton
+- [ ] **24.3 Les quatre refus (inconnu / faux / saturé / révoqué) : 403 et MÊME empreinte md5, zéro requête côté BBB**
+- [ ] **24.3b Aucun `Set-Cookie` sur le parcours invité, ni au GET ni au POST**
+- [ ] **24.4 Fenêtre : 10 échecs ⇒ refus même avec le bon mot de passe ; déblocage après 15 min ; aucune temporisation observée ; la professeure n'est jamais gênée**
+- [ ] **24.5 Régénération et révocation constatées depuis le poste invité : ancien lien mort à la seconde**
+- [ ] 24.5b Jeton et mot de passe d'invitation absents de la source pour un élève et pour un autre professeur
+- [ ] **24.6 Enregistrement réel : invisible en `processing` SANS erreur, puis listé, lu, supprimé — et réellement disparu du serveur BBB**
+- [ ] **24.7 Les enregistrements d'un collègue n'apparaissent jamais, y compris pour des salons portant des classes (le bug `explode[2]` du legacy)**
+- [ ] **24.7b `recordID` étranger posté : refus, AUCUNE suppression émise, enregistrement du collègue intact ; salon d'autrui ⇒ 404 sans appel**
+- [ ] 24.8 Élève / administratif / admin ⇒ 403 ; non connecté ⇒ `/login` ; GET sur les 3 routes mutantes ⇒ 405
+- [ ] **24.9 Serveur éteint : page rendue, santé `ok` ; 2 serveurs dont 1 injoignable : l'autre s'affiche ; désactivé : pas d'appel ; invité sur salon fermé : AUCUN auto-rafraîchissement (journal Apache)**
+- [ ] 24.9b Fluidité même-session pendant un `/recordings` qui traîne
+- [ ] **24.10 Suppression d'un salon : confirmation qui prévient, invitation morte, enregistrement invisible côté SE5 mais TOUJOURS présent côté BBB**
+- [ ] 24.11 Droits `0600`/`0700` après update et reboot ; sort de `/var/lib/sambaedu-ext-bbb` à `ext:remove` CONSIGNÉ (il porte maintenant des mots de passe d'invitation en clair)
+
+## Section 25 — Équilibrage multi-serveurs et extinction du BBB legacy (Story 57.4)
+
+> **Ce que cette section valide, et pourquoi elle clôt l'Epic 57.** La 57.4 a **deux volets étanches**. Le premier vit entièrement dans l'extension : le salon ne part plus sur « le premier serveur actif » mais sur **le moins chargé**, avec **bascule sur panne** — l'algorithme de SE4, repris tel quel (D5), y compris sa sémantique Scalelite. Le second vit dans le core et n'a rien à voir : il **éteint** la surface BBB legacy de SE5, ce qui est le critère d'acceptation final du système d'extensions (AR12) — « l'accès à la visioconférence passe exclusivement par la tuile ».
+>
+> Le contre-modèle est nommé, et il est instructif : SE4 répartissait sur la foi d'un `server_bbb_is_up()` qui n'était **qu'un GET sur l'URL de base** — il déclarait vivant un serveur dont le secret était faux, et vivant aussi un Scalelite éteint. Il gardait ses mesures dans un cache en mémoire partagée, avec un compteur d'échecs jamais purgé hors cron. Rien de tout cela n'est porté : la sonde est **signée**, elle est **bornée à 3 s**, elle n'a **aucune mémoire**, et ce qui protège vraiment d'un serveur tombé est la **bascule au moment de créer** — le seul instant qui compte.
+>
+> Quatre choses ne se prouvent QUE sur une VM avec **deux serveurs BigBlueButton réels** :
+>
+> 1. **la répartition observée** : le meeting apparaît dans la console du serveur le moins chargé, et pas dans l'autre ;
+> 2. **la bascule réelle**, serveur coupé entre la sonde et le clic — le cours s'ouvre quand même, **sans que le professeur fasse quoi que ce soit** ;
+> 3. **le budget de temps sous mono-processus** : pendant qu'un démarrage sonde un serveur mort, le reste de l'établissement navigue ;
+> 4. **l'extinction traversée pour de vrai**, y compris sur une instance où `/var/www/sambaedu` existe encore — c'est là, et seulement là, que le repli vers le système de fichiers SE4 se vérifie fermé.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué à la main : toute la matrice du choix (moins chargé gagne, égalité départagée par le plus petit identifiant, Scalelite **jamais sondé** mais délégable, serveur désactivé ni sondé ni candidat, `SUCCESS` sans conférence = charge 0), la bascule bornée à **exactement deux** tentatives, l'absence de bascule sur secret refusé ou réponse inattendue, le verrou d'état relâché **avant la toute première sonde**, l'absence de sonde au rendu de la moindre page, le mapping de `measureLoad` sur de vraies réponses XML, les redirections `/bbb/*` et `/visio` (préfixe UAI compris), et le « grep = 0 » avec ses méta-tests.
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && vendor/bin/phpunit         # 331 tests
+> cd /var/www/sambaedu-reload && php artisan test --testsuite=Architecture # 153 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x/57.1/57.2/57.3** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+Les Sections 22 à 24 doivent être passées. Prévoir en plus, et c'est le vrai coût de cette section : **deux serveurs BigBlueButton joignables** depuis l'instance, tous deux déclarés et testés verts sur `/ext/bbb/admin/servers`, avec un accès aux **consoles ou aux journaux des deux** (`bbb-conf --check`, ou la liste des conférences actives).
+
+À défaut d'un second serveur BBB, les scénarios 25.1 à 25.3 restent jouables en **dégradé** : déclarer deux fois le même serveur ne prouverait rien, mais déclarer un serveur réel et une **adresse morte** (`https://bbb-absent.invalid/bigbluebutton/api`, secret quelconque) prouve l'exclusion et la bascule, qui sont l'essentiel.
+
+### Scénario 25.1 — ⭐ Le meeting part sur le serveur le MOINS CHARGÉ
+
+Ouvrir une conférence de charge sur le **premier** serveur (par exemple depuis une autre instance, ou en y faisant entrer deux ou trois participants), et laisser le **second** vide.
+
+En **prof.martin**, sur `/ext/bbb/rooms`, cliquer **« Démarrer ou entrer »** sur un salon.
+
+**Attendu** :
+
+- la conférence apparaît dans la console du **second** serveur (le vide), **pas** dans celle du premier ;
+- la page revient sur la conférence, la professeure y est **modérateur**, comme d'habitude ;
+- côté base, le salon a mémorisé le serveur qui l'a réellement ouvert :
+
+```bash
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "SELECT r.name, r.server_id, s.base_url FROM rooms r JOIN servers s ON s.id = r.server_id;"
+```
+
+Inverser ensuite les charges (vider le premier, charger le second) et démarrer un **autre** salon : il doit partir sur le premier. C'est la mesure qui décide, à chaque démarrage, et rien d'autre.
+
+**Contrôle qui compte** : dans le journal Apache du serveur BBB **le moins chargé**, on doit voir **deux** requêtes — un `getMeetings` (la sonde) puis un `create`. Sur l'autre, **un seul** `getMeetings`. La sonde interroge tout le monde ; la création ne s'adresse qu'au vainqueur.
+
+### Scénario 25.2 — ⭐ Un serveur tombe entre la sonde et le clic : la bascule
+
+C'est le scénario que la 57.4 existe pour rendre indolore.
+
+1. laisser les deux serveurs joignables et **peu chargés**, le second étant le moins chargé ;
+2. **couper le second** (`systemctl stop bbb-*`, ou couper le réseau vers lui) ;
+3. démarrer un salon.
+
+**Attendu** : le salon **s'ouvre quand même**, sur le premier serveur, et le professeur **n'a rien à faire** — pas de message d'erreur, pas de second clic. Le temps d'ouverture est simplement plus long (une sonde qui expire à 3 s, puis une création).
+
+Deux vérifications qui distinguent les deux lignes de défense :
+
+- si le serveur est coupé **avant** le clic, il est écarté dès la **sonde** — le journal du serveur vivant montre alors `getMeetings` puis `create`, et un seul `create` a été émis en tout ;
+- si le serveur tombe **entre** la sonde et la création (le cas rare, à simuler en le coupant pendant l'ouverture), l'extension émet **deux** `create` : un vers le mort, un vers le vivant. C'est la bascule, et elle est **bornée à un seul réessai**.
+
+Et dans les deux cas, le salon mémorise **le serveur qui a réellement ouvert** (requête SQL du 25.1) : c'est lui que la jonction des élèves suivra.
+
+### Scénario 25.3 — ⭐ Tous les serveurs coupés : un message, jamais une page blanche
+
+Couper **les deux** serveurs, puis démarrer un salon.
+
+**Attendu** : retour sur `/ext/bbb/rooms` avec un message explicite — « Aucun serveur de visioconférence n'est joignable actuellement. Réessayez dans un instant, puis prévenez l'administrateur. » La page est **complète** : liste des salons, entête, pied de page. Jamais une page blanche, jamais une erreur 500, jamais un navigateur qui tourne indéfiniment.
+
+Trois messages doivent être **distincts**, et c'est le point de ce scénario — trois causes, trois remèdes :
+
+| Situation | Message attendu |
+|---|---|
+| Aucun serveur déclaré, ou tous désactivés | « Aucun serveur de visioconférence **configuré** — prévenez l'administrateur. » |
+| Des serveurs déclarés, aucun ne répond | « Aucun serveur de visioconférence n'est **joignable actuellement**. » |
+| Le ou les serveurs refusent le secret | « … le **secret enregistré a été refusé** — prévenez l'administrateur. » |
+
+Pour le troisième : modifier le secret d'un serveur sur `/ext/bbb/admin/servers` en une valeur fausse, désactiver l'autre, et démarrer. Le message doit **nommer le secret** — un serveur mal configuré ne se signale jamais tout seul, et « injoignable » enverrait l'administrateur vérifier son réseau pendant des heures.
+
+### Scénario 25.4 — ⭐ Délégation Scalelite : le seuil, jamais la mesure
+
+À défaut d'un vrai Scalelite, un **serveur BBB ordinaire déclaré avec un seuil** le simule exactement : c'est la même sémantique, et c'est tout l'intérêt du contrat repris de SE4.
+
+Déclarer le second serveur avec un **seuil de délégation à 5**, puis :
+
+1. charger le premier serveur avec **moins de 5 participants** ⇒ démarrer un salon : il part sur le **premier** ;
+2. charger le premier serveur à **plus de 5 participants** ⇒ démarrer un autre salon : il part sur le **serveur à seuil**.
+
+**Le contrôle qui porte la sémantique** : dans le journal Apache du serveur à seuil, **aucun `getMeetings` n'apparaît jamais**, dans aucun des deux cas. Il n'est **pas sondé** — sa valeur n'est pas une mesure de sa charge, c'est un **point de délégation** choisi par l'administrateur. C'est exactement ce que faisait `load_server_bbb()` dans SE4, et c'est délibéré.
+
+**Corollaire à vérifier une fois** : couper le serveur à seuil et démarrer un salon dans le cas 2. Comme il n'est jamais sondé, il **est** choisi, la création échoue, et **la bascule le rattrape** — le salon s'ouvre sur l'autre. C'est la seule protection qu'un Scalelite éteint puisse avoir, et c'est pour cela que la bascule existe.
+
+### Scénario 25.5 — Le budget de temps, sous serveur mono-processus
+
+Pendant qu'un démarrage sonde un serveur **mort** (donc ~3 s d'attente, plus la création), depuis **un autre onglet de la MÊME personne** et depuis **une autre session** :
+
+```bash
+for i in $(seq 1 20); do curl -sS -o /dev/null -w '%{http_code} %{time_total}\n' \
+  -b "se5_ext_bbb=<cookie>" 'https://<instance>/ext/bbb/rooms'; done
+```
+
+**Attendu** : toutes les requêtes rendent `200` **rapidement** (quelques dizaines de millisecondes). C'est ce que garantit le relâchement du verrou d'état avant la première sonde : le professeur dont le démarrage traîne peut **quand même** recharger sa liste de salons dans un autre onglet. Un blocage ici signifie que le verrou est retenu pendant les appels sortants — la régression exacte que la revue 57.2 avait fait corriger.
+
+Chronométrer aussi le pire cas assumé : trois serveurs déclarés dont deux morts ⇒ le démarrage peut prendre ~20 à 25 s. C'est **long, et normal** : il est payé sur un acte explicite, une fois par ouverture de cours. Si le parc réel montre que c'est trop, la réponse est une borne de sonde plus courte ou un sondage concurrent — **pas** un cache.
+
+### Scénario 25.6 — Un salon démarré GARDE son serveur
+
+Démarrer un salon (il part, disons, sur le serveur B). Puis, **sans le refermer** :
+
+1. charger fortement le serveur B et laisser A vide ;
+2. faire **rejoindre un élève** ⇒ il entre sur **B**, pas sur A. La jonction suit `rooms.server_id`, elle ne re-choisit jamais ;
+3. ouvrir l'onglet **Enregistrements** ⇒ les enregistrements du salon sont demandés à **B**.
+
+**Pourquoi c'est voulu** : BigBlueButton ne déplace pas une conférence en cours. Rééquilibrer un salon vivant reviendrait à envoyer la moitié de la classe dans une salle vide. Seul le **prochain démarrage** peut changer de serveur — y compris pour un salon dont le serveur a été supprimé ou désactivé depuis (comportement de la 57.2, conservé).
+
+### Scénario 25.7 — ⭐ Extinction traversée : les anciennes URL ne mènent plus nulle part
+
+Depuis un navigateur connecté à SE5, visiter **une par une** :
+
+```
+/bbb/config.php   /bbb/create.php   /bbb/join.php   /bbb/launch.php   /bbb/records.php   /bbb/refresh.php
+/visio            /visio/           /visio/?salon=prof.martin
+```
+
+**Attendu, pour chacune** : une redirection **302 vers l'accueil SE5** (`/`), où vit le lanceur. Jamais l'interface legacy, jamais une page d'erreur, jamais un formulaire BigBlueButton.
+
+Puis la **forme préfixée par l'UAI**, celle que le legacy fabriquait lui-même :
+
+```
+/<uai>/bbb/create.php      /<uai>/visio/
+```
+
+**Attendu** : même redirection. Le préfixe est retiré avant l'évaluation des routes bloquées.
+
+**Le contrôle le plus important de la section**, et il ne se joue que sur une instance où **`/var/www/sambaedu` existe encore** (Epic 38 non débranché) :
+
+```bash
+ls -la /var/www/sambaedu/bbb/     # le code SE4 d'origine est bien là
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' 'https://<instance>/bbb/create.php'
+```
+
+**Attendu** : `302` vers `/`. **Surtout pas `200`.** Un `200` signifierait que le repli vers le système de fichiers SE4 s'est rouvert — c'est-à-dire l'interface SE4 d'origine ressuscitée, avec ses mots de passe en champs cachés et sa vérification TLS désactivée. C'est précisément ce que les deux entrées de `blocked_legacy_routes` empêchent, et ce qu'aucun test hors VM ne peut constater.
+
+### Scénario 25.8 — La modale de recherche ne propose plus « Visioconférences »
+
+Sur n'importe quelle page de SE5, ouvrir la **recherche globale** (la modale du bandeau) et taper `visio`, puis `salon`, puis `bbb`.
+
+**Attendu** : **aucune** entrée « Créer un salon », « Rejoindre un salon » ni « Enregistrements ». La catégorie entière a disparu.
+
+Et la contre-épreuve, tout aussi importante : le **lanceur d'applications** propose bien la tuile « Visioconférences », et c'est **le seul chemin** vers la visio depuis SE5. Vérifier aussi, sur une instance où l'extension **n'est pas installée**, qu'aucun lien mort ne subsiste nulle part — c'est la raison pour laquelle la catégorie n'a **pas** été remplacée par un lien en dur vers `/ext/bbb` : la tuile, elle, est conditionnée à l'installation réelle.
+
+### Scénario 25.9 — Non-régression de l'Epic 38 : l'observation du canal legacy
+
+```bash
+php artisan se4:extinction-report      # ou l'équivalent 38.6 de l'instance
+```
+
+**Attendu** : la commande tourne, et son verdict n'est pas perturbé. Deux points à consigner :
+
+1. les répertoires `bbb` et `visio` **restent** dans l'inventaire du canal legacy de l'Epic 38 : cette liste décrit le **système de fichiers SE4**, pas la surface SE5. Les en retirer fausserait le verdict sur une instance non débranchée ;
+2. en revanche, les requêtes `/bbb/*` et `/visio/*` **cessent d'apparaître** dans `legacy_catchall_logs` — une route **migrée** est redirigée avant journalisation (comportement existant du catchall). C'est correct et assumé : une route migrée n'est plus un accès au canal legacy, et le verdict GO/NO-GO ne doit plus la compter.
+
+```sql
+SELECT path, COUNT(*) FROM legacy_catchall_logs WHERE path LIKE 'bbb%' OR path LIKE 'visio%' GROUP BY path;
+```
+
+**Attendu** : aucune ligne **nouvelle** après les visites du scénario 25.7 (les lignes historiques, elles, restent — c'est un journal).
+
+### Scénario 25.10 — Le module legacy a bien disparu du disque
+
+```bash
+ls /var/www/sambaedu-reload/legacy/modules/          # plus de répertoire bbb
+ls /var/www/sambaedu-reload/legacy/stubs/ | grep -i bbb   # rien
+php artisan test --testsuite=Architecture            # dont LegacyBbbLinkExtinctionTest
+```
+
+**Attendu** : le répertoire `legacy/modules/bbb/` et les deux stubs dédiés ont disparu ; le module `dhcp` et les stubs **partagés** (`functions.inc.php`, `sites.inc.php`, `ent.inc.php`, `cloud.inc.php`, `fonc_parc.inc.php`) sont **intacts** — le module dhcp les consomme, et les supprimer le casserait.
+
+Contrôle croisé : `/dhcp/baux.php` répond toujours comme avant.
+
+### Checklist rapide — Section 25
+
+- [ ] **25.1 Répartition observée : le meeting apparaît dans la console du serveur le MOINS chargé ; sonde sur tous, création sur un seul ; `rooms.server_id` mémorise le bon**
+- [ ] **25.2 Bascule : serveur coupé ⇒ le salon s'ouvre quand même sans action de l'utilisateur ; exactement DEUX `create` quand la panne survient après la sonde**
+- [ ] **25.3 Tous coupés ⇒ message clair, page complète, jamais blanche ; les TROIS messages (non configuré / non joignable / secret refusé) sont distincts**
+- [ ] **25.4 Délégation Scalelite : choisi quand les mesurés dépassent son seuil, et JAMAIS sondé (zéro `getMeetings` dans son journal) ; s'il est mort, la bascule le rattrape**
+- [ ] 25.5 Fluidité même-session pendant un démarrage qui sonde un serveur mort ; pire cas ~25 s chronométré et assumé
+- [ ] **25.6 Un salon démarré garde son serveur : jonction et enregistrements suivent `server_id`, quelle que soit la charge**
+- [ ] **25.7 `/bbb/*.php` et `/visio` (avec ET sans préfixe UAI) ⇒ 302 vers l'accueil SE5 — y compris sur une instance où `/var/www/sambaedu/bbb/` existe encore**
+- [ ] **25.8 La recherche globale ne propose plus « Visioconférences » ; la tuile du lanceur est le seul chemin ; aucun lien mort là où l'extension n'est pas installée**
+- [ ] 25.9 `se4:extinction-report` tourne ; `bbb`/`visio` restent dans l'inventaire du FS SE4 ; plus de hits `/bbb/*` dans `legacy_catchall_logs`
+- [ ] 25.10 `legacy/modules/bbb/` et les 2 stubs dédiés absents ; stubs partagés et module dhcp intacts (`/dhcp/baux.php` répond)

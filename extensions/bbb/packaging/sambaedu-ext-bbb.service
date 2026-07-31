@@ -1,0 +1,48 @@
+[Unit]
+Description=Extension SE5 « bbb » — Visioconférences BigBlueButton
+After=network.target
+
+[Service]
+Type=simple
+# LE seul canal de configuration SE5 → extension : 7 variables, posées 0600
+# root:root par le helper root de SE5, lues par systemd AVANT le renoncement aux
+# privilèges. Le paquet ne crée jamais ce fichier et ne le lit jamais lui-même.
+EnvironmentFile=/etc/sambaedu/extensions/bbb.env
+# Le serveur HTTP intégré de PHP est mono-processus par défaut. Cette variable
+# en atténue l'effet ; la VRAIE garde est côté appels sortants (timeouts courts
+# et bornés sur BBB comme sur OIDC — décision D2).
+Environment=PHP_CLI_SERVER_WORKERS=4
+# `public/index.php` est passé en SCRIPT ROUTEUR : toute requête sans fichier
+# statique correspondant atteint le front controller, un fichier existant sous
+# `public/` (feuille de style, script de thème) est servi nativement.
+# Écoute 127.0.0.1 EXCLUSIVEMENT : l'exposition publique, c'est Apache, via le
+# fragment `ProxyPass /ext/bbb` généré par le helper root.
+ExecStart=/usr/bin/php -S 127.0.0.1:${SE5_EXT_PORT} -t /usr/share/sambaedu-ext-bbb/public /usr/share/sambaedu-ext-bbb/public/index.php
+
+# ── ÉTAT PERSISTANT : StateDirectory, et surtout PAS un chown au postinst ────
+#
+# AMENDEMENT à la lettre de la décision D3 (« le postinst crée le répertoire et
+# le fichier »), instruit par la Story 57.1 :
+#
+#   `DynamicUser=yes` alloue un UID VOLATIL, réattribué à chaque démarrage. Un
+#   `chown` figé au postinst désignerait un UID qui n'existera plus au prochain
+#   redémarrage : la base deviendrait illisible par son propre service, sans
+#   qu'aucun test ne le voie avant la production.
+#
+#   `StateDirectory=` fait gérer /var/lib/sambaedu-ext-bbb — création, mode,
+#   propriétaire, REMAP à chaque démarrage — par systemd lui-même, et expose le
+#   chemin dans $STATE_DIRECTORY. L'application y crée `database.sqlite` en 0600.
+#
+# L'esprit de D3 est intact (autonomie de l'extension, zéro extension du helper
+# root) ; seule la lettre est corrigée pour survivre à l'UID volatil. Le postinst
+# du paquet reste donc VIDE.
+DynamicUser=yes
+StateDirectory=sambaedu-ext-bbb
+StateDirectoryMode=0700
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

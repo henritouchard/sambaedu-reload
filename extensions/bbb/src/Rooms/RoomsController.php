@@ -1,0 +1,668 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SambaEdu\ExtBbb\Rooms;
+
+use SambaEdu\ExtBbb\Bbb\BbbApiClient;
+use SambaEdu\ExtBbb\Bbb\CallOutcome;
+use SambaEdu\ExtBbb\Bbb\RoomMeeting;
+use SambaEdu\ExtBbb\Bbb\ServerSelector;
+use SambaEdu\ExtBbb\Env;
+use SambaEdu\ExtBbb\Http\Csrf;
+use SambaEdu\ExtBbb\Http\Request;
+use SambaEdu\ExtBbb\Http\Response;
+use SambaEdu\ExtBbb\Http\SessionStore;
+use SambaEdu\ExtBbb\Identity;
+use SambaEdu\ExtBbb\Store;
+use SambaEdu\ExtBbb\Url;
+use SambaEdu\ExtBbb\View;
+
+/**
+ * Story 57.2 — **LES SALONS : L'AUTORISATION CHANGE DE CAMP.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ *  CE QUE CE FICHIER EXISTE POUR TUER
+ *
+ *  SE4 n'avait AUCUNE autorisation côté serveur. Sa « visibilité » n'était
+ *  qu'un filtre d'affichage : le formulaire de jonction postait `meetingId`,
+ *  `attendedPW` **et** `moderatorPW` en champs cachés, dans le HTML servi à
+ *  tout le monde ; et le lancement donnait le mot de passe modérateur à
+ *  **tout non-élève**, sur n'importe quel salon, même créé par un autre
+ *  professeur. Il suffisait de lire la source d'une page pour entrer
+ *  modérateur dans le cours d'un collègue.
+ *
+ *  Ici, trois règles, et elles ne souffrent aucune exception :
+ *
+ *  1. **La décision se rejoue à CHAQUE requête**, à partir de la table et des
+ *     claims de l'identité — jamais d'un champ de formulaire. Le client dit
+ *     seulement « le salon <jeton> », et il ne dit rien d'autre.
+ *  2. **Aucun mot de passe BigBlueButton ne traverse le navigateur** : ni dans
+ *     le HTML, ni dans une URL de page, ni dans un champ caché, ni dans un
+ *     journal. La seule sortie est l'URL de jonction signée, fabriquée ici et
+ *     posée dans un `Location:`.
+ *  3. **Le rôle dans la conférence découle de la table** : créateur ⇒
+ *     modérateur ; toute autre personne autorisée — élève, professeur
+ *     co-membre de la classe, administratif sur un salon d'établissement ⇒
+ *     participant.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **Refus INDISTINCT.** Un jeton inconnu et un salon qu'on n'a pas le droit de
+ * voir rendent exactement la même réponse. Distinguer les deux offrirait un
+ * oracle : on saurait qu'un salon existe sans y avoir droit.
+ *
+ * **Les actions qui appellent un serveur BigBlueButton sont des POST**, jamais
+ * des GET. Un GET serait préchargé au survol d'un lien par un navigateur ou un
+ * antivirus, et ouvrirait des meetings tout seul — sur un serveur HTTP intégré
+ * mono-processus, c'est aussi un moyen de bloquer l'extension entière.
+ */
+final class RoomsController
+{
+    /**
+     * **Qui peut créer — décision instruite.** Le besoin exprimé, comme l'AC,
+     * ne parle que du professeur. Le claim de rôle est un scalaire à profil
+     * métier prioritaire : un professeur qui administre reste `prof`. Ouvrir la
+     * création à `admin` fabriquerait des salons sans classes possibles (les
+     * groupes d'un administrateur pur sont vides ou ne sont que des équipes),
+     * pour un besoin que personne n'a formulé. Élargir un jour = changer cette
+     * constante, et rien d'autre.
+     */
+    public const CREATOR_ROLE = 'prof';
+
+    /** Un nom de salon est un intitulé, pas un texte. */
+    public const MAX_NAME_LENGTH = 100;
+
+    /**
+     * Story 57.4 — **La bascule sur panne, bornée à UN réessai.**
+     *
+     * Deux tentatives de création au maximum, jamais « tant qu'il reste des
+     * serveurs » : chaque tentative coûte jusqu'à 8 s sur un serveur HTTP
+     * mono-processus, et une salle de classe n'attend pas une cascade.
+     */
+    public const START_ATTEMPTS = 2;
+
+    /**
+     * Story 57.4, review #1 — ce que voit le professeur quand un serveur a été
+     * écarté pour secret invalide **mais que le salon a quand même ouvert**.
+     *
+     * Il n'a rien à corriger, lui : le message le dit, et nomme qui doit agir.
+     */
+    public const SECRET_REFUSED_ELSEWHERE = 'Le salon a bien ouvert. Un des serveurs de visioconférence a toutefois '
+        . 'refusé son secret et a été écarté : signalez-le à votre administrateur.';
+
+    private const FLASH = 'rooms.flash';
+
+    private const CSRF = 'rooms.csrf';
+
+    public function __construct(
+        private readonly Store $store,
+        private readonly BbbApiClient $api,
+        private readonly View $view,
+        private readonly Env $env,
+        private readonly ServerSelector $selector,
+    ) {
+    }
+
+    public function handle(Request $request, SessionStore $session): Response
+    {
+        // L'identité est relue ICI, à chaque requête. Elle n'est jamais acquise
+        // une fois pour toutes à la connexion : elle périme, et un rôle devenu
+        // invalide ne rend plus aucune identité du tout.
+        $identity = Identity::fromSessionStore($session);
+
+        if ($identity === null) {
+            return Response::redirect('/login');
+        }
+
+        if (strtoupper($request->method) !== 'POST') {
+            return $this->index($session, $identity);
+        }
+
+        if (! (new Csrf(self::CSRF))->matches($request, $session)) {
+            return $this->errorPage($identity, 'bbb.rooms.csrf', 'Formulaire expiré ou invalide.', 403);
+        }
+
+        return match ($request->routePath()) {
+            '/rooms/start' => $this->start($request, $session, $identity),
+            '/rooms/join' => $this->join($request, $session, $identity),
+            '/rooms/delete' => $this->delete($request, $session, $identity),
+            '/rooms/guest/enable' => $this->enableGuest($request, $session, $identity),
+            '/rooms/guest/revoke' => $this->revokeGuest($request, $session, $identity),
+            default => $this->create($request, $session, $identity),
+        };
+    }
+
+    // =====================================================================
+    // Liste
+    // =====================================================================
+
+    /**
+     * `GET /rooms` — **rendue depuis SQLite SEULEMENT.**
+     *
+     * Aucun appel BigBlueButton : afficher la liste ne doit jamais dépendre de
+     * la santé d'un tiers. Le legacy interrogeait tous ses serveurs à
+     * l'affichage, avec un cache pour amortir la note — et un cache à
+     * réconcilier. Ici, `last_started_at` est un repère daté, pas un état.
+     */
+    private function index(SessionStore $session, Identity $identity, int $status = 200): Response
+    {
+        return $this->render($session, $identity, [], [], $status);
+    }
+
+    /**
+     * @param  array<string, string>  $errors
+     * @param  array<string, mixed>  $old
+     */
+    private function render(
+        SessionStore $session,
+        Identity $identity,
+        array $errors,
+        array $old,
+        int $status = 200,
+    ): Response {
+        $rooms = $this->store->roomsVisibleTo($identity);
+
+        $mine = [];
+        $others = [];
+
+        foreach ($rooms as $room) {
+            if ($room->isOwnedBy($identity->sub)) {
+                $mine[] = $room;
+            } else {
+                $others[] = $room;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  LE LIEN PUBLIC ET SON MOT DE PASSE NE SORTENT QUE POUR LE CRÉATEUR
+        //
+        //  Cette lecture est faite UNIQUEMENT sur `$mine`. Ce n'est pas une
+        //  précaution d'écriture de la vue : la liste des salons des autres ne
+        //  reçoit structurellement rien, parce que rien n'a été lu pour elle.
+        //  Un `Room` ne porte de toute façon ni jeton d'invitation ni mot de
+        //  passe — il ne porte qu'un booléen d'affichage.
+        // ═══════════════════════════════════════════════════════════════════
+        $invitations = [];
+
+        foreach ($mine as $room) {
+            $invitation = $this->store->guestInvitation($room->id);
+
+            if ($invitation !== null) {
+                $invitations[$room->token] = [
+                    'password' => $invitation['password'],
+                    'url' => $this->guestUrl($invitation['token']),
+                ];
+            }
+        }
+
+        return Response::html(
+            $this->view->page('rooms', [
+                'mine' => $mine,
+                'others' => $others,
+                'invitations' => $invitations,
+                'canSeeRecordings' => $identity->role === RecordingsController::VIEWER_ROLE,
+                'canCreate' => $this->canCreate($identity),
+                'groups' => $identity->groups,
+                'errors' => $errors,
+                'old' => $old,
+                'flash' => $this->takeFlash($session),
+                'csrf' => (new Csrf(self::CSRF))->token($session),
+            ], 'Salons', $this->env, $identity),
+            $status,
+        );
+    }
+
+    // =====================================================================
+    // Création
+    // =====================================================================
+
+    private function create(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        if (! $this->canCreate($identity)) {
+            return $this->errorPage(
+                $identity,
+                'bbb.rooms.forbidden',
+                'Seuls les professeurs peuvent créer un salon.',
+                403,
+            );
+        }
+
+        $name = trim($request->input('name'));
+        $visibility = $request->input('visibility');
+        $submitted = $request->inputList('groups');
+
+        $errors = [];
+
+        if ($name === '') {
+            $errors['name'] = 'Le nom du salon est obligatoire.';
+        } elseif (mb_strlen($name) > self::MAX_NAME_LENGTH) {
+            $errors['name'] = sprintf('Le nom du salon ne doit pas dépasser %d caractères.', self::MAX_NAME_LENGTH);
+        }
+
+        if (! in_array($visibility, Room::VISIBILITIES, true)) {
+            $errors['visibility'] = 'Choisissez qui pourra voir ce salon.';
+        }
+
+        $groups = [];
+
+        if ($visibility === Room::VISIBILITY_CLASSE) {
+            $groups = array_values(array_unique($submitted));
+
+            if ($groups === []) {
+                $errors['groups'] = 'Choisissez au moins une classe ou une équipe.';
+            }
+
+            foreach ($groups as $group) {
+                // ═══════════════════════════════════════════════════════════
+                //  LA GARDE QUI PORTE L'AC : le `<select>` ne décide de RIEN.
+                //
+                //  Un groupe soumis qui n'est pas dans les groupes de CETTE
+                //  identité est refusé EXPLICITEMENT, jamais filtré en
+                //  silence : une valeur inventée n'est pas une faute de
+                //  frappe, c'est une tentative — et l'utilisateur légitime,
+                //  lui, ne peut pas la produire.
+                // ═══════════════════════════════════════════════════════════
+                if (! in_array($group, $identity->groups, true)) {
+                    $errors['groups'] = 'Vous ne pouvez ouvrir un salon que pour vos propres classes et équipes.';
+
+                    break;
+                }
+            }
+        }
+
+        if ($errors !== []) {
+            // Rendu DIRECT plutôt que redirection : la saisie est conservée.
+            return $this->render($session, $identity, $errors, [
+                'name' => $name,
+                'visibility' => $visibility,
+                'groups' => $submitted,
+            ], 422);
+        }
+
+        $this->store->addRoom($name, $identity->sub, $identity->name, $visibility, $groups);
+
+        $this->flash($session, 'success', 'Salon créé. Il s\'ouvrira quand vous le démarrerez.');
+
+        return Response::redirect('/rooms');
+    }
+
+    // =====================================================================
+    // Démarrage — l'acte du créateur
+    // =====================================================================
+
+    /**
+     * `POST /rooms/start` — **« démarrer OU entrer », et c'est le même bouton.**
+     *
+     * `createMeeting` est idempotent côté BigBlueButton : le même identifiant
+     * avec les mêmes mots de passe rend `SUCCESS` sur un meeting déjà vivant.
+     * C'est cette propriété de l'API qui remplace, à elle seule, le miroir en
+     * mémoire du legacy et son ramasse-miettes — il n'y a aucun état de
+     * fonctionnement à réconcilier, donc aucun état à désynchroniser.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     *  Story 57.4 — **C'EST ICI, ET NULLE PART AILLEURS, QUE LA RÉPARTITION SE
+     *  JOUE.**
+     *
+     *  Le démarrage est le seul instant où le serveur d'un salon se décide :
+     *  la jonction, la page « pas ouvert » et les enregistrements suivent
+     *  ensuite `rooms.server_id`, sans jamais rien re-choisir. Un salon démarré
+     *  garde donc son serveur — et c'est le prochain démarrage, seulement lui,
+     *  qui pourra le changer.
+     *
+     *  **Budget de temps, assumé et écrit.** Pire cas : N serveurs normaux
+     *  sondés à 3 s pièce, puis deux tentatives de création à 8 s. Pour trois
+     *  serveurs dont deux morts : ~25 s. Ce budget est acceptable parce qu'il
+     *  est payé sur un POST explicite du créateur, une fois par ouverture de
+     *  cours, verrou d'état relâché — et pas au rendu d'une page que tout
+     *  l'établissement recharge.
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    private function start(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->ownedRoom($request, $identity);
+
+        if ($room === null) {
+            return $this->notFound($identity);
+        }
+
+        $secrets = $this->store->roomSecrets($room->id);
+
+        if ($secrets === null) {
+            return $this->notFound($identity);
+        }
+
+        // Verrou d'état relâché AVANT le réseau (review 57.2 #1), et donc avant
+        // la PREMIÈRE sonde de charge : le tenir pendant N sondes puis deux
+        // créations bloquerait les autres onglets de la même personne pendant
+        // tout ce temps, et immobiliserait un worker de plus que nécessaire.
+        $session->close();
+
+        $selection = $this->selector->select();
+
+        if ($selection->isEmpty()) {
+            // Aucun serveur configuré, aucun joignable, ou secret refusé
+            // partout : trois causes, trois messages, une seule chose en
+            // commun — une réponse HTTP complète, jamais une page blanche.
+            $this->flash($session, 'error', $selection->message);
+
+            return Response::redirect('/rooms');
+        }
+
+        $meeting = new RoomMeeting(
+            meetingId: $room->token,
+            name: $room->name,
+            attendeePassword: $secrets['attendee'],
+            moderatorPassword: $secrets['moderator'],
+            logoutUrl: Url::absolute($this->env, '/rooms'),
+        );
+
+        $attempts = 0;
+        $failure = '';
+
+        foreach ($selection->candidates as $candidate) {
+            $attempts++;
+
+            $result = $this->api->createMeeting($candidate->baseUrl, $candidate->secret, $meeting);
+
+            if ($result->isOk()) {
+                // Le serveur mémorisé est celui qui a RÉELLEMENT ouvert le
+                // meeting — celui de la bascule, le cas échéant. Pointer le
+                // premier choix théorique enverrait les élèves frapper à une
+                // porte qui n'existe pas.
+                $this->store->markStarted($room->id, $candidate->id);
+
+                // ═══════════════════════════════════════════════════════════
+                //  « ÇA A MARCHÉ AILLEURS » NE DOIT PAS ÊTRE SILENCIEUX
+                //  (review 57.4 #1)
+                //
+                //  Le sélecteur écarte un serveur dont le secret est refusé et
+                //  le SIGNALE. Ce signal n'était lu que lorsqu'il ne restait
+                //  plus AUCUN candidat : avec deux serveurs déclarés dont un au
+                //  secret périmé, tout démarrait normalement sur le second,
+                //  indéfiniment, sans une trace nulle part. L'administrateur ne
+                //  l'aurait découvert qu'en testant la connexion à la main —
+                //  ce que rien ne l'incite à faire tant que les cours ont lieu.
+                //
+                //  Un `warning`, pas une `error` : le salon EST ouvert, rien
+                //  n'a échoué pour le professeur. Ce qui est cassé appelle un
+                //  administrateur, pas une inquiétude.
+                // ═══════════════════════════════════════════════════════════
+                if ($selection->secretRefused) {
+                    $this->flash($session, 'warning', self::SECRET_REFUSED_ELSEWHERE);
+                }
+
+                return $this->redirectToConference(
+                    $candidate->baseUrl,
+                    $candidate->secret,
+                    $room,
+                    $identity,
+                    $secrets['moderator'],
+                );
+            }
+
+            $failure = $result->message;
+
+            // ═══════════════════════════════════════════════════════════════
+            //  SEUL UN ÉCHEC RÉSEAU DONNE DROIT À LA BASCULE
+            //
+            //  Un serveur tombé entre la sonde et la création — ou un Scalelite,
+            //  qui n'est jamais sondé et dont la santé n'a donc rien prouvé —
+            //  est un aléa d'infrastructure : on réessaie ailleurs, une fois.
+            //
+            //  Un secret refusé ou une réponse inattendue, NON : ce sont des
+            //  erreurs de configuration ou de protocole, et « essayer ailleurs »
+            //  les masquerait — l'administrateur ne les découvrirait que le jour
+            //  où il ne reste plus un seul serveur sain.
+            // ═══════════════════════════════════════════════════════════════
+            if ($result->outcome !== CallOutcome::Unreachable || $attempts >= self::START_ATTEMPTS) {
+                break;
+            }
+        }
+
+        $this->flash($session, 'error', $failure);
+
+        return Response::redirect('/rooms');
+    }
+
+    // =====================================================================
+    // Jonction — l'acte de tous les autres
+    // =====================================================================
+
+    private function join(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->store->roomByToken($request->input('token'));
+
+        // Jeton inconnu ET salon non visible : MÊME réponse, même code, même
+        // page. Et surtout : aucun appel sortant n'a encore été fait — un refus
+        // ne doit pas se trahir par le temps qu'il met.
+        if ($room === null || ! $room->isVisibleTo($identity)) {
+            return $this->notFound($identity);
+        }
+
+        $server = $room->serverId !== null ? $this->store->server($room->serverId) : null;
+
+        // Salon jamais démarré, ou serveur supprimé / désactivé depuis :
+        // « pas ouvert ». C'est un état NORMAL, pas une erreur — et il ne coûte
+        // aucun appel.
+        if ($server === null || $server['enabled'] !== true) {
+            return $this->closedPage($room, $identity);
+        }
+
+        $baseUrl = (string) $server['base_url'];
+        $secret = (string) $server['secret'];
+
+        // Idem `start()` : rien ne justifie de tenir le verrou d'état pendant un
+        // aller-retour réseau (review 57.2 #1).
+        $session->close();
+
+        $running = $this->api->isMeetingRunning($baseUrl, $secret, $room->token);
+
+        if (! $running->answered()) {
+            $this->flash($session, 'error', $running->message);
+
+            return Response::redirect('/rooms');
+        }
+
+        if (! $running->running) {
+            return $this->closedPage($room, $identity);
+        }
+
+        $secrets = $this->store->roomSecrets($room->id);
+
+        if ($secrets === null) {
+            return $this->notFound($identity);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  LA MATRICE DE RÔLE, ET ELLE TIENT EN UNE LIGNE
+        //
+        //  Créateur ⇒ modérateur. Tout le reste ⇒ participant, y compris un
+        //  professeur co-membre de la classe et un administratif sur un salon
+        //  d'établissement. Le « tout non-élève est modérateur » du legacy est
+        //  MORT ici, et il n'y a pas d'endroit où le ressusciter par mégarde :
+        //  le mot de passe se choisit à partir de la ligne du salon, pas du
+        //  profil de la personne.
+        // ═══════════════════════════════════════════════════════════════════
+        $password = $room->isOwnedBy($identity->sub) ? $secrets['moderator'] : $secrets['attendee'];
+
+        return $this->redirectToConference($baseUrl, $secret, $room, $identity, $password);
+    }
+
+    // =====================================================================
+    // Story 57.3 — L'invitation externe : un fait LOCAL
+    // =====================================================================
+
+    /**
+     * `POST /rooms/guest/enable` — **activer et régénérer sont le même acte.**
+     *
+     * Le code est identique parce que l'effet l'est : de nouvelles valeurs, les
+     * compteurs remis à zéro, et l'ancien lien mort à l'instant même. Distinguer
+     * les deux ne servirait qu'à écrire deux fois la même chose, et à ouvrir la
+     * possibilité qu'elles divergent.
+     *
+     * **Aucun appel sortant.** Une invitation ne se déclare pas à
+     * BigBlueButton : elle n'existe que dans la table, et l'invité rejoint la
+     * conférence comme n'importe quel participant, avec `attendee_pw`. Rien à
+     * dire au serveur distant, donc rien à attendre de lui.
+     */
+    private function enableGuest(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->ownedRoom($request, $identity);
+
+        if ($room === null) {
+            return $this->notFound($identity);
+        }
+
+        $this->store->enableGuestAccess($room->id);
+
+        $this->flash(
+            $session,
+            'success',
+            $room->hasGuestAccess
+                ? 'Nouveau lien d\'invitation. L\'ancien lien et son mot de passe ne fonctionnent plus.'
+                : 'Invitation activée. Communiquez le lien ET le mot de passe aux personnes conviées.',
+        );
+
+        return Response::redirect('/rooms');
+    }
+
+    /** `POST /rooms/guest/revoke` — effet IMMÉDIAT : le lien ne résout plus rien. */
+    private function revokeGuest(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->ownedRoom($request, $identity);
+
+        if ($room === null) {
+            return $this->notFound($identity);
+        }
+
+        $this->store->revokeGuestAccess($room->id);
+
+        $this->flash($session, 'success', 'Invitation révoquée : le lien public ne fonctionne plus.');
+
+        return Response::redirect('/rooms');
+    }
+
+    /**
+     * L'URL PUBLIQUE d'une invitation, **absolue**.
+     *
+     * Elle doit fonctionner depuis l'extérieur de l'établissement : c'est le cas
+     * d'école du piège n°1 (le proxy retire le préfixe). Elle dérive de
+     * l'issuer, jamais d'un en-tête `Host:` ou `X-Forwarded-*` — faire reposer
+     * une propriété sur un en-tête que le contrat ne garantit pas, c'est la
+     * faire tomber en silence (leçon de la revue de 57.1).
+     *
+     * Issuer vide (développement hors provisionnement) ⇒ repli sur le chemin
+     * préfixé, qui reste juste pour un navigateur déjà sur la bonne origine.
+     */
+    private function guestUrl(string $guestToken): string
+    {
+        $path = '/visio?g=' . rawurlencode($guestToken);
+        $absolute = Url::absolute($this->env, $path);
+
+        return $absolute !== '' ? $absolute : Url::to($path);
+    }
+
+    // =====================================================================
+    // Suppression
+    // =====================================================================
+
+    private function delete(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->ownedRoom($request, $identity);
+
+        if ($room === null) {
+            return $this->notFound($identity);
+        }
+
+        $this->store->deleteRoom($room->id);
+
+        $this->flash($session, 'success', 'Salon supprimé.');
+
+        return Response::redirect('/rooms');
+    }
+
+    // =====================================================================
+
+    /**
+     * L'ULTIME sortie d'un mot de passe de salon : un en-tête de redirection.
+     *
+     * ⚠️ L'URL n'est ni journalisée, ni affichée, ni conservée. Le nom affiché
+     * dans la conférence est celui de l'identité — jamais une saisie de
+     * l'utilisateur, sans quoi n'importe qui pourrait se présenter comme
+     * n'importe qui.
+     */
+    private function redirectToConference(
+        string $baseUrl,
+        string $secret,
+        Room $room,
+        Identity $identity,
+        string $password,
+    ): Response {
+        return Response::redirectTo(
+            $this->api->joinUrl($baseUrl, $secret, $room->token, $identity->name, $password)
+        );
+    }
+
+    /** Le salon désigné, à condition d'en être le créateur. Sinon : rien du tout. */
+    private function ownedRoom(Request $request, Identity $identity): ?Room
+    {
+        $room = $this->store->roomByToken($request->input('token'));
+
+        return $room !== null && $room->isOwnedBy($identity->sub) ? $room : null;
+    }
+
+    private function canCreate(Identity $identity): bool
+    {
+        return $identity->role === self::CREATOR_ROLE;
+    }
+
+    /** LA réponse indistincte : même code, même message, même statut. */
+    private function notFound(Identity $identity): Response
+    {
+        return $this->errorPage(
+            $identity,
+            'bbb.rooms.not_found',
+            'Ce salon n\'existe pas, ou ne vous est pas accessible.',
+            404,
+        );
+    }
+
+    private function closedPage(Room $room, Identity $identity): Response
+    {
+        return Response::html(
+            $this->view->page('room-closed', ['room' => $room], 'Salon fermé', $this->env, $identity),
+        );
+    }
+
+    private function errorPage(Identity $identity, string $code, string $message, int $status): Response
+    {
+        return Response::html(
+            $this->view->page('error', [
+                'code' => $code,
+                'message' => $message,
+                'canRetry' => false,
+            ], 'Accès refusé', $this->env, $identity),
+            $status,
+        );
+    }
+
+    // ── État de page ─────────────────────────────────────────────────────
+
+    private function flash(SessionStore $session, string $type, string $message): void
+    {
+        /** @var list<array{type: string, message: string}> $current */
+        $current = (array) $session->get(self::FLASH, []);
+        $current[] = ['type' => $type, 'message' => $message];
+        $session->put(self::FLASH, $current);
+    }
+
+    /** @return list<array{type: string, message: string}> */
+    private function takeFlash(SessionStore $session): array
+    {
+        /** @var list<array{type: string, message: string}> $current */
+        $current = (array) $session->get(self::FLASH, []);
+        $session->forget(self::FLASH);
+
+        return $current;
+    }
+}

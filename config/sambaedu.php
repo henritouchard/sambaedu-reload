@@ -56,6 +56,29 @@ return [
     'blocked_legacy_routes' => [
         '^annu2/annu\.php' => 'app/users',
         'parcs/show_parc.php' => 'app/parcs',
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  Story 57.4 / AR12 — BBB LEGACY ÉTEINT
+        //
+        //  L'extension `sambaedu-ext-bbb` est le successeur intégral : chaque
+        //  page a la sienne (`config` → /ext/bbb/admin/servers, `create`/`join`
+        //  → /ext/bbb/rooms, `records` → /ext/bbb/recordings, la page publique
+        //  invité → /ext/bbb/visio). Redirection vers l'accueil SE5, où vit le
+        //  lanceur.
+        //
+        //  ⚠️ CES DEUX ENTRÉES NE SONT PAS DÉCORATIVES. Le module local
+        //  `legacy/modules/bbb/` a été supprimé avec cette story ; sans elles,
+        //  le catchall passerait simplement à l'étape suivante — le proxy vers
+        //  le système de fichiers SE4 (`/var/www/sambaedu/bbb/…`) — et
+        //  RESSUSCITERAIT l'interface legacy d'origine, TLS désactivé et champs
+        //  cachés compris, sur toute instance que l'Epic 38 n'a pas encore
+        //  débranchée. Les retirer rouvrirait ce chemin.
+        //
+        //  Patterns SANS slash de tête : c'est la forme `path` que manipule le
+        //  catchall (préfixe UAI déjà retiré). Ne pas les « normaliser ».
+        // ═══════════════════════════════════════════════════════════════════
+        '^bbb(/|$)' => '/',
+        '^visio(/|$)' => '/',
         // Story 38.2 — l'entrée `gpo/shortcuts_out\.php` => `noop:…` a été RETIRÉE :
         // le tombstone natif `/gpo/shortcuts_out.php` (route `legacy.tombstone.shortcuts`,
         // déclarée AVANT le catchall) la supersède. La convention `noop:` de
