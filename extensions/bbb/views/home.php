@@ -69,11 +69,23 @@
         </div>
     <?php endif; ?>
 
-    <div class="card card--muted">
+    <?php /*
+        Story 57.2 — un LIEN, pas une liste.
+
+        Cette page est la sonde de santé de l'extension : elle n'ouvre ni base,
+        ni fournisseur d'identité, ni serveur de visioconférence. Afficher ici
+        les salons de la personne coûterait une lecture de base à chaque passage
+        du superviseur — et transformerait une base illisible en « extension
+        injoignable », ce qu'elle n'est pas.
+    */ ?>
+    <div class="card">
         <h2>Salons</h2>
-        <p class="meta" style="margin:0">
-            La préparation et la tenue des salons arrivent dans une prochaine version de l'extension.
+        <p style="margin-top:0">
+            <?= $identity->role === 'prof'
+                ? 'Créez un salon pour vos classes, démarrez-le au moment du cours.'
+                : 'Retrouvez les salons ouverts pour vous, et rejoignez-les en un clic.' ?>
         </p>
+        <a class="btn btn--primary" href="<?= bbb_e(bbb_url('/rooms')) ?>">Voir les salons</a>
     </div>
 
 <?php endif; ?>

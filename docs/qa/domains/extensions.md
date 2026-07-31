@@ -2927,3 +2927,231 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://<ip-serveur>/ext/bbb
 - [ ] **22.9 Santé : `ok` → `unreachable` → `ok` ; serveur BBB coupé ⇒ l'extension reste `ok` (la racine ne dépend de rien)**
 - [ ] 22.10 20 requêtes concurrentes en 200 pendant un appel BBB vers un trou noir
 - [ ] **22.11 `ext:remove bbb` : 404, unité et paquet partis, env et fragment retirés, tuile disparue, rejeu no-op — et sort du répertoire d'état CONSIGNÉ**
+
+---
+
+## Section 23 — Salons BBB : création, visibilité et jonction (Story 57.2)
+
+> **Ce que cette section valide, et pourquoi elle ne ressemble à aucune autre.** La 57.2 déplace l'autorisation **du client vers le serveur**. SE4 n'en avait aucune : son formulaire de jonction portait `meetingId`, `attendedPW` **et** `moderatorPW` en champs cachés dans le HTML servi à tout le monde, et son lancement donnait le mot de passe modérateur à **tout non-élève**, sur n'importe quel salon — y compris celui d'un collègue. Il suffisait d'un `Ctrl+U`.
+>
+> Trois propriétés portent donc cette section, et **deux d'entre elles se vérifient en regardant ce qui N'ARRIVE PAS** :
+>
+> 1. **le rôle observé DANS la conférence** — le créateur est modérateur, tout le monde d'autre est participant, y compris un professeur co-membre de la classe et un administrateur. Cela ne se lit que dans BigBlueButton, sur un vrai serveur ;
+> 2. **l'élève d'une autre classe ne voit rien et n'entre pas**, même en rejouant la requête à la main ;
+> 3. **la migration v1 → v2 sur la base RÉELLE de l'instance** : les serveurs déclarés en 57.1 doivent survivre à la mise à jour du paquet.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué ici : la matrice d'autorisation complète au niveau contrôleur (élève de la classe / élève d'une autre classe / collègue / administratif / administrateur / créateur, sur les trois visibilités), le refus **indistinct** entre jeton inconnu et salon interdit, la garde « groupes soumis ⊆ claim » avec son contournement de formulaire simulé, l'absence de tout mot de passe dans le HTML de chaque page, l'absence de tout appel sortant au rendu, l'anti-CSRF, le schéma v2 avec sa cascade, et le mapping des réponses `createMeeting` / `isMeetingRunning` sur du vrai XML.
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && vendor/bin/phpunit        # 213 tests
+> cd /var/www/sambaedu-reload && php artisan test --testsuite=Architecture # 145 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x/57.1** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+La Section 22 doit être passée : extension installée par le canal standard, SSO fonctionnel, **et au moins un serveur BigBlueButton déclaré et testé vert** (scénario 22.7). Sans serveur actif, seuls les scénarios 23.1, 23.2 et 23.7 sont jouables.
+
+Prévoir **quatre comptes réels** : une professeure de 4ᵉB (`prof.martin` ci-dessous), un second professeur de la même 4ᵉB, un élève de 4ᵉB, un élève de 5ᵉA. Plus un compte administratif et un compte `admin` pour les contre-épreuves.
+
+### Scénario 23.1 — ⭐ Migration v1 → v2 sur la base de l'instance
+
+À jouer **avant** toute autre chose, sur une instance où la 57.1 tournait déjà avec ses serveurs configurés.
+
+```bash
+# AVANT la mise à jour du paquet
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT id, base_url, enabled FROM servers;"
+
+php artisan ext:update bbb     # ou ext:install si l'extension n'était pas posée
+
+# APRÈS
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT id, base_url, enabled FROM servers; .tables"
+```
+
+**Attendu** : `user_version` passe de `1` à `2` ; la table `servers` est **inchangée, ligne pour ligne, secret pour secret** ; les tables `rooms` et `room_groups` apparaissent, vides. Redémarrer le service (`systemctl restart sambaedu-ext-bbb`) et relire : `user_version` vaut toujours `2` et rien n'a bougé — la migration est rejouable, et le service redémarre à chaque mise à jour de paquet.
+
+> Si `sqlite3` n'est pas installé, `php -r` avec PDO fait l'affaire ; l'important est de **lire la base avant et après**, pas l'outil.
+
+### Scénario 23.2 — Création d'un salon par une vraie professeure (AC1)
+
+Se connecter en **prof.martin**, ouvrir la tuile, cliquer « Voir les salons ».
+
+**Attendu sur la page d'accueil** : une carte « Salons » avec un **lien** vers `/ext/bbb/rooms` — jamais une liste incorporée. C'est délibéré : la racine est la sonde de santé, elle n'ouvre pas la base (contrôle en 23.8).
+
+Sur `/ext/bbb/rooms` :
+
+1. le formulaire « Créer un salon » est présent ;
+2. la liste des cases à cocher « Mes classes et équipes » contient **exactement les classes et équipes réelles** de cette professeure — celles de son claim `groups`, ni plus ni moins. Aucune classe d'un collègue, aucun balayage d'annuaire ;
+3. créer un salon « Cours de mathématiques », visibilité « une ou plusieurs de mes classes », case 4ᵉB.
+
+**Attendu** : retour à la liste, message « Salon créé », le salon apparaît sous « Mes salons » avec « Visible par : 4B » et « Dernière ouverture : jamais ouvert ». **Aucun meeting n'a été créé côté BigBlueButton** — `créer ≠ démarrer` (vérifiable : la liste des réunions du serveur BBB est inchangée).
+
+**Contre-épreuves à faire dans la foulée** :
+
+- se connecter en **élève**, en **administratif**, en **admin** : le formulaire de création n'apparaît pour aucun des trois. Seuls les professeurs créent ;
+- en prof.martin, soumettre le formulaire avec un nom vide, puis avec « classes » sans cocher de case : refus explicite, la saisie est conservée, rien n'est écrit.
+
+### Scénario 23.3 — ⭐ Le contournement du formulaire, joué pour de vrai
+
+C'est **le** scénario de la story. Le `<select>` ne protège rien ; ce qui protège est la comparaison faite au serveur.
+
+Depuis la console du navigateur, connecté en **prof.martin**, sur `/ext/bbb/rooms` :
+
+```js
+// On fabrique une soumission portant une classe qui n'est PAS la sienne.
+const f = document.querySelector('form[action$="/rooms"]');
+const i = document.createElement('input');
+i.type = 'hidden'; i.name = 'groups[]'; i.value = '6C';   // ← classe d'un collègue
+f.appendChild(i);
+f.querySelector('[name=name]').value = 'Salon volé';
+f.querySelector('[value=classe]').checked = true;
+f.submit();
+```
+
+**Attendu** : la page revient en **422** avec « Vous ne pouvez ouvrir un salon que pour vos propres classes et équipes. » **Rien n'est écrit** — ni le salon, ni sa partie légitime. Vérifier en base :
+
+```bash
+sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite "SELECT name FROM rooms; SELECT * FROM room_groups;"
+```
+
+**Attendu** : aucune trace de « Salon volé ». Le refus est **explicite**, pas un filtrage silencieux : une valeur qu'un utilisateur légitime ne peut pas produire est une tentative, et elle se voit.
+
+### Scénario 23.4 — ⭐ Démarrage, et le rôle observé DANS la conférence (AC1)
+
+En **prof.martin**, cliquer « Démarrer ou entrer » sur « Cours de mathématiques ».
+
+**Attendu** :
+
+- redirection immédiate vers le serveur BigBlueButton, la conférence s'ouvre ;
+- **dans la conférence**, la professeure est **modérateur** : elle a l'icône de modération, peut couper les micros, gérer la présentation, créer des groupes (« breakout rooms ») ;
+- l'enregistrement est **possible** (bouton présent — `record=true` + `allowStartStopRecording=true`, iso-legacy) ;
+- le **chat privé est désactivé** (`lockSettingsDisablePrivateChat`, iso-legacy) ;
+- en quittant la conférence, le retour se fait sur **`/ext/bbb/rooms`** (`logoutUrl`).
+
+**Ce qu'il faut regarder dans la barre d'adresse** : l'URL de jonction contient bien un `password=` et un `checksum=`. **C'est normal, et c'est le seul endroit où un mot de passe apparaît.** Il a été fabriqué par le serveur, dans un `Location:`, et il n'est écrit nulle part ailleurs.
+
+**Le contrôle qui compte, à faire juste après** : revenir sur `/ext/bbb/rooms`, faire `Ctrl+U`, chercher le mot de passe relevé dans l'URL. **Zéro occurrence.** Chercher aussi `moderatorPW`, `attendeePW`, `password` : rien. C'est exactement ce que SE4 servait à tout le monde.
+
+Vérifier enfin que la liste affiche maintenant une date sous « Dernière ouverture ».
+
+### Scénario 23.5 — ⭐ L'élève de 4ᵉB entre en participant, celui de 5ᵉA n'entre pas (AC2)
+
+**Élève de 4ᵉB** — ouvrir la tuile, « Voir les salons ».
+
+**Attendu** : « Cours de mathématiques » apparaît sous « Salons accessibles », avec le nom de la professeure et « Visible par : 4B ». Cliquer « Rejoindre ».
+
+- la conférence s'ouvre et l'élève y est **participant** : aucune icône de modération, pas de gestion de présentation, pas de coupure de micro d'autrui ;
+- il n'a saisi **aucun mot de passe**, et n'en a jamais vu passer un.
+
+**Élève de 5ᵉA** — même parcours.
+
+**Attendu** : « Cours de mathématiques » **n'apparaît pas** dans sa liste. Puis, le contrôle réel — récupérer le jeton du salon (visible dans la source de la page de l'élève de 4ᵉB, champ `token`) et le rejouer depuis le compte de l'élève de 5ᵉA :
+
+```js
+// Console du navigateur, connecté en élève de 5eA, sur /ext/bbb/rooms
+const t = document.querySelector('[name=_token]').value;
+fetch('/ext/bbb/rooms/join', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+  body: '_token=' + t + '&token=<LE-JETON-DU-SALON-4B>',
+  redirect: 'manual',
+}).then(r => console.log(r.status));
+```
+
+**Attendu** : **404**, page « Ce salon n'existe pas, ou ne vous est pas accessible », code `bbb.rooms.not_found`. Recommencer avec un jeton **totalement inventé** (32 caractères au hasard) : **exactement la même réponse**, même code, même texte. C'est voulu — deux réponses différentes diraient « ce salon existe, mais pas pour vous ».
+
+**Contrôle du bug legacy `[0]`** : si vous disposez d'un élève inscrit dans **plusieurs** classes dont la 4ᵉB, vérifier qu'il voit le salon même si la 4ᵉB n'est pas sa première classe. SE4 ne comparait que la première et l'excluait à tort.
+
+### Scénario 23.6 — ⭐ Le « non-élève = modérateur » du legacy est bien mort
+
+Le défaut §9.2 de la carte du legacy, éprouvé de face. Pour chacun de ces comptes, rejoindre « Cours de mathématiques » et **regarder le rôle dans la conférence** :
+
+| Compte | Attendu DANS BigBlueButton |
+|---|---|
+| **prof.martin** (créatrice) | **modérateur** |
+| Second professeur, co-membre de la 4ᵉB | **participant** |
+| Compte `administratif` (sur un salon `Tout l'établissement`) | **participant** |
+| Compte `admin` de SambaEdu (sur un salon `Tout l'établissement`) | **participant** |
+
+**Attendu** : une seule personne est modérateur, et c'est celle qui a créé le salon. Un compte `admin` administre SambaEdu et la configuration des serveurs BBB ; il ne modère pas le cours d'un professeur. Si l'un de ces trois comptes arrive avec les droits de modération, **la story a échoué** — c'est très exactement le comportement de SE4.
+
+**Salon privé** : créer en prof.martin un salon « Entretien » en visibilité « Privé », le démarrer. Vérifier qu'il **n'apparaît chez personne d'autre** (ni le collègue, ni l'élève, ni l'admin) et que rejouer son jeton depuis un autre compte rend 404. Le `private` de SE4 signifiait « tous les personnels » — ici il veut dire ce qu'il dit.
+
+### Scénario 23.7 — Salon fermé, meeting expiré, serveur absent
+
+Quatre situations, quatre messages, et aucune page blanche.
+
+1. **Salon jamais démarré** — créer un salon « Atelier » en visibilité établissement, ne PAS le démarrer, puis cliquer « Rejoindre » depuis un autre compte.
+   **Attendu** : page « Ce salon n'est pas ouvert », qui nomme le salon et son créateur, avec un retour vers la liste. Ce n'est **pas** une erreur : ni 4xx, ni 5xx, c'est un état normal. **Aucun appel n'est émis vers BigBlueButton** (vérifiable en coupant le serveur BBB : la page reste instantanée).
+
+2. **Meeting terminé** — sur un salon démarré, terminer la conférence côté BigBlueButton (`endMeeting` par la modératrice, ou attendre la fin des **quatre heures** de `duration`), puis « Rejoindre » depuis un compte élève.
+   **Attendu** : même page « Ce salon n'est pas ouvert ». Le salon (durable) a survécu au meeting (éphémère), et rien n'a eu besoin d'être nettoyé — c'est ce qui remplace le cache et son ramasse-miettes de SE4.
+
+3. **Re-démarrage par la créatrice** — cliquer de nouveau « Démarrer ou entrer ».
+   **Attendu** : la conférence se ré-ouvre, en modérateur, **sans erreur de doublon**. `createMeeting` est idempotent : le même bouton crée, re-crée ou rejoint.
+
+4. **Aucun serveur actif** — désactiver tous les serveurs sur `/ext/bbb/admin/servers`, puis « Démarrer ou entrer ».
+   **Attendu** : « Aucun serveur de visioconférence configuré — prévenez l'administrateur ». Et côté élève, « Rejoindre » rend « Ce salon n'est pas ouvert ». Réactiver ensuite.
+
+5. **Serveur injoignable** — pointer un serveur actif vers une IP non routée, puis « Rejoindre » côté élève.
+   **Attendu** : « Serveur de visioconférence injoignable » — **et surtout pas** « Ce salon n'est pas ouvert », qui enverrait une classe entière attendre pour rien. La réponse revient en **moins de 10 secondes**.
+
+### Scénario 23.8 — La sonde de santé n'a pas bougé, et les actions restent des POST
+
+```bash
+# La racine ne dépend toujours de rien : serveur BBB coupé, elle reste verte.
+systemctl stop <votre-bbb>   # ou couper le réseau vers lui
+php artisan ext:health:check bbb
+php artisan tinker --execute="dump(\App\Models\Extension::where('key','bbb')->first(['health_status'])?->toArray());"
+```
+
+**Attendu** : `health_status` reste **`ok`**. La page `/ext/bbb/` se rend instantanément et propose le lien « Voir les salons ». Si l'état bascule en `unreachable`, c'est qu'un appel sortant a été introduit au rendu de la racine.
+
+```bash
+# Les actions sont des POST, et rien d'autre.
+curl -sS -o /dev/null -w '%{http_code}\n' 'http://<ip>/ext/bbb/rooms/start?token=xxx'
+curl -sS -o /dev/null -w '%{http_code}\n' 'http://<ip>/ext/bbb/rooms/join?token=xxx'
+curl -sS -o /dev/null -w '%{http_code}\n' 'http://<ip>/ext/bbb/rooms/delete?token=xxx'
+```
+
+**Attendu** : **405** sur les trois. Un GET mutateur serait préchargé au survol d'un lien par un navigateur ou un antivirus, et ouvrirait des conférences tout seul.
+
+**Contrôle de fluidité (garde D2)** : pendant qu'un « Démarrer » tourne vers un serveur BBB injoignable, charger 20 fois `/ext/bbb/` et `/ext/bbb/rooms` en parallèle. Toutes les requêtes doivent rendre `200` rapidement — la liste se rend depuis SQLite, elle n'attend personne.
+
+### Scénario 23.9 — Suppression, et ce qui part avec
+
+En prof.martin, supprimer « Cours de mathématiques » (confirmation demandée).
+
+**Attendu** : le salon disparaît de sa liste **et de celle de ses élèves**. En base :
+
+```bash
+sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "SELECT COUNT(*) FROM rooms; SELECT COUNT(*) FROM room_groups;"
+```
+
+**Attendu** : les lignes `room_groups` du salon sont parties avec lui (`ON DELETE CASCADE`, qui ne fonctionne que parce que `PRAGMA foreign_keys` est activé à l'ouverture — ce n'est pas le défaut de SQLite).
+
+**Contre-épreuve** : depuis le compte du **second professeur**, rejouer une suppression sur le jeton d'un salon de prof.martin (même méthode qu'en 23.5). **Attendu** : 404 indistinct, et le salon **intact**.
+
+### Scénario 23.10 — Point d'attention à consigner, hérité de la 22.11
+
+`/var/lib/sambaedu-ext-bbb` porte désormais **les salons de l'établissement**, et plus seulement la liste des serveurs. Ce que devient ce répertoire après `php artisan ext:remove bbb` **n'est toujours pas spécifié** par le contrat du canal d'installation. Le vérifier et le **consigner dans la review** : c'est une décision produit (conserver ? purger ? demander ?), pas un détail d'implémentation, et elle pèse plus lourd qu'à la 57.1.
+
+### Checklist rapide — Section 23
+
+- [ ] **23.1 Migration v1 → v2 sur la base RÉELLE : `user_version` 1 → 2, serveurs intacts ligne pour ligne, `rooms`/`room_groups` créées, redémarrage sans effet**
+- [ ] 23.2 Création par une vraie professeure : cases = ses classes réelles, salon créé, AUCUN meeting côté BBB
+- [ ] 23.2b Formulaire de création absent pour élève, administratif et admin
+- [ ] **23.3 Contournement du formulaire avec une classe étrangère : 422 explicite, RIEN en base**
+- [ ] **23.4 Démarrage : modératrice DANS la conférence, retour sur `/rooms` en sortant, et zéro mot de passe dans la source de la page**
+- [ ] **23.5 Élève 4ᵉB participant sans mot de passe ; élève 5ᵉA : salon absent + 404 sur rejeu de la requête, identique à un jeton inventé**
+- [ ] 23.5b Élève multi-classes : le salon de sa 2ᵉ classe lui est bien visible
+- [ ] **23.6 Collègue, administratif et admin rejoignent en PARTICIPANT — le « non-élève = modérateur » du legacy est mort**
+- [ ] **23.6b Salon privé : invisible et injoignable pour tout autre que son créateur**
+- [ ] 23.7 Salon jamais démarré / meeting expiré ⇒ « pas ouvert » sans appel inutile ; re-démarrage idempotent ; aucun serveur actif et serveur injoignable ⇒ deux messages DIFFÉRENTS
+- [ ] **23.8 Serveur BBB coupé ⇒ santé toujours `ok` ; `/rooms/start|join|delete` en GET ⇒ 405 ; navigation fluide pendant un appel qui traîne**
+- [ ] 23.9 Suppression par le créateur : cascade des groupes ; suppression par un tiers ⇒ 404 et salon intact
+- [ ] **23.10 Sort de `/var/lib/sambaedu-ext-bbb` après `ext:remove` : CONSIGNÉ dans la review (il porte maintenant les salons)**

@@ -6,6 +6,7 @@ namespace SambaEdu\ExtBbb\Admin;
 
 use SambaEdu\ExtBbb\Bbb\BbbApiClient;
 use SambaEdu\ExtBbb\Env;
+use SambaEdu\ExtBbb\Http\Csrf;
 use SambaEdu\ExtBbb\Http\Request;
 use SambaEdu\ExtBbb\Http\Response;
 use SambaEdu\ExtBbb\Http\SessionStore;
@@ -229,6 +230,10 @@ final class ServersController
             return Response::redirect('/admin/servers');
         }
 
+        // Verrou d'état relâché AVANT le réseau (review 57.2 #1) : le `flash()`
+        // qui suit le reprendra, le temps de son écriture seulement.
+        $session->close();
+
         $result = $this->api->testConnection((string) $server['base_url'], (string) $server['secret']);
 
         $this->flash(
@@ -355,23 +360,14 @@ final class ServersController
         return $current;
     }
 
+    /** Story 57.2 : le mécanisme est FACTORISÉ ; seul l'espace de clé reste local. */
     private function csrfToken(SessionStore $session): string
     {
-        $token = $session->get(self::CSRF);
-
-        if (! is_string($token) || $token === '') {
-            $token = bin2hex(random_bytes(32));
-            $session->put(self::CSRF, $token);
-        }
-
-        return $token;
+        return (new Csrf(self::CSRF))->token($session);
     }
 
     private function csrfMatches(Request $request, SessionStore $session): bool
     {
-        $expected = $session->get(self::CSRF);
-        $received = $request->input('_token');
-
-        return is_string($expected) && $expected !== '' && $received !== '' && hash_equals($expected, $received);
+        return (new Csrf(self::CSRF))->matches($request, $session);
     }
 }

@@ -82,6 +82,25 @@ final class Url
     }
 
     /**
+     * Story 57.2 — Une URL **ABSOLUE** de l'extension, quand un tiers l'exige.
+     *
+     * BigBlueButton veut une `logoutUrl` absolue pour renvoyer la personne
+     * après la conférence. L'extension ne connaît d'absolu que son issuer : elle
+     * est servie sous `SE5_EXT_BASE_PATH` de la MÊME origine que SambaEdu, c'est
+     * le contrat d'exposition du canal d'installation.
+     *
+     * ⚠️ On ne fabrique **jamais** cette URL depuis `Host:` ou un `X-Forwarded-*` :
+     * ce sont des en-têtes que le contrat ne garantit pas, et faire reposer quoi
+     * que ce soit dessus fait tomber la garde en silence (leçon de la revue de
+     * 57.1). Issuer vide — extension non provisionnée — ⇒ chaîne vide, et
+     * l'appelant omet le paramètre.
+     */
+    public static function absolute(Env $env, string $path = '/'): string
+    {
+        return $env->issuer === '' ? '' : $env->issuer . self::to($path);
+    }
+
+    /**
      * La seule URL de SE5 que l'extension connaisse : son issuer OIDC. Sert de
      * cible au lien « Retour à SambaEdu » (FR16). Jamais d'URL codée en dur.
      */

@@ -43,6 +43,17 @@ final class ArraySessionStore implements SessionStore
         // Rien à faire : il n'y a pas d'identifiant à renouveler en mémoire.
     }
 
+    /** Compte les relâchements de verrou — c'est ce qui rend la règle testable. */
+    public int $closes = 0;
+
+    public function close(): void
+    {
+        // Rien à relâcher en mémoire : il n'y a pas de verrou de fichier. On
+        // COMPTE, pour qu'un test puisse affirmer qu'un appel sortant a bien été
+        // précédé d'un relâchement (review 57.2 #1).
+        $this->closes++;
+    }
+
     public function destroy(): void
     {
         $this->data = [];

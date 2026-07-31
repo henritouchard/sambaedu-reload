@@ -105,6 +105,26 @@ final class NativeSessionStore implements SessionStore
         }
     }
 
+    /**
+     * Rend la main sur le verrou du fichier d'état. Le contenu déjà écrit est
+     * persisté ; une écriture ultérieure rouvrira l'état — `$started` repasse à
+     * `false` exprès, et `$unavailable` n'est PAS armé (contrairement à
+     * {@see self::destroy()}) : il n'y a rien de détruit ici, juste un verrou
+     * relâché. Voir l'interface pour le pourquoi.
+     */
+    public function close(): void
+    {
+        if (! $this->started) {
+            return;
+        }
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        $this->started = false;
+    }
+
     public function destroy(): void
     {
         if (! $this->boot(false)) {

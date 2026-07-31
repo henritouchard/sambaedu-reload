@@ -28,6 +28,23 @@ interface SessionStore
     /** Nouvel identifiant, contenu conservé — à la promotion d'anonyme à connecté. */
     public function regenerate(): void;
 
+    /**
+     * **Rend la main sur le verrou d'état, sans rien perdre** — à appeler AVANT
+     * tout appel réseau sortant (review 57.2 #1).
+     *
+     * Le mécanisme natif de PHP verrouille le fichier d'état pendant TOUTE la
+     * requête : deux requêtes portant le même cookie se sérialisent. Tenir ce
+     * verrou pendant un appel BigBlueButton borné à 8 s, c'est bloquer les
+     * AUTRES onglets de la même personne pendant tout ce temps — un prof dont le
+     * démarrage traîne ne peut même plus recharger sa liste de salons. Et sur un
+     * serveur intégré à 4 workers, c'est autant de workers immobilisés.
+     *
+     * Ce n'est pas une fermeture : une écriture ultérieure ({@see self::put()})
+     * rouvre l'état et reprend le verrou, le temps de cette écriture seulement.
+     * Idempotente, et sans effet si rien n'est ouvert.
+     */
+    public function close(): void;
+
     /** Vide et clôt l'état courant. */
     public function destroy(): void;
 }

@@ -6,13 +6,19 @@ namespace SambaEdu\ExtBbb\Tests;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use SambaEdu\ExtBbb\Identity;
 use SambaEdu\ExtBbb\Oidc\IdTokenVerifier;
 use SambaEdu\ExtBbb\Oidc\SqliteReplayGuard;
+use SambaEdu\ExtBbb\Rooms\Room;
 use SambaEdu\ExtBbb\Store;
 
 /**
  * Story 57.1 — L'état de l'extension : migration idempotente, droits du fichier,
  * serveurs, anti-rejeu.
+ *
+ * Story 57.2 — Et le palier v2 : la migration d'une base VIVANTE, les salons,
+ * leur visibilité décidée en SQL, et le fait qu'aucun mot de passe ne puisse
+ * atteindre une page.
  */
 final class StoreTest extends TestCase
 {
@@ -218,6 +224,268 @@ final class StoreTest extends TestCase
         $store->consumeJti('jti-en-clair-lisible', time() + 300);
 
         self::assertStringNotContainsString('jti-en-clair-lisible', (string) file_get_contents($this->path()));
+    }
+
+    // =====================================================================
+    // Story 57.2 — Migration v1 → v2 SUR UNE BASE VIVANTE
+    // =====================================================================
+
+    #[Test]
+    public function a_populated_v1_database_is_migrated_in_place_without_losing_anything(): void
+    {
+        // ⚠️ LE test qui compte pour une mise à jour de paquet : la base d'une
+        // instance qui tourne DÉJÀ, avec ses serveurs déclarés en 57.1. Une
+        // migration qui repartirait de zéro effacerait la configuration de
+        // l'établissement au premier `apt upgrade` — et personne ne s'en
+        // apercevrait avant le premier cours en visioconférence.
+        $this->createV1Database();
+
+        $store = new Store($this->path());
+
+        self::assertSame(2, $store->schemaVersion());
+
+        $servers = $store->servers();
+        self::assertCount(2, $servers, 'les serveurs de 57.1 survivent');
+        self::assertSame('https://bbb1.example.test/bigbluebutton/api', $servers[0]['base_url']);
+        self::assertSame('secret-historique-1', $servers[0]['secret']);
+        self::assertSame(50, $servers[1]['scalelite_threshold']);
+        self::assertFalse($servers[1]['enabled']);
+
+        // Et les tables neuves sont utilisables immédiatement.
+        $id = $store->addRoom('Salon d\'après migration', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+        self::assertNotNull($store->roomSecrets($id));
+    }
+
+    #[Test]
+    public function migrating_a_v1_database_twice_is_a_no_op(): void
+    {
+        // Le service redémarre à chaque mise à jour du paquet : une migration
+        // non rejouable casserait au DEUXIÈME redémarrage, jamais au premier.
+        $this->createV1Database();
+
+        $first = new Store($this->path());
+        $roomId = $first->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB, []);
+
+        $second = new Store($this->path());
+        $second->migrate();
+        $second->migrate();
+
+        self::assertSame(2, $second->schemaVersion());
+        self::assertCount(2, $second->servers());
+        self::assertNotNull($second->roomSecrets($roomId), 'le salon créé entre-temps est intact');
+    }
+
+    /** Fabrique à la main le schéma EXACT de la version 1, avec des données dedans. */
+    private function createV1Database(): void
+    {
+        $pdo = new \PDO('sqlite:' . $this->path(), null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE servers (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                base_url            TEXT    NOT NULL,
+                secret              TEXT    NOT NULL,
+                scalelite_threshold INTEGER NOT NULL DEFAULT 0,
+                enabled             INTEGER NOT NULL DEFAULT 1,
+                created_at          TEXT    NOT NULL,
+                updated_at          TEXT    NOT NULL
+            )
+        SQL);
+
+        $pdo->exec('CREATE TABLE oidc_replay (jti TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
+        $pdo->exec('CREATE INDEX oidc_replay_expires_at ON oidc_replay (expires_at)');
+
+        $pdo->exec(<<<'SQL'
+            INSERT INTO servers (base_url, secret, scalelite_threshold, enabled, created_at, updated_at) VALUES
+                ('https://bbb1.example.test/bigbluebutton/api', 'secret-historique-1', 0, 1, '2026-07-01T08:00:00Z', '2026-07-01T08:00:00Z'),
+                ('https://bbb2.example.test/bigbluebutton/api', 'secret-historique-2', 50, 0, '2026-07-01T08:00:00Z', '2026-07-01T08:00:00Z')
+        SQL);
+
+        $pdo->exec('PRAGMA user_version = 1');
+
+        unset($pdo);
+    }
+
+    // =====================================================================
+    // Story 57.2 — Salons
+    // =====================================================================
+
+    #[Test]
+    public function a_room_is_created_with_a_public_token_and_two_distinct_passwords(): void
+    {
+        $store = new Store($this->path());
+
+        $id = $store->addRoom('Cours', 'prof.martin', 'Madame Martin', Room::VISIBILITY_CLASSE, ['4B', '3A']);
+        $secrets = $store->roomSecrets($id);
+
+        self::assertNotNull($secrets);
+        self::assertNotSame($secrets['attendee'], $secrets['moderator']);
+
+        $room = $store->roomsVisibleTo(new Identity('prof.martin', 'Madame Martin', 'prof', []))[0];
+
+        self::assertSame('Cours', $room->name);
+        self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $room->token);
+        self::assertSame(['3A', '4B'], $room->groups, 'les groupes reviennent triés');
+        self::assertNull($room->serverId);
+        self::assertNull($room->lastStartedAt);
+    }
+
+    #[Test]
+    public function a_room_is_found_by_its_token_and_by_nothing_else(): void
+    {
+        $store = new Store($this->path());
+        $id = $store->addRoom('Cours', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $token = $store->roomsVisibleTo(new Identity('prof.martin', 'Madame Martin', 'prof', []))[0]->token;
+
+        self::assertSame($id, $store->roomByToken($token)?->id);
+        self::assertNull($store->roomByToken(''), 'un jeton vide ne désigne rien');
+        self::assertNull($store->roomByToken(bin2hex(random_bytes(16))));
+    }
+
+    #[Test]
+    public function visibility_is_decided_in_sql_for_the_three_cases(): void
+    {
+        $store = new Store($this->path());
+
+        $store->addRoom('Établissement', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+        $store->addRoom('Classe 4B', 'prof.martin', 'Madame Martin', Room::VISIBILITY_CLASSE, ['4B']);
+        $store->addRoom('Privé', 'prof.martin', 'Madame Martin', Room::VISIBILITY_PRIVATE);
+
+        $names = static fn (array $rooms): array => array_map(static fn (Room $r): string => $r->name, $rooms);
+
+        self::assertSame(
+            ['Privé', 'Classe 4B', 'Établissement'],
+            $names($store->roomsVisibleTo(new Identity('prof.martin', 'Madame Martin', 'prof', ['4B']))),
+            'le créateur voit tout ce qui est à lui',
+        );
+
+        self::assertSame(
+            ['Classe 4B', 'Établissement'],
+            $names($store->roomsVisibleTo(new Identity('paul.durand', 'Paul Durand', 'eleve', ['4B']))),
+        );
+
+        self::assertSame(
+            ['Établissement'],
+            $names($store->roomsVisibleTo(new Identity('jules.petit', 'Jules Petit', 'eleve', ['5A']))),
+        );
+    }
+
+    #[Test]
+    public function an_empty_groups_claim_is_a_normal_case_not_an_invalid_query(): void
+    {
+        // `IN ()` n'existe pas en SQL : une clause fabriquée à vide ferait
+        // échouer la requête — donc la page — pour un administratif ou un
+        // professeur sans classe déclarée. Cas NORMAL, court-circuité.
+        $store = new Store($this->path());
+
+        $store->addRoom('Établissement', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+        $store->addRoom('Classe 4B', 'prof.martin', 'Madame Martin', Room::VISIBILITY_CLASSE, ['4B']);
+
+        $visible = $store->roomsVisibleTo(new Identity('agent.durand', 'Agent Durand', 'administratif', []));
+
+        self::assertCount(1, $visible);
+        self::assertSame('Établissement', $visible[0]->name);
+    }
+
+    #[Test]
+    public function deleting_a_room_takes_its_groups_with_it(): void
+    {
+        // `ON DELETE CASCADE` ne fonctionne que si `PRAGMA foreign_keys` est
+        // activé — ce qui n'est PAS le défaut de SQLite. La garde est posée à
+        // l'ouverture ; ce test est là pour le jour où quelqu'un la retirera.
+        $store = new Store($this->path());
+
+        $id = $store->addRoom('Cours', 'prof.martin', 'Madame Martin', Room::VISIBILITY_CLASSE, ['4B', '3A']);
+        self::assertSame(2, $store->roomGroupCount());
+
+        $store->deleteRoom($id);
+
+        self::assertSame(0, $store->roomGroupCount());
+        self::assertSame([], $store->roomsVisibleTo(new Identity('prof.martin', 'Madame Martin', 'prof', ['4B'])));
+    }
+
+    #[Test]
+    public function the_same_group_submitted_twice_is_stored_once(): void
+    {
+        $store = new Store($this->path());
+
+        $store->addRoom('Cours', 'prof.martin', 'Madame Martin', Room::VISIBILITY_CLASSE, ['4B', '4B']);
+
+        self::assertSame(1, $store->roomGroupCount());
+    }
+
+    #[Test]
+    public function groups_are_ignored_for_a_visibility_that_has_no_use_for_them(): void
+    {
+        $store = new Store($this->path());
+
+        $store->addRoom('Établissement', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB, ['4B']);
+        $store->addRoom('Privé', 'prof.martin', 'Madame Martin', Room::VISIBILITY_PRIVATE, ['4B']);
+
+        self::assertSame(0, $store->roomGroupCount());
+    }
+
+    #[Test]
+    public function a_visibility_outside_the_vocabulary_never_reaches_the_table(): void
+    {
+        // Dernière ligne de défense : le `CHECK` du schéma. Le contrôleur refuse
+        // déjà, mais une table qui accepterait `world` laisserait une ligne dont
+        // plus personne ne saurait quoi faire.
+        $store = new Store($this->path());
+
+        $this->expectException(\PDOException::class);
+
+        $store->addRoom('Salon', 'prof.martin', 'Madame Martin', 'world');
+    }
+
+    #[Test]
+    public function starting_a_room_records_its_server_and_a_date_that_proves_nothing(): void
+    {
+        $store = new Store($this->path());
+
+        $serverId = $store->addServer('https://bbb.example.test/bigbluebutton/api', 'secret');
+        $id = $store->addRoom('Cours', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $store->markStarted($id, $serverId);
+
+        $room = $store->roomsVisibleTo(new Identity('prof.martin', 'Madame Martin', 'prof', []))[0];
+
+        self::assertSame($serverId, $room->serverId);
+        self::assertNotNull($room->lastStartedAt);
+    }
+
+    #[Test]
+    public function the_first_active_server_is_the_one_that_gets_used(): void
+    {
+        $store = new Store($this->path());
+
+        self::assertNull($store->firstEnabledServer(), 'aucun serveur : rien à choisir, et surtout pas une erreur');
+
+        $store->addServer('https://bbb1.example.test/api', 'secret-1', 0, false);
+        $second = $store->addServer('https://bbb2.example.test/api', 'secret-2', 0, true);
+        $store->addServer('https://bbb3.example.test/api', 'secret-3', 0, true);
+
+        self::assertSame($second, $store->firstEnabledServer()['id'], 'le premier ACTIF, pas le premier tout court');
+    }
+
+    #[Test]
+    public function no_room_password_is_ever_carried_by_the_object_that_reaches_a_page(): void
+    {
+        // Propriété STRUCTURELLE, et c'est ce qui la rend sûre : l'objet qui
+        // traverse les contrôleurs et les vues n'a pas d'attribut où un mot de
+        // passe pourrait se trouver. Le legacy, lui, les postait tous les deux
+        // en champs cachés.
+        $store = new Store($this->path());
+        $store->addRoom('Cours', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $room = $store->roomsVisibleTo(new Identity('prof.martin', 'Madame Martin', 'prof', []))[0];
+        $serialized = print_r($room, true);
+        $secrets = $store->roomSecrets($room->id);
+
+        self::assertNotNull($secrets);
+        self::assertStringNotContainsString($secrets['attendee'], $serialized);
+        self::assertStringNotContainsString($secrets['moderator'], $serialized);
     }
 
     #[Test]

@@ -21,6 +21,7 @@ use SambaEdu\ExtBbb\Oidc\JsonHttpClient;
 use SambaEdu\ExtBbb\Oidc\OidcException;
 use SambaEdu\ExtBbb\Oidc\ProviderMetadata;
 use SambaEdu\ExtBbb\Oidc\SqliteReplayGuard;
+use SambaEdu\ExtBbb\Rooms\RoomsController;
 use Throwable;
 
 /**
@@ -88,6 +89,15 @@ final class App
         $router->add('GET', '/logout', $this->logout(...));
         $router->add('GET', '/admin/servers', $this->servers(...));
         $router->add('POST', '/admin/servers', $this->servers(...));
+
+        // Story 57.2 — Les salons. **Tout ce qui appelle un serveur
+        // BigBlueButton est en POST** : un GET serait préchargé au survol d'un
+        // lien, et ouvrirait des meetings sans que personne ne l'ait demandé.
+        $router->add('GET', '/rooms', $this->rooms(...));
+        $router->add('POST', '/rooms', $this->rooms(...));
+        $router->add('POST', '/rooms/start', $this->rooms(...));
+        $router->add('POST', '/rooms/join', $this->rooms(...));
+        $router->add('POST', '/rooms/delete', $this->rooms(...));
 
         return $router;
     }
@@ -163,6 +173,13 @@ final class App
     private function servers(Request $request): Response
     {
         $controller = new ServersController($this->store(), $this->api, $this->view, $this->env);
+
+        return $controller->handle($request, $this->sessionStore);
+    }
+
+    private function rooms(Request $request): Response
+    {
+        $controller = new RoomsController($this->store(), $this->api, $this->view, $this->env);
 
         return $controller->handle($request, $this->sessionStore);
     }
