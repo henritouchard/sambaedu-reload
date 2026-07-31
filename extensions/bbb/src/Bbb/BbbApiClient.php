@@ -55,4 +55,34 @@ interface BbbApiClient
         string $fullName,
         string $password,
     ): string;
+
+    /**
+     * Les enregistrements PUBLIÉS, **filtrés à la source**. Appel SORTANT, borné.
+     *
+     * `$meetingIds` part dans le paramètre `meetingID` de l'API, sous forme de
+     * liste séparée par des virgules. SE4 appelait `getRecordings()` **sans
+     * aucun filtre** sur chaque serveur, ramenait tout l'historique de
+     * l'établissement, le mettait en cache une demi-heure, puis triait en PHP
+     * en décodant le `meetingID` — un décodage faux dès qu'un salon portait des
+     * classes.
+     *
+     * ⚠️ Le filtre envoyé n'est pas une garantie reçue : l'appelant re-filtre la
+     * réponse. C'est de la défense en profondeur, pas de la méfiance décorative
+     * — un serveur qui ignorerait `meetingID` rendrait les enregistrements de
+     * tout l'établissement.
+     *
+     * `$recordId` interroge UN enregistrement précis (`recordID`) : c'est ce qui
+     * permet de prouver la propriété AVANT de supprimer quoi que ce soit.
+     *
+     * @param  list<string>  $meetingIds
+     */
+    public function getRecordings(
+        string $baseUrl,
+        string $secret,
+        array $meetingIds = [],
+        string $recordId = '',
+    ): RecordingsResult;
+
+    /** Supprime UN enregistrement. **Appel SORTANT, borné, et irréversible.** */
+    public function deleteRecording(string $baseUrl, string $secret, string $recordId): DeleteResult;
 }

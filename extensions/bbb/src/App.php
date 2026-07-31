@@ -7,6 +7,7 @@ namespace SambaEdu\ExtBbb;
 use SambaEdu\ExtBbb\Admin\ServersController;
 use SambaEdu\ExtBbb\Bbb\BbbApiClient;
 use SambaEdu\ExtBbb\Bbb\LiveBbbApiClient;
+use SambaEdu\ExtBbb\Guest\GuestController;
 use SambaEdu\ExtBbb\Http\NativeSessionStore;
 use SambaEdu\ExtBbb\Http\Request;
 use SambaEdu\ExtBbb\Http\Response;
@@ -21,6 +22,7 @@ use SambaEdu\ExtBbb\Oidc\JsonHttpClient;
 use SambaEdu\ExtBbb\Oidc\OidcException;
 use SambaEdu\ExtBbb\Oidc\ProviderMetadata;
 use SambaEdu\ExtBbb\Oidc\SqliteReplayGuard;
+use SambaEdu\ExtBbb\Rooms\RecordingsController;
 use SambaEdu\ExtBbb\Rooms\RoomsController;
 use Throwable;
 
@@ -98,6 +100,29 @@ final class App
         $router->add('POST', '/rooms/start', $this->rooms(...));
         $router->add('POST', '/rooms/join', $this->rooms(...));
         $router->add('POST', '/rooms/delete', $this->rooms(...));
+
+        // Story 57.3 — L'invitation externe : deux actes LOCAUX du créateur,
+        // aucun appel sortant, mais mutants — donc en POST, avec jeton
+        // anti-CSRF, comme le reste.
+        $router->add('POST', '/rooms/guest/enable', $this->rooms(...));
+        $router->add('POST', '/rooms/guest/revoke', $this->rooms(...));
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  LA ROUTE PUBLIQUE — la SEULE de l'extension à ne pas exiger le SSO
+        //
+        //  Elle est servie par un contrôleur DISTINCT, qui ne reçoit pas de
+        //  magasin d'état : c'est le typage qui garantit qu'aucun état par
+        //  visiteur n'est ouvert sur ce parcours, avant comme après la
+        //  vérification du mot de passe.
+        // ═══════════════════════════════════════════════════════════════════
+        $router->add('GET', '/visio', $this->visio(...));
+        $router->add('POST', '/visio', $this->visio(...));
+
+        // Story 57.3 — Les enregistrements. `GET /recordings` est le SEUL GET
+        // de l'extension à faire des appels sortants : c'est une lecture, elle
+        // ne mute rien, elle est bornée, et le verrou d'état est relâché avant.
+        $router->add('GET', '/recordings', $this->recordings(...));
+        $router->add('POST', '/recordings/delete', $this->recordings(...));
 
         return $router;
     }
@@ -180,6 +205,26 @@ final class App
     private function rooms(Request $request): Response
     {
         $controller = new RoomsController($this->store(), $this->api, $this->view, $this->env);
+
+        return $controller->handle($request, $this->sessionStore);
+    }
+
+    /**
+     * ⚠️ **Le magasin d'état n'est PAS passé ici, et c'est le point de la
+     * story 57.3** : le parcours invité n'ouvre, ne lit et n'écrit aucun état
+     * par visiteur. Ce n'est pas une discipline de rédaction, c'est la signature
+     * du contrôleur.
+     */
+    private function visio(Request $request): Response
+    {
+        $controller = new GuestController($this->store(), $this->api, $this->view, $this->env);
+
+        return $controller->handle($request);
+    }
+
+    private function recordings(Request $request): Response
+    {
+        $controller = new RecordingsController($this->store(), $this->api, $this->view, $this->env);
 
         return $controller->handle($request, $this->sessionStore);
     }

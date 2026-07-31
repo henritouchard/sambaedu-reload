@@ -6,6 +6,8 @@ namespace SambaEdu\ExtBbb\Tests;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use SambaEdu\ExtBbb\Bbb\RecordingItem;
+use SambaEdu\ExtBbb\Bbb\RecordingsResult;
 use SambaEdu\ExtBbb\Identity;
 use SambaEdu\ExtBbb\Rooms\Room;
 use SambaEdu\ExtBbb\Tests\Support\RoomsWorkbench;
@@ -32,9 +34,10 @@ use SambaEdu\ExtBbb\Tests\Support\RoomsWorkbench;
  *  se reprendre tout seul à l'écriture suivante.
  * ══════════════════════════════════════════════════════════════════════════
  *
- * Les trois points de sortie sont couverts — `createMeeting`, `isMeetingRunning`
- * et le test de connexion de 57.1 : une règle vraie à deux endroits sur trois
- * n'est pas une règle.
+ * Les points de sortie sont TOUS couverts — `createMeeting`, `isMeetingRunning`,
+ * le test de connexion de 57.1, puis, depuis la story 57.3, `getRecordings` et
+ * `deleteRecordings` : une règle vraie à quatre endroits sur cinq n'est pas une
+ * règle.
  *
  * Ce fichier porte aussi (review #3) les gardes CSRF des quatre routes mutantes :
  * même sujet, une classe de choses qui doivent être vraies AVANT qu'une route
@@ -180,6 +183,101 @@ final class SessionLockReleasedBeforeNetworkTest extends TestCase
 
         self::assertNotSame(403, $response->status);
         self::assertNotSame([], $this->bench->api->created);
+    }
+
+    // ── Story 57.3 — les DEUX nouveaux points de sortie ──────────────────
+    //
+    // La règle passe de trois points à cinq. Le parcours invité, lui, ne figure
+    // pas ici : il n'a AUCUN état à relâcher — le contrôleur n'en reçoit pas.
+    // C'est `GuestAccessTest` qui l'affirme, par le typage et par l'absence de
+    // tout `Set-Cookie`.
+
+    #[Test]
+    public function listing_the_recordings_releases_the_lock_before_each_server_call(): void
+    {
+        // Deux serveurs ⇒ deux appels ⇒ deux relâchements. « Avant le réseau »
+        // ne veut pas dire « une fois en début de requête ».
+        $secondServer = $this->bench->store->addServer('https://bbb2.example.test/bigbluebutton/api', 'secret-2');
+        $other = $this->bench->store->addRoom('Conseil', 'prof.martin', 'Madame Martin', Room::VISIBILITY_PRIVATE);
+        $this->bench->store->markStarted($other, $secondServer);
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $before = $session->closes;
+
+        $this->bench->getRecordings($session);
+
+        self::assertCount(2, $this->bench->api->listed, 'les deux appels sortants doivent avoir eu lieu');
+        self::assertGreaterThanOrEqual($before + 2, $session->closes, 'un relâchement par appel sortant');
+    }
+
+    #[Test]
+    public function deleting_a_recording_releases_the_lock_before_the_check_and_before_the_deletion(): void
+    {
+        $this->bench->api->recordingsByServer['https://bbb.example.test/bigbluebutton/api'] = RecordingsResult::ok([
+            new RecordingItem('rec-1', $this->token, 1.0, 2.0, 'https://bbb.example.test/playback/rec-1', 10),
+        ]);
+
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $before = $session->closes;
+
+        $this->bench->postRecordings($session, ['token' => $this->token, 'record' => 'rec-1']);
+
+        self::assertCount(1, $this->bench->api->listed);
+        self::assertCount(1, $this->bench->api->deleted);
+        self::assertGreaterThanOrEqual($before + 2, $session->closes);
+    }
+
+    #[Test]
+    public function a_recordings_refusal_reaches_neither_the_network_nor_the_lock(): void
+    {
+        // Contrôle NÉGATIF des deux tests ci-dessus : sans lui, ils passeraient
+        // aussi bien si `close()` était posé « à tout hasard » en tête de
+        // requête — auquel cas ils ne prouveraient plus rien.
+        $session = $this->bench->sessionFor('eleve', 'paul.durand', 'Paul Durand', ['4B']);
+        $before = $session->closes;
+
+        self::assertSame(403, $this->bench->getRecordings($session)->status);
+
+        self::assertSame(0, $this->bench->api->outboundCalls());
+        self::assertSame($before, $session->closes);
+    }
+
+    #[Test]
+    public function enabling_an_invitation_never_releases_the_lock_because_it_never_calls_out(): void
+    {
+        // Troisième contrôle négatif : l'invitation est un fait LOCAL. Rien à
+        // dire à BigBlueButton, donc rien à relâcher.
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->csrf($session);
+        $before = $session->closes;
+
+        $this->bench->post($session, '/rooms/guest/enable', ['token' => $this->token]);
+        $this->bench->post($session, '/rooms/guest/revoke', ['token' => $this->token]);
+
+        self::assertSame(0, $this->bench->api->outboundCalls());
+        self::assertSame($before, $session->closes);
+    }
+
+    #[Test]
+    public function the_guest_invitation_routes_are_protected_by_the_csrf_token_too(): void
+    {
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $this->bench->csrf($session);
+
+        foreach (['/rooms/guest/enable', '/rooms/guest/revoke'] as $path) {
+            $response = $this->bench->post($session, $path, [
+                '_token' => 'jeton-fabrique-ailleurs',
+                'token' => $this->token,
+            ]);
+
+            self::assertSame(403, $response->status, $path);
+        }
+
+        // Et rien n'a été activé au passage : un 403 qui aurait quand même
+        // publié un lien public serait le pire des deux mondes.
+        $room = $this->bench->store->roomByToken($this->token);
+        self::assertNotNull($room);
+        self::assertNull($this->bench->store->guestInvitation($room->id));
     }
 
     #[Test]

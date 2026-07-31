@@ -49,7 +49,24 @@ use Throwable;
 final class Store
 {
     /** Version de schéma appliquée par cette version du code. */
-    public const SCHEMA_VERSION = 2;
+    public const SCHEMA_VERSION = 3;
+
+    /**
+     * Story 57.3 — **L'ALPHABET DU MOT DE PASSE D'INVITATION.**
+     *
+     * Le créateur doit pouvoir le DICTER à un parent au téléphone : ni `0`/`O`,
+     * ni `1`/`l`/`I`, et rien qui dépende de la casse pour être compris. 32
+     * symboles × 8 caractères ≈ 40 bits.
+     *
+     * 40 bits ne sont PAS ce qui protège le salon, et c'est le point : la force
+     * du système est le COUPLE « jeton de 128 bits, non énumérable » + « mot de
+     * passe » + « fenêtre d'échecs bornée ». À dix essais par quart d'heure sur
+     * un jeton qu'il faut d'abord connaître, l'espace est hors d'atteinte.
+     */
+    private const GUEST_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+    /** Longueur du mot de passe d'invitation, en caractères. */
+    private const GUEST_PASSWORD_LENGTH = 8;
 
     /**
      * Longueur en OCTETS de l'aléa d'un identifiant public ou d'un mot de passe
@@ -117,8 +134,95 @@ final class Store
      * pas une requête) : la valeur interpolée est une CONSTANTE de classe
      * entière, jamais une donnée d'entrée.
      */
+    /**
+     * ══════════════════════════════════════════════════════════════════════
+     *  LA MIGRATION EST UN ACTE UNIQUE, PAS UNE SUITE D'INSTRUCTIONS
+     *  (review 57.3 #1 — le seul 🔴 de l'epic)
+     *
+     *  Un palier était une suite d'`exec()` **auto-committés séparément**, et
+     *  `PRAGMA user_version` n'était posé qu'à la toute fin. Deux scénarios
+     *  ordinaires cassaient alors l'extension DÉFINITIVEMENT :
+     *
+     *  1. **Course entre workers.** `php -S` tourne à 4 workers (D2), qui sont
+     *     des PROCESSUS distincts, et ce magasin est reconstruit à chaque
+     *     requête. Juste après une mise à jour du paquet, deux requêtes
+     *     simultanées lisent toutes deux `user_version = 2` avant qu'aucune
+     *     n'ait fini, et rejouent toutes deux le palier. `busy_timeout`
+     *     sérialise l'écriture mais ne protège en RIEN de ce TOCTOU : la
+     *     seconde exécute quand même son `ADD COLUMN` sur une colonne qui
+     *     existe déjà.
+     *  2. **Processus tué au milieu** : les colonnes déjà ajoutées sont
+     *     committées, `user_version` non — le palier se rejoue et échoue pareil.
+     *
+     *  Dans les deux cas : `PDOException` à la construction du magasin, donc
+     *  500 sur `/rooms`, `/visio`, `/recordings` et `/admin/servers`, et
+     *  **indéfiniment** — chaque nouvelle requête rejoue le même palier cassé.
+     *  Le plus grave : `GET /` ne touche jamais la base, donc **la sonde de
+     *  santé de SE5 reste au vert pendant que l'extension est morte.**
+     *
+     *  Le remède tient en deux gestes :
+     *
+     *  - `BEGIN IMMEDIATE` prend le verrou d'écriture AVANT de relire la
+     *    version. La seconde requête attend (`busy_timeout`), puis relit
+     *    `user_version` — désormais à jour — et ne rejoue rien.
+     *  - Tout le palier ET la pose de `user_version` sont dans la MÊME
+     *    transaction. SQLite sait faire du DDL transactionnel, et
+     *    `user_version` vit dans l'en-tête de la base, donc y participe : un
+     *    crash rejoue proprement depuis un état cohérent, jamais depuis un
+     *    demi-palier.
+     *
+     *  C'est la rigueur qu'`addRoom()` avait déjà et que la migration, elle,
+     *  n'avait pas.
+     * ══════════════════════════════════════════════════════════════════════
+     */
     public function migrate(): void
     {
+        // Lecture hors verrou : le cas de très loin le plus fréquent est
+        // « rien à faire », et il ne doit pas coûter un verrou d'écriture à
+        // chaque requête.
+        if ($this->schemaVersion() >= self::SCHEMA_VERSION) {
+            return;
+        }
+
+        $this->pdo->exec('BEGIN IMMEDIATE');
+
+        try {
+            $this->migrateWithinTransaction();
+            $this->pdo->exec('COMMIT');
+        } catch (Throwable $e) {
+            $this->pdo->exec('ROLLBACK');
+
+            throw $e;
+        }
+    }
+
+    /**
+     * `ALTER TABLE … ADD COLUMN`, mais seulement si la colonne manque.
+     *
+     * SQLite n'a pas de `ADD COLUMN IF NOT EXISTS` : la précondition se lit
+     * dans `PRAGMA table_info`. Le nom de colonne est comparé en littéral, il
+     * ne vient jamais de l'extérieur (les paliers de migration sont du code
+     * écrit ici, pas de la donnée) — pas d'interpolation à surveiller.
+     */
+    private function addColumnIfMissing(string $table, string $column, string $definition): void
+    {
+        $rows = $this->pdo->query('PRAGMA table_info(' . $table . ')')?->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        foreach ($rows as $row) {
+            if (($row['name'] ?? null) === $column) {
+                return;
+            }
+        }
+
+        $this->pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
+    }
+
+    /** Le corps de la migration — TOUJOURS appelé sous verrou d'écriture. */
+    private function migrateWithinTransaction(): void
+    {
+        // ⚠️ RELECTURE SOUS VERROU, et c'est tout l'intérêt de la manœuvre : la
+        // valeur lue avant `BEGIN IMMEDIATE` peut être périmée si un autre
+        // worker vient de migrer pendant qu'on attendait.
         $current = $this->schemaVersion();
 
         if ($current >= self::SCHEMA_VERSION) {
@@ -201,6 +305,42 @@ final class Store
 
             $this->pdo->exec('CREATE INDEX IF NOT EXISTS room_groups_group_name ON room_groups (group_name)');
             $this->pdo->exec('CREATE INDEX IF NOT EXISTS rooms_owner_sub ON rooms (owner_sub)');
+        }
+
+        if ($current < 3) {
+            // ═══════════════════════════════════════════════════════════════
+            //  L'INVITATION VIT SUR LA LIGNE DU SALON (Story 57.3)
+            //
+            //  Un salon, une invitation : le lien public et son mot de passe
+            //  sont des attributs du salon, pas une entité à part. SE4 faisait
+            //  l'inverse — un `CONF_HASH` par UTILISATEUR, qui n'était autre
+            //  que son login en clair : un seul salon invitable par personne,
+            //  une URL énumérable, et aucune révocation possible.
+            //
+            //  ⚠️ **Piège SQLite** : `ALTER TABLE … ADD COLUMN` ne sait PAS
+            //  poser `UNIQUE` (erreur à l'exécution), d'où l'index unique
+            //  séparé. Les `NULL` y sont mutuellement distincts (sémantique
+            //  SQLite) : tous les salons SANS invitation cohabitent sans se
+            //  gêner, et c'est exactement ce qu'on veut.
+            //
+            //  ⚠️ **Idempotence, à deux niveaux** (review 57.3 #1). La
+            //  transaction et la relecture de `user_version` sous verrou (voir
+            //  le docblock de `migrate()`) empêchent qu'un demi-palier existe.
+            //  `addColumnIfMissing()` répare en plus ceux qui existeraient
+            //  DÉJÀ — état laissé par une version antérieure du code, ou par une
+            //  intervention manuelle sur le fichier.
+            //
+            //  Ce n'est PAS le `try/catch` qu'on s'interdisait ici : celui-ci
+            //  avalerait n'importe quelle panne, alors qu'une garde
+            //  d'existence VÉRIFIE UNE PRÉCONDITION et laisse tout le reste
+            //  échouer bruyamment. Le `CREATE UNIQUE INDEX` juste dessous, lui,
+            //  n'a besoin d'aucune garde : `IF NOT EXISTS` en est déjà une.
+            // ═══════════════════════════════════════════════════════════════
+            $this->addColumnIfMissing('rooms', 'guest_token', 'TEXT');
+            $this->addColumnIfMissing('rooms', 'guest_password', 'TEXT');
+            $this->addColumnIfMissing('rooms', 'guest_failures', 'INTEGER NOT NULL DEFAULT 0');
+            $this->addColumnIfMissing('rooms', 'guest_window_started_at', 'INTEGER');
+            $this->pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS rooms_guest_token ON rooms (guest_token)');
         }
 
         $this->pdo->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
@@ -439,6 +579,37 @@ final class Store
     }
 
     /**
+     * Story 57.3 — **MES salons, par une COLONNE.**
+     *
+     * C'est ce qui rend la liste des enregistrements possible sans décoder quoi
+     * que ce soit : `owner_sub` dit qui a créé le salon, et `token` est le
+     * `meetingID` que BigBlueButton connaît. Le legacy, lui, devait relire le
+     * segment n°2 d'un `meetingID` fabriqué par concaténation de hashes
+     * (`explode('-', …)[2]`), position qui se décalait dès qu'un salon portait
+     * des classes — le filtre « mes enregistrements » était donc faux pour
+     * exactement les salons les plus courants.
+     *
+     * @return list<Room>
+     */
+    public function roomsOwnedBy(string $ownerSub): array
+    {
+        if ($ownerSub === '') {
+            return [];
+        }
+
+        $statement = $this->pdo->prepare('SELECT * FROM rooms WHERE owner_sub = :sub ORDER BY id DESC');
+        $statement->execute(['sub' => $ownerSub]);
+
+        $rooms = [];
+
+        foreach ($statement->fetchAll() ?: [] as $row) {
+            $rooms[] = Room::fromRow($row, $this->groupsOf((int) $row['id']));
+        }
+
+        return $rooms;
+    }
+
+    /**
      * Les deux mots de passe d'un salon.
      *
      * **La seule porte de sortie de ces valeurs**, et elle est délibérément
@@ -487,6 +658,201 @@ final class Store
         $this->pdo->prepare('DELETE FROM rooms WHERE id = :id')->execute(['id' => $roomId]);
     }
 
+    // =====================================================================
+    // Invitation externe (Story 57.3)
+    // =====================================================================
+
+    /**
+     * Ouvre — ou RÉ-ouvre — l'invitation externe d'un salon.
+     *
+     * Activer et régénérer sont le même acte : de nouvelles valeurs, et les
+     * compteurs d'échecs remis à zéro. L'ancien lien meurt à l'instant même, ce
+     * qui est précisément ce que SE4 ne savait pas faire (expiration au bout de
+     * quatre heures, ou disparition silencieuse du meeting — jamais un acte du
+     * professeur).
+     *
+     * ⚠️ Le mot de passe est stocké EN CLAIR, et c'est la même décision assumée
+     * que pour `servers.secret` : la protection est le système de fichiers
+     * (répertoire 0700, base 0600), et il doit rester RELISIBLE par le créateur
+     * pour qu'il puisse le partager. Le hacher le rendrait invérifiable comme
+     * partageable. Il ne quitte ce fichier QUE vers la page de son créateur.
+     *
+     * @return array{token: string, password: string}
+     */
+    public function enableGuestAccess(int $roomId): array
+    {
+        $token = self::newSecret();
+        $password = self::newGuestPassword();
+
+        $this->pdo->prepare(<<<'SQL'
+            UPDATE rooms
+               SET guest_token = :token,
+                   guest_password = :password,
+                   guest_failures = 0,
+                   guest_window_started_at = NULL,
+                   updated_at = :now
+             WHERE id = :id
+        SQL)->execute([
+            'token' => $token,
+            'password' => $password,
+            'now' => self::now(),
+            'id' => $roomId,
+        ]);
+
+        return ['token' => $token, 'password' => $password];
+    }
+
+    /**
+     * Ferme l'invitation : les quatre colonnes retombent à leur état d'origine.
+     *
+     * `guest_token IS NULL` ⟺ pas d'invitation. Les deux colonnes vivent et
+     * meurent ensemble : il n'existe aucun état où un mot de passe survivrait à
+     * son jeton.
+     */
+    public function revokeGuestAccess(int $roomId): void
+    {
+        $this->pdo->prepare(<<<'SQL'
+            UPDATE rooms
+               SET guest_token = NULL,
+                   guest_password = NULL,
+                   guest_failures = 0,
+                   guest_window_started_at = NULL,
+                   updated_at = :now
+             WHERE id = :id
+        SQL)->execute(['now' => self::now(), 'id' => $roomId]);
+    }
+
+    /**
+     * Le jeton et le mot de passe d'invitation — **pour le créateur, et pour
+     * personne d'autre.**
+     *
+     * Cette méthode est la porte de sortie de ces deux valeurs, exactement comme
+     * {@see roomSecrets()} l'est pour les mots de passe BigBlueButton. Elle est
+     * appelée UNIQUEMENT sur les salons dont le demandeur est le créateur : la
+     * vue qui liste les salons des autres ne reçoit structurellement rien.
+     *
+     * @return array{token: string, password: string}|null
+     */
+    public function guestInvitation(int $roomId): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT guest_token, guest_password FROM rooms WHERE id = :id');
+        $statement->execute(['id' => $roomId]);
+        $row = $statement->fetch();
+
+        if (! is_array($row) || $row['guest_token'] === null || (string) $row['guest_token'] === '') {
+            return null;
+        }
+
+        return ['token' => (string) $row['guest_token'], 'password' => (string) $row['guest_password']];
+    }
+
+    /**
+     * Le salon désigné par son jeton d'INVITATION.
+     *
+     * Jeton vide ⇒ rien, sans requête : une chaîne vide n'est pas une valeur
+     * d'entrée légitime, et l'index unique la laisserait pourtant chercher.
+     */
+    public function roomByGuestToken(string $token): ?Room
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $statement = $this->pdo->prepare('SELECT * FROM rooms WHERE guest_token = :token');
+        $statement->execute(['token' => $token]);
+        $row = $statement->fetch();
+
+        if (! is_array($row)) {
+            return null;
+        }
+
+        return Room::fromRow($row, $this->groupsOf((int) $row['id']));
+    }
+
+    /**
+     * Le mot de passe d'invitation d'un salon, ou `null` s'il n'y en a pas.
+     *
+     * ⚠️ La COMPARAISON ne se fait pas ici : elle se fait au contrôleur, en
+     * temps constant, et contre une valeur factice lorsque le jeton est inconnu.
+     * Une méthode `checkGuestPassword()` qui renverrait un booléen aurait
+     * l'air plus sûre et serait pire — elle interdirait justement le chemin
+     * « jeton inconnu, on compare quand même ».
+     */
+    public function guestPassword(int $roomId): ?string
+    {
+        $statement = $this->pdo->prepare('SELECT guest_password FROM rooms WHERE id = :id');
+        $statement->execute(['id' => $roomId]);
+        $row = $statement->fetch();
+
+        if (! is_array($row) || $row['guest_password'] === null || (string) $row['guest_password'] === '') {
+            return null;
+        }
+
+        return (string) $row['guest_password'];
+    }
+
+    /**
+     * Le nombre d'échecs de mot de passe dans la fenêtre COURANTE.
+     *
+     * Fenêtre FIXE et non glissante : `guest_window_started_at` marque son
+     * ouverture, et une fenêtre expirée vaut zéro — sans écriture. C'est ce qui
+     * évite d'avoir à tenir une liste d'horodatages par salon, donc à la purger.
+     *
+     * La durée est un paramètre plutôt qu'une constante d'ici : c'est une
+     * décision de POLITIQUE, elle appartient au contrôleur qui l'applique.
+     */
+    public function guestFailuresInWindow(int $roomId, int $now, int $windowSeconds): int
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT guest_failures, guest_window_started_at FROM rooms WHERE id = :id'
+        );
+        $statement->execute(['id' => $roomId]);
+        $row = $statement->fetch();
+
+        if (! is_array($row) || $row['guest_window_started_at'] === null) {
+            return 0;
+        }
+
+        $startedAt = (int) $row['guest_window_started_at'];
+
+        // Fenêtre expirée — ou horodatée dans le futur (horloge qui a reculé,
+        // état recopié d'ailleurs) : on ne peut rien affirmer, on repart de zéro.
+        if ($startedAt > $now || ($now - $startedAt) >= $windowSeconds) {
+            return 0;
+        }
+
+        return (int) $row['guest_failures'];
+    }
+
+    /**
+     * Compte un échec de mot de passe. Ouvre une fenêtre si la précédente est
+     * close, incrémente sinon.
+     */
+    public function recordGuestFailure(int $roomId, int $now, int $windowSeconds): void
+    {
+        $inWindow = $this->guestFailuresInWindow($roomId, $now, $windowSeconds) > 0;
+
+        if ($inWindow) {
+            $this->pdo->prepare(
+                'UPDATE rooms SET guest_failures = guest_failures + 1 WHERE id = :id'
+            )->execute(['id' => $roomId]);
+
+            return;
+        }
+
+        $this->pdo->prepare(
+            'UPDATE rooms SET guest_failures = 1, guest_window_started_at = :now WHERE id = :id'
+        )->execute(['now' => $now, 'id' => $roomId]);
+    }
+
+    /** Un succès efface l'ardoise : la fenêtre ne punit que des échecs consécutifs. */
+    public function resetGuestFailures(int $roomId): void
+    {
+        $this->pdo->prepare(
+            'UPDATE rooms SET guest_failures = 0, guest_window_started_at = NULL WHERE id = :id'
+        )->execute(['id' => $roomId]);
+    }
+
     public function roomGroupCount(): int
     {
         $value = $this->pdo->query('SELECT COUNT(*) FROM room_groups')?->fetchColumn();
@@ -509,6 +875,27 @@ final class Store
     private static function newSecret(): string
     {
         return bin2hex(random_bytes(self::RANDOM_BYTES));
+    }
+
+    /**
+     * Le mot de passe d'invitation : court, dictable, tiré par le SERVEUR.
+     *
+     * Jamais une saisie du professeur — un mot de passe choisi est un mot de
+     * passe réutilisé d'ailleurs. `random_int()` est le tirage cryptographique
+     * d'entiers de PHP ; l'alphabet compte 32 symboles, donc chaque caractère
+     * porte exactement 5 bits sans biais de modulo.
+     */
+    private static function newGuestPassword(): string
+    {
+        $alphabet = self::GUEST_PASSWORD_ALPHABET;
+        $last = strlen($alphabet) - 1;
+        $password = '';
+
+        for ($i = 0; $i < self::GUEST_PASSWORD_LENGTH; $i++) {
+            $password .= $alphabet[random_int(0, $last)];
+        }
+
+        return $password;
     }
 
     // =====================================================================

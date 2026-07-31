@@ -7,10 +7,14 @@ namespace SambaEdu\ExtBbb\Bbb;
 use BigBlueButton\BigBlueButton;
 use BigBlueButton\Exceptions\BadResponseException;
 use BigBlueButton\Parameters\CreateMeetingParameters;
+use BigBlueButton\Parameters\DeleteRecordingsParameters;
+use BigBlueButton\Parameters\GetRecordingsParameters;
 use BigBlueButton\Parameters\IsMeetingRunningParameters;
 use BigBlueButton\Parameters\JoinMeetingParameters;
 use BigBlueButton\Responses\CreateMeetingResponse;
+use BigBlueButton\Responses\DeleteRecordingsResponse;
 use BigBlueButton\Responses\GetMeetingsResponse;
+use BigBlueButton\Responses\GetRecordingsResponse;
 use BigBlueButton\Responses\IsMeetingRunningResponse;
 use RuntimeException;
 use Throwable;
@@ -85,6 +89,17 @@ final class LiveBbbApiClient implements BbbApiClient
     /** Mention affichée par le client BigBlueButton, iso-legacy (qui disait « 4 »). */
     public const MEETING_COPYRIGHT = 'SambaÉdu 5';
 
+    /**
+     * Story 57.3 — **Seuls les enregistrements PUBLIÉS sont demandés.**
+     *
+     * Première moitié de la double défense contre le piège d'hydratation du
+     * fork : un enregistrement encore en traitement (`processing`) ou déjà
+     * effacé (`deleted`) n'a pas de bloc `playback`, et `Record::__construct`
+     * le lit sans garde. Filtrer en amont évite le cas ; l'hydratation sous
+     * garde le rattrape s'il survient quand même.
+     */
+    public const RECORDINGS_STATE = 'published';
+
     /** @var callable(string, string): GetMeetingsResponse */
     private $meetingsTransport;
 
@@ -94,21 +109,33 @@ final class LiveBbbApiClient implements BbbApiClient
     /** @var callable(string, string, string): IsMeetingRunningResponse */
     private $runningTransport;
 
+    /** @var callable(string, string, GetRecordingsParameters): GetRecordingsResponse */
+    private $recordingsTransport;
+
+    /** @var callable(string, string, DeleteRecordingsParameters): DeleteRecordingsResponse */
+    private $deleteRecordingTransport;
+
     /**
      * @param  (callable(string, string): GetMeetingsResponse)|null  $transport
      *         Le transport réel par défaut ; une doublure en test, pour prouver
      *         le MAPPING sans réseau.
      * @param  (callable(string, string, CreateMeetingParameters): CreateMeetingResponse)|null  $createTransport
      * @param  (callable(string, string, string): IsMeetingRunningResponse)|null  $runningTransport
+     * @param  (callable(string, string, GetRecordingsParameters): GetRecordingsResponse)|null  $recordingsTransport
+     * @param  (callable(string, string, DeleteRecordingsParameters): DeleteRecordingsResponse)|null  $deleteRecordingTransport
      */
     public function __construct(
         ?callable $transport = null,
         ?callable $createTransport = null,
         ?callable $runningTransport = null,
+        ?callable $recordingsTransport = null,
+        ?callable $deleteRecordingTransport = null,
     ) {
         $this->meetingsTransport = $transport ?? self::defaultTransport(...);
         $this->createTransport = $createTransport ?? self::defaultCreateTransport(...);
         $this->runningTransport = $runningTransport ?? self::defaultRunningTransport(...);
+        $this->recordingsTransport = $recordingsTransport ?? self::defaultRecordingsTransport(...);
+        $this->deleteRecordingTransport = $deleteRecordingTransport ?? self::defaultDeleteRecordingTransport(...);
     }
 
     public function testConnection(string $baseUrl, string $secret): ConnectionResult
@@ -220,6 +247,172 @@ final class LiveBbbApiClient implements BbbApiClient
     }
 
     // =====================================================================
+    // Story 57.3 — Enregistrements : deux appels sortants de plus
+    // =====================================================================
+
+    public function getRecordings(
+        string $baseUrl,
+        string $secret,
+        array $meetingIds = [],
+        string $recordId = '',
+    ): RecordingsResult {
+        try {
+            $response = ($this->recordingsTransport)(
+                $baseUrl,
+                $secret,
+                self::recordingsParameters($meetingIds, $recordId),
+            );
+        } catch (BadResponseException $e) {
+            return RecordingsResult::invalidResponse($e->getMessage());
+        } catch (RuntimeException) {
+            return RecordingsResult::unreachable();
+        } catch (Throwable) {
+            return RecordingsResult::invalidResponse();
+        }
+
+        if ($response->failed()) {
+            return $response->getMessageKey() === 'checksumError'
+                ? RecordingsResult::invalidSecret()
+                : RecordingsResult::invalidResponse($response->getMessageKey());
+        }
+
+        if (! $response->success()) {
+            return RecordingsResult::invalidResponse();
+        }
+
+        return RecordingsResult::ok(self::hydrateRecords($response));
+    }
+
+    public function deleteRecording(string $baseUrl, string $secret, string $recordId): DeleteResult
+    {
+        try {
+            $response = ($this->deleteRecordingTransport)(
+                $baseUrl,
+                $secret,
+                new DeleteRecordingsParameters($recordId),
+            );
+        } catch (BadResponseException $e) {
+            return DeleteResult::invalidResponse($e->getMessage());
+        } catch (RuntimeException) {
+            return DeleteResult::unreachable();
+        } catch (Throwable) {
+            return DeleteResult::invalidResponse();
+        }
+
+        if ($response->failed()) {
+            return $response->getMessageKey() === 'checksumError'
+                ? DeleteResult::invalidSecret()
+                : DeleteResult::invalidResponse($response->getMessageKey());
+        }
+
+        if (! $response->success()) {
+            return DeleteResult::invalidResponse();
+        }
+
+        try {
+            return $response->isDeleted() ? DeleteResult::deleted() : DeleteResult::refused();
+        } catch (Throwable) {
+            // `SUCCESS` sans nœud `deleted` : on ne sait pas, donc on ne dit
+            // surtout pas « supprimé ».
+            return DeleteResult::invalidResponse();
+        }
+    }
+
+    /**
+     * L'hydratation, **enregistrement par enregistrement, sous garde.**
+     *
+     * ⚠️ `Record::__construct` lit `$xml->playback->format->type->__toString()`
+     * sans la moindre vérification : un enregistrement sans bloc `playback`
+     * (état `processing`, `deleted`) lève une erreur qui, remontée telle quelle,
+     * viderait la liste ENTIÈRE — un seul XML bancal effacerait de l'écran tous
+     * les cours des autres. C'est la même famille de piège que
+     * `getMeetingLayout()`, relevée en 57.2.
+     *
+     * `getRecords()` construit toute la collection d'un coup : l'itération se
+     * fait donc sur le XML brut, ce qui est le seul endroit où l'on peut isoler
+     * un enregistrement fautif.
+     *
+     * @return list<RecordingItem>
+     */
+    private static function hydrateRecords(GetRecordingsResponse $response): array
+    {
+        $items = [];
+
+        try {
+            $xml = $response->getRawXml();
+
+            // ⚠️ `isset()`, et surtout PAS `=== null` : SimpleXML rend un
+            // ÉLÉMENT VIDE pour un enfant absent, jamais `null`. Comparer à
+            // `null` laisserait donc passer le cas — vérifié sur pièce.
+            // `SUCCESS` + `messageKey = noRecordings` : une liste vide, pas une
+            // panne. C'est la réponse NORMALE d'un salon jamais enregistré.
+            if (! isset($xml->recordings)) {
+                return [];
+            }
+
+            $children = $xml->recordings->children();
+        } catch (Throwable) {
+            return [];
+        }
+
+        foreach ($children as $recordXml) {
+            try {
+                $items[] = new RecordingItem(
+                    recordId: (string) $recordXml->recordID,
+                    meetingId: (string) $recordXml->meetingID,
+                    startTime: (float) (string) $recordXml->startTime,
+                    endTime: (float) (string) $recordXml->endTime,
+                    playbackUrl: self::playbackUrlOf($recordXml),
+                    lengthMinutes: (int) (string) $recordXml->playback->format->length,
+                );
+            } catch (Throwable) {
+                // Un enregistrement illisible est IGNORÉ ; les autres vivent.
+                continue;
+            }
+        }
+
+        return $items;
+    }
+
+    /** L'URL de lecture, ou rien — un enregistrement sans playback n'est pas lisible. */
+    private static function playbackUrlOf(\SimpleXMLElement $recordXml): string
+    {
+        $format = $recordXml->playback->format ?? null;
+
+        if ($format === null || ! isset($format->url)) {
+            throw new RuntimeException('enregistrement sans bloc de lecture');
+        }
+
+        return (string) $format->url;
+    }
+
+    /**
+     * ⚠️ **Vérifié sur pièce, pas sur parole** : `GetRecordingsParameters::getHTTPQuery()`
+     * émet bien `meetingID`, `recordID` et `state`. L'incident `getMeetingLayout`
+     * de 57.2 a appris que les déclarations de ce fork ne suffisent pas — un test
+     * de mapping affirme la requête RÉELLEMENT construite.
+     *
+     * @param  list<string>  $meetingIds
+     */
+    private static function recordingsParameters(array $meetingIds, string $recordId): GetRecordingsParameters
+    {
+        $parameters = new GetRecordingsParameters();
+
+        if ($meetingIds !== []) {
+            // L'API BigBlueButton accepte une liste séparée par des virgules.
+            $parameters->setMeetingId(implode(',', $meetingIds));
+        }
+
+        if ($recordId !== '') {
+            $parameters->setRecordId($recordId);
+        }
+
+        $parameters->setState(self::RECORDINGS_STATE);
+
+        return $parameters;
+    }
+
+    // =====================================================================
 
     /**
      * Les paramètres du meeting, **portés du legacy** (D5 : « se reprend presque
@@ -297,6 +490,22 @@ final class LiveBbbApiClient implements BbbApiClient
         string $meetingId,
     ): IsMeetingRunningResponse {
         return self::client($baseUrl, $secret)->isMeetingRunning(new IsMeetingRunningParameters($meetingId));
+    }
+
+    private static function defaultRecordingsTransport(
+        string $baseUrl,
+        string $secret,
+        GetRecordingsParameters $parameters,
+    ): GetRecordingsResponse {
+        return self::client($baseUrl, $secret)->getRecordings($parameters);
+    }
+
+    private static function defaultDeleteRecordingTransport(
+        string $baseUrl,
+        string $secret,
+        DeleteRecordingsParameters $parameters,
+    ): DeleteRecordingsResponse {
+        return self::client($baseUrl, $secret)->deleteRecordings($parameters);
     }
 
     /** Constructeur du fork : ($baseUrl, $secret, $opts) — les options cURL vivent sous la clé `curl`. */

@@ -242,7 +242,7 @@ final class StoreTest extends TestCase
 
         $store = new Store($this->path());
 
-        self::assertSame(2, $store->schemaVersion());
+        self::assertSame(Store::SCHEMA_VERSION, $store->schemaVersion());
 
         $servers = $store->servers();
         self::assertCount(2, $servers, 'les serveurs de 57.1 survivent');
@@ -270,7 +270,7 @@ final class StoreTest extends TestCase
         $second->migrate();
         $second->migrate();
 
-        self::assertSame(2, $second->schemaVersion());
+        self::assertSame(Store::SCHEMA_VERSION, $second->schemaVersion());
         self::assertCount(2, $second->servers());
         self::assertNotNull($second->roomSecrets($roomId), 'le salon créé entre-temps est intact');
     }
@@ -304,6 +304,376 @@ final class StoreTest extends TestCase
         $pdo->exec('PRAGMA user_version = 1');
 
         unset($pdo);
+    }
+
+    // =====================================================================
+    // Story 57.3 — Migration v2 → v3 SUR UNE BASE VIVANTE
+    // =====================================================================
+
+    #[Test]
+    public function a_populated_v2_database_is_migrated_to_v3_without_losing_anything(): void
+    {
+        // Même enjeu qu'en 57.2, mais la base porte MAINTENANT les salons de
+        // l'établissement : une migration qui repartirait de zéro effacerait le
+        // travail des professeurs au premier `apt upgrade`.
+        $this->createV2Database();
+
+        $store = new Store($this->path());
+
+        self::assertSame(Store::SCHEMA_VERSION, $store->schemaVersion());
+        self::assertSame(3, Store::SCHEMA_VERSION);
+
+        $servers = $store->servers();
+        self::assertCount(2, $servers, 'les serveurs de 57.1 survivent');
+        self::assertSame('secret-historique-1', $servers[0]['secret']);
+
+        $rooms = $store->roomsOwnedBy('prof.martin');
+        self::assertCount(2, $rooms, 'les salons de 57.2 survivent');
+        self::assertSame('jeton-public-2', $rooms[0]->token);
+        self::assertSame('Conseil de classe', $rooms[0]->name);
+        self::assertSame(['4B'], $rooms[1]->groups, 'les groupes de visibilité aussi');
+        self::assertFalse($rooms[0]->hasGuestAccess, 'aucune invitation avant la migration, aucune après');
+
+        // Et les colonnes neuves sont utilisables immédiatement.
+        $invitation = $store->enableGuestAccess($rooms[0]->id);
+        self::assertNotNull($store->roomByGuestToken($invitation['token']));
+    }
+
+    #[Test]
+    public function migrating_a_v2_database_twice_is_a_no_op(): void
+    {
+        // `ALTER TABLE … ADD COLUMN` échoue si la colonne existe : c'est le
+        // garde-fou `user_version` qui porte l'idempotence, et rien d'autre. Un
+        // deuxième démarrage du service ne doit pas rejouer le palier.
+        $this->createV2Database();
+
+        $first = new Store($this->path());
+        $invitation = $first->enableGuestAccess($first->roomsOwnedBy('prof.martin')[0]->id);
+
+        $second = new Store($this->path());
+        $second->migrate();
+        $second->migrate();
+
+        self::assertSame(Store::SCHEMA_VERSION, $second->schemaVersion());
+        self::assertCount(2, $second->servers());
+        self::assertNotNull($second->roomByGuestToken($invitation['token']), 'l\'invitation posée entre-temps est intacte');
+    }
+
+    // ── Review 57.3 #1 — la migration survit à la concurrence et au crash ────
+    //
+    // `php -S` tourne à 4 workers, qui sont des PROCESSUS distincts, et ce
+    // magasin est reconstruit à CHAQUE requête. Deux requêtes simultanées juste
+    // après une mise à jour du paquet lisaient toutes deux l'ancienne version et
+    // rejouaient toutes deux le palier ; la seconde échouait sur `duplicate
+    // column name`, et comme `user_version` n'était jamais posé, elle échouait
+    // ENSUITE À CHAQUE REQUÊTE. `GET /` ne touchant pas la base, la sonde de
+    // santé de SE5 serait restée au vert pendant que l'extension était morte.
+
+    #[Test]
+    public function a_second_store_opened_on_a_half_migrated_database_repairs_it(): void
+    {
+        // Simule EXACTEMENT l'état laissé par un processus tué au milieu de
+        // l'ancien palier : des colonnes déjà ajoutées, mais `user_version`
+        // resté en arrière. Avant correction, ceci relançait `ADD COLUMN` sur
+        // une colonne existante — panne définitive.
+        $this->createV2Database();
+
+        $pdo = new \PDO('sqlite:' . $this->path());
+        $pdo->exec('ALTER TABLE rooms ADD COLUMN guest_token TEXT');
+        $pdo->exec('ALTER TABLE rooms ADD COLUMN guest_password TEXT');
+        unset($pdo);
+
+        // Aucune exception attendue, et la base doit finir COMPLÈTE.
+        $store = new Store($this->path());
+
+        self::assertSame(Store::SCHEMA_VERSION, $store->schemaVersion());
+        self::assertCount(2, $store->servers(), 'la réparation ne détruit rien');
+
+        $invitation = $store->enableGuestAccess($store->roomsOwnedBy('prof.martin')[0]->id);
+        self::assertNotNull(
+            $store->roomByGuestToken($invitation['token']),
+            'les colonnes du palier v3 sont toutes là, pas seulement les deux posées à la main',
+        );
+    }
+
+    #[Test]
+    public function a_failing_migration_leaves_the_schema_version_untouched(): void
+    {
+        // CONTRÔLE POSITIF de la transaction : si le palier échoue, il ne doit
+        // RIEN laisser derrière lui — ni colonne, ni version avancée. Sans la
+        // transaction, `user_version` restait certes en arrière, mais les
+        // colonnes déjà ajoutées, elles, restaient : c'est ce demi-état qui
+        // rendait la panne définitive.
+        $this->createV2Database();
+
+        // On fabrique un échec certain au MILIEU du palier : une colonne du
+        // palier existe déjà ET porte un index unique du même nom, ce que
+        // `CREATE UNIQUE INDEX IF NOT EXISTS` ne rattrapera pas puisqu'il
+        // portera sur une définition incompatible.
+        $pdo = new \PDO('sqlite:' . $this->path());
+        $pdo->exec('CREATE TABLE rooms_guest_token (bloque INTEGER)');
+        unset($pdo);
+
+        $store = null;
+
+        try {
+            $store = new Store($this->path());
+        } catch (\Throwable) {
+            // Attendu : l'échec doit être BRUYANT, jamais avalé.
+        }
+
+        $check = new \PDO('sqlite:' . $this->path());
+        $version = (int) $check->query('PRAGMA user_version')?->fetchColumn();
+
+        self::assertSame(2, $version, 'un palier qui échoue ne doit pas avancer la version');
+
+        $columns = array_column(
+            $check->query('PRAGMA table_info(rooms)')?->fetchAll(\PDO::FETCH_ASSOC) ?: [],
+            'name',
+        );
+
+        self::assertNotContains(
+            'guest_token',
+            $columns,
+            'un palier qui échoue ne doit laisser AUCUNE colonne derrière lui — c\'est le demi-état qui rendait la panne définitive',
+        );
+
+        unset($check, $store);
+    }
+
+    /** Fabrique à la main le schéma EXACT de la version 2, avec des données dedans. */
+    private function createV2Database(): void
+    {
+        $this->createV1Database();
+
+        $pdo = new \PDO('sqlite:' . $this->path(), null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE rooms (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                token           TEXT    NOT NULL UNIQUE,
+                name            TEXT    NOT NULL,
+                owner_sub       TEXT    NOT NULL,
+                owner_name      TEXT    NOT NULL,
+                visibility      TEXT    NOT NULL CHECK (visibility IN ('etab','classe','private')),
+                attendee_pw     TEXT    NOT NULL,
+                moderator_pw    TEXT    NOT NULL,
+                server_id       INTEGER,
+                last_started_at TEXT,
+                created_at      TEXT    NOT NULL,
+                updated_at      TEXT    NOT NULL
+            )
+        SQL);
+
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE room_groups (
+                room_id    INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+                group_name TEXT    NOT NULL,
+                PRIMARY KEY (room_id, group_name)
+            )
+        SQL);
+
+        $pdo->exec('CREATE INDEX room_groups_group_name ON room_groups (group_name)');
+        $pdo->exec('CREATE INDEX rooms_owner_sub ON rooms (owner_sub)');
+
+        $pdo->exec(<<<'SQL'
+            INSERT INTO rooms (token, name, owner_sub, owner_name, visibility, attendee_pw, moderator_pw,
+                               server_id, last_started_at, created_at, updated_at) VALUES
+                ('jeton-public-1', 'Cours de mathématiques', 'prof.martin', 'Madame Martin', 'classe',
+                 'pw-participant-1', 'pw-moderateur-1', 1, '2026-07-10T09:00:00Z',
+                 '2026-07-01T08:00:00Z', '2026-07-10T09:00:00Z'),
+                ('jeton-public-2', 'Conseil de classe', 'prof.martin', 'Madame Martin', 'private',
+                 'pw-participant-2', 'pw-moderateur-2', NULL, NULL,
+                 '2026-07-02T08:00:00Z', '2026-07-02T08:00:00Z')
+        SQL);
+
+        $pdo->exec("INSERT INTO room_groups (room_id, group_name) VALUES (1, '4B')");
+        $pdo->exec('PRAGMA user_version = 2');
+
+        unset($pdo);
+    }
+
+    // =====================================================================
+    // Story 57.3 — L'invitation externe
+    // =====================================================================
+
+    #[Test]
+    public function enabling_an_invitation_yields_a_token_and_a_dictatable_password(): void
+    {
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        self::assertNull($store->guestInvitation($roomId), 'aucune invitation par défaut');
+
+        $invitation = $store->enableGuestAccess($roomId);
+
+        // Le jeton : 16 octets d'aléa cryptographique, soit 32 caractères
+        // hexadécimaux. Le legacy y mettait le LOGIN du créateur, en clair.
+        self::assertSame(32, strlen($invitation['token']));
+        self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $invitation['token']);
+
+        // Le mot de passe : huit caractères d'un alphabet sans ambiguïté — il
+        // doit pouvoir se dicter au téléphone. Ni `0`/`O`, ni `1`/`l`/`I`.
+        self::assertSame(8, strlen($invitation['password']));
+        self::assertMatchesRegularExpression('/^[A-HJ-NP-Z2-9]{8}$/', $invitation['password']);
+
+        self::assertSame($invitation, $store->guestInvitation($roomId));
+        self::assertSame($invitation['password'], $store->guestPassword($roomId));
+
+        $found = $store->roomByGuestToken($invitation['token']);
+        self::assertNotNull($found);
+        self::assertSame($roomId, $found->id);
+        self::assertTrue($found->hasGuestAccess);
+    }
+
+    #[Test]
+    public function regenerating_replaces_both_values_and_kills_the_previous_ones(): void
+    {
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $first = $store->enableGuestAccess($roomId);
+        $second = $store->enableGuestAccess($roomId);
+
+        self::assertNotSame($first['token'], $second['token']);
+        self::assertNotSame($first['password'], $second['password']);
+
+        self::assertNull($store->roomByGuestToken($first['token']), 'l\'ancien jeton ne résout plus rien');
+        self::assertNotNull($store->roomByGuestToken($second['token']));
+    }
+
+    #[Test]
+    public function revoking_takes_the_token_and_the_password_away_together(): void
+    {
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $invitation = $store->enableGuestAccess($roomId);
+        $store->revokeGuestAccess($roomId);
+
+        // Les deux colonnes vivent et meurent ENSEMBLE : il n'existe aucun état
+        // où un mot de passe survivrait à son jeton.
+        self::assertNull($store->guestInvitation($roomId));
+        self::assertNull($store->guestPassword($roomId));
+        self::assertNull($store->roomByGuestToken($invitation['token']));
+
+        $room = $store->roomByToken(
+            $store->roomsOwnedBy('prof.martin')[0]->token
+        );
+        self::assertNotNull($room);
+        self::assertFalse($room->hasGuestAccess);
+    }
+
+    #[Test]
+    public function many_rooms_without_an_invitation_coexist_without_colliding(): void
+    {
+        // ⚠️ L'index sur `guest_token` est UNIQUE, et c'est ce qui garantit
+        // qu'un jeton ne désigne jamais deux salons. Encore faut-il que les
+        // salons SANS invitation puissent cohabiter : en SQLite, deux `NULL`
+        // sont mutuellement distincts pour un index unique — ils le peuvent.
+        $store = new Store($this->path());
+
+        for ($i = 0; $i < 5; $i++) {
+            $store->addRoom('Salon ' . $i, 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+        }
+
+        self::assertCount(5, $store->roomsOwnedBy('prof.martin'));
+    }
+
+    #[Test]
+    public function an_empty_guest_token_never_matches_anything(): void
+    {
+        $store = new Store($this->path());
+        $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        self::assertNull($store->roomByGuestToken(''));
+    }
+
+    #[Test]
+    public function the_failure_window_is_fixed_and_forgets_by_itself(): void
+    {
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+        $store->enableGuestAccess($roomId);
+
+        $now = 1_800_000_000;
+        $window = 900;
+
+        self::assertSame(0, $store->guestFailuresInWindow($roomId, $now, $window));
+
+        $store->recordGuestFailure($roomId, $now, $window);
+        $store->recordGuestFailure($roomId, $now + 10, $window);
+        $store->recordGuestFailure($roomId, $now + 20, $window);
+
+        self::assertSame(3, $store->guestFailuresInWindow($roomId, $now + 30, $window));
+
+        // La fenêtre est FIXE : elle court depuis le PREMIER échec, pas depuis
+        // le dernier. Une fois expirée, l'ardoise est vierge — sans écriture,
+        // sans purge, sans tâche planifiée.
+        self::assertSame(0, $store->guestFailuresInWindow($roomId, $now + $window, $window));
+
+        // Et un échec après l'expiration rouvre une fenêtre neuve, à un.
+        $store->recordGuestFailure($roomId, $now + $window + 1, $window);
+        self::assertSame(1, $store->guestFailuresInWindow($roomId, $now + $window + 2, $window));
+    }
+
+    #[Test]
+    public function an_horodate_from_the_future_is_treated_as_no_window_at_all(): void
+    {
+        // Horloge qui a reculé, base recopiée d'ailleurs : on ne peut rien
+        // affirmer, donc on ne bloque personne sur la foi d'un compteur douteux.
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $store->recordGuestFailure($roomId, 1_800_000_000, 900);
+
+        self::assertSame(0, $store->guestFailuresInWindow($roomId, 1_700_000_000, 900));
+    }
+
+    #[Test]
+    public function resetting_the_failures_wipes_the_window_too(): void
+    {
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $now = 1_800_000_000;
+        $store->recordGuestFailure($roomId, $now, 900);
+        $store->recordGuestFailure($roomId, $now, 900);
+
+        $store->resetGuestFailures($roomId);
+
+        self::assertSame(0, $store->guestFailuresInWindow($roomId, $now, 900));
+    }
+
+    #[Test]
+    public function enabling_an_invitation_clears_the_failure_counter(): void
+    {
+        // Régénérer, c'est repartir de zéro : un professeur qui renouvelle son
+        // lien parce que quelqu'un l'a bourriné ne doit pas trouver la porte
+        // encore fermée derrière.
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+
+        $now = 1_800_000_000;
+        $store->recordGuestFailure($roomId, $now, 900);
+        $store->recordGuestFailure($roomId, $now, 900);
+
+        $store->enableGuestAccess($roomId);
+
+        self::assertSame(0, $store->guestFailuresInWindow($roomId, $now, 900));
+    }
+
+    #[Test]
+    public function deleting_a_room_takes_its_invitation_with_it(): void
+    {
+        $store = new Store($this->path());
+        $roomId = $store->addRoom('Salon', 'prof.martin', 'Madame Martin', Room::VISIBILITY_ETAB);
+        $invitation = $store->enableGuestAccess($roomId);
+
+        $store->deleteRoom($roomId);
+
+        self::assertNull($store->roomByGuestToken($invitation['token']));
+        self::assertNull($store->guestInvitation($roomId));
     }
 
     // =====================================================================

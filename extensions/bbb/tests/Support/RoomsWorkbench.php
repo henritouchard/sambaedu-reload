@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace SambaEdu\ExtBbb\Tests\Support;
 
 use SambaEdu\ExtBbb\Env;
+use SambaEdu\ExtBbb\Guest\GuestController;
 use SambaEdu\ExtBbb\Http\ArraySessionStore;
 use SambaEdu\ExtBbb\Http\Request;
 use SambaEdu\ExtBbb\Http\Response;
 use SambaEdu\ExtBbb\Identity;
+use SambaEdu\ExtBbb\Rooms\RecordingsController;
 use SambaEdu\ExtBbb\Rooms\RoomsController;
 use SambaEdu\ExtBbb\Store;
 use SambaEdu\ExtBbb\Url;
@@ -82,6 +84,51 @@ final class RoomsWorkbench
         $this->get($session);
 
         return (string) $session->get('rooms.csrf');
+    }
+
+    // =====================================================================
+    // Story 57.3
+    // =====================================================================
+
+    /**
+     * Le contrôleur du parcours invité.
+     *
+     * ⚠️ Remarquer ce qu'on ne lui donne PAS : aucun magasin d'état. On ne
+     * *choisit* pas de ne pas lui en passer — on ne *peut* pas, il n'en prend
+     * pas. C'est la preuve par le typage que le parcours invité est sans état.
+     */
+    public function guestController(): GuestController
+    {
+        return new GuestController($this->store, $this->api, new View(dirname(__DIR__, 2) . '/views'), $this->env);
+    }
+
+    public function getGuest(string $token): Response
+    {
+        return $this->guestController()->handle(new Request('GET', '/visio', ['g' => $token]));
+    }
+
+    /** @param  array<string, string>  $post */
+    public function postGuest(array $post, ?int $now = null): Response
+    {
+        return $this->guestController()->handle(new Request('POST', '/visio', [], $post), $now);
+    }
+
+    public function recordingsController(): RecordingsController
+    {
+        return new RecordingsController($this->store, $this->api, new View(dirname(__DIR__, 2) . '/views'), $this->env);
+    }
+
+    public function getRecordings(ArraySessionStore $session): Response
+    {
+        return $this->recordingsController()->handle(new Request('GET', '/recordings'), $session);
+    }
+
+    /** @param  array<string, string>  $post */
+    public function postRecordings(ArraySessionStore $session, array $post): Response
+    {
+        $post['_token'] ??= $this->csrf($session);
+
+        return $this->recordingsController()->handle(new Request('POST', '/recordings/delete', [], $post), $session);
     }
 
     public function destroy(): void

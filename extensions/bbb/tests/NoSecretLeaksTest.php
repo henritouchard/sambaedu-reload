@@ -153,6 +153,102 @@ final class NoSecretLeaksTest extends TestCase
         self::assertStringContainsString('Cours de mathématiques', $body);
     }
 
+    // =====================================================================
+    // Story 57.3 — les pages neuves, et le mot de passe d'INVITATION
+    // =====================================================================
+
+    #[Test]
+    public function none_of_the_new_pages_ever_carries_a_bigbluebutton_password(): void
+    {
+        $invitation = $this->bench->store->enableGuestAccess($this->roomId);
+
+        $teacher = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $pupil = $this->bench->sessionFor('eleve', 'paul.durand', 'Paul Durand', ['4B']);
+
+        $pages = [
+            'liste enrichie du créateur' => $this->bench->get($teacher)->body,
+            'liste de l\'élève' => $this->bench->get($pupil)->body,
+            'enregistrements' => $this->bench->getRecordings($teacher)->body,
+            'refus 403 des enregistrements' => $this->bench->getRecordings($pupil)->body,
+            'formulaire invité' => $this->bench->getGuest($invitation['token'])->body,
+            'refus invité' => $this->bench->postGuest([
+                'g' => $invitation['token'],
+                'name' => 'Parent',
+                'password' => 'faux',
+            ])->body,
+        ];
+
+        foreach ($pages as $where => $body) {
+            self::assertNotSame('', $body, $where . ' doit bien rendre quelque chose');
+            $this->assertCarriesNoSecret($body, $where);
+        }
+    }
+
+    #[Test]
+    public function the_invitation_password_is_shown_to_its_creator_and_to_absolutely_nobody_else(): void
+    {
+        // C'est la seule valeur secrète de l'extension qui DOIT s'afficher : le
+        // professeur ne peut pas la partager s'il ne la voit pas. Mais elle ne
+        // sort que là.
+        $invitation = $this->bench->store->enableGuestAccess($this->roomId);
+
+        $teacher = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+        $own = $this->bench->get($teacher)->body;
+
+        // Contrôle POSITIF : sans lui, tout le reste passerait pour la mauvaise
+        // raison (une page qui n'afficherait rien du tout).
+        self::assertStringContainsString($invitation['password'], $own);
+        self::assertStringContainsString($invitation['token'], $own);
+
+        $elsewhere = [
+            'liste d\'un élève de la classe' => $this->bench->get(
+                $this->bench->sessionFor('eleve', 'paul.durand', 'Paul Durand', ['4B'])
+            )->body,
+            'liste d\'un autre professeur' => $this->bench->get(
+                $this->bench->sessionFor('prof', 'prof.dupont', 'Monsieur Dupont', ['4B'])
+            )->body,
+            'liste d\'un administrateur' => $this->bench->get(
+                $this->bench->sessionFor('admin', 'root', 'Admin', [])
+            )->body,
+            'refus public' => $this->bench->postGuest([
+                'g' => $invitation['token'],
+                'name' => 'Parent',
+                'password' => 'faux',
+            ])->body,
+        ];
+
+        foreach ($elsewhere as $where => $body) {
+            self::assertStringNotContainsString($invitation['password'], $body, $where);
+            self::assertStringNotContainsString($invitation['token'], $body, $where);
+        }
+
+        // Le formulaire public, lui, RENVOIE le jeton dans son champ caché —
+        // c'est la valeur que le visiteur a lui-même apportée dans son URL, il
+        // ne peut rien y apprendre. Mais le mot de passe, jamais : la page le
+        // DEMANDE, elle ne le donne pas.
+        $form = $this->bench->getGuest($invitation['token'])->body;
+
+        self::assertStringContainsString($invitation['token'], $form);
+        self::assertStringNotContainsString($invitation['password'], $form);
+    }
+
+    #[Test]
+    public function the_guest_join_url_exists_only_in_a_location_header(): void
+    {
+        $invitation = $this->bench->store->enableGuestAccess($this->roomId);
+
+        $response = $this->bench->postGuest([
+            'g' => $invitation['token'],
+            'name' => 'Monsieur Durand',
+            'password' => $invitation['password'],
+        ]);
+
+        self::assertSame(302, $response->status);
+        self::assertSame('', $response->body);
+        self::assertStringContainsString(rawurlencode($this->secrets['attendee']), $response->headers['Location']);
+        self::assertStringNotContainsString(rawurlencode($this->secrets['moderator']), $response->headers['Location']);
+    }
+
     #[Test]
     public function the_admin_servers_page_still_hides_its_secret(): void
     {

@@ -15,9 +15,18 @@
  * Convention UX du projet : libellé AU-DESSUS du champ, étoile sur
  * l'obligatoire, aide seulement quand elle apprend quelque chose.
  *
+ * Story 57.3 — La zone d'invitation externe s'affiche pour les salons du
+ * créateur, et pour eux seuls. Le lien public et le mot de passe d'invitation y
+ * apparaissent en clair : c'est leur RAISON D'ÊTRE, le professeur doit pouvoir
+ * les recopier ou les dicter. Ils n'existent nulle part ailleurs dans la page,
+ * et surtout pas dans la liste « Salons accessibles » — le contrôleur ne les a
+ * lus que pour `$mine`.
+ *
  * @var list<\SambaEdu\ExtBbb\Rooms\Room> $mine
  * @var list<\SambaEdu\ExtBbb\Rooms\Room> $others
+ * @var array<string, array{password: string, url: string}> $invitations
  * @var bool $canCreate
+ * @var bool $canSeeRecordings
  * @var list<string> $groups
  * @var array<string, string> $errors
  * @var array<string, mixed> $old
@@ -31,6 +40,8 @@ $roomsUrl = bbb_url('/rooms');
 $startUrl = bbb_url('/rooms/start');
 $joinUrl = bbb_url('/rooms/join');
 $deleteUrl = bbb_url('/rooms/delete');
+$guestEnableUrl = bbb_url('/rooms/guest/enable');
+$guestRevokeUrl = bbb_url('/rooms/guest/revoke');
 
 $oldName = isset($old['name']) && is_string($old['name']) ? $old['name'] : '';
 $oldVisibility = isset($old['visibility']) && is_string($old['visibility'])
@@ -66,6 +77,12 @@ $openedAt = static function (?string $iso): string {
     Un salon est durable : vous le créez une fois, puis vous l'ouvrez à chaque séance.
     Vos élèves ne le voient que lorsqu'ils y ont droit, et n'ont jamais de mot de passe à saisir.
 </p>
+
+<?php if ($canSeeRecordings): ?>
+    <div class="actions">
+        <a class="btn" href="<?= bbb_e(bbb_url('/recordings')) ?>">Enregistrements</a>
+    </div>
+<?php endif; ?>
 
 <?php foreach ($flash as $entry): ?>
     <div class="alert alert--<?= bbb_e($entry['type']) ?>"><?= bbb_e($entry['message']) ?></div>
@@ -147,15 +164,50 @@ $openedAt = static function (?string $iso): string {
                     <th scope="col">Salon</th>
                     <th scope="col">Visible par</th>
                     <th scope="col">Dernière ouverture</th>
+                    <th scope="col">Invitation externe</th>
                     <th scope="col">Actions</th>
                 </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($mine as $room): ?>
+                    <?php $invitation = $invitations[$room->token] ?? null; ?>
                     <tr>
                         <td><?= bbb_e($room->name) ?></td>
                         <td><?= bbb_e($room->visibilityLabel()) ?></td>
                         <td class="meta"><?= bbb_e($openedAt($room->lastStartedAt)) ?></td>
+                        <td>
+                            <?php if ($invitation === null): ?>
+                                <p class="meta" style="margin-top:0">Aucune invitation active.</p>
+                                <form method="post" action="<?= bbb_e($guestEnableUrl) ?>">
+                                    <input type="hidden" name="_token" value="<?= bbb_e($csrf) ?>">
+                                    <input type="hidden" name="token" value="<?= bbb_e($room->token) ?>">
+                                    <button type="submit" class="btn btn--small">Activer l'invitation</button>
+                                </form>
+                            <?php else: ?>
+                                <p class="meta" style="margin-top:0">
+                                    Lien à transmettre :<br>
+                                    <code style="word-break:break-all"><?= bbb_e($invitation['url']) ?></code>
+                                </p>
+                                <p class="meta">
+                                    Mot de passe : <strong><code><?= bbb_e($invitation['password']) ?></code></strong>
+                                </p>
+                                <div class="actions">
+                                    <form method="post" action="<?= bbb_e($guestEnableUrl) ?>"
+                                          onsubmit="return confirm('Régénérer le lien et le mot de passe ? L\'ancien lien cessera immédiatement de fonctionner.');">
+                                        <input type="hidden" name="_token" value="<?= bbb_e($csrf) ?>">
+                                        <input type="hidden" name="token" value="<?= bbb_e($room->token) ?>">
+                                        <button type="submit" class="btn btn--small">Régénérer</button>
+                                    </form>
+
+                                    <form method="post" action="<?= bbb_e($guestRevokeUrl) ?>"
+                                          onsubmit="return confirm('Révoquer l\'invitation ? Le lien public cessera immédiatement de fonctionner.');">
+                                        <input type="hidden" name="_token" value="<?= bbb_e($csrf) ?>">
+                                        <input type="hidden" name="token" value="<?= bbb_e($room->token) ?>">
+                                        <button type="submit" class="btn btn--small btn--danger">Révoquer</button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <div class="actions">
                                 <form method="post" action="<?= bbb_e($startUrl) ?>">
@@ -165,7 +217,7 @@ $openedAt = static function (?string $iso): string {
                                 </form>
 
                                 <form method="post" action="<?= bbb_e($deleteUrl) ?>"
-                                      onsubmit="return confirm('Supprimer définitivement ce salon ?');">
+                                      onsubmit="return confirm('Supprimer définitivement ce salon ? Son invitation externe cessera de fonctionner, et ses enregistrements ne seront plus accessibles depuis SambaEdu.');">
                                     <input type="hidden" name="_token" value="<?= bbb_e($csrf) ?>">
                                     <input type="hidden" name="token" value="<?= bbb_e($room->token) ?>">
                                     <button type="submit" class="btn btn--small btn--danger">Supprimer</button>
@@ -177,9 +229,14 @@ $openedAt = static function (?string $iso): string {
                 </tbody>
             </table>
         </div>
-        <p class="meta" style="margin-bottom:0">
+        <p class="meta">
             « Dernière ouverture » est un repère daté, pas un état : un salon se referme tout seul
             au bout de quatre heures, ou lorsque le dernier participant s'en va.
+        </p>
+        <p class="meta" style="margin-bottom:0">
+            L'invitation externe permet à des personnes sans compte SambaEdu — parents, intervenants —
+            de rejoindre la séance en participant. Transmettez-leur le lien <em>et</em> le mot de passe.
+            Vous pouvez les régénérer ou les révoquer à tout moment : l'ancien lien meurt aussitôt.
         </p>
     <?php endif; ?>
 </div>

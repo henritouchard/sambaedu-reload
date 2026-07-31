@@ -126,6 +126,55 @@ final class NoOutboundAtRenderTest extends TestCase
         self::assertSame(0, $this->bench->api->outboundCalls());
     }
 
+    // ── Story 57.3 ───────────────────────────────────────────────────────
+
+    #[Test]
+    public function the_public_guest_form_never_calls_a_bbb_server(): void
+    {
+        // La page qu'un anonyme peut frapper autant qu'il veut ne doit RIEN
+        // coûter : c'est la seule surface de l'extension ouverte sur le monde.
+        $this->bench->store->enableGuestAccess(
+            (int) $this->bench->store->roomsOwnedBy('prof.martin')[0]->id
+        );
+
+        $this->bench->getGuest('jeton-quelconque');
+        $this->bench->getGuest('');
+
+        self::assertSame(0, $this->bench->api->outboundCalls());
+    }
+
+    #[Test]
+    public function managing_an_invitation_never_calls_a_bbb_server(): void
+    {
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+
+        $this->bench->post($session, '/rooms/guest/enable', ['token' => $this->token]);
+        $this->bench->post($session, '/rooms/guest/revoke', ['token' => $this->token]);
+
+        self::assertSame(0, $this->bench->api->outboundCalls());
+    }
+
+    #[Test]
+    public function listing_the_recordings_emits_exactly_one_call_per_server_and_that_is_the_documented_exception(): void
+    {
+        // ⚠️ Ce test DOCUMENTE une exception, il ne la corrige pas.
+        // `GET /recordings` est le seul GET de l'extension à faire des appels
+        // sortants. La règle de 57.2 visait les MUTATIONS — un `createMeeting`
+        // déclenché par le préchargement d'un navigateur ouvrirait des
+        // conférences tout seul. Lister ne mute rien, l'appel est borné, le
+        // verrou d'état est relâché avant, et aucun attribut de préchargement
+        // n'est posé sur le lien qui y mène.
+        $session = $this->bench->sessionFor('prof', 'prof.martin', 'Madame Martin', ['4B']);
+
+        $body = $this->bench->getRecordings($session)->body;
+
+        self::assertCount(1, $this->bench->api->listed, 'un seul serveur en fixture, donc un seul appel');
+        self::assertSame(1, $this->bench->api->outboundCalls());
+
+        self::assertStringNotContainsString('prefetch', $body);
+        self::assertStringNotContainsString('preload', $body);
+    }
+
     // =====================================================================
     // La sonde de santé reste ce qu'elle est
     // =====================================================================
@@ -217,7 +266,14 @@ final class NoOutboundAtRenderTest extends TestCase
 
         $app = new App($env, new View(dirname(__DIR__) . '/views'), $session, $this->bench->api, new FakeJsonHttpClient());
 
-        foreach (['/rooms/start', '/rooms/join', '/rooms/delete'] as $path) {
+        foreach ([
+            '/rooms/start',
+            '/rooms/join',
+            '/rooms/delete',
+            '/rooms/guest/enable',
+            '/rooms/guest/revoke',
+            '/recordings/delete',
+        ] as $path) {
             $response = $app->handle(new Request('GET', $path, ['token' => $this->token]));
 
             self::assertSame(405, $response->status, $path);

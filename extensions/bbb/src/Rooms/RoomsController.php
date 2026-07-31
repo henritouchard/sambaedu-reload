@@ -105,6 +105,8 @@ final class RoomsController
             '/rooms/start' => $this->start($request, $session, $identity),
             '/rooms/join' => $this->join($request, $session, $identity),
             '/rooms/delete' => $this->delete($request, $session, $identity),
+            '/rooms/guest/enable' => $this->enableGuest($request, $session, $identity),
+            '/rooms/guest/revoke' => $this->revokeGuest($request, $session, $identity),
             default => $this->create($request, $session, $identity),
         };
     }
@@ -150,10 +152,34 @@ final class RoomsController
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        //  LE LIEN PUBLIC ET SON MOT DE PASSE NE SORTENT QUE POUR LE CRÉATEUR
+        //
+        //  Cette lecture est faite UNIQUEMENT sur `$mine`. Ce n'est pas une
+        //  précaution d'écriture de la vue : la liste des salons des autres ne
+        //  reçoit structurellement rien, parce que rien n'a été lu pour elle.
+        //  Un `Room` ne porte de toute façon ni jeton d'invitation ni mot de
+        //  passe — il ne porte qu'un booléen d'affichage.
+        // ═══════════════════════════════════════════════════════════════════
+        $invitations = [];
+
+        foreach ($mine as $room) {
+            $invitation = $this->store->guestInvitation($room->id);
+
+            if ($invitation !== null) {
+                $invitations[$room->token] = [
+                    'password' => $invitation['password'],
+                    'url' => $this->guestUrl($invitation['token']),
+                ];
+            }
+        }
+
         return Response::html(
             $this->view->page('rooms', [
                 'mine' => $mine,
                 'others' => $others,
+                'invitations' => $invitations,
+                'canSeeRecordings' => $identity->role === RecordingsController::VIEWER_ROLE,
                 'canCreate' => $this->canCreate($identity),
                 'groups' => $identity->groups,
                 'errors' => $errors,
@@ -370,6 +396,80 @@ final class RoomsController
         $password = $room->isOwnedBy($identity->sub) ? $secrets['moderator'] : $secrets['attendee'];
 
         return $this->redirectToConference($baseUrl, $secret, $room, $identity, $password);
+    }
+
+    // =====================================================================
+    // Story 57.3 — L'invitation externe : un fait LOCAL
+    // =====================================================================
+
+    /**
+     * `POST /rooms/guest/enable` — **activer et régénérer sont le même acte.**
+     *
+     * Le code est identique parce que l'effet l'est : de nouvelles valeurs, les
+     * compteurs remis à zéro, et l'ancien lien mort à l'instant même. Distinguer
+     * les deux ne servirait qu'à écrire deux fois la même chose, et à ouvrir la
+     * possibilité qu'elles divergent.
+     *
+     * **Aucun appel sortant.** Une invitation ne se déclare pas à
+     * BigBlueButton : elle n'existe que dans la table, et l'invité rejoint la
+     * conférence comme n'importe quel participant, avec `attendee_pw`. Rien à
+     * dire au serveur distant, donc rien à attendre de lui.
+     */
+    private function enableGuest(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->ownedRoom($request, $identity);
+
+        if ($room === null) {
+            return $this->notFound($identity);
+        }
+
+        $this->store->enableGuestAccess($room->id);
+
+        $this->flash(
+            $session,
+            'success',
+            $room->hasGuestAccess
+                ? 'Nouveau lien d\'invitation. L\'ancien lien et son mot de passe ne fonctionnent plus.'
+                : 'Invitation activée. Communiquez le lien ET le mot de passe aux personnes conviées.',
+        );
+
+        return Response::redirect('/rooms');
+    }
+
+    /** `POST /rooms/guest/revoke` — effet IMMÉDIAT : le lien ne résout plus rien. */
+    private function revokeGuest(Request $request, SessionStore $session, Identity $identity): Response
+    {
+        $room = $this->ownedRoom($request, $identity);
+
+        if ($room === null) {
+            return $this->notFound($identity);
+        }
+
+        $this->store->revokeGuestAccess($room->id);
+
+        $this->flash($session, 'success', 'Invitation révoquée : le lien public ne fonctionne plus.');
+
+        return Response::redirect('/rooms');
+    }
+
+    /**
+     * L'URL PUBLIQUE d'une invitation, **absolue**.
+     *
+     * Elle doit fonctionner depuis l'extérieur de l'établissement : c'est le cas
+     * d'école du piège n°1 (le proxy retire le préfixe). Elle dérive de
+     * l'issuer, jamais d'un en-tête `Host:` ou `X-Forwarded-*` — faire reposer
+     * une propriété sur un en-tête que le contrat ne garantit pas, c'est la
+     * faire tomber en silence (leçon de la revue de 57.1).
+     *
+     * Issuer vide (développement hors provisionnement) ⇒ repli sur le chemin
+     * préfixé, qui reste juste pour un navigateur déjà sur la bonne origine.
+     */
+    private function guestUrl(string $guestToken): string
+    {
+        $path = '/visio?g=' . rawurlencode($guestToken);
+        $absolute = Url::absolute($this->env, $path);
+
+        return $absolute !== '' ? $absolute : Url::to($path);
     }
 
     // =====================================================================

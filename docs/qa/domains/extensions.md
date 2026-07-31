@@ -3155,3 +3155,246 @@ sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
 - [ ] **23.8 Serveur BBB coupé ⇒ santé toujours `ok` ; `/rooms/start|join|delete` en GET ⇒ 405 ; navigation fluide pendant un appel qui traîne**
 - [ ] 23.9 Suppression par le créateur : cascade des groupes ; suppression par un tiers ⇒ 404 et salon intact
 - [ ] **23.10 Sort de `/var/lib/sambaedu-ext-bbb` après `ext:remove` : CONSIGNÉ dans la review (il porte maintenant les salons)**
+
+---
+
+## Section 24 — Invités externes et enregistrements BBB (Story 57.3)
+
+> **Ce que cette section valide, et pourquoi elle est la plus exposée de l'epic.** La 57.3 ouvre **la seule surface non authentifiée de l'extension** : `GET/POST /ext/bbb/visio`, hors SSO, atteignable par n'importe qui. Tout ce que la 57.2 a gagné en déplaçant l'autorisation côté serveur doit y tenir dans un contexte plus hostile, et **la moitié des propriétés se vérifient en regardant ce qui N'ARRIVE PAS**.
+>
+> Le contre-modèle est nommé : le `CONF_HASH` de SE4 était **le login du créateur, en clair**, dans l'URL publique — énumérable, un seul salon invitable par personne, aucune révocation, comparaison du secret en clair et **sans aucune limite de tentatives** (`visio/index.php:27`), plus une page d'attente en `Refresh: 15` qui faisait de chaque invité un générateur d'appels sortants. Rien de tout cela n'est porté.
+>
+> Trois choses ne se prouvent QUE sur une VM avec un vrai serveur BigBlueButton :
+>
+> 1. **la jonction effective d'un invité SANS COMPTE**, depuis un navigateur en navigation privée, à travers le proxy Apache réel (`/ext/bbb/visio` → chemin nu côté backend) — et son apparition **en participant**, nom suffixé « (invité) », dans la liste de la conférence ;
+> 2. **le cycle réel d'un enregistrement** : une séance enregistrée par BigBlueButton, son passage par l'état `processing` puis `published`, son apparition dans l'onglet, sa lecture, sa suppression ;
+> 3. **la migration v2 → v3 sur la base RÉELLE** de l'instance, qui porte désormais les salons ET leurs invitations.
+>
+> Ce que la suite automatisée prouve déjà, et qui n'a **pas** à être rejoué à la main : l'égalité **octet pour octet** des quatre refus de la route publique (jeton inconnu / invitation révoquée / mot de passe faux / fenêtre saturée), l'absence de tout appel sortant dans ces quatre cas, la comparaison en temps constant contre une valeur factice, l'absence structurelle de magasin d'état sur le parcours invité (prouvée par le typage du contrôleur ET par l'absence de tout `Set-Cookie`), le fait qu'`attendee_pw` soit le seul mot de passe atteignable depuis `/visio`, le filtrage puis le **re-filtrage** des enregistrements, le refus de suppression d'un `recordID` étranger **sans qu'aucun appel de suppression ne soit émis**, le schéma v3 et son idempotence, et le mapping `getRecordings` / `deleteRecordings` sur de vraies réponses XML — enregistrement sans bloc `playback` compris.
+>
+> ```bash
+> cd /var/www/sambaedu-reload/extensions/bbb && vendor/bin/phpunit         # 296 tests
+> cd /var/www/sambaedu-reload && php artisan test --testsuite=Architecture # 145 tests
+> ```
+>
+> **Dette worktree assumée, iso 54.x/55.x/56.x/57.1/57.2** : story développée dans un worktree git non synchronisé vers la VM. À jouer **au merge sur `main`**, après `bash scripts/update.sh`.
+
+### Pré-requis de la section
+
+Les Sections 22 et 23 doivent être passées : extension installée par le canal standard, SSO fonctionnel, **au moins un serveur BigBlueButton déclaré et testé vert**, et **au moins un salon réel appartenant à une vraie professeure** (`prof.martin` ci-dessous), déjà démarré une fois — sans quoi il n'a pas de serveur mémorisé et rien n'est jouable.
+
+Prévoir en plus : **un poste ou un navigateur SANS session SambaEdu** (fenêtre de navigation privée suffit, à condition de ne s'y connecter à rien), et un second professeur pour les contre-épreuves.
+
+### Scénario 24.1 — ⭐ Migration v2 → v3 sur la base de l'instance
+
+À jouer **avant** toute autre chose, sur une instance où la 57.2 tournait déjà avec ses salons.
+
+```bash
+# AVANT la mise à jour du paquet
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT COUNT(*) FROM servers; SELECT id, name, owner_sub, server_id FROM rooms;"
+
+php artisan ext:update bbb
+
+# APRÈS
+sudo -u \#$(stat -c '%u' /var/lib/sambaedu-ext-bbb) sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite \
+  "PRAGMA user_version; SELECT COUNT(*) FROM servers; SELECT id, name, owner_sub, server_id, guest_token, guest_failures FROM rooms;"
+```
+
+**Attendu** : `user_version` passe de `2` à `3` ; `servers` **inchangée** ; `rooms` inchangée **ligne pour ligne**, avec quatre colonnes de plus — `guest_token` et `guest_password` à `NULL`, `guest_failures` à `0`, `guest_window_started_at` à `NULL`. Les salons et leurs groupes de visibilité sont intacts.
+
+Puis `systemctl restart sambaedu-ext-bbb` et relire : `user_version` vaut toujours `3`, rien n'a bougé, **et le service est bien reparti**. C'est le point qui compte : `ALTER TABLE … ADD COLUMN` échoue si la colonne existe, et seule la garde `user_version` empêche le palier d'être rejoué. Un service qui ne redémarre pas après la deuxième mise à jour est le symptôme exact d'une migration non idempotente.
+
+Vérifier enfin l'index unique :
+
+```bash
+sqlite3 /var/lib/sambaedu-ext-bbb/database.sqlite ".indexes rooms"
+```
+
+**Attendu** : `rooms_guest_token` figure dans la liste.
+
+### Scénario 24.2 — ⭐ Un invité SANS COMPTE rejoint la conférence
+
+C'est **le** scénario de la story.
+
+En **prof.martin**, sur `/ext/bbb/rooms`, dans la colonne « Invitation externe » du salon, cliquer **« Activer l'invitation »**.
+
+**Attendu** : la page affiche un **lien absolu** de la forme `https://<instance>/ext/bbb/visio?g=<32 caractères hexadécimaux>` **et** un **mot de passe de 8 caractères** en majuscules et chiffres, sans `0`, `O`, `1`, `I` ni `l` — il doit pouvoir se dicter au téléphone.
+
+Contrôles immédiats :
+
+- le lien est **absolu** et porte le nom d'hôte réel de l'instance, pas `127.0.0.1` ni le port interne — il dérive de l'issuer OIDC, jamais d'un en-tête `Host:` ;
+- le jeton ne contient **ni le login de la professeure, ni le nom du salon, ni la classe**. Il ne veut rien dire, et c'est sa qualité.
+
+Puis démarrer le salon (bouton « Démarrer ou entrer »), et **depuis un navigateur en navigation privée** :
+
+1. ouvrir le lien. **Attendu** : un formulaire « Rejoindre une visioconférence », deux champs (nom, mot de passe du salon), **aucun bouton de connexion SambaEdu proéminent**, aucune barre de navigation de SE5 ;
+2. saisir un nom (« Monsieur Durand ») et le mot de passe affiché à la professeure ;
+3. **Attendu** : redirection directe **dans la conférence**, sans compte, sans inscription.
+
+**Dans BigBlueButton, côté professeure** : le nouvel arrivant apparaît **en participant** (pas modérateur : ni micro forcé, ni contrôle de présentation, ni pouvoir d'éjection) et son nom est **« Monsieur Durand (invité) »**. Le suffixe n'est pas cosmétique : un externe ne doit pas pouvoir se présenter sous l'apparence d'un membre de l'établissement.
+
+**Contre-épreuve à ne pas sauter** : dans le navigateur privé, `Ctrl+U` sur la page du formulaire **et** sur la page de refus. Aucun mot de passe BigBlueButton ne doit y figurer — ni participant, ni modérateur. Le seul secret que la page manipule est le mot de passe d'invitation, et elle le **demande**, elle ne le donne pas.
+
+### Scénario 24.3 — ⭐ La route publique n'est pas un oracle
+
+Toujours en navigation privée. Comparer **quatre** réponses, dans cet ordre :
+
+```bash
+BASE=https://<instance>/ext/bbb/visio
+G=<le jeton affiché à la professeure>
+
+# a) jeton inventé de toutes pièces
+curl -sS -o /tmp/a.html -w '%{http_code}\n' -X POST "$BASE" -d "g=jeton-invente" -d "name=Intrus" -d "password=x"
+
+# b) bon jeton, mauvais mot de passe
+curl -sS -o /tmp/b.html -w '%{http_code}\n' -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=FAUXFAUX"
+
+# c) dix échecs de plus, puis le BON mot de passe (fenêtre saturée)
+for i in $(seq 1 10); do curl -sS -o /dev/null -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=ENCOREFX"; done
+curl -sS -o /tmp/c.html -w '%{http_code}\n' -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=<LE BON>"
+
+# d) après révocation depuis la page de la professeure
+curl -sS -o /tmp/d.html -w '%{http_code}\n' -X POST "$BASE" -d "g=$G" -d "name=Intrus" -d "password=<LE BON>"
+
+md5sum /tmp/a.html /tmp/b.html /tmp/c.html /tmp/d.html
+```
+
+**Attendu** : **403** quatre fois, et **quatre empreintes identiques**. Aucune des pages ne dit « lien inconnu », « trop de tentatives » ni « invitation révoquée » : un message distinct confirmerait l'existence du salon à quelqu'un qui n'a pas le mot de passe.
+
+**Attendu aussi, et c'est la moitié du scénario** : dans le journal du serveur BigBlueButton, **aucune requête** n'est arrivée pendant ces quatorze appels. Un refus ne parle jamais au serveur distant — il ne se trahit donc pas par sa durée, et la route publique ne peut pas servir à faire travailler l'infrastructure.
+
+Vérifier enfin qu'**aucun cookie** n'est posé sur ce parcours :
+
+```bash
+curl -sS -D - -o /dev/null "$BASE?g=$G" | grep -i set-cookie
+curl -sS -D - -o /dev/null -X POST "$BASE" -d "g=$G" -d "name=X" -d "password=y" | grep -i set-cookie
+```
+
+**Attendu** : aucune ligne. Le parcours invité n'ouvre aucun état par visiteur, ni avant ni après la vérification.
+
+### Scénario 24.4 — Fenêtre anti-bourrinage, observée en vrai
+
+Après le scénario 24.3, l'invitation a été révoquée : la **régénérer** depuis la page de la professeure (bouton « Régénérer »), ce qui remet aussi les compteurs à zéro.
+
+1. depuis le navigateur privé, saisir **dix fois** un mauvais mot de passe ;
+2. saisir ensuite le **bon** : **refusé**, avec la même page que d'habitude ;
+3. attendre **plus de quinze minutes** sans rien tenter ;
+4. resaisir le bon mot de passe : **la jonction passe**.
+
+**Attendu complémentaire** : pendant la période bloquée, la professeure, elle, **ne subit rien** — elle démarre, entre, régénère et révoque normalement. La fenêtre est **par salon et par invité**, elle ne ferme pas le salon.
+
+**Et surtout** : aucune requête ne doit avoir mis 2, 5 ou 10 secondes à revenir. Il n'y a **pas** de temporisation : sur un serveur HTTP intégré mono-processus, faire attendre un attaquant reviendrait à bloquer tout l'établissement.
+
+### Scénario 24.5 — Révocation et régénération, constatées depuis le poste invité
+
+Deux allers-retours, à faire les deux :
+
+- **Régénérer** : le poste invité recharge l'ancien lien et saisit l'ancien mot de passe ⇒ **refus immédiat**, la même page que d'habitude. Le **nouveau** lien avec le **nouveau** mot de passe fonctionne aussitôt. SE4 n'avait aucune régénération ;
+- **Révoquer** : la colonne « Invitation externe » repasse à « Aucune invitation active », et l'ancien lien meurt **à la seconde**, sans attendre l'expiration de quoi que ce soit. SE4 n'avait aucune révocation non plus — le lien expirait tout seul au bout de quatre heures, ou disparaissait quand le meeting s'éteignait.
+
+**Contre-épreuve d'étanchéité** : se connecter en **élève de la classe** puis en **second professeur**, ouvrir `/ext/bbb/rooms` et faire `Ctrl+U`. **Attendu** : ni le jeton d'invitation, ni le mot de passe d'invitation n'apparaissent dans la source. Ils ne sont lus, côté serveur, que pour les salons dont la personne connectée est le créateur.
+
+### Scénario 24.6 — ⭐ Un enregistrement réel : liste, lecture, suppression
+
+`record=true` est posé depuis la 57.2 : tout meeting démarré par l'extension est enregistrable.
+
+1. en **prof.martin**, démarrer le salon, **lancer l'enregistrement** dans BigBlueButton, parler une minute, l'arrêter, puis **terminer la conférence** (bouton de fin, pas seulement fermer l'onglet — un meeting qui se referme tout seul met plus longtemps) ;
+2. ouvrir **`/ext/bbb/recordings`** (lien « Enregistrements » sur la page des salons) **tout de suite**.
+
+**Attendu à ce stade** : l'enregistrement **n'apparaît pas encore**, et la page ne montre **aucune erreur** — BigBlueButton le traite (`processing`), et seuls les enregistrements `published` sont demandés. C'est un contrôle en soi : un enregistrement en cours de traitement n'a pas de bloc de lecture, et il ne doit **ni apparaître, ni faire disparaître les autres**.
+
+3. attendre la fin du traitement (de quelques minutes à un quart d'heure selon le serveur), recharger.
+
+**Attendu** : une ligne avec le **nom du salon tel que la professeure l'a écrit** (pas le nom rapporté par BigBlueButton), la date et l'heure de la séance, sa durée, et deux boutons.
+
+4. **« Lire »** : ouvre un **nouvel onglet** sur l'URL de lecture BigBlueButton, la séance se rejoue. L'extension ne rediffuse rien elle-même ;
+5. **« Supprimer »** : confirmation demandée, puis message « Enregistrement supprimé », et la ligne disparaît.
+
+**Attendu côté serveur BBB** : l'enregistrement a réellement disparu (`bbb-record --list` ou l'interface d'administration du serveur). Une suppression annoncée qui n'aurait pas eu lieu serait le pire des résultats.
+
+### Scénario 24.7 — ⭐ « SES salons uniquement », et le bug legacy qu'on enterre
+
+Le filtre du legacy lisait le segment n°2 d'un `meetingID` fabriqué par concaténation de hashes — position fausse **dès qu'un salon portait des classes**, c'est-à-dire pour les salons les plus courants.
+
+1. faire enregistrer une séance par le **second professeur**, sur un salon **à lui**, portant lui aussi des classes ;
+2. en **prof.martin**, ouvrir `/ext/bbb/recordings`.
+
+**Attendu** : elle voit ses enregistrements, **et uniquement les siens** — y compris ceux de salons portant des classes, qui étaient précisément ceux que SE4 perdait. L'enregistrement du collègue n'apparaît nulle part.
+
+3. tenter la suppression croisée. Récupérer un `recordID` du collègue (visible dans son propre onglet), et le poster depuis la session de prof.martin sur **son** salon à elle :
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://<instance>/ext/bbb/recordings/delete \
+  -b cookies-prof-martin.txt \
+  -d "_token=<le jeton du formulaire>" \
+  -d "token=<jeton public d'un salon de prof.martin>" \
+  -d "record=<recordID du collègue>"
+```
+
+**Attendu** : redirection, message « Cet enregistrement n'appartient pas à ce salon », **et l'enregistrement du collègue toujours présent** sur le serveur BBB. Le serveur a interrogé BigBlueButton pour vérifier l'appartenance, et **n'a émis aucune demande de suppression**.
+
+4. rejouer la même requête avec le **jeton d'un salon du collègue** : **404**, indistinct, et **aucun appel** vers BigBlueButton.
+
+### Scénario 24.8 — Rôles et surfaces des enregistrements
+
+- **élève**, **administratif**, **admin** : `/ext/bbb/recordings` en accès direct ⇒ **403** propre, page d'erreur de l'extension. Le lien « Enregistrements » n'apparaît d'ailleurs pas sur leur page des salons — mais c'est la garde serveur qui compte, pas l'affichage ;
+- **non connecté** : redirection vers `/ext/bbb/login` (parcours SSO), jamais la liste.
+
+Et les méthodes :
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://<instance>/ext/bbb/recordings/delete?token=x&record=y'
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://<instance>/ext/bbb/rooms/guest/enable?token=x'
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://<instance>/ext/bbb/rooms/guest/revoke?token=x'
+```
+
+**Attendu** : **405** sur les trois — les actes mutants sont des POST, jetonnés.
+
+### Scénario 24.9 — Pannes : ce qui doit rester debout
+
+- **serveur BBB éteint** pendant que la professeure ouvre `/ext/bbb/recordings` ⇒ un message « injoignable », **la page se rend quand même**, et la santé de l'extension reste `ok` côté SambaEdu (`/admin/extensions`). Une extension vivante ne doit pas être déclarée morte parce qu'un tiers l'est ;
+- **deux serveurs déclarés**, l'un injoignable : les enregistrements de l'autre **s'affichent quand même**, avec un message pour le serveur en panne ;
+- **serveur désactivé par l'admin** : il n'est **pas interrogé du tout**, un message le dit, et les enregistrements réapparaissent tels quels après réactivation — rien n'a été perdu ni supprimé ;
+- **salon jamais démarré** : il n'a pas de serveur mémorisé, aucune requête n'est émise pour lui ;
+- **invité pendant que le salon est fermé** : après le bon mot de passe, page « La visioconférence n'est pas encore ouverte », avec un bouton « Réessayer ». **Vérifier qu'aucun rafraîchissement automatique n'a lieu** (laisser l'onglet ouvert cinq minutes et surveiller le journal d'accès Apache : une seule requête). Le `Refresh: 15` du legacy transformait chaque invité laissé sur un onglet en cron d'appels sortants.
+
+**Contrôle de fluidité (garde D2)** : pendant qu'un `/ext/bbb/recordings` traîne vers un serveur lent, charger 20 fois `/ext/bbb/` et `/ext/bbb/rooms` en parallèle depuis **la même session** (mêmes cookies). Toutes doivent rendre `200` rapidement : le verrou d'état est relâché avant chaque appel sortant, y compris entre deux serveurs.
+
+### Scénario 24.10 — Suppression d'un salon : ce que l'utilisateur a été prévenu de perdre
+
+Supprimer un salon qui a **une invitation active** et **au moins un enregistrement**.
+
+**Attendu** : la demande de confirmation dit explicitement que l'invitation cessera de fonctionner **et** que les enregistrements ne seront plus accessibles depuis SambaEdu. Après suppression :
+
+- l'ancien lien d'invitation rend le refus indistinct ;
+- l'enregistrement **disparaît de l'onglet** — c'est une conséquence, pas un filtre : sans ligne `rooms`, il n'existe plus de requête qui le trouve ;
+- **l'enregistrement est TOUJOURS sur le serveur BigBlueButton** (`bbb-record --list`). C'est délibéré : supprimer les enregistrements d'un salon à sa suppression serait destructeur et irréversible.
+
+> **À consigner** : reprendre un enregistrement devenu orphelin est un **acte d'exploitant**, qui passe par l'interface ou les outils du serveur BigBlueButton lui-même. L'extension n'offre pas de vue d'administration pour cela, et c'est une décision, pas un oubli.
+
+### Scénario 24.11 — Point d'attention, hérité de la 22.11 et de la 23.10
+
+`/var/lib/sambaedu-ext-bbb` porte désormais **les salons, leurs invitations et les mots de passe d'invitation en clair**. Deux choses à vérifier et à consigner :
+
+1. les droits du fichier restent `0600`, et le répertoire `0700`, après la mise à jour du paquet et après un redémarrage (`DynamicUser=yes` ⇒ UID volatil, remap par `StateDirectory=`) ;
+2. ce que devient ce répertoire après `php artisan ext:remove bbb` **n'est toujours pas spécifié** par le contrat du canal d'installation. La question pèse un cran de plus qu'à la 57.2.
+
+### Checklist rapide — Section 24
+
+- [ ] **24.1 Migration v2 → v3 sur la base RÉELLE : `user_version` 2 → 3, serveurs et salons intacts ligne pour ligne, 4 colonnes neuves à NULL/0, index `rooms_guest_token`, redémarrage sans effet**
+- [ ] **24.2 Invité SANS COMPTE : lien absolu + mot de passe dictable, jonction effective, PARTICIPANT dans la conférence, nom suffixé « (invité) »**
+- [ ] 24.2b `Ctrl+U` sur formulaire et refus : aucun mot de passe BigBlueButton
+- [ ] **24.3 Les quatre refus (inconnu / faux / saturé / révoqué) : 403 et MÊME empreinte md5, zéro requête côté BBB**
+- [ ] **24.3b Aucun `Set-Cookie` sur le parcours invité, ni au GET ni au POST**
+- [ ] **24.4 Fenêtre : 10 échecs ⇒ refus même avec le bon mot de passe ; déblocage après 15 min ; aucune temporisation observée ; la professeure n'est jamais gênée**
+- [ ] **24.5 Régénération et révocation constatées depuis le poste invité : ancien lien mort à la seconde**
+- [ ] 24.5b Jeton et mot de passe d'invitation absents de la source pour un élève et pour un autre professeur
+- [ ] **24.6 Enregistrement réel : invisible en `processing` SANS erreur, puis listé, lu, supprimé — et réellement disparu du serveur BBB**
+- [ ] **24.7 Les enregistrements d'un collègue n'apparaissent jamais, y compris pour des salons portant des classes (le bug `explode[2]` du legacy)**
+- [ ] **24.7b `recordID` étranger posté : refus, AUCUNE suppression émise, enregistrement du collègue intact ; salon d'autrui ⇒ 404 sans appel**
+- [ ] 24.8 Élève / administratif / admin ⇒ 403 ; non connecté ⇒ `/login` ; GET sur les 3 routes mutantes ⇒ 405
+- [ ] **24.9 Serveur éteint : page rendue, santé `ok` ; 2 serveurs dont 1 injoignable : l'autre s'affiche ; désactivé : pas d'appel ; invité sur salon fermé : AUCUN auto-rafraîchissement (journal Apache)**
+- [ ] 24.9b Fluidité même-session pendant un `/recordings` qui traîne
+- [ ] **24.10 Suppression d'un salon : confirmation qui prévient, invitation morte, enregistrement invisible côté SE5 mais TOUJOURS présent côté BBB**
+- [ ] 24.11 Droits `0600`/`0700` après update et reboot ; sort de `/var/lib/sambaedu-ext-bbb` à `ext:remove` CONSIGNÉ (il porte maintenant des mots de passe d'invitation en clair)

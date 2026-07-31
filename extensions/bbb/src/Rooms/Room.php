@@ -58,6 +58,20 @@ final class Room
         public readonly ?int $serverId = null,
         public readonly ?string $lastStartedAt = null,
         public readonly string $createdAt = '',
+        /**
+         * Story 57.3 — **UN BOOLÉEN, ET RIEN D'AUTRE.**
+         *
+         * L'objet ne porte NI le jeton d'invitation NI le mot de passe qui va
+         * avec, pour la même raison structurelle que les mots de passe
+         * BigBlueButton : le jeton d'invitation EST l'URL publique du salon, et
+         * un `Room` traverse aussi la liste des ÉLÈVES. Le lui donner
+         * l'exposerait à tout le monde — c'est-à-dire referait, à la lettre, le
+         * `CONF_HASH` que cette story existe pour tuer.
+         *
+         * Ces deux valeurs se lisent par {@see \SambaEdu\ExtBbb\Store::guestInvitation()},
+         * appelée uniquement sur les salons du demandeur.
+         */
+        public readonly bool $hasGuestAccess = false,
     ) {
     }
 
@@ -80,6 +94,8 @@ final class Room
                 ? (string) $row['last_started_at']
                 : null,
             createdAt: (string) ($row['created_at'] ?? ''),
+            hasGuestAccess: isset($row['guest_token']) && $row['guest_token'] !== null
+                && (string) $row['guest_token'] !== '',
         );
     }
 

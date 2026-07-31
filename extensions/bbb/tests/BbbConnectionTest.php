@@ -6,8 +6,12 @@ namespace SambaEdu\ExtBbb\Tests;
 
 use BigBlueButton\Exceptions\BadResponseException;
 use BigBlueButton\Parameters\CreateMeetingParameters;
+use BigBlueButton\Parameters\DeleteRecordingsParameters;
+use BigBlueButton\Parameters\GetRecordingsParameters;
 use BigBlueButton\Responses\CreateMeetingResponse;
+use BigBlueButton\Responses\DeleteRecordingsResponse;
 use BigBlueButton\Responses\GetMeetingsResponse;
+use BigBlueButton\Responses\GetRecordingsResponse;
 use BigBlueButton\Responses\IsMeetingRunningResponse;
 use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\Attributes\Test;
@@ -539,5 +543,276 @@ final class BbbConnectionTest extends TestCase
         self::assertMatchesRegularExpression('/CURLOPT_SSL_VERIFYPEER\s*=>\s*true/', $source);
         self::assertMatchesRegularExpression('/CURLOPT_SSL_VERIFYHOST\s*=>\s*2/', $source);
         self::assertDoesNotMatchRegularExpression('/CURLOPT_SSL_VERIFY(PEER|HOST)\s*=>\s*(false|0)\b/', $source);
+    }
+
+    // =====================================================================
+    // Story 57.3 — Les enregistrements, sur de VRAIES réponses de la biblio
+    // =====================================================================
+
+    /** @param  array<int, GetRecordingsParameters>  $captured */
+    private function clientListing(string $xml, array &$captured = []): LiveBbbApiClient
+    {
+        return new LiveBbbApiClient(null, null, null, static function (
+            string $url,
+            string $secret,
+            GetRecordingsParameters $p,
+        ) use ($xml, &$captured): GetRecordingsResponse {
+            $captured[] = $p;
+
+            return new GetRecordingsResponse(new SimpleXMLElement($xml));
+        });
+    }
+
+    /** @param  array<int, DeleteRecordingsParameters>  $captured */
+    private function clientDeleting(string $xml, array &$captured = []): LiveBbbApiClient
+    {
+        return new LiveBbbApiClient(null, null, null, null, static function (
+            string $url,
+            string $secret,
+            DeleteRecordingsParameters $p,
+        ) use ($xml, &$captured): DeleteRecordingsResponse {
+            $captured[] = $p;
+
+            return new DeleteRecordingsResponse(new SimpleXMLElement($xml));
+        });
+    }
+
+    private const RECORDINGS_XML = <<<'XML'
+        <response>
+            <returncode>SUCCESS</returncode>
+            <recordings>
+                <recording>
+                    <recordID>rec-1</recordID>
+                    <meetingID>salon-a</meetingID>
+                    <name>Cours de mathématiques</name>
+                    <published>true</published>
+                    <state>published</state>
+                    <startTime>1780000000000</startTime>
+                    <endTime>1780003600000</endTime>
+                    <playback>
+                        <format>
+                            <type>presentation</type>
+                            <url>https://bbb.example.test/playback/presentation/2.3/rec-1</url>
+                            <length>60</length>
+                        </format>
+                    </playback>
+                    <metadata><meetingName>Cours</meetingName></metadata>
+                </recording>
+                <recording>
+                    <recordID>rec-2</recordID>
+                    <meetingID>salon-b</meetingID>
+                    <name>Conseil</name>
+                    <published>true</published>
+                    <state>published</state>
+                    <startTime>1770000000000</startTime>
+                    <endTime>1770001800000</endTime>
+                    <playback>
+                        <format>
+                            <type>presentation</type>
+                            <url>https://bbb.example.test/playback/presentation/2.3/rec-2</url>
+                            <length>30</length>
+                        </format>
+                    </playback>
+                    <metadata><meetingName>Conseil</meetingName></metadata>
+                </recording>
+            </recordings>
+        </response>
+    XML;
+
+    #[Test]
+    public function a_recordings_response_is_mapped_into_the_extensions_own_objects(): void
+    {
+        $result = $this->clientListing(self::RECORDINGS_XML)
+            ->getRecordings('https://bbb.example.test/api', 'secret', ['salon-a', 'salon-b']);
+
+        self::assertSame(CallOutcome::Ok, $result->outcome);
+        self::assertCount(2, $result->items);
+
+        self::assertSame('rec-1', $result->items[0]->recordId);
+        self::assertSame('salon-a', $result->items[0]->meetingId);
+        self::assertSame('https://bbb.example.test/playback/presentation/2.3/rec-1', $result->items[0]->playbackUrl);
+        self::assertSame(60, $result->items[0]->lengthMinutes);
+
+        // BigBlueButton horodate en MILLISECONDES : la conversion se fait ici,
+        // une fois, et personne d'autre n'a à le savoir.
+        self::assertSame(1780000000, $result->items[0]->startedAt());
+    }
+
+    #[Test]
+    public function a_recording_without_a_playback_block_is_ignored_and_the_others_survive(): void
+    {
+        // ⚠️ LE piège du fork, même famille que `getMeetingLayout` :
+        // `Record::__construct` lit `$xml->playback->format->type` sans garde.
+        // Un enregistrement en cours de traitement — ou déjà effacé — n'a pas
+        // ce bloc, et sans l'hydratation par enregistrement il ferait
+        // disparaître de l'écran TOUS les cours des autres.
+        $xml = <<<'XML'
+            <response>
+                <returncode>SUCCESS</returncode>
+                <recordings>
+                    <recording>
+                        <recordID>rec-en-cours</recordID>
+                        <meetingID>salon-a</meetingID>
+                        <state>processing</state>
+                        <startTime>1780000000000</startTime>
+                        <endTime>0</endTime>
+                    </recording>
+                    <recording>
+                        <recordID>rec-bon</recordID>
+                        <meetingID>salon-a</meetingID>
+                        <state>published</state>
+                        <startTime>1780000000000</startTime>
+                        <endTime>1780003600000</endTime>
+                        <playback>
+                            <format>
+                                <type>presentation</type>
+                                <url>https://bbb.example.test/playback/rec-bon</url>
+                                <length>12</length>
+                            </format>
+                        </playback>
+                    </recording>
+                </recordings>
+            </response>
+        XML;
+
+        $result = $this->clientListing($xml)->getRecordings('https://bbb.example.test/api', 'secret', ['salon-a']);
+
+        self::assertTrue($result->isOk());
+        self::assertCount(1, $result->items, 'un XML bancal n\'emporte pas la liste');
+        self::assertSame('rec-bon', $result->items[0]->recordId);
+    }
+
+    #[Test]
+    public function no_recordings_is_an_empty_list_and_never_an_error(): void
+    {
+        // C'est la réponse NORMALE d'un salon jamais enregistré. La prendre
+        // pour une panne ferait accuser un serveur en pleine forme.
+        $result = $this->clientListing(
+            '<response><returncode>SUCCESS</returncode><messageKey>noRecordings</messageKey>'
+            . '<message>There are no recordings for the meetings.</message></response>'
+        )->getRecordings('https://bbb.example.test/api', 'secret', ['salon-a']);
+
+        self::assertTrue($result->isOk());
+        self::assertSame([], $result->items);
+        self::assertSame('', $result->message);
+    }
+
+    #[Test]
+    public function a_checksum_error_on_recordings_names_the_secret_not_the_network(): void
+    {
+        $result = $this->clientListing(
+            '<response><returncode>FAILED</returncode><messageKey>checksumError</messageKey></response>'
+        )->getRecordings('https://bbb.example.test/api', 'secret', ['salon-a']);
+
+        self::assertSame(CallOutcome::InvalidSecret, $result->outcome);
+        self::assertStringContainsString('secret', $result->message);
+    }
+
+    #[Test]
+    public function a_recordings_call_that_never_reaches_the_server_says_so(): void
+    {
+        $client = new LiveBbbApiClient(null, null, null, static function (): GetRecordingsResponse {
+            throw new RuntimeException('Could not resolve host');
+        });
+
+        $result = $client->getRecordings('https://bbb.example.test/api', 'secret', ['salon-a']);
+
+        self::assertSame(CallOutcome::Unreachable, $result->outcome);
+        self::assertStringContainsString('injoignable', $result->message);
+    }
+
+    #[Test]
+    public function the_recordings_request_really_carries_the_meeting_ids_and_the_state(): void
+    {
+        // ⚠️ Prouvé sur la requête CONSTRUITE, pas sur la déclaration du fork.
+        // C'est la leçon de l'incident `getMeetingLayout` de 57.2 : ce que
+        // cette bibliothèque annonce et ce qu'elle fait ne coïncident pas
+        // toujours.
+        $captured = [];
+        $this->clientListing(self::RECORDINGS_XML, $captured)
+            ->getRecordings('https://bbb.example.test/api', 'secret', ['salon-a', 'salon-b']);
+
+        $query = $captured[0]->getHTTPQuery();
+
+        self::assertStringContainsString('meetingID=' . rawurlencode('salon-a,salon-b'), $query);
+        self::assertStringContainsString('state=published', $query);
+        self::assertStringNotContainsString('recordID=', $query);
+    }
+
+    #[Test]
+    public function asking_for_a_single_record_sends_the_record_id_and_no_meeting_filter(): void
+    {
+        // C'est la requête de VÉRIFICATION qui précède toute suppression.
+        $captured = [];
+        $this->clientListing(self::RECORDINGS_XML, $captured)
+            ->getRecordings('https://bbb.example.test/api', 'secret', [], 'rec-1');
+
+        $query = $captured[0]->getHTTPQuery();
+
+        self::assertStringContainsString('recordID=rec-1', $query);
+        self::assertStringContainsString('state=published', $query);
+        self::assertStringNotContainsString('meetingID=', $query);
+    }
+
+    #[Test]
+    public function deleting_a_recording_is_reported_as_deleted(): void
+    {
+        $captured = [];
+        $result = $this->clientDeleting(
+            '<response><returncode>SUCCESS</returncode><deleted>true</deleted></response>',
+            $captured,
+        )->deleteRecording('https://bbb.example.test/api', 'secret', 'rec-1');
+
+        self::assertTrue($result->isOk());
+        self::assertStringContainsString('recordID=rec-1', $captured[0]->getHTTPQuery());
+    }
+
+    #[Test]
+    public function a_deletion_the_server_refused_is_never_taken_for_a_success(): void
+    {
+        // Dire « supprimé » ferait disparaître de l'écran un enregistrement
+        // toujours présent sur le serveur : la personne croirait avoir effacé
+        // un cours qu'elle n'a pas effacé.
+        $result = $this->clientDeleting(
+            '<response><returncode>SUCCESS</returncode><deleted>false</deleted></response>'
+        )->deleteRecording('https://bbb.example.test/api', 'secret', 'rec-1');
+
+        self::assertFalse($result->isOk());
+        self::assertSame(CallOutcome::Ok, $result->outcome, 'le serveur a bien répondu — il a répondu « non »');
+        self::assertNotSame('', $result->message);
+    }
+
+    #[Test]
+    public function a_deletion_that_never_reaches_the_server_deletes_nothing_and_says_so(): void
+    {
+        $client = new LiveBbbApiClient(null, null, null, null, static function (): DeleteRecordingsResponse {
+            throw new RuntimeException('timeout');
+        });
+
+        $result = $client->deleteRecording('https://bbb.example.test/api', 'secret', 'rec-1');
+
+        self::assertSame(CallOutcome::Unreachable, $result->outcome);
+        self::assertFalse($result->isOk());
+    }
+
+    #[Test]
+    public function no_recordings_message_ever_carries_a_secret(): void
+    {
+        $secret = 'secret-partage-tres-reconnaissable';
+
+        $messages = [
+            (new LiveBbbApiClient(null, null, null, static function () use ($secret): GetRecordingsResponse {
+                throw new RuntimeException('curl error on https://bbb/api/getRecordings?checksum=' . $secret);
+            }))->getRecordings('https://bbb.example.test/api', $secret, ['salon-a'])->message,
+
+            (new LiveBbbApiClient(null, null, null, null, static function () use ($secret): DeleteRecordingsResponse {
+                throw new RuntimeException('curl error on https://bbb/api/deleteRecordings?checksum=' . $secret);
+            }))->deleteRecording('https://bbb.example.test/api', $secret, 'rec-1')->message,
+        ];
+
+        foreach ($messages as $message) {
+            self::assertNotSame('', $message);
+            self::assertStringNotContainsString($secret, $message);
+        }
     }
 }

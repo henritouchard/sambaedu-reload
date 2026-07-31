@@ -7,6 +7,9 @@ namespace SambaEdu\ExtBbb\Tests\Support;
 use SambaEdu\ExtBbb\Bbb\BbbApiClient;
 use SambaEdu\ExtBbb\Bbb\ConnectionResult;
 use SambaEdu\ExtBbb\Bbb\CreateResult;
+use SambaEdu\ExtBbb\Bbb\DeleteResult;
+use SambaEdu\ExtBbb\Bbb\RecordingItem;
+use SambaEdu\ExtBbb\Bbb\RecordingsResult;
 use SambaEdu\ExtBbb\Bbb\RoomMeeting;
 use SambaEdu\ExtBbb\Bbb\RunningResult;
 
@@ -90,9 +93,75 @@ final class RecordingBbbApiClient implements BbbApiClient
             . '&checksum=doublure';
     }
 
+    // =====================================================================
+    // Story 57.3 — Les enregistrements
+    // =====================================================================
+
+    /** @var list<array{url: string, secret: string, meetingIds: list<string>, recordId: string}> */
+    public array $listed = [];
+
+    /** @var list<array{url: string, secret: string, recordId: string}> */
+    public array $deleted = [];
+
+    /**
+     * Ce que le serveur RÉPOND, indexé par URL de base — et volontairement pas
+     * par ce qu'on lui a demandé.
+     *
+     * C'est ce qui rend exécutable le test le plus important de l'AC2 : un
+     * serveur peut renvoyer des enregistrements qu'on ne lui a PAS demandés (le
+     * filtre `meetingID` est un paramètre qu'on envoie, pas une garantie qu'on
+     * reçoit). La doublure doit donc pouvoir « en renvoyer trop » pour que la
+     * re-vérification côté extension prouve quelque chose.
+     *
+     * @var array<string, RecordingsResult>
+     */
+    public array $recordingsByServer = [];
+
+    public ?RecordingsResult $recordingsResult = null;
+
+    public ?DeleteResult $deleteResult = null;
+
+    public function getRecordings(
+        string $baseUrl,
+        string $secret,
+        array $meetingIds = [],
+        string $recordId = '',
+    ): RecordingsResult {
+        $this->listed[] = [
+            'url' => $baseUrl,
+            'secret' => $secret,
+            'meetingIds' => array_values($meetingIds),
+            'recordId' => $recordId,
+        ];
+
+        $result = $this->recordingsByServer[$baseUrl] ?? $this->recordingsResult ?? RecordingsResult::ok([]);
+
+        // Une demande portant un `recordID` interroge UN enregistrement : la
+        // doublure imite le serveur réel en ne rendant que celui-là.
+        if ($recordId !== '' && $result->isOk()) {
+            $result = RecordingsResult::ok(array_values(array_filter(
+                $result->items,
+                static fn (RecordingItem $item): bool => $item->recordId === $recordId,
+            )));
+        }
+
+        return $result;
+    }
+
+    public function deleteRecording(string $baseUrl, string $secret, string $recordId): DeleteResult
+    {
+        $this->deleted[] = ['url' => $baseUrl, 'secret' => $secret, 'recordId' => $recordId];
+
+        return $this->deleteResult ?? DeleteResult::deleted();
+    }
+
     /** Le nombre d'appels qui SORTENT réellement du serveur (la fabrique d'URL n'en est pas un). */
     public function outboundCalls(): int
     {
-        return count($this->calls) + count($this->created) + count($this->probed);
+        return count($this->calls)
+            + count($this->created)
+            + count($this->probed)
+            + count($this->listed)
+            + count($this->deleted);
     }
 }
