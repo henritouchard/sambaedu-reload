@@ -231,6 +231,16 @@
                 ]
             },
             "hash": "e3fa179d99ff934eb12ec32832a3dda8ca5e6bb253e9aacd17560b9202ff0fbc"
+        },
+        {
+            "type": "folders",
+            "semantics": "exclusive",
+            "payload": {
+                "folder": "desktop",
+                "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+                "quick_access": "pinned"
+            },
+            "hash": "4e7caf3747ee9b8f1edf1143dd022f3f8204b46d795de532e563d6dbf3890b73"
         }
     ]
 }

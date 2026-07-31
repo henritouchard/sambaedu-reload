@@ -110,6 +110,26 @@ final class StateContract
         // agent ≤ 2.12.4 IGNORE ce type EN SILENCE (contrat §8 — aucun statut au
         // rapport) → release 2.13.0 à publier.
         'app_profile',
+        // Story 58.1 (D1) — mécanisme `folders` : REDIRECTION DE DOSSIER SHELL
+        // Windows (`HKCU\…\Explorer\User Shell Folders`), portée MachineUser
+        // (le SET est trivial, mais le CHEMIN dépend du POSTE — iso `shortcuts`).
+        // Successeur du script GPO legacy `folders/bureau_samba|bureau_local`,
+        // dernier émetteur de cette redirection, coupé le 2026-07-20 par le
+        // blocage d'héritage sur l'OU des comptes (`gPOptions: 1`) SANS
+        // successeur : depuis, tout profil itinérant NEUF garde un Bureau local
+        // et ne voit AUCUN raccourci `place=desktop` posé sur le Bureau réseau
+        // (les profils antérieurs, eux, conservaient la valeur figée dans leur
+        // NTUSER.DAT — d'où un parc qui paraissait sain).
+        // Payload EXACTEMENT 2 clés `{folder, path}` (§7.12) — `folder` = enum
+        // FERMÉ de dossiers shell (`desktop` seul aujourd'hui), `path` = gabarit
+        // à tokens `\\<se4fs>\users\<user>\Bureau\` ou `%USERPROFILE%\Desktop\`,
+        // JAMAIS résolu côté serveur (mêmes tokens que `drives`/`shortcuts`).
+        // Pourquoi un TYPE et pas un item `registry` : le contrat ne substitue
+        // pas les tokens dans les valeurs `registry`, et un agent antérieur
+        // écrirait alors le littéral `<se4fs>` dans la ruche — une écriture
+        // FAUSSE, pas une ignorance. Un type nouveau, lui, est IGNORÉ EN SILENCE
+        // (contrat §8) par un agent ≤ 2.15.0 → release 2.16.0 à publier.
+        'folders',
     ];
 
     /**

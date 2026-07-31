@@ -542,7 +542,51 @@ package shared
 // substituable (hors-domaine, ni SE4FS ni LOGONSERVER), la probe réseau est
 // IGNORÉE — jamais une passe en erreur, les autres emplacements convergent.
 //
+// 2.16.0 = Story 58.1, type `folders` (§7.12) — l'agent porte enfin la
+// REDIRECTION des dossiers shell (`HKCU\…\Explorer\User Shell Folders`), pas
+// seulement le contenu qu'il y dépose.
+//
+// Panne réparée : `\\<se4fs>\users\<user>\Bureau\` n'est le Bureau de
+// l'utilisateur QUE si cette valeur pointe dessus. Elle était écrite par le
+// script de la GPO legacy « Bureau » (paquet `folders`, `bureau_samba` /
+// `bureau_local`), coupé le 2026-07-20 par le blocage d'héritage sur l'OU des
+// comptes (`gPOptions: 1`, sans `gPLink`) — sans successeur SE5. Comme la valeur
+// est écrite UNE fois puis FIGÉE dans le profil itinérant, les profils antérieurs
+// la gardaient et le parc paraissait sain ; tout profil NEUF, lui, restait sur un
+// Bureau local et n'affichait AUCUN des `.lnk` que le handler `shortcuts` posait
+// consciencieusement sur le Bureau réseau. Aucune erreur nulle part : juste des
+// raccourcis invisibles (diagnostic lab1 du 2026-07-30).
+//
+// Le handler (shared.FoldersHandler, compagnon) crée le dossier cible PUIS écrit
+// la valeur en REG_EXPAND_SZ — cet ordre est le seul sûr (rediriger vers un
+// dossier absent donne un Bureau vide). Le chemin vient du SERVEUR et c'est
+// EXACTEMENT celui de `desktop_path` (même DesktopPathResolver côté PHP) : poser
+// les raccourcis et rediriger le shell sont deux moitiés d'un même geste.
+// Rafraîchissement = RefreshExplorerRestart (Explorer ne relit `User Shell
+// Folders` qu'à son démarrage — un SHChangeNotify ne suffit pas) ; au régime
+// stable, zéro écriture ⇒ zéro relance.
+//
+// L'item porte AUSSI `quick_access: pinned` : Windows épingle les dossiers
+// standards en enregistrant le CHEMIN résolu à la création du profil, jamais un
+// KNOWNFOLDERID — rediriger ensuite laisse dans l'Accès rapide une entrée
+// « Bureau » qui mène à l'ancien emplacement. Le handler la fait suivre (verbe
+// bascule `pintohome` via powershell.exe, iso `bureau_samba.ps1`), et ne
+// désépingle QUE la valeur qu'il vient lui-même de remplacer : la jumplist vit
+// dans %APPDATA%, donc dans le profil itinérant PARTAGÉ entre tous les postes de
+// l'utilisateur — « nettoyer les emplacements concurrents » rejouerait le
+// finding 🔴 de la 27.21.
+//
+// CONTRAT WIRE : type AJOUTÉ = évolution mineure §9, forward-compatible. Un agent
+// ≤ 2.15.0 IGNORE `folders` EN SILENCE (contrat §8) — il continue de poser les
+// `.lnk` au bon endroit sans que le shell les regarde, soit exactement le
+// comportement d'aujourd'hui. C'est aussi POURQUOI un type neuf plutôt qu'un item
+// `registry` : le contrat ne substitue pas les tokens dans les valeurs
+// `registry`, un agent antérieur y aurait écrit le littéral `<se4fs>` — une
+// écriture FAUSSE dans la ruche, pas une ignorance. Golden `state.v1.json` et
+// `FROZEN_STATE_HASH` (PHP + Go) RÉGÉNÉRÉS sciemment (le golden gagne UN item
+// `folders` en portée `machine_user`).
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.15.0"
+var Version = "2.16.0"

@@ -242,7 +242,8 @@ Identifiants prévus :
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
 (Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7), `firewall`
 (Story 36.2, cf. §7.8), `privilege` (Story 35.6, cf. §7.9), `legacy_cleanup`
-(Story 38.3, cf. §7.10), `app_profile` (Story 36.5, cf. §7.11).
+(Story 38.3, cf. §7.10), `app_profile` (Story 36.5, cf. §7.11), `folders`
+(Story 58.1, cf. §7.12).
 
 ### 7.1 Payload `registry`
 
@@ -1300,6 +1301,128 @@ ouvert**, hors de cette story.
 > erreur ». La release 2.13.0 DOIT être publiée manuellement (update.sh ne publie
 > jamais seul).
 
+### 7.12 Payload `folders`
+
+Type `folders` (Story 58.1) — **redirection des dossiers shell Windows**
+(`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`),
+portée **`machine_user`**, appliquée par le **COMPAGNON**. Sémantique
+**`exclusive`** : un dossier shell a UNE valeur, l'identité de l'item est le
+`folder`.
+
+```json
+{
+  "type": "folders",
+  "semantics": "exclusive",
+  "payload": {
+    "folder": "desktop",
+    "path": "\\\\<se4fs>\\users\\<user>\\Bureau\\",
+    "quick_access": "pinned"
+  }
+}
+```
+
+| champ | type | rôle |
+|---|---|---|
+| `folder` | string | Dossier shell visé — **enum FERMÉ** de mots MÉTIER : `desktop` (seule valeur publiée). Le serveur n'émet **jamais** de nom de valeur de registre (`Desktop`) ni de chemin de clé : la traduction mot → mécanisme appartient à l'agent (invariant capability-first). Un `folder` inconnu = enveloppe invalide, jamais une écriture dans une valeur devinée. |
+| `path` | string | Gabarit du dossier cible, à **tokens** — `\\<se4fs>\users\<user>\Bureau\` (Bureau réseau) ou `%USERPROFILE%\Desktop\` (Bureau local). **Jamais résolu côté serveur** (mêmes tokens que `drives`, `shortcuts`, `app_profile`). Le `%VAR%` reste **littéral** : la valeur est écrite en `REG_EXPAND_SZ`, Windows l'expanse à la lecture. |
+| `quick_access` | string | **Optionnel**, enum FERMÉ `pinned` \| `unmanaged`. Absent ⇒ `unmanaged` (comportement d'un agent antérieur — champ additif §9). Un verbe INCONNU est en revanche refusé : `pined` doit se voir, pas se traduire en silence par « on ne fait rien ». |
+
+**`quick_access` — pourquoi l'épingle fait partie de la cible.** Windows épingle
+les dossiers standards à la **création du profil**, en enregistrant dans sa
+jumplist le chemin **résolu** de l'époque — pas un `KNOWNFOLDERID`. Rediriger le
+Bureau ensuite laisse donc dans l'Accès rapide une entrée « Bureau » qui pointe
+l'ANCIEN emplacement : le raccourci de barre latérale le plus visible de
+l'explorateur mène au mauvais dossier. C'est la même classe de panne que celle
+que ce type répare, en plus discret. Le legacy le corrigeait dans
+`bureau_samba.ps1` (désépingler le Bureau local, épingler le Bureau résolu).
+
+Une redirection juste dont l'épingle mène encore à l'ancien dossier n'est donc
+pas « appliquée », elle est **à moitié appliquée** : `Test` l'inclut, et un
+désépinglage manuel de l'utilisateur ramène l'item en dérive (level-triggered).
+
+> ⚠️ **Le handler ne désépingle QUE l'emplacement qu'il vient lui-même de
+> remplacer.** La jumplist d'épingles vit dans `%APPDATA%`, donc dans le **profil
+> itinérant**, partagé entre TOUS les postes de l'utilisateur — alors que l'état
+> est compilé par couple (poste, user). Un handler qui « nettoierait les
+> emplacements concurrents » retirerait l'épingle qu'un AUTRE poste vient
+> légitimement de poser : c'est exactement le finding 🔴 de la review 27.21 sur
+> `desktop_sweep_paths`, transposé. La valeur précédente, elle, n'est ni dérivée
+> ni devinée — l'agent ne retire que sa propre trace.
+
+**Mécanisme** : `pintohome` n'existe que comme verbe d'automation sur
+`Shell.Application` (IDispatch, sans interface à vtable) — l'agent l'invoque donc
+via `powershell.exe`, comme le faisait le legacy et comme il le fait déjà
+ailleurs (`legacy_cleanup`, `tasks`, `smbios`). C'est un verbe **bascule** :
+chaque op teste l'état avant d'invoquer, ce qui rend `Pin`/`Unpin` idempotents.
+
+**Le trou que ce type bouche.** `\\<se4fs>\users\<user>\Bureau\` n'est le Bureau
+de l'utilisateur QUE si la valeur `User Shell Folders\Desktop` pointe dessus.
+Cette valeur était écrite par le script de la GPO legacy « Bureau » (paquet
+`folders`, `bureau_samba` / `bureau_local`, discriminés par le groupe
+`Port_perdir`). Cet émetteur a été coupé le **2026-07-20** — l'OU des comptes de
+l'établissement porte `gPOptions: 1` (héritage bloqué) sans `gPLink` — **sans
+successeur SE5**.
+
+La panne est restée invisible parce que la valeur, écrite UNE fois, est **figée
+dans le profil itinérant** (`/home/profiles/<user>.V6/NTUSER.DAT`) : les profils
+créés avant la coupure la conservent indéfiniment, ceux créés après ne l'ont
+jamais eue. Le handler `shortcuts` continuait de déposer les `.lnk` dans le
+Bureau réseau, que le shell de la session ne regardait pas : **tout raccourci
+`place=desktop` invisible**, sans une erreur nulle part.
+
+**Un seul chemin de vérité.** Le `path` est EXACTEMENT le `desktop_path` du
+payload `shortcuts` — même résolution serveur
+(`App\Services\Agent\DesktopPathResolver`), même matrice
+{`shared_local`, `personal_local`, `nomade`} × politique `home` :
+
+| environnement du parc | `home` | `path` |
+|---|---|---|
+| `shared_local` | ✓ | `\\<se4fs>\users\<user>\Bureau\` |
+| `shared_local` | ✗ | `%USERPROFILE%\Desktop\` |
+| `personal_local` / `nomade` | ✓ ou ✗ | `%USERPROFILE%\Desktop\` |
+
+Poser les raccourcis et rediriger le shell sont **deux moitiés d'un même
+geste** : les laisser diverger reproduit la panne à l'identique.
+
+**Le Bureau local s'ÉCRIT, il ne se tait pas.** Un poste perdir émet
+explicitement `%USERPROFILE%\Desktop\`. Le profil itinérant est partagé entre
+tous les postes de l'utilisateur : sans écriture explicite, un portable perdir
+hériterait du Bureau réseau laissé par le poste de classe, et réciproquement.
+« Ne pas gérer » (§8) laisserait la mauvaise valeur en place — c'est la règle
+des maps symétriques.
+
+**Ordre d'application, non négociable** : le handler crée le dossier cible
+**PUIS** écrit la valeur. Rediriger vers un dossier absent donne un Bureau vide
+et Explorer peut recréer un dossier local à la place. Le legacy faisait déjà
+`MD` avant `reg add`.
+
+**Cible injoignable ≠ cible absente.** Un dossier absent est une **dérive** (à
+créer) ; un serveur de fichiers muet est une **erreur** — le type passe en
+`{status: error}`, aucune redirection n'est posée. Les confondre ferait basculer
+un utilisateur sur un Bureau local le jour où le partage tousse, et la valeur le
+suivrait ensuite sur tous ses postes.
+
+**Rafraîchissement** : Explorer ne relit `User Shell Folders` qu'à **son
+démarrage** — un `SHChangeNotify` ne suffit pas. Un changement EFFECTIF demande
+donc `RefreshExplorerRestart` (échelle Story 43.1), exécuté une seule fois en fin
+de passe par le compagnon. Au régime stable, zéro écriture ⇒ zéro relance.
+
+**Ce que le type ne fait pas** : il ne DÉPLACE aucun contenu et ne SUPPRIME rien.
+Le nettoyage des `.lnk` gérés orphelins reste l'affaire de `shortcuts` et de ses
+`desktop_sweep_paths`, pilotés par le SERVEUR — un emplacement réseau est
+partagé entre tous les postes de l'utilisateur (cf. §7 `shortcuts`).
+
+**Pourquoi un TYPE et pas un item `registry`.** Le contrat ne substitue pas les
+tokens dans les valeurs `registry` : un agent antérieur y écrirait le littéral
+`<se4fs>` dans la ruche — une écriture **fausse**, pas une ignorance. Un type
+nouveau, lui, est ignoré EN SILENCE (§8).
+
+> **Agents antérieurs à 2.16.0** : le type `folders` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme : comportement d'aujourd'hui
+> (raccourcis posés au bon endroit, invisibles pour les profils postérieurs au
+> 2026-07-20). La release 2.16.0 DOIT être publiée manuellement (update.sh ne
+> publie jamais seul).
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -1389,7 +1512,18 @@ décision de contrat consommée par chaque handler côté agent.
   appliquée par le COMPAGNON — c'est l'« option (b)/(c) » anticipée par la trace
   contractuelle de Q5-a, §7.10), golden `state.v1.json` bumpé avec justification
   (AJOUT d'UN item `app_profile` en portée session → hash recalculé, jumeau Go à
-  l'identique NFR13), `report.v1.json` INCHANGÉ, agent bumpé 2.13.0.
+  l'identique NFR13), `report.v1.json` INCHANGÉ, agent bumpé 2.13.0. Ex. Story
+  58.1 : type `folders` (§7.12 — REDIRECTION des dossiers shell, portée
+  `machine_user` appliquée par le COMPAGNON), golden `state.v1.json` bumpé avec
+  justification (AJOUT d'UN item `folders` en portée machine_user → hash
+  recalculé, jumeau Go à l'identique NFR13), `report.v1.json` INCHANGÉ, agent
+  bumpé 2.16.0. Cas d'école du choix « type neuf plutôt que payload existant » :
+  la redirection AURAIT pu s'exprimer en item `registry`, mais le contrat ne
+  substitue pas les tokens `<se4fs>`/`<user>` dans les valeurs `registry` — un
+  agent antérieur aurait écrit le LITTÉRAL `<se4fs>` dans la ruche, soit une
+  écriture FAUSSE au lieu d'une ignorance. La règle : quand l'incompréhension
+  d'un agent ancien produirait un ÉCRIT erroné plutôt qu'un silence, c'est un
+  type qu'il faut, pas un champ.
   ⚠️ Contrairement au champ ajouté, un agent
   ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
   aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la

@@ -26,6 +26,7 @@ use App\Services\Agent\Providers\RegistryListMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryListUserCapabilityProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
+use App\Services\Agent\Providers\ShellFoldersStateProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\Providers\LockscreenStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
@@ -190,6 +191,16 @@ class AgentServiceProvider extends ServiceProvider
                 // union des raccourcis des mailles, chemin du bureau résolu
                 // serveur (fix Bug C). Une ligne, zéro modif du compilateur.
                 $app->make(ShortcutsStateProvider::class),
+                // Story 58.1 — type `folders` (exclusive / machine_user) :
+                // REDIRECTION du Bureau (`User Shell Folders\Desktop`) vers le
+                // MÊME chemin que celui où `shortcuts` pose les `.lnk`. Sans
+                // elle, l'agent dépose des raccourcis dans un dossier que le
+                // shell ne regarde pas — panne réelle depuis que le blocage
+                // d'héritage GPO (2026-07-20) a coupé le script legacy qui
+                // écrivait cette valeur, sans successeur. Voisin IMMÉDIAT de
+                // ShortcutsStateProvider ci-dessus : les deux partagent le
+                // DesktopPathResolver et ne doivent jamais diverger.
+                $app->make(ShellFoldersStateProvider::class),
                 // Story 27.2 — types `printers` (aggregate / session) : union
                 // des imprimantes des mailles POSTE, défaut exclusif réglé par
                 // WG (physique > logique) ; et `drives` (aggregate / session) :

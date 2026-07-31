@@ -295,7 +295,32 @@ class ContractV1Test extends TestCase
     // champ est ajouté à un item existant), hash d'item RECALCULÉ
     // (1ff7dadf… → e3fa179d…) et hash d'état RECALCULÉ. Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = '34b4f15b5a9e7cf5f0883d24c52bc6deb5b4d65582eee1c6502c89264b28b869';
+    // Re-bumpé SCIEMMENT par la Story 58.1 (évolution MINEURE du contrat, §9) :
+    // AJOUT d'UN item `folders` (§7.12 — REDIRECTION du dossier shell Bureau,
+    // `HKCU\…\Explorer\User Shell Folders`, exclusive) en portée MACHINE_USER →
+    // machine_user = 2 items, 20 items au total, hash d'état RECALCULÉ. Le golden
+    // illustre le MÊME parc `shared_local` que l'item `shortcuts` voisin, donc le
+    // MÊME chemin (`\\<se4fs>\users\<user>\Bureau\`) : c'est l'invariant de la
+    // story — l'endroit où l'agent POSE les `.lnk` et celui vers lequel il
+    // REDIRIGE le shell sont un seul chemin, résolu une seule fois
+    // (DesktopPathResolver). Les voir diverger dans ce golden serait le signe que
+    // la panne de juillet 2026 est de retour : des raccourcis déposés dans un
+    // dossier que le shell ne regarde pas.
+    // Type AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
+    // major : un binaire ≤ 2.15.0 IGNORE le type EN SILENCE (§8 — aucun statut au
+    // rapport) et se comporte exactement comme aujourd'hui, d'où publication de
+    // release 2.16.0 obligatoire. Le type entre dans ReportRequest via
+    // Rule::in(RESOURCE_TYPES). Le jumeau Go (hasher_test.go::frozenStateHash)
+    // porte la même valeur (test croisé NFR13).
+    // Amendement 58.1 (même story, agent 2.16.0 NON encore publiée — le champ
+    // est donc fondu dans la même version) : le payload `folders` gagne
+    // `quick_access` (3 clés), qui fait SUIVRE l'entrée d'Accès rapide. Windows
+    // épingle les dossiers standards en enregistrant le CHEMIN résolu à la
+    // création du profil, pas un KNOWNFOLDERID : rediriger ensuite laisse une
+    // entrée « Bureau » qui mène à l'ancien emplacement — la même panne que
+    // celle qu'on répare, en plus discret. Champ additif §9 (absent =
+    // `unmanaged`), hash d'item et hash d'état RECALCULÉS.
+    private const FROZEN_STATE_HASH = '8940e34ff63824c37bad3b2e22d9151016d1661f90a099cc6736977690ac4e7e';
 
     private StateHasher $hasher;
 

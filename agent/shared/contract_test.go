@@ -59,8 +59,13 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// Story 36.5 : +1 item `app_profile` (redirection profil Firefox → home
 	// réseau, aggregate, payload {app, link, server, profile_name, install_hash,
 	// cache_local}) en portée SESSION → session = 9.
-	if len(state.Machine) != 9 || len(state.Session) != 9 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 9/9/1)",
+	// Story 58.1 : +1 item `folders` (redirection du dossier shell Bureau vers
+	// `User Shell Folders`, exclusive, payload {folder, path}) en portée
+	// MACHINE_USER → machine_user = 2, aux côtés de l'item `shortcuts` avec
+	// lequel il partage le MÊME chemin (poser les `.lnk` et rediriger le shell
+	// sont deux moitiés d'un même geste).
+	if len(state.Machine) != 9 || len(state.Session) != 9 || len(state.MachineUser) != 2 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 9/9/2)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

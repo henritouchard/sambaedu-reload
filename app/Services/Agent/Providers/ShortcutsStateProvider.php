@@ -7,13 +7,13 @@ namespace App\Services\Agent\Providers;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
-use App\Enums\WorkstationEnvironment;
 use App\Models\Shortcut;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Services\Agent\Contracts\StateProvider;
+use App\Services\Agent\DesktopPathResolver;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
@@ -73,20 +73,15 @@ use Illuminate\Support\Collection;
  */
 final class ShortcutsStateProvider implements StateProvider
 {
-    /**
-     * Bureau RÉSEAU (redirigé sur le home de l'utilisateur). Tokens `<se4fs>` /
-     * `<user>` substitués LOCALEMENT par l'agent. Backslash final = convention
-     * legacy. **Seul le serveur** connaît ce gabarit : l'agent ne le dérive
-     * JAMAIS lui-même, il le reçoit (`desktop_path` pour la POSE,
-     * `desktop_sweep_paths` pour le BALAYAGE — Story 27.21, option A).
-     */
-    private const DESKTOP_PATH_NETWORK = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
-
-    /** Bureau LOCAL du profil Windows (jamais de dépendance réseau). */
-    private const DESKTOP_PATH_LOCAL = '%USERPROFILE%\\Desktop\\';
-
     public function __construct(
         private readonly WorkstationEnvironmentResolver $environmentResolver,
+        // Story 58.1 — le mapping environnement→chemin du Bureau a QUITTÉ ce
+        // provider pour {@see DesktopPathResolver} : il est désormais partagé
+        // avec {@see ShellFoldersStateProvider}, qui fait porter à l'agent la
+        // REDIRECTION du shell vers ce même chemin. Deux mappings jumeaux, c'est
+        // la garantie que l'agent pose les `.lnk` dans un dossier que le shell
+        // ne regarde pas. Déplacement PUR : valeurs et payload inchangés.
+        private readonly DesktopPathResolver $desktopPaths,
     ) {}
 
     public function type(): string
@@ -124,8 +119,8 @@ final class ShortcutsStateProvider implements StateProvider
         $environment = $this->environmentResolver->resolveForGroupIds($wgIds);
         $homeEnabled = FilePolicyService::capabilities()['home'];
 
-        $desktopPath = $this->desktopPathFor($environment, $homeEnabled);
-        $desktopSweepPaths = $this->desktopSweepPathsFor($environment);
+        $desktopPath = $this->desktopPaths->pathFor($environment, $homeEnabled);
+        $desktopSweepPaths = $this->desktopPaths->sweepPathsFor($environment);
 
         $rows = Shortcut::query()
             ->where('shortcuts.is_active', true)
@@ -176,95 +171,13 @@ final class ShortcutsStateProvider implements StateProvider
         ));
     }
 
-    /**
-     * Chemin du bureau résolu côté SERVEUR (décision n° 3, fix Bug C). Tokens
-     * `<se4fs>` (nom serveur de fichiers) et `<user>` (login courant) laissés
-     * au payload : l'agent les substitue LOCALEMENT (aucune fuite de secret,
-     * aucune dépendance réseau au calcul). Backslash final = convention legacy.
-     *
-     * Le mapping environnement→chemin vit ici (pas dans l'enum, pas dans
-     * l'agent) — l'agent reste bête. **SEULE porte** de résolution du bureau :
-     * aucune autre branche réseau/local n'existe côté serveur (Story 27.21).
-     *
-     * **Story 27.21 — UN facteur ajouté : la politique home (K:).** Le bureau
-     * RÉSEAU vit dans le home de l'utilisateur (`\\<se4fs>\users\<user>\`) :
-     * quand l'admin coupe l'accès au home (`/admin/settings/files`,
-     * {@see FilePolicyService::capabilities()} clé `home`), la session affiche
-     * le bureau LOCAL et des `.lnk` posés en réseau seraient INVISIBLES (constat
-     * terrain 2026-07-22). On ne pousse jamais une donnée vers un emplacement
-     * que l'utilisateur ne peut pas atteindre : `home=false` ⇒ bureau LOCAL,
-     * quel que soit l'environnement du parc.
-     *
-     * Symétrie assumée avec `app_profile` (36.7) : là la redirection de profil a
-     * été DÉCORRÉLÉE de K: (le profil suit toujours, l'UNC reste joignable sans
-     * montage) ; ici le bureau SUIT K: — dans les deux cas on place la donnée là
-     * où l'utilisateur peut effectivement la voir.
-     *
-     * Lecture canonique iso {@see DrivesStateProvider}
-     * (appel statique direct, aucun cache — le réglage est global d'instance).
-     *
-     * ⚠️ POSE ≠ BALAYAGE : cette méthode résout le seul emplacement où l'agent
-     * POSE les `.lnk`. Les emplacements qu'il BALAIE (pour y supprimer les `.lnk`
-     * gérés sortis des règles) sont une autre décision, prise par
-     * {@see self::desktopSweepPathsFor()} — ne pas confondre les deux.
-     */
-    private function desktopPathFor(WorkstationEnvironment $environment, bool $homeEnabled): string
-    {
-        return match ($environment) {
-            // Poste partagé : bureau redirigé RÉSEAU (le défaut du pansement Bug
-            // C, mais désormais PARAMÉTRABLE par parc et non figé) — SEULEMENT
-            // si le home est accessible, sinon le bureau réseau est invisible.
-            WorkstationEnvironment::SharedLocal => $homeEnabled
-                ? self::DESKTOP_PATH_NETWORK
-                : self::DESKTOP_PATH_LOCAL,
-            // Perdir / nomade : bureau LOCAL du profil — le `.lnk` est posé
-            // dans le profil de l'utilisateur, pas sur le partage réseau.
-            WorkstationEnvironment::PersonalLocal,
-            WorkstationEnvironment::Nomade => self::DESKTOP_PATH_LOCAL,
-        };
-    }
-
-    /**
-     * Emplacements Bureau que l'agent doit BALAYER (`desktop_sweep_paths`,
-     * Story 27.21 — arbitrage « option A », le serveur pilote).
-     *
-     * **Pourquoi le serveur et pas l'agent (finding 🔴 #1 de la review 27.21).**
-     * Le Bureau RÉSEAU `\\<se4fs>\users\<user>\Bureau\` vit dans le home : c'est
-     * un emplacement PAR UTILISATEUR, PARTAGÉ entre TOUS ses postes. Le
-     * desired-state, lui, est compilé par couple (poste, user). Un agent qui
-     * déciderait SEUL de balayer cet emplacement y supprimerait les `.lnk`
-     * gérés légitimement posés par un AUTRE poste du même utilisateur (le
-     * portable perdir d'un prof effaçant les raccourcis que le poste de classe
-     * vient de poser, et réciproquement — ping-pong permanent sur un partage de
-     * production). Seul le serveur connaît l'environnement du parc, donc
-     * l'autorité :
-     *
-     *  - `SharedLocal`             ⇒ `[réseau, local]` — le double-balayage
-     *    anti-orphelins de l'AC2/AC3 : une bascule de la politique home ne laisse
-     *    jamais de `.lnk` géré à l'emplacement devenu inactif.
-     *  - `PersonalLocal` / `Nomade` ⇒ `[local]` SEULEMENT — ces postes n'ont
-     *    aucune autorité sur le Bureau réseau et ne doivent JAMAIS y toucher.
-     *
-     * **Indépendant de la politique home** — délibérément : basculer K: ne change
-     * QUE l'emplacement de POSE. Les deux emplacements d'un parc partagé restent
-     * balayés dans les deux états, sinon celui qui vient d'être abandonné ne
-     * serait plus jamais nettoyé (c'est exactement le scénario cible de l'AC3).
-     * Effet de bord utile : couper K: ne fait bouger qu'un champ du payload.
-     *
-     * L'ORDRE est fixe (réseau puis local) : la liste est hachée telle quelle
-     * (les listes ne sont pas triées par {@see \App\Services\Agent\StateHasher}),
-     * un ordre stable garantit un hash stable.
-     *
-     * @return list<string>
-     */
-    private function desktopSweepPathsFor(WorkstationEnvironment $environment): array
-    {
-        return match ($environment) {
-            WorkstationEnvironment::SharedLocal => [self::DESKTOP_PATH_NETWORK, self::DESKTOP_PATH_LOCAL],
-            WorkstationEnvironment::PersonalLocal,
-            WorkstationEnvironment::Nomade => [self::DESKTOP_PATH_LOCAL],
-        };
-    }
+    // Story 58.1 — `desktopPathFor()` et `desktopSweepPathsFor()` ont été
+    // DÉPLACÉS dans {@see DesktopPathResolver} (le raisonnement complet y est
+    // conservé mot pour mot). Motif : un SECOND consommateur en a besoin —
+    // ShellFoldersStateProvider, qui fait porter à l'agent la redirection
+    // `User Shell Folders\Desktop` vers ce MÊME chemin. Deux mappings jumeaux
+    // auraient laissé l'agent poser des `.lnk` dans un dossier que le shell ne
+    // regarde pas : c'est la panne de juillet 2026. Ne rien réintroduire ici.
 
     /**
      * Payload v1 (décision n° 6, étendu Story 27.7). `desktop_path` présent
