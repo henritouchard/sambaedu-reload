@@ -3594,3 +3594,217 @@ Contrôle croisé : `/dhcp/baux.php` répond toujours comme avant.
 - [ ] **25.8 La recherche globale ne propose plus « Visioconférences » ; la tuile du lanceur est le seul chemin ; aucun lien mort là où l'extension n'est pas installée**
 - [ ] 25.9 `se4:extinction-report` tourne ; `bbb`/`visio` restent dans l'inventaire du FS SE4 ; plus de hits `/bbb/*` dans `legacy_catchall_logs`
 - [ ] 25.10 `legacy/modules/bbb/` et les 2 stubs dédiés absents ; stubs partagés et module dhcp intacts (`/dhcp/baux.php` répond)
+
+## Section 26 — Le faux serveur BigBlueButton : ce qu'il rend jouable sur l'hôte, et ce qu'il ne prouvera jamais
+
+> **Pourquoi cette section existe, et pourquoi elle n'est pas un scénario de recette de plus.** L'extension BBB a été développée et testée de bout en bout **sans jamais rencontrer un vrai serveur BigBlueButton**. C'est exactement là que l'Epic 57 a cassé : les deux défauts les plus coûteux — l'URL de base doublée en `…/bigbluebutton/apiapi/create` (57.2) et l'hydratation d'un enregistrement sans bloc `playback` (57.3) — n'ont été trouvés qu'**en développant la story suivante**, et tous deux **imputaient leur faute au serveur distant**. Déployer un vrai BBB coûte un Ubuntu dédié, du HTTPS obligatoire et une grande plage UDP ; `scripts/dev/fake-bbb-server.php` coûte une commande, et rend jouable sur l'hôte la moitié de cette dette.
+>
+> **Sa seule valeur est sa fidélité.** Un faux serveur approximatif donnerait une confiance fausse — pire que rien. D'où trois engagements, tous vérifiés par `extensions/bbb/tests/FakeBbbServerTest.php`, qui fait **parser ses réponses par le vrai fork** `sambaedu/bigbluebutton-api-php` plutôt que par des assertions sur des chaînes :
+>
+> 1. le **checksum** est calculé à l'identique du protocole — `sha1(<méthode> + <query sans le paramètre checksum> + <secret>)`, sur la query **brute**. Ré-encoder les paramètres casserait la signature de toute création de salon : le fork émet, faute de frappe, un paramètre littéralement nommé `breakoutRoomsPrivateChatEnabled(` ;
+> 2. la **racine `/bigbluebutton/api` ne vérifie PAS le checksum**, comme le vrai. C'est ce qui rendait `server_bbb_is_up()` de SE4 trompeur — il déclarait vert un serveur au secret faux. Le faux serveur **reproduit ce piège au lieu de le masquer**, sinon il ferait perdre à la 57.1 sa démonstration ;
+> 3. les **cas piégeux** s'assertent **à l'envers** : les tests ne prouvent pas que tout va bien, ils prouvent que **la casse se reproduit**. Un piège qui ne mord plus est un piège cassé, et il rendrait l'outil rassurant à tort.
+>
+> ⚠️ **CE N'EST PAS UN LIVRABLE.** Le script vit dans `scripts/dev/`, à côté de `build-test-extension.sh`, et ne part **jamais** dans le paquet `sambaedu-ext-bbb` (`packaging/build-deb.sh` ne copie que `public`, `src`, `views`, `composer.*` et `manifest.json`).
+
+### Pré-requis de la section
+
+Rien d'autre que **php 8.2+ sur la machine où tourne SE5** — le faux serveur n'a aucune dépendance et se sert par le serveur intégré de PHP. Il écoute sur `127.0.0.1` par défaut : pour le déclarer depuis une instance SE5 qui vit ailleurs (VM, lab), le lancer avec `--host 0.0.0.0` **et rien d'autre que sur un réseau de confiance** — il ne parle que `http`, et le secret partagé y circule en clair.
+
+```bash
+php scripts/dev/fake-bbb-server.php --help          # l'aide, et la liste des pièges
+php scripts/dev/fake-bbb-server.php --port 8088     # une instance, secret « sekret-de-test »
+```
+
+La bannière de démarrage affiche **les deux URL de base à coller** dans `/ext/bbb/admin/servers`, et les commandes de pilotage à chaud.
+
+### Ce que cette section NE remplace PAS
+
+Cette section **s'ajoute** aux Sections 22 à 25, elle ne les remplace pas. Quatre choses ne se prouveront **jamais** contre un faux serveur, et restent intégralement à jouer contre un vrai BigBlueButton :
+
+| Ce qui reste dû à un vrai serveur | Pourquoi le faux ne peut pas |
+|---|---|
+| **Le rôle VÉCU dans la conférence** — micro, caméra, partage d'écran, expulsion, démarrage de l'enregistrement | Le faux serveur voit passer le mot de passe et sait en déduire `MODERATOR` ou `VIEWER` ; il n'a **aucune conférence** derrière. Que le mot de passe modérateur confère réellement les pouvoirs de modérateur est une propriété de BigBlueButton, pas du protocole. |
+| **La jonction d'un invité à travers le proxy** de l'instance | Le lien invité traverse Apache, la redirection publique et un navigateur qui n'est pas authentifié sur SE5. Le faux serveur ne voit que la dernière étape, et depuis `127.0.0.1`. |
+| **La production RÉELLE d'un enregistrement** | Un vrai BBB ne publie un enregistrement que **plusieurs minutes après la fin** de la conférence, une fois le traitement terminé — et c'est ce délai, et l'état `processing` qu'il traverse, qui produisent le XML piégeux en vrai. Le faux serveur fabrique l'enregistrement **à la création du salon** : c'est le raccourci assumé qui rend l'onglet jouable, et c'est précisément ce qu'il ne prouve pas. |
+| **Tout le chemin TLS** | Le client vérifie pair **et** hôte (`CURLOPT_SSL_VERIFYPEER`, `VERIFYHOST = 2` — D5, correctif du legacy qui les désactivait). Le faux serveur parle `http` en clair : le certificat, le nom d'hôte, la chaîne de confiance ne sont **jamais** éprouvés. |
+
+À quoi s'ajoute, mécaniquement, tout ce qui relève de la **charge réelle** : le comportement d'un vrai serveur à 60 participants, la latence WebRTC, le dimensionnement UDP.
+
+### Scénario 26.1 — ⭐ Le test de connexion distingue vraiment trois causes
+
+Lancer une instance, la déclarer sur `/ext/bbb/admin/servers` avec l'URL affichée par la bannière et le secret `sekret-de-test`, puis **« Tester la connexion »**.
+
+**Attendu** : vert, avec le nombre de conférences en cours.
+
+Puis les trois contre-épreuves, qui doivent donner **trois messages distincts** :
+
+| Manipulation | Attendu |
+|---|---|
+| Changer le secret enregistré pour une valeur fausse | « secret invalide » — **pas** « injoignable » |
+| Arrêter le faux serveur (`Ctrl-C`) | « injoignable » |
+| `curl -s 'http://127.0.0.1:8088/control/trap?on=html'` puis retester | « réponse inattendue » |
+
+**Le contrôle qui porte toute la section** : avec le secret faux, appeler **à la main** la racine du même serveur :
+
+```bash
+curl -s 'http://127.0.0.1:8088/bigbluebutton/api'
+```
+
+Elle répond `SUCCESS` **sans avoir vérifié quoi que ce soit**. C'est ce qu'un `server_bbb_is_up()` legacy aurait vu — un serveur « vert » dont le secret est faux, et qui n'aurait échoué qu'au premier salon, en production, devant une classe. Le faux serveur reproduit ce piège **exprès** : c'est la démonstration de pourquoi la 57.1 teste avec `getMeetings` et non avec un GET.
+
+### Scénario 26.2 — ⭐ Les deux formes d'URL de base, et le défaut qu'elles ne produisent plus
+
+Déclarer **deux fois le même faux serveur**, avec les deux formes que la bannière affiche :
+
+```
+http://127.0.0.1:8088/bigbluebutton/api      ← la forme que la page d'administration propose
+http://127.0.0.1:8088/bigbluebutton          ← l'autre forme acceptée par apiBase()
+```
+
+**Attendu** : les deux testent vert, et **démarrent réellement un salon**. Un test de connexion vert ne suffit pas ici — c'est `create` qui révélait le défaut de 57.2, pas `getMeetings`.
+
+Puis constater le **symptôme** du défaut, que SE5 ne peut plus produire :
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:8088/bigbluebutton/apiapi/create'
+```
+
+**Attendu** : `404`, en HTML. C'est ce que le fork traduit par `BadResponseException`, et l'extension par « réponse inattendue » — **un serveur parfaitement sain, accusé à tort**. Que ce chemin existe et réponde 404 est la moitié de la preuve ; que SE5 ne l'emprunte plus est l'autre moitié, et c'est `apiBase()` qui la tient.
+
+### Scénario 26.3 — ⭐ L'enchaînement complet d'un cours, sans BigBlueButton
+
+Avec **un seul** faux serveur déclaré, en `prof.martin` :
+
+1. créer un salon sur `/ext/bbb/rooms`, puis **« Démarrer ou entrer »** ;
+2. **attendu** : le navigateur atterrit sur une page verte du faux serveur, « Vous seriez ici dans la conférence », qui affiche le `meetingID`, le nom affiché et **le rôle annoncé par le mot de passe** — `MODÉRATEUR` pour la créatrice ;
+3. revenir sur `/ext/bbb/rooms` : le salon est **ouvert** ;
+4. en `eleve.dupont`, membre de la classe, rejoindre le même salon : la page de conférence l'annonce **`PARTICIPANT`** ;
+5. ouvrir l'onglet **Enregistrements** : il liste un enregistrement, dont le lien de lecture mène à une page bleue du faux serveur ;
+6. supprimer l'enregistrement : il **disparaît vraiment**, et un rechargement le confirme.
+
+**Le point de fidélité à ne pas rater, et il est contre-intuitif** : entre l'étape 1 et l'étape 2, `isMeetingRunning` répond `false`. Un vrai BigBlueButton ne déclare un salon « en cours » **qu'une fois qu'un participant l'a rejoint**, et le faux serveur fait pareil (`--running=on-join`, le défaut). L'ordre « le professeur arrive d'abord » n'est donc pas décoratif : c'est ce qui fait qu'un élève cliquant **avant** que le professeur n'ait atterri dans la conférence voit un salon fermé. Le vérifier ici épargne de le découvrir en classe.
+
+> Le mode `--running=on-create` existe pour les explorations au `curl` (le salon est « ouvert » dès sa création, sans navigateur). Il est annoncé comme une **divergence** dans la bannière de démarrage, et il ne doit pas servir à valider ce scénario.
+
+### Scénario 26.4 — ⭐ L'équilibrage entre deux serveurs, observé pour de vrai
+
+Deux instances, deux charges :
+
+```bash
+php scripts/dev/fake-bbb-server.php --port 8088 --load 0  &
+php scripts/dev/fake-bbb-server.php --port 8089 --load 12 &
+```
+
+Les déclarer toutes deux, puis démarrer un salon.
+
+**Attendu** : il part sur le **8088**. Inverser les charges **à chaud**, sans rien redémarrer :
+
+```bash
+curl -s 'http://127.0.0.1:8088/control/load?n=30'
+curl -s 'http://127.0.0.1:8089/control/load?n=0'
+```
+
+Démarrer un **autre** salon : il part sur le **8089**.
+
+**Le contrôle qui compte**, et il se lit directement dans le terminal de chaque faux serveur, qui journalise chaque appel :
+
+```
+[10:14:02] getMeetings        200  SUCCESS/noMeetings
+[10:14:02] create             200  SUCCESS                meetingID=…
+```
+
+Le serveur **perdant** ne voit **qu'un** `getMeetings` ; le **gagnant** voit `getMeetings` **puis** `create`. La sonde interroge tout le monde, la création ne s'adresse qu'au vainqueur — c'est le contrôle du scénario 25.1, désormais jouable sans deux vrais BBB.
+
+> Cette ligne de journal est écrite par le faux serveur lui-même : `php -S` **ne journalise pas** la requête quand un script de routage est en place, il n'affiche que « Accepted » / « Closing ». Sans elle, le scénario ne se vérifierait pas — il se croirait.
+
+Contre-épreuve de la **bascule** : couper le serveur le moins chargé (`Ctrl-C`), démarrer un salon. Il doit s'ouvrir **quand même**, sur l'autre, **sans que le professeur fasse quoi que ce soit**.
+
+### Scénario 26.5 — ⭐ Les deux bornes de temps sont bien DEUX bornes
+
+```bash
+curl -s 'http://127.0.0.1:8088/control/trap?on=slow&delay=4000'
+```
+
+Quatre secondes : **au-delà** des 3 s de la sonde de charge (`PROBE_TIMEOUT_MS`), **en deçà** des 8 s de la borne totale (`TOTAL_TIMEOUT_MS`).
+
+**Attendu**, sur le **même** appel `getMeetings` :
+
+- **« Tester la connexion »** sur `/ext/bbb/admin/servers` → **vert**, après ~4 s d'attente ;
+- **démarrer un salon** → le serveur lent est **écarté de la mesure** (sa sonde expire à 3 s) et, s'il est seul, la création part quand même vers lui.
+
+C'est la seule façon d'observer sur l'hôte que la borne de sonde et la borne totale sont bien deux décisions distinctes, et non une valeur recopiée.
+
+Pousser ensuite le délai **au-delà** de la borne totale et retester la connexion :
+
+```bash
+curl -s 'http://127.0.0.1:8088/control/trap?on=slow&delay=9000'
+```
+
+**Attendu** : « injoignable ». Et pendant l'attente, vérifier depuis un autre onglet que `/ext/bbb/rooms` répond **normalement** — c'est le relâchement du verrou d'état avant les appels sortants (review 57.2 #1), et le faux serveur permet enfin de le mesurer sans couper un vrai réseau.
+
+```bash
+curl -s 'http://127.0.0.1:8088/control/trap?off=all'   # ne pas oublier
+```
+
+### Scénario 26.6 — ⭐ Les deux XML qui ont mordu, et les deux défenses qui tiennent
+
+**Le premier ne lève AUCUNE exception**, et c'est ce qui le rend redoutable :
+
+```bash
+curl -s 'http://127.0.0.1:8088/control/trap?on=no-meetings-element'
+```
+
+Le serveur répond alors `SUCCESS` **sans le moindre élément `meetings`** — la forme qu'émettent certains serveurs, dont des Scalelite, quand il n'y a rien à lister. `GetMeetingsResponse::getMeetings()` fait `foreach ($this->rawXml->meetings->children() …)`, et `children()` sur un enfant absent rend `null` : **avertissement PHP, jamais exception**. Aucun `catch (Throwable)` ne l'attrape.
+
+**Attendu** : le test de connexion reste **vert** (« aucune réunion en cours »), le démarrage d'un salon fonctionne, et — le point du scénario — **rien n'apparaît dans le journal du service** :
+
+```bash
+journalctl -u sambaedu-ext-bbb --since '5 min ago' | grep -i 'foreach'
+```
+
+**Attendu : aucune ligne.** Une ligne signifierait que la garde `isset($xml->meetings)` de `meetingsOf()` a disparu, et donc que le journal se remplit à chaque appel — c'est le défaut que la 57.1 portait **en silence** jusqu'à la 57.4.
+
+**Le second vide la liste entière** :
+
+```bash
+curl -s 'http://127.0.0.1:8088/control/trap?off=all'
+curl -s 'http://127.0.0.1:8088/control/trap?on=recording-no-playback'
+```
+
+Le serveur injecte alors **deux** anomalies, et la distinction est le tout :
+
+- un enregistrement `processing` sans bloc `playback` — **écarté par le filtre `state=published`** que l'extension envoie, première ligne de défense, honorée ici comme un vrai serveur l'honore ;
+- un enregistrement **`published`** sans bloc `playback` — il **passe le filtre**, atteint `Record::__construct` (`$xml->playback->format->type->__toString()`, sans la moindre garde) et **emporterait toute la collection**.
+
+Ouvrir l'onglet **Enregistrements** d'un salon qui en a au moins un.
+
+**Attendu** : les enregistrements légitimes **s'affichent toujours**, les deux piégés sont **silencieusement ignorés**. C'est la seconde ligne de défense — l'hydratation enregistrement par enregistrement sous `try/catch`. Une liste **vide** signifierait que la garde a sauté, et donc qu'un seul XML bancal effacerait de l'écran **tous les cours des autres professeurs**.
+
+### Scénario 26.7 — La preuve que l'outil lui-même est fidèle
+
+Un outil de test non testé ne vaut rien. La fidélité du faux serveur est prouvée par une suite qui fait **parser ses réponses par le vrai fork** :
+
+```bash
+cd extensions/bbb && vendor/bin/phpunit --filter FakeBbbServerTest    # 20 tests
+cd extensions/bbb && vendor/bin/phpunit                              # 354 tests au total
+```
+
+Ce que ces tests figent, et qu'il faut relire avant de toucher au script :
+
+- l'URL est construite par `Util\UrlBuilder`, **la bibliothèque elle-même**, jamais par le test ;
+- les paramètres de création sont **capturés** au transport de `LiveBbbApiClient`, jamais recopiés — recopier la liste des `set*()` referait exactement la « règle recopiée » qui a mordu trois fois sur l'epic ;
+- les deux pièges XML s'assertent **à l'envers** : `no-meetings-element` doit **produire l'avertissement PHP**, `recording-no-playback` doit **faire échouer `getRecords()`**. S'ils cessent de mordre, ce sont **eux** qui sont cassés ;
+- un **contrôle positif** interdit la dérive symétrique : un élément `meetings` **vide** ne doit déclencher **aucun** avertissement — c'est bien l'**absence** de l'élément qui mord, pas son vide ;
+- un test HTTP de bout en bout (`LiveBbbApiClient` → cURL → socket → faux serveur) prouve que tout cela traverse un vrai réseau, pas seulement une fonction.
+
+### Checklist rapide — Section 26
+
+- [ ] **26.1 Trois causes, trois messages : secret invalide ≠ injoignable ≠ réponse inattendue — ET la racine `/bigbluebutton/api` répond `SUCCESS` avec un secret faux (piège du legacy, reproduit exprès)**
+- [ ] **26.2 Les DEUX formes d'URL de base démarrent réellement un salon ; `…/apiapi/create` répond 404 et SE5 ne l'emprunte plus**
+- [ ] **26.3 Cours complet sans BBB : démarrer ⇒ MODÉRATEUR, élève ⇒ PARTICIPANT, enregistrement listé, lu, supprimé — et `isMeetingRunning` est FAUX tant que personne n'a rejoint**
+- [ ] **26.4 Deux instances : le salon part sur la moins chargée ; charges inversées à chaud ⇒ il change de serveur ; le perdant ne voit qu'un `getMeetings`, le gagnant `getMeetings` puis `create` ; bascule sur serveur coupé**
+- [ ] **26.5 `--delay 4000` : le MÊME appel échoue comme sonde (3 s) et réussit comme test de connexion (8 s) ; `/rooms` reste fluide dans un autre onglet pendant l'attente**
+- [ ] **26.6 `no-meetings-element` ⇒ vert ET zéro ligne `foreach` dans le journal ; `recording-no-playback` ⇒ les enregistrements légitimes survivent, la liste n'est PAS vide**
+- [ ] 26.7 `vendor/bin/phpunit` dans `extensions/bbb` : 354 tests verts, dont les 20 de `FakeBbbServerTest`
+- [ ] **Rappel : rôle VÉCU en conférence, invité à travers le proxy, production RÉELLE d'un enregistrement et chemin TLS restent dus à un VRAI serveur (Sections 22 à 25)**
