@@ -86,12 +86,23 @@ class UserSyncService
             'updated' => 0,
             'skipped' => 0,
             'errors' => 0,
+            // Story 49.3 (AC1/AC6) — comptes réactivés par le miroir `is_active`
+            // (compte AD réapparu / réactivé : false → true sur la branche update).
+            'reactivated' => 0,
             'admin_granted' => false,
             'total_ad' => 0,
             'etab_tree' => 0,
             'etab_ou_tree' => 0,
             'etab_member_of' => 0,
             'etab_excluded' => 0,
+            // Story 49.3 (AC2) — santé du balayage : sans ces deux compteurs la
+            // garde anti-désactivation en masse (AC3) est AVEUGLE.
+            'fetch_groups_failed' => 0,
+            'main_groups_found' => 0,
+            // Story 49.3 (AC2) — identifiants PRÉSENTS au balayage (les deux
+            // familles, cf. D6 : `ad_guid` d'abord, `login` en repli).
+            'present_guids' => [],
+            'present_logins' => [],
             'delta_mode' => $deltaMode,
             'delta_cursor_start' => null,
             'delta_cursor_end' => null,
@@ -137,6 +148,10 @@ class UserSyncService
             $stats['etab_ou_tree'] = $fetchResult['establishment']['ou_tree'];
             $stats['etab_member_of'] = $fetchResult['establishment']['member_of'];
             $stats['etab_excluded'] = $fetchResult['establishment']['excluded'];
+            $stats['fetch_groups_failed'] = $fetchResult['fetch_groups_failed'];
+            $stats['main_groups_found'] = $fetchResult['main_groups_found'];
+            $stats['present_guids'] = $fetchResult['present_guids'];
+            $stats['present_logins'] = $fetchResult['present_logins'];
             $log('info', count($adUsers) . ' utilisateurs trouvés dans l\'AD');
 
             // 2. Importer chaque utilisateur
@@ -145,8 +160,12 @@ class UserSyncService
             try {
                 foreach ($adUsers as $adUser) {
                     try {
-                        $result = $this->upsertUser($adUser);
+                        $reactivated = false;
+                        $result = $this->upsertUser($adUser, $reactivated);
                         $stats[$result]++;
+                        if ($reactivated) {
+                            $stats['reactivated']++;
+                        }
                     } catch (\Exception $e) {
                         $stats['errors']++;
                         $log('warning', "Erreur pour {$adUser->login}: " . $e->getMessage());
@@ -241,20 +260,89 @@ class UserSyncService
     }
 
     /**
+     * Balayage fetch-only, SANS AUCUNE ÉCRITURE (Story 49.3 — AC2).
+     *
+     * Sert le `--dry-run` de `users:reconcile-departures` : l'admin doit pouvoir
+     * lire le plan de désactivation AVANT d'assumer un `--force`, sans qu'un
+     * seul upsert ne parte. C'est le MÊME chemin interne que l'import
+     * (`fetchUsersFromAd`) — jamais un second code de fetch, sous peine de voir
+     * les deux diverger et le dry-run mentir (D2).
+     *
+     * @return array{
+     *   total_ad: int,
+     *   fetch_groups_failed: int,
+     *   main_groups_found: int,
+     *   present_guids: string[],
+     *   present_logins: string[]
+     * }
+     */
+    public function fetchPresence(?callable $logger = null, string $establishmentScope = self::ESTABLISHMENT_SCOPE_ALL): array
+    {
+        $log = $logger ?? fn(string $level, string $message) => Log::log($level, "[UserSyncService] {$message}");
+
+        // `paginationIsCritical: true` — sur CE chemin (et lui seul), un
+        // annuaire qui n'honore pas le contrôle paged-results doit faire
+        // ÉCHOUER le balayage plutôt que rendre un résultat peut-être amputé :
+        // la réconciliation en déduirait des départs qui n'ont pas eu lieu.
+        $fetchResult = $this->fetchUsersFromAd($log, $establishmentScope, null, true);
+
+        return [
+            'total_ad' => count($fetchResult['users']),
+            'fetch_groups_failed' => $fetchResult['fetch_groups_failed'],
+            'main_groups_found' => $fetchResult['main_groups_found'],
+            'present_guids' => $fetchResult['present_guids'],
+            'present_logins' => $fetchResult['present_logins'],
+        ];
+    }
+
+    /**
      * Récupère les utilisateurs depuis l'AD via les groupes principaux
-     * 
+     *
+     * ─────────────────────────────────────────────────────────────────────────
+     * Story 49.3 (AC2 / D3) — pourquoi `paginate()` et NON `get()`.
+     * ─────────────────────────────────────────────────────────────────────────
+     * `MaxPageSize` vaut 1000 par défaut côté AD : au-delà, le serveur renvoie
+     * un résultat PARTIEL accompagné d'une erreur « Size limit exceeded » /
+     * « Partial search results returned ». Or LdapRecord AVALE cette erreur —
+     * `HandlesConnection::shouldBypassError()` la bypasse explicitement via
+     * `DetectsErrors::causedBySizeLimit()` — et `get()` rend le partiel SANS
+     * exception ni signal post-hoc exploitable. Autrement dit : la troncature
+     * est INDÉTECTABLE après coup. La seule parade est de ne jamais la
+     * provoquer, d'où le contrôle paged-results (`paginate()`, supporté par
+     * Samba AD), qui corrige au passage le balayage delta.
+     *
+     * La garde anti-désactivation en masse (`UserDepartureReconciliationService`)
+     * reste derrière, en défense en profondeur : un balayage amputé pour une
+     * raison qu'on n'aurait pas prévue ne doit jamais désactiver un parc.
+     *
      * @param string $establishmentScope Scope de rattachement établissement (all|tree|memberOf)
      * @param string|null $changedSince Filtre whenChanged >= valeur AD generalized time
      * @return array{
      *   users: array<AdUser>,
-     *   establishment: array{tree: int, member_of: int, excluded: int},
-     *   max_whenchanged: ?string
+     *   establishment: array{tree: int, ou_tree: int, member_of: int, excluded: int},
+     *   max_whenchanged: ?string,
+     *   fetch_groups_failed: int,
+     *   main_groups_found: int,
+     *   present_guids: string[],
+     *   present_logins: string[]
      * }
      */
-    private function fetchUsersFromAd(callable $log, string $establishmentScope, ?string $changedSince = null): array
-    {
+    private function fetchUsersFromAd(
+        callable $log,
+        string $establishmentScope,
+        ?string $changedSince = null,
+        bool $paginationIsCritical = false
+    ): array {
         $users = [];
         $seenIdentifiers = [];
+        // Story 49.3 (AC2 / D6) — les DEUX familles d'identifiants présents,
+        // renseignées pour CHAQUE entrée retenue (et pas l'une ou l'autre selon
+        // la clé de dédoublonnage) : le prédicat d'absence teste le guid ET le
+        // login, une ligne SQL sans `ad_guid` (créée par SE5 avant sa première
+        // sync) ne doit pas être vue comme partie.
+        $presentGuids = [];
+        $presentLogins = [];
+        $fetchGroupsFailed = 0;
         $establishmentMatchedByTree = 0;
         $establishmentMatchedByOuTree = 0;
         $establishmentMatchedByMemberOf = 0;
@@ -289,6 +377,13 @@ class UserSyncService
                     'excluded' => 0,
                 ],
                 'max_whenchanged' => $maxWhenChanged,
+                // Story 49.3 (AC3-3) — `main_groups_found = 0` est une condition
+                // d'ABANDON de la réconciliation : sans groupe principal, tout
+                // le parc paraîtrait absent.
+                'fetch_groups_failed' => 0,
+                'main_groups_found' => 0,
+                'present_guids' => [],
+                'present_logins' => [],
             ];
         }
 
@@ -305,7 +400,27 @@ class UserSyncService
                     $ldapQuery->where('whenchanged', '>=', $changedSince);
                 }
 
-                $ldapUsers = $ldapQuery->get();
+                // `paginate()` et non `get()` : cf. le docblock de la méthode —
+                // la troncature silencieuse au `MaxPageSize` AD est
+                // indétectable après coup, on ne peut que la prévenir.
+                //
+                // Correction de review — la CRITICITÉ du contrôle paged-results
+                // n'est pas un détail. À `false` (défaut LdapRecord), un serveur
+                // qui ne reconnaît pas le contrôle a le droit de l'IGNORER
+                // (RFC 4511 §4.1.11) : la requête retombe alors exactement dans
+                // le mode tronqué-silencieux qu'on cherche à fuir, et le
+                // correctif se dégrade sans bruit. À `true`, le même serveur
+                // REJETTE la requête — on récolte une exception, donc un fetch
+                // en échec, donc l'abandon de la garde. Fail-closed.
+                //
+                // On ne l'impose QUE sur le chemin de la réconciliation
+                // (`fetchPresence`) : là, ne rien faire est toujours préférable
+                // à désactiver sur un balayage douteux. L'import et le delta
+                // 5 min gardent la criticité par défaut — les casser toutes les
+                // 5 minutes sur un annuaire qui n'honore pas le contrôle serait
+                // une régression bien pire que la troncature qu'ils subissaient
+                // déjà avant 49.3.
+                $ldapUsers = $ldapQuery->paginate(1000, $paginationIsCritical);
 
                 $count = 0;
                 foreach ($ldapUsers as $ldapUser) {
@@ -352,6 +467,10 @@ class UserSyncService
                     }
 
                     $seenIdentifiers[$dedupeKey] = true;
+                    if ($objectGuid !== null && $objectGuid !== '') {
+                        $presentGuids[$objectGuid] = true;
+                    }
+                    $presentLogins[strtolower($login)] = true;
                     $users[] = $this->ldapUserToAdData($ldapUser, $groupName);
                     $count++;
                 }
@@ -359,6 +478,13 @@ class UserSyncService
                 $log('info', "  → {$count} utilisateurs dans {$groupName}");
 
             } catch (\Exception $e) {
+                // Story 49.3 (AC2 / AC3-2) — l'échec d'UN groupe principal était
+                // jusqu'ici un simple warning avalé : le retour d'`importFromAd`
+                // paraissait sain alors qu'un tiers du parc manquait, et la
+                // réconciliation des départs aurait désactivé tous les membres
+                // du groupe en échec. On le COMPTE, et la garde abandonne dès
+                // qu'il est non nul.
+                $fetchGroupsFailed++;
                 $log('warning', "Erreur récupération {$groupName}: " . $e->getMessage());
             }
         }
@@ -385,6 +511,10 @@ class UserSyncService
                 'excluded' => $establishmentExcluded,
             ],
             'max_whenchanged' => $maxWhenChanged,
+            'fetch_groups_failed' => $fetchGroupsFailed,
+            'main_groups_found' => count($mainGroupsDn),
+            'present_guids' => array_keys($presentGuids),
+            'present_logins' => array_keys($presentLogins),
         ];
     }
 
@@ -530,6 +660,13 @@ class UserSyncService
             dn: $ldapUser->getDn(),
             groups: $groupNames,
             rights: $rightProfiles,
+            // Story 49.3 (AC1) — MIROIR de `useraccountcontrol`. Le business
+            // object le calcule déjà (`LdapUser::toBusinessObject()` :
+            // `uac === 512`) ; il n'était simplement pas transmis au DTO, si
+            // bien que `upsertUser` posait un `true` en dur à la création et ne
+            // touchait rien à l'update. Le transmettre est ce qui permet à la
+            // sync de refléter les désactivations ET les retours.
+            isActive: $businessObject->isActiveAccount(),
             role: $role,
             objectGuid: $this->convertAdGuidToString($ldapUser->getFirstAttribute('objectguid')),
             passwordChangedAt: $passwordChangedAt,
@@ -568,11 +705,21 @@ class UserSyncService
 
     /**
      * Crée ou met à jour un utilisateur Eloquent depuis les données AD
-     * 
+     *
+     * Story 49.3 (AC1) — `is_active` est un MIROIR de l'AD sur les DEUX
+     * branches. Ni un `true` en dur (il ressusciterait toutes les 5 minutes un
+     * compte désactivé à la main : `UserService::disableUser()` pose
+     * `uac=514` + `is_active=false`, mais le compte AD désactivé RESTE membre
+     * de ses groupes, donc présent au balayage), ni une absence (le retour d'un
+     * utilisateur ne serait jamais reflété).
+     *
+     * @param bool|null $reactivated Renseigné par référence : `true` quand
+     *        l'update fait passer `is_active` de false à true (compteur AC6).
      * @return string 'created'|'updated'|'skipped'
      */
-    private function upsertUser(AdUser $adUser): string
+    private function upsertUser(AdUser $adUser, ?bool &$reactivated = null): string
     {
+        $reactivated = false;
         $login = $adUser->login;
         $adGuid = $this->convertAdGuidToString($adUser->objectGuid);
         $user = null;
@@ -623,12 +770,18 @@ class UserSyncService
                 'role' => $adUser->role,
                 'school_code' => $adUser->etabCode,
                 'school_name' => $adUser->etabName,
-                'is_active' => true,
+                // Story 49.3 (AC1) — miroir `useraccountcontrol` (512 = actif).
+                'is_active' => $adUser->isActive,
                 'ad_synced_at' => now(),
                 // Story 14.4 — AC3 / Tâche 4.3 : backfill password_changed_at depuis pwdLastSet AD
                 'password_changed_at' => $adUser->passwordChangedAt,
             ]);
         } else {
+            // Story 49.3 (AC1/AC6) — lu AVANT l'update : c'est la transition
+            // false → true qui compte comme « réactivation » dans le rapport.
+            $wasActive = (bool) $user->is_active;
+            $reactivated = ! $wasActive && $adUser->isActive;
+
             $user->update([
                 'login' => $login,
                 'fullname' => $adUser->fullname !== '' ? $adUser->fullname : $user->fullname,
@@ -640,6 +793,10 @@ class UserSyncService
                 'role' => $adUser->role !== '' ? $adUser->role : $user->role,
                 'school_code' => ($adUser->etabCode !== null && $adUser->etabCode !== '') ? $adUser->etabCode : $user->school_code,
                 'school_name' => ($adUser->etabName !== null && $adUser->etabName !== '') ? $adUser->etabName : $user->school_name,
+                // Story 49.3 (AC1) — miroir `useraccountcontrol` sur l'update
+                // aussi : sans lui, `users.is_active` ne reflétait NI les
+                // désactivations AD, NI les retours (prérequis FR-R4).
+                'is_active' => $adUser->isActive,
                 'ad_synced_at' => now(),
                 // Story 14.4 — AC3 / Tâche 4.3 : mise à jour password_changed_at.
                 // Préserve la date SQL existante si l'AD répond null

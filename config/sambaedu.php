@@ -710,4 +710,35 @@ return [
     'doc' => [
         'index_file' => env('SAMBAEDU_DOC_INDEX_FILE', base_path('userDoc/dist/index.html')),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 49.3 — Garde anti-désactivation en masse (NFR-R1)
+    |--------------------------------------------------------------------------
+    | Seuil au-delà duquel `users:reconcile-departures` ABANDONNE en no-op
+    | total plutôt que de désactiver ce qui ressemble à un parc entier.
+    |
+    | Seuil effectif = max(ceil(ratio × base), plancher), où `base` est le
+    | nombre de comptes ACTIFS `source='ad'` (hors compte protégé et comptes
+    | système) constaté AVANT la passe.
+    |
+    |  - `max_disable_ratio` (défaut 0.10) protège les GROS parcs : 10 % du
+    |    parc qui disparaît en une nuit n'est pas un mouvement d'effectifs,
+    |    c'est un incident d'annuaire.
+    |  - `max_disable_floor` (défaut 5) protège les PETITS parcs : sans
+    |    plancher, un établissement de 10 comptes refuserait 2 départs
+    |    parfaitement légitimes toutes les nuits.
+    |
+    | `--force` ne lève QUE ce seuil — c'est le geste ASSUMÉ de la rentrée
+    | (purge AAF massive). Il ne lève JAMAIS les gardes de santé du balayage
+    | (fetch en échec, groupe principal en erreur, groupes principaux absents,
+    | résultat anormalement vide) : une panne AD reste infranchissable, même
+    | forcée. Procédure au runbook `docs/qa/domains/ad-sync.md`.
+    */
+    'user_sync' => [
+        'reconcile' => [
+            'max_disable_ratio' => (float) env('USER_SYNC_RECONCILE_MAX_DISABLE_RATIO', 0.10),
+            'max_disable_floor' => (int) env('USER_SYNC_RECONCILE_MAX_DISABLE_FLOOR', 5),
+        ],
+    ],
 ];

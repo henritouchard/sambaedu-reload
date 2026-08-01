@@ -69,6 +69,23 @@ class Kernel extends ConsoleKernel
         // `user-groups:sync-from-ad` pointait une commande jamais créée
         // (NamespaceNotFoundException loggée toutes les 5 min depuis l'origine).
 
+        // Story 49.3 (AC8) — Réconciliation nocturne des DÉPARTS à 01h30.
+        // Balayage AD complet (entrées + retours) puis désactivation des
+        // absents, sous garde anti-désactivation en masse. DISTINCTE du tick
+        // delta 5 min ci-dessus, qui reste inchangé : lui capte les entrées,
+        // les retours et les sorties de groupe ; seul le balayage COMPLET peut
+        // conclure qu'un compte a disparu de l'annuaire.
+        // Créneau 01h30 : libre, et AVANT la fenêtre de maintenance nocturne
+        // (02h00 → 04h30) — la passe doit avoir rendu son verdict avant que les
+        // purges ne tournent.
+        // Exécution directe (pas via la queue `sync`), comme les autres
+        // commandes daily. Le fuseau du scheduler est `app.timezone`
+        // (Europe/Paris) — aucun timestamp brut n'est écrit par cette passe.
+        $schedule->command('users:reconcile-departures')
+                 ->dailyAt('01:30')
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Purge des error_logs de plus de 30 jours
         $schedule->command('error-logs:prune')
                  ->daily()
