@@ -3493,6 +3493,10 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
                 $table->string('type');
                 $table->text('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
+                // Story 49.1 — profil de droits porté par le groupe (parité
+                // avec la migration ; posé par défaut à la CRÉATION pour
+                // `Profs`/`Eleves` dans `projectFoldedGroup`).
+                $table->unsignedBigInteger('rights_profile_id')->nullable();
                 $table->timestamps();
             });
             $this->createdTables = true;

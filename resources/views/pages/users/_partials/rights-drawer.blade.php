@@ -7,6 +7,7 @@ use App\Components\Traits\WithToasts;
 use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Models\User as EloquentUser;
+use App\Services\GroupRightsProfileService;
 use App\Services\UserService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -56,11 +57,16 @@ new class extends Component {
         // depuis /app/rights-management ou rapatriés via la sync AD. Sans ça,
         // un profil custom existait en base mais n'apparaissait pas ici, donc
         // ne pouvait pas être assigné.
+        // Story 49.1 (AC8) — l'état « porté » est DÉRIVÉ en lecture (jointure
+        // `user_groups.rights_profile_id` → `roles`), aucune colonne ajoutée
+        // sur `model_has_roles`, aucune persistance.
+        $carriers = app(GroupRightsProfileService::class)->carriersByRoleId();
+
         $this->availableRoles = \Spatie\Permission\Models\Role::where('guard_name', 'web')
             ->with('permissions')
             ->orderBy('name')
             ->get()
-            ->map(function ($r) {
+            ->map(function ($r) use ($carriers) {
                 $enumCase = SambaRole::tryFrom($r->name);
                 return [
                     'name' => $r->name,
@@ -68,6 +74,9 @@ new class extends Component {
                     'is_seeded' => SambaRole::isSeeded($r->name),
                     'permissions_count' => $r->permissions->count(),
                     'permissions' => $r->permissions->pluck('name')->toArray(),
+                    // Groupes portant ce profil — non vide ⇒ rôle NON attribuable
+                    // et NON décochable ici (AC8).
+                    'carried_by' => $carriers[(int) $r->id] ?? [],
                 ];
             })
             ->toArray();
@@ -147,6 +156,23 @@ new class extends Component {
 
         if ($this->selectedRole === null) {
             $this->toastError('Veuillez sélectionner un rôle.');
+            return;
+        }
+
+        // Story 49.1 (AC8 / D8) — garde SERVEUR : un profil porté par au moins
+        // un groupe n'est ni attribuable ni décochable ici, quel que soit le
+        // payload reçu. Le `disabled` de l'UI seul serait du théâtre : un
+        // payload Livewire forgé écrirait, et la réconciliation (≤ 5 min de
+        // sync delta) ferait un retrait silencieux — exactement le sinistre que
+        // l'AC prévient. Le RETRAIT est bloqué symétriquement : décocher un
+        // profil porté serait re-posé à la réconciliation suivante.
+        $carriers = $this->carriersFor($this->selectedRole);
+        if (!empty($carriers)) {
+            $this->toastError(
+                "Le profil « {$this->selectedRole} » est porté par le(s) groupe(s) "
+                . implode(', ', $carriers)
+                . ' — pour donner ce profil, ajoutez l\'utilisateur au groupe.'
+            );
             return;
         }
 
@@ -427,9 +453,32 @@ new class extends Component {
     }
 
     /**
+     * Story 49.1 (AC8) — noms des groupes portant un profil donné, relus EN
+     * BASE au moment du geste (pas depuis l'état Livewire, qui pourrait être
+     * forgé ou périmé).
+     *
+     * @return string[]
+     */
+    private function carriersFor(string $roleName): array
+    {
+        $role = \Spatie\Permission\Models\Role::where('name', $roleName)
+            ->where('guard_name', 'web')
+            ->first();
+
+        if (!$role) {
+            return [];
+        }
+
+        return app(GroupRightsProfileService::class)->carrierNames((int) $role->id);
+    }
+
+    /**
      * Story 7.1.bis — compte le nombre d'users sélectionnés ayant chaque rôle.
      *
-     * @return array<string, array{state:string, has:int, total:int}>
+     * Story 49.1 (AC8) — enrichi de `carried_by` : les groupes portant ce
+     * profil. Non vide ⇒ contrôle désactivé + raison affichée.
+     *
+     * @return array<string, array{state:string, has:int, total:int, carried_by:string[]}>
      */
     #[Computed]
     public function roleStates(): array
@@ -448,6 +497,7 @@ new class extends Component {
         // les rôles seedés ; sinon les profils customs apparaissent toujours
         // avec un badge "Aucun" même quand un user les porte.
         $roleNames = array_column($this->availableRoles, 'name');
+        $carriedBy = array_column($this->availableRoles, 'carried_by', 'name');
 
         $states = [];
         foreach ($roleNames as $name) {
@@ -467,6 +517,7 @@ new class extends Component {
                 },
                 'has' => $has,
                 'total' => $total,
+                'carried_by' => $carriedBy[$name] ?? [],
             ];
         }
 
@@ -533,16 +584,29 @@ new class extends Component {
                     <div class="flex-1 overflow-y-auto min-h-0 space-y-2 mb-4">
                         @foreach ($availableRoles as $role)
                             @php
-                                $rState = $this->roleStates[$role['name']] ?? ['state' => 'none', 'has' => 0, 'total' => count($selectedUsers)];
+                                $rState = $this->roleStates[$role['name']] ?? ['state' => 'none', 'has' => 0, 'total' => count($selectedUsers), 'carried_by' => $role['carried_by'] ?? []];
+                                // Story 49.1 (AC8) — profil PORTÉ par un groupe :
+                                // ni attribuable ni décochable ici (le geste est
+                                // l'ajout au groupe).
+                                $carriedBy = $role['carried_by'] ?? [];
+                                $isCarried = !empty($carriedBy);
                             @endphp
                             <label
-                                class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors
-                                    {{ $selectedRole === $role['name'] ? 'bg-primary/10 border border-primary/30' : 'bg-base-100 hover:bg-base-300/50 border border-transparent' }}">
+                                class="flex items-center gap-3 p-3 rounded-lg transition-colors
+                                    {{ $isCarried ? 'cursor-not-allowed opacity-70 bg-base-100 border border-base-300' : 'cursor-pointer ' . ($selectedRole === $role['name'] ? 'bg-primary/10 border border-primary/30' : 'bg-base-100 hover:bg-base-300/50 border border-transparent') }}">
                                 <input type="radio" wire:model.live="selectedRole" value="{{ $role['name'] }}"
+                                    @disabled($isCarried)
                                     class="radio radio-primary radio-sm" />
                                 <div class="flex-1">
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-sm">{{ $role['label'] }}</span>
+                                        @if ($isCarried)
+                                            <span class="badge badge-warning badge-xs"
+                                                title="Profil porté par un groupe : l'appartenance l'attribue automatiquement">
+                                                <i class="fa-solid fa-users-rectangle mr-1"></i>
+                                                porté par un groupe
+                                            </span>
+                                        @endif
                                         @if (!($role['is_seeded'] ?? true))
                                             <span class="badge badge-accent badge-xs"
                                                 title="Profil personnalisé créé via /app/rights-management ou rapatrié AD">
@@ -575,6 +639,12 @@ new class extends Component {
                                             <span class="text-primary">+{{ count($role['permissions']) - 3 }}</span>
                                         @endif
                                     </div>
+                                    @if ($isCarried)
+                                        <div class="text-xs text-warning mt-1">
+                                            Porté par le(s) groupe(s) {{ implode(', ', $carriedBy) }} — pour donner
+                                            ce profil, ajoutez l'utilisateur au groupe.
+                                        </div>
+                                    @endif
                                 </div>
                             </label>
                         @endforeach

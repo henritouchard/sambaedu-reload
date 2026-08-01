@@ -8,6 +8,7 @@ use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Filesystem\ShareService;
+use App\Services\GroupRightsProfileService;
 use App\Services\UserGroupService;
 use Illuminate\Support\Facades\Log;
 
@@ -38,6 +39,9 @@ use Illuminate\Support\Facades\Log;
  *    d'I/O), et écrire l'AD pendant qu'on le lit est conceptuellement faux.
  *    Flag DÉDIÉ : ne JAMAIS réutiliser `$syncEnabled`, qui gouverne la synchro
  *    FS ShareService (laquelle DOIT continuer à tourner au read-back).
+ *  - Réconciliation des PROFILS DE DROITS (Story 49.1) suspendue SEULE via
+ *    `disableProfileReconcile()`. Elle est ancrée AVANT le guard
+ *    `$syncEnabled` — cf. le docblock de `created()`.
  *
  * Fail-soft : aucune exception n'est propagée — un échec côté ShareService ou
  * côté projection AD est loggé et l'opération Eloquent (attach/detach/update)
@@ -55,6 +59,28 @@ class UserGroupUserPivotObserver
      * read-back `syncFromAd`, seul le resync AD est suspendu.
      */
     public static bool $adResyncEnabled = true;
+
+    /**
+     * Story 49.1 (D9) — flag DÉDIÉ à la réconciliation des profils de droits
+     * portés par les groupes. Pattern documenté 42.2 : chaque canal son flag.
+     *
+     * Ne JAMAIS le confondre avec `$syncEnabled` (synchro FS ShareService) ni
+     * avec `$adResyncEnabled` (projection AD). `$syncEnabled` est coupé par des
+     * chemins — import users, tests FS — qui DOIVENT malgré tout matérialiser
+     * les rôles : c'est précisément pourquoi le hook profils est ancré AVANT
+     * ce guard, sous son propre flag.
+     */
+    public static bool $profileReconcileEnabled = true;
+
+    public static function disableProfileReconcile(): void
+    {
+        self::$profileReconcileEnabled = false;
+    }
+
+    public static function enableProfileReconcile(): void
+    {
+        self::$profileReconcileEnabled = true;
+    }
 
     public static function disableSync(): void
     {
@@ -76,8 +102,16 @@ class UserGroupUserPivotObserver
         self::$adResyncEnabled = true;
     }
 
+    /**
+     * Story 49.1 (D9) — le hook « profils de droits » est appelé AVANT le guard
+     * `$syncEnabled`, DÉLIBÉRÉMENT : ce flag est coupé par des chemins qui
+     * doivent quand même matérialiser les rôles (import users
+     * `persistUserGroupsToSql`, tests FS). Il a son propre flag.
+     */
     public function created(UserGroupUserPivot $pivot): void
     {
+        $this->reconcileProfiles($pivot);
+
         if (! self::$syncEnabled) {
             return;
         }
@@ -86,6 +120,8 @@ class UserGroupUserPivotObserver
 
     public function deleted(UserGroupUserPivot $pivot): void
     {
+        $this->reconcileProfiles($pivot);
+
         if (! self::$syncEnabled) {
             return;
         }
@@ -133,6 +169,63 @@ class UserGroupUserPivotObserver
         } catch (\Throwable $e) {
             Log::error('UserGroupUserPivotObserver: échec resync projection AD (changement de rôle d\'arête)', [
                 'user_id' => (int) ($pivot->user_id ?? 0),
+                'group_id' => $groupId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Story 49.1 (AC2 / D9) — matérialise les profils de droits après un
+     * changement d'appartenance (attach ou detach, quel que soit le canal).
+     *
+     * **Early-return borné.** Si le groupe du pivot ne porte AUCUN profil, la
+     * réconciliation est un no-op MATHÉMATIQUE : l'union attendue comme
+     * l'ensemble révocable ne dépendent que des groupes PORTEURS. Une seule
+     * requête légère (le `rights_profile_id` du groupe) suffit à le décider —
+     * c'est ce qui borne le coût d'un import massif, où la quasi-totalité des
+     * ~600 groupes ne porte rien.
+     *
+     * Le groupe INTROUVABLE est le seul cas où l'on réconcilie sans savoir :
+     * il correspond à un detach accompagnant la suppression du groupe, donc à
+     * un porteur potentiellement disparu. (Le cleanup de sync supprime en
+     * masse via `whereNotIn(...)->delete()`, qui n'émet aucun event pivot : ce
+     * chemin-là relève du filet `users:reproject-group-profiles`.)
+     *
+     * **Fail-soft intégral** : un échec de réconciliation est loggé et ne casse
+     * JAMAIS l'écriture pivot qui vient d'aboutir. Aucune récursion possible :
+     * la réconciliation n'écrit que `model_has_roles`, jamais le pivot.
+     */
+    private function reconcileProfiles(UserGroupUserPivot $pivot): void
+    {
+        if (! self::$profileReconcileEnabled) {
+            return;
+        }
+
+        $userId = (int) ($pivot->user_id ?? 0);
+        $groupId = (int) ($pivot->user_group_id ?? 0);
+        if ($userId <= 0 || $groupId <= 0) {
+            return;
+        }
+
+        try {
+            $group = UserGroup::query()
+                ->whereKey($groupId)
+                ->first(['id', 'rights_profile_id']);
+
+            if ($group !== null && $group->rights_profile_id === null) {
+                return; // groupe non porteur : no-op mathématique.
+            }
+
+            $user = User::find($userId);
+            if (! $user) {
+                return;
+            }
+
+            app(GroupRightsProfileService::class)->reconcile($user);
+        } catch (\Throwable $e) {
+            Log::error('UserGroupUserPivotObserver: échec réconciliation des profils de droits', [
+                'user_id' => $userId,
                 'group_id' => $groupId,
                 'error' => $e->getMessage(),
             ]);

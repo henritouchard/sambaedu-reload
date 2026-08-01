@@ -89,7 +89,10 @@ class RoleManagementTest extends TestCase
         $component = Livewire::test($this->indexPage())
             ->call('loadProfiles');
 
-        $profiles = $component->get('profilesList');
+        // Story 49.1 — `profilesList` a été scindé : la liste historique est
+        // désormais `unattachedProfilesList` (profils portés par AUCUN groupe).
+        // Aucun groupe porteur n'existe dans ce test : tous les profils y sont.
+        $profiles = $component->get('unattachedProfilesList');
 
         $this->assertGreaterThanOrEqual(
             count(SambaRole::cases()) + 1,

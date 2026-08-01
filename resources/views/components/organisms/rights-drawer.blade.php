@@ -5,6 +5,7 @@ use Livewire\Attributes\On;
 use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Repositories\UserRepository;
+use App\Services\GroupRightsProfileService;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -95,6 +96,11 @@ new class extends Component {
         $this->rolesState = [];
         $this->rolesMeta = [];
 
+        // Story 49.1 (AC8) — état « porté » DÉRIVÉ en lecture (aucune
+        // persistance) : un profil porté par au moins un groupe est affiché
+        // mais ni attribuable ni décochable ici.
+        $carriers = app(GroupRightsProfileService::class)->carriersByRoleId();
+
         // Tous les rôles DB (seedés + custom rapatriés 7.2).
         $allRoles = SpatieRole::where('guard_name', 'web')->orderBy('name')->get();
         foreach ($allRoles as $role) {
@@ -116,6 +122,9 @@ new class extends Component {
                 'label' => $label,
                 'is_seeded' => $isSeeded,
                 'permissions' => $permsWithLabels,
+                // Story 49.1 (AC8) — groupes portant ce profil (vide = délégation
+                // libre, comportement inchangé).
+                'carried_by' => $carriers[(int) $role->id] ?? [],
             ];
             $this->rolesState[$role->name] = in_array($role->name, $assignedRoleNames, true);
         }
@@ -135,6 +144,13 @@ new class extends Component {
 
     public function toggleRole(string $roleName): void
     {
+        // Story 49.1 (AC8) — un profil PORTÉ par un groupe n'est pas
+        // basculable ici : l'appartenance au groupe l'attribue, et le drawer
+        // le rendrait mensonger (la réconciliation le re-poserait / re-retirerait).
+        if (!empty($this->rolesMeta[$roleName]['carried_by'] ?? [])) {
+            return;
+        }
+
         if (isset($this->rolesState[$roleName])) {
             $this->rolesState[$roleName] = !$this->rolesState[$roleName];
         }
@@ -157,10 +173,28 @@ new class extends Component {
         $added = 0;
         $removed = 0;
         $protectedSkipped = 0;
+        $carriedBlocked = [];
+
+        // Story 49.1 (AC8 / D8) — les groupes porteurs sont relus EN BASE ici
+        // (et non depuis `rolesMeta`, qui vient de l'état Livewire et pourrait
+        // être forgé) : defense in depth, un payload forgé ne doit pas écrire.
+        $carriers = app(GroupRightsProfileService::class)->carriersByRoleId();
+        $carriedNames = [];
+        foreach (SpatieRole::where('guard_name', 'web')->get(['id', 'name']) as $role) {
+            if (!empty($carriers[(int) $role->id])) {
+                $carriedNames[$role->name] = $carriers[(int) $role->id];
+            }
+        }
 
         foreach ($this->rolesState as $roleName => $isAssigned) {
             $wasAssigned = $this->initialRolesState[$roleName] ?? false;
             if ($isAssigned === $wasAssigned) {
+                continue;
+            }
+
+            // Garde SERVEUR symétrique : ni assign ni remove sur un profil porté.
+            if (isset($carriedNames[$roleName])) {
+                $carriedBlocked[] = "{$roleName} (porté par : " . implode(', ', $carriedNames[$roleName]) . ')';
                 continue;
             }
 
@@ -186,6 +220,13 @@ new class extends Component {
         $this->isLoading = false;
 
         $total = $added + $removed;
+        if (!empty($carriedBlocked)) {
+            ToastMagic::error(
+                'Profil(s) porté(s) par un groupe, non modifiable(s) ici : '
+                . implode(' ; ', $carriedBlocked)
+                . ' — pour donner ce profil, ajoutez l\'utilisateur au groupe.'
+            );
+        }
         if ($protectedSkipped > 0) {
             ToastMagic::warning(
                 "Le compte d'administration « {$this->targetLogin} » est protégé : "
@@ -234,8 +275,15 @@ new class extends Component {
                 {{-- Liste des rôles Spatie avec toggles --}}
                 <div class="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
                     @foreach ($rolesMeta as $roleName => $meta)
+                        @php
+                            // Story 49.1 (AC8) — profil porté par un groupe :
+                            // affiché, mais ni attribuable ni décochable ici.
+                            $carriedBy = $meta['carried_by'] ?? [];
+                            $isCarried = !empty($carriedBy);
+                        @endphp
                         <div
-                            class="flex items-center justify-between p-3 rounded-xl hover:bg-base-200/50 transition-colors border border-transparent hover:border-base-300">
+                            class="flex items-center justify-between p-3 rounded-xl transition-colors border border-transparent
+                                {{ $isCarried ? 'opacity-70' : 'hover:bg-base-200/50 hover:border-base-300' }}">
                             <div class="flex-1 min-w-0 mr-4">
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <span class="font-medium text-sm">{{ $meta['label'] }}</span>
@@ -244,8 +292,17 @@ new class extends Component {
                                     @else
                                         <span class="badge badge-xs badge-ghost">personnalisé</span>
                                     @endif
+                                    @if ($isCarried)
+                                        <span class="badge badge-xs badge-warning">porté par un groupe</span>
+                                    @endif
                                     <code class="text-xs text-base-content/40">{{ $roleName }}</code>
                                 </div>
+                                @if ($isCarried)
+                                    <div class="text-xs text-warning mt-1">
+                                        Porté par le(s) groupe(s) {{ implode(', ', $carriedBy) }} — pour donner
+                                        ce profil, ajoutez l'utilisateur au groupe.
+                                    </div>
+                                @endif
                                 @if (!empty($meta['permissions']))
                                     <div class="mt-1 flex flex-wrap gap-1">
                                         @foreach ($meta['permissions'] as $perm)
@@ -257,6 +314,7 @@ new class extends Component {
                                 @endif
                             </div>
                             <input type="checkbox" wire:click="toggleRole('{{ $roleName }}')"
+                                @disabled($isCarried)
                                 @checked($rolesState[$roleName] ?? false) class="toggle toggle-warning" />
                         </div>
                     @endforeach
