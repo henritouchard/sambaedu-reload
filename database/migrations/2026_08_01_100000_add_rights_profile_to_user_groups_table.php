@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -28,29 +27,32 @@ use Illuminate\Support\Facades\Schema;
  *    grande majorité des ~200 groupes — classes, équipes, matières — ne porte
  *    rien), et un même profil peut être porté par PLUSIEURS groupes.
  *
- * Volet DONNÉES (AC9 — seed brownfield, volet (a) du D6) : sur un parc scolaire
- * existant dont les groupes `Profs`/`Eleves` sont déjà importés, on pose le
- * défaut iso-comportement (`prof` / `eleve`) SI ET SEULEMENT SI le groupe existe
- * et ne porte encore rien. `Administratifs` ne reçoit RIEN (aucun rôle Spatie
- * `administratif` n'existe — le lien nullable est fait pour ça). Le greenfield
- * (groupes pas encore importés à la migration) est couvert par le volet (b) :
- * défaut à la CRÉATION du groupe dans `UserGroupService::projectFoldedGroup()`.
+ * **Aucun seed (décision Henri, 2026-08-03).** Cette migration est PUREMENT
+ * structurelle : elle ajoute la colonne, rien d'autre. Une version antérieure
+ * posait `prof` sur le groupe `Profs` et `eleve` sur `Eleves` — un seed
+ * « iso-comportement » pour les parcs scolaires existants. Deux raisons de
+ * l'avoir retiré :
  *
- * La migration est idempotente (gardes `hasColumn`) et n'écrase JAMAIS un choix
- * admin : `whereNull('rights_profile_id')` uniquement.
+ *  1. **Aucune installation ne le justifie.** Le produit n'est déployé que sur
+ *     les environnements de développement et de lab ; embarquer à perpétuité,
+ *     dans l'histoire du schéma, une migration de données qui ne s'appliquera
+ *     jamais nulle part est une dette gratuite. Le geste a été fait à la main
+ *     là où il avait un sens.
+ *  2. **Un profil de droits ne s'attribue pas par surprise.** Poser des droits
+ *     sur un groupe est une décision d'administrateur, pas un effet de bord de
+ *     migration — et `Profs`/`Eleves` sont des noms du vertical scolaire, que
+ *     rien ne rend universels : dans une administration, ces groupes n'existent
+ *     pas, et un groupe qui porterait par hasard l'un de ces noms recevrait des
+ *     droits que personne n'a demandés.
+ *
+ * Le geste d'amorçage est donc celui du produit : onglet Profils de
+ * `/app/rights-management` → « Donner des permissions à un groupe », qui pose le
+ * lien ET re-projette les membres dans le même geste (`setProfile()`).
+ *
+ * La migration reste idempotente (gardes `hasTable`/`hasColumn`).
  */
 return new class extends Migration
 {
-    /**
-     * Défauts iso-comportement : nom de groupe SQL → nom de rôle Spatie.
-     *
-     * `Administratifs` est ABSENT volontairement (AC9).
-     */
-    private const SEED_DEFAULTS = [
-        'Profs' => 'prof',
-        'Eleves' => 'eleve',
-    ];
-
     public function up(): void
     {
         if (! Schema::hasTable('user_groups')) {
@@ -65,8 +67,6 @@ return new class extends Migration
                     ->restrictOnDelete();
             });
         }
-
-        $this->seedBrownfieldDefaults();
     }
 
     public function down(): void
@@ -80,35 +80,5 @@ return new class extends Migration
             // colonne (no-op sur SQLite, qui n'a pas de contrainte nommée).
             $table->dropConstrainedForeignId('rights_profile_id');
         });
-    }
-
-    /**
-     * Volet données (AC9 / D6-a). Requêtes portables SQLite ⇄ Postgres (aucun
-     * SQL brut spécifique) — les tests hôtes tournent sur SQLite.
-     */
-    private function seedBrownfieldDefaults(): void
-    {
-        if (! Schema::hasTable('roles')) {
-            return; // socle Spatie absent : rien à lier (no-op silencieux).
-        }
-
-        foreach (self::SEED_DEFAULTS as $groupName => $roleName) {
-            $roleId = DB::table('roles')
-                ->where('name', $roleName)
-                ->where('guard_name', 'web')
-                ->value('id');
-
-            if ($roleId === null) {
-                continue; // greenfield / installation personnalisée : no-op.
-            }
-
-            // `LOWER(name)` : l'AD legacy stocke des CN en minuscules (`profs`)
-            // aussi souvent qu'en capitale — et `LOWER()` est portable
-            // SQLite ⇄ Postgres (même pattern que `FederatedRoleMapper`).
-            DB::table('user_groups')
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($groupName)])
-                ->whereNull('rights_profile_id')
-                ->update(['rights_profile_id' => $roleId]);
-        }
     }
 };

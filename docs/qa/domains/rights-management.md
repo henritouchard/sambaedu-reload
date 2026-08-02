@@ -1477,3 +1477,45 @@ bloquant**.
 
 > Un profil `gestionnaire` encore attribué en base après l'étape 5 est un **incident bloquant** :
 > il ne serait plus jamais révocable par aucune commande.
+
+### Scénario 19.12 — Le seed scolaire est RETIRÉ : le scénario 19.10 est caduc
+
+> **Décision Henri, 2026-08-03.** Le seed « iso-comportement » (`Profs`→`prof`, `Eleves`→`eleve`) a
+> été supprimé dans ses **deux** volets : la migration de données, et le défaut posé à la création
+> du groupe à l'import (`UserGroupService`). Le **scénario 19.10 ne s'applique plus** — ne le
+> rejouez pas, il échouerait, et c'est le comportement attendu.
+>
+> Deux raisons : aucune installation ne justifiait d'embarquer à perpétuité une migration de données
+> qui ne s'appliquerait jamais (le produit ne tourne que sur dev et lab, où le geste a été fait à la
+> main) ; et `Profs`/`Eleves` sont des noms du vertical scolaire — dans une administration, un
+> groupe portant par hasard l'un de ces noms aurait reçu des droits que personne n'a demandés.
+
+**Ce qui doit être vrai après un déploiement neuf**
+
+1. Après `migrate`, la colonne `user_groups.rights_profile_id` existe et **tous** les groupes l'ont
+   à `NULL` — y compris `Profs` et `Eleves` s'ils sont déjà importés.
+2. Après un import AD créant `Profs`/`Eleves`, ces groupes ne portent **aucun** profil.
+3. Aucun utilisateur ne gagne de rôle du seul fait de la migration ou de l'import.
+
+**Le geste d'amorçage, à faire une fois par installation**
+
+4. `/app/rights-management?tab=profiles` → **« Donner des permissions à un groupe »** → choisir le
+   groupe (`Profs`), choisir le profil (`prof`) → valider.
+5. Attendu : le lien est posé **et** les membres reçoivent le profil dans le même geste — c'est
+   `setProfile()` qui re-projette. Aucun `users:reproject-group-profiles` à lancer derrière.
+6. Répéter pour `Eleves` → `eleve` si le vertical scolaire s'applique. Ne rien poser sur
+   `Administratifs` (aucun rôle correspondant n'existe, et c'est voulu).
+7. Contre-épreuve : un ré-import AD ne doit **jamais** défaire ni ré-écraser ce choix.
+
+> Équivalent en ligne de commande, si l'UI n'est pas accessible (le `reproject` est alors
+> **nécessaire**, car un `UPDATE` SQL ne passe pas par `setProfile()`) :
+>
+> ```
+> sudo -u www-admin php artisan tinker --execute="\
+> \$g = App\Models\UserGroup::where('name','Profs')->first(); \
+> \$r = Spatie\Permission\Models\Role::where('name','prof')->where('guard_name','web')->first(); \
+> app(App\Services\GroupRightsProfileService::class)->setProfile(\$g, \$r->id);"
+> ```
+>
+> `setProfile()` reste le bon point d'entrée même en tinker : il pose le lien, re-projette les
+> membres et journalise le geste.

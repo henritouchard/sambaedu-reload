@@ -20,7 +20,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
-use Spatie\Permission\Models\Role as SpatieRole;
 
 class UserGroupService
 {
@@ -620,11 +619,14 @@ class UserGroupService
                 'type' => $detectedType,
                 'ad_dn' => $adDn !== '' ? $adDn : null,
                 'ad_guid' => $adGuid,
-                // Story 49.1 (AC9 / D6-b) — défaut iso-comportement posé à la
-                // CRÉATION uniquement (greenfield). JAMAIS sur la branche
-                // update ci-dessous : un retrait décidé par l'admin ne doit
-                // jamais être ré-écrasé par un import.
-                'rights_profile_id' => $this->defaultRightsProfileIdFor($groupName, $detectedType),
+                // Un groupe importé ne porte AUCUN profil de droits : le lien
+                // est nullable et le reste jusqu'à ce qu'un administrateur en
+                // décide autrement (décision Henri, 2026-08-03 — cf. le
+                // docblock de la migration `..._add_rights_profile_to_...`).
+                // Une version antérieure posait ici un défaut `Profs`→`prof` /
+                // `Eleves`→`eleve` : c'était le dernier littéral scolaire câblé
+                // dans un service du produit, et il aurait donné des droits, en
+                // silence, à tout groupe portant par hasard l'un de ces noms.
             ]);
             $stats['created']++;
         } else {
@@ -1484,51 +1486,6 @@ class UserGroupService
      * `custom` (déclassement) au lieu de classe/équipe/cours/… Les valeurs de
      * retour (chaînes de type) sont strictement inchangées.
      */
-    /**
-     * Story 49.1 (AC9 / D6-b) — profil de droits posé PAR DÉFAUT à la création
-     * d'un groupe importé de l'AD.
-     *
-     * Volet greenfield du seed : sur une installation neuve, les groupes ne
-     * sont pas encore en base quand la migration de données (volet brownfield)
-     * s'exécute — c'est le premier import qui les crée. On y pose alors le même
-     * défaut iso-comportement : `Profs` → `prof`, `Eleves` → `eleve`.
-     *
-     * Sémantique commune aux deux volets : « valeur par défaut à l'apparition »,
-     * JAMAIS « état imposé ». D'où l'appel depuis la seule branche CRÉATION —
-     * un retrait décidé par l'admin n'est jamais ré-écrasé par un ré-import.
-     * Un groupe créé à la main depuis l'UI ne passe pas par ici : ce geste
-     * explicite ne seed rien.
-     *
-     * `Administratifs` ne reçoit RIEN : aucun rôle Spatie correspondant
-     * n'existe, et le lien nullable est fait pour ça. Sur un parc non scolaire
-     * (aucun `Profs`/`Eleves`), la méthode retourne toujours `null`.
-     */
-    private function defaultRightsProfileIdFor(string $groupName, string $detectedType): ?int
-    {
-        if ($detectedType !== 'role') {
-            return null;
-        }
-
-        $roleName = match (mb_strtolower($groupName)) {
-            'profs' => 'prof',
-            'eleves' => 'eleve',
-            default => null,
-        };
-
-        if ($roleName === null) {
-            return null;
-        }
-
-        // No-op silencieux si le rôle socle n'existe pas encore (installation
-        // personnalisée, socle Spatie pas encore seedé).
-        $roleId = SpatieRole::query()
-            ->where('name', $roleName)
-            ->where('guard_name', 'web')
-            ->value('id');
-
-        return $roleId === null ? null : (int) $roleId;
-    }
-
     private function detectTypeFromAdGroupName(string $groupName): string
     {
         if (strncasecmp($groupName, 'Matiere_', 8) === 0 && str_contains($groupName, '@')) {
