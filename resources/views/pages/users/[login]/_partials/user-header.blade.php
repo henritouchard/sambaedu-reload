@@ -1,3 +1,27 @@
+@php
+    // Story 49.2 (D5) — le rôle affiché est résolu UNE seule fois ici, puis
+    // consommé par les badges ET par la tuile « Rôle ».
+    //
+    // Les badges Élève/Professeur s'appuyaient sur `Types\User::isEleve()/isProf()`,
+    // qui dérivaient la catégorie de `memberOf`/`dn` LDAP. Or ce DTO est hydraté
+    // DEPUIS SQL sur cette page (`UserService::getByLoginFromSql`) : la question
+    // « est-il prof ? » recevait donc une réponse dépendant de la source des
+    // données. C'est un comportement type-OU d'AFFICHAGE, pas un droit (Epic 42
+    // NFR-S3) : il se lit sur `users.role`, normalisé (la colonne a plusieurs
+    // écrivains, singulier ET pluriel).
+    $roleKey = match (strtolower(trim((string) $user->role))) {
+        'eleve', 'eleves' => 'eleve',
+        'prof', 'profs' => 'prof',
+        'administratif', 'administratifs', 'admin' => 'administratif',
+        default => null,
+    };
+    $roleLabel = match ($roleKey) {
+        'eleve' => 'Élève',
+        'prof' => 'Professeur',
+        'administratif' => 'Administratif',
+        default => ucfirst((string) ($user->role ?? 'Non défini')),
+    };
+@endphp
 <!-- En-tête avec actions principales -->
 <div class="flex flex-col mb-6 w-full">
     <div class="card-body p-0">
@@ -24,7 +48,7 @@
                                         <div class="flex-1 min-w-0">
                                             <!-- Badges de statut -->
                                             <div class="flex flex-wrap gap-2">
-                                                @if ($user->isEleve())
+                                                @if ($roleKey === 'eleve')
                                                     <div
                                                         class="badge badge-info badge-lg gap-2 px-4 py-2 shadow-md hover:shadow-lg transition-all duration-300">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor"
@@ -37,7 +61,7 @@
                                                         Élève
                                                     </div>
                                                 @endif
-                                                @if ($user->isProf())
+                                                @if ($roleKey === 'prof')
                                                     <div
                                                         class="badge badge-success badge-lg gap-2 px-4 py-2 shadow-md hover:shadow-lg transition-all duration-300">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor"
@@ -119,14 +143,6 @@
                         </div>
 
                         <!-- Rôle -->
-                        @php
-                            $roleLabel = match (strtolower((string) $user->role)) {
-                                'eleves', 'eleve' => 'Élève',
-                                'profs', 'prof' => 'Professeur',
-                                'administratifs', 'admin', 'administratif' => 'Administratif',
-                                default => ucfirst((string) ($user->role ?? 'Non défini')),
-                            };
-                        @endphp
                         <div
                             class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-300 hover:border-info/20 group">
                             <div class="stat-figure text-info group-hover:scale-110 transition-transform duration-300">

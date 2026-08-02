@@ -266,3 +266,65 @@ après avoir peuplé `/home/profiles` (cf. Scénario filesystem 26.3-1).
 
 - [ ] Scénario 26.3-U1 : pastille volumineux affichée (cache uniquement)
 - [ ] Scénario 26.3-U2 : pas de pastille sous seuil / sans snapshot
+
+---
+
+## Story 49.2 — Affichages du rôle : Postgres, plus l'annuaire (2026-08-01)
+
+Le cut-over runtime de l'Epic 49 touche deux affichages de ce domaine. Les
+parcours de session, de droits d'administration et de blocage des élèves sont
+documentés dans **`auth.md` § Story 49.2** (jamais de fichier QA par story).
+
+**Ce qui change** : les badges « Élève » / « Professeur » de la fiche utilisateur
+et la liste des profs éligibles au rôle de professeur principal dérivaient de
+prédicats qui interrogeaient l'annuaire « d'abord ». Ils lisent désormais
+`users.role`, colonne déjà chargée en mémoire. Aucun changement d'affichage
+attendu pour un compte synchronisé — le bénéfice est en coût.
+
+### Scénario 49.2-U1 — Badges de la fiche utilisateur, iso-affichage
+
+**Étapes** :
+
+1. Ouvrir `/app/users/<login>` pour un élève, puis pour un professeur.
+2. Comparer avec la tuile « Rôle » de la même page.
+
+**Attendu** :
+
+- Élève → badge bleu « Élève » ; professeur → badge vert « Professeur ».
+- Le badge et la tuile « Rôle » sont **cohérents** (ils dérivent maintenant de la
+  même valeur normalisée : `prof` et `profs` donnent le même résultat).
+- Un compte `administratif` ou `autre` n'affiche **ni** badge Élève **ni** badge
+  Professeur — comme avant.
+
+### Scénario 49.2-U2 — Professeur principal : liste instantanée
+
+**Étapes** :
+
+1. Ouvrir une classe `/app/users/groups/<id>`, action « Nommer un professeur
+   principal ».
+2. Observer le temps d'ouverture de la modale sur une classe de 25-30 élèves.
+
+**Attendu** :
+
+- Seuls les **professeurs** de la classe sont proposés (aucun élève).
+- La modale s'ouvre **immédiatement**. Auparavant, ce rendu déclenchait un
+  aller-retour annuaire **par membre de la classe** — sur une classe complète,
+  l'attente était perceptible.
+- Cocher / décocher un PP fonctionne comme avant (projection AD `PP_<classe>`
+  inchangée).
+
+### Scénario 49.2-U3 — Modales de droits : plus de compte fabriqué
+
+**Étapes** :
+
+1. `/app/users` → sélection → « Gérer les droits » (ou « Déléguer »).
+2. Cibler un login qui n'existe pas en base.
+
+**Attendu** : toast « introuvable — attendez la synchronisation (≤ 5 min) »,
+**aucune** ligne `users` créée. Détail et contre-épreuve : `auth.md` § 49.2-13.
+
+### Checklist rapide — Story 49.2 (users)
+
+- [ ] 49.2-U1 : badges Élève/Professeur inchangés et cohérents avec la tuile Rôle
+- [ ] 49.2-U2 : liste des profs d'une classe correcte et instantanée
+- [ ] 49.2-U3 : aucun compte fabriqué depuis les modales de droits

@@ -81,29 +81,11 @@ class GroupShowMembersTabsTest extends TestCase
         UserGroupUserPivotObserver::enableSync();
         Mockery::close();
 
-        // Purge le cache statique request-scope de User (LDAP primé null).
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $prop->setValue(null, []);
 
         $this->dropPermissionSchema();
         parent::tearDown();
     }
 
-    /** Pré-remplit le cache LDAP à null → isProf()/isEleve() retombent sur role. */
-    private function primeNoLdap(string ...$logins): void
-    {
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $cache = $prop->getValue();
-        foreach ($logins as $login) {
-            $cache['ldap:' . $login] = null;
-            $cache['bo:' . $login] = null;
-        }
-        $prop->setValue(null, $cache);
-    }
 
     private function makeAdmin(string $login = 'manager'): User
     {
@@ -139,7 +121,6 @@ class GroupShowMembersTabsTest extends TestCase
             $prof->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MANAGER],
             $eleve->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MEMBER],
         ]);
-        $this->primeNoLdap('prof.pp', 'prof.simple', 'eleve.un');
         return [$group, $profPp, $prof, $eleve];
     }
 
@@ -204,7 +185,6 @@ class GroupShowMembersTabsTest extends TestCase
         // pas de badge pour un admin, même porteur de l'arête owner.
         $admin = User::create(['login' => 'perso.un', 'role' => 'admin', 'fullname' => 'Dora Perso', 'is_active' => true]);
         $group->users()->sync([$admin->id => ['is_head_teacher' => true, 'role' => UserGroupUserPivot::ROLE_OWNER]]);
-        $this->primeNoLdap('perso.un');
 
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->assertSee('Dora Perso')
@@ -265,7 +245,6 @@ class GroupShowMembersTabsTest extends TestCase
         $user = User::create(['login' => 'sale.role', 'role' => 'eleve', 'fullname' => 'Sale Role', 'is_active' => true]);
         // Arête hors vocabulaire (donnée sale) — D1 : affichée « Élève ».
         $group->users()->sync([$user->id => ['role' => 'superadmin']]);
-        $this->primeNoLdap('sale.role');
 
         $members = collect(Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members())
             ->keyBy('id');

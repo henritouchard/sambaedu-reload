@@ -158,39 +158,9 @@ class LegacyConfigBridge
         return [];
     }
 
-    /**
-     * Vérifie si un utilisateur est élève
-     * 
-     * @deprecated Utiliser User::isMemberOf('Eleves')
-     */
-    public function isEleve(string $login): bool
-    {
-        $this->loadLegacyFiles();
-        $config = $this->getConfig();
-
-        if (function_exists('is_eleve')) {
-            return is_eleve($config, $login);
-        }
-
-        return false;
-    }
-
-    /**
-     * Vérifie si un utilisateur est professeur
-     * 
-     * @deprecated Utiliser User::isMemberOf('Professeurs')
-     */
-    public function isProf(string $login): bool
-    {
-        $this->loadLegacyFiles();
-        $config = $this->getConfig();
-
-        if (function_exists('is_prof')) {
-            return is_prof($config, $login);
-        }
-
-        return false;
-    }
+    // Story 49.2 (FR-R3) — `isEleve()` / `isProf()` supprimés : shims legacy
+    // `@deprecated` sans aucun appelant, qui rechargeaient toute la config
+    // legacy pour interroger l'annuaire. Le rôle se lit en Postgres.
 
     /**
      * Récupère les établissements activés

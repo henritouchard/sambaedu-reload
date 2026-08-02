@@ -6,7 +6,6 @@ use App\Http\Middleware\Auth\AuthGuardInterface;
 use App\Http\Middleware\Auth\KeycloakAuthGuard;
 use App\Http\Middleware\Auth\SambaEduAuthGuard;
 use App\Services\AuthenticationService;
-use App\Repositories\UserRepository;
 use App\Auth\Federated\ExternalIdentityLifecycleService;
 use Closure;
 use Illuminate\Http\Request;
@@ -38,9 +37,8 @@ class AuthGuardInterfaceTest extends TestCase
     public function test_sambaedu_auth_guard_implements_interface(): void
     {
         $authService = $this->createMock(AuthenticationService::class);
-        $userRepo = $this->createMock(UserRepository::class);
 
-        $guard = new SambaEduAuthGuard($authService, $userRepo, new ExternalIdentityLifecycleService());
+        $guard = new SambaEduAuthGuard($authService, new ExternalIdentityLifecycleService());
 
         $this->assertInstanceOf(AuthGuardInterface::class, $guard);
     }
@@ -80,18 +78,14 @@ class AuthGuardInterfaceTest extends TestCase
         $authServiceMock = $this->createMock(AuthenticationService::class);
         $authServiceMock->method('isAlreadyAuthenticated')->willReturn(false);
 
-        $userRepoMock = $this->createMock(UserRepository::class);
-
         // Remplacer les bindings dans le conteneur
         $this->app->instance(AuthenticationService::class, $authServiceMock);
-        $this->app->instance(UserRepository::class, $userRepoMock);
 
         // Forcer la recréation du guard avec les nouveaux mocks
         $this->app->bind(
             AuthGuardInterface::class,
             fn ($app) => new SambaEduAuthGuard(
                 $app->make(AuthenticationService::class),
-                $app->make(UserRepository::class),
                 $app->make(ExternalIdentityLifecycleService::class),
             ),
         );
@@ -136,16 +130,12 @@ class AuthGuardInterfaceTest extends TestCase
         $authServiceMock->method('isAlreadyAuthenticated')->willReturn(true);
         $authServiceMock->method('getCurrentUser')->willReturn('');
 
-        $userRepoMock = $this->createMock(UserRepository::class);
-
         $this->app->instance(AuthenticationService::class, $authServiceMock);
-        $this->app->instance(UserRepository::class, $userRepoMock);
 
         $this->app->bind(
             AuthGuardInterface::class,
             fn ($app) => new SambaEduAuthGuard(
                 $app->make(AuthenticationService::class),
-                $app->make(UserRepository::class),
                 $app->make(ExternalIdentityLifecycleService::class),
             ),
         );

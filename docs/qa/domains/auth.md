@@ -1836,3 +1836,302 @@ Avant la correction Opus-D, `reg add ... Migrated /d 0` n'avait aucun effet — 
 - [ ] Smoke 16.13bis-17 (Linux) — fragment contient `export BOOTSTRAP_TOKEN="<hex32>"` + curl enroll réussit
 - [ ] APCu inspection : `php -r 'var_dump(apcu_fetch("apps.<token-vu-dans-fragment>"));'` retourne le payload `['uuid' => '...', 'time' => ...]`
 
+
+---
+
+## Story 49.2 — Bascule runtime Postgres-only du guard de session (2026-08-01)
+
+**Date livraison** : 2026-08-01
+**Migrations à appliquer** : aucune (story en lecture seule sur le schéma)
+**Prérequis** : Stories 49.1 (le groupe porte le profil de droits) et 49.3
+(`users.is_active` = miroir de `useraccountcontrol`) déployées. Sans elles, le
+guard lirait un miroir incomplet.
+
+### Ce qui change, en une phrase
+
+Pendant la navigation, **plus aucune requête ne part vers l'annuaire**.
+L'existence du compte et son activité sont lues dans Postgres ; le rôle et les
+droits viennent de Spatie. L'AD reste l'autorité des comptes et de
+l'authentification, mais son seul contact runtime est désormais la **cérémonie
+de login** (le bind, et l'auto-provisioning du tout premier login).
+
+### Trois changements OBSERVABLES en exploitation
+
+| # | Avant | Après |
+|---|-------|-------|
+| O1 | Un compte désactivé dans l'AD continuait de naviguer jusqu'à 60 s (cache LDAP du guard), voire indéfiniment : la branche « compte désactivé » refusait la requête **sans détruire la session** → boucle de redirection vers `/login`. | Déconnexion **à la requête suivante**, session détruite, retour propre au formulaire de login. |
+| O2 | L'option `blocage_eleves` était **inerte** : le prédicat qui la servait renvoyait `false` en dur (contournement d'une requête LDAP à 720 s). | L'option **refonctionne**. ⚠️ Un établissement qui a `blocage_eleves` posé dans sa configuration va **re-bloquer ses élèves** au prochain login. C'est le comportement legacy voulu — mais il faut le savoir avant de recevoir l'appel. |
+| O3 | Les modales « Déléguer » / « Gérer les droits » créaient une ligne `users` minimale pour un login absent de SQL mais présent dans l'AD. | Un login absent de SQL est **refusé** avec un toast explicite (« attendre la synchronisation »). Plus aucune ligne fabriquée. |
+
+### Section 1 — Guard de session
+
+#### Scénario 49.2-1 — Navigation nominale, zéro trafic annuaire
+
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50
+# Fenêtre 1 : observer le trafic LDAP du serveur pendant la navigation
+tcpdump -ni any port 389 or port 636 -c 50
+```
+
+1. Fenêtre 2 : se connecter à `/login` avec un compte prof déjà synchronisé.
+2. Naviguer sur 5 à 10 pages (`/app/users`, `/app/parc`, une fiche utilisateur…).
+
+**Attendu** :
+
+- Le **bind du login** apparaît dans la capture (c'est normal : l'authentification
+  EST l'AD).
+- **Aucun paquet LDAP supplémentaire** pendant la navigation qui suit.
+- Aucune ligne « Utilisateur non trouvé » dans `storage/logs/laravel.log`.
+
+#### Scénario 49.2-2 — Compte désactivé : déconnexion au coup d'après (O1)
+
+1. Ouvrir une session avec `qa492`, rester connecté sur `/app/dashboard`.
+2. Désactiver le compte dans l'AD (ou directement :
+   `php artisan tinker --execute="App\Models\User::findByLogin('qa492')->update(['is_active' => false]);"`).
+3. Recharger n'importe quelle page de l'application.
+
+**Attendu** :
+
+- Redirection vers `/login`, **une seule fois** — pas de boucle.
+- `storage/logs/laravel.log` : `SambaEduAuth: Compte désactivé`.
+- Une nouvelle tentative de login échoue au bind (compte AD désactivé).
+
+**Ce que ce scénario vérifie** : c'est le point qui rend la bascule sûre. Sans
+lui, un départ traité par la réconciliation nocturne (49.3) laisserait la session
+en cours vivante.
+
+#### Scénario 49.2-3 — Compte absent de Postgres
+
+1. Ouvrir une session avec `qa492b`.
+2. Supprimer sa ligne SQL :
+   `php artisan tinker --execute="App\Models\User::findByLogin('qa492b')->delete();"`
+3. Recharger une page.
+
+**Attendu** : redirection vers `/login`, log `SambaEduAuth: Utilisateur non trouvé en base`.
+Un nouveau login **recrée la ligne** (auto-provisioning de la cérémonie de login,
+scénario 49.2-5).
+
+#### Scénario 49.2-4 — Session fédérée (technicien externe) intacte
+
+1. Entrer par le flux fédéré depuis controlHub (cf. `federated-login.md`).
+2. Naviguer sur plusieurs pages du parc.
+3. Désactiver l'`ExternalIdentity` côté SE5, recharger.
+
+**Attendu** :
+
+- Étapes 1-2 : navigation normale, rôle `technicien` conservé, **aucun** trafic LDAP.
+- Étape 3 : déconnexion immédiate (comportement Epic 20, **inchangé**).
+
+**Pourquoi ce scénario existe** : la dernière refonte du guard (Epic 20) a produit
+LA régression de référence du dépôt — les externes déconnectés à chaque requête
+par une revérification annuaire. La branche fédérée est évaluée AVANT le lookup
+natif et n'a pas été touchée ; ce scénario le prouve sur le terrain.
+
+#### Scénario 49.2-5 — Premier login sur installation fraîche (œuf/poule)
+
+À jouer **avant** la première synchronisation AD→SQL, ou en simulant :
+
+```bash
+php artisan tinker --execute="App\Models\User::findByLogin('admin')?->delete();"
+```
+
+1. Se connecter en `admin` sur `/login`.
+2. Aller sur `/app/dashboard`, puis sur une route quota (`sambaedu.admin`).
+
+**Attendu** :
+
+- Le login réussit et la ligne `users` est **créée pendant le login** —
+  `storage/logs/laravel.log` : `Auto-provisioning User Eloquent au login` puis
+  `Droits super-admin accordés automatiquement`.
+- `is_active` reflète l'état AD du compte (**pas** `true` en dur) :
+  `php artisan tinker --execute="dump(App\Models\User::findByLogin('admin')->is_active);"`
+- La navigation qui suit ne produit **aucun** trafic LDAP.
+
+#### Scénario 49.2-6 — Homonymie fédérée (piège `ext:`)
+
+1. Vérifier qu'aucune session native ne peut être servie par une ligne fédérée :
+
+```bash
+php artisan tinker --execute="dump(App\Models\User::where('source','federated')->pluck('login'));"
+```
+
+2. Si un login fédéré porte un nom homonyme d'un compte AD, ouvrir une session
+   native avec ce login.
+
+**Attendu** : la session native est **refusée** tant qu'il n'existe pas de ligne
+`source='ad'` pour ce login. Une session native ne doit jamais s'aligner sur une
+identité externe.
+
+### Section 2 — Droits d'administration (`sambaedu.admin`)
+
+#### Scénario 49.2-7 — Le compte protégé garde ses routes
+
+1. Se connecter en `admin`.
+2. Ouvrir une route gardée par `sambaedu.admin` (page quotas).
+
+**Attendu** : accès accordé.
+
+**Pourquoi ce scénario est le plus important de la section** : `admin` figure
+dans `MainGroups::SYSTEM_ACCOUNTS`, il est donc **filtré du balayage AD→SQL** et
+n'a NI appartenance de groupe NI `ad_right_profiles` en base. Seule la clause
+`hasRole('super-admin')` le laisse passer. Si ce scénario échoue, le compte
+d'administration est verrouillé hors de ses propres routes.
+
+#### Scénario 49.2-8 — Profil de droits AD
+
+1. Choisir un compte dont `ad_right_profiles` contient `user_admin` :
+   `php artisan tinker --execute="dump(App\Models\User::whereNotNull('ad_right_profiles')->get(['login','ad_right_profiles'])->take(10));"`
+2. Se connecter avec, ouvrir une route `sambaedu.admin`.
+
+**Attendu** : accès accordé (mêmes motifs qu'avant la bascule, données SQL).
+
+#### Scénario 49.2-9 — Refus
+
+1. Se connecter avec un compte prof ordinaire (aucun profil de droits, aucun
+   groupe « admin »).
+2. Ouvrir une route `sambaedu.admin`.
+
+**Attendu** : refus (403 en JSON, message d'erreur en HTML).
+
+> **Écart connu et assumé (D4)** : un compte « Domain Admins uniquement », hors
+> des trois groupes principaux et donc jamais synchronisé, ne passe plus ce
+> middleware sans délégation Spatie. Population théorique — les administrateurs
+> réels passent par `admin` ou par une délégation. Si un tel compte existe dans
+> un établissement, lui attribuer le rôle `super-admin` depuis
+> `/app/rights-management`.
+
+### Section 3 — Blocage des élèves (O2)
+
+#### Scénario 49.2-10 — Option inactive (défaut du produit)
+
+```bash
+grep -i blocage_eleves /etc/sambaedu/sambaedu.conf || echo "non défini"
+```
+
+1. Option absente ou vide.
+2. Se connecter avec un compte élève.
+
+**Attendu** : login normal, **strictement** comme avant la story. Aucune requête
+supplémentaire n'est même émise (la configuration est évaluée avant le lookup).
+
+#### Scénario 49.2-11 — Option active : le blocage REDEVIENT effectif
+
+1. Poser `blocage_eleves` dans la configuration SambaEdu.
+2. Se connecter avec un compte élève (membre d'un groupe portant le profil `eleve`).
+
+**Attendu** : refus avec le code legacy `ELEVES_BLOQUES`, log
+`Accès interdit aux élèves`.
+
+3. Se connecter avec un prof : login normal.
+
+⚠️ **À communiquer avant déploiement** : sur un établissement ayant cette option
+posée, le comportement change du jour au lendemain — les élèves ne pouvaient
+plus être bloqués depuis la migration, ils le seront de nouveau.
+
+#### Scénario 49.2-12 — Compte non encore synchronisé, option active
+
+1. Option `blocage_eleves` active.
+2. Se connecter avec un compte AD créé il y a moins de 5 minutes (pas encore en base).
+
+**Attendu** : le compte **n'est pas bloqué** — le bind tranche. On ne refuse pas
+un compte au prétexte qu'on ignore son rôle.
+
+### Section 4 — Modales de droits (O3)
+
+#### Scénario 49.2-13 — Login absent de Postgres
+
+1. Ouvrir `/app/users`, sélectionner des utilisateurs, ouvrir « Déléguer ».
+2. Injecter (ou sélectionner) un login qui n'existe pas en base.
+3. Appliquer.
+
+**Attendu** :
+
+- Toast : « Utilisateur `<login>` introuvable. Si le compte vient d'être créé
+  dans l'annuaire, attendez la synchronisation (≤ 5 min). »
+- **Aucune** ligne `users` créée, **aucune** délégation.
+- Même comportement sur le drawer « Gérer les droits ».
+
+#### Scénario 49.2-14 — Login présent : inchangé
+
+1. Même parcours avec des utilisateurs réels.
+
+**Attendu** : délégations / rôles appliqués exactement comme avant.
+
+### Section 5 — Affichages dérivés du rôle
+
+#### Scénario 49.2-15 — Badges de la fiche utilisateur
+
+1. Ouvrir `/app/users/<login>` pour un élève, puis pour un prof.
+
+**Attendu** : badges « Élève » / « Professeur » identiques à avant la story, et
+cohérents avec la tuile « Rôle » de la même page (les deux dérivent maintenant de
+la même valeur normalisée).
+
+#### Scénario 49.2-16 — Professeur principal d'une classe
+
+1. Ouvrir une classe, action « Nommer un professeur principal ».
+
+**Attendu** : la liste propose **les profs de la classe** (et eux seuls), et
+s'affiche **instantanément** — c'est le rendu qui déclenchait auparavant un
+aller-retour annuaire **par membre de la classe**.
+
+### Checklist rapide — Story 49.2
+
+- [ ] 49.2-1 — Navigation nominale : bind au login, zéro LDAP ensuite
+- [ ] 49.2-2 — Compte désactivé : déconnecté au coup d'après, **sans boucle**
+- [ ] 49.2-3 — Compte absent de Postgres : refusé, recréé au login suivant
+- [ ] 49.2-4 — Session fédérée : intacte, révocation toujours immédiate
+- [ ] 49.2-5 — Fresh install : `admin` provisionné AU LOGIN, `is_active` miroir
+- [ ] 49.2-6 — Aucune session native servie par une ligne `source='federated'`
+- [ ] 49.2-7 — **`admin` garde ses routes `sambaedu.admin`** (le scénario qui compte)
+- [ ] 49.2-8 — `ad_right_profiles` ouvre l'accès, mêmes motifs qu'avant
+- [ ] 49.2-9 — Prof ordinaire refusé
+- [ ] 49.2-10 — `blocage_eleves` absent : comportement strictement inchangé
+- [ ] 49.2-11 — `blocage_eleves` posé : blocage effectif (**changement observable**)
+- [ ] 49.2-12 — Compte non synchronisé jamais bloqué par défaut
+- [ ] 49.2-13 — Modales : login absent refusé, aucune ligne fabriquée
+- [ ] 49.2-14 — Modales : login présent, comportement inchangé
+- [ ] 49.2-15 — Badges Élève/Professeur iso-affichage
+- [ ] 49.2-16 — Liste des profs d'une classe instantanée
+
+### Scénario 49.2-17 — Corrections de review : SSO CAS/ENT, message de blocage, symétrie fédérée
+
+> **Le trou principal.** Avant 49.2, le guard provisionnait lui-même la ligne `users` manquante pour
+> **toute** session non fédérée — CAS et ENT compris. En déplaçant ce filet dans la cérémonie de
+> login, il n'avait été recâblé que sur le login natif par formulaire : un compte AD légitime pas
+> encore synchronisé réussissait son SSO, puis se faisait refuser et déconnecter par le guard à la
+> première requête protégée, en boucle. Les trois points d'entrée non fédérés partagent désormais
+> le même helper, qui provisionne le login **que le guard ira chercher** (`getCurrentUser()`) et non
+> un login recomposé à la main.
+
+**A — Œuf/poule sur CAS et ENT (le scénario à rejouer en priorité après un déploiement)**
+
+1. Sur une instance dont la synchro n'a pas encore tourné (ou pour un compte AD volontairement
+   absent de `users`), se connecter **via CAS**.
+2. Attendu : le SSO aboutit **et** la première page protégée s'affiche. Une ligne `users` a été
+   créée, avec `is_active` reflétant l'annuaire (jamais `true` en dur).
+3. Rejouer le même scénario **via ENT**.
+4. Contre-épreuve : un login absent de l'annuaire ne doit créer **aucune** ligne — le guard refuse,
+   et `storage/logs/laravel.log` porte « Auto-provisioning ignoré : login absent de l'annuaire ».
+5. Régime établi : un compte déjà synchronisé ne doit déclencher **aucun** lookup annuaire au login.
+
+> **Point d'attention CAS 3.0** (fragilité antérieure à 49.2, non corrigée) : la session CAS retient
+> l'attribut `cn`/`displayName` comme login. S'il diffère du `sAMAccountName`, le guard cherchera une
+> ligne inexistante. Le provisioning journalise alors « login absent de l'annuaire » — c'est le
+> symptôme à reconnaître. À remonter si un établissement en CAS 3.0 le rencontre.
+
+**B — Message de blocage sur le changement de mot de passe forcé**
+
+6. Sur un établissement ayant `blocage_eleves` posé, amener un élève sur l'écran de changement de
+   mot de passe obligatoire.
+7. Attendu : le message affiché est le motif réel (« Accès interdit aux élèves »), **plus**
+   « Le mot de passe actuel est incorrect » qui envoyait chercher une panne inexistante.
+8. Contre-épreuve : un vrai mauvais mot de passe affiche toujours le message générique — il ne doit
+   pas révéler si le compte existe.
+
+**C — Symétrie de l'exclusion des comptes fédérés**
+
+9. Les deux voies de secours de `RequireAdminRights` (résolution par `sambaedu_login`, puis par le
+   service d'auth) ne résolvent plus un compte `source='federated'`, même homonyme d'un compte AD.
+   Non atteignable en usage normal (toutes les routes `sambaedu.admin` sont sous `sambaedu.auth`) :
+   c'est de la défense en profondeur, vérifiée par test plutôt qu'en manuel.

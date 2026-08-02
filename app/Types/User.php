@@ -104,102 +104,25 @@ class User implements Wireable
     }
 
     // ============================================
-    // MÉTHODES DE VÉRIFICATION DU RÔLE
+    // RÔLE
+    //
+    // Story 49.2 (FR-R3) — les prédicats scolaires `isAdmin()`, `isEleve()`,
+    // `isProf()`, `isAdministratif()` et `determineRole()` ont été SUPPRIMÉS.
+    // Ils dérivaient une catégorie de `memberOf`/`dn` LDAP, sur un DTO qui est
+    // aujourd'hui hydraté aussi bien depuis SQL (`UserService::getByLoginFromSql`)
+    // que depuis l'annuaire : selon la source, le même objet répondait
+    // différemment à la même question.
+    //
+    // À la place, selon ce que l'appelant veut vraiment :
+    //  - un DROIT      → `can('…')` / `hasRole(…)` sur `App\Models\User` ;
+    //  - une APPARTENANCE → `isMemberOf()` ci-dessous, ou `userGroups()` en SQL ;
+    //  - une CATÉGORIE d'affichage (type-OU) → la propriété `role`, normalisée
+    //    au site d'affichage.
+    //
+    // La détermination du rôle à la synchronisation reste, elle, du ressort de
+    // la frontière AD→SQL ({@see \App\LdapModels\LdapUser::extractRole()}), qui
+    // est autonome et n'a jamais dépendu de ces méthodes.
     // ============================================
-
-    /**
-     * Vérifie si l'utilisateur est administrateur
-     * Un administrateur est membre d'un groupe contenant "administrateurs" ou "Domain Admins"
-     */
-    public function isAdmin(): bool
-    {
-        foreach ($this->memberOf as $group) {
-            $groupLower = strtolower($group);
-            if (
-                str_contains($groupLower, 'cn=administrateurs') ||
-                str_contains($groupLower, 'cn=domain admins') ||
-                str_contains($groupLower, 'administrators')
-            ) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Vérifie si l'utilisateur est un élève
-     * Un élève est membre d'un groupe contenant "Eleves" ou se trouve dans l'OU "Eleves"
-     */
-    public function isEleve(): bool
-    {
-        // Vérifier les groupes
-        foreach ($this->memberOf as $group) {
-            if (preg_match('/Eleves/i', $group)) {
-                return true;
-            }
-        }
-        // Vérifier le DN
-        if ($this->dn && preg_match('/OU=Eleves/i', $this->dn)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Vérifie si l'utilisateur est un professeur
-     * Un professeur est membre d'un groupe contenant "Profs" ou se trouve dans l'OU "Profs"
-     */
-    public function isProf(): bool
-    {
-        // Vérifier les groupes
-        foreach ($this->memberOf as $group) {
-            if (preg_match('/Profs/i', $group)) {
-                return true;
-            }
-        }
-        // Vérifier le DN
-        if ($this->dn && preg_match('/OU=Profs/i', $this->dn)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Vérifie si l'utilisateur est administratif
-     * Un utilisateur administratif est membre d'un groupe contenant "Administratifs"
-     */
-    public function isAdministratif(): bool
-    {
-        // Vérifier les groupes
-        foreach ($this->memberOf as $group) {
-            if (preg_match('/Administratifs/i', $group)) {
-                return true;
-            }
-        }
-        // Vérifier le DN
-        if ($this->dn && preg_match('/OU=Administratifs/i', $this->dn)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Détermine le rôle de l'utilisateur depuis ses groupes
-     * @return string 'eleves', 'profs', 'administratifs' ou 'autre'
-     */
-    public function determineRole(): string
-    {
-        if ($this->isEleve()) {
-            return 'eleves';
-        }
-        if ($this->isProf()) {
-            return 'profs';
-        }
-        if ($this->isAdministratif()) {
-            return 'administratifs';
-        }
-        return 'autre';
-    }
 
     /**
      * Vérifie si l'utilisateur est externe (rattaché à un autre établissement)

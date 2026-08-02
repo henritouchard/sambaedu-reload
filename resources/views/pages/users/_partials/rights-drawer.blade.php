@@ -8,7 +8,6 @@ use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Models\User as EloquentUser;
 use App\Services\GroupRightsProfileService;
-use App\Services\UserService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
@@ -314,18 +313,22 @@ new class extends Component {
     // ========================================================================
 
     /**
-     * Assure qu'un utilisateur Eloquent existe pour un login AD.
+     * Résout l'utilisateur Eloquent d'un login sélectionné.
      *
-     * Story 7.1 — Review #A : avant de créer un EloquentUser fantôme, on vérifie
-     * que le login existe réellement dans l'annuaire (AD). Sans ça, un admin
-     * peut injecter n'importe quel login dans `selectedUsers` → création d'un
-     * enregistrement DB orphelin (aucun objet AD correspondant).
+     * Story 7.1 — Review #A : le besoin d'origine était d'empêcher la création
+     * d'un EloquentUser FANTÔME quand un admin injecte un login arbitraire dans
+     * `selectedUsers`. Il était couvert par une vérification annuaire suivie
+     * d'une création de ligne minimale.
+     *
+     * Story 49.2 — le fallback annuaire est SUPPRIMÉ, et le besoin d'origine est
+     * mieux servi : plus aucune ligne n'est fabriquée ici, donc plus aucun
+     * fantôme possible, et plus d'aller-retour LDAP au clic. Postgres est la
+     * vérité pour l'existence d'un compte côté SE5.
      *
      * Comportement :
-     *  - login existe en base SQL → retourne l'user existant (fast path).
-     *  - login absent de la base SQL mais présent dans l'AD → création + return.
-     *  - login absent des deux → toast warning + return null (skip, l'appelant
-     *    incrémente `$errors`).
+     *  - login existe en base SQL → retourne l'user existant.
+     *  - login absent → toast warning + return null (skip, l'appelant incrémente
+     *    `$errors`).
      */
     private function ensureEloquentUser(string $login): ?EloquentUser
     {
@@ -335,25 +338,12 @@ new class extends Component {
             return $user;
         }
 
-        // Vérification AD : le login existe-t-il dans l'annuaire ?
-        try {
-            $adUser = app(UserService::class)->getByLogin($login);
-        } catch (\Throwable $e) {
-            Log::warning("[RightsDrawer] Échec lookup AD pour {$login}: " . $e->getMessage());
-            $adUser = null;
-        }
+        $this->toastWarning(
+            "Utilisateur {$login} introuvable. Si le compte vient d'être créé dans l'annuaire, "
+            . 'attendez la synchronisation (≤ 5 min).'
+        );
 
-        if (!$adUser) {
-            $this->toastWarning("Utilisateur {$login} introuvable dans l'annuaire.");
-            return null;
-        }
-
-        // Créer un enregistrement minimal — sera enrichi par sambaedu:sync-rights
-        return EloquentUser::create([
-            'login' => $login,
-            'role' => 'autre',
-            'is_active' => true,
-        ]);
+        return null;
     }
 
     #[Computed]

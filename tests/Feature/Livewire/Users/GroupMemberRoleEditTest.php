@@ -87,29 +87,11 @@ class GroupMemberRoleEditTest extends TestCase
         UserGroupUserPivotObserver::enableAdResync();
         Mockery::close();
 
-        // Purge le cache statique request-scope de User (LDAP primé null).
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $prop->setValue(null, []);
 
         $this->dropPermissionSchema();
         parent::tearDown();
     }
 
-    /** Pré-remplit le cache LDAP à null → isProf()/isEleve() retombent sur role. */
-    private function primeNoLdap(string ...$logins): void
-    {
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $cache = $prop->getValue();
-        foreach ($logins as $login) {
-            $cache['ldap:' . $login] = null;
-            $cache['bo:' . $login] = null;
-        }
-        $prop->setValue(null, $cache);
-    }
 
     private function makeAdmin(string $login = 'manager'): User
     {
@@ -144,7 +126,6 @@ class GroupMemberRoleEditTest extends TestCase
             $prof->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MANAGER],
             $eleve->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MEMBER],
         ]);
-        $this->primeNoLdap('prof.pp', 'prof.simple', 'eleve.un');
         return [$group, $profPp, $prof, $eleve];
     }
 
@@ -249,7 +230,6 @@ class GroupMemberRoleEditTest extends TestCase
         $group = UserGroup::create(['name' => 'Projet', 'type' => 'projet', 'display_name' => 'Projet X']);
         $prof = User::create(['login' => 'prof.projet', 'role' => 'prof', 'fullname' => 'Eve Projet', 'is_active' => true]);
         $group->users()->sync([$prof->id => ['role' => UserGroupUserPivot::ROLE_MANAGER]]);
-        $this->primeNoLdap('prof.projet');
 
         // D3 — refus serveur même en payload forgé (l'UI ne propose owner que
         // pour les classes).
@@ -309,7 +289,6 @@ class GroupMemberRoleEditTest extends TestCase
         $this->actingAs($this->makeAdmin());
         [$group] = $this->makeClasse();
         $outsider = User::create(['login' => 'outsider', 'role' => 'eleve', 'is_active' => true]);
-        $this->primeNoLdap('outsider');
 
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->call('updateMemberRole', $outsider->id, UserGroupUserPivot::ROLE_MANAGER)
@@ -382,7 +361,6 @@ class GroupMemberRoleEditTest extends TestCase
         $group = UserGroup::create(['name' => 'Custom', 'type' => 'custom', 'display_name' => 'Groupe libre']);
         $prof = User::create(['login' => 'nouveau.prof', 'role' => 'prof', 'is_active' => true]);
         $eleve = User::create(['login' => 'nouveau.eleve', 'role' => 'eleve', 'is_active' => true]);
-        $this->primeNoLdap('nouveau.prof', 'nouveau.eleve');
 
         $available = collect(
             Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->availableUsers()
@@ -398,7 +376,6 @@ class GroupMemberRoleEditTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $group = UserGroup::create(['name' => 'Custom', 'type' => 'custom', 'display_name' => 'Groupe libre']);
         $prof = User::create(['login' => 'nouveau.prof', 'role' => 'prof', 'is_active' => true]);
-        $this->primeNoLdap('nouveau.prof');
 
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->call('toggleUser', $prof->id)
@@ -417,7 +394,6 @@ class GroupMemberRoleEditTest extends TestCase
 
         $eleveASurcharger = User::create(['login' => 'eleve.surcharge', 'role' => 'eleve', 'is_active' => true]);
         $profSansSurcharge = User::create(['login' => 'prof.sans.surcharge', 'role' => 'prof', 'is_active' => true]);
-        $this->primeNoLdap('prof.existant', 'eleve.surcharge', 'prof.sans.surcharge');
 
         UserGroupUserPivotObserver::enableSync();
         UserGroupUserPivotObserver::enableAdResync();
@@ -451,7 +427,6 @@ class GroupMemberRoleEditTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $group = UserGroup::create(['name' => 'Custom', 'type' => 'custom', 'display_name' => 'Groupe libre']);
         $nouveauEleve = User::create(['login' => 'nouveau.simple', 'role' => 'eleve', 'is_active' => true]);
-        $this->primeNoLdap('nouveau.simple');
 
         UserGroupUserPivotObserver::enableSync();
         UserGroupUserPivotObserver::enableAdResync();

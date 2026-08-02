@@ -45,12 +45,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         }
         UserGroupObserver::enableSync();
 
-        // Purge le cache statique request-scope de User (rempli par primeNoLdap)
-        // pour éviter qu'un login réutilisé hérite d'une entrée d'un test antérieur.
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $prop->setValue(null, []);
 
         parent::tearDown();
     }
@@ -95,7 +89,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('alice');
 
         $folded = $service->createGroup([
             'name' => '3emeA',
@@ -433,7 +426,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.martin', 'eleve.un', 'eleve.deux');
 
         $service->createGroup([
             'name' => '3A',
@@ -492,7 +484,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.martin', 'eleve.un');
 
         // Le CN primaire stocké en SQL est `Classe_3A` (résolu à la création) ;
         // l'edit-form renvoie ce nom. Le helper doit dériver la base `3A` et
@@ -557,7 +548,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.martin', 'eleve.un');
 
         $group = UserGroup::query()->create([
             'name' => 'Classe_3A',
@@ -622,7 +612,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('jean.dupont');
 
         $group = UserGroup::query()->create([
             'name' => 'Classe_3A',
@@ -690,7 +679,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('jean.dupont');
 
         $group = UserGroup::query()->create([
             'name' => 'Classe_3A',
@@ -785,7 +773,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.maths');
 
         $service->createGroup([
             'name' => 'Maths5A',
@@ -825,7 +812,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.math');
 
         $service->createGroup([
             'name' => 'Math@3emeA',
@@ -867,7 +853,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.math');
 
         $service->createGroup([
             'name' => 'matiere_Math@3emeA',
@@ -1264,7 +1249,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
 
-        $this->primeNoLdap('prof.un', 'prof.deux', 'eleve.un');
 
         return [$service, $prof1, $prof2, $eleve];
     }
@@ -1328,7 +1312,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'prof.un', 'role' => 'prof',
             'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.un');
 
         $group = UserGroup::query()->create([
             'name' => 'Classe_3A', 'display_name' => '3A', 'type' => 'classe',
@@ -1389,7 +1372,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'prof.maths', 'role' => 'prof',
             'dn' => 'CN=prof.maths,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.maths');
 
         $service->createGroup([
             'name' => 'Maths5A',
@@ -1413,7 +1395,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'ghost', 'role' => 'prof',
             'dn' => 'CN=ghost,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('ghost');
 
         $service->createGroup([
             'name' => '3A',
@@ -1556,7 +1537,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'prof.un', 'role' => 'prof',
             'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.un');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -1825,7 +1805,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
         $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
-        $this->primeNoLdap('alice', 'bob');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -1920,7 +1899,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
         User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
-        $this->primeNoLdap('alice', 'bob');
 
         // Groupe préexistant au NOM `3A` (la ligne SQL avant rename).
         $group = UserGroup::query()->create([
@@ -1979,7 +1957,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'prof.maths', 'role' => 'prof',
             'dn' => 'CN=prof.maths,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.maths');
 
         // Groupe hors scope préexistant.
         UserGroup::query()->create([
@@ -2039,7 +2016,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
         $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
-        $this->primeNoLdap('alice', 'bob');
 
         // La ligne SQL existante porte le nom nu minuscule `3a` (tel que projeté
         // par le fold casse-insensible des CN minuscules).
@@ -2119,7 +2095,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'carl', 'role' => 'prof',
             'dn' => 'CN=carl,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('alice', 'bob', 'carl');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2189,7 +2164,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'bob', 'role' => 'prof',
             'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('alice', 'bob');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2240,7 +2214,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'carl', 'role' => 'prof',
             'dn' => 'CN=carl,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('carl');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2289,7 +2262,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'bob', 'role' => 'prof',
             'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('bob');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2342,7 +2314,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'bob', 'role' => 'prof',
             'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('bob');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2406,7 +2377,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'eleve.un', 'role' => 'eleve',
             'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.un', 'prof.deux', 'eleve.un');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2463,7 +2433,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'eleve.un', 'role' => 'eleve',
             'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.un', 'eleve.un');
 
         $created = $service->createGroup([
             'name' => '3A',
@@ -2526,7 +2495,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'bob', 'role' => 'prof',
             'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('bob');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2584,7 +2552,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'bob', 'role' => 'prof',
             'dn' => 'CN=bob,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('bob');
 
         $group = UserGroup::query()->create([
             'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
@@ -2633,7 +2600,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'eleve.proj', 'role' => 'eleve',
             'dn' => 'CN=eleve.proj,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('eleve.proj');
 
         $group = UserGroup::query()->create([
             'name' => 'Projet_proj2', 'display_name' => 'proj2', 'type' => 'projet',
@@ -2784,7 +2750,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'eleve.esp', 'role' => 'eleve',
             'dn' => 'CN=eleve.esp,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.esp', 'eleve.esp');
 
         $service->importFromUsersAdGroups();
 
@@ -2965,7 +2930,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'dora', 'role' => 'eleve', // rétrogradée depuis prof
             'dn' => 'CN=dora,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('dora');
 
         $group = UserGroup::query()->create([
             'name' => 'Cours_Histoire4A', 'display_name' => 'Cours_Histoire4A', 'type' => 'cours',
@@ -3007,7 +2971,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'erin', 'role' => 'prof',
             'dn' => 'CN=erin,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('erin');
 
         $group = UserGroup::query()->create([
             'name' => '301 g1', 'display_name' => '301 g1', 'type' => 'equipe',
@@ -3082,7 +3045,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'prof.un', 'role' => 'prof',
             'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
         ]);
-        $this->primeNoLdap('prof.un');
 
         $group = UserGroup::query()->create(['name' => '3A', 'display_name' => '3A', 'type' => 'classe']);
         $group->users()->attach([$prof1->id => ['role' => 'owner']]);
@@ -3276,28 +3238,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             ->value('role');
     }
 
-    /**
-     * Court-circuite la résolution LDAP de `User::isProf()/isEleve()` en
-     * pré-remplissant le cache request-scope statique avec `null` : sans
-     * connexion AD sur l'hôte de test, la résolution retombe alors sur
-     * `users.role` (comportement de fallback déjà présent dans le modèle).
-     */
-    private function primeNoLdap(string ...$logins): void
-    {
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-
-        /** @var array<string,mixed> $cache */
-        $cache = $prop->getValue();
-
-        foreach ($logins as $login) {
-            $cache['ldap:' . $login] = null;
-            $cache['bo:' . $login] = null;
-        }
-
-        $prop->setValue(null, $cache);
-    }
 
     private function adGroupRow(string $cn, string $ou = 'OU=Classes'): array
     {

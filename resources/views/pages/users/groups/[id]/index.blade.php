@@ -75,10 +75,11 @@ new #[Title('Groupe utilisateur')] class extends Component {
             }
 
             // Rôle métier : prof / eleve / autre. On lit la colonne SQL `role`
-            // (déjà en mémoire via `with('users')`) plutôt que User::isProf()/
-            // isEleve() : ces helpers interrogent le LDAP « d'abord » (1 round-trip
-            // réseau par membre au render) pour une info déjà présente en base.
-            // SQL = source de vérité côté SE5 (alignée par syncFromAd).
+            // (déjà en mémoire via `with('users')`). Les helpers `User::isProf()`/
+            // `isEleve()` qui interrogeaient le LDAP « d'abord » — 1 round-trip
+            // réseau par membre au render, pour une info déjà présente en base —
+            // ont été SUPPRIMÉS par la Story 49.2 (FR-R3). SQL = source de vérité
+            // côté SE5 (alignée par syncFromAd).
             $role = $user->role === 'prof' ? 'prof' : ($user->role === 'eleve' ? 'eleve' : 'autre');
 
             // Story 42.3 (D1/T1.1) — rôle D'ARÊTE (`user_group_user.role`),
