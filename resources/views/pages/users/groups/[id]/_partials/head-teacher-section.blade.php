@@ -24,9 +24,9 @@ use Livewire\Component;
  *    Livewire forgé avec un groupId non-classe est rejeté en `mount` via abort.
  *
  * Fonction : désigner le(s) professeur(s) principal(aux) d'une classe. Le toggle
- * n'est proposé que pour les membres `isProf()` (D5) — un élève PP n'a pas de
- * sens métier (l'écriture service reste robuste si forcé : intersection membres).
- * Plusieurs PP autorisés.
+ * n'est proposé que pour les membres dont `users.role === 'prof'` (D5) — un élève
+ * PP n'a pas de sens métier (l'écriture service reste robuste si forcé :
+ * intersection membres). Plusieurs PP autorisés.
  *
  * Persistance : `UserGroupService::updateGroup($id, [... 'head_teacher_ids'])` —
  * un seul aller-retour qui (1) projette la 3ᵉ cible AD `PP_<base>` (orthogonale
@@ -132,7 +132,14 @@ new class extends Component {
 
     /**
      * Membres profs de la classe avec leur état PP courant. Le toggle PP n'est
-     * proposé QUE pour les `isProf()` (D5).
+     * proposé QUE pour les profs (D5).
+     *
+     * Story 49.2 — le filtre lit `users.role`, colonne DÉJÀ hydratée par la
+     * relation `users` : zéro requête supplémentaire. Il s'appuyait auparavant
+     * sur `User::isProf()`, LDAP-first, soit **un aller-retour annuaire par
+     * membre de la classe à chaque rendu** de cette section
+     * (`project_isprof_iseleve_ldap_first_cost`). Même comparaison stricte que
+     * le reste de la page groupe (pattern 42.2).
      *
      * @return array<int,array{id:int,login:string,label:string,is_head_teacher:bool}>
      */
@@ -144,7 +151,7 @@ new class extends Component {
         }
 
         return $group->users
-            ->filter(static fn(User $u): bool => $u->isProf())
+            ->filter(static fn(User $u): bool => $u->role === 'prof')
             ->map(function (User $u): array {
                 $label = $u->fullname ?: trim((string) (($u->firstname ?? '') . ' ' . ($u->lastname ?? '')));
                 if ($label === '') {

@@ -8,7 +8,6 @@ use App\Enums\SambaPermission;
 use App\Models\User as EloquentUser;
 use App\Models\WorkstationGroup;
 use App\Services\PermissionService;
-use App\Services\UserService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
@@ -269,7 +268,10 @@ new class extends Component {
             return;
         }
 
-        // Résolution du granter (utilisateur connecté, compat legacy AuthUser).
+        // Résolution du granter (utilisateur connecté). Le `instanceof` reste
+        // défensif : `auth()->user()` est un Eloquent sur tous les chemins du
+        // produit, mais un `Authenticatable` tiers (guard alternatif, test) ne
+        // doit pas faire tomber l'écriture.
         $granter = null;
         $authUser = auth()->user();
         if ($authUser) {
@@ -375,8 +377,15 @@ new class extends Component {
     }
 
     /**
-     * Assure qu'un EloquentUser existe pour un login AD.
-     * Crée le user minimal seulement si le login existe vraiment dans l'annuaire.
+     * Résout l'EloquentUser d'un login sélectionné.
+     *
+     * Story 49.2 — le fallback annuaire a été SUPPRIMÉ. Il vérifiait l'existence
+     * du login dans l'AD puis créait une ligne `users` minimale (`role='autre'`,
+     * `is_active=true` en dur) : un aller-retour LDAP au clic, et une ligne
+     * fabriquée dont les valeurs n'étaient le miroir de rien. Postgres est
+     * désormais la vérité pour l'existence d'un compte côté SE5 : un login
+     * absent de la base est « introuvable », point. Un compte tout juste créé
+     * dans l'annuaire apparaîtra à la prochaine synchronisation.
      */
     private function ensureEloquentUser(string $login): ?EloquentUser
     {
@@ -385,23 +394,12 @@ new class extends Component {
             return $user;
         }
 
-        try {
-            $adUser = app(UserService::class)->getByLogin($login);
-        } catch (\Throwable $e) {
-            Log::warning("[DelegationModal] Échec lookup AD pour {$login}: " . $e->getMessage());
-            $adUser = null;
-        }
+        $this->toastWarning(
+            "Utilisateur {$login} introuvable. Si le compte vient d'être créé dans l'annuaire, "
+            . 'attendez la synchronisation (≤ 5 min).'
+        );
 
-        if (!$adUser) {
-            $this->toastWarning("Utilisateur {$login} introuvable dans l'annuaire.");
-            return null;
-        }
-
-        return EloquentUser::create([
-            'login' => $login,
-            'role' => 'autre',
-            'is_active' => true,
-        ]);
+        return null;
     }
 };
 ?>

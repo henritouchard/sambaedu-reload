@@ -14,13 +14,19 @@ use Illuminate\Support\Facades\Log;
  *
  * Renvoie directement un `App\Models\User` Eloquent. L'Eloquent est la source
  * de vérité pour les permissions Spatie, les délégations scopées et les
- * relations DB. Les attributs "vivants" de l'AD (groupes, flags admin/prof)
- * sont lazy-loadés depuis LDAP à la demande via `User::ldapBusinessObject()`.
+ * relations DB.
  *
- * Why: avant, on renvoyait un `AuthUser` (wrapper LDAP) qui forçait tous les
- * checks scopés à résoudre l'Eloquent par un `instanceof User` + bridge. Les
- * oublis (ex. `parc/index.blade.php::scopedUser`) laissaient passer des users
- * LDAP non-scopés en ignorant leurs délégations négatives.
+ * Why: avant, on renvoyait un `AuthUser` (wrapper LDAP, supprimé par la Story
+ * 49.2) qui forçait tous les checks scopés à résoudre l'Eloquent par un
+ * `instanceof User` + bridge. Les oublis (ex. `parc/index.blade.php::scopedUser`)
+ * laissaient passer des users LDAP non-scopés en ignorant leurs délégations
+ * négatives.
+ *
+ * Story 49.2 : les attributs « vivants » de l'AD ne sont PLUS lazy-loadés depuis
+ * l'annuaire. Rôles et appartenances se lisent en Postgres (miroir posé par la
+ * sync — Stories 49.1/49.3). Ce provider conserve son lookup LDAP dans
+ * {@see self::resolveUser()} : c'est une CÉRÉMONIE de login (1 fois par session,
+ * jamais par requête), au même titre que le bind.
  */
 class LdapUserProvider implements UserProvider
 {

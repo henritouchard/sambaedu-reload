@@ -81,8 +81,10 @@ class UserPolicy
      */
     public function view(?Authenticatable $actor, ?User $target = null): bool
     {
-        // Correction review 7.2 #M1 : en prod, `auth()->user()` = `AuthUser` LDAP.
-        // Normaliser vers l'Eloquent User pour que le scoping classe fonctionne.
+        // Normalise l'acteur vers l'Eloquent User pour que le scoping classe
+        // fonctionne quelle que soit la façon dont il a été résolu (Story 49.2 :
+        // le wrapper LDAP `AuthUser` n'existe plus, mais un `Authenticatable`
+        // tiers peut toujours arriver ici — tests, guards alternatifs).
         $actor = $this->resolveEloquentActor($actor);
         if ($actor === null) {
             return false;
@@ -138,8 +140,10 @@ class UserPolicy
             return false;
         }
 
-        // Correction review 7.2 #M1 : en prod, `auth()->user()` = `AuthUser` LDAP.
-        // Normaliser vers l'Eloquent User pour que le scoping classe fonctionne.
+        // Normalise l'acteur vers l'Eloquent User pour que le scoping classe
+        // fonctionne quelle que soit la façon dont il a été résolu (Story 49.2 :
+        // le wrapper LDAP `AuthUser` n'existe plus, mais un `Authenticatable`
+        // tiers peut toujours arriver ici — tests, guards alternatifs).
         $actor = $this->resolveEloquentActor($actor);
         if ($actor === null) {
             return false;

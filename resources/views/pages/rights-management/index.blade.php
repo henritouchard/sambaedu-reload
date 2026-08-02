@@ -9,7 +9,10 @@ use App\Enums\SambaRole;
 use App\Models\DelegationHistory;
 use App\Models\User as EloquentUser;
 use App\Models\Delegation;
+use App\Models\UserGroup;
+use App\Services\GroupRightsProfileService;
 use App\Services\PermissionService;
+use Illuminate\Support\Facades\Gate;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -43,10 +46,45 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     public string $historyToFilter = '';
     public int $historyPerPage = 25;
 
-    // Story 7.2 — Onglet Profils
-    public array $profilesList = [];
+    // ------------------------------------------------------------------
+    // Story 7.2 / 49.1 — Onglet Profils
+    // ------------------------------------------------------------------
+
+    /**
+     * Story 49.1 (AC7) — section PRINCIPALE : les groupes qui PORTENT un profil
+     * de droits. C'est la réponse au recadrage « l'onglet liste les groupes
+     * porteurs, pas des objets indépendants ».
+     */
+    public array $carrierGroupsList = [];
+
+    /**
+     * Story 49.1 (AC7 / D7) — section secondaire : les profils portés par AUCUN
+     * groupe (délégations `user-admin`/`technicien`, réserve de profils custom).
+     * Sans elle, ces profils n'auraient plus AUCUN point d'entrée d'édition ni
+     * de suppression, alors que les drawers continuent de les attribuer.
+     */
+    public array $unattachedProfilesList = [];
+
     /** Sélection multi pour suppression depuis le menu actions de la page. */
     public array $selectedProfiles = [];
+
+    // --- Modale « Donner des permissions à un groupe » / « Changer le profil »
+    public bool $showProfileAssignModal = false;
+    /** 'assign' (groupe à choisir) | 'change' (groupe figé). */
+    public string $profileAssignMode = 'assign';
+    public ?int $profileAssignGroupId = null;
+    public string $profileAssignGroupLabel = '';
+    public string $profileGroupSearch = '';
+    public array $profileGroupResults = [];
+    public ?int $profileAssignRoleId = null;
+    /** Profils sélectionnables dans la modale (tous les rôles guard `web`). */
+    public array $profileChoices = [];
+
+    // --- Modale de confirmation de retrait
+    public bool $showProfileRemoveModal = false;
+    public ?int $profileRemoveGroupId = null;
+    public string $profileRemoveGroupLabel = '';
+    public string $profileRemoveProfileLabel = '';
 
     public function mount(): void
     {
@@ -398,52 +436,110 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     // ========================================================================
 
     /**
-     * Recharge la liste des profils. Appelée à la 1ère ouverture de l'onglet
-     * et au retour depuis les pages dédiées de création/édition.
+     * Recharge les DEUX sections de l'onglet Profils (Story 49.1 AC7).
+     *
+     * Appelée à la 1ère ouverture de l'onglet, au retour depuis les pages
+     * dédiées de création/édition, et après chaque pose/changement/retrait de
+     * profil porté.
      */
     public function loadProfiles(): void
     {
-        $this->profilesList = Role::where('guard_name', 'web')
+        $carriedIds = app(GroupRightsProfileService::class)->carriedRoleIds();
+
+        $roles = Role::where('guard_name', 'web')
             ->withCount(['users', 'permissions'])
             ->orderBy('name')
             ->get()
-            ->map(function (Role $r) {
-                $enumCase = SambaRole::tryFrom($r->name);
+            ->keyBy('id');
+
+        // Section principale : les GROUPES porteurs (pas les ~200 groupes).
+        $this->carrierGroupsList = UserGroup::query()
+            ->carryingProfile()
+            ->orderBy('name')
+            ->get()
+            ->map(function (UserGroup $group) use ($roles) {
+                $role = $roles->get((int) $group->rights_profile_id);
+
                 return [
-                    'id' => $r->id,
-                    'name' => $r->name,
-                    'label' => $enumCase?->label() ?? $r->name,
-                    'is_seeded' => SambaRole::isSeeded($r->name),
-                    'permissions_count' => $r->permissions_count,
-                    'users_count' => $r->users_count,
+                    'group_id' => $group->id,
+                    'group_label' => $group->display_name_or_name,
+                    'group_name' => $group->name,
+                    'group_type' => $group->type,
+                    'profile_id' => $role?->id,
+                    'profile_name' => $role?->name ?? '—',
+                    'profile_label' => $role
+                        ? (SambaRole::tryFrom($role->name)?->label() ?? $role->name)
+                        : '—',
+                    'is_seeded' => $role ? SambaRole::isSeeded($role->name) : false,
+                    'permissions_count' => (int) ($role?->permissions_count ?? 0),
+                    'users_count' => (int) ($role?->users_count ?? 0),
                 ];
             })
+            ->values()
+            ->toArray();
+
+        // Section secondaire : les profils portés par AUCUN groupe.
+        $this->unattachedProfilesList = $roles
+            ->reject(fn(Role $r) => in_array((int) $r->id, $carriedIds, true))
+            ->map(fn(Role $r) => [
+                'id' => $r->id,
+                'name' => $r->name,
+                'label' => SambaRole::tryFrom($r->name)?->label() ?? $r->name,
+                'is_seeded' => SambaRole::isSeeded($r->name),
+                'permissions_count' => (int) $r->permissions_count,
+                'users_count' => (int) $r->users_count,
+            ])
+            ->values()
+            ->toArray();
+
+        $this->profileChoices = $roles
+            ->map(fn(Role $r) => [
+                'id' => $r->id,
+                'name' => $r->name,
+                'label' => SambaRole::tryFrom($r->name)?->label() ?? $r->name,
+                'permissions_count' => (int) $r->permissions_count,
+            ])
+            ->values()
             ->toArray();
     }
 
     /**
      * Supprime plusieurs profils sélectionnés depuis le menu actions de la page.
-     * Skipped : profils seedés (toast warning) ou portant des utilisateurs (toast error agrégé).
+     *
+     * Story 49.1 (AC6) — la garde « profil PORTÉ par au moins un groupe » passe
+     * AVANT la garde `isSeeded` existante, et son message NOMME les groupes
+     * porteurs : une suppression silencieuse retirerait des droits à tout un
+     * parc. Le filet DB (`restrictOnDelete`) couvre les chemins hors UI.
      */
     public function deleteSelectedProfiles(): void
     {
-        abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
+        abort_unless(Gate::allows('user.assign.right'), 403);
 
         if (empty($this->selectedProfiles)) {
             return;
         }
 
+        $service = app(GroupRightsProfileService::class);
+
         $deleted = 0;
         $skippedSeeded = 0;
         $skippedAssigned = 0;
+        $carriedMessages = [];
 
         foreach ($this->selectedProfiles as $roleName) {
-            if (SambaRole::isSeeded($roleName)) {
-                $skippedSeeded++;
-                continue;
-            }
             $role = Role::where('name', $roleName)->where('guard_name', 'web')->first();
             if (!$role) {
+                continue;
+            }
+
+            $carriers = $service->carrierNames((int) $role->id);
+            if (!empty($carriers)) {
+                $carriedMessages[] = "« {$roleName} » — porté par : " . implode(', ', $carriers);
+                continue;
+            }
+
+            if (SambaRole::isSeeded($roleName)) {
+                $skippedSeeded++;
                 continue;
             }
             if ($role->users()->count() > 0) {
@@ -458,6 +554,12 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
             app(PermissionRegistrar::class)->forgetCachedPermissions();
             $this->toastSuccess("{$deleted} profil(s) supprimé(s).");
         }
+        if (!empty($carriedMessages)) {
+            $this->toastError(
+                'Suppression refusée. ' . implode(' ; ', $carriedMessages)
+                . ' — retirez d\'abord le profil de ces groupes.'
+            );
+        }
         if ($skippedSeeded > 0) {
             $this->toastWarning("{$skippedSeeded} profil(s) initial(aux) ignoré(s).");
         }
@@ -467,6 +569,226 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
 
         $this->selectedProfiles = [];
         $this->loadProfiles();
+    }
+
+    // ========================================================================
+    // Story 49.1 (AC7) — donner / changer / retirer le profil porté d'un groupe
+    // ========================================================================
+
+    /** Ouvre la modale « Donner des permissions à un groupe ». */
+    public function openAssignProfileModal(): void
+    {
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
+        $this->resetProfileModal();
+        $this->profileAssignMode = 'assign';
+        $this->showProfileAssignModal = true;
+
+        if (empty($this->profileChoices)) {
+            $this->loadProfiles();
+        }
+    }
+
+    /** Ouvre la même modale, groupe FIGÉ, pour changer son profil. */
+    public function openChangeProfileModal(int $groupId): void
+    {
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
+        $group = UserGroup::find($groupId);
+        if (!$group) {
+            $this->toastError('Groupe introuvable.');
+            return;
+        }
+
+        $this->resetProfileModal();
+        $this->profileAssignMode = 'change';
+        $this->profileAssignGroupId = $group->id;
+        $this->profileAssignGroupLabel = $group->display_name_or_name;
+        $this->profileAssignRoleId = $group->rights_profile_id === null
+            ? null
+            : (int) $group->rights_profile_id;
+        $this->showProfileAssignModal = true;
+
+        if (empty($this->profileChoices)) {
+            $this->loadProfiles();
+        }
+    }
+
+    public function closeProfileAssignModal(): void
+    {
+        $this->showProfileAssignModal = false;
+        $this->resetProfileModal();
+    }
+
+    private function resetProfileModal(): void
+    {
+        $this->profileAssignMode = 'assign';
+        $this->profileAssignGroupId = null;
+        $this->profileAssignGroupLabel = '';
+        $this->profileGroupSearch = '';
+        $this->profileGroupResults = [];
+        $this->profileAssignRoleId = null;
+    }
+
+    /**
+     * Recherche SERVER-SIDE du groupe destinataire. Les groupes DÉJÀ porteurs
+     * sont exclus : pour eux, le geste est « Changer le profil » depuis leur
+     * ligne (`whereNull('rights_profile_id')`).
+     */
+    public function updatedProfileGroupSearch(): void
+    {
+        $term = trim($this->profileGroupSearch);
+
+        if (mb_strlen($term) < 2) {
+            $this->profileGroupResults = [];
+            return;
+        }
+
+        // ILIKE n'existe pas en SQLite (tests hôte) — pattern projet.
+        $likeOp = \Illuminate\Support\Facades\DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
+
+        $this->profileGroupResults = UserGroup::query()
+            ->whereNull('rights_profile_id')
+            ->where(function ($q) use ($likeOp, $term) {
+                $q->where('name', $likeOp, "%{$term}%")
+                    ->orWhere('display_name', $likeOp, "%{$term}%");
+            })
+            ->orderBy('name')
+            ->limit(20)
+            ->get()
+            ->map(fn(UserGroup $g) => [
+                'id' => $g->id,
+                'label' => $g->display_name_or_name,
+                'name' => $g->name,
+                'type' => $g->type,
+            ])
+            ->toArray();
+    }
+
+    public function selectProfileGroup(int $groupId): void
+    {
+        $match = collect($this->profileGroupResults)->firstWhere('id', $groupId);
+        if (!$match) {
+            return;
+        }
+
+        $this->profileAssignGroupId = $groupId;
+        $this->profileAssignGroupLabel = $match['label'];
+        $this->profileGroupResults = [];
+        $this->profileGroupSearch = '';
+    }
+
+    /**
+     * Pose ou change le profil porté par le groupe, et re-projette ses membres
+     * DANS LE MÊME GESTE (AC4, piège du dernier porteur couvert par le service).
+     */
+    public function submitProfileAssignment(): void
+    {
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
+        if ($this->profileAssignGroupId === null) {
+            $this->toastError('Sélectionnez un groupe.');
+            return;
+        }
+        if ($this->profileAssignRoleId === null) {
+            $this->toastError('Sélectionnez un profil de droits.');
+            return;
+        }
+
+        $group = UserGroup::find($this->profileAssignGroupId);
+        if (!$group) {
+            $this->toastError('Groupe introuvable.');
+            return;
+        }
+
+        $actor = auth()->user();
+
+        try {
+            $stats = app(GroupRightsProfileService::class)->setProfile(
+                $group,
+                (int) $this->profileAssignRoleId,
+                $actor instanceof EloquentUser ? $actor : null,
+            );
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+            return;
+        }
+
+        $choice = collect($this->profileChoices)->firstWhere('id', (int) $this->profileAssignRoleId);
+        $profileName = $choice['name'] ?? (Role::find($this->profileAssignRoleId)?->name ?? '?');
+        $groupLabel = $group->display_name_or_name;
+
+        $this->closeProfileAssignModal();
+        $this->loadProfiles();
+
+        if (!$stats['changed']) {
+            $this->toastInfo("Le groupe « {$groupLabel} » portait déjà le profil « {$profileName} ».");
+            return;
+        }
+
+        $this->toastSuccess(
+            "Profil « {$profileName} » donné au groupe « {$groupLabel} » — "
+            . "{$stats['users']} utilisateur(s) re-projeté(s)."
+        );
+    }
+
+    public function openRemoveProfileModal(int $groupId): void
+    {
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
+        $group = UserGroup::with('rightsProfile')->find($groupId);
+        if (!$group || !$group->carriesProfile()) {
+            $this->toastError('Ce groupe ne porte aucun profil.');
+            return;
+        }
+
+        $this->profileRemoveGroupId = $group->id;
+        $this->profileRemoveGroupLabel = $group->display_name_or_name;
+        $this->profileRemoveProfileLabel = $group->rightsProfile?->name ?? '?';
+        $this->showProfileRemoveModal = true;
+    }
+
+    public function closeProfileRemoveModal(): void
+    {
+        $this->showProfileRemoveModal = false;
+        $this->profileRemoveGroupId = null;
+        $this->profileRemoveGroupLabel = '';
+        $this->profileRemoveProfileLabel = '';
+    }
+
+    /** Retrait du profil porté → re-projection immédiate des membres (AC4). */
+    public function confirmRemoveProfile(): void
+    {
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
+        if ($this->profileRemoveGroupId === null) {
+            return;
+        }
+
+        $group = UserGroup::find($this->profileRemoveGroupId);
+        if (!$group) {
+            $this->closeProfileRemoveModal();
+            $this->toastError('Groupe introuvable.');
+            return;
+        }
+
+        $actor = auth()->user();
+        $groupLabel = $group->display_name_or_name;
+        $profileLabel = $this->profileRemoveProfileLabel;
+
+        $stats = app(GroupRightsProfileService::class)->setProfile(
+            $group,
+            null,
+            $actor instanceof EloquentUser ? $actor : null,
+        );
+
+        $this->closeProfileRemoveModal();
+        $this->loadProfiles();
+
+        $this->toastSuccess(
+            "Profil « {$profileLabel} » retiré du groupe « {$groupLabel} » — "
+            . "{$stats['users']} utilisateur(s) re-projeté(s)."
+        );
     }
 
 };
@@ -487,6 +809,12 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                 <ul tabindex="0"
                     class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-72 border border-base-300 z-[1]">
                     @if ($activeTab === 'profiles')
+                        <li>
+                            <button type="button" wire:click="openAssignProfileModal">
+                                <i class="fa-solid fa-user-plus"></i>
+                                Donner des permissions à un groupe
+                            </button>
+                        </li>
                         <li>
                             <a href="{{ route('app.rights-management.profiles.create') }}">
                                 <i class="fa-solid fa-plus"></i>
@@ -861,6 +1189,131 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         @endif
 
     </div>
+
+    {{-- ================================================================ --}}
+    {{-- Story 49.1 (AC7) — modale « Donner des permissions à un groupe » --}}
+    {{-- (mode `assign`) / « Changer le profil » (mode `change`, groupe figé) --}}
+    {{-- ================================================================ --}}
+    <x-molecules.modal wire:model="showProfileAssignModal"
+        :title="$profileAssignMode === 'change' ? 'Changer le profil de droits du groupe' : 'Donner des permissions à un groupe'"
+        subtitle="L'appartenance au groupe attribue automatiquement le profil à ses membres."
+        icon="fa-users-rectangle text-primary"
+        size="max-w-2xl"
+        height="h-auto max-h-[85vh]"
+        closeMethod="closeProfileAssignModal">
+
+        <x-molecules.modal.section title="Groupe">
+            @if ($profileAssignMode === 'change' || $profileAssignGroupId !== null)
+                <div class="flex items-center justify-between gap-3 p-3 rounded-lg bg-base-200/60">
+                    <div class="min-w-0">
+                        <div class="font-medium truncate">{{ $profileAssignGroupLabel }}</div>
+                        <div class="text-xs text-base-content/50">Groupe destinataire</div>
+                    </div>
+                    @if ($profileAssignMode !== 'change')
+                        <button type="button" class="btn btn-ghost btn-xs"
+                            wire:click="$set('profileAssignGroupId', null)">
+                            <i class="fa-solid fa-xmark"></i> Changer
+                        </button>
+                    @endif
+                </div>
+            @else
+                <div class="flex flex-col w-full gap-1">
+                    <label class="text-sm font-medium" for="profile-group-search">
+                        Rechercher un groupe <span class="text-error">*</span>
+                    </label>
+                    <label class="input w-full">
+                        <i class="fa-solid fa-magnifying-glass opacity-50"></i>
+                        <input id="profile-group-search" type="text" class="grow"
+                            placeholder="Nom du groupe (2 caractères minimum)…"
+                            wire:model.live.debounce.300ms="profileGroupSearch" />
+                    </label>
+
+                    @if (!empty($profileGroupResults))
+                        <div class="border border-base-300 rounded-lg divide-y divide-base-200 mt-2 max-h-60 overflow-y-auto">
+                            @foreach ($profileGroupResults as $result)
+                                <button type="button"
+                                    wire:key="group-result-{{ $result['id'] }}"
+                                    class="w-full flex items-center gap-3 px-3 py-2 hover:bg-base-200/50 text-left transition-colors"
+                                    wire:click="selectProfileGroup({{ $result['id'] }})">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-medium text-sm truncate">{{ $result['label'] }}</div>
+                                        <div class="text-xs text-base-content/50 font-mono truncate">{{ $result['name'] }}</div>
+                                    </div>
+                                    <span class="badge badge-ghost badge-xs">{{ $result['type'] }}</span>
+                                </button>
+                            @endforeach
+                        </div>
+                    @elseif (mb_strlen(trim($profileGroupSearch)) >= 2)
+                        <p class="text-xs text-base-content/50 mt-2">
+                            Aucun groupe sans profil ne correspond. Un groupe déjà porteur se modifie
+                            depuis son action « Changer ».
+                        </p>
+                    @endif
+                </div>
+            @endif
+        </x-molecules.modal.section>
+
+        <x-molecules.modal.section title="Profil de droits">
+            <div class="flex flex-col w-full gap-1">
+                <label class="text-sm font-medium" for="profile-assign-role">
+                    Profil attribué aux membres <span class="text-error">*</span>
+                </label>
+                <select id="profile-assign-role" class="select w-full" wire:model.live="profileAssignRoleId">
+                    <option value="">— Choisir un profil —</option>
+                    @foreach ($profileChoices as $choice)
+                        <option value="{{ $choice['id'] }}">
+                            {{ $choice['label'] }} ({{ $choice['permissions_count'] }} permission(s))
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+        </x-molecules.modal.section>
+
+        <x-slot:footerNote>
+            Les membres du groupe seront re-projetés immédiatement. Les droits attribués
+            individuellement (délégations) ne sont pas modifiés.
+        </x-slot:footerNote>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeProfileAssignModal">Annuler</button>
+            <button type="button" class="btn btn-primary" wire:click="submitProfileAssignment"
+                @disabled($profileAssignGroupId === null || $profileAssignRoleId === null)>
+                <i class="fa-solid fa-check mr-1"></i>
+                {{ $profileAssignMode === 'change' ? 'Changer le profil' : 'Donner les permissions' }}
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- Story 49.1 (AC7) — confirmation de RETRAIT du profil porté. --}}
+    <x-molecules.modal wire:model="showProfileRemoveModal"
+        title="Retirer le profil de droits du groupe"
+        icon="fa-link-slash text-error"
+        size="max-w-xl"
+        height="h-auto max-h-[85vh]"
+        closeMethod="closeProfileRemoveModal">
+
+        <x-molecules.modal.section>
+            <p class="text-sm">
+                Le profil <strong>{{ $profileRemoveProfileLabel }}</strong> ne sera plus porté par
+                le groupe <strong>{{ $profileRemoveGroupLabel }}</strong>.
+            </p>
+            <div class="alert alert-warning mt-3 text-sm">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>
+                    Le profil sera retiré de tous les membres du groupe. Les droits attribués
+                    individuellement (délégations) restent intacts.
+                </span>
+            </div>
+        </x-molecules.modal.section>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeProfileRemoveModal">Annuler</button>
+            <button type="button" class="btn btn-error" wire:click="confirmRemoveProfile">
+                <i class="fa-solid fa-link-slash mr-1"></i>
+                Retirer le profil
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
 
     {{-- Story 7.2 — modale délégation partagée avec /app/users (clic ligne sur
          le tableau Délégations actives ouvre cette modale en mode édition). --}}

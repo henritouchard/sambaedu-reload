@@ -1287,3 +1287,193 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - [ ] 2 imports consécutifs : `head_teacher_updated==0`, pivot identique
 - [ ] Données sales : fautif isolé (`errors==1`), suivants projetés ; `pp_profs` toléré
 - [ ] `git diff app/` : SEUL `projectFoldedGroup` (+ commentaires) touché — chokepoint/fold/observer/vestiges intacts
+
+---
+
+## Section 19 — Le groupe d'utilisateurs porte le profil de droits (Story 49.1, 2026-08-01)
+
+**Le modèle en une phrase.** Un groupe d'utilisateurs peut porter *un* profil de droits
+(`user_groups.rights_profile_id` → `roles.id`, nullable) : **appartenir au groupe EST
+l'attribution du profil**. Un utilisateur détient l'**union** des profils portés par ses
+groupes. Aucun rang, aucune précédence — les permissions Spatie sont cumulatives.
+
+**Ce qui reste intact et doit le prouver à chaque scénario :** les **délégations manuelles**
+(rôles portés par *aucun* groupe, attribués au drawer). `syncRoles` est interdit dans le
+chemin de matérialisation ; toute observation d'une délégation disparue est un **incident
+bloquant**.
+
+**Code de référence** :
+- `app/Services/GroupRightsProfileService.php` — `carriedRoleIds` / `reconcile` / `setProfile` / `reprojectAll`
+- `app/Observers/UserGroupUserPivotObserver.php` — hook `reconcileProfiles()` (flag dédié `$profileReconcileEnabled`)
+- `app/Console/Commands/ReprojectGroupProfiles.php` — `users:reproject-group-profiles`
+- `app/Services/UserGroupService.php` — `defaultRightsProfileIdFor()` (défaut à la création, import AD)
+- `database/migrations/2026_08_01_100000_add_rights_profile_to_user_groups_table.php` — colonne + seed brownfield
+- `resources/views/pages/rights-management/_partials/profiles-tab.blade.php` — les deux sections
+
+### Pré-requis Section 19
+
+- Migrations appliquées (`php artisan migrate:status` — la migration `2026_08_01_100000` en `Ran`).
+- Un groupe `Profs` importé, un groupe de classe `3A`, un profil custom `gestionnaire`.
+- Un utilisateur `enseignant.test` **membre de `Profs`** portant AUSSI la délégation `user-admin`
+  posée au drawer (c'est le témoin des délégations).
+
+### Scénario 19.1 — L'onglet Profils présente les groupes porteurs (AC7)
+
+1. `/app/rights-management?tab=profiles`.
+2. **Attendu** : section principale **« Groupes porteurs de permissions »** listant `Profs` →
+   profil `prof` (badge *initial*), nombre de permissions et d'utilisateurs, lien vers la page du
+   profil. Les ~200 groupes non porteurs **ne sont pas listés**.
+3. **Attendu** : section secondaire **« Profils non portés »** contenant `user-admin`, `technicien`,
+   `gestionnaire`… et **pas** `prof`. Sélection multiple + suppression toujours disponibles.
+
+### Scénario 19.2 — Donner des permissions à un groupe (AC7 + AC2)
+
+1. Bouton **« Donner des permissions à un groupe »** (section principale ou menu Actions).
+2. Rechercher `3A` → sélectionner. **Attendu** : un groupe **déjà porteur** (`Profs`) n'apparaît
+   jamais dans la recherche — pour lui le geste est « Changer ».
+3. Choisir le profil `gestionnaire`, valider.
+4. **Attendu** : toast « Profil « gestionnaire » donné au groupe « 3A » — N utilisateur(s)
+   re-projeté(s) », `3A` apparaît en section principale.
+5. **Vérification côté membre** : ouvrir un élève de `3A` → il porte `gestionnaire`. Le compte
+   `enseignant.test` (non membre de `3A`) ne l'a **pas**.
+
+### Scénario 19.3 — L'appartenance attribue et retire (AC2, le cœur)
+
+1. Ajouter `eleveB` au groupe `Profs` (page groupe ou fiche utilisateur).
+2. **Attendu** : `eleveB` porte `prof` **immédiatement**, sans passage au drawer.
+3. Retirer `eleveB` de `Profs`.
+4. **Attendu** : `prof` disparaît de `eleveB`.
+5. **Témoin délégations** : `enseignant.test` conserve `user-admin` tout du long.
+
+### Scénario 19.4 — Changer / retirer le profil porté, re-projection en une passe (AC4)
+
+1. Sur la ligne `Profs`, **« Changer »** → choisir `eleve` → valider.
+2. **Attendu** : *tous* les membres de `Profs` perdent `prof` et gagnent `eleve`, **en une seule
+   passe**. C'est le **piège du dernier porteur** : `Profs` étant le seul porteur de `prof`, sans
+   traitement explicite l'ancien profil resterait orphelin sur tout le monde.
+3. Remettre `prof`, puis **« Retirer »** → confirmer (la modale annonce « Le profil sera retiré de
+   tous les membres du groupe »).
+4. **Attendu** : plus aucun membre ne porte `prof` ; `enseignant.test` garde `user-admin`.
+
+### Scénario 19.5 — Cumul pur, aucune précédence (AC5)
+
+1. Poser `gestionnaire` sur `3A` et `prof` sur `Profs`. Rendre un utilisateur membre des DEUX.
+2. **Attendu** : il porte `prof` **et** `gestionnaire`, et l'**union** de leurs permissions.
+3. Le retirer de `Profs` → il perd `prof`, garde `gestionnaire`.
+
+### Scénario 19.6 — Suppression d'un profil porté REFUSÉE, deux chemins (AC6, CRITIQUE)
+
+1. **Chemin liste** : section « Profils non portés »… `gestionnaire` n'y est plus (il est porté).
+   Le retirer temporairement de `3A` pour le voir réapparaître, le re-poser, puis forcer la
+   sélection : la suppression est **refusée** avec un message **nommant les groupes porteurs**.
+2. **Chemin page du profil** : ouvrir la page de `gestionnaire`. **Attendu** : bandeau
+   *« Profil porté par un groupe »* listant les porteurs, action « Supprimer le profil »
+   **désactivée** ; un appel forcé renvoie « Suppression refusée — porté par : … ».
+3. **Filet DB** : une suppression hors UI (tinker `Role::find(x)->delete()`) échoue sur la
+   contrainte `restrictOnDelete`.
+4. Un profil **non porté** reste supprimable exactement comme avant.
+
+### Scénario 19.7 — Verrouillage des DEUX drawers (AC8)
+
+1. `/app/users` → cocher un utilisateur → **« Gérer les droits »** → onglet Rôles.
+2. **Attendu** : `prof` affiché avec le badge **« porté par un groupe »**, radio **désactivé**, et
+   la raison « Porté par le(s) groupe(s) Profs — pour donner ce profil, ajoutez l'utilisateur au
+   groupe ». Les rôles non portés se comportent comme avant.
+3. Même vérification sur le drawer par-utilisateur (fiche utilisateur → gestion des permissions) :
+   toggle **désactivé** + raison.
+4. **Garde serveur** (le point qui compte) : rejouer le geste avec un payload forgé (console
+   navigateur, `Livewire.find(id).call('applyRoles')` après avoir forcé `selectedRole='prof'`).
+   **Attendu** : refus + toast explicite, **aucune écriture** — dans les deux sens (attribution ET
+   retrait).
+
+### Scénario 19.8 — Re-projection parc entier, idempotente (AC4)
+
+1. `php artisan users:reproject-group-profiles --dry-run` → tableau des compteurs, **aucune
+   écriture**.
+2. `php artisan users:reproject-group-profiles` → backfill.
+3. **Relancer immédiatement** → « Profils posés : 0 / Profils retirés : 0 ». Le re-run est un no-op
+   strict.
+4. Une erreur sur un utilisateur n'arrête pas la boucle (compteur `Erreurs` + log) et la commande
+   sort en **FAILURE**.
+
+### Scénario 19.9 — Périmètre borné : fédéré et compte protégé (AC3 + AC10)
+
+1. Poser `technicien` sur un groupe. Faire une re-projection parc entier.
+2. **Attendu** : un **technicien fédéré** (`source='federated'`, membre d'aucun groupe) **conserve**
+   son rôle `technicien` — sinon le `syncRoles` de son login le re-poserait à chaque connexion et on
+   installerait une boucle retrait / re-pose.
+3. **Attendu** : le compte protégé `admin` est **entièrement sauté** — ni assign ni remove, même
+   membre d'un groupe porteur. Son `super-admin` est inchangé.
+
+### Scénario 19.10 — Seed iso-comportement, jamais ré-écrasant (AC9)
+
+1. **Brownfield** (parc scolaire existant) : après migration, `Profs` porte `prof`, `Eleves` porte
+   `eleve`, **`Administratifs` ne porte rien**. Un groupe qui portait déjà un profil est **intact**.
+2. **Greenfield** : sur une installation neuve, le **premier import AD** qui crée `Profs` pose le
+   même défaut.
+3. **Non ré-écrasement** : retirer le profil de `Profs` depuis l'UI, relancer un import AD →
+   `Profs` reste **sans profil**. Un choix admin n'est jamais annulé par un ré-import.
+4. **Généricité** : sur un parc sans `Profs` ni `Eleves` (administration), **rien** n'est seedé et
+   tout fonctionne à l'identique.
+
+### Limites connues (documentées, non corrigées ici)
+
+- **Écritures pivot hors Eloquent** : les writes bruts `DB::table('user_group_user')` (backfill 42.1,
+  `MergeLegacyUserGroups`) et la suppression en masse de groupes (`whereNotIn(...)->delete()`)
+  n'émettent aucun event et ne déclenchent donc pas la réconciliation. Filet :
+  `users:reproject-group-profiles`.
+- **Sémantique du changement de profil porté** : un utilisateur **membre du groupe au moment du
+  changement** perd l'ancien profil, même s'il le détenait aussi par délégation — les deux sont
+  indistinguables à cet instant. Un non-membre le garde. C'est voulu.
+- **Aucune planification** : le nightly `--mode=full` appartient à la Story 49.3.
+
+> **Couverture automatisée.** `tests/Feature/Services/GroupRightsProfileServiceTest.php` (19 tests :
+> 5 scénarios AC11, test-verrou anti-`syncRoles`, dernier porteur, fédéré, admin protégé, dry-run,
+> fail-soft) ; `tests/Feature/Observers/UserGroupUserPivotProfileReconcileTest.php` (hook, guard FS
+> coupé, early-return groupe non porteur, flag dédié, fail-soft) ;
+> `tests/Feature/Console/ReprojectGroupProfilesCommandTest.php` ;
+> `tests/Feature/Migrations/GroupRightsProfileSeedTest.php` + `GroupRightsProfileForeignKeyTest.php`
+> (seed 2 volets + filet `restrictOnDelete` sur le schéma réel) ;
+> `tests/Feature/Livewire/GroupRightsProfileTabTest.php` (onglet, gestes, refus AC6 des 2 chemins) ;
+> `tests/Feature/Livewire/CarriedProfileDrawerLockTest.php` (verrouillage des 2 drawers + gardes
+> serveur sur payload forgé).
+
+### Checklist rapide Section 19
+
+- [ ] Onglet Profils : section « Groupes porteurs » + section « Profils non portés » (pas les 200 groupes)
+- [ ] Donner des permissions à un groupe : recherche excluant les porteurs, re-projection immédiate
+- [ ] Ajout/retrait d'appartenance ⇒ profil posé/retiré sans passage au drawer
+- [ ] Changement de profil porté : ancien retiré à TOUS les membres en une passe (dernier porteur)
+- [ ] Membre de 2 groupes porteurs : union des permissions, aucun départage
+- [ ] **Délégation `user-admin` intacte après TOUS les scénarios** (verrou `syncRoles`)
+- [ ] Suppression d'un profil porté refusée dans les 2 chemins UI + filet DB
+- [ ] Les 2 drawers : contrôle désactivé + raison, ET refus serveur sur payload forgé (assign ET remove)
+- [ ] `users:reproject-group-profiles` : dry-run muet, backfill, re-run = 0/0
+- [ ] Technicien fédéré conservé ; compte `admin` intouché
+- [ ] Seed : `Administratifs` sans profil ; retrait admin jamais ré-écrasé par un ré-import
+- [ ] Groupe porteur supprimé de l'AD : profil révoqué aux anciens membres, délégation intacte (19.11)
+
+### Scénario 19.11 — Disparition d'un groupe porteur au balayage AD (correction de review)
+
+> **Pourquoi ce scénario existe.** La review adversariale de 49.1 a montré que le cleanup du
+> balayage (`syncFromAd`, `whereNotIn(LOWER(name))->delete()`) supprime les groupes disparus de
+> l'annuaire par un DELETE de **masse** : aucun event Eloquent, ni sur le groupe ni sur le pivot.
+> Dès la suppression, le profil du groupe sort de `carriedRoleIds()` et devient indistinguable
+> d'une délégation manuelle — la réconciliation générique ne le retire plus, **sur aucune passe**,
+> `users:reproject-group-profiles` compris. Les anciens membres gardaient donc le profil à vie.
+> Corrigé : capture des porteurs condamnés et de leurs membres **avant** le DELETE, révocation
+> explicite **après** (`GroupRightsProfileService::reconcileOrphanedProfiles()`), même mécanisme
+> que le piège du dernier porteur.
+
+1. Créer dans l'AD un groupe `Comptabilite`, le laisser s'importer, lui donner le profil
+   `gestionnaire` depuis l'onglet Profils, y placer `compta.test`.
+2. Vérifier que `compta.test` a bien le profil (page utilisateur / drawer en lecture).
+3. Donner en plus à `compta.test` la délégation `user-admin` au drawer (témoin).
+4. **Supprimer le groupe `Comptabilite` dans l'AD**, puis relancer le balayage groupes.
+5. Attendu : la ligne `user_groups` a disparu **et** `compta.test` n'a plus `gestionnaire`.
+6. Attendu : `compta.test` a **toujours** `user-admin` — la délégation n'est jamais emportée.
+7. Contre-épreuve : un groupe porteur **toujours présent** dans l'AD (`Profs`) ne bouge pas, et
+   ses membres gardent leur profil.
+
+> Un profil `gestionnaire` encore attribué en base après l'étape 5 est un **incident bloquant** :
+> il ne serait plus jamais révocable par aucune commande.

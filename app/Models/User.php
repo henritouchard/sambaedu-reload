@@ -19,16 +19,21 @@ use Livewire\Wireable;
 
 /**
  * Modèle Eloquent User pour le système de droits SambaEdu 4.6
- * 
- * Remplace progressivement AuthUser (wrapper LDAP).
- * Utilise la table PostgreSQL 'users' comme cache SQL des utilisateurs AD.
+ *
+ * Unique représentation de l'utilisateur authentifié (l'ancien wrapper LDAP
+ * `AuthUser` a été supprimé par la Story 49.2).
+ * Utilise la table PostgreSQL 'users' comme miroir SQL des utilisateurs AD.
  * Porte le trait HasRoles de Spatie pour la gestion des permissions et rôles.
- * 
- * Transition prévue :
+ *
+ * Transition :
  * - Phase A : AD = source de vérité, cette table = cache
  * - Phase B : Double-écriture, SQL prend le relais
  * - Phase C : SQL = source de vérité, AD = proxy Windows
- * 
+ *
+ * Depuis l'Epic 49, le RUNTIME est en phase C pour les rôles et la session :
+ * plus aucune décision d'autorisation ni de session n'interroge l'annuaire
+ * (les écritures de compte, elles, restent AD-first).
+ *
  * @property int $id
  * @property string $login
  * @property string|null $password
@@ -362,18 +367,24 @@ class User extends Authenticatable implements Wireable
     }
 
     // ========================================================================
-    // Helpers d'authentification (ex-AuthUser wrapper)
+    // Helpers d'authentification
     //
-    // Why: le guard web injecte désormais directement l'Eloquent User (cf.
-    // `LdapUserProvider`). Ces méthodes exposent l'API historique d'`AuthUser`
-    // pour que les consommateurs (@auth->user()->isAdmin(), getLogin(), …)
-    // continuent de fonctionner sans avoir à résoudre un Eloquent à la main.
-    // Les flags dynamiques (admin/prof/eleve) sont lazy-loadés depuis LDAP
-    // via `ldapBusinessObject()` avec cache par-request.
+    // Why: le guard web injecte directement l'Eloquent User (cf.
+    // `LdapUserProvider`). Ces accesseurs exposent l'identité du compte aux
+    // consommateurs (`auth()->user()->getLogin()`, …) sans résoudre un modèle
+    // à la main.
+    //
+    // Story 49.2 (FR-R3) — les prédicats scolaires LDAP-first
+    // (`isAdmin()`/`isProf()`/`isEleve()`/`getGroups()`) et toute la chaîne
+    // LDAP-lazy qui les portait (`getLdapUser()`, `ldapBusinessObject()`, le
+    // cache statique `$ldapCache`) ont été SUPPRIMÉS, pas réécrits : ils
+    // nommaient des catégories scolaires en dur et coûtaient un aller-retour
+    // annuaire par utilisateur. Selon ce que l'appelant voulait réellement, il
+    // lit désormais un DROIT (`can('…')` / `hasRole(…)`, matérialisés par 49.1),
+    // une APPARTENANCE (`userGroups()`), ou `users.role` quand il s'agit d'un
+    // comportement type-OU assumé (affichage). Aucun prédicat de remplacement
+    // n'a été introduit : ce serait reconduire le problème éteint ici.
     // ========================================================================
-
-    /** @var array<string, mixed> Cache LDAP par login, scope request. */
-    private static array $ldapCache = [];
 
     public function getLogin(): string
     {
@@ -414,28 +425,24 @@ class User extends Authenticatable implements Wireable
      *
      * **Pourquoi cette méthode existe et pas une autre :**
      *
-     * 1. **PAS `isProf()`/`isEleve()`/`isAdmin()`** ({@see self::isProf()},
-     *    {@see self::isEleve()}, {@see self::isAdmin()}) : ces méthodes sont
-     *    **LDAP-first**
-     *    (`ldapBusinessObject()?->isProf() ?? ...`) — `getLdapUser()` déclenche
-     *    `LdapUser::findByLogin()`, soit **une requête réseau LDAP par login**,
-     *    avec un cache seulement *request-scoped* (`self::$ldapCache`).
-     *    Dans une navbar rendue à CHAQUE page vue, par CHAQUE
-     *    utilisateur, ce serait un aller-retour LDAP systématique — le repo
-     *    interdit déjà ce pattern sur des rendus ailleurs (ex.
-     *    `app/Actions/Groups/BackfillUserGroupUserRoles.php:26`,
-     *    `app/Services/UserGroupService.php:1071`).
-     * 2. **PAS `hasRole('prof')`/`hasRole('eleve')` (Spatie)** : ces rôles
-     *    *existent* dans {@see \Database\Seeders\PermissionSeeder} mais la
-     *    sync AD→SQL ne les matérialise JAMAIS pour la population
-     *    synchronisée — c'est le périmètre de la Story 49.1, non implémentée.
-     *    `hasRole('prof')` renverrait `false` pour la quasi-totalité des
-     *    profs réels.
+     * 1. **PAS `isProf()`/`isEleve()`/`isAdmin()`** : ces méthodes étaient
+     *    **LDAP-first** (un aller-retour annuaire par login, avec un cache
+     *    seulement *request-scoped*) — inacceptable dans une navbar rendue à
+     *    CHAQUE page vue, par CHAQUE utilisateur. Elles n'existent plus depuis
+     *    la Story 49.2 (FR-R3 : suppression, pas réécriture) ; ce docblock garde
+     *    la trace du raisonnement pour que le réflexe ne revienne pas.
+     * 2. **PAS `hasRole('prof')`/`hasRole('eleve')` (Spatie)** : ces rôles sont
+     *    désormais matérialisés par la Story 49.1 (le groupe porte le profil de
+     *    droits) et seraient donc fiables pour `prof`/`eleve`. Mais ils ne
+     *    couvrent PAS `administratif`, qui n'a aucun rôle Spatie : la résolution
+     *    ci-dessous doit rendre les quatre familles métier, `users.role` reste
+     *    donc son entrée. Point d'attention si un jour `administratif` devient
+     *    un rôle : cette méthode pourra alors basculer entièrement sur Spatie.
      * 3. **PAS `$this->role` brut sans normalisation** : la colonne `role` a
      *    TROIS écrivains au vocabulaire divergent — la sync AD→SQL
      *    (`UserSyncService.php:503-508`, singulier `eleve|prof|administratif`),
-     *    l'auto-provisioning au login (`LdapUserProvider.php:120`,
-     *    `SambaEduAuthGuard.php:209` — **PLURIEL** `eleves|profs|administratifs`)
+     *    l'auto-provisioning au login (`LdapUserProvider`, `AuthController` —
+     *    **PLURIEL** `eleves|profs|administratifs`)
      *    et `UserService` (`administratifs → 'admin'`). Un prof connecté avant
      *    le prochain passage de sync porte `role='profs'` : un simple `===`
      *    le raterait.
@@ -449,28 +456,23 @@ class User extends Authenticatable implements Wireable
      * par `grantAdminRights()` de la sync et par le drawer de délégation.
      *
      * **Coût** : 0 LDAP, 0 SQL pour `users.role` (déjà hydraté en mémoire par
-     * `Auth::login()` — `SambaEduAuthGuard.php:111-114`), au plus 1 SELECT
-     * Spatie par requête HTTP (relation mise en cache par le registrar Spatie).
-     * NFR9 tenu.
+     * `Auth::login()` — le guard pose l'Eloquent), au plus 1 SELECT Spatie par
+     * requête HTTP (relation mise en cache par le registrar Spatie). NFR9 tenu.
      *
      * **Résultat = un ENSEMBLE, jamais un scalaire** : un prof délégué
      * `super-admin` renvoie `['prof', 'admin']` — il voit les deux familles
      * de tuiles du lanceur.
      *
-     * **Risque résiduel assumé, par écrit** : le mode `delta` de la sync AD ne
-     * rétrograde jamais `users.role` (Story 49.3, non implémentée) — un prof
-     * sorti du groupe AD Profs garde `role='prof'` jusqu'à réconciliation.
-     * Conséquence ICI : une tuile affichée à tort au pire jusqu'à la
-     * réconciliation suivante — **jamais une autorisation** (FR14 : la tuile
-     * est un affichage, l'autorisation réelle reste côté extension).
-     * Acceptable pour de l'affichage.
+     * **Fraîcheur (mise à jour 49.3)** : la réconciliation nocturne des départs
+     * désactive les comptes disparus et retire leurs appartenances ; le sursis
+     * d'un `users.role` non rétrogradé se limite donc à l'intervalle entre deux
+     * passes, et n'a jamais valeur d'autorisation (FR14 : la tuile est un
+     * affichage, l'autorisation réelle reste côté extension).
      *
-     * **Point de modification unique** : cette méthode sera réutilisée/raffinée
-     * par le claim `role` du SSO (Story 55.2) et simplifiée quand 49.1/49.2
-     * matérialiseront Spatie et basculeront le runtime en Postgres-only — un
-     * seul endroit à faire évoluer, volontairement pas de classe résolveuse
-     * dédiée pour une seule méthode nommée et testée (fiche « pas de
-     * sur-conçu »).
+     * **Point de modification unique** : cette méthode est réutilisée par le
+     * claim `role` du SSO (Story 55.2) — un seul endroit à faire évoluer,
+     * volontairement pas de classe résolveuse dédiée pour une seule méthode
+     * nommée et testée (fiche « pas de sur-conçu »).
      *
      * @return list<string>
      */
@@ -504,11 +506,6 @@ class User extends Authenticatable implements Wireable
         return (bool) $this->is_active;
     }
 
-    public function isAdmin(): bool
-    {
-        return $this->ldapBusinessObject()?->isAdmin() ?? false;
-    }
-
     // ========================================================================
     // Verrou du compte d'administration protégé
     // ========================================================================
@@ -516,8 +513,10 @@ class User extends Authenticatable implements Wireable
     /**
      * Ce compte est-il le compte d'administration protégé ?
      *
-     * À ne pas confondre avec {@see self::isAdmin()}, qui interroge l'AD
-     * (`memberOf` `Domain Admins`) et vaut pour de multiples comptes.
+     * Il s'agit d'un login RÉSERVÉ ({@see self::PROTECTED_ADMIN_LOGIN}), à ne
+     * pas confondre avec « être administrateur », qui se lit sur le rôle Spatie
+     * `super-admin` ({@see \App\Enums\SambaRole::SuperAdmin}) et vaut pour de
+     * multiples comptes.
      */
     public function isProtectedAdmin(): bool
     {
@@ -589,47 +588,6 @@ class User extends Authenticatable implements Wireable
         }
 
         return $this->spatieSyncPermissions(...$permissions);
-    }
-
-    public function isProf(): bool
-    {
-        return $this->ldapBusinessObject()?->isProf() ?? ($this->role === 'prof');
-    }
-
-    public function isEleve(): bool
-    {
-        return $this->ldapBusinessObject()?->isEleve() ?? ($this->role === 'eleve');
-    }
-
-    public function getGroups(): array
-    {
-        $bo = $this->ldapBusinessObject();
-        return is_object($bo) && isset($bo->groups) && is_array($bo->groups) ? $bo->groups : [];
-    }
-
-    /**
-     * Charge (avec cache request-scope) le modèle LDAP sous-jacent.
-     * Retourne null si le user SQL n'a plus de correspondance AD.
-     */
-    public function getLdapUser(): ?\App\LdapModels\LdapUser
-    {
-        $key = 'ldap:' . $this->login;
-        if (!array_key_exists($key, self::$ldapCache)) {
-            self::$ldapCache[$key] = \App\LdapModels\LdapUser::findByLogin((string) $this->login);
-        }
-        return self::$ldapCache[$key];
-    }
-
-    /**
-     * Business object LDAP (DTO métier avec isAdmin/isProf/groups/…), lazy + cache.
-     */
-    public function ldapBusinessObject(): ?object
-    {
-        $key = 'bo:' . $this->login;
-        if (!array_key_exists($key, self::$ldapCache)) {
-            self::$ldapCache[$key] = $this->getLdapUser()?->toBusinessObject();
-        }
-        return self::$ldapCache[$key];
     }
 
     /**

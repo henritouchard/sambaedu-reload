@@ -51,6 +51,10 @@ trait CreatesPermissionSchema
                 $table->text('dn')->nullable();
                 $table->string('ad_guid', 36)->nullable();
                 $table->string('role', 50)->default('autre');
+                // Story 20.1 / 49.1 — origine du compte : 'ad' (défaut) ou
+                // 'federated'. La réconciliation des profils de droits est
+                // bornée à `source='ad'` (AC3).
+                $table->string('source', 16)->default('ad');
                 $table->string('school_code', 255)->nullable();
                 $table->string('school_name', 255)->nullable();
                 $table->boolean('is_active')->default(true);
@@ -76,9 +80,19 @@ trait CreatesPermissionSchema
                 $table->string('type');
                 $table->text('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
+                // Story 49.1 (AC1) — profil de droits porté par le groupe.
+                // Pas de FK ici : le schéma hand-rolled crée `roles` APRÈS
+                // `user_groups` (le filet `restrictOnDelete` est vérifié par le
+                // test de migration, qui joue les vraies migrations).
+                $table->unsignedBigInteger('rights_profile_id')->nullable();
                 $table->timestamps();
             });
             $this->createdTables[] = 'user_groups';
+        } elseif (!Schema::hasColumn('user_groups', 'rights_profile_id')) {
+            // Table créée par un autre test avant 49.1 : on la complète.
+            Schema::table('user_groups', function (Blueprint $table) {
+                $table->unsignedBigInteger('rights_profile_id')->nullable();
+            });
         }
 
         if (!Schema::hasTable('user_group_user')) {

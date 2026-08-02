@@ -5,11 +5,13 @@ namespace App\Models;
 use App\Models\Concerns\HasAppCustomizations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Wireable;
+use Spatie\Permission\Models\Role;
 
 /**
  * Modèle Eloquent pour les groupes d'utilisateurs
@@ -23,6 +25,7 @@ use Livewire\Wireable;
  * @property string $type
  * @property string|null $ad_dn
  * @property string|null $ad_guid
+ * @property int|null $rights_profile_id
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
  */
@@ -39,6 +42,10 @@ class UserGroup extends Model implements Wireable
         'type',
         'ad_dn',
         'ad_guid',
+        // Story 49.1 (AC1) — profil de droits PORTÉ par ce groupe (FK
+        // `roles.id`, nullable ; le cas normal est l'absence de lien).
+        // L'appartenance au groupe matérialise ce rôle Spatie chez ses membres.
+        'rights_profile_id',
     ];
 
     // ========================================================================
@@ -77,6 +84,19 @@ class UserGroup extends Model implements Wireable
             // d'arête. `withPivot` n'introduit pas de timestamps (le pivot
             // custom 5.2 reste `$timestamps=false`).
             ->withPivot('is_head_teacher', 'role');
+    }
+
+    /**
+     * Story 49.1 (AC1) — profil de droits porté par ce groupe (rôle Spatie).
+     *
+     * Référencé par **id**, jamais par nom : les profils custom sont
+     * renommables depuis `/app/rights-management/profiles/[id]`, un nom stocké
+     * deviendrait pendant. `null` dans le cas normal (la très grande majorité
+     * des groupes ne porte aucun profil).
+     */
+    public function rightsProfile(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'rights_profile_id');
     }
 
     public function wallpapers(): MorphMany
@@ -118,9 +138,29 @@ class UserGroup extends Model implements Wireable
         });
     }
 
+    /**
+     * Story 49.1 — groupes PORTEURS d'un profil de droits (section principale
+     * de l'onglet Profils). Le complément (`whereNull`) est le cas normal.
+     */
+    public function scopeCarryingProfile(Builder $query): Builder
+    {
+        return $query->whereNotNull('rights_profile_id');
+    }
+
     // ========================================================================
     // HELPERS
     // ========================================================================
+
+    /**
+     * Story 49.1 — ce groupe porte-t-il un profil de droits ?
+     *
+     * C'est l'information « qualifiant vs regroupement », DÉRIVÉE : aucune
+     * colonne de nature, aucune constante.
+     */
+    public function carriesProfile(): bool
+    {
+        return $this->rights_profile_id !== null;
+    }
 
     public static function findByName(string $name): ?self
     {

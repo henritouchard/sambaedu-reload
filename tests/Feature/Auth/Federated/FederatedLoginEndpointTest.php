@@ -13,7 +13,6 @@ use App\Enums\SambaRole;
 use App\Http\Middleware\Auth\SambaEduAuthGuard;
 use App\Models\ExternalIdentity;
 use App\Models\User;
-use App\Repositories\UserRepository;
 use App\Services\AuthenticationService;
 use Illuminate\Http\Request;
 use Illuminate\Session\Store;
@@ -356,29 +355,30 @@ class FederatedLoginEndpointTest extends TestCase
     }
 
     #[Test]
-    public function ldap_user_flow_is_unchanged_for_non_federated_sessions(): void
+    public function native_user_flow_is_unchanged_for_non_federated_sessions(): void
     {
-        // Régression AC15 : une session NON fédérée passe par le flux LDAP
-        // standard (findByLogin appelé), strictement inchangé.
-        // Pré-crée l'Eloquent pour court-circuiter ensureEloquentUser.
+        // Régression AC15 (Story 20.1), RECADRÉE par la Story 49.2.
+        //
+        // Ce que ce test verrouille n'a PAS changé : une session NON fédérée
+        // suit son flux propre, et ce flux VALIDE l'existence de l'utilisateur
+        // avant de le laisser passer (le contraire serait un trou d'authz).
+        //
+        // Ce qui a changé, c'est la SOURCE de cette validation : l'assertion
+        // « `UserRepository::findByLogin` est appelé » n'a plus d'objet — le
+        // guard n'a plus de `UserRepository` du tout (FR-R4, existence lue en
+        // Postgres). L'assertion devient donc : le flux natif passe SI ET
+        // SEULEMENT SI la ligne `users` existe.
         User::create([
-            'login' => 'prof.dupont', 'fullname' => 'Prof Dupont', 'source' => 'ad',
+            'login' => 'prof.dupont', 'fullname' => 'Prof Dupont',
             'role' => 'prof', 'is_active' => true,
         ]);
-
-        $ldapUser = new \App\Types\User(
-            login: 'prof.dupont', fullname: 'Prof Dupont', firstname: 'Prof',
-            lastname: 'Dupont', email: 'p@d.fr', isActive: true, dn: 'CN=prof,DC=x', role: 'prof',
-        );
 
         $authService = Mockery::mock(AuthenticationService::class);
         $authService->shouldReceive('isAlreadyAuthenticated')->andReturn(true);
         $authService->shouldReceive('getCurrentUser')->andReturn('prof.dupont');
+        $authService->shouldReceive('logout')->andReturnNull();
 
-        $userRepo = Mockery::mock(UserRepository::class);
-        $userRepo->shouldReceive('findByLogin')->once()->with('prof.dupont')->andReturn($ldapUser);
-
-        $guard = new SambaEduAuthGuard($authService, $userRepo, new \App\Auth\Federated\ExternalIdentityLifecycleService());
+        $guard = new SambaEduAuthGuard($authService, new \App\Auth\Federated\ExternalIdentityLifecycleService());
 
         $request = Request::create('/app/dashboard', 'GET');
         $session = new Store('test', new ArraySessionHandler(120));
@@ -391,7 +391,24 @@ class FederatedLoginEndpointTest extends TestCase
             return new \Symfony\Component\HttpFoundation\Response('ok', 200);
         });
 
-        $this->assertTrue($called, 'Le flux LDAP standard doit passer (findByLogin appelé)');
+        $this->assertTrue($called, 'Le flux natif doit passer quand la ligne users existe');
+
+        // Contre-épreuve : sans ligne `users`, le même flux refuse. Sans elle,
+        // le test ci-dessus passerait aussi avec un guard qui ne vérifie RIEN.
+        User::where('login', 'prof.dupont')->delete();
+
+        $secondRequest = Request::create('/app/dashboard', 'GET');
+        $secondSession = new Store('test2', new ArraySessionHandler(120));
+        $secondSession->start();
+        $secondRequest->setLaravelSession($secondSession);
+
+        $calledAgain = false;
+        $guard->handle($secondRequest, function () use (&$calledAgain) {
+            $calledAgain = true;
+            return new \Symfony\Component\HttpFoundation\Response('ok', 200);
+        });
+
+        $this->assertFalse($calledAgain, 'Un login absent de Postgres doit être refusé');
     }
 
     #[Test]
@@ -410,9 +427,15 @@ class FederatedLoginEndpointTest extends TestCase
     }
 
     /**
-     * Guard configuré pour les sessions fédérées : `AuthenticationService` et
-     * `UserRepository` mockés. `findByLogin` ne DOIT PAS être appelé (le guard
-     * saute le LDAP). On lit le login depuis le marqueur fédéré.
+     * Guard configuré pour les sessions fédérées.
+     *
+     * Story 49.2 — le garde-fou « le LDAP ne doit JAMAIS être interrogé pour un
+     * externe » était porté par un `shouldReceive('findByLogin')->never()` sur
+     * un `UserRepository` mocké. Il est devenu STRUCTUREL : le guard n'a plus
+     * de `UserRepository` en constructeur, il ne peut donc plus interroger
+     * l'annuaire — ni pour un externe, ni pour personne. La vérification par
+     * mock n'a plus de sujet ; c'est le test d'architecture du guard qui la
+     * remplace ({@see \Tests\Feature\Auth\SambaEduAuthGuardPostgresTest}).
      */
     private function makeGuardSkippingLdap(): SambaEduAuthGuard
     {
@@ -423,10 +446,6 @@ class FederatedLoginEndpointTest extends TestCase
         $authService->shouldReceive('getCurrentUser')->andReturn($user?->login);
         $authService->shouldReceive('logout')->andReturnNull();
 
-        $userRepo = Mockery::mock(UserRepository::class);
-        // Garde-fou : le LDAP ne doit JAMAIS être interrogé pour un externe.
-        $userRepo->shouldReceive('findByLogin')->never();
-
-        return new SambaEduAuthGuard($authService, $userRepo, new \App\Auth\Federated\ExternalIdentityLifecycleService());
+        return new SambaEduAuthGuard($authService, new \App\Auth\Federated\ExternalIdentityLifecycleService());
     }
 }

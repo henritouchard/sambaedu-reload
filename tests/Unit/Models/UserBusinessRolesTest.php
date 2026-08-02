@@ -10,7 +10,6 @@ use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
-use ReflectionProperty;
 use Tests\TestCase;
 
 /**
@@ -99,32 +98,36 @@ class UserBusinessRolesTest extends TestCase
     #[Test]
     public function resolution_never_touches_ldap(): void
     {
-        // ⚠️ L'argument « aucun mock LDAP n'est enregistré, donc un accès LDAP
-        // ferait échouer ce test » était FAUX : `isProf()` s'écrit
-        // `ldapBusinessObject()?->isProf() ?? ($this->role === 'prof')`, et
-        // `LdapUser::findByLogin()` est un `->first()` qui peut renvoyer `null`
-        // sans lever. Une implémentation LDAP-first serait retombée sur le
-        // fallback et ce test serait resté VERT — exactement le défaut relevé
-        // en review 54.2 (#4) : un commentaire décrivant une propriété que rien
-        // ne verrouille, ici sur le modèle le plus transverse du dépôt.
+        // Story 54.3 — la preuve reposait sur le cache statique `User::$ldapCache` :
+        // tout chemin LDAP y posait une clé (même pour un résultat `null`), un
+        // cache resté vide prouvait donc qu'aucun n'avait été emprunté.
         //
-        // Preuve déterministe : TOUT chemin LDAP (`getLdapUser()`,
-        // `ldapBusinessObject()`) pose une clé dans `self::$ldapCache`, même
-        // quand le résultat est `null`. Un cache resté vide = aucun chemin LDAP
-        // emprunté.
-        $cache = new ReflectionProperty(User::class, 'ldapCache');
-        $cache->setAccessible(true);
-        $cache->setValue(null, []);
+        // Story 49.2 — ce cache et toute la chaîne LDAP-lazy du modèle
+        // (`getLdapUser()`, `ldapBusinessObject()`, `isProf()`, `isEleve()`,
+        // `isAdmin()`) ont été SUPPRIMÉS (FR-R3). La propriété est désormais
+        // STRUCTURELLE : `App\Models\User` n'a plus aucun chemin vers l'annuaire.
+        // On la verrouille en conséquence — si quelqu'un réintroduit un jour un
+        // helper LDAP-first sur ce modèle, ce test le signale.
+        $this->assertFalse(
+            method_exists(User::class, 'ldapBusinessObject'),
+            'Aucun chemin LDAP-lazy ne doit être réintroduit sur App\Models\User (FR-R3)',
+        );
+        $this->assertFalse(method_exists(User::class, 'getLdapUser'));
+        foreach (['isProf', 'isEleve', 'isAdmin', 'getGroups'] as $removed) {
+            $this->assertFalse(
+                method_exists(User::class, $removed),
+                "Le prédicat scolaire {$removed}() a été supprimé par la Story 49.2 (FR-R3) : "
+                . 'il ne doit pas revenir, même réécrit en SQL.',
+            );
+        }
+        $this->assertFalse(
+            property_exists(User::class, 'ldapCache'),
+            'Le cache LDAP request-scope a été supprimé avec la chaîne qu\'il servait',
+        );
 
         $user = $this->makeUser('prof');
         $user->assignRole(SambaRole::SuperAdmin->value);
 
         $this->assertSame(['prof', 'admin'], $user->businessRoles());
-
-        $this->assertSame(
-            [],
-            $cache->getValue(),
-            'businessRoles() ne doit emprunter AUCUN chemin LDAP (1 aller-retour par page vue, par utilisateur)',
-        );
     }
 }

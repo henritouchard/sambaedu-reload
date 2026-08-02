@@ -80,8 +80,13 @@ class AuthenticationService
     public function authenticate(string $login, string $password, string $ip): array
     {
         try {
-            // Vérifier si l'utilisateur est un élève et si les élèves sont bloqués
-            if ($this->isEleve($login) && !empty($this->sambaEduConfig->get('blocage_eleves'))) {
+            // Vérifier si les élèves sont bloqués, et si l'utilisateur en est un.
+            //
+            // Story 49.2 — l'ordre des deux opérandes est INVERSÉ : la config
+            // (lecture mémoire) est évaluée avant le lookup utilisateur (SQL).
+            // Sur le défaut du produit (`blocage_eleves` vide), aucune requête
+            // n'est émise et le comportement est strictement inchangé.
+            if (!empty($this->sambaEduConfig->get('blocage_eleves')) && $this->isEleve($login)) {
                 Log::warning('Accès interdit aux élèves', ['login' => $login]);
                 return [
                     'success' => false,
@@ -254,13 +259,39 @@ class AuthenticationService
     }
 
     /**
-     * Vérifier si l'utilisateur est un élève
-     * TODO: La requête LDAP prend 720s sur ce serveur - désactivé temporairement
+     * Vérifier si l'utilisateur est un élève (option legacy `blocage_eleves`).
+     *
+     * **Story 49.2 — RESTAURATION d'un comportement en sommeil.** Cette méthode
+     * renvoyait `return false` en dur depuis la migration, avec pour motif « la
+     * requête LDAP prend 720 s sur ce serveur ». Un contournement de performance
+     * devenu une extinction silencieuse de fonctionnalité : l'option
+     * `blocage_eleves` était configurable mais totalement inerte.
+     *
+     * La bascule Postgres la restaure à coût nul : le rôle `eleve` est
+     * matérialisé en base par la Story 49.1 (le groupe porteur attribue le
+     * profil), la question se résout donc en une lecture SQL indexée — sans
+     * annuaire, sans les 720 s.
+     *
+     * Deux garde-fous :
+     *  - le comportement reste GATED par la configuration (appelant : la config
+     *    est évaluée en premier ; défaut vide ⇒ méthode jamais atteinte) ;
+     *  - un compte absent de la base n'est PAS bloqué : le bind LDAP tranchera
+     *    son sort. Refuser un compte non encore synchronisé sous prétexte qu'on
+     *    ignore son rôle serait un déni de service sur les nouveaux comptes.
      */
     private function isEleve(string $login): bool
     {
-        // Désactivé temporairement - requête LDAP trop lente (720s timeout)
-        return false;
+        try {
+            return \App\Models\User::findByLogin($login)
+                ?->hasRole(\App\Enums\SambaRole::Eleve->value) ?? false;
+        } catch (\Throwable $e) {
+            // Base indisponible / schéma incomplet : on n'invente pas un blocage.
+            Log::warning('blocage_eleves : résolution du rôle impossible', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
     }
 
     /**

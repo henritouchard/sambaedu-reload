@@ -12,14 +12,36 @@ use App\Auth\Federated\Session\FederatedSession;
 use App\Models\ExternalIdentity;
 use App\Models\User;
 use App\Services\AuthenticationService;
-use App\Services\UserSyncService;
-use App\Repositories\UserRepository;
 
 /**
- * Implémentation MVP de l'AuthGuard pour SambaEdu
+ * Guard de session SambaEdu — **Postgres-only depuis la Story 49.2**.
  *
- * Reproduit exactement le comportement du middleware SambaEduAuth original :
- * session, LDAP, auto-provisioning Eloquent, Auth::login.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Doctrine (Story 49.2, FR-R4) : le guard n'interroge JAMAIS le LDAP
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Le guard s'exécute à CHAQUE requête HTTP authentifiée. Y placer un lookup
+ * annuaire, c'était un aller-retour réseau par requête (atténué par un cache
+ * 60 s qui, lui, retardait d'autant la prise en compte d'une désactivation).
+ * Depuis 49.1 (rôles Spatie = miroir des appartenances) et 49.3 (`users.is_active`
+ * = miroir de `useraccountcontrol`, écrit par la sync ET par la réconciliation
+ * des départs), Postgres porte tout ce dont le guard a besoin :
+ *
+ *  - **existence** : `users` (lookup unique, borné aux comptes NON fédérés) ;
+ *  - **activité**  : `users.is_active`.
+ *
+ * L'AD reste l'autorité des comptes et de l'authentification, mais son seul
+ * point de contact runtime est désormais la **cérémonie de login** (bind, et
+ * l'auto-provisioning œuf/poule déplacé dans `AuthController::authenticate`) —
+ * 1 fois par session, jamais par requête.
+ *
+ * **Aucun cache sur ce chemin** (D8) : une lecture SQL indexée est moins chère
+ * que l'ancien `Cache::remember` + LDAP, et la fraîcheur EST le bénéfice (un
+ * compte désactivé est déconnecté à la requête suivante, sans fenêtre). Piège
+ * projet à ne pas réintroduire : APCu n'a pas de `Cache::lock()`.
+ *
+ * **Branche fédérée strictement inchangée** (Story 20.1 — D-5) : elle est
+ * évaluée AVANT le lookup natif et ne touche ni le LDAP ni `users.is_active`
+ * (c'est `ExternalIdentity.is_active` qui fait foi pour un externe).
  *
  * Pour swapper vers Keycloak (Phase 2), remplacer le binding dans AppServiceProvider :
  * AuthGuardInterface::class → KeycloakAuthGuard::class
@@ -28,7 +50,6 @@ class SambaEduAuthGuard implements AuthGuardInterface
 {
     public function __construct(
         private AuthenticationService $authService,
-        private UserRepository $userRepository,
         private ExternalIdentityLifecycleService $federatedLifecycle
     ) {
     }
@@ -79,44 +100,69 @@ class SambaEduAuthGuard implements AuthGuardInterface
             return $this->handleFederatedSession($request, $next, $login);
         }
 
-        // Vérifier que l'utilisateur existe toujours dans LDAP via le repository
-        // OPTIMISÉ: Utilise maintenant le cache (60s) et recherche limitée à l'établissement courant
-        $user = $this->userRepository->findByLogin($login);
+        // Story 49.2 — EXISTENCE depuis Postgres (un seul lookup, réutilisé plus
+        // bas pour l'alignement `Auth::login`). Aucun appel LDAP ici.
+        $user = $this->findNativeUser($login);
 
-        if (!$user) {
-            Log::warning('SambaEduAuth: Utilisateur non trouvé dans LDAP', ['login' => $login]);
+        if ($user === null) {
+            Log::warning('SambaEduAuth: Utilisateur non trouvé en base', ['login' => $login]);
             $this->authService->logout();
             return $this->unauthorized($request, 'Utilisateur non trouvé');
         }
 
-        // Vérifier que le compte est actif
-        if (!$user->isActive) {
+        // Story 49.2 — ACTIVITÉ depuis `users.is_active`, miroir de
+        // `useraccountcontrol` posé par la sync et la réconciliation (49.3).
+        //
+        // ⚠️ Le `logout` est AJOUTÉ ici : jusqu'à 49.2, cette branche refusait la
+        // requête SANS détruire la session. La session survivait donc au refus et
+        // l'utilisateur bouclait indéfiniment sur la redirection vers /login. Un
+        // compte désactivé doit être DÉCONNECTÉ, pas seulement éconduit.
+        if (!$user->is_active) {
             Log::warning('SambaEduAuth: Compte désactivé', ['login' => $login]);
+            $this->authService->logout();
+            Auth::logout();
             return $this->unauthorized($request, 'Compte désactivé');
         }
 
-        // Ajouter les informations utilisateur à la requête
+        // `sambaedu_user` porte désormais le User ELOQUENT (le DTO LDAP n'existe
+        // plus sur ce chemin). Unique consommateur runtime : `RequireAdminRights`.
         $request->attributes->set('sambaedu_user', $user);
         $request->attributes->set('sambaedu_login', $login);
 
-        // Auto-provisionner le User Eloquent s'il n'existe pas encore en SQL
-        // Résout le problème œuf/poule : l'admin peut se connecter avant le premier sync
-        $this->ensureEloquentUser($login, $user);
-
-        // Connecter l'utilisateur au système d'authentification Laravel
-        // auth()->user() renverra un `App\Models\User` Eloquent (source de vérité
-        // Spatie + délégations scopées). L'auto-provisioning DB est déjà fait
-        // ci-dessus par `ensureEloquentUser`.
-        //
-        // On réaligne le guard `web` à chaque requête où la session LDAP
-        // courante ne correspond pas à l'Eloquent connecté. Sans ce check,
-        // une session web résiduelle (logout LDAP sans Auth::logout) ferait
-        // passer les middlewares `can:*` sur l'identité du user précédent.
-        $eloquentUser = User::findByLogin($login);
-        if ($eloquentUser && Auth::id() !== $eloquentUser->id) {
-            Auth::login($eloquentUser);
+        // Réalignement du guard `web` : à chaque requête où la session legacy
+        // courante ne correspond pas à l'Eloquent connecté. Sans ce check, une
+        // session web résiduelle (logout legacy sans `Auth::logout`) ferait passer
+        // les middlewares `can:*` sur l'identité du user précédent.
+        if (Auth::id() !== $user->id) {
+            Auth::login($user);
         }
         return $next($request);
+    }
+
+    /**
+     * Story 49.2 (D2) — résolution SQL d'une session NATIVE.
+     *
+     * Le lookup est borné aux comptes non fédérés : l'ancien `findByLogin` LDAP
+     * les excluait implicitement (un externe n'existe pas dans l'annuaire), et
+     * un compte fédéré porte un login de la forme `ext:<sub>` qui pourrait
+     * entrer en homonymie. Une session native ne doit JAMAIS s'aligner sur une
+     * ligne `source='federated'` (fiche `project_sql_user_pickers_must_exclude_federated`).
+     *
+     * `source` NULL est traité comme `'ad'` (défaut de colonne, lignes créées
+     * avant la migration `add_source_and_external_identity_to_users_table`).
+     *
+     * Comparaison de login insensible à la casse, comme {@see User::findByLogin()}
+     * (AD est case-insensitive sur sAMAccountName, Postgres ne l'est pas).
+     */
+    private function findNativeUser(string $login): ?User
+    {
+        return User::query()
+            ->whereRaw('LOWER(login) = ?', [strtolower($login)])
+            ->where(function ($query): void {
+                $query->where('source', '!=', 'federated')
+                    ->orWhereNull('source');
+            })
+            ->first();
     }
 
     /**
@@ -183,45 +229,6 @@ class SambaEduAuthGuard implements AuthGuardInterface
         FederatedSession::forget($request);
         $this->authService->logout();
         Auth::logout();
-    }
-
-    /**
-     * Crée le User Eloquent à la volée si absent, avec droits admin si login='admin'
-     */
-    private function ensureEloquentUser(string $login, \App\Types\User $adUser): void
-    {
-        $eloquentUser = User::where('login', $login)->first();
-
-        if ($eloquentUser !== null) {
-            return;
-        }
-
-        Log::info('SambaEduAuth: Auto-provisioning User Eloquent', ['login' => $login]);
-
-        try {
-            $eloquentUser = User::create([
-                'login' => $login,
-                'fullname' => $adUser->fullname,
-                'firstname' => $adUser->firstname,
-                'lastname' => $adUser->lastname,
-                'email' => $adUser->email,
-                'dn' => $adUser->dn,
-                'role' => $adUser->role ?? 'autre',
-                'is_active' => true,
-                'ad_synced_at' => now(),
-            ]);
-
-            // Si c'est l'admin, lui donner tous les droits immédiatement
-            if ($login === User::PROTECTED_ADMIN_LOGIN) {
-                app(UserSyncService::class)->grantAdminRights($eloquentUser);
-                Log::info('SambaEduAuth: Droits super-admin accordés automatiquement', ['login' => $login]);
-            }
-        } catch (\Exception $e) {
-            Log::error('SambaEduAuth: Erreur auto-provisioning', [
-                'login' => $login,
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 
     /**

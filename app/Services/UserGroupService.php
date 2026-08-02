@@ -20,6 +20,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Spatie\Permission\Models\Role as SpatieRole;
 
 class UserGroupService
 {
@@ -485,6 +486,42 @@ class UserGroupService
                 }
 
                 if (count($onlyGroupNames) === 0) {
+                    // Story 49.1 (correction de review) — un groupe PORTEUR sur
+                    // le point de disparaître emporte son profil hors de
+                    // `carriedRoleIds()` : après le DELETE, la réconciliation
+                    // générique prendrait ce profil pour une délégation
+                    // manuelle et ne le retirerait JAMAIS de ses anciens
+                    // membres, sur aucune passe. Même piège que le dernier
+                    // porteur (D4), même remède : on capture AVANT, on
+                    // réconcilie APRÈS avec le profil rendu explicitement
+                    // révocable. Le DELETE de masse ci-dessous n'émet aucun
+                    // event (ni groupe, ni pivot) — rien d'autre ne rattrape ce
+                    // cas. Coût quand aucun porteur ne disparaît (le cas
+                    // normal) : une requête indexée qui ne ramène rien.
+                    $doomedCarriers = UserGroup::query()
+                        ->whereNotNull('rights_profile_id')
+                        ->whereNotIn(DB::raw('LOWER(name)'), $detectedNames)
+                        ->get(['id', 'rights_profile_id']);
+
+                    $orphanRoleIds = [];
+                    $orphanUserIds = [];
+
+                    if ($doomedCarriers->isNotEmpty()) {
+                        $orphanRoleIds = $doomedCarriers
+                            ->pluck('rights_profile_id')
+                            ->map(fn($id) => (int) $id)
+                            ->unique()
+                            ->values()
+                            ->all();
+
+                        $orphanUserIds = DB::table('user_group_user')
+                            ->whereIn('user_group_id', $doomedCarriers->pluck('id')->all())
+                            ->distinct()
+                            ->pluck('user_id')
+                            ->map(fn($id) => (int) $id)
+                            ->all();
+                    }
+
                     // Comparer aux noms NUS effectivement persistés (pas les CN
                     // bruts d'origine) : sinon la ligne foldée `3A` tomberait dans
                     // le whereNotIn (les CN `classe_3a`/`equipe_3a` ne sont plus des
@@ -494,6 +531,14 @@ class UserGroupService
                         ->delete();
 
                     $stats['deleted'] += $deleted;
+
+                    if ($orphanRoleIds !== [] && $orphanUserIds !== []) {
+                        $orphanStats = app(GroupRightsProfileService::class)
+                            ->reconcileOrphanedProfiles($orphanUserIds, $orphanRoleIds);
+
+                        $stats['orphan_profiles_revoked'] = ($stats['orphan_profiles_revoked'] ?? 0)
+                            + $orphanStats['removed'];
+                    }
                 }
             });
         } finally {
@@ -575,6 +620,11 @@ class UserGroupService
                 'type' => $detectedType,
                 'ad_dn' => $adDn !== '' ? $adDn : null,
                 'ad_guid' => $adGuid,
+                // Story 49.1 (AC9 / D6-b) — défaut iso-comportement posé à la
+                // CRÉATION uniquement (greenfield). JAMAIS sur la branche
+                // update ci-dessous : un retrait décidé par l'admin ne doit
+                // jamais être ré-écrasé par un import.
+                'rights_profile_id' => $this->defaultRightsProfileIdFor($groupName, $detectedType),
             ]);
             $stats['created']++;
         } else {
@@ -1434,6 +1484,51 @@ class UserGroupService
      * `custom` (déclassement) au lieu de classe/équipe/cours/… Les valeurs de
      * retour (chaînes de type) sont strictement inchangées.
      */
+    /**
+     * Story 49.1 (AC9 / D6-b) — profil de droits posé PAR DÉFAUT à la création
+     * d'un groupe importé de l'AD.
+     *
+     * Volet greenfield du seed : sur une installation neuve, les groupes ne
+     * sont pas encore en base quand la migration de données (volet brownfield)
+     * s'exécute — c'est le premier import qui les crée. On y pose alors le même
+     * défaut iso-comportement : `Profs` → `prof`, `Eleves` → `eleve`.
+     *
+     * Sémantique commune aux deux volets : « valeur par défaut à l'apparition »,
+     * JAMAIS « état imposé ». D'où l'appel depuis la seule branche CRÉATION —
+     * un retrait décidé par l'admin n'est jamais ré-écrasé par un ré-import.
+     * Un groupe créé à la main depuis l'UI ne passe pas par ici : ce geste
+     * explicite ne seed rien.
+     *
+     * `Administratifs` ne reçoit RIEN : aucun rôle Spatie correspondant
+     * n'existe, et le lien nullable est fait pour ça. Sur un parc non scolaire
+     * (aucun `Profs`/`Eleves`), la méthode retourne toujours `null`.
+     */
+    private function defaultRightsProfileIdFor(string $groupName, string $detectedType): ?int
+    {
+        if ($detectedType !== 'role') {
+            return null;
+        }
+
+        $roleName = match (mb_strtolower($groupName)) {
+            'profs' => 'prof',
+            'eleves' => 'eleve',
+            default => null,
+        };
+
+        if ($roleName === null) {
+            return null;
+        }
+
+        // No-op silencieux si le rôle socle n'existe pas encore (installation
+        // personnalisée, socle Spatie pas encore seedé).
+        $roleId = SpatieRole::query()
+            ->where('name', $roleName)
+            ->where('guard_name', 'web')
+            ->value('id');
+
+        return $roleId === null ? null : (int) $roleId;
+    }
+
     private function detectTypeFromAdGroupName(string $groupName): string
     {
         if (strncasecmp($groupName, 'Matiere_', 8) === 0 && str_contains($groupName, '@')) {

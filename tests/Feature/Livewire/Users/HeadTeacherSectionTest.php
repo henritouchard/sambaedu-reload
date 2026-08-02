@@ -27,7 +27,8 @@ use Tests\Traits\CreatesPermissionSchema;
  *  - rendu conditionnel `type === 'classe'` (visible classe, absent cours)
  *  - abort en mount sur un groupId non-classe (anti-forge payload)
  *  - désignation d'un PP → toggle + save persiste le pivot + toast succès
- *  - toggle limité aux membres `isProf()` (les élèves n'ont pas de contrôle)
+ *  - toggle limité aux membres profs (`users.role === 'prof'` depuis 49.2 ;
+ *    auparavant `isProf()`, LDAP-first) — les élèves n'ont pas de contrôle
  *  - double guard `update-group` (toggle/save sans `user.modify` = readonly/403)
  */
 class HeadTeacherSectionTest extends TestCase
@@ -62,11 +63,6 @@ class HeadTeacherSectionTest extends TestCase
         UserGroupObserver::enableSync();
         UserGroupUserPivotObserver::enableSync();
 
-        // Purge le cache statique request-scope de User (LDAP primé ci-dessous).
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $prop->setValue(null, []);
 
         $this->dropPermissionSchema();
         Mockery::close();
@@ -106,19 +102,6 @@ class HeadTeacherSectionTest extends TestCase
         });
     }
 
-    /** Pré-remplit le cache LDAP à null → isProf()/isEleve() retombent sur role. */
-    private function primeNoLdap(string ...$logins): void
-    {
-        $ref = new ReflectionClass(User::class);
-        $prop = $ref->getProperty('ldapCache');
-        $prop->setAccessible(true);
-        $cache = $prop->getValue();
-        foreach ($logins as $login) {
-            $cache['ldap:' . $login] = null;
-            $cache['bo:' . $login] = null;
-        }
-        $prop->setValue(null, $cache);
-    }
 
     private function makeAdmin(string $login = 'manager', array $perms = ['user.read', 'user.modify']): User
     {
@@ -145,7 +128,6 @@ class HeadTeacherSectionTest extends TestCase
             $prof2->id => ['is_head_teacher' => false],
             $eleve->id => ['is_head_teacher' => false],
         ]);
-        $this->primeNoLdap('prof.un', 'prof.deux', 'eleve.un');
         return [$group, $prof1, $prof2, $eleve];
     }
 

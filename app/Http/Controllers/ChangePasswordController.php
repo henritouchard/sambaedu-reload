@@ -83,8 +83,21 @@ class ChangePasswordController extends Controller
             $authResult = $this->authService->authenticate($currentUser, $request->current_password, $request->ip());
 
             if (!$authResult['success'] && ($authResult['code'] ?? '') !== AuthenticationErrors::ERROR_AUTHENTICATION_PASSWORD_CHANGE_REQUIRED) {
+                // Story 49.2 (correction de review) — `authenticate()` peut
+                // refuser pour une raison qui n'a RIEN à voir avec le mot de
+                // passe : depuis la restauration de `blocage_eleves` (ce garde
+                // était un stub `return false`, donc muet), un élève d'un
+                // établissement ayant posé le blocage reçoit `ELEVES_BLOQUES`.
+                // Lui répondre « le mot de passe actuel est incorrect » l'envoie
+                // chercher une panne qui n'existe pas. Le message générique
+                // reste le défaut pour tout échec lié aux identifiants — il ne
+                // doit pas révéler si le compte existe.
+                $message = ($authResult['code'] ?? '') === 'ELEVES_BLOQUES'
+                    ? ($authResult['error'] ?? 'Accès interdit aux élèves')
+                    : 'Le mot de passe actuel est incorrect';
+
                 return redirect()->back()
-                    ->with('toast_error', 'Le mot de passe actuel est incorrect')
+                    ->with('toast_error', $message)
                     ->withInput();
             }
 

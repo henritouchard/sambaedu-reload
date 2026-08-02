@@ -11,8 +11,6 @@ use App\Models\User;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\PermissionService;
-use App\Services\UserService;
-use App\Types\User as AdUser;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Queue;
@@ -209,23 +207,6 @@ class DelegationModalTest extends TestCase
         return $admin;
     }
 
-    /**
-     * @param array<int, string> $missing  logins qui doivent retourner null (absents de l'AD)
-     */
-    private function mockAdUserService(array $missing = []): void
-    {
-        $mock = Mockery::mock(UserService::class);
-        $mock->shouldReceive('getByLogin')->andReturnUsing(function (string $login) use ($missing) {
-            if (in_array($login, $missing, true)) {
-                return null;
-            }
-            return new AdUser(
-                login: $login,
-                fullname: $login,
-            );
-        });
-        $this->app->instance(UserService::class, $mock);
-    }
 
     private function modalComponent(): string
     {
@@ -256,7 +237,6 @@ class DelegationModalTest extends TestCase
         $target = $this->makeUser('dmod-target');
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
@@ -282,7 +262,6 @@ class DelegationModalTest extends TestCase
         $target = $this->makeUser('dmod-target-rm');
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         app(PermissionService::class)->grantDelegation($target, 'computer.view', $group, $admin);
 
@@ -312,7 +291,6 @@ class DelegationModalTest extends TestCase
         $target->givePermissionTo('computer.view');
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
@@ -341,7 +319,6 @@ class DelegationModalTest extends TestCase
         $group = $this->makeGroup();
         app(PermissionService::class)->negateDelegation($target, 'computer.view', $group, $admin);
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
@@ -367,7 +344,6 @@ class DelegationModalTest extends TestCase
         $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-multi'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         $svc = app(PermissionService::class);
         $userNone = $this->makeUser('u-none');
@@ -394,7 +370,6 @@ class DelegationModalTest extends TestCase
     {
         $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-togexp'));
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->set('hasExpiration', true)
@@ -410,7 +385,6 @@ class DelegationModalTest extends TestCase
         $target->givePermissionTo('computer.view');
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         $expiresAtIso = (new \DateTimeImmutable('+3 hours'))->format('Y-m-d\TH:i');
 
@@ -435,7 +409,6 @@ class DelegationModalTest extends TestCase
         $group = $this->makeGroup();
         app(PermissionService::class)->grantDelegation($target, 'computer.view', $group, $admin);
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
@@ -454,7 +427,6 @@ class DelegationModalTest extends TestCase
         $target = $this->makeUser('dmod-target-gpo');
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
@@ -465,12 +437,24 @@ class DelegationModalTest extends TestCase
         Queue::assertPushed(SyncGpoJob::class, 1);
     }
 
-    public function test_auto_for_nonexistent_user_creates_minimal_eloquent_user(): void
+    /**
+     * Story 49.2 (AC7) — INVERSION ASSUMÉE d'un comportement.
+     *
+     * Ce test s'appelait `test_auto_for_nonexistent_user_creates_minimal_eloquent_user`
+     * et vérifiait qu'un login absent de SQL mais présent dans l'AD provoquait
+     * la création d'une ligne `users` minimale (`role='autre'`, `is_active=true`
+     * en dur). Ce fallback est supprimé : Postgres est la vérité pour
+     * l'existence d'un compte côté SE5, et une ligne fabriquée dont les valeurs
+     * ne sont le miroir de rien est précisément ce que l'Epic 49 élimine.
+     *
+     * Nouveau contrat : aucune ligne créée, aucune délégation, l'utilisateur est
+     * simplement compté en erreur (l'admin est invité à attendre la sync).
+     */
+    public function test_auto_for_user_absent_from_sql_creates_nothing(): void
     {
         $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-newu'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         $this->assertDatabaseMissing('users', ['login' => 'newly-created-dmod']);
 
@@ -480,17 +464,16 @@ class DelegationModalTest extends TestCase
             ->set('selectedDelegationPermission', 'computer.view')
             ->call('applyDelegationActions');
 
-        $this->assertDatabaseHas('users', ['login' => 'newly-created-dmod']);
-        $newUser = User::where('login', 'newly-created-dmod')->first();
-        $this->assertDatabaseHas('delegations', ['user_id' => $newUser->id]);
+        $this->assertDatabaseMissing('users', ['login' => 'newly-created-dmod']);
+        $this->assertEquals(0, Delegation::count());
     }
 
-    public function test_auto_rejects_unknown_ad_login(): void
+    /** Story 49.2 — « inconnu » se lit désormais en Postgres, plus dans l'annuaire. */
+    public function test_auto_rejects_login_unknown_to_postgres(): void
     {
         $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-unk'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService(missing: ['ghost-login-dmod']);
 
         Livewire::test($this->modalComponent())
             ->call('open', ['ghost-login-dmod'])
@@ -508,7 +491,6 @@ class DelegationModalTest extends TestCase
         $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-step1'));
         $target = $this->makeUser('dmod-target-step1');
         $group = $this->makeGroup();
-        $this->mockAdUserService();
 
         $this->actingAs($admin);
         $test = Livewire::test($this->modalComponent())
@@ -535,7 +517,6 @@ class DelegationModalTest extends TestCase
         $svc->grantDelegation($userPositive, 'computer.view', $group);
         $userNone = $this->makeUser('sum-dmod-none');
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         $test = Livewire::test($this->modalComponent())
             ->call('open', ['sum-dmod-pos', 'sum-dmod-none'])
@@ -559,7 +540,6 @@ class DelegationModalTest extends TestCase
         $admin = $this->grantAdminPermission($this->makeUser('dmod-empty'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->set('selectedUsers', [])
@@ -576,7 +556,6 @@ class DelegationModalTest extends TestCase
         $target = $this->makeUser('dmod-target-noperm');
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService();
 
         Livewire::test($this->modalComponent())
             ->call('open', [$target->login])

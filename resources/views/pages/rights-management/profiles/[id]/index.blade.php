@@ -6,6 +6,7 @@ use App\Components\Traits\WithToasts;
 use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Models\User as EloquentUser;
+use App\Services\GroupRightsProfileService;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Illuminate\Validation\Rule;
@@ -24,6 +25,18 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
     /** Liste des utilisateurs portant ce profil (chargée à mount + après mutation). */
     public array $assignedUsers = [];
 
+    /** Story 49.1 (AC6) — id du rôle édité (le nom est renommable). */
+    public int $roleId = 0;
+
+    /**
+     * Story 49.1 (AC6) — groupes qui PORTENT ce profil. Non vide ⇒ suppression
+     * refusée : la suppression silencieuse d'un profil porté retirerait des
+     * droits à tout un parc.
+     *
+     * @var array<int, array{id:int, label:string}>
+     */
+    public array $carrierGroups = [];
+
     /** Snapshot post-mount/post-save pour détecter les changements (bouton Enregistrer). */
     public string $initialName = '';
     public array $initialPermissions = [];
@@ -35,9 +48,11 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
             abort(404);
         }
 
+        $this->roleId = (int) $role->id;
         $this->originalName = $role->name;
         $this->name = $role->name;
         $this->isSeeded = SambaRole::isSeeded($role->name);
+        $this->loadCarrierGroups();
         $this->usersCount = $role->users()->count();
         $this->permissions = $role->permissions->pluck('name')->toArray();
         sort($this->permissions);
@@ -82,6 +97,22 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
     public function onRightsApplied(): void
     {
         $this->loadAssignedUsers();
+    }
+
+    /**
+     * Story 49.1 (AC6) — groupes portant ce profil. Information affichée sur la
+     * page (avec lien vers l'onglet Profils) et base de la garde de suppression.
+     */
+    public function loadCarrierGroups(): void
+    {
+        $this->carrierGroups = app(GroupRightsProfileService::class)
+            ->groupsCarrying($this->roleId)
+            ->map(fn(\App\Models\UserGroup $g) => [
+                'id' => $g->id,
+                'label' => $g->display_name_or_name,
+            ])
+            ->values()
+            ->toArray();
     }
 
     public function save(): void
@@ -152,6 +183,19 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
     {
         abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
 
+        // Story 49.1 (AC6) — garde « profil PORTÉ », AVANT la garde seedé. Le
+        // message NOMME les groupes porteurs : sans ça, la suppression
+        // retirerait silencieusement des droits à tout un parc. La FK
+        // `restrictOnDelete` fait filet au niveau DB pour les chemins hors UI.
+        $this->loadCarrierGroups();
+        if (!empty($this->carrierGroups)) {
+            $names = implode(', ', array_column($this->carrierGroups, 'label'));
+            $this->toastError(
+                "Suppression refusée — porté par : {$names}. Retirez d'abord le profil de ces groupes."
+            );
+            return;
+        }
+
         if ($this->isSeeded) {
             $this->toastError('Le profil est initial et ne peut pas être supprimé.');
             return;
@@ -187,10 +231,10 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
             </label>
             <ul tabindex="0"
                 class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-300 z-[1]">
-                <li class="{{ $isSeeded || $usersCount > 0 ? 'disabled' : '' }}">
+                <li class="{{ $isSeeded || $usersCount > 0 || !empty($carrierGroups) ? 'disabled' : '' }}">
                     <button type="button"
                         class="text-error"
-                        @disabled($isSeeded || $usersCount > 0)
+                        @disabled($isSeeded || $usersCount > 0 || !empty($carrierGroups))
                         wire:click="delete"
                         wire:confirm="Supprimer ce profil ? Action irréversible.">
                         <i class="fa-solid fa-trash-can"></i>
@@ -217,6 +261,29 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
         'isSeeded' => $isSeeded,
         'usersCount' => $usersCount,
     ])
+
+    {{-- Story 49.1 (AC6/AC7) — groupes PORTANT ce profil : l'appartenance à
+         l'un d'eux attribue ce profil, et tant qu'il en existe un, le profil
+         n'est pas supprimable. --}}
+    @if (!empty($carrierGroups))
+        <div class="mt-6">
+            <div class="alert alert-info">
+                <i class="fa-solid fa-users-rectangle"></i>
+                <div>
+                    <div class="font-semibold">Profil porté par un groupe</div>
+                    <div class="text-sm">
+                        Ce profil est attribué automatiquement aux membres de :
+                        <strong>{{ implode(', ', array_column($carrierGroups, 'label')) }}</strong>.
+                        Il n'est ni supprimable ni attribuable individuellement tant qu'un groupe le porte.
+                    </div>
+                    <a class="link link-hover text-sm"
+                        href="{{ route('app.rights-management', ['tab' => 'profiles']) }}">
+                        Gérer les groupes porteurs
+                    </a>
+                </div>
+            </div>
+        </div>
+    @endif
 
     {{-- Utilisateurs portant ce profil. Le scroll vertical est géré par la page
          (organisms.page :scrollable=true par défaut) ; ce tableau reste donc

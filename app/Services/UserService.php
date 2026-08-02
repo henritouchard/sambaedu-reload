@@ -130,10 +130,13 @@ class UserService
         }
     }
 
-    public function getByLogin(string $login): ?User
-    {
-        return $this->userRepository->findByLogin($login);
-    }
+    // Story 49.2 (FR-R3) — `getByLogin()` (lookup LDAP) supprimé : ses deux
+    // appelants (fallbacks d'existence des modales délégation / droits) ne
+    // vérifient plus l'annuaire, Postgres étant la vérité pour l'existence
+    // d'un compte côté SE5. Les lookups LDAP de ce service qui SUBSISTENT sont
+    // ceux qui font partie d'un geste d'ÉCRITURE de compte (existence avant
+    // création, collision de login, mise à jour) — l'AD reste AD-first en
+    // écriture.
 
     /**
      * Récupère un utilisateur depuis la base SQL locale (table users), sans LDAP.
