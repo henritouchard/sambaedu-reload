@@ -119,11 +119,8 @@ func (o *folderOps) EnsureDir(value string) error {
 // FOLDERID_Frequent). GUID figé par Windows.
 const quickAccessNamespace = `shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}`
 
-// psQuote échappe une chaîne pour une chaîne littérale PowerShell simple-quote
-// (seul le quote simple doit être doublé — aucune interpolation n'y a lieu).
-func psQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-}
+// psQuote (échappement d'un littéral PowerShell simple-quote) est déclaré une
+// seule fois pour le paquet, dans tasks_windows.go.
 
 // quickAccessPaths énumère les emplacements ÉPINGLÉS, chemins résolus.
 func (o *folderOps) quickAccessPaths() ([]string, error) {
