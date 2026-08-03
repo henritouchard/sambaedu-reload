@@ -1,13 +1,14 @@
 ---
 title: Comprendre le modèle de droits
-description: "Les trois briques du modèle de droits — profils, droits individuels, délégations par salle — et la règle qui décide quand un droit s'applique."
+description: "Les briques du modèle de droits — profils portés par un groupe, profils attribués à la main, droits individuels, délégations par salle — et la règle qui décide quand un droit s'applique."
 ---
 
 # Comprendre le modèle de droits
 
 Cette fiche explique, en langage courant, comment SE5 décide de ce qu'une
-personne a le droit de faire. Trois briques se combinent : les **profils de
-droits**, les **droits individuels** et les **délégations par salle**.
+personne a le droit de faire. Quatre briques se combinent : les **profils de
+droits**, la façon dont ils **s'attribuent** — par un groupe ou à la main —, les
+**droits individuels** et les **délégations par salle**.
 
 ## Où ça se passe
 
@@ -32,6 +33,45 @@ seul geste. Il en existe de deux origines :
   [Composer un profil de droits](/admin/droits/composer-un-profil)).
 
 Une même personne peut porter plusieurs profils : leurs droits s'additionnent.
+Il n'y a **aucune priorité** entre eux — rien ne l'emporte sur rien, tout se
+cumule.
+
+### Comment un profil s'attribue : par un groupe, ou à la main
+
+C'est le point le plus important de cette fiche, car il décide de ce que vous
+pouvez modifier et de ce que vous ne pouvez pas.
+
+**Un groupe d'utilisateurs peut porter un profil de droits.** Dans ce cas,
+**appartenir au groupe suffit à recevoir le profil** : personne n'a besoin de
+l'attribuer compte par compte. Ajouter quelqu'un au groupe lui donne le profil ;
+l'en retirer le lui reprend. Un même profil peut être porté par plusieurs
+groupes, et la très grande majorité des groupes — classes, équipes, matières —
+n'en porte aucun : c'est le cas normal.
+
+C'est ce mécanisme qui permet, par exemple, que tous les enseignants disposent
+des droits de leur fonction sans qu'on les leur attribue un par un.
+
+**Un profil peut aussi être attribué à la main**, à une personne précise, depuis
+le volet de gestion des droits. C'est ce qu'on appelle une **délégation** : elle
+ne concerne que cette personne, et elle reste sous votre contrôle.
+
+Les deux voies coexistent sans se gêner, mais elles n'obéissent pas aux mêmes
+règles :
+
+| | Profil **porté par un groupe** | Profil **attribué à la main** |
+|---|---|---|
+| Comment on le donne | en ajoutant la personne au groupe | en le cochant dans le volet des droits |
+| Comment on le reprend | en retirant la personne du groupe | en le décochant |
+| Modifiable compte par compte | **non** — le contrôle est verrouillé | oui |
+
+::: attention
+Un profil porté par un groupe **ne peut pas être coché ni décoché** sur une
+personne : le contrôle est désactivé, et l'interface indique quel groupe le
+porte. Ce n'est pas une limitation arbitraire — l'appartenance au groupe étant
+la source de l'attribution, une modification manuelle serait défaite toute
+seule à la synchronisation suivante. Le geste de remplacement est indiqué à
+l'écran : **ajoutez ou retirez la personne du groupe**.
+:::
 
 ### Les droits individuels
 
@@ -97,3 +137,9 @@ Windows d'un poste : un profil attribué, un droit accordé ou une exclusion lev
 valent dès le prochain chargement de page de la personne concernée. Il n'y a
 rien à attendre côté poste.
 :::
+
+Une nuance sur les profils portés par un groupe : si l'appartenance change
+**depuis SE5**, l'effet est immédiat comme ci-dessus. Si elle change **dans
+l'annuaire par un autre outil** — un enseignant ajouté au groupe des professeurs
+depuis un autre logiciel —, SE5 en prend connaissance à la synchronisation
+suivante, qui passe toutes les cinq minutes.

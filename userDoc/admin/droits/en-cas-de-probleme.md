@@ -49,3 +49,34 @@ sur le serveur.
 - **Pour retracer un changement**, l'onglet **Historique** journalise qui a
   accordé, révoqué ou posé une exclusion, sur quelle salle et quel droit. Ce
   journal est inaltérable : il dit fidèlement ce qui s'est passé.
+
+## Un profil ne peut pas être coché ou décoché
+
+Dans le volet de gestion des droits, certains profils apparaissent **désactivés**
+et refusent le clic. C'est normal : ils sont **portés par un groupe
+d'utilisateurs**, et c'est l'appartenance au groupe qui les attribue. L'écran
+indique lequel.
+
+- **Pour donner ce profil à quelqu'un**, ajoutez-le au groupe qui le porte.
+- **Pour le lui reprendre**, retirez-le de ce groupe.
+- Le passage par les groupes n'est pas contournable : une attribution manuelle
+  serait défaite à la synchronisation suivante, puisque l'appartenance reste la
+  source de l'attribution.
+
+Si vous voulez qu'un profil redevienne attribuable personne par personne,
+retirez-le du groupe qui le porte, depuis l'onglet **Profils** — mais sachez que
+ce retrait le reprend **à tous les membres** de ce groupe.
+
+## Une personne a perdu ses droits du jour au lendemain
+
+- **Elle a quitté un groupe porteur.** C'est la cause la plus fréquente : le
+  profil suit l'appartenance, et une sortie de groupe le reprend. La carte
+  **Permissions** de sa fiche montre ce qu'elle détient encore, et l'onglet
+  **Historique** retrace le changement.
+- **Son compte a été désactivé.** Un compte qui disparaît de l'annuaire est
+  désactivé automatiquement lors du contrôle nocturne, et un compte désactivé
+  est déconnecté de SE5. Vérifiez son statut sur sa fiche : s'il est de retour
+  dans l'annuaire, la synchronisation le réactive, et ses profils de groupe
+  reviennent avec son appartenance.
+- **Ses délégations manuelles, elles, sont conservées** dans les deux cas : un
+  profil attribué à la main n'est jamais repris par ces mécanismes automatiques.

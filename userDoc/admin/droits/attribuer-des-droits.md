@@ -40,6 +40,25 @@ seulement **une partie** des comptes sélectionnés. Assigner et retirer sont
   aucun profil existant ;
 - **retirer** un profil l'enlève des comptes qui le portaient.
 
+#### Les profils verrouillés
+
+Certains profils apparaissent **désactivés** : ni cochables, ni décochables. Ce
+sont ceux qui sont **portés par un groupe d'utilisateurs** (voir
+[Comprendre le modèle de droits](/admin/droits/comprendre-le-modele-de-droits)).
+Pour ceux-là, c'est l'**appartenance au groupe** qui décide, et l'interface
+indique quel groupe est concerné.
+
+Le geste de remplacement est donc ailleurs : **ajoutez la personne au groupe**
+pour lui donner le profil, **retirez-l'en** pour le lui reprendre.
+
+::: attention
+Ce verrouillage n'est pas qu'une précaution d'interface : il vaut aussi côté
+serveur. Une attribution manuelle qui passerait outre serait de toute façon
+défaite à la synchronisation suivante, puisque l'appartenance au groupe reste la
+source de vérité — mieux vaut donc que le geste soit refusé tout de suite, et
+que l'écran dise quoi faire à la place.
+:::
+
 ### Onglet Permissions
 
 Cet onglet **accorde ou retire des droits individuels**, qui s'appliquent
@@ -48,7 +67,8 @@ sélection.
 
 Un droit reçu **par un profil** ne se retire **pas** ici : il porte un repère
 et l'infobulle « via un rôle (non retirable individuellement) ». Pour l'enlever,
-retirez le profil qui le porte, depuis l'onglet **Rôles**.
+retirez le profil qui le porte, depuis l'onglet **Rôles** — ou, si ce profil est
+porté par un groupe, retirez la personne du groupe.
 
 ::: delai-effet immediat
 Un profil assigné ou retiré, un droit accordé ou révoqué valent dès le prochain

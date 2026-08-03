@@ -22,12 +22,14 @@ aussi depuis la page des utilisateurs.
 ## Les fiches de ce domaine
 
 - [Comprendre le modèle de droits](/admin/droits/comprendre-le-modele-de-droits)
-  — les trois briques (profils, droits individuels, délégations par salle) et
-  la règle qui décide quand un droit s'applique.
+  — les profils, leurs deux voies d'attribution (par un groupe ou à la main),
+  les droits individuels, les délégations par salle, et la règle qui décide
+  quand un droit s'applique.
 - [Les profils types](/admin/droits/profils-types) — les neuf profils livrés
   avec SE5 et ce que chacun autorise.
 - [Composer un profil de droits](/admin/droits/composer-un-profil) — créer,
-  modifier et supprimer un profil sur mesure.
+  modifier et supprimer un profil sur mesure, et le faire porter par un groupe
+  pour qu'il s'attribue tout seul.
 - [Attribuer des droits à une personne](/admin/droits/attribuer-des-droits) —
   donner un profil ou un droit individuel à un ou plusieurs comptes.
 - [Déléguer un droit sur une salle](/admin/droits/deleguer-sur-une-salle) —
