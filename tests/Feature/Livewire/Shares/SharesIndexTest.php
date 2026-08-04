@@ -8,6 +8,7 @@ use App\Models\NetworkShare;
 use App\Models\User;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Jobs\ReconcileNetworkShareJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -113,7 +114,9 @@ class SharesIndexTest extends TestCase
             'letter' => 'P:',
             'created_by_user_id' => $admin->id,
         ]);
-        Process::assertRan(fn ($process) => str_contains($process->command, 'mkdir'));
+        // Story 60.4 — l'écran ENFILE : rien n'est écrit dans la requête.
+        Process::assertNothingRan();
+        Queue::assertPushed(ReconcileNetworkShareJob::class);
     }
 
     #[Test]

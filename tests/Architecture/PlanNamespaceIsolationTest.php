@@ -91,6 +91,17 @@ class PlanNamespaceIsolationTest extends TestCase
     private const CONTRACT_PURE_EXCLUDED = 'FileBackendRegistry.php';
 
     /**
+     * Story 60.4 — le sous-dossier des IMPLÉMENTATIONS, qui vit SOUS la ligne.
+     *
+     * Le backend du serveur de fichiers historique exécute : c'est sa fonction. Il
+     * a donc tout le vocabulaire concret sous la main, et le scanner avec les
+     * règles pures reviendrait à interdire au seul composant qui doit écrire de
+     * savoir écrire. On l'exclut par son DOSSIER, pas en relâchant les règles pour
+     * tout le contrat — ce qui aurait affaibli la garde là où elle compte.
+     */
+    private const CONTRACT_IMPLEMENTATION_DIR = 'Posix';
+
+    /**
      * Story 60.3 — l'ASSEMBLEUR de plan de partage plat et le REGISTRE.
      *
      * Ces deux-là requêtent (l'un lit un pivot, l'autre lit une colonne et
@@ -201,9 +212,134 @@ class PlanNamespaceIsolationTest extends TestCase
         'modèle groupe d\'utilisateurs' => 'use App\\Models\\UserGroup;',
     ];
 
+    // =========================================================================
+    // Story 60.4 — LA COUPE PASSE AVANT LA DÉRIVATION DES PERMISSIONS
+    // =========================================================================
+
+    /**
+     * Le dossier des services de fichiers, scanné à PLAT (profondeur 0).
+     *
+     * Les sous-dossiers en sont volontairement absents : `Acl/` porte le savoir de
+     * format des listes d'accès, `Backend/Posix/` porte l'exécution. Ce sont les
+     * DEUX ZONES AUTORISÉES — la coupe ne les traverse pas, elle les délimite.
+     */
+    private const ORCHESTRATOR_DIR = 'app/Services/Filesystem';
+
+    /**
+     * Le dossier du CONTRAT (`depth(0)` : les implémentations vivent dans ses
+     * sous-dossiers et sont, elles, sous la ligne).
+     */
+    private const CONTRACT_DIR = 'app/Services/Filesystem/Backend';
+
+    /**
+     * Fichiers EXCLUS NOMMÉMENT du scan, avec la date de leur sort.
+     *
+     * Ce ne sont pas des trous dans la garde : ce sont des chemins figés, dont
+     * chacun a une échéance écrite. Les nommer un par un est ce qui rend leur
+     * disparition constatable — une exclusion par motif les aurait rendus
+     * invisibles, et le jour où l'un d'eux meurt, personne ne l'aurait remarqué.
+     *
+     *  - `ShareService` — chemin figé du partage de classe depuis la story 5.2.
+     *    Sa méthode de création de partage de classe MEURT en 60.5, une fois le
+     *    référentiel d'arbre vert. Zéro diff exigé par la story 60.4.
+     *  - `AclService` — garde de chemin et pose de droits de la baseline 5.2, même
+     *    sort, même story. Zéro diff exigé.
+     *  - `HomeDirService` — répertoires personnels, hors du périmètre de l'epic 60
+     *    (le plan de fichiers ne les gouverne pas encore).
+     *  - `XfsQuotaService` — plafonds de zone. La story qui les brancherait au plan
+     *    est SUSPENDUE (décision Q-D, 2026-08-04) ; d'ici là ce service reste le
+     *    seul pilote des plafonds, hors de la ligne.
+     *
+     * **`DirectoryTemplateService` n'a PAS besoin d'exclusion**, et c'est une
+     * information : la story 60.4 lui demandait de rester en base seule et de
+     * déléguer. Il est donc SCANNÉ comme les autres, et il passe. Une exclusion
+     * creuse aurait affirmé le contraire.
+     *
+     * @var list<string>
+     */
+    private const ORCHESTRATOR_LEGACY_EXCLUSIONS = [
+        'ShareService.php',
+        'AclService.php',
+        'HomeDirService.php',
+        'XfsQuotaService.php',
+    ];
+
+    /**
+     * Fichiers HORS de ce dossier qui vivent quand même au-dessus de la ligne et
+     * doivent donc être tenus par les mêmes règles.
+     *
+     * @var list<string>
+     */
+    private const ABOVE_THE_LINE_FILES = [
+        'app/Jobs/ReconcileNetworkShareJob.php',
+    ];
+
+    /**
+     * Les marqueurs du SERVEUR DE FICHIERS, interdits au-dessus de la ligne.
+     *
+     * Elles complètent les règles de pureté : celles-ci interdisaient les services
+     * d'exécution PAR LEUR NOM de classe ; celles-là interdisent le VOCABULAIRE.
+     * La descente de la story 60.4 aurait pu être cosmétique — déplacer la
+     * dérivation des permissions dans un fichier neuf en laissant ses appelants
+     * la manipuler au-dessus — et aucune règle existante ne l'aurait vu.
+     *
+     * @var array<string, string>
+     */
+    private const POSIX_MARKER_RULES = [
+        'mode de permission' => '/(?<![\w-])(rwx|r-x|rw-)(?![\w-])/',
+        'entrée de liste d\'accès' => '/(?<!\w)(default|user|group|mask|other)::/',
+        'sujet nommé d\'une liste d\'accès' => '/(?<!\w)(user|group):[A-Za-z0-9_\\\\]/',
+        'commandes de listes d\'accès' => '/\b(setfacl|getfacl)\b/',
+        'commandes de propriété et de mode' => '/\b(chown|chgrp|chmod)\b/',
+        'résolution de nom système' => '/\bgetent\b/',
+        'élévation de privilège' => '/\bsudo\b/',
+        'exécution de processus' => '/(?<!\w)Process::|Illuminate\\\\Support\\\\Facades\\\\Process\b/',
+        // Sans exclusion sur les guillemets : un chemin codé en dur est
+        // PRÉCISÉMENT une chaîne littérale, et l'exclure aurait rendu la règle
+        // aveugle au seul cas qui arrive vraiment.
+        'chemin absolu' => '#(?<![\w.])/(var|etc|srv|home|usr|opt)/#',
+        'groupe d\'administration d\'annuaire' => '/domain(\\\\\\\\040|\s)admins/i',
+        'nom d\'exécution du serveur applicatif' => '/\bwww-admin\b/',
+    ];
+
+    /**
+     * Formes que le scan DOIT voir. Une règle nouvelle est le premier candidat à
+     * l'aveuglement : elle passerait éternellement au vert sur des fichiers qui
+     * n'ont jamais eu l'occasion de la violer.
+     *
+     * @var array<string, string>
+     */
+    private const POSIX_NEEDLES = [
+        'mode de permission' => '$acls[] = "user:{$login}:rwx";',
+        'entrée de liste d\'accès' => "\$base = ['user::rwx', 'mask::rwx'];",
+        'sujet nommé d\'une liste d\'accès' => '$line = "group:classe_3sb:rx";',
+        'commandes de listes d\'accès' => 'Process::run("setfacl -b " . $p);',
+        'commandes de propriété et de mode' => '// puis un chown www-data',
+        'résolution de nom système' => '$ok = Process::run("getent group x")->successful();',
+        'élévation de privilège' => '$cmd = "sudo mkdir -p " . $path;',
+        'exécution de processus' => '$r = Process::run($cmd);',
+        'chemin absolu' => 'public static string $root = \'/var/sambaedu/Partages\';',
+        'groupe d\'administration d\'annuaire' => '$acl = "group:domain\\\\040admins:rwx";',
+        'nom d\'exécution du serveur applicatif' => 'sprintf("chown www-admin %s", $p)',
+    ];
+
     private static function repoPath(string $relative): string
     {
         return dirname(__DIR__, 2) . '/' . ltrim($relative, '/');
+    }
+
+    /** @return list<string> étiquettes des règles POSIX violées */
+    private function posixViolations(string $content): array
+    {
+        $violations = [];
+
+        foreach (self::POSIX_MARKER_RULES as $label => $pattern) {
+            if (preg_match($pattern, $content) === 1) {
+                $violations[] = $label;
+            }
+        }
+
+        return $violations;
     }
 
     /** @return list<string> étiquettes des règles violées */
@@ -356,7 +492,14 @@ class PlanNamespaceIsolationTest extends TestCase
         $inspected = 0;
         $offenders = [];
 
-        foreach ((new Finder())->files()->in($dir)->name('*.php')->notName(self::CONTRACT_PURE_EXCLUDED) as $file) {
+        $finder = (new Finder())
+            ->files()
+            ->in($dir)
+            ->exclude(self::CONTRACT_IMPLEMENTATION_DIR)
+            ->name('*.php')
+            ->notName(self::CONTRACT_PURE_EXCLUDED);
+
+        foreach ($finder as $file) {
             $inspected++;
 
             $found = $this->violations((string) $file->getContents());
@@ -448,6 +591,154 @@ class PlanNamespaceIsolationTest extends TestCase
         ] as $honest) {
             self::assertNotContains($label, $this->violations($honest), 'faux positif sur : ' . $honest);
         }
+    }
+
+    /**
+     * Story 60.4 — LE VOCABULAIRE DU SERVEUR DE FICHIERS N'EXISTE QUE SOUS LA
+     * LIGNE.
+     *
+     * C'est le piège numéro un du chantier, et il est cosmétique : on descend la
+     * dérivation des permissions dans un fichier neuf, on garde ses appelants
+     * au-dessus, et rien ne proteste — sauf que la ligne n'est plus nulle part. Les
+     * règles de pureté existantes ne l'auraient pas vu : elles interdisent les
+     * services d'exécution par leur NOM, pas leur VOCABULAIRE.
+     *
+     * Zones autorisées, et elles seules : le dossier des implémentations de
+     * backend et le dossier du format des listes d'accès.
+     */
+    #[Test]
+    public function no_file_above_the_line_speaks_the_file_server_vocabulary(): void
+    {
+        $dir = realpath(self::repoPath(self::ORCHESTRATOR_DIR));
+        self::assertNotFalse($dir, self::ORCHESTRATOR_DIR . ' doit exister');
+
+        $finder = (new Finder())->files()->in($dir)->depth(0)->name('*.php');
+        foreach (self::ORCHESTRATOR_LEGACY_EXCLUSIONS as $excluded) {
+            $finder->notName($excluded);
+        }
+
+        $scanned = [];
+        $offenders = [];
+
+        foreach ($finder as $file) {
+            $scanned[] = $file->getFilename();
+            $found = $this->posixViolations((string) $file->getContents());
+            if ($found !== []) {
+                $offenders[$file->getRelativePathname()] = $found;
+            }
+        }
+
+        foreach (self::ABOVE_THE_LINE_FILES as $relative) {
+            $path = self::repoPath($relative);
+            self::assertFileExists($path, 'la garde doit trouver ' . $relative);
+            $scanned[] = basename($relative);
+            $found = $this->posixViolations((string) file_get_contents($path));
+            if ($found !== []) {
+                $offenders[$relative] = $found;
+            }
+        }
+
+        // Le CONTRAT lui-même est au-dessus de la ligne. Ses objets de rapport
+        // décrivent ce qu'un backend a fait sans jamais dire comment : un exemple
+        // illustratif glissé dans un commentaire y ferait entrer le vocabulaire
+        // d'une implémentation particulière, et la règle 60.3 voisine ne le
+        // verrait pas — elle ne détecte que des noms de classe, pas de la prose.
+        $contractDir = realpath(self::repoPath(self::CONTRACT_DIR));
+        self::assertNotFalse($contractDir, self::CONTRACT_DIR . ' doit exister');
+
+        foreach ((new Finder())->files()->in($contractDir)->depth(0)->name('*.php') as $file) {
+            $scanned[] = $file->getFilename();
+            $found = $this->posixViolations((string) $file->getContents());
+            if ($found !== []) {
+                $offenders['contrat/' . $file->getFilename()] = $found;
+            }
+        }
+
+        // Méta-test de PÉRIMÈTRE : la garde doit voir les fichiers qui comptent.
+        // L'orchestrateur des répertoires réseau et le comparateur d'état sont les
+        // deux qui viennent d'être vidés de ce vocabulaire ; un renommage qui les
+        // ferait sortir du scan doit tomber ici, pas passer au vert.
+        foreach (['NetworkShareService.php', 'PlanStateComparator.php', 'SharePlanProjector.php', 'DirectoryTemplateService.php'] as $expected) {
+            self::assertContains($expected, $scanned, 'la garde doit scanner ' . $expected);
+        }
+
+        self::assertSame(
+            [],
+            $offenders,
+            'LIGNE DE COUPE FRANCHIE. Le vocabulaire du serveur de fichiers (commande, mode de permission, '
+            . 'entrée de liste d\'accès, chemin absolu, nom d\'exécution) n\'a le droit d\'exister que sous '
+            . 'la ligne de contrat — dans le dossier des implémentations de backend et dans celui du format '
+            . 'des listes d\'accès. Fichiers fautifs : '
+            . json_encode($offenders, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        );
+    }
+
+    /**
+     * Story 60.4 — MÉTA-TEST D'AIGUILLE de la règle ci-dessus.
+     *
+     * Chaque étiquette voit la forme qu'un contributeur pressé écrirait, et aucune
+     * ne mord sur du vocabulaire honnête d'orchestrateur. Sans les deux moitiés, la
+     * règle serait soit aveugle, soit inutilisable.
+     */
+    #[Test]
+    public function the_file_server_vocabulary_rule_sees_the_forms_it_claims_to_forbid(): void
+    {
+        self::assertSame(
+            array_keys(self::POSIX_MARKER_RULES),
+            array_keys(self::POSIX_NEEDLES),
+            'chaque règle du vocabulaire du serveur de fichiers doit avoir son aiguille',
+        );
+
+        foreach (self::POSIX_NEEDLES as $label => $needle) {
+            self::assertContains(
+                $label,
+                $this->posixViolations($needle),
+                sprintf('la règle « %s » ne détecte pas son aiguille : le scan est aveugle', $label),
+            );
+        }
+
+        // Contrôles NÉGATIFS : le vocabulaire légitime d'un orchestrateur neutre ne
+        // déclenche rien. Sans eux, une règle trop large rendrait la coupe
+        // intenable et finirait par être désactivée — ce qui est pire qu'une règle
+        // absente.
+        foreach ([
+            'public function provision(NetworkShare $share): bool',
+            '$plan = $this->projector->project($share);',
+            '$report = $this->registry->forShare($share)->provision($plan);',
+            '/** Le plan de fichiers est neutre : ni mode, ni nom de groupe système. */',
+            "return ['status' => 'conforme', 'nodes' => []];",
+            'use App\\Services\\Filesystem\\Plan\\PlanSubject;',
+            '$grant->access === PlanGrant::ACCESS_RW',
+        ] as $honest) {
+            self::assertSame([], $this->posixViolations($honest), 'faux positif sur : ' . $honest);
+        }
+    }
+
+    /**
+     * Story 60.4 — les deux ZONES AUTORISÉES portent bien ce vocabulaire.
+     *
+     * Contrôle inverse du précédent, et il n'est pas décoratif : si le backend du
+     * serveur de fichiers ne contenait AUCUN marqueur, c'est que la descente
+     * n'aurait rien descendu, et le test du dessus serait vert pour la pire des
+     * raisons.
+     */
+    #[Test]
+    public function the_execution_zone_is_where_that_vocabulary_actually_lives(): void
+    {
+        $backendDir = realpath(self::repoPath('app/Services/Filesystem/Backend/Posix'));
+        self::assertNotFalse($backendDir, 'le dossier des implémentations de backend doit exister');
+
+        $markers = [];
+        $files = 0;
+        foreach ((new Finder())->files()->in($backendDir)->name('*.php') as $file) {
+            $files++;
+            $markers = array_merge($markers, $this->posixViolations((string) $file->getContents()));
+        }
+
+        self::assertGreaterThanOrEqual(6, $files, 'la zone d\'exécution doit être réellement peuplée');
+        self::assertContains('commandes de listes d\'accès', array_unique($markers));
+        self::assertContains('mode de permission', array_unique($markers));
+        self::assertContains('élévation de privilège', array_unique($markers));
     }
 
     /**

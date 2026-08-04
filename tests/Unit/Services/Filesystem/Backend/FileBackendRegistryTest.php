@@ -8,6 +8,7 @@ use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\UnknownFileBackendException;
 use App\Models\NetworkShare;
 use App\Services\Filesystem\Backend\FileBackendRegistry;
+use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\Backend\PreviewBackend;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
@@ -58,31 +59,30 @@ class FileBackendRegistryTest extends TestCase
     }
 
     /**
-     * **CE TEST EST À RETOURNER PAR LA STORY 60.4.** Tant que l'exécution n'est
-     * pas descendue sous la ligne de contrat, demander le serveur de fichiers
-     * historique échoue en NOMMANT ce qui est disponible et la story qui livrera
-     * l'implémentation. Fail-closed : jamais un repli sur le backend d'aperçu, qui
-     * ferait croire à une application alors que rien ne serait écrit.
+     * **LE TEST RETOURNÉ.** Son prédécesseur s'appelait « `posix` est une valeur de
+     * colonne légitime SANS implémentation jusqu'à 60.4 » et vérifiait que
+     * demander le serveur de fichiers historique ÉCHOUAIT en nommant la story à
+     * venir. Cette story est celle-là : l'exécution est descendue sous la ligne de
+     * contrat, le nom répond, et le refus n'a plus lieu d'être.
+     *
+     * Ce qui n'a PAS changé : un nom sans implémentation reste un échec explicite,
+     * jamais un repli — c'est ce que vérifient les deux tests suivants.
      */
     #[Test]
-    public function posix_is_a_legitimate_column_value_without_an_implementation_until_60_4(): void
+    public function posix_now_resolves_to_the_real_file_server_backend(): void
     {
-        $this->assertFalse($this->registry()->has(FileBackendName::Posix));
+        $this->assertTrue($this->registry()->has(FileBackendName::Posix));
 
-        try {
-            $this->registry()->get(FileBackendName::Posix);
-            $this->fail('le backend posix ne devrait pas se résoudre avant la story 60.4');
-        } catch (UnknownFileBackendException $e) {
-            $this->assertStringContainsString('posix', $e->getMessage());
-            $this->assertStringContainsString('preview', $e->getMessage());
-            $this->assertStringContainsString('60.4', $e->getMessage());
-        }
+        $backend = $this->registry()->get(FileBackendName::Posix);
+
+        $this->assertInstanceOf(PosixFileBackend::class, $backend);
+        $this->assertSame(FileBackendName::Posix, $backend->name());
     }
 
     #[Test]
     public function only_the_implemented_names_are_advertised_as_available(): void
     {
-        $this->assertSame([FileBackendName::Preview], $this->registry()->availableNames());
+        $this->assertSame([FileBackendName::Posix, FileBackendName::Preview], $this->registry()->availableNames());
     }
 
     #[Test]
@@ -90,11 +90,10 @@ class FileBackendRegistryTest extends TestCase
     {
         $share = NetworkShare::factory()->create();
 
-        // Le défaut de la colonne dit vrai : les partages existants SONT du POSIX.
+        // Le défaut de la colonne dit vrai : les partages existants SONT du POSIX,
+        // et ils sont désormais servis par une implémentation réelle.
         $this->assertSame(FileBackendName::Posix, $share->fresh()->backendName());
-
-        $this->expectException(UnknownFileBackendException::class);
-        $this->registry()->forShare($share->fresh());
+        $this->assertInstanceOf(PosixFileBackend::class, $this->registry()->forShare($share->fresh()));
     }
 
     #[Test]

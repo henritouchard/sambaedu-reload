@@ -11,17 +11,23 @@ use App\Services\Filesystem\NetworkShareService;
 use Throwable;
 
 /**
- * Epic 34 — détecte la DÉRIVE ACL des lecteurs réseau gérés : pour chaque
- * {@see NetworkShare}, compare l'état DÉSIRÉ (SQL autoritaire) à l'état EFFECTIF
- * sur disque ({@see NetworkShareService::computeDrift()}).
+ * Epic 34 → story 60.4 — détecte l'ÉCART des lecteurs réseau gérés : pour chaque
+ * {@see NetworkShare}, compare l'état DÉSIRÉ (la base, autoritaire) à l'état RELU
+ * ({@see NetworkShareService::computeDrift()}).
+ *
+ * **La sémantique de comptage est CONSERVÉE** (dérivés / non provisionnés /
+ * illisibles) alors que le chemin a changé de nature sous elle : l'audit ne
+ * compare plus des lignes de permission brutes, il compare un PLAN à une
+ * RELECTURE, en vocabulaire de plan. Les quatre statuts agrégés survivent
+ * exactement pour ce contrôleur.
  *
  * Rend l'idempotence observable côté opérateur : c'est le garde-fou continu qui
- * complète la reconvergence 1-clic de l'UI. Read-only (seul `getfacl` est
- * appelé — aucun `setfacl`), conforme au contrat {@see EnvironmentCheck}.
+ * complète la reconvergence en un geste depuis l'écran. Lecture seule — aucune
+ * écriture n'est déclenchée d'ici. Conforme au contrat {@see EnvironmentCheck}.
  *
  * Sévérité : `warn` (non bloquant) s'il existe des lecteurs dérivés ou non
- * provisionnés — la remédiation (re-provisioning) est une action opérateur, pas
- * un pré-requis d'installation.
+ * provisionnés — la remédiation est une action opérateur, pas un pré-requis
+ * d'installation.
  */
 final class NetworkShareAclDriftCheck implements EnvironmentCheck
 {
@@ -83,9 +89,9 @@ final class NetworkShareAclDriftCheck implements EnvironmentCheck
 
         return CheckResult::warn(
             'Lecteurs réseau non conformes : ' . implode(' ; ', $parts) . '.',
-            'Re-provisionner les lecteurs concernés (bouton « Resynchroniser » sur la fiche du lecteur, '
-            . 'ou re-enregistrer une assignation). Le re-provisioning est idempotent : il efface puis '
-            . 're-applique les ACL canoniques dérivées du SQL.',
+            'Relancer la réconciliation des lecteurs concernés (bouton « Resynchroniser » sur la fiche du '
+            . 'lecteur, ou re-enregistrer une assignation). La réconciliation est idempotente : un lecteur '
+            . 'déjà conforme n\'est pas réécrit.',
         );
     }
 }

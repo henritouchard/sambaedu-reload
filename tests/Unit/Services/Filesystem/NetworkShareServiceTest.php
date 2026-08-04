@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Filesystem;
 
+use App\Enums\FileBackendOutcome;
+use App\Jobs\ReconcileNetworkShareJob;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
 use App\Models\QuotaAuditLog;
@@ -12,25 +14,31 @@ use App\Models\UserGroup;
 use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\NetworkShareService;
+use App\Services\Filesystem\Plan\PlanSubject;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Unit\Services\Filesystem\Support\RecordingBackend;
 
 /**
- * Story 34.1 — Tests Unit `NetworkShareService`.
+ * Story 34.1 → 60.4 — l'ORCHESTRATEUR, testé AU-DESSUS DE LA LIGNE.
  *
- * Stratégie : `Process::fake()` mocke `mkdir`/`setfacl`/`chown`/`chgrp` — AUCUN
- * accès FS réel. `sharesRoot()` est pointé vers un tempdir réel (via config)
- * pour les checks `is_dir()` d'idempotence.
+ * **Aucune simulation de processus dans ce fichier, et c'est une garde.** Les
+ * tests historiques de ce service simulaient `mkdir`, `setfacl`, `chown` et
+ * `chgrp` : c'était cohérent, puisque le service les lançait. Il ne les lance
+ * plus. Un test d'orchestrateur qui aurait encore besoin d'une simulation
+ * d'exécution signalerait que la coupe a fui — et il existe donc ici un test qui
+ * VÉRIFIE qu'aucune commande n'est lancée par ce chemin. Les gestes système sont
+ * testés là où ils vivent, sous la ligne.
  *
- * IMPORTANT : `Process::fake()` ne peut configurer ses handlers qu'au PREMIER
- * appel (un 2ᵉ appel sur un fake déjà actif est ignoré). On ne fake donc PAS
- * dans `setUp()` : chaque test appelle `Process::fake(...)` UNE fois, avec ses
- * propres handlers (la passe par défaut = succès pour les commandes non
- * matchées).
+ * L'exécution est remplacée en substituant un double à l'implémentation que le
+ * registre résout : l'orchestrateur emprunte le vrai chemin (projection,
+ * résolution par la colonne, délégation), et seule la couche qui écrit change.
  */
 class NetworkShareServiceTest extends TestCase
 {
@@ -38,27 +46,22 @@ class NetworkShareServiceTest extends TestCase
 
     private NetworkShareService $service;
 
-    private string $tempRoot;
+    private RecordingBackend $backend;
 
     protected function setUp(): void
     {
         parent::setUp();
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
-        Queue::fake();
 
-        $this->tempRoot = sys_get_temp_dir() . '/netshare-svc-' . uniqid();
-        @mkdir($this->tempRoot, 0o755, true);
-        config(['filesystem.shares_root' => $this->tempRoot]);
+        $this->backend = new RecordingBackend();
+        $this->app->instance(PosixFileBackend::class, $this->backend);
 
         $this->service = app(NetworkShareService::class);
     }
 
     protected function tearDown(): void
     {
-        if (is_dir($this->tempRoot)) {
-            @rmdir($this->tempRoot);
-        }
         WorkstationGroupObserver::enableSync();
         UserGroupObserver::enableSync();
         parent::tearDown();
@@ -75,167 +78,220 @@ class NetworkShareServiceTest extends TestCase
     }
 
     // =========================================================================
-    // Path / nommage
+    // Nommage — la seule règle qui reste au-dessus de la ligne
     // =========================================================================
 
     #[Test]
-    public function resolves_a_valid_share_path_under_the_dedicated_root(): void
+    public function the_directory_name_rule_rejects_traversal_and_metacharacters(): void
     {
-        $share = NetworkShare::factory()->create(['directory_name' => 'direction']);
-        self::assertSame($this->tempRoot . '/direction', $this->service->resolveSharePath($share));
-    }
-
-    #[Test]
-    public function rejects_traversal_and_metacharacters_in_directory_name(): void
-    {
-        foreach (['../etc', 'a/b', 'foo bar', 'evil;rm', '.hidden', 'a$b'] as $bad) {
-            $share = new NetworkShare(['name' => 'x', 'directory_name' => $bad]);
-            self::assertNull($this->service->resolveSharePath($share), "should reject: {$bad}");
+        foreach (['../etc', 'a/b', 'foo bar', 'evil;rm', '.hidden', 'a$b', ''] as $bad) {
+            self::assertFalse($this->service->isValidDirectoryName($bad), "doit refuser : {$bad}");
         }
-    }
-
-    #[Test]
-    public function path_guard_rejects_paths_outside_the_root_and_excessive_depth(): void
-    {
-        self::assertFalse($this->service->validateSharePath('/etc/passwd'));
-        self::assertFalse($this->service->validateSharePath($this->tempRoot . '/../escape'));
-        self::assertFalse($this->service->validateSharePath($this->tempRoot . '/a/b/c')); // depth 3 > MAX_DEPTH 2
-        self::assertTrue($this->service->validateSharePath($this->tempRoot . '/ok'));
-        self::assertTrue($this->service->validateSharePath($this->tempRoot . '/a/b')); // depth 2 OK
-    }
-
-    #[Test]
-    public function provision_refused_for_invalid_directory_name_runs_no_process(): void
-    {
-        Process::fake();
-        $share = NetworkShare::factory()->create(['directory_name' => 'valid']);
-        // Force un nom invalide en mémoire (contourne l'unicité DB).
-        $share->directory_name = '../escape';
-
-        self::assertFalse($this->service->provision($share));
-        Process::assertNothingRan();
+        foreach (['direction', 'Classe_3A', 'docs.v2', 'a-b_c'] as $good) {
+            self::assertTrue($this->service->isValidDirectoryName($good), "doit accepter : {$good}");
+        }
+        self::assertFalse($this->service->isValidDirectoryName(null));
     }
 
     // =========================================================================
-    // Provisioning + ACL
+    // Délégation
     // =========================================================================
 
     #[Test]
-    public function provision_creates_directory_and_applies_canonical_acls(): void
+    public function provisioning_projects_a_neutral_plan_and_delegates_to_the_backend_of_the_column(): void
     {
-        Process::fake();
-        $share = NetworkShare::factory()->create(['directory_name' => 'commun']);
+        $share = NetworkShare::factory()->create(['directory_name' => 'commun', 'name' => 'Commun']);
+        $alice = User::factory()->create(['login' => 'alice']);
+        $this->assign($share, User::class, $alice->id, 'rw');
 
         self::assertTrue($this->service->provision($share, 'qa'));
 
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'mkdir -p')
-            && str_contains($p->command, 'commun'));
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'setfacl')
-            && str_contains($p->command, '-b')); // wipe avant batch
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'chown www-admin'));
-        Process::assertRan(fn ($p): bool => str_contains($p->command, "chgrp 'domain admins'"));
+        self::assertSame(['provision'], $this->backend->calls);
+        $plan = $this->backend->plans[0];
+        self::assertSame('commun', $plan->rootPath);
+        self::assertCount(1, $plan->nodes);
+        self::assertSame(PlanSubject::TYPE_USER, $plan->nodes[0]->grants[0]->subject->type);
+        self::assertSame((int) $alice->id, $plan->nodes[0]->grants[0]->subject->id);
+    }
+
+    /**
+     * LA GARDE DE LA COUPE, côté tests : ce chemin ne lance AUCUNE commande. Si
+     * un jour il en lance une, c'est que la dérivation des permissions est
+     * remontée au-dessus de la ligne.
+     */
+    #[Test]
+    public function the_orchestrator_itself_never_runs_a_single_command(): void
+    {
+        Process::fake();
+        $share = NetworkShare::factory()->create(['directory_name' => 'aucunecommande']);
+
+        $this->service->provision($share, 'qa');
+        $this->service->deprovision($share, 'qa');
+        $this->service->computeDrift($share);
+
+        Process::assertNothingRan();
     }
 
     #[Test]
-    public function user_assignment_grants_rx_for_ro_and_rwx_for_rw(): void
+    public function a_parc_assignment_never_becomes_a_grant_in_the_plan(): void
     {
-        Process::fake();
-        $alice = User::factory()->create(['login' => 'alice']);
-        $bob = User::factory()->create(['login' => 'bob']);
-        $share = NetworkShare::factory()->create(['directory_name' => 'mix']);
-        $this->assign($share, User::class, $alice->id, 'ro');
-        $this->assign($share, User::class, $bob->id, 'rw');
+        $wg = WorkstationGroup::factory()->logical()->create();
+        $share = NetworkShare::factory()->create(['directory_name' => 'montage']);
+        $this->assign($share, WorkstationGroup::class, $wg->id, 'rw');
 
         $this->service->provision($share);
 
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'setfacl')
-            && str_contains($p->command, 'user:alice:rx'));
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'setfacl')
-            && str_contains($p->command, 'user:bob:rwx'));
-        // Défauts miroir pour l'héritage.
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'default:user:alice:rx'));
+        self::assertSame([], $this->backend->plans[0]->nodes[0]->grants);
     }
 
     #[Test]
-    public function user_group_classe_assignment_grants_classe_unix_group(): void
+    public function a_group_assignment_becomes_an_internal_identity_never_a_system_name(): void
     {
-        Process::fake();
         $group = UserGroup::create(['name' => '3emeA', 'type' => 'classe']);
         $share = NetworkShare::factory()->create(['directory_name' => 'classe3a']);
         $this->assign($share, UserGroup::class, $group->id, 'rw');
 
         $this->service->provision($share);
 
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'group:classe_3emea:rwx'));
+        $subject = $this->backend->plans[0]->nodes[0]->grants[0]->subject;
+        self::assertSame(PlanSubject::TYPE_USER_GROUP, $subject->type);
+        self::assertSame((int) $group->id, $subject->id);
     }
 
-    #[Test]
-    public function user_group_equipe_assignment_grants_equipe_unix_group(): void
-    {
-        Process::fake();
-        $group = UserGroup::create(['name' => 'profs', 'type' => 'equipe']);
-        $share = NetworkShare::factory()->create(['directory_name' => 'salledesprofs']);
-        $this->assign($share, UserGroup::class, $group->id, 'ro');
-
-        $this->service->provision($share);
-
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'group:equipe_profs:rx'));
-    }
+    // =========================================================================
+    // Le booléen d'adaptation est CALCULÉ, jamais lu dans un rapport
+    // =========================================================================
 
     #[Test]
-    public function workstation_group_assignment_contributes_no_acl(): void
+    public function the_boolean_kept_for_historic_callers_is_derived_from_the_report_lists(): void
     {
-        $wg = WorkstationGroup::factory()->logical()->create();
-        $share = NetworkShare::factory()->create(['directory_name' => 'mountonly']);
-        $this->assign($share, WorkstationGroup::class, $wg->id, 'rw');
-        $share->load('assignments');
+        $share = NetworkShare::factory()->create(['directory_name' => 'derive']);
 
-        // L'ACL bâtie pour un share assigné UNIQUEMENT à un WG = le set canonique
-        // de base SANS aucune ligne user:<login>/group:<nom> spécifique (montage-
-        // seul). On vérifie sur le builder pur (déterministe).
-        $acls = $this->service->buildAcls($share);
-
-        $canonical = [
-            'user::rwx',
-            'group::---',
-            'group:domain\\040admins:rwx',
-            'mask::rwx',
-            'other::---',
-            'default:user::rwx',
-            'default:group::---',
-            'default:group:domain\\040admins:rwx',
-            'default:mask::rwx',
-            'default:other::---',
-        ];
-        self::assertSame($canonical, $acls);
-    }
-
-    #[Test]
-    public function provision_is_idempotent_skips_mkdir_when_dir_exists(): void
-    {
-        Process::fake();
-        $share = NetworkShare::factory()->create(['directory_name' => 'idem']);
-        @mkdir($this->tempRoot . '/idem', 0o755, true);
-
+        $this->backend->provisionOutcome = FileBackendOutcome::Conforme;
         self::assertTrue($this->service->provision($share));
 
-        // Le dossier existe déjà → aucun mkdir n'est lancé (is_dir court-circuite).
-        Process::assertNotRan(fn ($p): bool => str_contains($p->command, 'mkdir'));
-        // Mais les ACLs sont RÉ-appliquées (wipe + batch) → idempotence ACL.
-        Process::assertRan(fn ($p): bool => str_contains($p->command, 'setfacl') && str_contains($p->command, '-b'));
+        $this->backend->provisionOutcome = FileBackendOutcome::Echec;
+        self::assertFalse($this->service->provision($share));
 
-        @rmdir($this->tempRoot . '/idem');
+        // Un déclin n'est pas un échec, mais ce n'est pas non plus la convergence :
+        // l'appelant historique doit le savoir.
+        $this->backend->provisionOutcome = FileBackendOutcome::NonImplemente;
+        self::assertFalse($this->service->provision($share));
+    }
+
+    #[Test]
+    public function an_unprojectable_directory_fails_explicitly_and_delegates_nothing(): void
+    {
+        $share = NetworkShare::factory()->create(['directory_name' => 'valide']);
+        $share->directory_name = '../evasion';
+
+        self::assertFalse($this->service->provision($share));
+        self::assertSame([], $this->backend->calls);
     }
 
     // =========================================================================
-    // Audit + fail-soft
+    // Régimes d'exécution (AC4)
     // =========================================================================
 
     #[Test]
-    public function provision_writes_an_audit_row(): void
+    public function a_screen_enqueues_and_writes_nothing_in_the_request(): void
     {
-        Process::fake();
+        Queue::fake();
+        $share = NetworkShare::factory()->create(['directory_name' => 'enfile']);
+
+        self::assertTrue($this->service->queueReconciliation($share, 'ui'));
+
+        Queue::assertPushed(
+            ReconcileNetworkShareJob::class,
+            fn (ReconcileNetworkShareJob $job): bool => $job->shareId === (int) $share->id && $job->performedBy === 'ui',
+        );
+        self::assertSame([], $this->backend->calls, 'aucune écriture ne doit avoir lieu dans le cycle de la requête');
+    }
+
+    #[Test]
+    public function the_enqueued_state_is_immediately_readable_and_says_engaged_not_done(): void
+    {
+        Bus::fake();
+        $share = NetworkShare::factory()->create(['directory_name' => 'attente']);
+
+        $this->service->queueReconciliation($share);
+
+        $report = $this->service->lastReport($share);
+        self::assertNotNull($report);
+        self::assertSame(FileBackendOutcome::EnAttente->value, $report['nodes'][0]['outcome']);
+    }
+
+    #[Test]
+    public function a_direct_reconciliation_replaces_the_pending_state_by_the_real_one(): void
+    {
+        Bus::fake();
+        $share = NetworkShare::factory()->create(['directory_name' => 'remplace']);
+        $this->service->queueReconciliation($share);
+
+        $this->service->reconcile($share, 'cli');
+
+        $report = $this->service->lastReport($share);
+        self::assertSame(FileBackendOutcome::Applique->value, $report['nodes'][0]['outcome']);
+    }
+
+    /**
+     * L'ÉCHEC D'UN GESTE ENFILÉ DOIT AVOIR UN DESTINATAIRE.
+     *
+     * Le service absorbe l'erreur (il rend `null`), donc rien ne remonte au
+     * traitement en file : ni réessai, ni consignation d'échec. Si le rapport
+     * « en attente » posé à l'enfilage restait en place, l'écran dirait « c'est
+     * engagé » pour toujours, et le seul témoin serait une ligne de journal que
+     * personne ne lit. C'est la signature de défaut que cet epic traque.
+     */
+    #[Test]
+    public function a_queued_reconciliation_that_fails_replaces_the_pending_state_by_a_readable_failure(): void
+    {
+        Bus::fake();
+        $share = NetworkShare::factory()->create(['directory_name' => 'echoue']);
+        $this->service->queueReconciliation($share);
+        self::assertNotNull($this->service->lastReport($share), 'l\'état « en attente » doit exister avant');
+
+        $this->backend->provisionThrows = true;
+        self::assertNull($this->service->reconcile($share, 'file'));
+
+        self::assertNull(
+            $this->service->lastReport($share),
+            'le rapport « en attente » ne doit pas survivre à l\'échec du geste qu\'il annonçait',
+        );
+        self::assertNotNull($this->service->lastFailure($share));
+    }
+
+    /**
+     * Et il ne DOIT PAS survivre à la réconciliation suivante qui aboutit :
+     * un échec qui resterait affiché après correction serait un second mensonge,
+     * symétrique du premier.
+     */
+    #[Test]
+    public function a_later_successful_reconciliation_clears_the_recorded_failure(): void
+    {
+        Bus::fake();
+        $share = NetworkShare::factory()->create(['directory_name' => 'reprend']);
+
+        $this->backend->provisionThrows = true;
+        $this->service->reconcile($share);
+        self::assertNotNull($this->service->lastFailure($share));
+
+        $this->backend->provisionThrows = false;
+        $this->service->reconcile($share);
+
+        self::assertNull($this->service->lastFailure($share));
+        self::assertNotNull($this->service->lastReport($share));
+    }
+
+    // =========================================================================
+    // Trace applicative
+    // =========================================================================
+
+    #[Test]
+    public function the_audit_row_keeps_its_shape_and_its_author(): void
+    {
         $share = NetworkShare::factory()->create(['directory_name' => 'audite']);
+
         $this->service->provision($share, 'qa-runbook');
 
         $row = QuotaAuditLog::where('target_type', 'share')
@@ -250,37 +306,13 @@ class NetworkShareServiceTest extends TestCase
     }
 
     #[Test]
-    public function provision_is_fail_soft_when_setfacl_fails(): void
+    public function deprovisioning_delegates_and_traces_too(): void
     {
-        // PREMIER (et seul) appel à Process::fake de ce test : `setfacl` échoue,
-        // tout le reste réussit. (Un 2ᵉ Process::fake serait ignoré — cf. note
-        // de classe ; on ne fake PAS dans setUp pour cette raison.)
-        Process::fake([
-            'sudo setfacl*' => Process::result(output: 'boom', exitCode: 1),
-            '*' => Process::result(output: '', exitCode: 0),
-        ]);
+        $share = NetworkShare::factory()->create(['directory_name' => 'revoque']);
 
-        $share = NetworkShare::factory()->create(['directory_name' => 'failsoft']);
-        $this->assign($share, User::class, User::factory()->create(['login' => 'eve'])->id);
+        self::assertTrue($this->service->deprovision($share, 'qa'));
 
-        // Aucune exception propagée ; retour false (échec partiel).
-        self::assertFalse($this->service->provision($share));
-        // L'audit est tout de même écrit (trace de la tentative).
-        self::assertNotNull(QuotaAuditLog::where('target_name', 'failsoft')->first());
-    }
-
-    #[Test]
-    public function get_status_reports_existence_without_side_effects(): void
-    {
-        Process::fake();
-        $share = NetworkShare::factory()->create(['directory_name' => 'statut']);
-        $sam = User::factory()->create(['login' => 'sam']);
-        $this->assign($share, User::class, $sam->id);
-
-        $status = $this->service->getStatus($share);
-        self::assertFalse($status['exists']); // dir non créé
-        self::assertSame($this->tempRoot . '/statut', $status['path']);
-        self::assertSame(1, $status['assignments_count']);
-        Process::assertNothingRan();
+        self::assertSame(['deprovision'], $this->backend->calls);
+        self::assertNotNull(QuotaAuditLog::where('target_name', 'revoque')->where('action', 'deprovision_share')->first());
     }
 }

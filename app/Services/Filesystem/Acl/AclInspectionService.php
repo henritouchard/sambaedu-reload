@@ -6,7 +6,7 @@ namespace App\Services\Filesystem\Acl;
 
 use App\Models\User;
 use App\Models\UserGroup;
-use App\Services\Filesystem\NetworkShareService;
+use App\Services\Filesystem\Backend\Posix\PosixSubjectProjector;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
@@ -21,13 +21,13 @@ use Illuminate\Support\Facades\Process;
  *
  * **Direction de la vérité.** L'import FS→SQL n'a de sens qu'en MIGRATION
  * one-shot : une fois l'intention d'accès capturée en SQL (autoritaire), le
- * disque redevient une projection ({@see NetworkShareService::provision()}). Ce
+ * disque redevient une projection ({@see \App\Services\Filesystem\NetworkShareService::provision()}). Ce
  * service ne fait donc AUCUNE écriture ACL — il lit (`getfacl`) et classe.
  *
  * **Mapping inverse robuste.** Le nom de groupe Unix disque
  * (`equipe_3sb-1229y`) est ré-associé à son {@see UserGroup} par
  * FORWARD-PROJECTION : on projette chaque UserGroup candidat via
- * {@see NetworkShareService::unixGroupForGroup()} et on indexe le résultat →
+ * {@see PosixSubjectProjector::unixGroupForGroup()} et on indexe le résultat →
  * aucun strip fragile du suffixe établissement (mémoire
  * acl_equipe_group_missing_etab_suffix).
  *
@@ -57,7 +57,7 @@ class AclInspectionService
      */
     private const STRUCTURAL_NAMED = ['domain\040admins', 'domain admins'];
 
-    public function __construct(private readonly NetworkShareService $networkShareService)
+    public function __construct(private readonly PosixSubjectProjector $projector)
     {
     }
 
@@ -246,7 +246,7 @@ class AclInspectionService
     /**
      * Index INVERSE `nom Unix disque (lowercased) → UserGroup`, par
      * forward-projection de chaque groupe via
-     * {@see NetworkShareService::unixGroupForGroup()}. En cas de collision (deux
+     * {@see PosixSubjectProjector::unixGroupForGroup()}. En cas de collision (deux
      * groupes projetant le même nom Unix), le PREMIER gagne et un warning est
      * tracé — situation anormale à investiguer, jamais un choix silencieux.
      *
@@ -256,7 +256,7 @@ class AclInspectionService
     {
         $index = [];
         foreach (UserGroup::query()->get() as $group) {
-            $unix = $this->networkShareService->unixGroupForGroup($group);
+            $unix = $this->projector->unixGroupForGroup($group);
             if ($unix === null) {
                 continue;
             }

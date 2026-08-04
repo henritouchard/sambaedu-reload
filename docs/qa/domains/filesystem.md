@@ -20,13 +20,20 @@
 
 ### Scénario 5.1c-1 — Section Quota groupe : affichage par défaut (Hérité)
 
-**Pré-requis** : un groupe sans règle `QuotaRule::TYPE_GROUP` (ex: nouveau
-groupe "test-classe-6a").
+**Pré-requis** : un groupe sans règle `QuotaRule::TYPE_GROUP`. Le créer de
+**type "Classe"** (`type='classe'`) : la section quota s'affiche pour tous les
+types, mais les scénarios 5.2-* et 34.1-3 exigent `classe` (`ShareService`
+refuse tout autre type) — un seul groupe suffit ainsi pour tout le runbook.
+Nom sans espace ni accent (cf. note #15). Exemple : `TEST6A`.
 
 1. Se connecter en `admin` (server.admin).
 2. Naviguer vers `/app/users/groups/{id}` du groupe en question.
 3. Vérifier qu'une nouvelle section "Quota du groupe" est affichée entre la
-   liste des membres et la wallpaper-card.
+   section "Professeur principal" et la section "Capacités" (ordre réel de
+   la page : en-tête → membres → partage de classe (si `type='classe'`) →
+   professeur principal → **quota du groupe** → capacités). La wallpaper-card
+   n'existe plus : le fond d'écran est devenu une capacité et vit désormais
+   dans la section "Capacités", en bas de page.
 4. Pour chaque partition (`/home`, `/var/sambaedu`) : badge ghost "Hérité (défaut)"
    + texte explicatif "Aucune règle groupe — les utilisateurs héritent du
    quota par défaut de leur profil."
@@ -1462,6 +1469,265 @@ Ces éléments existent, sont testés sur l'hôte, et **dorment** :
 - [ ] 60.3-4 : `getfacl` inchangé sur les partages classe **et** sur les répertoires réseau
 - [ ] 60.3-4 : créer / assigner / désassigner / supprimer un lecteur se comporte comme avant
 - [ ] Suite automatisée verte sur l'hôte — la VM n'a pas `pdo_sqlite`, ne pas tenter d'y jouer les tests
+
+---
+
+## Story 60.4 — Le backend `posix` : l'exécution passe sous la ligne de contrat
+
+> **Ce que cette story change POUR L'EXPLOITANT, en une phrase** : rien ne doit
+> bouger sur le disque. Les droits sont désormais posés par une implémentation
+> nommée derrière un contrat, et non plus par le service de provisionnement
+> lui-même — mais les commandes émises, les entrées produites et l'état final sont
+> les mêmes. **Le seul écart de comportement voulu est un écart en MOINS** : un
+> répertoire déjà conforme n'est plus réécrit.
+>
+> Deux changements sont VISIBLES et attendus :
+> 1. **le provisionnement déclenché depuis un écran est ENFILÉ** — l'écran dit
+>    « la mise en place des droits est engagée », et l'état se lit au
+>    rafraîchissement suivant ou en cliquant « Vérifier » ;
+> 2. **l'encart de conformité ne montre plus de lignes de droits brutes** — il
+>    nomme les destinataires par leur nom SE5 et dit « attendu / constaté ».
+>
+> Contexte d'exécution : la synchronisation vers la VM était COUPÉE pendant le
+> développement. **Aucune vérification disque n'a été faite par le dev.** Tout ce
+> qui suit est à exécuter par Henri.
+
+### Prérequis d'exploitation à VÉRIFIER AVANT de conclure quoi que ce soit
+
+Ces trois points ne sont pas touchés par la story ; s'ils ont dérivé pour une
+autre raison, les scénarios ci-dessous mesureront la mauvaise chose.
+
+- [ ] 60.4-P1 — **la racine des répertoires gérés reste traversable** :
+      `getfacl -c /var/sambaedu/Partages | grep '^other'` doit montrer au moins
+      `r-x`. Les participants en lecture seule doivent pouvoir TRAVERSER la racine
+      pour atteindre leur dossier ; un `other::---` sur la racine casse tout
+      l'étage sans qu'aucune entrée de sous-dossier ne soit fautive.
+- [ ] 60.4-P2 — **le masquage SMB est toujours actif** :
+      `grep -i 'hide unreadable' /etc/samba/smb-partages.conf` (ou le fichier de
+      configuration inclus) rend `hide unreadable = Yes`. C'est lui qui empêche un
+      élève de VOIR les dossiers auxquels il n'a pas accès.
+- [ ] 60.4-P3 — **aucune option n'ignore les droits POSIX** :
+      `testparm -s 2>/dev/null | grep -i 'ignore system acl'` ne doit RIEN rendre.
+      SE5 s'appuie sur le fait que Samba projette les droits POSIX ; si cette
+      option apparaissait, tout ce qui suit serait posé et sans effet.
+- [ ] 60.4-P4 — **la liste blanche d'élévation couvre le jeu de commandes** :
+      `grep -E 'setfacl|getfacl|chmod|chown|chgrp|mkdir|mv' /etc/sudoers.d/sambaedu`.
+      La story n'ajoute **aucune commande privilégiée**. Elle ajoute une seule
+      commande, `getent`, en LECTURE et SANS élévation — rien à autoriser.
+- [ ] 60.4-P5 — **une file de traitement tourne** : `systemctl status` du service
+      de file (ou `php artisan queue:work --once` à la main). **Sans elle, les
+      écrans enfilent dans le vide** : l'écran dira « engagée » et rien ne se
+      passera. C'est le point de vérification le plus important de cette story.
+
+### Scénario 60.4-1 — LE TEST QUI DÉCIDE : `getfacl -R` avant / après
+
+C'est le seul protocole qui établit « aucune entrée ne bouge sur une instance en
+place ». À faire sur une instance qui a DÉJÀ des répertoires provisionnés.
+
+1. **Avant tout déploiement du code de la story**, capturer l'état complet :
+   ```
+   cd /var/sambaedu/Partages
+   for d in */ ; do echo "### $d" ; getfacl -R -c -E -p "$d" ; done > /tmp/acl-avant.txt
+   ```
+   (le `.trash` éventuel est inclus, c'est voulu — il ne doit pas bouger non plus)
+2. Déployer la story.
+3. Sur **chaque** répertoire, cliquer « Resynchroniser » depuis sa fiche, puis
+   laisser la file traiter (ou `php artisan queue:work --stop-when-empty`).
+4. Recapturer :
+   ```
+   cd /var/sambaedu/Partages
+   for d in */ ; do echo "### $d" ; getfacl -R -c -E -p "$d" ; done > /tmp/acl-apres.txt
+   diff -u /tmp/acl-avant.txt /tmp/acl-apres.txt
+   ```
+
+- [ ] 60.4-1a — **le diff est VIDE**. Toute ligne de différence est un défaut de la
+      story, pas un réglage : la remonter telle quelle.
+- [ ] 60.4-1b — relancer « Resynchroniser » une seconde fois sur un répertoire :
+      dans `journalctl` / les journaux applicatifs, le second passage doit se
+      solder par un état **`conforme`**, et **aucun `setfacl` ne doit apparaître**.
+      C'est le changement de comportement voulu (avant, la séquence réécrivait
+      toujours). Pour l'observer directement :
+      `strace`-libre — surveiller simplement l'horodatage des fichiers ou activer
+      le journal applicatif en `debug` le temps du test.
+- [ ] 60.4-1c — sur un répertoire volontairement dérivé à la main
+      (`sudo setfacl -m u:root:rwx /var/sambaedu/Partages/<un_dossier>`), l'encart
+      de conformité doit passer en « Écart détecté » **et** la resynchronisation
+      doit ramener l'état exactement à celui de `/tmp/acl-avant.txt`.
+
+### Scénario 60.4-2 — La réconciliation enfilée (ce qui change à l'écran)
+
+- [ ] 60.4-2a — ajouter une assignation sur un répertoire : le message dit
+      **« engagée »**, et l'écran ne bloque pas pendant la pose.
+- [ ] 60.4-2b — **avec la file ARRÊTÉE** : le message dit toujours « engagée », et
+      `getfacl` ne montre AUCUN changement. C'est le comportement attendu, et c'est
+      pourquoi 60.4-P5 est un prérequis et non un détail.
+- [ ] 60.4-2c — redémarrer la file : la pose a lieu, et « Vérifier » sur la fiche
+      rend « conformes ».
+- [ ] 60.4-2d — supprimer un répertoire : la révocation reste **SYNCHRONE** (elle
+      ne passe pas par la file). Vérifier immédiatement après la suppression que
+      `\\serveur\partages\<nom>` n'est plus atteignable depuis un poste.
+
+### Scénario 60.4-3 — L'archivage : le nom de dossier a CHANGÉ
+
+La poubelle suffixait par l'identifiant de la ligne en base
+(`.trash/<nom>-<id>`). Cet identifiant n'appartient pas au plan (le plan est
+portable par conception) : le suffixe est désormais la **date d'archivage**.
+
+- [ ] 60.4-3a — supprimer un répertoire, puis `ls -la /var/sambaedu/Partages/.trash`
+      → une entrée `<nom>-AAAAMMJJ-HHMMSS`, en `0700 www-admin`.
+- [ ] 60.4-3b — le contenu est INTACT (`ls -la` dedans). Aucune donnée n'est
+      détruite, jamais.
+- [ ] 60.4-3c — les archives ANTÉRIEURES (`<nom>-<id>`) sont toujours là, non
+      renommées, non touchées.
+
+**Cas de collision, vérifié en laboratoire.** Deux archivages du MÊME nom de
+répertoire dans la MÊME seconde (donc : ligne supprimée puis recréée à
+l'identique, puis re-supprimée aussitôt) viseraient la même cible. Le
+déplacement n'écrase alors rien : le second contenu se retrouve **imbriqué** sous
+`<nom>-AAAAMMJJ-HHMMSS/<nom>/`. Aucune donnée n'est perdue — l'obligation tenue
+par cette story est respectée — mais l'exploitant qui tomberait dessus doit savoir
+que c'est une imbrication, pas une fusion.
+
+- [ ] 60.4-3d — (facultatif) si une archive contient un dossier de même nom que
+      l'archive elle-même, c'est ce cas : deux archivages distincts, pas un seul.
+
+### Scénario 60.4-4 — `pp_<classe>` comme sujet de droits : PREMIÈRE UTILISATION RÉELLE
+
+**À lire avant de conclure.** Le groupe d'annuaire des professeurs principaux
+(`PP_<base>`) existe depuis la story 42.2 et il est bien alimenté. Mais **aucune
+liste d'accès du produit historique ne l'a jamais visé** : sa résolvabilité côté
+système (par le démon de jonction d'annuaire) n'est **PAS établie**. La story ne
+la présuppose pas et ne la contourne pas — elle la vérifie avant d'écrire, et
+refuse d'écrire si le nom ne résout pas.
+
+Ce scénario est là pour l'ÉTABLIR, sur une instance réelle.
+
+1. Choisir une classe existante et relever sa base nue (nom court + suffixe
+   d'établissement), par exemple `3sb-1229y`.
+2. Sonder les trois noms du trio, exactement comme le fait le code :
+   ```
+   getent group classe_3sb-1229y
+   getent group equipe_3sb-1229y
+   getent group pp_3sb-1229y
+   ```
+
+- [ ] 60.4-4a — les deux premiers résolvent (ils sont utilisés depuis toujours).
+- [ ] 60.4-4b — **le troisième résout-il ?** Noter la réponse telle quelle, c'est
+      l'information attendue.
+  - **S'il résout** : le rôle « propriétaire » d'une classe est projetable en
+    droits, et la story suivante peut s'appuyer dessus.
+  - **S'il ne résout PAS** : c'est le comportement NORMAL de la story — l'octroi
+    n'est pas écrit, et la fiche du répertoire affiche un échec **nommant
+    `pp_<base>`**. Rien n'est posé au hasard. Il faudra alors décider (story
+    ultérieure) entre exposer le groupe au système ou compiler ce rôle autrement.
+- [ ] 60.4-4c — vérifier la casse : `getent group PP_3sb-1229y` peut résoudre là où
+      `pp_3sb-1229y` échoue (ou l'inverse) selon la configuration de sensibilité à
+      la casse. Noter le résultat des deux.
+
+### Scénario 60.4-5 — L'encart de conformité assaini
+
+- [ ] 60.4-5a — sur une fiche de répertoire, l'encart n'affiche **plus aucune
+      ligne de droits** (`user:...:rwx`), plus aucun nom de groupe système, plus
+      aucun chemin absolu.
+- [ ] 60.4-5b — sur un répertoire dérivé, il nomme les destinataires par leur nom
+      SE5 et dit « Attendu / Constaté » (`Lire`, `Modifier`, `Aucun`, `—`), avec
+      « (racine) » pour la racine.
+- [ ] 60.4-5c — le bouton « Resynchroniser » est toujours là et engage la
+      réconciliation ; le bouton « Vérifier » relit sans rien écrire.
+- [ ] 60.4-5d — le contrôleur d'environnement (`php artisan se4:doctor`, section
+      système de fichiers) compte toujours les lecteurs dérivés / non provisionnés /
+      illisibles, avec la même sémantique qu'avant.
+
+### Scénario 60.4-6 — Un groupe qui ne résout pas (l'incident connu, rendu visible)
+
+Reproduit l'incident du groupe d'équipe sans suffixe d'établissement, où l'outil
+échouait avec « argument invalide » et où la seule trace était une ligne de
+journal que personne ne lisait.
+
+1. Assigner à un répertoire un groupe SE5 dont le nom système n'existe PAS côté
+   annuaire (créer un groupe SE5 « bidon », ne pas le synchroniser).
+2. Resynchroniser, laisser la file traiter.
+
+- [ ] 60.4-6a — `getfacl` sur le dossier ne montre **aucune** entrée pour ce
+      groupe : rien n'a été posé au hasard.
+- [ ] 60.4-6b — la fiche affiche un **échec** dont le texte NOMME le groupe système
+      attendu. C'est l'information qui rend l'incident réparable.
+- [ ] 60.4-6c — les autres entrées du même répertoire sont posées normalement : un
+      octroi refusé n'emporte pas les autres.
+
+### Scénario 60.4-7 — Résolution de noms INDISPONIBLE : le doute ne révoque rien
+
+Distinct du précédent, et c'est tout l'enjeu : « ce groupe n'existe pas » est une
+réponse, « je n'ai pas pu demander » n'en est pas une. La pose commence par purger
+les droits étendus du répertoire — si un doute était traité comme une absence, une
+panne de résolution de noms deviendrait une **révocation d'accès** sur tous les
+répertoires réconciliés pendant la panne.
+
+1. Noter d'abord l'état : `getfacl /var/sambaedu/Partages/<nom>` (le garder).
+2. Rendre la résolution de noms indisponible **le temps du test** (arrêter le
+   service de jonction au domaine : `systemctl stop winbind`).
+3. Depuis la fiche du répertoire, cliquer « Resynchroniser », laisser la file
+   traiter.
+
+- [ ] 60.4-7a — `getfacl` sur le dossier est **strictement identique** à l'état
+      noté en 1 : rien n'a été purgé, rien n'a été réécrit.
+- [ ] 60.4-7b — la fiche affiche un **échec** disant qu'il a été impossible de
+      savoir si le groupe se résout, et invitant à vérifier la jonction au domaine.
+- [ ] 60.4-7c — relancer le service (`systemctl start winbind`), attendre la
+      résolution (`getent group <nom>` répond), resynchroniser → l'état redevient
+      conforme, sans intervention manuelle sur les droits.
+
+### Scénario 60.4-8 — Un geste enfilé qui échoue le DIT à l'écran
+
+Le service absorbe l'erreur : rien ne remonte à la file, donc ni réessai ni
+consignation d'échec. Le seul destinataire possible est l'écran.
+
+1. Provoquer un échec de préparation (le plus simple : renommer temporairement le
+   répertoire de partage attendu, ou retirer la recette rattachée).
+2. Resynchroniser, laisser la file traiter, **recharger la fiche**.
+
+- [ ] 60.4-8a — la fiche affiche « la dernière mise en place des droits n'a pas eu
+      lieu ». Elle ne reste PAS sur « réconciliation engagée ».
+- [ ] 60.4-8b — après correction et resynchronisation aboutie, ce message
+      **disparaît** — un échec qui resterait affiché serait le mensonge symétrique.
+
+### Ce qui n'est PAS observable sur cette instance (et pourquoi)
+
+À dire explicitement pour qu'une absence de constat ne se lise pas comme un
+succès :
+
+- **Le garde-fou d'échelle** (refus au-delà de 200 entrées nominatives sur un même
+  nœud) : aucun répertoire réel n'a une audience nominative de cette taille — la
+  voie normale est le groupe. Il est couvert par la suite automatisée, pas par ce
+  runbook.
+- **Le plafond de zone** : SE5 ne le pilote pas (story suspendue). Le backend
+  répond « non piloté par SE5 pour l'instant » et **aucune infrastructure de quota
+  n'est posée**. Rien à vérifier sur disque ; c'est une dette datée, pas une panne.
+- **Les arbres à plusieurs niveaux** : la chaîne recette→arbre n'est pas encore
+  branchée sur ce backend (story suivante). Tous les plans en production ont
+  aujourd'hui UN nœud, la racine.
+- **Le suivi de progression d'une réconciliation** : il n'existe pas, et c'est un
+  choix. L'écran dit « engagée » puis l'administrateur relit à la demande. Il n'y a
+  ni barre d'avancement ni actualisation automatique à chercher.
+- **La suite automatisée ne tourne pas sur la VM** (pas de `pdo_sqlite`) : elle est
+  exécutée sur la machine hôte. Ne pas tenter de la jouer ici.
+
+### Checklist rapide — Story 60.4
+
+- [ ] 60.4-P5 : **une file de traitement tourne** (sinon les écrans enfilent dans le vide)
+- [ ] 60.4-1a : `getfacl -R` avant/après → **diff VIDE**
+- [ ] 60.4-1b : second passage → `conforme`, **aucun `setfacl`**
+- [ ] 60.4-1c : dérive manuelle → détectée, puis ramenée à l'état d'origine
+- [ ] 60.4-2a/b/c : l'écran dit « engagée », la file exécute, « Vérifier » confirme
+- [ ] 60.4-2d : suppression → révocation immédiate, chemin UNC inatteignable
+- [ ] 60.4-3a/b/c : archive datée, contenu intact, archives antérieures non touchées
+- [ ] 60.4-4b : **`getent group pp_<base>` — noter la réponse** (première utilisation réelle)
+- [ ] 60.4-5a : plus aucune ligne de droits brute à l'écran
+- [ ] 60.4-6a/b : groupe non résolu → rien de posé, échec qui NOMME le groupe attendu
+- [ ] 60.4-7a : résolution de noms coupée → `getfacl` **inchangé** (le doute ne révoque pas)
+- [ ] 60.4-8a : geste enfilé en échec → l'écran le DIT, il ne reste pas sur « engagée »
+- [ ] Prérequis P1 à P4 vérifiés et inchangés
+- [ ] Suite automatisée verte sur l'hôte
 
 ---
 

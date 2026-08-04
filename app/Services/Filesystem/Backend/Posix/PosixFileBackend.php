@@ -1,0 +1,586 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Filesystem\Backend\Posix;
+
+use App\Enums\FileBackendName;
+use App\Enums\FileBackendOutcome;
+use App\Services\Filesystem\Acl\AclFormat;
+use App\Services\Filesystem\Backend\FileBackend;
+use App\Services\Filesystem\Backend\InspectionReport;
+use App\Services\Filesystem\Backend\NodeObservation;
+use App\Services\Filesystem\Backend\NodeReconciliation;
+use App\Services\Filesystem\Backend\ObservedGrant;
+use App\Services\Filesystem\Backend\ReconciliationReport;
+use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanNode;
+use App\Services\Filesystem\Plan\PlanSubject;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
+
+/**
+ * Story 60.4 — LE PREMIER BACKEND RÉEL : le serveur de fichiers historique,
+ * derrière la ligne de contrat.
+ *
+ * Rien ici n'est neuf. Le jeu canonique d'entrées, la séquence de pose, la
+ * séquence de révocation data-safe, la lecture de l'état effectif viennent tous
+ * du provisionnement 34.1 et n'ont pas été réécrits : la valeur de cette story
+ * est dans la RETENUE. Ce qui change, c'est qui les appelle et ce qu'ils
+ * rendent — un état PAR NŒUD, en vocabulaire de plan, au lieu d'un booléen.
+ *
+ * ---------------------------------------------------------------------------
+ * **LA CONVENTION DE PRÉCÉDENCE, TENUE ICI POUR LA PREMIÈRE FOIS.**
+ *
+ * Un nœud, une entrée de rapport, plusieurs gestes (créer, purger, poser N
+ * entrées, donner propriétaire et groupe). Le contrat ÉNONCE l'ordre
+ * d'effondrement sans l'imposer ; ce backend le CHOISIT et le dit :
+ *
+ *     `echec` > `non_exprimable` > `non_implemente` > `applique` > `conforme`
+ *
+ * Concrètement : un changement de propriétaire qui échoue rend le nœud en échec
+ * même si toutes ses entrées sont posées — un succès partiel ne masque jamais un
+ * échec ; un octroi que SE5 ne sait pas projeter rend le nœud en dette même si le
+ * dossier vient d'être créé — la dette prime sur « j'ai changé quelque chose ».
+ * `non_exprimable` n'est jamais produit ici : POSIX n'a aucune limite de MODÈLE
+ * dans cette story (l'absence de plafond est une dette de notre code, pas une
+ * limite du système de fichiers), et l'écrire serait une contre-vérité.
+ * `en_attente` non plus : ce backend est synchrone — c'est l'orchestrateur qui,
+ * au-dessus, dit « engagé, pas achevé » quand il enfile la réconciliation.
+ *
+ * ---------------------------------------------------------------------------
+ * **L'IDEMPOTENCE EST DEVENUE VRAIE, ET C'EST LE SEUL CHANGEMENT DE COMPORTEMENT.**
+ *
+ * La séquence historique purgeait puis reposait TOUJOURS, y compris sur un
+ * répertoire déjà conforme. Le contrat exige qu'un second passage sur un backend
+ * déjà conforme rende `conforme` SANS ÉCRITURE. On lit donc l'état effectif AVANT
+ * d'écrire, et on n'écrit que s'il diffère. L'état final est identique — c'est ce
+ * qui rend vraie la promesse « aucune entrée ne bouge sur une instance en
+ * place » — et le passage à vide n'émet plus rien.
+ *
+ * **La limite de lecture est celle d'hier, volontairement.** On lit l'état du
+ * répertoire de TÊTE, pas une descente récursive. C'est la limite assumée de
+ * l'audit de dérive depuis l'Epic 34, elle suffit à détecter une dérive de
+ * contrat, et l'élargir en passant aurait fait de cette story une story de
+ * performance sans mesure. Corollaire honnête : une dérive introduite en
+ * profondeur (sur un seul sous-dossier) n'est pas vue, et le nœud est déclaré
+ * conforme. La reconvergence forcée reste disponible.
+ *
+ * **Ce que « conforme » n'a PAS regardé** : le propriétaire et le groupe. Ils ne
+ * sont (re)posés que quand on écrit. Les lire coûterait un geste de plus à chaque
+ * passage pour un écart que rien n'a jamais produit en exploitation ; le jour où
+ * ce serait le cas, c'est une lecture à ajouter ici, pas une garantie à corriger
+ * ailleurs.
+ */
+final class PosixFileBackend implements FileBackend
+{
+    /**
+     * Verrou de passage, repris du provisionnement 34.1 — et pour la même raison :
+     * la mémoire cache par défaut ne verrouille pas entre processus, il faut le
+     * magasin fichier. Il protège désormais AUSSI deux traitements enfilés qui se
+     * croiseraient.
+     *
+     * La clé est indexée sur la RACINE DU PLAN, pas sur un identifiant de ligne :
+     * le plan ne porte pas d'identifiant, et la racine est unique par répertoire
+     * géré — la protection est au moins aussi forte.
+     */
+    private const LOCK_PREFIX = 'network-shares:provision:';
+
+    private const LOCK_SECONDS = 60;
+
+    /**
+     * Attente maximale de la RÉVOCATION avant de renoncer. Dimensionnée sur la
+     * pose : un passage ordinaire tient dans la seconde, un gros passage dans
+     * quelques secondes ({@see \App\Services\Filesystem\Backend\Posix\PosixAclCompiler}
+     * refuse au-delà de 200 entrées nominatives, mesurées à 0,32 s).
+     */
+    private const REVOKE_WAIT_SECONDS = 10;
+
+    /**
+     * Sujets d'entrée STRUCTURELS : ils appartiennent au contrat de base d'un
+     * répertoire géré, pas à son audience. Même frontière que l'inspection
+     * d'import — deux frontières qui divergeraient feraient de l'une un octroi
+     * observé et de l'autre pas.
+     */
+    private const STRUCTURAL_NAMED = ['domain\040admins', 'domain admins'];
+
+    public function __construct(
+        private readonly PosixPathGuard $guard,
+        private readonly PosixAclCompiler $compiler,
+        private readonly PosixSubjectProjector $projector,
+        private readonly PosixExecutor $executor,
+    ) {
+    }
+
+    public function name(): FileBackendName
+    {
+        return FileBackendName::Posix;
+    }
+
+    // =========================================================================
+    // provision
+    // =========================================================================
+
+    public function provision(FilePlan $plan): ReconciliationReport
+    {
+        $lock = Cache::store('file')->lock(self::LOCK_PREFIX . $plan->rootPath, self::LOCK_SECONDS);
+
+        if (! $lock->get()) {
+            return $this->everyNode($plan, static fn (string $path): NodeReconciliation => NodeReconciliation::echec(
+                $path,
+                'une autre réconciliation est en cours sur ce répertoire : ce passage n\'a rien écrit.',
+            ));
+        }
+
+        try {
+            $entries = [];
+            foreach ($plan->nodes as $node) {
+                $entries[] = $this->provisionNode($plan, $node);
+            }
+
+            return ReconciliationReport::covering($this->name(), $plan, $entries);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function provisionNode(FilePlan $plan, PlanNode $node): NodeReconciliation
+    {
+        $path = $this->guard->resolve($plan, $node->path);
+        if ($path === null) {
+            return NodeReconciliation::echec(
+                $node->path,
+                'le chemin de ce nœud est refusé par la garde du serveur de fichiers : rien n\'a été écrit.',
+            );
+        }
+
+        $compiled = $this->compiler->compile($node);
+
+        // Garde-fou d'échelle : le nœud entier est refusé, aucun geste n'est tenté.
+        if ($compiled->isBlocked()) {
+            return NodeReconciliation::echec($node->path, implode(' ', $compiled->refusalDetails()));
+        }
+
+        /** @var list<FileBackendOutcome> $outcomes */
+        $outcomes = $compiled->refusalOutcomes();
+        $details = $compiled->refusalDetails();
+
+        $created = false;
+        if (! $this->executor->directoryExists($path)) {
+            $made = $this->executor->makeDirectory($path);
+            if (! $made->ok) {
+                $outcomes[] = FileBackendOutcome::Echec;
+                $details[] = 'création du répertoire impossible : ' . $this->trim($made->error);
+
+                return $this->collapse($node->path, $outcomes, $details);
+            }
+            $created = true;
+        }
+
+        if (! $created && $this->isAlreadyConform($path, $compiled)) {
+            $outcomes[] = FileBackendOutcome::Conforme;
+
+            return $this->collapse($node->path, $outcomes, $details);
+        }
+
+        $wiped = $this->executor->wipeAcls($path);
+        if (! $wiped->ok) {
+            $outcomes[] = FileBackendOutcome::Echec;
+            $details[] = 'purge des droits étendus impossible : ' . $this->trim($wiped->error);
+
+            return $this->collapse($node->path, $outcomes, $details);
+        }
+
+        $failed = 0;
+        $firstError = '';
+        foreach ($compiled->acls as $acl) {
+            $applied = $this->executor->applyAcl($path, $acl);
+            if (! $applied->ok) {
+                $failed++;
+                if ($firstError === '') {
+                    $firstError = $this->trim($applied->error);
+                }
+            }
+        }
+        if ($failed > 0) {
+            $outcomes[] = FileBackendOutcome::Echec;
+            $details[] = sprintf('%d droit(s) n\'ont pas pu être posés : %s', $failed, $firstError);
+        }
+
+        $owner = $this->executor->changeOwner($path);
+        $group = $this->executor->changeGroup($path);
+        if (! $owner->ok || ! $group->ok) {
+            $outcomes[] = FileBackendOutcome::Echec;
+            $details[] = 'propriétaire ou groupe propriétaire non appliqué : '
+                . $this->trim($owner->ok ? $group->error : $owner->error);
+        }
+
+        $outcomes[] = FileBackendOutcome::Applique;
+
+        return $this->collapse($node->path, $outcomes, $details);
+    }
+
+    /**
+     * L'état effectif du répertoire de TÊTE est-il déjà celui que le plan décrit ?
+     *
+     * La comparaison est SÉMANTIQUE : la forme d'entrée abrégée et la forme de
+     * sortie canonique sont ramenées l'une à l'autre avant d'être comparées, sans
+     * quoi un état parfaitement conforme se lirait comme une dérive à chaque
+     * passage. Une lecture en échec vaut « pas conforme » — on préfère réécrire un
+     * état déjà bon que de déclarer conforme ce qu'on n'a pas pu lire.
+     */
+    private function isAlreadyConform(string $path, CompiledNodeAcl $compiled): bool
+    {
+        $read = $this->executor->readAcl($path);
+        if (! $read->ok) {
+            return false;
+        }
+
+        $effective = AclFormat::normalizeSet(preg_split('/\R/', $read->output) ?: []);
+
+        return $effective === AclFormat::normalizeSet($compiled->acls);
+    }
+
+    // =========================================================================
+    // deprovision
+    // =========================================================================
+
+    /**
+     * Révoque les droits et sort la structure de l'espace exposé — SANS DÉTRUIRE
+     * DE DONNÉES.
+     *
+     * C'est l'obligation que le contrat décrivait sans que personne ne la tienne :
+     * elle est tenue ici. La séquence est celle de l'Epic 34, à l'identique :
+     *  1. purge des droits étendus (retire tous les octrois) ;
+     *  2. resserrage du mode de base (sinon la purge laisse « les autres » entrer
+     *     par la permission de base) ;
+     *  3. DÉPLACEMENT vers une poubelle hors de l'espace exporté — jamais une
+     *     suppression. Un dossier « supprimé » côté base mais laissé sur le disque
+     *     avec ses droits reste atteignable par tous ceux qui y avaient accès :
+     *     la suppression de la ligne ne suffit pas.
+     *
+     * **Un seul geste pour tout l'arbre, et un état par nœud quand même.** Les
+     * trois commandes sont récursives et le déplacement emporte la racine avec
+     * tout son contenu : les nœuds descendants quittent l'espace exposé par le
+     * même geste. Chacun le DIT, plutôt que d'être omis du rapport — un rapport
+     * amputé se lit « tout va bien » sur le nœud dont personne n'a parlé.
+     *
+     * Idempotent : une racine déjà absente rend `conforme` partout.
+     */
+    public function deprovision(FilePlan $plan): ReconciliationReport
+    {
+        $lock = Cache::store('file')->lock(self::LOCK_PREFIX . $plan->rootPath, self::LOCK_SECONDS);
+
+        // La révocation ATTEND son tour, là où la mise en place renonce.
+        //
+        // L'asymétrie est délibérée. Renoncer à une mise en place est sans
+        // conséquence : l'écart reste, un passage ultérieur le résorbera. Renoncer
+        // à une révocation, en revanche, laisse un répertoire pleinement accordé
+        // pendant que son appelant s'apprête à en supprimer la ligne — plus aucun
+        // écran, plus aucun contrôle automatique ne le verrait ensuite. Depuis que
+        // la mise en place est enfilée, la fenêtre où un passage est « en cours »
+        // ne se limite plus à la durée d'une requête : elle mérite qu'on l'attende.
+        try {
+            $lock->block(self::REVOKE_WAIT_SECONDS);
+        } catch (LockTimeoutException) {
+            return $this->everyNode($plan, static fn (string $path): NodeReconciliation => NodeReconciliation::echec(
+                $path,
+                'une autre réconciliation est en cours sur ce répertoire et ne s\'est pas achevée à temps : '
+                . 'ce passage n\'a rien révoqué.',
+            ));
+        }
+
+        try {
+            $root = $this->guard->planRoot($plan);
+            if ($root === null) {
+                return $this->everyNode($plan, static fn (string $p): NodeReconciliation => NodeReconciliation::echec(
+                    $p,
+                    'la racine de ce plan est refusée par la garde du serveur de fichiers : rien n\'a été révoqué.',
+                ));
+            }
+
+            if (! $this->executor->directoryExists($root)) {
+                return $this->everyNode($plan, static fn (string $p): NodeReconciliation => NodeReconciliation::conforme(
+                    $p,
+                    'déjà hors de l\'espace exposé : rien à révoquer.',
+                ));
+            }
+
+            $failure = $this->revoke($plan, $root);
+            if ($failure !== null) {
+                return $this->everyNode($plan, static fn (string $p): NodeReconciliation => NodeReconciliation::echec($p, $failure));
+            }
+
+            return $this->everyNode($plan, static fn (string $p): NodeReconciliation => NodeReconciliation::applique(
+                $p,
+                $p === PlanNode::ROOT_PATH
+                    ? 'droits révoqués, contenu archivé hors de l\'espace exposé (aucune donnée détruite).'
+                    : 'sorti de l\'espace exposé avec la racine du plan (aucune donnée détruite).',
+            ));
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** `null` si la séquence a réussi, sinon la cause. */
+    private function revoke(FilePlan $plan, string $root): ?string
+    {
+        $wiped = $this->executor->wipeAcls($root);
+        if (! $wiped->ok) {
+            return 'purge des droits étendus impossible : ' . $this->trim($wiped->error);
+        }
+
+        $restricted = $this->executor->restrictMode($root);
+        if (! $restricted->ok) {
+            return 'resserrage du mode de base impossible : ' . $this->trim($restricted->error);
+        }
+
+        $target = $this->guard->trashTarget($plan, now()->format('Ymd-His'));
+        if ($target === null) {
+            return 'la cible d\'archivage est refusée par la garde du serveur de fichiers.';
+        }
+
+        $trash = $this->executor->makeTrashRoot($this->guard->trashRoot());
+        if (! $trash->ok) {
+            return 'création de l\'espace d\'archivage impossible : ' . $this->trim($trash->error);
+        }
+
+        $moved = $this->executor->move($root, $target);
+        if (! $moved->ok) {
+            return 'archivage impossible : ' . $this->trim($moved->error);
+        }
+
+        return null;
+    }
+
+    // =========================================================================
+    // inspect
+    // =========================================================================
+
+    /**
+     * RELIT l'état, un nœud après l'autre, racine comprise, et le REPROJETTE en
+     * vocabulaire de plan.
+     *
+     * **Aucun nom système ne remonte.** Un nom d'ouverture de session relu devient
+     * l'identité interne du compte ; un nom de groupe système devient l'identité
+     * interne du groupe, retrouvée par projection EN AVANT (on projette les
+     * candidats et on indexe), jamais par découpage du nom relu.
+     *
+     * **Ce qui ne se reprojette pas n'est ni inventé ni tu.** Un compte supprimé,
+     * un groupe étranger : l'entrée est COMPTÉE dans le détail de l'observation,
+     * en nombre et sans nom système, et la comparaison la traitera comme un écart.
+     *
+     * **Une entrée VIDE est une observation, pas une absence.** Une entrée présente
+     * sans aucun droit se relit en accès « aucun » — c'est la forme matérialisée
+     * d'un octroi suspendu, et la confondre avec l'absence d'entrée referait au
+     * niveau du vocabulaire l'erreur que le modèle a démontée.
+     *
+     * **Le plafond n'est pas regardé** (`plafondObserve = false` partout) : SE5 ne
+     * pilote pas les plafonds de zone, la story qui le ferait est suspendue. Dette
+     * datée et visible, pas limite de modèle.
+     */
+    public function inspect(FilePlan $plan): InspectionReport
+    {
+        $index = $this->projector->reverseIndex($plan);
+
+        $observations = [];
+        foreach ($plan->nodes as $node) {
+            $observations[] = $this->inspectNode($plan, $node, $index);
+        }
+
+        return InspectionReport::covering($this->name(), $plan, $observations);
+    }
+
+    /**
+     * @param  array{groups: array<string, PlanSubject>, logins: array<string, PlanSubject>}  $index
+     */
+    private function inspectNode(FilePlan $plan, PlanNode $node, array $index): NodeObservation
+    {
+        $path = $this->guard->resolve($plan, $node->path);
+        if ($path === null) {
+            return NodeObservation::echec(
+                $node->path,
+                'le chemin de ce nœud est refusé par la garde du serveur de fichiers : rien n\'a été relu.',
+            );
+        }
+
+        if (! $this->executor->directoryExists($path)) {
+            return NodeObservation::absent($node->path);
+        }
+
+        $read = $this->executor->readAcl($path);
+        if (! $read->ok) {
+            return NodeObservation::echec(
+                $node->path,
+                'relecture impossible : ' . $this->trim($read->error),
+            );
+        }
+
+        $grants = [];
+        $unmapped = 0;
+
+        foreach (AclFormat::parseEntries($read->output) as $entry) {
+            // Les miroirs d'héritage ne sont pas des octrois : ils décrivent ce
+            // que le contenu à venir héritera, pas ce que quelqu'un a aujourd'hui.
+            if ($entry['default']) {
+                continue;
+            }
+
+            $qualifier = $entry['qualifier'];
+            $type = $entry['type'];
+
+            // Entrées de base et masque : le contrat structurel du répertoire.
+            if ($qualifier === null || $type === 'other' || $type === 'mask') {
+                continue;
+            }
+            if ($type === 'group' && in_array(strtolower($qualifier), self::STRUCTURAL_NAMED, true)) {
+                continue;
+            }
+
+            $access = $this->accessOf($entry['mode']);
+            if ($access === null) {
+                $unmapped++;
+
+                continue;
+            }
+
+            $subject = $type === 'user'
+                ? $this->projector->subjectForLogin(AclFormat::unescape($qualifier), $index['logins'])
+                : ($index['groups'][strtolower(AclFormat::unescape($qualifier))] ?? null);
+
+            if (! $subject instanceof PlanSubject) {
+                $unmapped++;
+
+                continue;
+            }
+
+            $grants[] = new ObservedGrant($subject, $access);
+        }
+
+        return NodeObservation::observed(
+            $node->path,
+            $grants,
+            null,
+            false,
+            $unmapped > 0
+                ? sprintf(
+                    '%d entrée(s) relue(s) ne correspondent à aucune identité connue de SE5 : elles sont '
+                    . 'comptées comme écart, pas ignorées.',
+                    $unmapped,
+                )
+                : null,
+        );
+    }
+
+    /**
+     * Niveau d'accès de plan d'un mode relu.
+     *
+     * Un mode entièrement vide se dit « aucun » — c'est un octroi suspendu
+     * matérialisé, pas une absence. Un mode qui ne se réduit ni à `ro`, ni à `rw`,
+     * ni au vide (l'exécution seule, par exemple) n'est PAS traduit : il serait
+     * faux de le ramener à l'un des trois, et le compter en écart est la seule
+     * réponse honnête.
+     */
+    private function accessOf(string $mode): ?string
+    {
+        $normalized = AclFormat::normalizeMode($mode);
+
+        if ($normalized === '---') {
+            return ObservedGrant::ACCESS_NONE;
+        }
+
+        return AclFormat::modeToAccess($normalized);
+    }
+
+    // =========================================================================
+    // quota
+    // =========================================================================
+
+    /**
+     * DÉCLINE, honnêtement, et n'ouvre aucune infrastructure.
+     *
+     * Le système de fichiers SAIT plafonner une arborescence — le mécanisme de
+     * quota de projet existe, il a été monté et vérifié en ouverture d'epic. S'il
+     * ne plafonne rien, c'est que SE5 ne le pilote pas : la story qui le
+     * brancherait est SUSPENDUE. C'est donc une dette de notre code, temporaire, et
+     * l'affichage doit la GRISER — pas une limite du modèle, qui serait permanente
+     * et se masquerait. Écrire « non supporté » ici mettrait une contre-vérité
+     * dans le code.
+     *
+     * Un plan sans plafond donne un rapport VIDE et parfaitement valide.
+     */
+    public function quota(FilePlan $plan): ReconciliationReport
+    {
+        return ReconciliationReport::coveringCapped(
+            $this->name(),
+            $plan,
+            array_map(
+                static fn (string $path): NodeReconciliation => NodeReconciliation::nonImplemente(
+                    $path,
+                    'le mécanisme de plafond de zone existe côté système de fichiers ; SE5 ne le pilote pas — '
+                    . 'la story qui le brancherait est suspendue.',
+                ),
+                $plan->cappedNodePaths(),
+            ),
+        );
+    }
+
+    // =========================================================================
+    // Effondrement et utilitaires
+    // =========================================================================
+
+    /**
+     * Effondre les états des gestes d'un nœud en UN état, selon la convention de
+     * précédence énoncée au docblock de classe.
+     *
+     * @param  list<FileBackendOutcome>  $outcomes
+     * @param  list<string>  $details
+     */
+    private function collapse(string $path, array $outcomes, array $details): NodeReconciliation
+    {
+        $order = [
+            FileBackendOutcome::Echec,
+            FileBackendOutcome::NonExprimable,
+            FileBackendOutcome::NonImplemente,
+            FileBackendOutcome::Applique,
+            FileBackendOutcome::Conforme,
+        ];
+
+        $winner = FileBackendOutcome::Conforme;
+        foreach ($order as $candidate) {
+            if (in_array($candidate, $outcomes, true)) {
+                $winner = $candidate;
+                break;
+            }
+        }
+
+        $detail = implode(' ', array_filter($details, static fn (string $d): bool => trim($d) !== ''));
+
+        if ($winner->requiresDetail() && trim($detail) === '') {
+            $detail = 'cause non détaillée par le serveur de fichiers.';
+        }
+
+        return new NodeReconciliation($path, $winner, $detail === '' ? null : $detail);
+    }
+
+    /**
+     * @param  callable(string): NodeReconciliation  $factory
+     */
+    private function everyNode(FilePlan $plan, callable $factory): ReconciliationReport
+    {
+        return ReconciliationReport::covering(
+            $this->name(),
+            $plan,
+            array_map($factory, $plan->nodePaths()),
+        );
+    }
+
+    /**
+     * Sortie système NEUTRALISÉE avant d'entrer dans un rapport — la phrase est
+     * gardée, le vocabulaire du backend est jeté ({@see PosixDiagnostic}).
+     */
+    private function trim(string $error): string
+    {
+        return PosixDiagnostic::neutralize($error);
+    }
+}

@@ -233,12 +233,14 @@ class SharePlanPreviewTest extends TestCase
     /**
      * Le bloc d'aperçu, isolé du reste de la page.
      *
-     * L'isolement est VOLONTAIRE et il est honnête de le dire : la page porte déjà,
-     * depuis l'Epic 34, un encart de conformité qui affiche des entrées de liste
-     * d'accès BRUTES. Cet encart est hors du périmètre de cette story et son
-     * assainissement appartient à la descente de l'exécution sous la ligne (60.4).
-     * Ce que cette story livre — l'aperçu — doit être neutre, et c'est ce qu'on
-     * mesure ; prétendre mesurer toute la page serait mesurer le travail d'autrui.
+     * L'isolement était VOLONTAIRE, et sa raison a DISPARU : la page portait,
+     * depuis l'Epic 34, un encart de conformité qui affichait des entrées de liste
+     * d'accès brutes, hors du périmètre de la story 60.3. La story 60.4 l'a
+     * assaini, et il a désormais sa propre garde de neutralité, bornée sur son
+     * propre marqueur ({@see \Tests\Feature\Livewire\Shares\ShareDriftPanelTest}).
+     * On garde deux zones bornées plutôt qu'une mesure de page entière : chaque
+     * test dit alors exactement ce qu'il couvre, et un ajout de bloc ne le rend pas
+     * silencieusement plus faible.
      */
     private function previewSection(string $html): string
     {

@@ -26,22 +26,52 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * fois au-dessus de la ligne, en 60.4. Faire porter un rôle à une observation
  * obligerait chaque backend à le deviner, et deux backends le devineraient
  * différemment.
+ *
+ * ---------------------------------------------------------------------------
+ * **Story 60.4 — UN TROISIÈME ACCÈS, RÉSERVÉ AUX OBSERVATIONS : « aucun ».**
+ *
+ * Une relecture peut trouver un octroi PRÉSENT et VIDE. C'est la forme
+ * matérialisée d'une suspension : l'octroi existe, il ne donne rien, le dossier et
+ * les données restent. Tant que ce vocabulaire manquait, l'état relu ne pouvait
+ * pas distinguer « octroi vide » de « pas d'octroi » — et la comparaison
+ * désiré/observé aurait donc lu une suspension appliquée comme une matérialisation
+ * manquante, ou pire, une suspension NON appliquée comme conforme. C'était le legs
+ * le plus subtil de la story précédente ; il se solde ici.
+ *
+ * **{@see PlanGrant} reste INCHANGÉ, et c'est le point.** Le plan dit une
+ * INTENTION : un octroi y est actif ou suspendu, jamais « à zéro droit ». Le
+ * disque, lui, dit une FORME. Ajouter « aucun » au vocabulaire du désir referait au
+ * niveau des mots l'erreur que le modèle a démontée au niveau des concepts :
+ * suspension, absence et interdiction sont trois choses différentes.
  */
 final class ObservedGrant
 {
+    /**
+     * Entrée PRÉSENTE, aucun droit — vocabulaire neutre de l'observation, jamais
+     * du plan. Ce n'est pas la notation système d'un mode vide : c'est un mot.
+     */
+    public const ACCESS_NONE = 'none';
+
+    /**
+     * Vocabulaire d'accès d'une OBSERVATION : celui du plan, plus « aucun ».
+     *
+     * @var list<string>
+     */
+    public const ACCESSES = [PlanGrant::ACCESS_RO, PlanGrant::ACCESS_RW, self::ACCESS_NONE];
+
     public readonly PlanSubject $subject;
 
-    /** `ro` ou `rw` — le vocabulaire d'accès du plan, sans traduction. */
+    /** `ro`, `rw` ou `none` — le vocabulaire d'accès observé. */
     public readonly string $access;
 
     public function __construct(PlanSubject $subject, string $access)
     {
-        if (! in_array($access, PlanGrant::ACCESSES, true)) {
+        if (! in_array($access, self::ACCESSES, true)) {
             throw InvalidBackendReportException::make(sprintf(
                 'accès observé inconnu « %s » (attendu : %s) — une observation se dit dans le vocabulaire '
                 . 'du plan, pas dans celui du backend.',
                 $access,
-                implode('|', PlanGrant::ACCESSES),
+                implode('|', self::ACCESSES),
             ));
         }
 

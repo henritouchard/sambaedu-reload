@@ -4,86 +4,103 @@ declare(strict_types=1);
 
 namespace App\Services\Filesystem;
 
+use App\Enums\FileBackendOutcome;
+use App\Jobs\ReconcileNetworkShareJob;
 use App\Models\NetworkShare;
-use App\Models\NetworkShareAssignable;
 use App\Models\QuotaAuditLog;
-use App\Services\Filesystem\Acl\AclFormat;
-use App\Models\User;
-use App\Models\UserGroup;
+use App\Models\QuotaRule;
+use App\Services\Filesystem\Backend\FileBackendRegistry;
+use App\Services\Filesystem\Backend\InspectionReport;
+use App\Services\Filesystem\Backend\NodeReconciliation;
+use App\Services\Filesystem\Backend\ReconciliationReport;
+use App\Services\Filesystem\Plan\FilePlan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
+use Throwable;
 
 /**
- * Story 34.1 — provisioning FS/ACL GÉNÉRIQUE des répertoires réseau gérés.
+ * Story 34.1 → 60.4 — l'ORCHESTRATEUR des répertoires réseau gérés, AU-DESSUS de
+ * la ligne de contrat.
  *
- * Service distinct de {@see ShareService} (spécifique aux classes) : il crée le
- * répertoire d'un {@see NetworkShare} sous une racine DÉDIÉE
- * `/var/sambaedu/Partages/<directory_name>` et applique les ACLs POSIX dérivées
- * des assignations `User`/`UserGroup` (`access` ro→`rx`, rw→`rwx`). Idempotent,
- * fail-soft, audité (`quota_audit_logs`, `target_type='share'`).
+ * **Ce service ne sait plus rien du serveur de fichiers.** Il ne dérive aucun nom
+ * de groupe système, ne construit aucun chemin absolu, n'exécute aucune commande.
+ * Son travail tient en quatre gestes : valider le nom de répertoire (une règle de
+ * NOMMAGE, neutre), projeter le répertoire en PLAN, résoudre l'autorité d'écriture
+ * PAR LA COLONNE, et déléguer. Tout le reste est descendu dans
+ * {@see \App\Services\Filesystem\Backend\Posix\PosixFileBackend} — c'est la coupe
+ * de l'epic, et le piège du chantier était précisément de déplacer la dérivation
+ * des permissions en laissant ses appelants au-dessus.
  *
- * **Pourquoi self-contained (zéro réutilisation de `AclService::setAcls`).**
- * {@see AclService::validatePath()} (et donc `setAcls`/`getFacl`) est VERROUILLÉ
- * sur `classesRoot()` (`/var/sambaedu/Classes`) : il REFUSE tout chemin sous
- * `Partages`. Plutôt que de détendre cette garde partagée (risque sur la
- * baseline 5.2 et garde-fou « ZÉRO touche AclService »), ce service porte sa
- * PROPRE garde de path calquée 1:1 ({@see validateSharePath()}) — triple garde
- * préservée (regex anti-traversal + `escapeshellarg` + whitelist sudo) — et ses
- * propres shell-outs `setfacl`/`mkdir`/`chown`/`chgrp` (encapsulés `Process`,
- * `Process::fake()` en tests). Les helpers de NOMMAGE de groupe Unix
- * (`aclGroupLocalPart`/`establishmentSuffix`) sont des méthodes PUBLIQUES de
- * `ShareService`, réutilisées en LECTURE (aucune modification de ShareService).
+ * Une règle d'architecture nommée le VÉRIFIE : aucun marqueur du serveur de
+ * fichiers (commande, mode de permission, entrée de liste d'accès, chemin absolu,
+ * nom d'exécution) n'a le droit d'apparaître dans ce fichier.
  *
- * **Modèle d'accès à deux axes (décision Henri 2026-06-29).** L'ACL POSIX dérive
- * des seules assignations `User`/`UserGroup`. Une assignation `WorkstationGroup`
- * est MONTAGE-SEUL — elle ne contribue AUCUNE ligne d'ACL (invariant : POSIX ne
- * sait pas exprimer « les utilisateurs de la machine X » ; la visibilité de la
- * lettre par parc est gérée par {@see \App\Services\Agent\Providers\DrivesStateProvider}
- * via la maille WG, pas par le FS).
+ * ---------------------------------------------------------------------------
+ * **DEUX RÉGIMES D'EXÉCUTION, ET UNE SEULE RAISON DE LES SÉPARER.**
+ *
+ * La pose de droits est QUADRATIQUE en nombre d'entrées nominatives (mesuré :
+ * 0,32 s à 200 entrées, 7,16 s à 1 000, 63 s à 3 000). La faire dans le cycle
+ * d'une requête d'écran, c'est faire attendre l'administrateur sans rien lui
+ * apprendre. Les écrans ENFILENT donc ({@see queueReconciliation()}) et affichent
+ * « engagé » ; les commandes et le traitement enfilé lui-même exécutent EN DIRECT
+ * ({@see provision()}) — ils sont déjà hors requête, et leur code retour doit
+ * garder son sens.
+ *
+ * **Le traitement enfilé transporte des IDENTIFIANTS, jamais un plan ni un
+ * rapport.** La source autoritaire est la base : un plan sérialisé dans une file
+ * serait un instantané périmé au moment de son exécution, et une assignation
+ * ajoutée entre-temps serait ÉCRASÉE par le rejeu. La projection se refait dans le
+ * traitement. Quant aux rapports, ils REFUSENT la sérialisation native (garde de
+ * la story 60.3) : le dernier passage voyage en tableau, dans le cache.
+ *
+ * ---------------------------------------------------------------------------
+ * **L'AUDIT RESTE ICI, ET C'EST DÉLIBÉRÉ.** Le contrat de backend exclut
+ * explicitement l'auteur de l'action : il dit l'état désiré et ce qu'il en est
+ * advenu, pas la traçabilité. Or la ligne d'audit est indexée sur le RÉPERTOIRE
+ * (une entité de base que le backend ne reçoit pas) et sur l'AUTEUR (que le
+ * contrat refuse de porter). L'écrire sous la ligne aurait donc perdu en silence
+ * l'auteur passé par les commandes — un signal qui n'atteint plus son
+ * destinataire, exactement le défaut que cet epic traque. Elle est donc écrite
+ * ici, où les deux informations existent.
+ *
+ * **Aucun booléen ne vient d'un rapport.** Les adaptations `bool` conservées pour
+ * les appelants historiques sont CALCULÉES depuis les listes du rapport.
  */
 class NetworkShareService
 {
     /**
-     * Racine canonique des répertoires réseau. Overridable en tests (iso
-     * `AclService::$classesRoot`). `config('filesystem.shares_root')` la
-     * surcharge si défini.
-     */
-    public static string $sharesRoot = '/var/sambaedu/Partages';
-
-    /**
-     * Profondeur maximale autorisée sous {@see sharesRoot()} : `<directory_name>`
-     * = 1 niveau ; on prévoit 2 pour de futurs sous-dossiers de template
-     * (Story 34.3). Au-delà : refus.
-     */
-    private const MAX_DEPTH = 2;
-
-    public function __construct(private readonly ShareService $shareService)
-    {
-    }
-
-    public function sharesRoot(): string
-    {
-        return rtrim((string) config('filesystem.shares_root', static::$sharesRoot), '/');
-    }
-
-    // =========================================================================
-    // Path / nommage
-    // =========================================================================
-
-    /**
-     * Motif d'un `directory_name` valide (segment FS sûr) : alphanum + `._-`,
-     * 1er char ≠ `.`. Source de vérité UNIQUE du format — consommée à la fois par
-     * {@see isValidDirectoryName()} (garde de provisioning) ET par la règle
-     * `regex:` du formulaire de création/édition 34.2 (finding 34.1 M4 : le format
-     * n'était validé qu'au provisioning, un nom malformé pouvait être persisté).
+     * Motif d'un `directory_name` valide (segment de chemin sûr) : alphanumérique
+     * + `._-`, premier caractère différent de `.`. Source de vérité UNIQUE du
+     * format — consommée par la garde de provisionnement ET par les règles de
+     * validation des formulaires de création/édition.
+     *
+     * C'est une règle de NOMMAGE, pas une règle de système de fichiers : elle
+     * reste donc au-dessus de la ligne, et la garde de chemin absolu, elle, est
+     * descendue.
      */
     public const DIRECTORY_NAME_PATTERN = '/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/';
 
+    /** Préfixe de cache du DERNIER rapport de réconciliation, par répertoire. */
+    private const REPORT_CACHE_PREFIX = 'network-share-report:';
+
+    private const FAILURE_CACHE_PREFIX = 'network-share-failure:';
+
+    private const REPORT_CACHE_MINUTES = 60 * 24 * 7;
+
+    public function __construct(
+        private readonly SharePlanProjector $projector,
+        private readonly FileBackendRegistry $registry,
+        private readonly PlanStateComparator $comparator,
+    ) {
+    }
+
+    // =========================================================================
+    // Nommage
+    // =========================================================================
+
     /**
-     * Valide un `directory_name` (segment FS sûr, unique) : alphanum + `._-`,
-     * 1er char ≠ `.` (calqué `ShareService::bareClassName`). Aucun `/`, espace,
-     * métacaractère.
+     * Valide un `directory_name` : alphanumérique + `._-`, premier caractère
+     * différent de `.`. Aucune espace, aucun métacaractère.
      */
     public function isValidDirectoryName(?string $name): bool
     {
@@ -92,624 +109,304 @@ class NetworkShareService
             && preg_match(self::DIRECTORY_NAME_PATTERN, $name) === 1;
     }
 
-    /**
-     * Garde de path durcie, calquée 1:1 sur {@see AclService::validatePath()}
-     * mais PARAMÉTRÉE sur {@see sharesRoot()} et {@see MAX_DEPTH}. Rejette :
-     * path non absolu / hors racine / caractères hors `[A-Za-z0-9_./-]` /
-     * segment `..`|`.` / profondeur > MAX_DEPTH. Pas de `realpath()` (le path
-     * peut ne pas exister à la création).
-     */
-    public function validateSharePath(string $path): bool
-    {
-        $root = $this->sharesRoot();
-
-        if ($path === '' || $path[0] !== '/') {
-            return false;
-        }
-        if (! str_starts_with($path, $root . '/') && $path !== $root) {
-            return false;
-        }
-        if (! preg_match('#^/[A-Za-z0-9_./-]+$#', $path)) {
-            return false;
-        }
-
-        $segments = $path === $root
-            ? []
-            : explode('/', trim(substr($path, strlen($root) + 1), '/'));
-        foreach ($segments as $seg) {
-            if ($seg === '' || $seg === '..' || $seg === '.') {
-                return false;
-            }
-        }
-        if (count($segments) > self::MAX_DEPTH) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Path absolu du répertoire d'un share, ou `null` si `directory_name`
-     * invalide ou path refusé par la garde.
-     */
-    public function resolveSharePath(NetworkShare $share): ?string
-    {
-        if (! $this->isValidDirectoryName($share->directory_name)) {
-            return null;
-        }
-        $path = $this->sharesRoot() . '/' . $share->directory_name;
-
-        return $this->validateSharePath($path) ? $path : null;
-    }
-
     // =========================================================================
-    // ACL builder
+    // Réconciliation
     // =========================================================================
 
     /**
-     * Set d'ACLs POSIX d'un répertoire réseau : set canonique de base + une
-     * ligne par assignation `User`/`UserGroup` (rx si `access=ro`, rwx si
-     * `access=rw`), avec défauts miroir pour l'héritage (calqué
-     * `ShareService::buildEchangeAcls`). Les assignations `WorkstationGroup`
-     * sont IGNORÉES (montage-seul — aucune ACL).
+     * Réconciliation SYNCHRONE — commandes hors requête et traitement enfilé.
      *
-     * @return list<string>
-     */
-    public function buildAcls(NetworkShare $share): array
-    {
-        // Set canonique de base (pas de groupe `equipe_` générique — propre aux
-        // classes). `domain admins` garde la main, `other` n'a rien.
-        $acls = [
-            'user::rwx',
-            'group::---',
-            'group:domain\\040admins:rwx',
-            'mask::rwx',
-            'other::---',
-            'default:user::rwx',
-            'default:group::---',
-            'default:group:domain\\040admins:rwx',
-            'default:mask::rwx',
-            'default:other::---',
-        ];
-
-        foreach ($share->assignments as $assignment) {
-            $mode = $assignment->isWritable() ? 'rwx' : 'rx';
-
-            if ($assignment->assignable_type === User::class) {
-                $login = $this->loginFor($assignment);
-                if ($login === null) {
-                    Log::warning('NetworkShareService: assignation user ignorée (login invalide)', [
-                        'share_id' => $share->id,
-                        'assignable_id' => $assignment->assignable_id,
-                    ]);
-                    continue;
-                }
-                $acls[] = "user:{$login}:{$mode}";
-                $acls[] = "default:user:{$login}:{$mode}";
-                continue;
-            }
-
-            if ($assignment->assignable_type === UserGroup::class) {
-                $unix = $this->unixGroupFor($assignment);
-                if ($unix === null) {
-                    Log::warning('NetworkShareService: assignation groupe ignorée (nom de groupe Unix indérivable)', [
-                        'share_id' => $share->id,
-                        'assignable_id' => $assignment->assignable_id,
-                    ]);
-                    continue;
-                }
-                $acls[] = "group:{$unix}:{$mode}";
-                $acls[] = "default:group:{$unix}:{$mode}";
-                continue;
-            }
-
-            // WorkstationGroup (et tout autre type) : MONTAGE-SEUL — aucune ACL.
-        }
-
-        return $acls;
-    }
-
-    /**
-     * Login POSIX d'une assignation `User` (validé `^[a-zA-Z0-9._-]+$`, iso
-     * `ShareService::createEleveDir`). `null` si introuvable/invalide.
-     */
-    private function loginFor(NetworkShareAssignable $assignment): ?string
-    {
-        $user = $assignment->relationLoaded('assignable')
-            ? $assignment->assignable
-            : User::find($assignment->assignable_id);
-
-        $login = $user instanceof User ? (string) $user->login : '';
-
-        return ($login !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $login) === 1)
-            ? $login
-            : null;
-    }
-
-    /**
-     * Nom de groupe Unix d'une assignation `UserGroup` — MAPPING RETENU
-     * (documenté) :
-     *  - `type === 'classe'` → `classe_<localPart>` (groupe d'appartenance des
-     *    ÉLÈVES de la classe ; localPart = nom court + suffixe établissement
-     *    fédéré, via `ShareService::aclGroupLocalPart`, mémoire
-     *    acl_equipe_group_missing_etab_suffix) ;
-     *  - `type === 'equipe'` → `equipe_<localPart>` (équipe pédagogique /
-     *    enseignants) ;
-     *  - sinon → `<localPart>` : le groupe générique (admin, custom) dont le
-     *    samAccountName Unix == son propre nom court (« à défaut le name du
-     *    groupe »).
-     * Les préfixes `classe_`/`equipe_` déjà présents dans localPart sont
-     * dé-préfixés avant re-préfixage (anti double-préfixe). `null` si nom
-     * indérivable.
-     */
-    private function unixGroupFor(NetworkShareAssignable $assignment): ?string
-    {
-        $group = $assignment->relationLoaded('assignable')
-            ? $assignment->assignable
-            : UserGroup::find($assignment->assignable_id);
-
-        if (! $group instanceof UserGroup) {
-            return null;
-        }
-
-        return $this->unixGroupForGroup($group);
-    }
-
-    /**
-     * Projette un {@see UserGroup} sur son nom de groupe Unix POSIX (sujet
-     * d'ACL `group:<unix>`). Source de vérité UNIQUE du mapping forward,
-     * réutilisée en LECTURE par {@see AclInspectionService} pour construire
-     * l'index INVERSE (nom disque → UserGroup) par forward-projection — approche
-     * robuste qui évite tout strip fragile du suffixe établissement. Cf.
-     * {@see unixGroupFor()} pour la sémantique du mapping (classe_/equipe_/nu).
-     */
-    public function unixGroupForGroup(UserGroup $group): ?string
-    {
-        $local = $this->shareService->aclGroupLocalPart($group);
-        if ($local === null) {
-            // Nom non conforme à la regex de durcissement : repli sur le name nu
-            // lowercased s'il est sûr, sinon abandon (fail-soft). On N'AJOUTE PAS
-            // le préfixe `classe_`/`equipe_` ici : ce chemin n'est atteint que
-            // pour un nom que `aclGroupLocalPart` a déjà rejeté ; le regex
-            // ci-dessous ne laisse passer que des noms déjà sûrs (espaces/accents
-            // rejetés → `null`). Si le groupe Unix nu n'existe pas, `setfacl`
-            // échouera et sera tracé (fail-closed, jamais de sur-octroi silencieux).
-            $fallback = strtolower((string) $group->name);
-
-            return preg_match('/^[a-z0-9._-]+$/', $fallback) === 1 ? $fallback : null;
-        }
-
-        $bare = $this->stripAclPrefix($local);
-
-        return match ($group->type) {
-            'classe' => 'classe_' . $bare,
-            'equipe' => 'equipe_' . $bare,
-            default => $local,
-        };
-    }
-
-    /**
-     * Retire un préfixe `classe_`/`equipe_` de tête (le localPart est déjà
-     * lowercased par `aclGroupLocalPart`).
-     */
-    private function stripAclPrefix(string $local): string
-    {
-        foreach (['classe_', 'equipe_'] as $prefix) {
-            if (str_starts_with($local, $prefix)) {
-                return substr($local, strlen($prefix));
-            }
-        }
-
-        return $local;
-    }
-
-    // =========================================================================
-    // Opérations publiques
-    // =========================================================================
-
-    /**
-     * Provisionne le répertoire d'un share : mkdir -p idempotent + ACLs POSIX
-     * (wipe `setfacl -b` puis batch) + ownership (`chown www-admin`,
-     * `chgrp 'domain admins'`) + audit. Fail-soft (retour `bool`, `Log::error`
-     * préfixé, aucune exception).
+     * Rend `true` si TOUS les nœuds sont dans l'état voulu à l'issue du passage.
+     * Le booléen est calculé depuis les listes du rapport : il n'en est jamais un
+     * champ.
      */
     public function provision(NetworkShare $share, ?string $performedBy = null): bool
     {
-        $performedBy = $performedBy ?? (string) (auth()->user()?->getAuthIdentifier() ?? 'system');
+        $report = $this->reconcile($share, $performedBy);
 
-        $path = $this->resolveSharePath($share);
-        if ($path === null) {
-            Log::error('NetworkShareService: provision refusé (directory_name invalide)', [
-                'share_id' => $share->id,
-                'directory_name' => $share->directory_name,
-            ]);
-
-            return false;
-        }
-
-        // `Cache::store('file')` : APCu ne supporte pas les locks cross-process
-        // (mémoire apcu_cache_no_lock).
-        $lock = Cache::store('file')->lock('network-shares:provision:' . $share->id, 60);
-        if (! $lock->get()) {
-            Log::warning('NetworkShareService: provision verrouillé (autre opération en cours)', [
-                'share_id' => $share->id,
-                'directory_name' => $share->directory_name,
-            ]);
-
-            return false;
-        }
-
-        try {
-            // Charge les assignations ET leur cible polymorphe une fois (Laravel
-            // groupe les MorphTo par type → ~2 requêtes au lieu d'un User::find /
-            // UserGroup::find par assignation). `loginFor`/`unixGroupFor`
-            // emprunteront alors le chemin `relationLoaded('assignable')`.
-            $share->loadMissing(['assignments', 'assignments.assignable']);
-
-            $allOk = true;
-
-            // mkdir -p crée aussi la racine `Partages` (idempotent — [PROD]).
-            if (! $this->ensureDirectory($path)) {
-                $allOk = false;
-            }
-
-            if (! $this->setAcls($path, $this->buildAcls($share))) {
-                $allOk = false;
-            }
-
-            $allOk = $this->chownAndChgrp($path) && $allOk;
-
-            $this->writeAudit('provision_share', $performedBy, $share, [
-                'directory_name' => $share->directory_name,
-                'path' => $path,
-                'assignments_count' => $share->assignments->count(),
-                'success' => $allOk,
-            ]);
-
-            Log::info('NetworkShareService: provision terminé', [
-                'share_id' => $share->id,
-                'directory_name' => $share->directory_name,
-                'path' => $path,
-                'success' => $allOk,
-            ]);
-
-            return $allOk;
-        } finally {
-            $lock->release();
-            Cache::forget('network-share-status:' . $share->id);
-        }
+        return $report !== null && count($report->converged()) === $report->count();
     }
 
     /**
-     * DÉPROVISIONNE le répertoire d'un share supprimé : révoque tout accès POSIX
-     * puis archive le dossier HORS de l'espace de noms exposé.
+     * Réconciliation SYNCHRONE, rapport complet. `null` si le répertoire n'est
+     * même pas projetable en plan (nom illisible, autorité d'écriture inconnue) —
+     * un échec EXPLICITE, jamais un plan partiel.
+     */
+    public function reconcile(NetworkShare $share, ?string $performedBy = null): ?ReconciliationReport
+    {
+        $performedBy = $this->actor($performedBy);
+
+        try {
+            $plan = $this->planFor($share);
+            $report = $this->registry->forShare($share)->provision($plan);
+        } catch (Throwable $e) {
+            Log::error('NetworkShareService: réconciliation refusée', [
+                'share_id' => $share->id,
+                'directory_name' => $share->directory_name,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Le rapport « en attente » posé à l'enfilage doit CÉDER LA PLACE.
+            // Le laisser en cache ferait dire à l'écran « réconciliation engagée »
+            // pour toujours : le geste a échoué, personne ne lève d'exception
+            // au-dessus (ce bloc l'absorbe), donc la file ne réessaie ni ne
+            // consigne rien. C'est la forme exacte du défaut que cet epic
+            // traque — un signal qui n'atteint pas son destinataire.
+            $this->rememberFailure($share, $e->getMessage());
+
+            return null;
+        }
+
+        $this->forgetFailure($share);
+        $this->rememberReport($share, $report);
+
+        $converged = count($report->converged()) === $report->count();
+
+        $this->writeAudit('provision_share', $performedBy, $share, [
+            'directory_name' => $share->directory_name,
+            'nodes' => $report->count(),
+            'converged' => count($report->converged()),
+            'failures' => count($report->failures()),
+            'declines' => count($report->declines()),
+            'success' => $converged,
+        ]);
+
+        Log::info('NetworkShareService: réconciliation terminée', [
+            'share_id' => $share->id,
+            'directory_name' => $share->directory_name,
+            'nodes' => $report->count(),
+            'success' => $converged,
+        ]);
+
+        return $report;
+    }
+
+    /**
+     * Réconciliation ENFILÉE — le chemin des ÉCRANS.
      *
-     * **Pourquoi (sécurité).** `Partages/` est exporté en entier par le share SMB
-     * `[partages]` : un sous-dossier « supprimé » côté SQL mais laissé sur disque
-     * AVEC ses ACL reste atteignable en UNC (`\\serveur\partages\<name>`) par tous
-     * ceux qui avaient un grant — fuite de contrôle d'accès. La suppression SQL
-     * seule ne suffit donc pas.
+     * Le dernier rapport connu est immédiatement remplacé par un rapport
+     * « en attente » couvrant les mêmes nœuds : l'écran dit donc « engagé », pas
+     * « accompli », et ne ment pas en attendant.
      *
-     * Séquence idempotente et data-safe (on NE détruit PAS les données —
-     * cohérent CLAUDE.md « jamais rm -rf ») :
-     *  1. `setfacl -R -P -b` : purge des ACL étendues (retire tous les grants) ;
-     *  2. `chmod -R 0770` : retire l'accès `other` que le mode de base laissait
-     *     traîner après le wipe (sinon dossier world-readable via la perm de base) ;
-     *  3. `mv` vers `Partages/.trash/<directory_name>-<id>` (répertoire poubelle
-     *     en `0700 www-admin` — non listable par les autres), sortant le dossier
-     *     de la vue des partages actifs sans perdre son contenu.
+     * **Pas de suivi de progression, et c'est un choix.** Un seul geste passe par
+     * ici, et la boucle de rétroaction existe déjà : l'encart de conformité relit
+     * le disque à la demande. Une machinerie de suivi (interrogation périodique,
+     * diffusion d'événements) serait de l'infrastructure construite avant son
+     * besoin. L'administrateur voit le résultat au rafraîchissement suivant, ou en
+     * relançant l'audit.
      *
-     * Fail-soft (retour `bool`, `Log::error` préfixé). No-op réussi si le dossier
-     * n'existe déjà plus.
+     * Rend `false` si le répertoire n'est pas projetable — rien n'est enfilé.
+     */
+    public function queueReconciliation(NetworkShare $share, ?string $performedBy = null): bool
+    {
+        try {
+            $plan = $this->planFor($share);
+            $backend = $this->registry->forShare($share);
+            // Le rapport « en attente » passe par la MÊME fabrique que les autres :
+            // son périmètre est donc confronté au plan, exactement comme celui
+            // d'un vrai passage. Le fabriquer à la main aurait contourné la seule
+            // garantie que ces rapports portent.
+            $this->rememberReport($share, ReconciliationReport::covering(
+                $backend->name(),
+                $plan,
+                array_map(
+                    static fn (string $path): NodeReconciliation => new NodeReconciliation(
+                        $path,
+                        FileBackendOutcome::EnAttente,
+                    ),
+                    $plan->nodePaths(),
+                ),
+            ));
+        } catch (Throwable $e) {
+            Log::error('NetworkShareService: réconciliation non enfilée', [
+                'share_id' => $share->id,
+                'directory_name' => $share->directory_name,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+
+        ReconcileNetworkShareJob::dispatch((int) $share->id, $this->actor($performedBy));
+
+        return true;
+    }
+
+    /**
+     * DÉPROVISIONNE : révoque les octrois et sort la structure de l'espace exposé.
+     *
+     * Reste SYNCHRONE, contrairement au provisionnement. La raison est de sûreté :
+     * l'appelant supprime la ligne juste après, et un répertoire encore exposé
+     * pendant que sa ligne disparaît est atteignable par tous ceux qui y avaient
+     * accès. Enfiler ce geste ouvrirait exactement la fenêtre que la séquence
+     * existe pour fermer.
      */
     public function deprovision(NetworkShare $share, ?string $performedBy = null): bool
     {
-        $performedBy = $performedBy ?? (string) (auth()->user()?->getAuthIdentifier() ?? 'system');
-
-        $path = $this->resolveSharePath($share);
-        if ($path === null) {
-            Log::error('NetworkShareService: deprovision refusé (directory_name invalide)', [
-                'share_id' => $share->id,
-                'directory_name' => $share->directory_name,
-            ]);
-
-            return false;
-        }
-
-        $lock = Cache::store('file')->lock('network-shares:provision:' . $share->id, 60);
-        if (! $lock->get()) {
-            Log::warning('NetworkShareService: deprovision verrouillé (autre opération en cours)', [
-                'share_id' => $share->id,
-                'directory_name' => $share->directory_name,
-            ]);
-
-            return false;
-        }
+        $performedBy = $this->actor($performedBy);
 
         try {
-            // Déjà absent : rien à révoquer (idempotent).
-            if (! is_dir($path)) {
-                return true;
-            }
-
-            $escaped = escapeshellarg($path);
-            $allOk = true;
-
-            // 1. Purge des ACL étendues (retire tous les grants).
-            $wipe = Process::run(sprintf('sudo setfacl -R -P -b %s', $escaped));
-            if (! $wipe->successful()) {
-                Log::error('NetworkShareService: deprovision échec wipe ACL', [
-                    'path' => $path,
-                    'output' => trim($wipe->errorOutput() ?: $wipe->output()),
-                ]);
-                $allOk = false;
-            }
-
-            // 2. Retire l'accès `other` résiduel du mode de base.
-            $chmod = Process::run(sprintf('sudo chmod -R 0770 %s', $escaped));
-            if (! $chmod->successful()) {
-                Log::error('NetworkShareService: deprovision échec chmod', [
-                    'path' => $path,
-                    'output' => trim($chmod->errorOutput() ?: $chmod->output()),
-                ]);
-                $allOk = false;
-            }
-
-            // 3. Archive hors de l'espace exposé.
-            $archived = $this->archiveOutOfBand($path, $share);
-            $allOk = $archived && $allOk;
-
-            $this->writeAudit('deprovision_share', $performedBy, $share, [
-                'directory_name' => $share->directory_name,
-                'path' => $path,
-                'archived' => $archived,
-                'success' => $allOk,
-            ]);
-
-            Log::info('NetworkShareService: deprovision terminé', [
+            $plan = $this->planFor($share);
+            $report = $this->registry->forShare($share)->deprovision($plan);
+        } catch (Throwable $e) {
+            Log::error('NetworkShareService: déprovisionnement refusé', [
                 'share_id' => $share->id,
                 'directory_name' => $share->directory_name,
-                'success' => $allOk,
+                'error' => $e->getMessage(),
             ]);
 
-            return $allOk;
-        } finally {
-            $lock->release();
-            Cache::forget('network-share-status:' . $share->id);
+            return false;
         }
+
+        $revoked = count($report->converged()) === $report->count();
+
+        $this->writeAudit('deprovision_share', $performedBy, $share, [
+            'directory_name' => $share->directory_name,
+            'nodes' => $report->count(),
+            'converged' => count($report->converged()),
+            'failures' => count($report->failures()),
+            'success' => $revoked,
+        ]);
+
+        Cache::forget(self::REPORT_CACHE_PREFIX . $share->id);
+        $this->forgetFailure($share);
+
+        Log::info('NetworkShareService: déprovisionnement terminé', [
+            'share_id' => $share->id,
+            'directory_name' => $share->directory_name,
+            'success' => $revoked,
+        ]);
+
+        return $revoked;
     }
 
-    /**
-     * Déplace un répertoire dé-provisionné vers `Partages/.trash/<name>-<id>`
-     * (poubelle `0700 www-admin`, non listable). Data-safe (mv, pas rm).
-     */
-    private function archiveOutOfBand(string $path, NetworkShare $share): bool
+    // =========================================================================
+    // Relecture et écart
+    // =========================================================================
+
+    /** RELIT l'état, sans rien écrire. */
+    public function inspect(NetworkShare $share): InspectionReport
     {
-        $trashRoot = $this->sharesRoot() . '/.trash';
-        $target = $trashRoot . '/' . $share->directory_name . '-' . $share->id;
-
-        if (! $this->validateSharePath($target)) {
-            Log::error('NetworkShareService: archiveOutOfBand cible refusée', ['target' => $target]);
-
-            return false;
-        }
-
-        // Poubelle : créée en 0700 www-admin (contenu protégé des autres).
-        $mk = Process::run(sprintf('sudo mkdir -p -m 0700 %s', escapeshellarg($trashRoot)));
-        if ($mk->successful()) {
-            Process::run(sprintf('sudo chown www-admin %s', escapeshellarg($trashRoot)));
-        } else {
-            Log::error('NetworkShareService: archiveOutOfBand échec mkdir poubelle', [
-                'trash' => $trashRoot,
-                'output' => trim($mk->errorOutput() ?: $mk->output()),
-            ]);
-
-            return false;
-        }
-
-        $mv = Process::run(sprintf('sudo mv %s %s', escapeshellarg($path), escapeshellarg($target)));
-        if (! $mv->successful()) {
-            Log::error('NetworkShareService: archiveOutOfBand échec mv', [
-                'path' => $path,
-                'target' => $target,
-                'output' => trim($mv->errorOutput() ?: $mv->output()),
-            ]);
-
-            return false;
-        }
-
-        return true;
+        return $this->registry->forShare($share)->inspect($this->planFor($share));
     }
 
     /**
-     * Lecture de l'état d'un répertoire (sans side-effect, pour future UI /
-     * commande). Ne shell-oute pas.
+     * ÉCART entre le désiré et le constaté, en vocabulaire de plan.
      *
-     * @return array{exists: bool, path: string|null, assignments_count: int}
-     */
-    public function getStatus(NetworkShare $share): array
-    {
-        $path = $this->resolveSharePath($share);
-
-        return [
-            'exists' => $path !== null && is_dir($path),
-            'path' => $path,
-            'assignments_count' => $share->assignments()->count(),
-        ];
-    }
-
-    /**
-     * Audit de dérive : compare le set d'ACL DÉSIRÉ ({@see buildAcls()}, dérivé
-     * du SQL autoritaire) au set EFFECTIF lu sur le disque (`getfacl` du
-     * répertoire de tête). Rend l'idempotence VISIBLE : c'est l'analogue SE5
-     * programmatique du « relire getfacl » manuel du legacy `visuacls.php`, mais
-     * avec un diff exploitable et une reconvergence 1-clic (= {@see provision()}).
+     * Remplace l'audit de dérive de l'Epic 34 : les quatre statuts agrégés sont
+     * conservés (un contrôleur d'environnement les consomme), mais le détail n'est
+     * plus une liste de lignes de permission — c'est, par nœud, la liste des
+     * sujets dont l'accès attendu et l'accès constaté diffèrent.
      *
-     * Read-only (aucun `setfacl`). `getfacl` normalisé via {@see AclFormat} pour
-     * que la comparaison reflète l'égalité SÉMANTIQUE (raccourci `rx` vs sortie
-     * `r-x`). Limite assumée : ne compare que l'ACL du répertoire de tête (pas
-     * une descente récursive) — suffisant pour détecter une dérive de contrat.
+     * Ne lève jamais : un répertoire illisible est un état, pas une exception à
+     * faire remonter jusqu'à un écran.
      *
-     * @return array{
-     *   status: 'conforme'|'drifted'|'absent'|'error',
-     *   path: string|null,
-     *   expected: list<string>,
-     *   effective: list<string>|null,
-     *   missing: list<string>,
-     *   unexpected: list<string>,
-     * }
+     * @return array{status:string,nodes:list<array<string,mixed>>,detail?:string}
      */
     public function computeDrift(NetworkShare $share): array
     {
-        $path = $this->resolveSharePath($share);
-        $share->loadMissing(['assignments', 'assignments.assignable']);
-        $expected = AclFormat::normalizeSet($this->buildAcls($share));
+        try {
+            $plan = $this->planFor($share);
 
-        $base = [
-            'path' => $path,
-            'expected' => $expected,
-            'effective' => null,
-            'missing' => [],
-            'unexpected' => [],
-        ];
-
-        if ($path === null) {
-            return ['status' => 'error'] + $base;
-        }
-        if (! is_dir($path)) {
-            return ['status' => 'absent'] + $base;
-        }
-
-        $cmd = sprintf('sudo getfacl -c -E -p %s 2>/dev/null', escapeshellarg($path));
-        $r = Process::run($cmd);
-        if (! $r->successful()) {
-            Log::warning('NetworkShareService: computeDrift échec getfacl', [
+            return $this->comparator->compare($plan, $this->registry->forShare($share)->inspect($plan));
+        } catch (Throwable $e) {
+            Log::warning('NetworkShareService: audit d\'écart impossible', [
                 'share_id' => $share->id,
-                'path' => $path,
-                'output' => trim($r->errorOutput() ?: $r->output()),
+                'directory_name' => $share->directory_name,
+                'error' => $e->getMessage(),
             ]);
 
-            return ['status' => 'error'] + $base;
+            return [
+                'status' => PlanStateComparator::STATUS_ERROR,
+                'nodes' => [],
+                'detail' => $e->getMessage(),
+            ];
         }
-
-        $effective = AclFormat::normalizeSet(preg_split('/\R/', $r->output()) ?: []);
-        $missing = array_values(array_diff($expected, $effective));    // désiré absent du disque
-        $unexpected = array_values(array_diff($effective, $expected)); // présent sur disque, non désiré
-
-        return [
-            'status' => ($missing === [] && $unexpected === []) ? 'conforme' : 'drifted',
-            'path' => $path,
-            'expected' => $expected,
-            'effective' => $effective,
-            'missing' => $missing,
-            'unexpected' => $unexpected,
-        ];
-    }
-
-    // =========================================================================
-    // Helpers FS privés (sudo mkdir/setfacl/chown/chgrp encapsulés)
-    // =========================================================================
-
-    private function ensureDirectory(string $path): bool
-    {
-        if (! $this->validateSharePath($path)) {
-            Log::error('NetworkShareService: ensureDirectory path invalide', ['path' => $path]);
-
-            return false;
-        }
-        if (is_dir($path)) {
-            return true;
-        }
-        $cmd = sprintf('sudo mkdir -p %s', escapeshellarg($path));
-        $r = Process::run($cmd);
-        if (! $r->successful()) {
-            Log::error('NetworkShareService: ensureDirectory échec mkdir', [
-                'path' => $path,
-                'output' => trim($r->errorOutput() ?: $r->output()),
-            ]);
-
-            return false;
-        }
-
-        return true;
     }
 
     /**
-     * Wipe (`setfacl -R -P -b`) puis ré-applique le set canonique. `-P`
-     * (physical) anti symlink traversal (iso AclService review 5.2 #3).
-     * Idempotent.
+     * Dernier rapport de réconciliation connu, en TABLEAU.
      *
-     * @param  list<string>  $acls
+     * Un rapport ne se reconstruit pas depuis un tableau sans repasser par sa
+     * fabrique et son plan — c'est ce que la garde de la story 60.3 protège. Tant
+     * qu'il s'agit de l'AFFICHER, le tableau suffit et personne n'a besoin de
+     * l'objet.
+     *
+     * @return array{backend:string,scope:string,nodes:list<array<string,mixed>>}|null
      */
-    private function setAcls(string $path, array $acls): bool
+    public function lastReport(NetworkShare $share): ?array
     {
-        if (! $this->validateSharePath($path)) {
-            Log::error('NetworkShareService: setAcls path invalide', ['path' => $path]);
+        $data = Cache::get(self::REPORT_CACHE_PREFIX . $share->id);
 
-            return false;
-        }
+        return is_array($data) ? $data : null;
+    }
 
-        $escaped = escapeshellarg($path);
+    // =========================================================================
+    // Interne
+    // =========================================================================
 
-        $wipe = sprintf('sudo setfacl -R -P -b %s', $escaped);
-        $r = Process::run($wipe);
-        if (! $r->successful()) {
-            Log::error('NetworkShareService: setAcls échec wipe', [
-                'path' => $path,
-                'output' => trim($r->errorOutput() ?: $r->output()),
-            ]);
+    /** @throws \App\Exceptions\Filesystem\PlanResolutionException */
+    private function planFor(NetworkShare $share): FilePlan
+    {
+        $share->loadMissing('assignments');
 
-            return false;
-        }
+        return $this->projector->project($share);
+    }
 
-        $allOk = true;
-        foreach ($acls as $acl) {
-            $cmd = sprintf('sudo setfacl -R -P -m %s %s', escapeshellarg($acl), $escaped);
-            $rr = Process::run($cmd);
-            if (! $rr->successful()) {
-                Log::error('NetworkShareService: setAcls échec ACL', [
-                    'path' => $path,
-                    'acl' => $acl,
-                    'output' => trim($rr->errorOutput() ?: $rr->output()),
-                ]);
-                $allOk = false;
-            }
-        }
-
-        return $allOk;
+    private function rememberReport(NetworkShare $share, ReconciliationReport $report): void
+    {
+        $this->rememberArray($share, $report->toArray());
     }
 
     /**
-     * `chown www-admin` + `chgrp 'domain admins'` (PHP-FPM = www-admin, mémoire
-     * php_fpm_user_www_admin). Fail-soft non-silencieux (iso ShareService #7).
+     * Consigne un ÉCHEC DE PRÉPARATION — et surtout, ne le déguise pas en rapport.
+     *
+     * Fabriquer ici un rapport « tout rouge » serait plus commode pour l'écran,
+     * mais il n'aurait été confronté à aucun plan : c'est précisément le
+     * contournement de fabrique que la story 60.3 a fermé. La vérité de ce
+     * moment, c'est « il n'y a pas de rapport, et voici pourquoi ». On l'écrit
+     * telle quelle, et le rapport périmé est retiré.
      */
-    private function chownAndChgrp(string $path): bool
+    private function rememberFailure(NetworkShare $share, string $reason): void
     {
-        if (! $this->validateSharePath($path)) {
-            return false;
-        }
-        $escaped = escapeshellarg($path);
-        $r1 = Process::run(sprintf('sudo chown www-admin %s', $escaped));
-        $r2 = Process::run(sprintf("sudo chgrp 'domain admins' %s", $escaped));
-        if (! $r1->successful()) {
-            Log::warning('NetworkShareService: chown échec', [
-                'path' => $path,
-                'err' => trim($r1->errorOutput() ?: $r1->output()),
-            ]);
-        }
-        if (! $r2->successful()) {
-            Log::warning('NetworkShareService: chgrp échec', [
-                'path' => $path,
-                'err' => trim($r2->errorOutput() ?: $r2->output()),
-            ]);
-        }
+        Cache::forget(self::REPORT_CACHE_PREFIX . $share->id);
+        Cache::put(
+            self::FAILURE_CACHE_PREFIX . $share->id,
+            $reason,
+            now()->addMinutes(self::REPORT_CACHE_MINUTES),
+        );
+    }
 
-        return $r1->successful() && $r2->successful();
+    private function forgetFailure(NetworkShare $share): void
+    {
+        Cache::forget(self::FAILURE_CACHE_PREFIX . $share->id);
     }
 
     /**
-     * Audit `quota_audit_logs` (`target_type='share'`, `partition='/var/sambaedu'`).
-     * Best-effort (iso ShareService::writeAudit).
+     * Raison du dernier échec de préparation, ou `null` s'il n'y en a pas eu
+     * depuis la dernière réconciliation aboutie.
+     */
+    public function lastFailure(NetworkShare $share): ?string
+    {
+        $reason = Cache::get(self::FAILURE_CACHE_PREFIX . $share->id);
+
+        return is_string($reason) && $reason !== '' ? $reason : null;
+    }
+
+    /** @param array<string,mixed> $data */
+    private function rememberArray(NetworkShare $share, array $data): void
+    {
+        Cache::put(self::REPORT_CACHE_PREFIX . $share->id, $data, now()->addMinutes(self::REPORT_CACHE_MINUTES));
+    }
+
+    private function actor(?string $performedBy): string
+    {
+        return $performedBy ?? (string) (auth()->user()?->getAuthIdentifier() ?? 'system');
+    }
+
+    /**
+     * Trace applicative du geste. Best-effort : une trace qui échoue ne fait pas
+     * échouer le geste qu'elle trace.
      *
      * @param  array<string, mixed>  $newValues
      */
@@ -721,14 +418,14 @@ class NetworkShareService
                 performedBy: $performedBy,
                 targetType: 'share',
                 targetName: $share->directory_name,
-                partition: '/var/sambaedu',
+                partition: QuotaRule::PARTITION_SAMBAEDU,
                 oldValues: null,
                 newValues: $newValues,
                 quotaRuleId: null,
                 fsApplied: true,
             );
-        } catch (\Throwable $e) {
-            Log::error('NetworkShareService: audit log écriture échouée', [
+        } catch (Throwable $e) {
+            Log::error('NetworkShareService: écriture de la trace applicative échouée', [
                 'action' => $action,
                 'share_id' => $share->id,
                 'error' => $e->getMessage(),

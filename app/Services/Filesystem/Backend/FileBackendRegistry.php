@@ -7,6 +7,7 @@ namespace App\Services\Filesystem\Backend;
 use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\UnknownFileBackendException;
 use App\Models\NetworkShare;
+use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use Illuminate\Contracts\Container\Container;
 
 /**
@@ -22,29 +23,25 @@ use Illuminate\Contracts\Container\Container;
  * mesures et ses tests. Le vocabulaire est fermé par une enum, la table est fermée
  * par cette constante.
  *
- * **`posix` est une valeur de colonne LÉGITIME sans implémentation.** Tous les
- * partages existants sont du POSIX, et le défaut de la colonne dit vrai. Mais rien
- * ne répond encore à ce nom : la descente de l'exécution sous la ligne de contrat
- * est la story 60.4. Demander ce backend lève donc une exception EXPLICITE qui
- * nomme les backends disponibles et la story qui la lèvera — fail-closed. Un test
- * épingle ce comportement, et c'est un test que 60.4 devra RETOURNER : son nom le
- * dit.
+ * **Story 60.4 — `posix` RÉPOND.** La story 60.3 laissait ce nom sans
+ * implémentation : la valeur de colonne était légitime (tous les répertoires
+ * existants sont servis par le serveur de fichiers historique), mais rien
+ * n'exécutait derrière, et le demander levait une exception nommant la story à
+ * venir. La descente de l'exécution sous la ligne de contrat est faite : la table
+ * porte l'implémentation, et le test qui épinglait le refus est RETOURNÉ.
+ *
+ * Un nom sans implémentation reste un échec EXPLICITE, jamais un repli : c'est ce
+ * qui attend les backends de l'Epic 61 tant qu'ils ne sont pas écrits.
  */
 final class FileBackendRegistry
 {
-    /**
-     * Nom de story citée par le message d'erreur de `posix`. Constante plutôt que
-     * littéral disséminé : le jour où 60.4 livre l'implémentation, la ligne à
-     * retirer est unique.
-     */
-    private const POSIX_IMPLEMENTATION_STORY = '60.4';
-
     /**
      * Table FERMÉE nom → classe d'implémentation.
      *
      * @var array<string, class-string<FileBackend>>
      */
     private const IMPLEMENTATIONS = [
+        'posix' => PosixFileBackend::class,
         'preview' => PreviewBackend::class,
     ];
 
@@ -60,11 +57,7 @@ final class FileBackendRegistry
         $class = self::IMPLEMENTATIONS[$name->value] ?? null;
 
         if ($class === null) {
-            throw UnknownFileBackendException::notImplemented(
-                $name,
-                $this->availableNames(),
-                $name === FileBackendName::Posix ? self::POSIX_IMPLEMENTATION_STORY : 'à venir',
-            );
+            throw UnknownFileBackendException::notImplemented($name, $this->availableNames(), 'à venir');
         }
 
         /** @var FileBackend $backend */

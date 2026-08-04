@@ -46,13 +46,24 @@ class DirectoryTemplateService
     /**
      * Matérialise un template en un répertoire réseau + ses assignations.
      *
+     * **Story 60.4 — deux régimes de provisionnement, choisis par l'APPELANT.**
+     * Appelée depuis un écran, la matérialisation ENFILE la pose des droits
+     * (`$deferProvisioning = true`) : le cycle d'une requête n'est pas le bon
+     * endroit pour un geste dont le coût est quadratique. Appelée hors requête,
+     * elle l'exécute en direct. Le résultat DIT lequel des deux a eu lieu — il
+     * n'affirme jamais un provisionnement accompli qui ne l'est pas.
+     *
      * @param  array{name?:string,directory_name?:string,label?:string|null,letter?:string|null,roles?:array<string,list<int>>}  $params
      *
      * @throws InvalidArgumentException                            format / lettre réservée / rôles invalides (AVANT écriture)
      * @throws \App\Exceptions\Filesystem\NetworkShareLetterCollisionException  collision de lettre (rollback transactionnel)
      */
-    public function materialize(DirectoryTemplate $template, array $params, ?string $performedBy = null): TemplateMaterializationResult
-    {
+    public function materialize(
+        DirectoryTemplate $template,
+        array $params,
+        ?string $performedBy = null,
+        bool $deferProvisioning = false,
+    ): TemplateMaterializationResult {
         $name = trim((string) ($params['name'] ?? ''));
         $directoryName = trim((string) ($params['directory_name'] ?? ''));
         $label = isset($params['label']) ? trim((string) $params['label']) : '';
@@ -114,13 +125,22 @@ class DirectoryTemplateService
             return $share;
         });
 
-        // --- Provisioning SYNCHRONE après commit (AC2, cohérent 34.2) --------
-        $provisioned = $this->shareService->provision($share, $performedBy);
+        // --- Provisionnement APRÈS commit, direct ou enfilé (60.4) -----------
+        if ($deferProvisioning) {
+            $queued = $this->shareService->queueReconciliation($share, $performedBy);
+            $state = $queued
+                ? TemplateMaterializationResult::PROVISIONING_QUEUED
+                : TemplateMaterializationResult::PROVISIONING_FAILED;
+        } else {
+            $state = $this->shareService->provision($share, $performedBy)
+                ? TemplateMaterializationResult::PROVISIONING_APPLIED
+                : TemplateMaterializationResult::PROVISIONING_FAILED;
+        }
 
         return new TemplateMaterializationResult(
             share: $share,
             warnings: $this->validator->warnings($share),
-            provisioned: $provisioned,
+            provisioning: $state,
         );
     }
 

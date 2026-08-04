@@ -11,6 +11,7 @@ use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
 use Database\Seeders\DirectoryTemplateSeeder;
+use App\Jobs\ReconcileNetworkShareJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -155,7 +156,13 @@ class SharesFromTemplateTest extends TestCase
             'assignable_id' => $classe->id,
             'access' => 'ro',
         ]);
-        Process::assertRan(fn ($p) => str_contains($p->command, 'mkdir'));
+        // Story 60.4 — la matérialisation depuis un écran ENFILE la pose des
+        // droits : rien n'est écrit dans le cycle de la requête.
+        Process::assertNothingRan();
+        Queue::assertPushed(
+            ReconcileNetworkShareJob::class,
+            fn (ReconcileNetworkShareJob $job): bool => $job->shareId === (int) $share->id,
+        );
     }
 
     #[Test]

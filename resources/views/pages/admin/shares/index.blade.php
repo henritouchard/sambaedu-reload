@@ -351,11 +351,13 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
         $share->save();
 
-        $ok = app(NetworkShareService::class)->provision($share);
-        if ($ok) {
-            $this->toastSuccess("Le répertoire « {$share->name} » a été créé et provisionné.");
+        // Story 60.4 — la mise en place des droits est ENFILÉE (elle est quadratique
+        // en nombre d'entrées nominatives et n'a rien à faire dans le cycle d'une
+        // requête). L'écran dit « engagée », jamais « accomplie ».
+        if (app(NetworkShareService::class)->queueReconciliation($share)) {
+            $this->toastSuccess("Le répertoire « {$share->name} » a été créé. La mise en place des droits est engagée.");
         } else {
-            $this->toastWarning("Le répertoire « {$share->name} » a été créé, mais son provisioning a échoué. "
+            $this->toastWarning("Le répertoire « {$share->name} » a été créé, mais la réconciliation des droits n'a pas pu être engagée. "
                 . 'Consultez les journaux serveur.');
         }
 
@@ -591,7 +593,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 'label' => $validated['templateLabel'] ?? null,
                 'letter' => $validated['templateLetter'] ?? null,
                 'roles' => $roles,
-            ]);
+            ], deferProvisioning: true);
         } catch (NetworkShareLetterCollisionException $e) {
             // Collision de lettre : rollback transactionnel déjà effectué (aucune
             // écriture partielle). On surface le message en toast (pas de création).
@@ -604,9 +606,12 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             return;
         }
 
-        $message = $result->provisioned
-            ? "Le répertoire « {$result->share->name} » a été créé depuis le template et provisionné."
-            : "Le répertoire « {$result->share->name} » a été créé, mais son provisioning a échoué. Consultez les journaux serveur.";
+        // Story 60.4 — la pose des droits est ENFILÉE : le message dit « engagée »,
+        // pas « accomplie ». Affirmer l'accompli serait le mensonge que la ligne de
+        // contrat combat un cran plus bas.
+        $message = $result->isFailure()
+            ? "Le répertoire « {$result->share->name} » a été créé, mais la réconciliation des droits n'a pas pu être engagée. Consultez les journaux serveur."
+            : "Le répertoire « {$result->share->name} » a été créé depuis le template. La mise en place des droits est engagée : l'état sera à jour au prochain rafraîchissement.";
 
         // Surfaçage des avertissements prédictifs non bloquants (WG-montage-seul,
         // AC2). Inerte pour les 4 recettes seedées (aucune n'assigne de parc),
@@ -618,10 +623,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         }
 
         session()->flash('toast', [
-            'status' => ($result->provisioned && $warnings === []) ? 'success' : 'warning',
-            'title' => $result->provisioned
-                ? ($warnings === [] ? 'Répertoire créé' : 'Répertoire créé (avec avertissements)')
-                : 'Provisioning incomplet',
+            'status' => (! $result->isFailure() && $warnings === []) ? 'success' : 'warning',
+            'title' => $result->isFailure()
+                ? 'Réconciliation non engagée'
+                : ($warnings === [] ? 'Répertoire créé' : 'Répertoire créé (avec avertissements)'),
             'message' => $message,
         ]);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Filesystem;
 
+use App\Jobs\ReconcileNetworkShareJob;
 use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
@@ -12,6 +13,7 @@ use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\Filesystem\DirectoryTemplateService;
+use App\Services\Filesystem\TemplateMaterializationResult;
 use Database\Seeders\DirectoryTemplateSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
@@ -162,8 +164,31 @@ class DirectoryTemplateServiceTest extends TestCase
             'roles' => ['group' => [$group->id]],
         ]);
 
-        $this->assertTrue($result->provisioned);
+        $this->assertSame(TemplateMaterializationResult::PROVISIONING_APPLIED, $result->provisioning);
+        $this->assertFalse($result->isFailure());
         Process::assertRan(fn ($p): bool => str_contains($p->command, 'mkdir -p') && str_contains($p->command, 'espace_cdi'));
+    }
+
+    /**
+     * Story 60.4 — appelée depuis un écran, la matérialisation ENFILE la pose des
+     * droits et le DIT. Aucune écriture n'a lieu dans le cycle de la requête, et le
+     * résultat n'affirme pas un provisionnement accompli qui ne l'est pas.
+     */
+    #[Test]
+    public function materialize_from_a_screen_queues_the_provisioning_and_says_so(): void
+    {
+        $group = UserGroup::create(['name' => 'cdi', 'type' => 'autre']);
+
+        $result = $this->service->materialize($this->template(DirectoryTemplate::KEY_GROUP_SPACE), [
+            'name' => 'Espace CDI',
+            'directory_name' => 'espace_cdi',
+            'roles' => ['group' => [$group->id]],
+        ], deferProvisioning: true);
+
+        $this->assertSame(TemplateMaterializationResult::PROVISIONING_QUEUED, $result->provisioning);
+        $this->assertFalse($result->isFailure());
+        Queue::assertPushed(ReconcileNetworkShareJob::class);
+        Process::assertNotRan(fn ($p): bool => str_contains($p->command, 'mkdir'));
     }
 
     // =========================================================================

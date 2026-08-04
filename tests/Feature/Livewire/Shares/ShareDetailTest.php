@@ -11,6 +11,7 @@ use App\Models\UserGroup;
 use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Jobs\ReconcileNetworkShareJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -85,7 +86,14 @@ class ShareDetailTest extends TestCase
             'assignable_id' => $user->id,
             'access' => 'rw',
         ]);
-        Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl'));
+        // Story 60.4 — l'écran ENFILE la réconciliation : aucune commande n'est
+        // lancée dans le cycle de la requête, et le traitement porte l'identifiant
+        // du répertoire, jamais un plan ni un rapport.
+        Process::assertNothingRan();
+        Queue::assertPushed(
+            ReconcileNetworkShareJob::class,
+            fn (ReconcileNetworkShareJob $job): bool => $job->shareId === (int) $share->id,
+        );
     }
 
     #[Test]

@@ -4,20 +4,38 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Filesystem;
 
+use App\Enums\FileBackendName;
 use App\Models\NetworkShare;
+use App\Models\NetworkShareAssignable;
+use App\Models\User;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Filesystem\Backend\InspectionReport;
+use App\Services\Filesystem\Backend\NodeObservation;
+use App\Services\Filesystem\Backend\ObservedGrant;
+use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\NetworkShareService;
+use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanNode;
+use App\Services\Filesystem\Plan\PlanSubject;
+use App\Services\Filesystem\PlanStateComparator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Unit\Services\Filesystem\Support\RecordingBackend;
 
 /**
- * Epic 34 — Tests de l'audit de dérive {@see NetworkShareService::computeDrift()}.
+ * Epic 34 → story 60.4 — l'AUDIT D'ÉCART, vu depuis l'orchestrateur.
  *
- * Vérifie que la comparaison désiré-vs-effectif est SÉMANTIQUE (raccourci vs
- * sortie getfacl normalisés) et détecte correctement conforme / drifted / absent.
+ * Les quatre statuts agrégés survivent (un contrôleur d'environnement les
+ * consomme), mais le chemin a changé de nature : on ne compare plus des lignes de
+ * permission brutes, on compare un PLAN à une RELECTURE, en vocabulaire de plan.
+ * Ce fichier vérifie l'agrégation et l'absence de vocabulaire système ; la table
+ * de comparaison elle-même est vérifiée ligne à ligne dans le test du
+ * comparateur.
+ *
+ * Aucune simulation de processus : ce chemin ne lance rien depuis l'orchestrateur.
  */
 class NetworkShareDriftTest extends TestCase
 {
@@ -25,7 +43,7 @@ class NetworkShareDriftTest extends TestCase
 
     private NetworkShareService $service;
 
-    private string $tempRoot;
+    private RecordingBackend $backend;
 
     protected function setUp(): void
     {
@@ -33,96 +51,140 @@ class NetworkShareDriftTest extends TestCase
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
 
-        $this->tempRoot = sys_get_temp_dir() . '/netshare-drift-' . uniqid();
-        @mkdir($this->tempRoot, 0o755, true);
-        config(['filesystem.shares_root' => $this->tempRoot]);
+        $this->backend = new RecordingBackend();
+        $this->app->instance(PosixFileBackend::class, $this->backend);
 
         $this->service = app(NetworkShareService::class);
     }
 
     protected function tearDown(): void
     {
-        @rmdir($this->tempRoot . '/proj');
-        @rmdir($this->tempRoot);
         WorkstationGroupObserver::enableSync();
         UserGroupObserver::enableSync();
         parent::tearDown();
     }
 
-    /** Set canonique de base (aucune assignation), en sortie getfacl. */
-    private const BASE_GETFACL = <<<TXT
-    user::rwx
-    group::---
-    group:domain\\040admins:rwx
-    mask::rwx
-    other::---
-    default:user::rwx
-    default:group::---
-    default:group:domain\\040admins:rwx
-    default:mask::rwx
-    default:other::---
-    TXT;
-
-    private function makeProvisionedShare(): NetworkShare
+    /** @param callable(FilePlan): list<NodeObservation> $factory */
+    private function observing(callable $factory): void
     {
-        @mkdir($this->tempRoot . '/proj', 0o755, true);
+        $this->backend->inspectUsing = fn (FilePlan $plan): InspectionReport => InspectionReport::covering(
+            FileBackendName::Posix,
+            $plan,
+            $factory($plan),
+        );
+    }
 
-        return NetworkShare::factory()->create(['directory_name' => 'proj']);
+    private function shareWithUser(string $access = 'rw'): array
+    {
+        $share = NetworkShare::factory()->create(['directory_name' => 'proj', 'name' => 'Projet']);
+        $user = User::factory()->create(['login' => 'alice']);
+        NetworkShareAssignable::create([
+            'network_share_id' => $share->id,
+            'assignable_type' => User::class,
+            'assignable_id' => $user->id,
+            'access' => $access,
+        ]);
+
+        return [$share, $user];
     }
 
     #[Test]
-    public function reports_absent_when_directory_missing(): void
+    public function it_reports_absent_when_the_backend_finds_nothing(): void
+    {
+        [$share] = $this->shareWithUser();
+        $this->observing(static fn (FilePlan $plan): array => [NodeObservation::absent(PlanNode::ROOT_PATH)]);
+
+        self::assertSame(PlanStateComparator::STATUS_ABSENT, $this->service->computeDrift($share)['status']);
+    }
+
+    #[Test]
+    public function it_reports_conforme_when_the_observed_access_matches_the_plan(): void
+    {
+        [$share, $user] = $this->shareWithUser('rw');
+        $this->observing(static fn (FilePlan $plan): array => [
+            NodeObservation::observed(PlanNode::ROOT_PATH, [
+                new ObservedGrant(PlanSubject::user((int) $user->id), 'rw'),
+            ]),
+        ]);
+
+        $drift = $this->service->computeDrift($share);
+
+        self::assertSame(PlanStateComparator::STATUS_CONFORME, $drift['status']);
+        self::assertSame([], $drift['nodes'][0]['differences']);
+    }
+
+    #[Test]
+    public function it_reports_a_drift_naming_the_subject_by_its_internal_identity(): void
+    {
+        [$share, $user] = $this->shareWithUser('rw');
+        $this->observing(static fn (FilePlan $plan): array => [
+            NodeObservation::observed(PlanNode::ROOT_PATH, [
+                new ObservedGrant(PlanSubject::user((int) $user->id), 'ro'),
+            ]),
+        ]);
+
+        $drift = $this->service->computeDrift($share);
+
+        self::assertSame(PlanStateComparator::STATUS_DRIFTED, $drift['status']);
+        self::assertSame(
+            [['subject' => ['type' => 'user', 'id' => (int) $user->id, 'edge_role' => null], 'expected' => 'rw', 'observed' => 'ro']],
+            $drift['nodes'][0]['differences'],
+        );
+    }
+
+    #[Test]
+    public function it_reports_an_error_when_the_backend_could_not_read(): void
+    {
+        [$share] = $this->shareWithUser();
+        $this->observing(static fn (FilePlan $plan): array => [
+            NodeObservation::echec(PlanNode::ROOT_PATH, 'relecture impossible'),
+        ]);
+
+        self::assertSame(PlanStateComparator::STATUS_ERROR, $this->service->computeDrift($share)['status']);
+    }
+
+    /**
+     * Un répertoire dont le nom n'est même pas projetable ne fait pas remonter une
+     * exception jusqu'à un écran : c'est un ÉTAT.
+     */
+    #[Test]
+    public function an_unprojectable_directory_is_an_error_state_not_an_exception(): void
+    {
+        $share = NetworkShare::factory()->create(['directory_name' => 'valide']);
+        $share->directory_name = '../evasion';
+
+        self::assertSame(PlanStateComparator::STATUS_ERROR, $this->service->computeDrift($share)['status']);
+    }
+
+    /**
+     * L'ASSAINISSEMENT : plus une seule ligne de permission dans ce que l'audit
+     * rend. C'est ce que la page de détail affichait depuis l'Epic 34.
+     */
+    #[Test]
+    public function the_drift_carries_no_system_vocabulary_at_all(): void
+    {
+        [$share, $user] = $this->shareWithUser('rw');
+        $this->observing(static fn (FilePlan $plan): array => [
+            NodeObservation::observed(PlanNode::ROOT_PATH, [
+                new ObservedGrant(PlanSubject::user((int) $user->id), 'ro'),
+            ]),
+        ]);
+
+        $serialized = json_encode($this->service->computeDrift($share), JSON_UNESCAPED_UNICODE);
+
+        foreach (['rwx', ':rx', 'setfacl', 'getfacl', 'user::', 'default:', 'mask::', 'domain', '/var/'] as $marker) {
+            self::assertStringNotContainsStringIgnoringCase($marker, (string) $serialized, 'marqueur système : ' . $marker);
+        }
+    }
+
+    #[Test]
+    public function computing_a_drift_runs_no_command_from_the_orchestrator(): void
     {
         Process::fake();
-        $share = NetworkShare::factory()->create(['directory_name' => 'ghost']);
+        [$share] = $this->shareWithUser();
 
-        self::assertSame('absent', $this->service->computeDrift($share)['status']);
-    }
+        $this->service->computeDrift($share);
 
-    #[Test]
-    public function reports_conforme_when_disk_matches_desired(): void
-    {
-        $share = $this->makeProvisionedShare();
-        Process::fake([
-            'sudo getfacl *' => Process::result(output: self::BASE_GETFACL, exitCode: 0),
-        ]);
-
-        $drift = $this->service->computeDrift($share);
-
-        self::assertSame('conforme', $drift['status']);
-        self::assertSame([], $drift['missing']);
-        self::assertSame([], $drift['unexpected']);
-    }
-
-    #[Test]
-    public function reports_drifted_with_missing_entry(): void
-    {
-        $share = $this->makeProvisionedShare();
-
-        // Disque amputé de `group:domain\040admins:rwx` (accès + default).
-        $amputated = str_replace(
-            ["group:domain\\040admins:rwx\n", "default:group:domain\\040admins:rwx\n"],
-            '',
-            self::BASE_GETFACL,
-        );
-        Process::fake([
-            'sudo getfacl *' => Process::result(output: $amputated, exitCode: 0),
-        ]);
-
-        $drift = $this->service->computeDrift($share);
-
-        self::assertSame('drifted', $drift['status']);
-        self::assertContains('group:domain\040admins:rwx', $drift['missing']);
-    }
-
-    #[Test]
-    public function reports_error_when_getfacl_fails(): void
-    {
-        $share = $this->makeProvisionedShare();
-        Process::fake([
-            'sudo getfacl *' => Process::result(output: '', errorOutput: 'boom', exitCode: 1),
-        ]);
-
-        self::assertSame('error', $this->service->computeDrift($share)['status']);
+        Process::assertNothingRan();
     }
 }

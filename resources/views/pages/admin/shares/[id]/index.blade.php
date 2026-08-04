@@ -13,6 +13,7 @@ use App\Services\Filesystem\Backend\FileBackendRegistry;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\NetworkShareValidator;
+use App\Services\Filesystem\PlanStateComparator;
 use App\Services\Filesystem\Plan\FilePlan;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
@@ -54,10 +55,27 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     // Édition de l'identité : header en lecture seule par défaut, formulaire à la demande.
     public bool $editingDetails = false;
 
-    // Audit de dérive ACL (désiré SQL vs effectif disque). Rafraîchi sur mount +
-    // après chaque (re)provisioning — PAS un computed live (éviterait un getfacl
-    // à chaque frappe). `null` = non calculé.
+    // Story 60.4 — écart entre le PLAN (base autoritaire) et l'état RELU, dit en
+    // vocabulaire de plan : par nœud, par sujet, l'attendu et le constaté. Plus
+    // aucune ligne de permission brute n'arrive ici. Rafraîchi au montage et à la
+    // demande — pas un calcul à chaque rendu (il relit le serveur).
+    // `null` = non calculé.
     public ?array $drift = null;
+
+    // Story 60.4 — la réconciliation déclenchée depuis cet écran est ENFILÉE.
+    // L'écran le DIT, et s'arrête là : pas d'interrogation périodique, pas de
+    // diffusion d'événement, pas d'indicateur de progression. Un seul geste passe
+    // par ici et la boucle de rétroaction existe déjà — l'encart de conformité
+    // relit l'état à la demande. Une machinerie de suivi serait de
+    // l'infrastructure construite avant son besoin.
+    public bool $reconciliationEngaged = false;
+
+    /**
+     * Raison du dernier échec de préparation d'une réconciliation enfilée, ou
+     * `null`. Survit au rafraîchissement (elle vient du serveur), contrairement
+     * à l'état « engagé » ci-dessus qui n'est vrai que dans le cycle du clic.
+     */
+    public ?string $reconciliationFailure = null;
 
     // Story 60.3 — le backend est une propriété VISIBLE du partage (il détermine
     // le chemin d'accès de l'utilisateur), et volontairement NON ÉDITABLE : tant
@@ -513,6 +531,9 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         // sort le dossier de l'espace exposé par le share SMB [partages] (sinon
         // un dossier « supprimé » reste atteignable en UNC avec ses grants). Le
         // contenu est archivé (mv en poubelle), pas détruit.
+        // Story 60.4 — le déprovisionnement reste SYNCHRONE : la ligne disparaît
+        // juste après, et un répertoire encore exposé pendant ce temps reste
+        // atteignable par tous ceux qui y avaient accès.
         $deprovisioned = $share !== null && app(NetworkShareService::class)->deprovision($share);
 
         // La suppression cascade le pivot (onDelete cascade, 34.1).
@@ -531,39 +552,117 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
     // --- Helpers ------------------------------------------------------------
 
+    /**
+     * ENFILE la réconciliation et le DIT. Aucune écriture n'a lieu dans le cycle
+     * de cette requête (la pose des droits est quadratique en nombre d'entrées
+     * nominatives) ; l'écran affiche l'état « engagé », et l'administrateur voit
+     * le résultat au rafraîchissement suivant ou en relançant l'audit.
+     */
     private function reprovision(string $okPrefix): void
     {
         $share = $this->share?->fresh();
         if ($share === null) {
             return;
         }
-        $ok = app(NetworkShareService::class)->provision($share);
-        if ($ok) {
-            $this->toastSuccess($okPrefix . ' et provisionné.');
+        if (app(NetworkShareService::class)->queueReconciliation($share)) {
+            $this->reconciliationEngaged = true;
+            $this->toastSuccess($okPrefix . '. La mise en place des droits est engagée.');
         } else {
-            $this->toastWarning($okPrefix . ", mais le provisioning a échoué. Consultez les journaux serveur.");
+            $this->toastWarning($okPrefix . ", mais la réconciliation n'a pas pu être engagée. Consultez les journaux serveur.");
         }
-        $this->refreshDrift();
     }
 
     /**
-     * Recalcule l'état de dérive ACL (désiré SQL vs effectif disque). Appelé sur
-     * mount et après chaque provisioning. Read-only (getfacl).
+     * Relit l'état et le compare au plan. Appelé au montage et à la demande —
+     * jamais pendant la saisie : il interroge le serveur.
      */
     private function refreshDrift(): void
     {
         $share = $this->share?->fresh();
-        $this->drift = $share === null ? null : app(NetworkShareService::class)->computeDrift($share);
+        $this->drift = $share === null ? null : $this->presentDrift(app(NetworkShareService::class)->computeDrift($share));
+        // Une réconciliation enfilée qui échoue ne lève RIEN au-dessus d'elle :
+        // le service absorbe l'erreur, la file ne réessaie pas et ne consigne
+        // rien. Sans cette relecture, l'échec n'aurait aucun destinataire.
+        $this->reconciliationFailure = $share === null
+            ? null
+            : app(NetworkShareService::class)->lastFailure($share);
     }
 
     /**
-     * Reconvergence manuelle depuis l'UI (analogue SE5 du « ré-appliquer » du
-     * legacy visuacls.php, mais idempotent : wipe + ré-application canonique).
+     * Met l'écart en forme d'affichage : les sujets sont résolus PAR IDENTITÉ
+     * INTERNE, en lot (deux requêtes au plus), et rendus par leur nom SE5. Aucun
+     * nom système, aucun mode de permission, aucun chemin n'entre ici — c'est ce
+     * que la story 60.4 assainit sur cet écran.
+     *
+     * @param  array{status:string,nodes:list<array<string,mixed>>,detail?:string}  $drift
+     */
+    private function presentDrift(array $drift): array
+    {
+        $userIds = [];
+        $groupIds = [];
+        foreach ($drift['nodes'] as $node) {
+            foreach ($node['differences'] as $difference) {
+                if ($difference['subject']['type'] === PlanSubject::TYPE_USER) {
+                    $userIds[$difference['subject']['id']] = true;
+                } else {
+                    $groupIds[$difference['subject']['id']] = true;
+                }
+            }
+        }
+
+        $userLabels = $userIds === []
+            ? []
+            : User::whereIn('id', array_keys($userIds))->pluck('login', 'id')->all();
+        $groupLabels = [];
+        if ($groupIds !== []) {
+            foreach (UserGroup::whereIn('id', array_keys($groupIds))->get(['id', 'name', 'display_name']) as $g) {
+                $groupLabels[(int) $g->id] = (string) ($g->display_name ?: $g->name);
+            }
+        }
+
+        $nodes = [];
+        foreach ($drift['nodes'] as $node) {
+            $differences = [];
+            foreach ($node['differences'] as $difference) {
+                $subject = $difference['subject'];
+                $label = $subject['type'] === PlanSubject::TYPE_USER
+                    ? ($userLabels[$subject['id']] ?? "#{$subject['id']}") . ' (utilisateur)'
+                    : ($groupLabels[$subject['id']] ?? "#{$subject['id']}") . " (groupe d'utilisateurs)";
+
+                $differences[] = [
+                    'label' => $label,
+                    'expected' => PlanStateComparator::accessLabel($difference['expected']),
+                    'observed' => PlanStateComparator::accessLabel($difference['observed']),
+                ];
+            }
+
+            $nodes[] = [
+                // La racine se dit « (racine) » — jamais son jeton brut.
+                'display_path' => $node['path'] === PlanNode::ROOT_PATH ? '(racine)' : $node['path'],
+                'status' => $node['status'],
+                'detail' => $node['detail'],
+                'differences' => $differences,
+            ];
+        }
+
+        return ['status' => $drift['status'], 'nodes' => $nodes];
+    }
+
+    /**
+     * Reconvergence manuelle depuis l'écran — enfilée comme les autres.
      */
     public function resync(): void
     {
         abort_unless(Gate::allows('manage-networkshare'), 403);
-        $this->reprovision('Lecteur resynchronisé');
+        $this->reprovision('Réconciliation demandée');
+    }
+
+    /** Relit l'état à la demande — le bouton d'audit de conformité. */
+    public function refreshConformity(): void
+    {
+        abort_unless(Gate::allows('view-networkshare'), 403);
+        $this->reconciliationEngaged = false;
+        $this->refreshDrift();
     }
 
     private function surfaceWarnings(): void
@@ -743,48 +842,109 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         </div>
     </div>
 
-    {{-- ===================== Conformité ACL (audit de dérive) ===================== --}}
+    {{-- ===================== Conformité des droits (Story 60.4) =====================
+         L'encart parle le VOCABULAIRE DU PLAN : un nœud, un sujet par son nom SE5,
+         un accès attendu et un accès constaté. Plus aucune ligne de permission
+         brute — c'est l'assainissement porté par la story 60.4, et un test de
+         neutralité borné sur le marqueur `data-share-drift` le vérifie. --}}
+    @if ($reconciliationEngaged)
+        <div class="alert alert-info mb-4 flex items-start justify-between gap-3">
+            <div class="flex items-start gap-2 min-w-0">
+                <i class="fa-solid fa-hourglass-half mt-0.5"></i>
+                <div class="min-w-0">
+                    <div class="text-sm font-medium">Réconciliation engagée</div>
+                    <div class="text-xs mt-0.5">
+                        La mise en place des droits se poursuit côté serveur. Relancez l'audit ci-dessous pour voir l'état à jour.
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- L'échec d'une réconciliation enfilée n'a AUCUN autre destinataire : le
+         service l'absorbe, la file ne réessaie pas. Sans cet encart, l'écran
+         resterait muet sur un geste qui n'a pas eu lieu. Le motif technique n'y
+         figure pas — il est au journal ; ici on dit ce qui n'a pas eu lieu. --}}
+    @if ($reconciliationFailure !== null)
+        <div class="alert alert-error mb-4 flex items-start gap-2" data-share-reconciliation-failure>
+            <i class="fa-solid fa-circle-xmark mt-0.5"></i>
+            <div class="min-w-0">
+                <div class="text-sm font-medium">La dernière mise en place des droits n'a pas eu lieu</div>
+                <div class="text-xs mt-0.5">
+                    Le paramétrage enregistré n'a pas pu être préparé pour le serveur : les droits en place
+                    sont restés tels quels. Consultez les journaux serveur, puis relancez la mise en place.
+                </div>
+            </div>
+        </div>
+    @endif
+
     @if ($drift !== null)
         @php
             $driftMeta = match ($drift['status']) {
-                'conforme' => ['alert-success', 'fa-circle-check', 'ACL disque conformes au paramétrage.'],
-                'drifted' => ['alert-warning', 'fa-triangle-exclamation', 'Dérive détectée : le disque ne correspond plus au paramétrage.'],
-                'absent' => ['alert-info', 'fa-folder-plus', 'Répertoire pas encore provisionné sur le serveur.'],
-                default => ['alert-error', 'fa-circle-xmark', 'Impossible de lire les ACL du serveur (voir journaux).'],
+                'conforme' => ['alert-success', 'fa-circle-check', 'Les droits en place correspondent au paramétrage.'],
+                'drifted' => ['alert-warning', 'fa-triangle-exclamation', 'Écart détecté : les droits en place ne correspondent plus au paramétrage.'],
+                'absent' => ['alert-info', 'fa-folder-plus', 'Répertoire pas encore créé sur le serveur.'],
+                default => ['alert-error', 'fa-circle-xmark', 'Impossible de relire l\'état du serveur (voir journaux).'],
             };
         @endphp
-        <div class="alert {{ $driftMeta[0] }} mb-6 flex items-start justify-between gap-3">
+        <div class="alert {{ $driftMeta[0] }} mb-6 flex items-start justify-between gap-3" data-share-drift>
             <div class="flex items-start gap-2 min-w-0">
                 <i class="fa-solid {{ $driftMeta[1] }} mt-0.5"></i>
                 <div class="min-w-0">
-                    <div class="text-sm font-medium">Conformité ACL — {{ $driftMeta[2] }}</div>
-                    @if ($drift['status'] === 'drifted')
-                        <div class="text-xs mt-1 space-y-0.5">
-                            @if (count($drift['missing']) > 0)
-                                <div><span class="font-semibold">Manquant sur disque :</span>
-                                    <span class="font-mono">{{ implode(', ', array_slice($drift['missing'], 0, 6)) }}</span>
-                                    @if (count($drift['missing']) > 6) … @endif
-                                </div>
-                            @endif
-                            @if (count($drift['unexpected']) > 0)
-                                <div><span class="font-semibold">En trop sur disque :</span>
-                                    <span class="font-mono">{{ implode(', ', array_slice($drift['unexpected'], 0, 6)) }}</span>
-                                    @if (count($drift['unexpected']) > 6) … @endif
-                                </div>
-                            @endif
-                        </div>
-                    @endif
+                    <div class="text-sm font-medium">Conformité des droits — {{ $driftMeta[2] }}</div>
+                    @foreach ($drift['nodes'] as $node)
+                        @if (count($node['differences']) > 0 || $node['detail'] !== null)
+                            <div class="text-xs mt-2">
+                                <div class="font-semibold">{{ $node['display_path'] }}</div>
+                                @if (count($node['differences']) > 0)
+                                    <div class="overflow-x-auto mt-1">
+                                        <table class="table table-xs">
+                                            <thead>
+                                                <tr>
+                                                    <th>Destinataire</th>
+                                                    <th>Attendu</th>
+                                                    <th>Constaté</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (array_slice($node['differences'], 0, 8) as $difference)
+                                                    <tr>
+                                                        <td>{{ $difference['label'] }}</td>
+                                                        <td>{{ $difference['expected'] }}</td>
+                                                        <td>{{ $difference['observed'] }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    @if (count($node['differences']) > 8)
+                                        <div class="mt-1">… et {{ count($node['differences']) - 8 }} autre(s).</div>
+                                    @endif
+                                @endif
+                                @if ($node['detail'] !== null)
+                                    <div class="mt-1">{{ $node['detail'] }}</div>
+                                @endif
+                            </div>
+                        @endif
+                    @endforeach
                 </div>
             </div>
-            @can('manage-networkshare')
-                @if (in_array($drift['status'], ['drifted', 'absent', 'error'], true))
-                    <button type="button" class="btn btn-sm shrink-0" wire:click="resync"
-                        wire:loading.attr="disabled" wire:target="resync">
-                        <span wire:loading.remove wire:target="resync"><i class="fa-solid fa-rotate"></i> Resynchroniser</span>
-                        <span wire:loading wire:target="resync"><span class="loading loading-spinner loading-xs"></span> …</span>
-                    </button>
-                @endif
-            @endcan
+            <div class="flex flex-col gap-2 shrink-0">
+                <button type="button" class="btn btn-sm btn-ghost" wire:click="refreshConformity"
+                    wire:loading.attr="disabled" wire:target="refreshConformity">
+                    <span wire:loading.remove wire:target="refreshConformity"><i class="fa-solid fa-magnifying-glass"></i> Vérifier</span>
+                    <span wire:loading wire:target="refreshConformity"><span class="loading loading-spinner loading-xs"></span> …</span>
+                </button>
+                @can('manage-networkshare')
+                    @if (in_array($drift['status'], ['drifted', 'absent', 'error'], true))
+                        <button type="button" class="btn btn-sm" wire:click="resync"
+                            wire:loading.attr="disabled" wire:target="resync">
+                            <span wire:loading.remove wire:target="resync"><i class="fa-solid fa-rotate"></i> Resynchroniser</span>
+                            <span wire:loading wire:target="resync"><span class="loading loading-spinner loading-xs"></span> …</span>
+                        </button>
+                    @endif
+                @endcan
+            </div>
         </div>
     @endif
 
