@@ -548,6 +548,120 @@ class PlanResolverTest extends TestCase
     }
 
     // =========================================================================
+    // Story 60.2 — le nommage de chemin des mailles « matière × classe »
+    // =========================================================================
+
+    private function matiereTemplate(string $pattern): DirectoryTemplate
+    {
+        return new DirectoryTemplate([
+            'key' => 'matiere_share',
+            'label' => 'Partage de matière',
+            'roles_spec' => [
+                [
+                    'key' => 'equipe',
+                    'label' => 'Enseignants de la matière',
+                    'maille' => UserGroup::class,
+                    'group_type' => 'matiere_classe',
+                    'access' => 'rw',
+                    'cardinality' => 'one',
+                ],
+            ],
+            'path_pattern' => $pattern,
+            'nodes_spec' => [
+                [
+                    'path' => '_travail',
+                    'label' => 'Documents de travail',
+                    'nature' => 'partagee',
+                    'grants' => [['role' => 'equipe', 'access' => 'rw']],
+                ],
+            ],
+        ]);
+    }
+
+    private function matiereContext(string $groupName, string $groupType = 'matiere_classe'): PlanResolutionContext
+    {
+        return new PlanResolutionContext(
+            groupId: 21,
+            groupName: $groupName,
+            groupType: $groupType,
+            roleTargets: ['equipe' => [PlanSubject::group(21)]],
+        );
+    }
+
+    #[Test]
+    public function a_matiere_classe_group_resolves_its_two_halves_into_two_path_segments(): void
+    {
+        $plan = $this->resolver->resolve(
+            $this->matiereTemplate('Matieres/{group.classe}/{group.matiere}'),
+            $this->matiereContext('Matiere_Math@3emeA'),
+        );
+
+        // La structure de l'ancien système, retrouvée SANS perte : le « @ »
+        // n'entre pas dans un segment, et le plan porte l'identité interne du
+        // groupe — rien n'a besoin d'être ré-analysé depuis le chemin.
+        $this->assertSame('Matieres/3emeA/Math', $plan->rootPath);
+    }
+
+    #[Test]
+    public function the_bare_name_of_a_matiere_classe_group_still_fails_explicitly(): void
+    {
+        // Comportement 60.1 CONSERVÉ : le « @ » n'est pas un segment sûr, donc
+        // `{group.bare_name}` n'est pas fourni pour ce type — et un placeholder
+        // non fourni fait échouer la résolution, jamais silencieusement.
+        $this->expectException(PlanResolutionException::class);
+        $this->expectExceptionMessageMatches('/non résolvable/u');
+
+        $this->resolver->resolve(
+            $this->matiereTemplate('Matieres/{group.bare_name}'),
+            $this->matiereContext('Matiere_Math@3emeA'),
+        );
+    }
+
+    #[Test]
+    public function the_matiere_placeholders_are_not_available_outside_that_type(): void
+    {
+        // La maille du groupe EST la maille du cloisonnement : `matiere` nu
+        // désigne les enseignants d'une discipline, pas une matière dans une
+        // classe. Ses deux moitiés n'existent pas.
+        $this->expectException(PlanResolutionException::class);
+        $this->expectExceptionMessageMatches('/\{group\.classe\}.*non résolvable|non résolvable/u');
+
+        $this->resolver->resolve(
+            $this->matiereTemplate('Matieres/{group.classe}/{group.matiere}'),
+            $this->matiereContext('Matiere_Math', 'matiere'),
+        );
+    }
+
+    #[Test]
+    public function a_name_without_a_single_at_sign_fails_explicitly(): void
+    {
+        foreach (['Matiere_Math', 'Matiere_A@B@C', 'Matiere_Ma th@3A', 'Matiere_@3A'] as $impossible) {
+            try {
+                $this->resolver->resolve(
+                    $this->matiereTemplate('Matieres/{group.classe}/{group.matiere}'),
+                    $this->matiereContext($impossible),
+                );
+                $this->fail('la résolution aurait dû échouer explicitement sur « ' . $impossible . ' »');
+            } catch (PlanResolutionException $e) {
+                $this->assertNotSame('', $e->getMessage());
+            }
+        }
+    }
+
+    #[Test]
+    public function a_matiere_classe_group_can_still_use_its_raw_name_when_it_is_safe(): void
+    {
+        // Un groupe typé matière×classe dont le nom ne porte PAS de « @ » garde le
+        // comportement ordinaire : son nom nu reste disponible.
+        $plan = $this->resolver->resolve(
+            $this->matiereTemplate('Matieres/{group.bare_name}'),
+            $this->matiereContext('Matiere_Math'),
+        );
+
+        $this->assertSame('Matieres/Math', $plan->rootPath);
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 

@@ -37,12 +37,20 @@ class UserGroupUserPivot extends Pivot
     /**
      * Story 42.1 — Vocabulaire BORNÉ du rôle d'arête `user_group_user.role`.
      *
-     * Le rôle d'un user DANS un groupe devient un attribut d'arête `string` :
-     *  - `member`  : membre simple (élève, ou tout user sans rôle de gestion) ;
-     *  - `manager` : professeur membre (dérivé de `users.role='prof'`) ;
+     * Le rôle d'un user DANS un groupe est un attribut d'arête `string`. Story
+     * 60.2 — ce vocabulaire est GÉNÉRIQUE : il qualifie une appartenance, il ne
+     * décrit aucun métier scolaire et n'est pas un niveau d'accès (l'accès est
+     * l'autre côté du mappage, `ro|rw`). Le libellé MÉTIER dépend du type de
+     * groupe et vit dans {@see \App\Support\EdgeRoleLabels} — `manager` se lit
+     * « Enseignant » en classe, « Porteur » en projet, « Référent » en équipe :
+     *  - `member`  : membre simple, sans rôle de gestion sur ce groupe ;
+     *  - `manager` : membre qui gère le groupe (posé par défaut pour un
+     *                `users.role='prof'` au rattachement, cf.
+     *                {@see self::defaultRoleForGlobalRole()}) ;
      *  - `owner`   : « propriétaire » de l'arête — ABSORBE l'ancien flag d'arête
      *                `is_head_teacher` (professeur principal). Depuis 42.2, le
-     *                rôle est la SEULE source (le miroir n'est plus écrit).
+     *                rôle est la SEULE source (le miroir n'est plus écrit) ; c'est
+     *                lui qui alimente la projection d'annuaire `PP_`.
      *
      * SQLite ne borne PAS les varchar (`string('role', 20)` non appliqué en
      * test — `project_sqlite_tests_no_varchar_enforcement`). La garde applicative

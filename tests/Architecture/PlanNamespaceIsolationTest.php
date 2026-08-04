@@ -52,6 +52,51 @@ class PlanNamespaceIsolationTest extends TestCase
     private const PLAN_NAMESPACE_DIR = 'app/Services/Filesystem/Plan';
 
     /**
+     * Story 60.2 — l'ASSEMBLEUR, qui vit HORS du namespace pur.
+     *
+     * Il requête Eloquent — c'est sa raison d'être, et c'est pour cela qu'il n'est
+     * pas dans le namespace du plan : la pureté du résolveur est ce qui rend ses
+     * tests rapides et sa sortie rejouable, et on ne la dilue pas. Mais le sortir
+     * du namespace sans rien à la place rouvrirait exactement le chemin que la
+     * story 60.1 a fermé : celui qui va chercher la dérivation des noms de groupes
+     * système « pour la réutiliser ». La ligne de coupe passe donc AUSSI par ici,
+     * avec un sous-ensemble de règles : pas de service d'exécution, pas de
+     * processus, pas de commande système.
+     */
+    private const ASSEMBLER_FILE = 'app/Services/Filesystem/TreePlanService.php';
+
+    /**
+     * Règles applicables à l'assembleur : celles qui portent sur l'EXÉCUTION.
+     * Les règles de requête et de modèle d'identité en sont volontairement
+     * absentes — l'assembleur requête, c'est son travail.
+     *
+     * @var list<string>
+     */
+    private const ASSEMBLER_RULES = [
+        'service du partage de classes',
+        'service de listes d\'accès',
+        'service de provisionnement des répertoires réseau',
+        'exécution de processus (façade)',
+        'exécution système (fonctions)',
+        'commandes de système de fichiers',
+        // L'assembleur revendique « SQL seulement, JAMAIS L'ANNUAIRE » et « il ne
+        // touche à aucun fichier ». Ces deux règles-là sont ce qui rend la phrase
+        // vraie : sans elles, un appel réseau vers l'annuaire ou une lecture de
+        // fichier ajoutés « pour dépanner » passeraient, pendant que le docblock
+        // continuerait d'affirmer que c'est structurellement impossible. Une
+        // garantie qui ne vit que dans le commentaire est la signature de défaut
+        // que cet epic rencontre le plus souvent.
+        'accès réseau',
+        'accès au système de fichiers',
+    ];
+
+    // NB : « requête Eloquent », la façade de base de données et les deux modèles
+    // d'identité restent HORS de cette liste — interroger SQL et charger un groupe
+    // sont précisément le travail de l'assembleur. La revendication « SQL
+    // seulement » n'interdit pas la base : elle interdit l'ANNUAIRE, qui se prend
+    // par le réseau. Les y ajouter viderait le fichier de sa raison d'être.
+
+    /**
      * Frontières du namespace du plan. `étiquette => motif`.
      *
      * @var array<string, string>
@@ -181,6 +226,61 @@ class PlanNamespaceIsolationTest extends TestCase
                 . 'final class X { public function f(string $p): bool { return preg_match("/a/", $p) === 1; } }'
             ),
         );
+    }
+
+    /**
+     * Story 60.2 — l'assembleur requête, mais il n'exécute rien.
+     */
+    #[Test]
+    public function the_assembler_queries_but_never_executes(): void
+    {
+        $path = self::repoPath(self::ASSEMBLER_FILE);
+        self::assertFileExists($path, 'l\'assembleur doit exister là où la garde le cherche');
+
+        $content = (string) file_get_contents($path);
+
+        $found = array_values(array_intersect($this->violations($content), self::ASSEMBLER_RULES));
+
+        self::assertSame(
+            [],
+            $found,
+            'LIGNE DE COUPE FRANCHIE PAR L\'ASSEMBLEUR. Il assemble des identités internes depuis SQL et '
+            . 'délègue au résolveur pur ; la dérivation des noms de groupes système et la pose des '
+            . 'permissions appartiennent au contrat de backend, APRÈS cette ligne. Règles violées : '
+            . json_encode($found, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        );
+
+        // Méta-test : la garde de l'assembleur doit inspecter un fichier qui a
+        // réellement le contenu attendu — un fichier vide passerait sinon.
+        self::assertStringContainsString(
+            'class TreePlanService',
+            $content,
+            'la garde doit inspecter l\'assembleur RÉEL',
+        );
+    }
+
+    /**
+     * Story 60.2 — chaque règle appliquée à l'assembleur voit son aiguille. Sans
+     * ce contrôle, une étiquette mal orthographiée dans la liste ci-dessus
+     * rendrait la garde de l'assembleur silencieusement vide.
+     */
+    #[Test]
+    public function the_assembler_rules_are_real_rules_with_working_needles(): void
+    {
+        foreach (self::ASSEMBLER_RULES as $label) {
+            self::assertArrayHasKey($label, self::FORBIDDEN_RULES, 'règle inconnue : ' . $label);
+            self::assertContains(
+                $label,
+                $this->violations(self::NEEDLES[$label]),
+                sprintf('la règle « %s » ne détecte pas son aiguille', $label),
+            );
+        }
+
+        // Et les règles VOLONTAIREMENT absentes le sont : l'assembleur a le droit
+        // de requêter et de connaître les modèles d'identité.
+        foreach (['requête Eloquent', 'base de données (façade)', 'modèle groupe d\'utilisateurs'] as $allowed) {
+            self::assertNotContains($allowed, self::ASSEMBLER_RULES);
+        }
     }
 
     /**

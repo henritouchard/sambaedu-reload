@@ -1243,8 +1243,124 @@ recette en DB et délègue au socle (`provision()`, `NetworkShareValidator`).
 - [ ] **Aucune UI, aucune route, aucune commande** n'a été ajoutée — si quelque chose d'observable est apparu, c'est un défaut
 - [ ] Suite automatisée verte sur l'hôte (résolveur, garde de neutralité, isolation d'architecture) — la VM n'a pas `pdo_sqlite`, ne pas tenter d'y jouer les tests
 
+## Story 60.2 — Résolution de rôle par règle et accrochage au type de groupe
+
+> ⚠️ **Cette story n'a, elle non plus, AUCUN effet observable en production — à une
+> exception près, purement textuelle : trois libellés changent à l'écran.** La
+> chaîne « groupe → plan » est livrée COMPLÈTE et **DORMANTE** : aucun code de
+> production ne l'appelle, aucune recette n'est accrochée à un type de groupe,
+> aucun déclencheur n'est câblé à la création d'un groupe. Le brancher exige un
+> backend capable d'exécuter un arbre (60.3/60.4) et la recette classe seedée
+> (60.5). Tenter de « voir le plan quelque part » dans l'admin est donc vain : il
+> n'y a rien à voir, et c'est le comportement attendu.
+>
+> La QA manuelle porte sur quatre points : **la migration s'applique et se
+> rétracte**, **les recettes livrées restent non accrochées et se matérialisent
+> comme avant**, **les libellés de rôle d'arête suivent le type de groupe**, et
+> **rien du comportement 5.2 / 34.x n'a bougé**. Le reste (stratégies de
+> résolution, sujet abstrait d'audience, décomposition « matière × classe ») est
+> verrouillé par la suite automatisée sur l'hôte.
+
+### Scénario 60.2-1 — La migration s'applique et n'accroche rien
+
+1. Sur `/vm` : `php artisan migrate` (au besoin `--pretend` d'abord).
+2. **Attendu** : la migration `add_attached_group_type_to_directory_templates`
+   ajoute **une seule colonne**, `attached_group_type`, **nullable** et **unique**,
+   à `directory_templates`. Aucune autre table touchée, aucune reprise de données.
+3. En tinker : `DirectoryTemplate::all()->pluck('attached_group_type', 'key');`
+   → les 4 valeurs sont `null`. **Aucune recette n'est accrochée**, et c'est
+   volontaire : l'accrochage est seedé en 60.5.
+
+### Scénario 60.2-2 — Les 4 recettes livrées se matérialisent exactement comme avant
+
+1. Sur `/app/shares`, « Créer depuis un template » : matérialiser un
+   `profs_to_eleves` et un `user_to_user` comme d'habitude.
+2. **Attendu** : formulaire identique, mêmes cibles à désigner à la main, mêmes
+   assignations produites. L'absence de règle de résolution vaut « cible désignée
+   à la matérialisation » — c'est le comportement de 34.3, inchangé.
+3. Rejouer `php artisan db:seed --class=DirectoryTemplateSeeder` : toujours 4
+   recettes, toujours non accrochées (le seeder n'a pas été modifié).
+4. **Piège à vérifier au passage** : `user_to_user` doit rester matérialisable. Ses
+   deux rôles visent des **personnes** — un correctif qui rejetterait les
+   utilisateurs comme cible casserait cette recette, et c'est l'erreur que la revue
+   de 60.1 avait failli faire entrer.
+
+### Scénario 60.2-3 — Les libellés de rôle d'arête suivent le type de groupe
+
+C'est **le seul changement visible** de la story. Les valeurs stockées
+(`member`/`manager`/`owner`) sont **inchangées** : seule leur lecture change.
+
+1. Ouvrir une **classe** (`/app/users/groups/<id>` d'un groupe de type `classe`),
+   onglet Profs et onglet Élèves.
+   **Attendu** : la colonne « Rôle » lit « Élève », « **Enseignant** » (et non plus
+   « Prof ») et « **Professeur principal** » (et non plus « Prof principal »). Pour
+   un porteur d'`update-group`, la liste déroulante affiche les mêmes trois
+   libellés ; l'option « Professeur principal » reste réservée aux classes.
+2. Ouvrir un groupe de type **projet** contenant un membre `manager`.
+   **Attendu** : ce membre se lit « **Porteur** », plus « Prof ». Un membre simple
+   s'y lit « **Membre** », plus « Élève ».
+3. Ouvrir un groupe de type **équipe** contenant un `manager` : il se lit
+   « **Référent** ».
+4. Ouvrir un groupe d'un type non tranché (cours, matière, custom…) : repli
+   générique « Membre / Gestionnaire / Propriétaire ». **Aucune valeur technique
+   (`member`, `manager`, `owner`) ne doit apparaître comme texte visible, nulle
+   part.**
+5. Fiche utilisateur `/app/users/<login>` : dans la liste de ses groupes, le badge
+   de rôle suit la même table (rien pour un membre simple, le libellé du type
+   sinon).
+6. **Non-régression fonctionnelle** : changer le rôle d'un membre depuis la liste
+   déroulante fonctionne comme avant (la valeur envoyée reste `member`/`manager`/
+   `owner`), et la reprojection d'annuaire du professeur principal (`PP_`) est
+   inchangée.
+
+### Scénario 60.2-4 — Aucune permission de fichier n'a bougé
+
+1. Sur un partage classe existant : `getfacl /var/sambaedu/Classes/Classe_<X>` et
+   ses sous-dossiers (`_travail`, `_profs`, `_echange`, dossiers élèves).
+2. Sur un répertoire réseau 34.x : `getfacl /var/sambaedu/Partages/<dir>`.
+3. **Attendu** : sorties **identiques** à avant déploiement. Trivialement vrai
+   (aucun service d'exécution n'a été modifié : `ShareService`,
+   `NetworkShareService`, `DirectoryTemplateService` et le seeder sont à zéro
+   diff), mais c'est le critère mesurable du garde-fou d'epic.
+
+### Scénario 60.2-5 — La migration se rétracte
+
+1. Sur un environnement de test (jamais en prod) : `php artisan migrate:rollback --step=1`.
+2. **Attendu** : la colonne `attached_group_type` et son index unique disparaissent,
+   les 4 recettes et leurs `roles_spec` sont intactes, l'application continue de
+   fonctionner. Rejouer `migrate` pour revenir.
+
+### Ce qui N'EST PAS observable, et qu'il ne faut pas chercher
+
+Ces comportements existent, sont testés sur l'hôte, et ne se voient d'aucun écran :
+
+- les quatre stratégies de résolution (`self`, `designated`, `pattern`,
+  `edge_role`) et leur validation ;
+- le sujet **abstrait** d'une audience d'arête — « les membres de ce groupe portant
+  ce rôle », un sujet par rôle listé, indépendant de l'effectif (3 membres et 300
+  membres produisent les mêmes sujets) ;
+- la décomposition d'un nom « matière × classe » (`Matiere_Math@3emeA`) en deux
+  segments de chemin — **aucune recette matière n'est seedée**, le modèle sait
+  seulement les accueillir ;
+- l'accrochage d'une recette à un type de groupe — **aucune donnée d'accrochage
+  n'est écrite** par cette story.
+
+### Checklist rapide — Story 60.2
+
+- [ ] 60.2-1 : migration jouée, 1 colonne nullable unique ajoutée, les 4 recettes restent non accrochées
+- [ ] 60.2-2 : « Créer depuis un template » identique à 34.3, `user_to_user` toujours matérialisable
+- [ ] 60.2-3 : libellés par type — classe « Élève / Enseignant / Professeur principal », projet « Porteur », équipe « Référent », repli générique ailleurs
+- [ ] 60.2-3 : aucune valeur technique (`member`/`manager`/`owner`) rendue comme texte visible
+- [ ] 60.2-3 : changer un rôle depuis la liste déroulante fonctionne toujours, projection `PP_` inchangée
+- [ ] 60.2-4 : `getfacl` inchangé sur les partages classe **et** sur les répertoires réseau
+- [ ] 60.2-5 : `migrate:rollback` propre, données 34.3 intactes
+- [ ] **Aucune UI nouvelle, aucune route, aucune commande** — hors les trois libellés, rien d'observable ne doit être apparu
+- [ ] Suite automatisée verte sur l'hôte — la VM n'a pas `pdo_sqlite`, ne pas tenter d'y jouer les tests
+
 ---
 
-*Dernière mise à jour : 2026-08-04 (Story 60.1 — la recette devient un arbre : colonnes additives nullables `path_pattern`/`nodes_spec` sur `directory_templates`, enum fermée `PlanNodeNature` (4 natures), DTO de plan neutres + résolution PURE `PlanResolver`, clôture calculée par nœud (AC9, issue du spike 60.0), garde de neutralité + test d'architecture verrouillant la ligne de coupe ; AUCUN effet observable en production — services d'exécution et seeder INTOUCHÉS)*
+*Dernière mise à jour : 2026-08-04 (Story 60.2 — résolution de rôle par règle : enum fermée `RoleResolutionStrategy` (self · designated [défaut, iso-34.3] · pattern · edge_role) portée par la clé additive `resolution` de `roles_spec` et validée sur le modèle, colonne additive nullable UNIQUE `attached_group_type`, assembleur `TreePlanService` (SQL seulement, hors namespace pur, test d'architecture étendu), décomposition « matière × classe » en deux segments de chemin, table canonique `EdgeRoleLabels` recâblée sur les trois écrans — SEUL changement visible : les libellés de rôle d'arête suivent le type de groupe ; la chaîne groupe→plan est livrée COMPLÈTE et DORMANTE, services d'exécution et seeder INTOUCHÉS)*
+
+*Mise à jour précédente : 2026-08-04 (Story 60.1 — la recette devient un arbre : colonnes additives nullables `path_pattern`/`nodes_spec` sur `directory_templates`, enum fermée `PlanNodeNature` (4 natures), DTO de plan neutres + résolution PURE `PlanResolver`, clôture calculée par nœud (AC9, issue du spike 60.0), garde de neutralité + test d'architecture verrouillant la ligne de coupe ; AUCUN effet observable en production — services d'exécution et seeder INTOUCHÉS)*
 
 *Mise à jour précédente : 2026-06-30 (Story 34.3 — Templates de répertoire : table `directory_templates` + `DirectoryTemplateSeeder` (4 recettes, Q3 option B) + `DirectoryTemplateService::materialize` (transaction + validation réutilisée 34.2, mapping de maille non redérivé) + 2e modale « Créer depuis un template » sur `/app/shares` (formulaire dynamique, aperçu, gating `networkshare.manage`) ; casiers « élèves→profs » par-élève reportés 34.x ; socle figé INTOUCHÉ ; **post-review** : surfaçage warnings AC2 [#1], pré-check unicité service [M-1], garde-fou seeder [M-2], test cible manquante [#2])*

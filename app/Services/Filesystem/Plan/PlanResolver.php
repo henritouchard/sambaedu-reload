@@ -280,12 +280,39 @@ final class PlanResolver
      * casse préservée). Sans lui, un motif qui re-préfixe produirait le double
      * préfixe bien connu sur les groupes dont le nom stocké porte déjà le préfixe.
      *
+     * **Story 60.2 — les deux moitiés d'un nom « matière × classe ».**
+     * `{group.matiere}` et `{group.classe}` ne sont fournis que pour un groupe de
+     * ce type, dont le nom (`Matiere_Maths@6A`) porte deux mailles et n'est donc
+     * pas un segment de chemin sûr. Un placeholder NON FOURNI fait échouer la
+     * substitution avec son message dédié — c'est le comportement de la story
+     * 60.1, et c'est exactement ce qu'on veut ici : `{group.bare_name}` sur un
+     * groupe matière×classe continue d'échouer explicitement, le « @ » n'entrant
+     * jamais dans un segment de chemin.
+     *
+     * Le nom reste inexploitable SEULEMENT s'il ne donne ni segment sûr ni
+     * décomposition : là, l'échec est immédiat et nomme le groupe, plutôt que de
+     * se manifester plus tard comme un placeholder mystérieusement absent.
+     *
      * @return array<string, string>
      */
     private function groupSubstitutions(PlanResolutionContext $context): array
     {
+        $values = [DirectoryTemplate::PLACEHOLDER_GROUP_NAME => $context->groupName];
+
         $bare = GroupNameNormalizer::bareName($context->groupName, $context->groupType);
-        if ($bare === null) {
+        if ($bare !== null) {
+            $values[DirectoryTemplate::PLACEHOLDER_GROUP_BARE_NAME] = $bare;
+        }
+
+        if ($context->groupType === GroupNameNormalizer::TYPE_MATIERE_CLASSE) {
+            $parts = GroupNameNormalizer::matiereClasseParts($context->groupName);
+            if ($parts !== null) {
+                $values[DirectoryTemplate::PLACEHOLDER_GROUP_MATIERE] = $parts['matiere'];
+                $values[DirectoryTemplate::PLACEHOLDER_GROUP_CLASSE] = $parts['classe'];
+            }
+        }
+
+        if ($bare === null && ! isset($values[DirectoryTemplate::PLACEHOLDER_GROUP_MATIERE])) {
             throw PlanResolutionException::make(sprintf(
                 'le nom du groupe « %s » ne donne pas un segment de chemin sûr (type « %s »).',
                 $context->groupName,
@@ -293,10 +320,7 @@ final class PlanResolver
             ));
         }
 
-        return [
-            DirectoryTemplate::PLACEHOLDER_GROUP_NAME => $context->groupName,
-            DirectoryTemplate::PLACEHOLDER_GROUP_BARE_NAME => $bare,
-        ];
+        return $values;
     }
 
     /**

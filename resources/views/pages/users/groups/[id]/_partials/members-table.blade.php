@@ -7,6 +7,11 @@
      par héritage de scope Blade (@include partage get_defined_vars()) — il
      gate l'option « Prof principal » (D3). --}}
 @php($withHeadTeacher = $withHeadTeacher ?? false)
+{{-- Story 60.2 — libellés du rôle d'arête par TYPE de groupe, depuis la table
+     canonique : « Enseignant » en classe, « Porteur » en projet, « Référent » en
+     équipe, repli générique ailleurs. Les VALEURS envoyées au serveur restent
+     `member|manager|owner`. --}}
+@php($edgeRoleOptions = \App\Support\EdgeRoleLabels::options($type ?? null))
 <div class="overflow-x-auto">
     <table class="table table-zebra">
         <thead>
@@ -40,10 +45,10 @@
                             <select wire:key="member-role-{{ $member['id'] }}"
                                 wire:change="updateMemberRole({{ $member['id'] }}, $event.target.value)"
                                 class="select select-bordered select-sm">
-                                <option value="member" @selected($member['edge_role'] === 'member')>Élève</option>
-                                <option value="manager" @selected($member['edge_role'] === 'manager')>Prof</option>
+                                <option value="member" @selected($member['edge_role'] === 'member')>{{ $edgeRoleOptions['member'] }}</option>
+                                <option value="manager" @selected($member['edge_role'] === 'manager')>{{ $edgeRoleOptions['manager'] }}</option>
                                 @if (($type ?? null) === 'classe' || $member['edge_role'] === 'owner')
-                                    <option value="owner" @selected($member['edge_role'] === 'owner')>Prof principal</option>
+                                    <option value="owner" @selected($member['edge_role'] === 'owner')>{{ $edgeRoleOptions['owner'] }}</option>
                                 @endif
                             </select>
                         @else

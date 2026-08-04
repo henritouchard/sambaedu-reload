@@ -143,6 +143,106 @@ trait ClassTreeRecipe
     }
 
     /**
+     * Story 60.2 — LA MÊME recette, rendue AUTO-RÉSOLVABLE et accrochable au type
+     * `classe`. C'est exactement ce que la story 60.5 seedera, et l'écrire ici en
+     * décor est la répétition générale.
+     *
+     * Deux rôles seulement, et deux stratégies :
+     *  - `equipe` en stratégie d'ARÊTE sur `manager|owner`. C'est la seule façon
+     *    de dire « les enseignants de cette classe » : depuis le repliement 4.13,
+     *    l'équipe pédagogique n'a plus de ligne à elle en base. Deux rôles
+     *    d'arête listés ⇒ DEUX sujets abstraits, quel que soit l'effectif.
+     *  - `classe` en stratégie « lui-même » : le groupe de matérialisation entier.
+     *
+     * Aucun rôle en cible désignée : c'est la condition d'accrochage, et c'est ce
+     * qui permettra à la création d'un groupe de matérialiser son arbre seule.
+     *
+     * @param  string|null  $attachedType  type de groupe accroché (`null` = non accrochée)
+     */
+    protected function autoResolvableClassTreeTemplate(?string $attachedType = 'classe'): DirectoryTemplate
+    {
+        return new DirectoryTemplate([
+            'key' => 'classe_share_auto',
+            'label' => 'Partage de classe (auto-résolvable)',
+            'description' => 'La recette que la création d\'un groupe classe pourra matérialiser seule.',
+            'attached_group_type' => $attachedType,
+            'roles_spec' => [
+                [
+                    'key' => 'equipe',
+                    'label' => 'Équipe enseignante',
+                    'maille' => UserGroup::class,
+                    'group_type' => 'classe',
+                    'access' => 'rw',
+                    'cardinality' => 'one',
+                    'resolution' => [
+                        'strategy' => 'edge_role',
+                        'edge_roles' => ['manager', 'owner'],
+                    ],
+                ],
+                [
+                    'key' => 'classe',
+                    'label' => 'Élèves de la classe',
+                    'maille' => UserGroup::class,
+                    'group_type' => 'classe',
+                    'access' => 'ro',
+                    'cardinality' => 'one',
+                    'resolution' => ['strategy' => 'self'],
+                ],
+            ],
+            'path_pattern' => 'Classes/Classe_{group.bare_name}',
+            'nodes_spec' => [
+                [
+                    'path' => '_travail',
+                    'label' => 'Documents de travail',
+                    'nature' => 'partagee',
+                    'grants' => [
+                        ['role' => 'equipe', 'access' => 'rw'],
+                        ['role' => 'classe', 'access' => 'ro'],
+                    ],
+                ],
+                [
+                    'path' => '_travail/devoirs',
+                    'label' => 'Dépôt des devoirs',
+                    'nature' => 'contenu_libre',
+                    'grants' => [
+                        ['role' => 'equipe', 'access' => 'rw'],
+                        ['role' => 'classe', 'access' => 'ro'],
+                    ],
+                ],
+                [
+                    'path' => '_profs',
+                    'label' => 'Espace des enseignants',
+                    'nature' => 'partagee',
+                    'grants' => [
+                        ['role' => 'equipe', 'access' => 'rw'],
+                    ],
+                ],
+                [
+                    'path' => '_echange',
+                    'label' => 'Espace d\'échange',
+                    'nature' => 'activable',
+                    'activable' => true,
+                    'grants' => [
+                        ['role' => 'equipe', 'access' => 'rw'],
+                        ['role' => 'classe', 'access' => 'rw', 'suspendable' => true],
+                    ],
+                ],
+                [
+                    'path' => '{member.login}',
+                    'label' => 'Dossier personnel',
+                    'nature' => 'par_membre',
+                    'edge_role' => 'member',
+                    'plafond' => 2147483648,
+                    'grants' => [
+                        ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
+                        ['role' => 'equipe', 'access' => 'rw'],
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * Contexte de résolution : un groupe au nom DÉJÀ préfixé, quatre membres
      * couvrant les trois rôles d'arête, et les cibles des rôles de la recette —
      * dont une audience qualifiée par un rôle d'arête (la forme dictée par la

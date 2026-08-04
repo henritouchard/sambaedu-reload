@@ -156,4 +156,87 @@ class GroupNameNormalizerTest extends TestCase
         $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole(null));
         $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole(42));
     }
+
+    // =========================================================================
+    // Story 60.2 — la décomposition « matière × classe »
+    // =========================================================================
+
+    #[Test]
+    public function a_matiere_classe_name_decomposes_into_two_safe_segments(): void
+    {
+        $this->assertSame(
+            ['matiere' => 'Math', 'classe' => '3emeA'],
+            GroupNameNormalizer::matiereClasseParts('Matiere_Math@3emeA'),
+        );
+    }
+
+    #[Test]
+    public function the_type_prefix_is_stripped_case_insensitively_and_is_optional(): void
+    {
+        $expected = ['matiere' => 'Maths', 'classe' => '6A'];
+
+        $this->assertSame($expected, GroupNameNormalizer::matiereClasseParts('Matiere_Maths@6A'));
+        $this->assertSame($expected, GroupNameNormalizer::matiereClasseParts('matiere_Maths@6A'), 'annuaire hérité en minuscules');
+        $this->assertSame($expected, GroupNameNormalizer::matiereClasseParts('Maths@6A'), 'nom déjà dé-préfixé');
+    }
+
+    #[Test]
+    public function the_case_of_each_half_is_preserved(): void
+    {
+        $this->assertSame(
+            ['matiere' => 'Physique-Chimie', 'classe' => '3emeA'],
+            GroupNameNormalizer::matiereClasseParts('Matiere_Physique-Chimie@3emeA'),
+        );
+    }
+
+    /**
+     * @return list<array{0:string,1:string}>
+     */
+    public static function undecomposableNames(): array
+    {
+        return [
+            ['Matiere_Maths', 'aucun « @ » : rien à décomposer, on ne devine pas la classe'],
+            ['Matiere_A@B@C', 'deux « @ » : découper demanderait de choisir un côté'],
+            ['Matiere_@6A', 'moitié gauche vide'],
+            ['Matiere_Maths@', 'moitié droite vide'],
+            ['Matiere_Ma ths@6A', 'espace : la moitié gauche n\'est pas un segment sûr'],
+            ['Matiere_Maths@6/A', 'séparateur de chemin dans la moitié droite'],
+            ['Matiere_.cachee@6A', 'point en premier caractère'],
+            ['Matiere_', 'nom réduit à son seul préfixe'],
+            ['', 'nom vide'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('undecomposableNames')]
+    public function an_undecomposable_name_yields_null_never_a_guess(string $rawName, string $why): void
+    {
+        $this->assertNull(GroupNameNormalizer::matiereClasseParts($rawName), $why);
+    }
+
+    #[Test]
+    public function the_bare_name_of_a_matiere_classe_group_still_refuses_the_at_sign(): void
+    {
+        // Le « @ » n'entre JAMAIS dans un segment de chemin : c'est la garantie
+        // que le motif de segment reste la copie exacte de celui du provisioning.
+        // La décomposition est la seule porte de sortie, et elle est explicite.
+        $this->assertNull(GroupNameNormalizer::bareName('Matiere_Maths@6A', 'matiere_classe'));
+        $this->assertFalse(GroupNameNormalizer::isSafeSegment('Maths@6A'));
+    }
+
+    #[Test]
+    public function the_decomposition_never_loses_information(): void
+    {
+        $parts = GroupNameNormalizer::matiereClasseParts('Matiere_Math@6A');
+        $homonyme = GroupNameNormalizer::bareName('Matiere_Math-6A', 'matiere_classe');
+
+        // La normalisation naïve du séparateur (« @ » → « - ») produirait
+        // EXACTEMENT le segment d'un AUTRE groupe, réellement nommé « Math-6A ».
+        // Voilà la perte qu'on refuse : deux groupes distincts, un seul chemin, et
+        // plus aucun moyen de remonter du chemin au groupe.
+        $this->assertSame($homonyme, str_replace('@', '-', 'Math@6A'));
+
+        // La décomposition garde les deux moitiés séparées : rien ne collisionne.
+        $this->assertSame(['matiere' => 'Math', 'classe' => '6A'], $parts);
+    }
 }

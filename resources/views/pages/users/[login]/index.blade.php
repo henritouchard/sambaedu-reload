@@ -15,6 +15,7 @@ use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
 use App\Models\Pivot\UserGroupUserPivot;
+use App\Support\EdgeRoleLabels;
 use App\Models\Wallpaper;
 use App\Models\Delegation;
 use Illuminate\Support\Facades\Gate;
@@ -239,9 +240,12 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                 'edge_role' => $edgeRole,
                 // Membre simple : pas de badge (c'est le cas par défaut, le
                 // signaler noierait les rôles qui, eux, sont informatifs).
+                // Story 60.2 — le libellé vient de la table CANONIQUE par type de
+                // groupe (« Porteur » dans un projet, « Référent » dans une
+                // équipe), plus d'un `match` local écrit pour la seule classe.
                 'edge_role_label' => $edgeRole === UserGroupUserPivot::ROLE_MEMBER
                     ? null
-                    : self::edgeRoleLabel($edgeRole),
+                    : EdgeRoleLabels::label(is_string($group->type) ? (string) $group->type : null, $edgeRole),
             ];
         }
 
@@ -286,15 +290,6 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         };
     }
 
-    /** Libellé FR du rôle d'arête — aligné sur la table des membres du groupe. */
-    private static function edgeRoleLabel(string $role): string
-    {
-        return match ($role) {
-            UserGroupUserPivot::ROLE_MANAGER => 'Prof',
-            UserGroupUserPivot::ROLE_OWNER => 'Prof principal',
-            default => 'Élève',
-        };
-    }
 
     public function removeFromGroup(string $group): void
     {

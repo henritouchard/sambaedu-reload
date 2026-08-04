@@ -224,13 +224,16 @@ class GroupShowMembersTabsTest extends TestCase
 
         // Piège 42.1 #5 — collision de clés interdite : `role` (global) reste
         // prof/eleve/autre, `edge_role` (arête) porte member/manager/owner.
+        // Story 60.2 — les libellés viennent désormais de la table canonique par
+        // TYPE de groupe (ici « classe ») : « Enseignant » et « Professeur
+        // principal » remplacent les abréviations écrites en dur.
         $this->assertSame('prof', $members[$profPp->id]['role']);
         $this->assertSame(UserGroupUserPivot::ROLE_OWNER, $members[$profPp->id]['edge_role']);
-        $this->assertSame('Prof principal', $members[$profPp->id]['edge_role_label']);
+        $this->assertSame('Professeur principal', $members[$profPp->id]['edge_role_label']);
 
         $this->assertSame('prof', $members[$prof->id]['role']);
         $this->assertSame(UserGroupUserPivot::ROLE_MANAGER, $members[$prof->id]['edge_role']);
-        $this->assertSame('Prof', $members[$prof->id]['edge_role_label']);
+        $this->assertSame('Enseignant', $members[$prof->id]['edge_role_label']);
 
         $this->assertSame('eleve', $members[$eleve->id]['role']);
         $this->assertSame(UserGroupUserPivot::ROLE_MEMBER, $members[$eleve->id]['edge_role']);
@@ -243,14 +246,16 @@ class GroupShowMembersTabsTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $group = UserGroup::create(['name' => 'Projet', 'type' => 'projet', 'display_name' => 'Projet X']);
         $user = User::create(['login' => 'sale.role', 'role' => 'eleve', 'fullname' => 'Sale Role', 'is_active' => true]);
-        // Arête hors vocabulaire (donnée sale) — D1 : affichée « Élève ».
+        // Arête hors vocabulaire (donnée sale) — D1 : ramenée au rôle le moins
+        // doté. Story 60.2 : dans un groupe de type « projet », ce rôle se lit
+        // « Membre » — écrire « Élève » là était un reste du seul cas scolaire.
         $group->users()->sync([$user->id => ['role' => 'superadmin']]);
 
         $members = collect(Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members())
             ->keyBy('id');
 
         $this->assertSame(UserGroupUserPivot::ROLE_MEMBER, $members[$user->id]['edge_role']);
-        $this->assertSame('Élève', $members[$user->id]['edge_role_label']);
+        $this->assertSame('Membre', $members[$user->id]['edge_role_label']);
     }
 
     #[Test]
@@ -265,8 +270,8 @@ class GroupShowMembersTabsTest extends TestCase
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->assertSee('Rôle')
             ->assertSee('Élève')
-            ->assertSee('Prof')
-            ->assertSee('Prof principal');
+            ->assertSee('Enseignant')
+            ->assertSee('Professeur principal');
     }
 
     #[Test]

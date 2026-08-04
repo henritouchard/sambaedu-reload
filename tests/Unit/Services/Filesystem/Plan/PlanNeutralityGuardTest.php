@@ -29,29 +29,7 @@ use Tests\TestCase;
 class PlanNeutralityGuardTest extends TestCase
 {
     use ClassTreeRecipe;
-
-    /**
-     * Marqueurs INTERDITS dans un plan sérialisé.
-     *
-     * @var array<string, string>
-     */
-    private const FORBIDDEN_MARKERS = [
-        'mode de permission' => 'rwx',
-        'mode de permission (lecture-exécution)' => ':rx',
-        'commande de pose de liste d\'accès' => 'setfacl',
-        'commande de lecture de liste d\'accès' => 'getfacl',
-        'entrée propriétaire d\'une liste d\'accès' => 'user::',
-        'entrée de groupe d\'une liste d\'accès' => 'group:',
-        'entrée héritée d\'une liste d\'accès' => 'default:',
-        'masque d\'une liste d\'accès' => 'mask::',
-        'entrée « autres » d\'une liste d\'accès' => 'other::',
-        'groupe d\'annuaire échappé' => 'domain\\040admins',
-        'racine système' => '/var/',
-        'racine des répertoires réseau' => 'Partages',
-        'racine des classes' => '/Classes',
-        'élévation de privilège' => 'sudo',
-        'refus explicite' => 'deny',
-    ];
+    use PlanNeutralityMarkers;
 
     #[Test]
     public function a_representative_plan_carries_no_trace_of_the_layer_below(): void
@@ -69,44 +47,7 @@ class PlanNeutralityGuardTest extends TestCase
             'les quatre natures doivent être exercées',
         );
 
-        $haystack = $this->plainTextOf($plan);
-
-        foreach (self::FORBIDDEN_MARKERS as $label => $marker) {
-            $this->assertStringNotContainsStringIgnoringCase(
-                $marker,
-                $haystack,
-                sprintf('LIGNE DE COUPE FRANCHIE : %s (« %s ») dans le plan sérialisé.', $label, $marker),
-            );
-        }
-    }
-
-    /**
-     * Texte BRUT du plan : toutes ses clés et valeurs scalaires mises bout à bout.
-     *
-     * On ne cherche PAS dans le JSON, et c'est le méta-test qui l'a imposé. Le JSON
-     * échappe l'antislash : un plan portant `domain\040admins` sort en
-     * `domain\\040admins`, et une recherche de la forme brute ne le trouve pas — la
-     * garde aurait donc été AVEUGLE au seul marqueur qui contient un antislash,
-     * c'est-à-dire au nom de groupe d'annuaire échappé, exactement celui que la
-     * couche du dessous écrit dans ses listes d'accès. La garde doit porter sur le
-     * VOCABULAIRE du plan, pas sur les accidents de son encodage.
-     */
-    private function plainTextOf(\App\Services\Filesystem\Plan\FilePlan $plan): string
-    {
-        $parts = [];
-        $walk = static function (array $data) use (&$walk, &$parts): void {
-            foreach ($data as $key => $value) {
-                $parts[] = (string) $key;
-                if (is_array($value)) {
-                    $walk($value);
-                } elseif ($value !== null && ! is_bool($value)) {
-                    $parts[] = (string) $value;
-                }
-            }
-        };
-        $walk($plan->toArray());
-
-        return implode("\n", $parts);
+        $this->assertPlanIsNeutral($plan);
     }
 
     #[Test]
@@ -189,7 +130,7 @@ class PlanNeutralityGuardTest extends TestCase
     #[Test]
     public function the_guard_actually_detects_every_marker_it_claims_to_forbid(): void
     {
-        foreach (self::FORBIDDEN_MARKERS as $label => $marker) {
+        foreach (self::forbiddenMarkers() as $label => $marker) {
             $plan = (new PlanResolver())->resolve(
                 $this->classTreeTemplate(nodeLabel: 'Dossier ' . $marker),
                 $this->classTreeContext(),

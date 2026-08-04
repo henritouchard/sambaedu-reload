@@ -25,4 +25,19 @@ final class InvalidTreeSpecException extends InvalidArgumentException
     {
         return new self('Recette invalide (arbre de répertoire) : ' . $reason);
     }
+
+    /**
+     * Story 60.2 — même exception, autre volet de la MÊME recette : la règle par
+     * laquelle un rôle trouve sa cible (`resolution`), ou l'accrochage de la
+     * recette à un type de groupe.
+     *
+     * Un type d'exception distinct n'apporterait rien : l'appelant qui attrape
+     * « recette invalide » veut savoir que la recette est invalide, pas de quel
+     * paragraphe elle l'est. Seul le libellé change, pour que le message dise où
+     * regarder.
+     */
+    public static function makeResolution(string $reason): self
+    {
+        return new self('Recette invalide (résolution de rôle) : ' . $reason);
+    }
 }

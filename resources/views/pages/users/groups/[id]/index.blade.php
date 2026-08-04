@@ -5,6 +5,7 @@ use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Services\UserGroupService;
+use App\Support\EdgeRoleLabels;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
@@ -68,7 +69,15 @@ new #[Title('Groupe utilisateur')] class extends Component {
     #[Computed]
     public function members(): Collection
     {
-        return $this->userGroupService->getById($this->groupId)?->users?->map(function ($user): array {
+        $group = $this->userGroupService->getById($this->groupId);
+
+        // Story 60.2 — le libellé du rôle d'arête dépend du TYPE de groupe
+        // (« Enseignant » en classe, « Porteur » en projet, « Référent » en
+        // équipe). On lit le type en BASE et non `$this->type` : cette propriété
+        // Livewire publique est ré-hydratée depuis le client, donc forgeable.
+        $groupType = is_string($group?->type) ? (string) $group->type : null;
+
+        return $group?->users?->map(function ($user) use ($groupType): array {
             $label = $user->fullname ?: trim((string) (($user->firstname ?? '') . ' ' . ($user->lastname ?? '')));
             if ($label === '') {
                 $label = $user->login;
@@ -104,22 +113,13 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 // introduire de collision de nom (l'UI rôle d'arête = 42.3).
                 'is_head_teacher' => (($user->pivot->role ?? null) === UserGroupUserPivot::ROLE_OWNER),
                 'edge_role' => $edgeRole,
-                'edge_role_label' => self::roleLabel($edgeRole),
+                // Story 42.3 (D1) — aucune valeur technique (`member|manager|
+                // owner`) n'est rendue comme texte visible. Story 60.2 — le
+                // libellé vient de la table CANONIQUE par type de groupe, plus
+                // d'un `match` local écrit pour le seul cas scolaire.
+                'edge_role_label' => EdgeRoleLabels::label($groupType, $edgeRole),
             ];
         }) ?? collect();
-    }
-
-    /**
-     * Story 42.3 (D1) — libellé FR privé du rôle d'arête. Aucune valeur
-     * technique (`member|manager|owner`) n'est rendue comme texte visible.
-     */
-    private static function roleLabel(string $role): string
-    {
-        return match ($role) {
-            UserGroupUserPivot::ROLE_MANAGER => 'Prof',
-            UserGroupUserPivot::ROLE_OWNER => 'Prof principal',
-            default => 'Élève',
-        };
     }
 
     /**
@@ -154,7 +154,10 @@ new #[Title('Groupe utilisateur')] class extends Component {
         // DB ($group->type), jamais $this->type — propriété Livewire publique
         // ré-hydratée du client, donc forgeable.
         if ($role === UserGroupUserPivot::ROLE_OWNER && $group->type !== 'classe') {
-            $this->toastError('Le rôle « Prof principal » n\'est disponible que pour les classes.');
+            $this->toastError(sprintf(
+                'Le rôle « %s » n\'est disponible que pour les classes.',
+                EdgeRoleLabels::label('classe', UserGroupUserPivot::ROLE_OWNER),
+            ));
             return;
         }
 
@@ -292,7 +295,10 @@ new #[Title('Groupe utilisateur')] class extends Component {
 
         if ($role === UserGroupUserPivot::ROLE_OWNER) {
             // D5 — jamais owner au rattachement, même payload forgé.
-            $this->toastError('Le rôle « Prof principal » ne peut pas être choisi au rattachement.');
+            $this->toastError(sprintf(
+                'Le rôle « %s » ne peut pas être choisi au rattachement.',
+                EdgeRoleLabels::label('classe', UserGroupUserPivot::ROLE_OWNER),
+            ));
             return;
         }
 

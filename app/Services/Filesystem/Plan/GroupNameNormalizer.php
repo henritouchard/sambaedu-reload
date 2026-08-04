@@ -57,8 +57,19 @@ final class GroupNameNormalizer
         'cours' => ['Cours_'],
         'projet' => ['Projet_'],
         'matiere' => ['Matiere_'],
-        'matiere_classe' => ['Matiere_'],
+        self::TYPE_MATIERE_CLASSE => ['Matiere_'],
     ];
+
+    /**
+     * Story 60.2 — type de groupe dont le nom porte DEUX mailles, séparées par un
+     * « @ ».
+     *
+     * `matiere_classe` est le type détecté à l'import pour un nom d'annuaire de la
+     * forme `Matiere_<matière>@<classe>` — la matière DANS une classe. Il est
+     * distinct de `matiere` nu (les enseignants d'une discipline tous niveaux
+     * confondus), même si l'annuaire les projette sous le même préfixe.
+     */
+    public const TYPE_MATIERE_CLASSE = 'matiere_classe';
 
     /**
      * Vocabulaire BORNÉ du rôle d'arête (`member|manager|owner`).
@@ -84,19 +95,81 @@ final class GroupNameNormalizer
      */
     public static function bareName(string $rawName, ?string $type = null): ?string
     {
-        $bare = $rawName;
+        $bare = self::stripTypePrefix($rawName, $type);
 
+        return self::isSafeSegment($bare) ? $bare : null;
+    }
+
+    /**
+     * Story 60.2 — DÉCOMPOSITION du nom d'un groupe « matière × classe » en ses
+     * deux segments : `Matiere_Math@3emeA` donne `['matiere' => 'Math',
+     * 'classe' => '3emeA']`.
+     *
+     * **Pourquoi décomposer plutôt que normaliser ou exclure.** Le nom d'un tel
+     * groupe n'est PAS un segment de chemin sûr : le « @ » ne fait pas partie du
+     * motif de segment, qui est la copie épinglée de celui du provisioning. Trois
+     * issues étaient possibles, deux sont des impasses :
+     *
+     *  1. Élargir le motif de segment pour admettre le « @ » : le plan accepterait
+     *     alors des chemins que la création du répertoire réseau refusera plus
+     *     tard. Une impasse simplement DIFFÉRÉE, et découverte au pire moment.
+     *  2. Remplacer le « @ » par un tiret ou un souligné : projection AVEC PERTE.
+     *     `Math@6A` collisionnerait avec un groupe réellement nommé `Math-6A`, et
+     *     la relecture d'état ne saurait plus remonter du chemin au groupe.
+     *  3. Décomposer : SANS perte. Le plan porte l'identité interne du groupe, le
+     *     chemin n'a jamais besoin d'être ré-analysé, et un motif du genre
+     *     `Matieres/{classe}/{matière}` retrouve exactement la structure de
+     *     l'ancien système.
+     *
+     * **Exactement UN « @ », jamais zéro, jamais deux.** La validation de nom à la
+     * création autorise `[A-Za-z0-9._@-]+` : un nom à plusieurs « @ » est donc
+     * possible en théorie. On refuse au lieu de deviner — découper `A@B@C` demande
+     * de choisir un côté, et ce choix serait arbitraire.
+     *
+     * Helper PUR : aucun accès base, disque ou réseau. Le TYPE du groupe n'est pas
+     * vérifié ici — c'est l'appelant qui sait qu'il tient un `matiere_classe` ;
+     * cette fonction ne fait que décomposer.
+     *
+     * @return array{matiere:string,classe:string}|null `null` si le nom ne se
+     *                                                  décompose pas en deux segments SÛRS.
+     */
+    public static function matiereClasseParts(string $rawName): ?array
+    {
+        $bare = self::stripTypePrefix($rawName, self::TYPE_MATIERE_CLASSE);
+
+        $parts = explode('@', $bare);
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        [$matiere, $classe] = $parts;
+
+        if (! self::isSafeSegment($matiere) || ! self::isSafeSegment($classe)) {
+            return null;
+        }
+
+        return ['matiere' => $matiere, 'classe' => $classe];
+    }
+
+    /**
+     * Retire le préfixe de TYPE d'un nom, SANS valider le résultat.
+     *
+     * Extrait de {@see bareName()} pour être partagé avec la décomposition
+     * matière × classe, dont le nom dé-préfixé n'est justement PAS un segment sûr
+     * (il porte encore son « @ »). La validation reste à la charge de l'appelant.
+     */
+    private static function stripTypePrefix(string $rawName, ?string $type): string
+    {
         foreach (self::TYPE_PREFIXES[$type] ?? [] as $prefix) {
             // Le préfixe n'est retiré que s'il RESTE quelque chose : un nom réduit
             // à son seul préfixe n'est pas un préfixe, c'est un nom (dégénéré) —
             // et l'implémentation historique le traite ainsi.
             if (strncasecmp($rawName, $prefix, strlen($prefix)) === 0 && strlen($rawName) > strlen($prefix)) {
-                $bare = substr($rawName, strlen($prefix));
-                break;
+                return substr($rawName, strlen($prefix));
             }
         }
 
-        return self::isSafeSegment($bare) ? $bare : null;
+        return $rawName;
     }
 
     /** `true` si `$segment` est un segment de chemin sûr (motif ci-dessus). */
