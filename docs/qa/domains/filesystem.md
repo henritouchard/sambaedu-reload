@@ -1175,4 +1175,76 @@ recette en DB et délègue au socle (`provision()`, `NetworkShareValidator`).
 
 ---
 
-*Dernière mise à jour : 2026-06-30 (Story 34.3 — Templates de répertoire : table `directory_templates` + `DirectoryTemplateSeeder` (4 recettes, Q3 option B) + `DirectoryTemplateService::materialize` (transaction + validation réutilisée 34.2, mapping de maille non redérivé) + 2e modale « Créer depuis un template » sur `/app/shares` (formulaire dynamique, aperçu, gating `networkshare.manage`) ; casiers « élèves→profs » par-élève reportés 34.x ; socle figé INTOUCHÉ ; **post-review** : surfaçage warnings AC2 [#1], pré-check unicité service [M-1], garde-fou seeder [M-2], test cible manquante [#2])*
+## Story 60.1 — La recette devient un arbre (modèle + résolution pure)
+
+> ⚠️ **Cette story n'a AUCUN effet observable en production.** Rien n'est branché :
+> pas d'UI, pas de route, pas de commande, pas de nouveau chemin d'exécution. Le
+> résolveur de plan n'a d'autre consommateur que ses tests ; ses consommateurs
+> réels arrivent en 60.2/60.3. La recette de la classe exprimée en vocabulaire de
+> plan n'est **pas seedée** — elle vit uniquement dans les tests.
+>
+> La QA manuelle se limite donc à trois vérifications : **la migration s'applique
+> et se rétracte**, **les recettes livrées restent sans arbre**, et **rien du
+> comportement 5.2 / 34.x n'a bougé**. Tout le reste (natures de nœud, clôture,
+> suspension, neutralité du plan) est verrouillé par la suite automatisée sur
+> l'hôte — c'est là qu'il faut le lire, pas sur la VM.
+
+### Scénario 60.1-1 — La migration s'applique et ne touche à rien d'autre
+
+1. Sur `/vm` : `php artisan migrate` (au besoin `--pretend` d'abord pour lire ce
+   qui sera joué).
+2. **Attendu** : la migration `add_tree_spec_to_directory_templates` ajoute
+   exactement **deux colonnes nullables** à `directory_templates` :
+   `path_pattern` (texte) et `nodes_spec` (JSON). Aucune autre table touchée,
+   aucune reprise de données.
+3. Vérifier en base : `\d directory_templates` (psql) ou
+   `Schema::getColumnListing('directory_templates')` en tinker.
+
+### Scénario 60.1-2 — Les 4 recettes livrées restent SANS arbre
+
+1. En tinker : `DirectoryTemplate::all()->map(fn ($t) => [$t->key, $t->path_pattern, $t->nodes_spec]);`
+2. **Attendu** : les 4 recettes (`direction_to_all`, `profs_to_eleves`,
+   `user_to_user`, `group_space`) ont `path_pattern = null` **et**
+   `nodes_spec = null`. `$t->hasTreeSpec()` répond `false` pour les quatre.
+3. Rejouer `php artisan db:seed --class=DirectoryTemplateSeeder` : idempotent,
+   toujours 4 recettes, toujours sans arbre (le seeder n'a pas été modifié).
+
+### Scénario 60.1-3 — La matérialisation 34.3 est strictement inchangée
+
+1. Sur `/app/shares`, « Créer depuis un template » : matérialiser un
+   `profs_to_eleves` comme avant.
+2. **Attendu** : comportement identique à 34.3 — mêmes assignations, mêmes
+   `access`, même provisioning. Aucun message nouveau, aucune option nouvelle
+   dans le formulaire (l'arbre n'est exposé nulle part).
+
+### Scénario 60.1-4 — Aucune permission de fichier n'a bougé
+
+1. Sur un partage classe existant : `getfacl /var/sambaedu/Classes/Classe_<X>` et
+   ses sous-dossiers (`_travail`, `_profs`, `_echange`, dossiers élèves).
+2. Sur un répertoire réseau 34.x : `getfacl /var/sambaedu/Partages/<dir>`.
+3. **Attendu** : sorties **identiques** à avant déploiement. C'est trivialement
+   vrai (rien ne touche au système de fichiers) mais c'est le critère mesurable
+   du garde-fou d'epic — le relever une fois vaut mieux que le supposer.
+
+### Scénario 60.1-5 — La migration se rétracte
+
+1. Sur un environnement de test (jamais en prod) : `php artisan migrate:rollback --step=1`.
+2. **Attendu** : les deux colonnes disparaissent, les 4 recettes et leurs
+   `roles_spec` sont intactes, l'application continue de fonctionner (aucun code
+   vivant ne lit ces colonnes). Rejouer `migrate` pour revenir.
+
+### Checklist rapide — Story 60.1
+
+- [ ] 60.1-1 : migration jouée, 2 colonnes nullables ajoutées, rien d'autre
+- [ ] 60.1-2 : les 4 recettes restent sans arbre (`hasTreeSpec()` faux), seeder inchangé et idempotent
+- [ ] 60.1-3 : « Créer depuis un template » se comporte exactement comme en 34.3
+- [ ] 60.1-4 : `getfacl` inchangé sur les partages classe **et** sur les répertoires réseau
+- [ ] 60.1-5 : `migrate:rollback` propre, données 34.3 intactes
+- [ ] **Aucune UI, aucune route, aucune commande** n'a été ajoutée — si quelque chose d'observable est apparu, c'est un défaut
+- [ ] Suite automatisée verte sur l'hôte (résolveur, garde de neutralité, isolation d'architecture) — la VM n'a pas `pdo_sqlite`, ne pas tenter d'y jouer les tests
+
+---
+
+*Dernière mise à jour : 2026-08-04 (Story 60.1 — la recette devient un arbre : colonnes additives nullables `path_pattern`/`nodes_spec` sur `directory_templates`, enum fermée `PlanNodeNature` (4 natures), DTO de plan neutres + résolution PURE `PlanResolver`, clôture calculée par nœud (AC9, issue du spike 60.0), garde de neutralité + test d'architecture verrouillant la ligne de coupe ; AUCUN effet observable en production — services d'exécution et seeder INTOUCHÉS)*
+
+*Mise à jour précédente : 2026-06-30 (Story 34.3 — Templates de répertoire : table `directory_templates` + `DirectoryTemplateSeeder` (4 recettes, Q3 option B) + `DirectoryTemplateService::materialize` (transaction + validation réutilisée 34.2, mapping de maille non redérivé) + 2e modale « Créer depuis un template » sur `/app/shares` (formulaire dynamique, aperçu, gating `networkshare.manage`) ; casiers « élèves→profs » par-élève reportés 34.x ; socle figé INTOUCHÉ ; **post-review** : surfaçage warnings AC2 [#1], pré-check unicité service [M-1], garde-fou seeder [M-2], test cible manquante [#2])*
