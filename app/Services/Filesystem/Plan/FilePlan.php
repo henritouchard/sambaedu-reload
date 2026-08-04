@@ -71,7 +71,7 @@ final class FilePlan
             $roles[$key] = array_values($subjects);
         }
 
-        usort($nodes, static fn (PlanNode $a, PlanNode $b): int => strcmp($a->path, $b->path));
+        usort($nodes, self::nodeOrder(...));
 
         $seen = [];
         foreach ($nodes as $node) {
@@ -90,6 +90,31 @@ final class FilePlan
         $this->nodes = array_values($nodes);
     }
 
+    /**
+     * Story 60.3 — ORDRE CANONIQUE des nœuds : la racine d'abord, le reste par
+     * chemin.
+     *
+     * Le tri par chemin seul mettrait presque toujours la racine en tête (« . »
+     * précède les lettres et les chiffres), mais PAS toujours : un nœud dont le
+     * nom commence par un tiret la précéderait, le tiret étant un premier
+     * caractère de segment légitime. « Presque toujours » n'est pas une propriété.
+     * On l'écrit donc, plutôt que d'espérer que l'encodage la donne.
+     */
+    private static function nodeOrder(PlanNode $a, PlanNode $b): int
+    {
+        if ($a->path === $b->path) {
+            return 0;
+        }
+        if ($a->path === PlanNode::ROOT_PATH) {
+            return -1;
+        }
+        if ($b->path === PlanNode::ROOT_PATH) {
+            return 1;
+        }
+
+        return strcmp($a->path, $b->path);
+    }
+
     public function node(string $path): ?PlanNode
     {
         foreach ($this->nodes as $node) {
@@ -99,6 +124,36 @@ final class FilePlan
         }
 
         return null;
+    }
+
+    /**
+     * Story 60.3 — chemins de TOUS les nœuds, dans l'ordre canonique.
+     *
+     * C'est le PÉRIMÈTRE contre lequel un rapport de backend se valide : couvrir
+     * exactement ces chemins, ni plus ni moins.
+     *
+     * @return list<string>
+     */
+    public function nodePaths(): array
+    {
+        return array_map(static fn (PlanNode $n): string => $n->path, $this->nodes);
+    }
+
+    /**
+     * Story 60.3 — chemins des nœuds PORTANT UN PLAFOND, dans l'ordre canonique.
+     *
+     * Périmètre de la réponse au plafond : un plan sans plafond donne une liste
+     * vide, et un rapport vide y est parfaitement VALIDE — il n'y avait rien à
+     * plafonner, ce n'est ni un échec ni un oubli.
+     *
+     * @return list<string>
+     */
+    public function cappedNodePaths(): array
+    {
+        return array_values(array_map(
+            static fn (PlanNode $n): string => $n->path,
+            array_filter($this->nodes, static fn (PlanNode $n): bool => $n->plafond !== null),
+        ));
     }
 
     /** @return list<string> */

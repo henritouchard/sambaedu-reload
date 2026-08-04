@@ -66,6 +66,48 @@ class PlanNamespaceIsolationTest extends TestCase
     private const ASSEMBLER_FILE = 'app/Services/Filesystem/TreePlanService.php';
 
     /**
+     * Story 60.3 — LA LIGNE DE CONTRAT elle-même, et ce qui la borde.
+     *
+     * L'interface, les DTO de rapport et le backend qui n'exécute rien vivent
+     * AU-DESSUS de la ligne : ils décrivent ce qu'un backend fait, ils ne le font
+     * pas. Ils tombent donc sous les règles PURES — les mêmes que le namespace du
+     * plan, plus une règle nommée sur les abstractions de fichiers du framework
+     * (voir {@see FORBIDDEN_RULES}).
+     *
+     * Le double propagateur et le squelette jetable ne sont PAS ici : ce sont des
+     * doubles de test, ils vivent sous `tests/`, et rien du contrat ne dépend
+     * d'eux.
+     *
+     * @var string
+     */
+    private const CONTRACT_PURE_DIR = 'app/Services/Filesystem/Backend';
+
+    /**
+     * Le registre vit dans le même dossier mais N'EST PAS pur : il lit une
+     * colonne. Il est scanné plus bas, avec les règles d'assembleur. L'exclure
+     * ici plutôt que de relâcher les règles pures est ce qui évite d'affaiblir la
+     * garde pour tout le dossier.
+     */
+    private const CONTRACT_PURE_EXCLUDED = 'FileBackendRegistry.php';
+
+    /**
+     * Story 60.3 — l'ASSEMBLEUR de plan de partage plat et le REGISTRE.
+     *
+     * Ces deux-là requêtent (l'un lit un pivot, l'autre lit une colonne et
+     * demande au conteneur) : c'est leur raison d'être, et c'est pourquoi ils
+     * vivent hors du namespace pur. Mais ils sont aussi le chemin le plus court
+     * vers la dérivation des noms système « pour la réutiliser » — la ligne de
+     * coupe passe donc aussi par eux, avec le sous-ensemble de règles qui porte
+     * sur l'EXÉCUTION.
+     *
+     * @var list<string>
+     */
+    private const CONTRACT_ASSEMBLER_FILES = [
+        'app/Services/Filesystem/SharePlanProjector.php',
+        'app/Services/Filesystem/Backend/FileBackendRegistry.php',
+    ];
+
+    /**
      * Règles applicables à l'assembleur : celles qui portent sur l'EXÉCUTION.
      * Les règles de requête et de modèle d'identité en sont volontairement
      * absentes — l'assembleur requête, c'est son travail.
@@ -88,6 +130,11 @@ class PlanNamespaceIsolationTest extends TestCase
         // que cet epic rencontre le plus souvent.
         'accès réseau',
         'accès au système de fichiers',
+        // Story 60.3 — le faux ami. Il abstrait les OPÉRATIONS sur les fichiers,
+        // pas les permissions ; et SE5 ne crée aucun fichier. S'y brancher
+        // donnerait une dépendance inutile et une fausse impression de
+        // portabilité, exactement là où la portabilité doit être vraie.
+        'abstraction de fichiers du framework',
     ];
 
     // NB : « requête Eloquent », la façade de base de données et les deux modèles
@@ -112,6 +159,14 @@ class PlanNamespaceIsolationTest extends TestCase
         'exécution système (fonctions)' => '/\b(shell_exec|passthru|proc_open|popen|system|exec)\s*\(/',
         'commandes de système de fichiers' => '/\b(setfacl|getfacl|chown|chgrp|sudo)\b/',
         'accès au système de fichiers' => '/\b(file_get_contents|file_put_contents|fopen|mkdir|rmdir|unlink|scandir|glob|realpath|is_dir|is_file)\s*\(/',
+
+        // 2bis. Story 60.3 — LE FAUX AMI, nommé. L'abstraction de fichiers du
+        //       framework est la « réutilisation de l'existant » la plus tentante
+        //       du chantier, et la plus fausse : elle couvre lire/écrire/lister,
+        //       jamais les permissions — or c'est la partie difficile, et c'est
+        //       la seule que SE5 provisionne. Un contrat qui s'y brancherait
+        //       hériterait de sa portabilité apparente sans en tirer sa propriété.
+        'abstraction de fichiers du framework' => '/(?<!\w)Storage::|Illuminate\\\\Support\\\\Facades\\\\Storage\b|Illuminate\\\\Contracts\\\\Filesystem\b|\bFlysystem\b/',
 
         // 3. Tout ce qui interroge — la résolution est PURE.
         'base de données (façade)' => '/(?<!\w)DB::|Illuminate\\\\Support\\\\Facades\\\\DB\b/',
@@ -138,6 +193,7 @@ class PlanNamespaceIsolationTest extends TestCase
         'exécution système (fonctions)' => '$out = shell_exec("id -u");',
         'commandes de système de fichiers' => '// on posera un setfacl plus tard',
         'accès au système de fichiers' => 'if (is_dir($path)) { return true; }',
+        'abstraction de fichiers du framework' => '$disk = Storage::disk("shares");',
         'base de données (façade)' => '$rows = DB::table("user_groups")->get();',
         'requête Eloquent' => '$g = UserGroup::find($id);',
         'accès réseau' => '$r = Http::get("https://exemple");',
@@ -280,6 +336,117 @@ class PlanNamespaceIsolationTest extends TestCase
         // de requêter et de connaître les modèles d'identité.
         foreach (['requête Eloquent', 'base de données (façade)', 'modèle groupe d\'utilisateurs'] as $allowed) {
             self::assertNotContains($allowed, self::ASSEMBLER_RULES);
+        }
+    }
+
+    /**
+     * Story 60.3 — LA LIGNE DE CONTRAT est du même côté que le plan.
+     *
+     * L'interface, les DTO de rapport et le backend qui n'exécute rien DÉCRIVENT
+     * ce qu'un backend fait ; ils ne le font pas. Le jour où l'un d'eux importe un
+     * service d'exécution, la ligne n'existe plus : le contrat serait devenu le
+     * premier backend déguisé, et le suivant devrait s'y conformer.
+     */
+    #[Test]
+    public function the_backend_contract_depends_on_nothing_that_executes_or_queries(): void
+    {
+        $dir = realpath(self::repoPath(self::CONTRACT_PURE_DIR));
+        self::assertNotFalse($dir, self::CONTRACT_PURE_DIR . ' doit exister');
+
+        $inspected = 0;
+        $offenders = [];
+
+        foreach ((new Finder())->files()->in($dir)->name('*.php')->notName(self::CONTRACT_PURE_EXCLUDED) as $file) {
+            $inspected++;
+
+            $found = $this->violations((string) $file->getContents());
+            if ($found !== []) {
+                $offenders[$file->getRelativePathname()] = $found;
+            }
+        }
+
+        // Méta-test : l'interface, les cinq DTO et le backend d'aperçu.
+        self::assertGreaterThanOrEqual(
+            7,
+            $inspected,
+            'la garde doit inspecter le namespace RÉEL du contrat (interface, DTO de rapport, backend d\'aperçu)',
+        );
+
+        self::assertSame(
+            [],
+            $offenders,
+            'LIGNE DE COUPE FRANCHIE PAR LE CONTRAT. Un contrat qui connaît un service d\'exécution, un '
+            . 'processus ou une abstraction de fichiers n\'est plus un contrat : c\'est le premier backend, '
+            . 'déguisé. Fichiers fautifs : '
+            . json_encode($offenders, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        );
+    }
+
+    /**
+     * Story 60.3 — le PROJECTEUR et le REGISTRE requêtent, mais n'exécutent rien.
+     */
+    #[Test]
+    public function the_contract_assemblers_query_but_never_execute(): void
+    {
+        foreach (self::CONTRACT_ASSEMBLER_FILES as $relative) {
+            $path = self::repoPath($relative);
+            self::assertFileExists($path, 'l\'assembleur doit exister là où la garde le cherche : ' . $relative);
+
+            $content = (string) file_get_contents($path);
+            $found = array_values(array_intersect($this->violations($content), self::ASSEMBLER_RULES));
+
+            self::assertSame(
+                [],
+                $found,
+                sprintf(
+                    'LIGNE DE COUPE FRANCHIE PAR « %s ». Il assemble depuis SQL et délègue ; la dérivation '
+                    . 'des noms système et la pose des permissions appartiennent à l\'implémentation de '
+                    . 'backend, APRÈS cette ligne. Règles violées : %s',
+                    $relative,
+                    json_encode($found, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                ),
+            );
+
+            // Méta-test : la garde doit inspecter un fichier qui a réellement le
+            // contenu attendu — un fichier vide passerait sinon.
+            self::assertStringContainsString('final class', $content, 'la garde doit inspecter le fichier RÉEL');
+        }
+    }
+
+    /**
+     * Story 60.3 — MÉTA-TEST de la règle NOMMÉE du faux ami.
+     *
+     * Elle est nouvelle, donc elle est le premier candidat à l'aveuglement : une
+     * règle mal écrite passerait éternellement au vert sur un dossier qui n'a
+     * jamais eu l'occasion de la violer.
+     */
+    #[Test]
+    public function the_framework_filesystem_rule_sees_the_forms_it_claims_to_forbid(): void
+    {
+        $label = 'abstraction de fichiers du framework';
+
+        foreach ([
+            '$disk = Storage::disk("shares");',
+            'use Illuminate\\Support\\Facades\\Storage;',
+            'use Illuminate\\Contracts\\Filesystem\\Filesystem;',
+            'use League\\Flysystem\\FilesystemOperator;',
+            '// on pourrait passer par Flysystem plus tard',
+        ] as $needle) {
+            self::assertContains(
+                $label,
+                $this->violations($needle),
+                'la règle du faux ami ne voit pas : ' . $needle,
+            );
+        }
+
+        // Contrôle NÉGATIF : la règle ne doit pas mordre sur du vocabulaire
+        // légitime — sinon on ne pourrait plus parler de plan de fichiers.
+        foreach ([
+            'final class FileBackendRegistry {}',
+            '/** Le plan de fichiers est neutre. */',
+            'public function inspect(FilePlan $plan): InspectionReport;',
+        ] as $honest) {
+            self::assertNotContains($label, $this->violations($honest), 'faux positif sur : ' . $honest);
         }
     }
 

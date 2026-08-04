@@ -102,6 +102,12 @@ class AppServiceProvider extends ServiceProvider
         // Service de pont legacy pour les parcs
         $this->app->singleton(LegacyParcBridgeService::class);
 
+        // Story 60.3 — résolution des backends de fichiers PAR NOM (ligne de
+        // contrat du plan de fichiers). Le registre est sans état : il ne fait que
+        // traduire un nom en implémentation, via le conteneur.
+        $this->app->singleton(\App\Services\Filesystem\Backend\FileBackendRegistry::class);
+        $this->app->singleton(\App\Services\Filesystem\Backend\PreviewBackend::class);
+
         // Binding AuthGuard — swap Phase 2 : remplacer SambaEduAuthGuard par KeycloakAuthGuard
         // Sous APP_ENV=dusk : guard de test sans LDAP (voir DuskAuthGuard).
         $this->app->bind(

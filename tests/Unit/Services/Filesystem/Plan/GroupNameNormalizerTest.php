@@ -147,6 +147,46 @@ class GroupNameNormalizerTest extends TestCase
         }
     }
 
+    // =========================================================================
+    // Story 60.3 — la RACINE devient un chemin de nœud valide, et rien d'autre
+    // ne change
+    // =========================================================================
+
+    #[Test]
+    public function the_root_token_is_a_valid_node_path(): void
+    {
+        $this->assertTrue(GroupNameNormalizer::isSafeNodePath(GroupNameNormalizer::ROOT_NODE_PATH));
+        $this->assertTrue(GroupNameNormalizer::isSafeNodePath('_profs'));
+        $this->assertTrue(GroupNameNormalizer::isSafeNodePath('_travail/devoirs'));
+    }
+
+    /**
+     * Le jeton racine vaut ENTIER, jamais en morceau : l'ouverture porte sur la
+     * position racine, pas sur le caractère.
+     */
+    #[Test]
+    public function the_root_token_is_only_valid_whole_never_as_a_segment(): void
+    {
+        foreach (['./x', 'a/./b', './', '..', '.cache', 'a/.', '/.', ''] as $path) {
+            $this->assertFalse(
+                GroupNameNormalizer::isSafeNodePath($path),
+                'chemin de nœud accepté à tort : ' . $path,
+            );
+        }
+    }
+
+    /**
+     * La RACINE D'UN PLAN, elle, n'a pas bougé : un plan enraciné sur « le
+     * dossier courant » serait un chemin non résolu déguisé. C'est exactement la
+     * raison pour laquelle le prédicat de nœud est SÉPARÉ.
+     */
+    #[Test]
+    public function the_plan_root_predicate_still_refuses_the_root_token(): void
+    {
+        $this->assertFalse(GroupNameNormalizer::isSafeRelativePath(GroupNameNormalizer::ROOT_NODE_PATH));
+        $this->assertFalse(GroupNameNormalizer::isSafeSegment(GroupNameNormalizer::ROOT_NODE_PATH));
+    }
+
     #[Test]
     public function edge_roles_are_a_closed_vocabulary(): void
     {

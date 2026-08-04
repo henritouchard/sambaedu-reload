@@ -123,6 +123,11 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 'directory_name' => $s->directory_name,
                 'description' => $s->description,
                 'letter' => $s->letter,
+                // Story 60.3 — l'autorité d'écriture des droits, en libellé (jamais
+                // la valeur technique brute à l'écran). Lecture SANCTIONNÉE de la
+                // colonne : une valeur hors vocabulaire échoue explicitement plutôt
+                // que de s'afficher au hasard.
+                'backend_label' => $s->backendName()->label(),
                 'users_count' => $s->users_count,
                 'user_groups_count' => $s->user_groups_count,
                 'workstation_groups_count' => $s->workstation_groups_count,
@@ -719,6 +724,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                 <th>Répertoire</th>
                                 <th>Description</th>
                                 <th>Lettre</th>
+                                <th>Backend</th>
                                 <th>Assignations</th>
                             </tr>
                         </thead>
@@ -749,6 +755,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                         @else
                                             <span class="badge badge-ghost" title="Lettre attribuée automatiquement">auto</span>
                                         @endif
+                                    </td>
+                                    {{-- Story 60.3 — backend VISIBLE, jamais éditable ici. --}}
+                                    <td>
+                                        <span class="badge badge-outline badge-sm">{{ $share['backend_label'] }}</span>
                                     </td>
                                     <td>
                                         @if ($share['total_assignments'] === 0)

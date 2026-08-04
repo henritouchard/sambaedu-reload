@@ -201,6 +201,40 @@ final class GroupNameNormalizer
     }
 
     /**
+     * Story 60.3 — jeton du nœud RACINE d'un plan, et source unique de sa valeur
+     * ({@see PlanNode::ROOT_PATH} en est l'alias).
+     *
+     * Il désigne « la racine du plan elle-même », relativement à cette racine. Ce
+     * n'est PAS un segment de chemin : {@see SEGMENT_PATTERN} le refuse (un
+     * segment ne peut pas commencer par un point), et c'est exactement ce qu'on
+     * veut — hors de la position racine, un « . » reste interdit partout.
+     */
+    public const ROOT_NODE_PATH = '.';
+
+    /**
+     * `true` si `$path` peut être le chemin d'un NŒUD de plan : le jeton racine
+     * ENTIER, ou un chemin relatif sûr.
+     *
+     * **Pourquoi un prédicat séparé plutôt qu'un élargissement de
+     * {@see isSafeRelativePath()}.** Le sondage d'ouverture d'epic a mesuré, sur
+     * une instance réelle, qu'une relecture d'état « avec les sous-chemins » rend
+     * les enfants MAIS PAS la racine : un backend qui traite la racine à part
+     * finit par l'omettre, et l'omission d'un nœud est précisément le silence que
+     * cette story rend impossible. La racine doit donc être un nœud comme les
+     * autres. Mais la RACINE D'UN PLAN, elle, ne doit surtout pas pouvoir valoir
+     * « . » : un plan enraciné sur « le dossier courant » n'a aucun sens et serait
+     * un chemin non résolu déguisé. Deux besoins, deux prédicats — élargir
+     * l'existant aurait ouvert le second en ouvrant le premier.
+     *
+     * Refuse donc, comme avant : `./x`, `a/./b`, `..`, l'absolu, le vide, et « . »
+     * en simple segment d'un chemin plus long.
+     */
+    public static function isSafeNodePath(string $path): bool
+    {
+        return $path === self::ROOT_NODE_PATH || self::isSafeRelativePath($path);
+    }
+
+    /**
      * `true` si `$login` peut servir de SEGMENT DE CHEMIN.
      *
      * Un login n'est JAMAIS un sujet d'octroi dans un plan (les sujets sont des

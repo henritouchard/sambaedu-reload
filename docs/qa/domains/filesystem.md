@@ -1359,7 +1359,115 @@ Ces comportements existent, sont testés sur l'hôte, et ne se voient d'aucun é
 
 ---
 
-*Dernière mise à jour : 2026-08-04 (Story 60.2 — résolution de rôle par règle : enum fermée `RoleResolutionStrategy` (self · designated [défaut, iso-34.3] · pattern · edge_role) portée par la clé additive `resolution` de `roles_spec` et validée sur le modèle, colonne additive nullable UNIQUE `attached_group_type`, assembleur `TreePlanService` (SQL seulement, hors namespace pur, test d'architecture étendu), décomposition « matière × classe » en deux segments de chemin, table canonique `EdgeRoleLabels` recâblée sur les trois écrans — SEUL changement visible : les libellés de rôle d'arête suivent le type de groupe ; la chaîne groupe→plan est livrée COMPLÈTE et DORMANTE, services d'exécution et seeder INTOUCHÉS)*
+## Story 60.3 — Le contrat `FileBackend`, le backend d'aperçu, et la colonne `backend`
+
+**Ce que cette story ajoute d'OBSERVABLE — et c'est une première dans l'epic.** Les deux
+stories précédentes ne se voyaient d'aucun écran. Celle-ci en livre deux :
+
+1. un **badge « Backend »** sur la liste des lecteurs réseau et sur la page d'un lecteur —
+   « Serveur de fichiers (POSIX/SMB) » partout, puisque c'est ce que sont tous les partages
+   en place ;
+2. une action **« Aperçu du plan »** sur la page d'un lecteur, qui ouvre une modale montrant
+   ce que le partage dit — la racine, ses accès prévus par personne et par groupe, le plafond
+   et le résultat annoncé par le backend d'aperçu.
+
+**Ce qu'elle ne change PAS** : aucun flux de provisioning ne route par la nouvelle colonne.
+L'aperçu est en LECTURE SEULE et n'écrit rien, nulle part. Le badge n'est pas éditable, et
+c'est délibéré : tant que rien ne route par la colonne, un sélecteur serait un réglage sans
+effet.
+
+### Scénario 60.3-1 — La migration s'applique et le défaut dit vrai
+
+1. Sur `/vm` : `php artisan migrate` puis
+   `psql -c "\d network_shares"` (ou l'équivalent) et
+   `psql -c "SELECT DISTINCT backend FROM network_shares;"`.
+2. **Attendu** : une colonne `backend` de type texte, **NOT NULL**, défaut `'posix'`, et
+   **toutes** les lignes existantes à `posix`. Aucune reprise de données n'a été jouée ni
+   n'est nécessaire — les partages en place *sont* du POSIX.
+3. Contrôle : `php artisan migrate:rollback --step=1` retire la colonne proprement, et
+   `php artisan migrate` la remet. Aucune autre table n'est touchée.
+
+### Scénario 60.3-2 — Le backend s'affiche, et ne se modifie pas
+
+1. Ouvrir `/admin/settings/files` → onglet « Lecteurs réseaux ».
+2. **Attendu** : une colonne « Backend » portant, pour chaque lecteur, le badge
+   **« Serveur de fichiers (POSIX/SMB) »**. Jamais la valeur technique `posix` à l'écran.
+3. Ouvrir un lecteur. **Attendu** : le même badge dans l'en-tête, à côté de la lettre, avec
+   une infobulle expliquant ce que ce choix change pour l'utilisateur.
+4. **Contrôle négatif — le plus important de la story** : il n'existe **aucun** moyen de
+   changer ce backend. Pas de liste déroulante, pas de bouton, pas de champ dans le
+   formulaire « Modifier ». Si vous en trouvez un, c'est un défaut : la propriété serait
+   affichée comme modifiable alors que rien ne l'honore.
+
+### Scénario 60.3-3 — L'aperçu d'un partage réel
+
+1. Sur un lecteur ayant au moins un utilisateur, un groupe et un parc assignés, cliquer
+   **« Aperçu du plan »**.
+2. **Attendu dans la modale** :
+   - l'en-tête annonce **« Aperçu (aucune exécution) »** — c'est le backend d'aperçu qui
+     répond, pas celui du partage ;
+   - « Racine du plan » affiche le **nom de répertoire** du partage (relatif, jamais
+     `/var/...`) et **1 nœud** ;
+   - la ligne du dossier s'intitule **« (racine) »** — jamais un point tout seul ;
+   - la colonne « Accès prévus » liste **l'utilisateur** et **le groupe**, par leurs noms
+     SE5, avec « Lire » ou « Modifier » ;
+   - **le parc n'y figure PAS**. C'est l'invariant montage-seul : un parc fait apparaître la
+     lettre, il ne donne aucun accès. Un partage assigné à un seul parc affiche « Aucun
+     accès prévu », et c'est la vérité ;
+   - la colonne « Résultat » affiche **« Aucune exécution (aperçu) »**.
+3. **Contrôle de neutralité, à faire à l'œil** : nulle part dans cette modale on ne doit lire
+   un mode de permission (`rwx`), un nom de commande système, un chemin absolu ou un nom de
+   groupe système. On y parle de dossiers, de personnes et de groupes.
+4. Fermer, puis vérifier qu'**aucun** provisioning ne s'est déclenché : ni toast de
+   provisioning, ni ligne nouvelle dans les journaux, ni changement de l'encart
+   « Conformité ACL ».
+
+### Scénario 60.3-4 — Aucune permission de fichier n'a bougé
+
+1. Sur un partage classe existant : `getfacl /var/sambaedu/Classes/Classe_<X>` et ses
+   sous-dossiers. Sur un répertoire réseau : `getfacl /var/sambaedu/Partages/<dir>`.
+2. **Attendu** : sorties **identiques** à avant déploiement. Trivialement vrai — les cinq
+   fichiers d'exécution (`DirectoryTemplateService`, `NetworkShareService`, `ShareService`,
+   `AclService`, `DirectoryTemplateSeeder`) sont à **zéro diff**, vérifié par `git diff --stat`.
+3. Créer un lecteur, lui ajouter une assignation, la retirer, le supprimer : le comportement
+   est celui d'avant, y compris les toasts et l'encart de conformité.
+
+### Ce qui N'EST PAS observable, et qu'il ne faut pas chercher
+
+Ces éléments existent, sont testés sur l'hôte, et **dorment** :
+
+- l'interface de contrat à cinq méthodes et ses rapports par nœud — **aucun backend réel ne
+  l'implémente** ; l'autorité d'écriture reste le code historique, appelé comme avant ;
+- le nom de backend `preview` n'est **jamais posé en base** par cette story : il n'est
+  atteignable que par l'aperçu, en mémoire ;
+- demander le backend `posix` au registre **échoue volontairement** (aucune implémentation
+  avant la story 60.4). Ce n'est visible d'aucun écran — l'aperçu, lui, demande explicitement
+  le backend d'aperçu ;
+- la relecture d'état, le plafond de zone et la comparaison désiré/observé : **le contrat
+  sait les dire, personne ne les exécute**. Aucune infrastructure de quota n'a été installée
+  (la story qui la poserait est suspendue) ;
+- le squelette Nextcloud écrit contre l'interface réelle vit sous `tests/Integration/`,
+  **skippé par défaut**, hors intégration continue : il n'est ni enregistré, ni
+  sélectionnable, ni atteignable depuis l'application.
+
+### Checklist rapide — Story 60.3
+
+- [ ] 60.3-1 : colonne `backend` NOT NULL défaut `posix`, toutes les lignes à `posix`, rollback propre
+- [ ] 60.3-2 : badge « Serveur de fichiers (POSIX/SMB) » sur la liste ET la page détail
+- [ ] 60.3-2 : **aucun** contrôle permettant de changer le backend, nulle part
+- [ ] 60.3-3 : l'aperçu s'ouvre, annonce « Aperçu (aucune exécution) », affiche « (racine) » et 1 nœud
+- [ ] 60.3-3 : utilisateurs et groupes listés par leurs noms SE5 ; **le parc n'apparaît pas**
+- [ ] 60.3-3 : aucun `rwx`, aucune commande système, aucun chemin absolu à l'écran
+- [ ] 60.3-3 : ouvrir l'aperçu ne provoque AUCUN provisioning (journaux, toasts, encart de conformité inchangés)
+- [ ] 60.3-4 : `getfacl` inchangé sur les partages classe **et** sur les répertoires réseau
+- [ ] 60.3-4 : créer / assigner / désassigner / supprimer un lecteur se comporte comme avant
+- [ ] Suite automatisée verte sur l'hôte — la VM n'a pas `pdo_sqlite`, ne pas tenter d'y jouer les tests
+
+---
+
+*Dernière mise à jour : 2026-08-04 (Story 60.3 — le contrat `FileBackend` et le backend `preview` : interface à 5 méthodes de forme distante (name/provision/deprovision/inspect/quota, aucun `bool`), enums fermées `FileBackendName` (posix|preview) / `FileBackendOutcome` (7 états, dont `non_exprimable` PERMANENT ≠ `non_implemente` TEMPORAIRE ≠ `non_execute` PAR CONCEPTION) / `FileBackendObservation` (4 statuts), rapports à COMPLÉTUDE VALIDÉE À LA CONSTRUCTION (un rapport qui omet un nœud est inconstructible) et `detail` obligatoire au constructeur, racine `PlanNode::ROOT_PATH` devenue nœud de première classe, colonne `network_shares.backend` NOT NULL défaut `posix` (hors `$fillable`, non éditable), registre par nom fail-closed, `SharePlanProjector` (partage plat → plan neutre), squelette Nextcloud JETABLE vert contre l'instance réelle — PREMIER LIVRABLE VISIBLE DE L'EPIC : badge backend + aperçu du plan avant application ; services d'exécution et seeder INTOUCHÉS, aucun flux ne route par la colonne)*
+
+*Mise à jour précédente : 2026-08-04 (Story 60.2 — résolution de rôle par règle : enum fermée `RoleResolutionStrategy` (self · designated [défaut, iso-34.3] · pattern · edge_role) portée par la clé additive `resolution` de `roles_spec` et validée sur le modèle, colonne additive nullable UNIQUE `attached_group_type`, assembleur `TreePlanService` (SQL seulement, hors namespace pur, test d'architecture étendu), décomposition « matière × classe » en deux segments de chemin, table canonique `EdgeRoleLabels` recâblée sur les trois écrans — SEUL changement visible : les libellés de rôle d'arête suivent le type de groupe ; la chaîne groupe→plan est livrée COMPLÈTE et DORMANTE, services d'exécution et seeder INTOUCHÉS)*
 
 *Mise à jour précédente : 2026-08-04 (Story 60.1 — la recette devient un arbre : colonnes additives nullables `path_pattern`/`nodes_spec` sur `directory_templates`, enum fermée `PlanNodeNature` (4 natures), DTO de plan neutres + résolution PURE `PlanResolver`, clôture calculée par nœud (AC9, issue du spike 60.0), garde de neutralité + test d'architecture verrouillant la ligne de coupe ; AUCUN effet observable en production — services d'exécution et seeder INTOUCHÉS)*
 

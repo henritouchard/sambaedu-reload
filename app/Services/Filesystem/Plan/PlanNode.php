@@ -39,7 +39,31 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  */
 final class PlanNode
 {
-    /** Chemin RELATIF à la racine du plan, segments déjà substitués et validés. */
+    /**
+     * Story 60.3 — chemin du nœud RACINE : la racine du plan, vue comme un nœud.
+     *
+     * **Pourquoi la racine devient un nœud de première classe.** Le sondage
+     * d'ouverture d'epic a mesuré qu'une relecture d'état « avec les sous-chemins »
+     * rend les enfants mais PAS la racine. Sans nœud racine, chaque backend doit
+     * réinventer ce cas, et l'un d'eux l'omettra — l'omission est le mode de
+     * rupture MESURÉ, pas une hypothèse. Un partage plat, lui, EST sa racine : le
+     * projecteur de partage n'aurait littéralement aucun nœud à produire sans elle.
+     *
+     * Alias de {@see GroupNameNormalizer::ROOT_NODE_PATH} — une seule valeur, un
+     * seul endroit où elle vit.
+     *
+     * **Ce qui n'est PAS ouvert ici** : le vocabulaire de recette (`nodes_spec`)
+     * n'accepte toujours pas « . » comme chemin de nœud écrit. C'est un legs NOMMÉ
+     * à la story 60.5, celle qui exprimera les droits de la racine du partage
+     * classe. Ouvrir les deux d'un coup aurait mêlé une contrainte de contrat
+     * (mesurée) à un choix de langage (non tranché).
+     */
+    public const ROOT_PATH = GroupNameNormalizer::ROOT_NODE_PATH;
+
+    /**
+     * Chemin RELATIF à la racine du plan, segments déjà substitués et validés, ou
+     * {@see ROOT_PATH} pour la racine elle-même.
+     */
     public readonly string $path;
 
     public readonly string $label;
@@ -75,11 +99,12 @@ final class PlanNode
         ?int $plafond = null,
         array $closure = [],
     ) {
-        if (! GroupNameNormalizer::isSafeRelativePath($path)) {
+        if (! GroupNameNormalizer::isSafeNodePath($path)) {
             throw PlanResolutionException::make(sprintf(
-                'chemin de nœud non sûr « %s » (chemin relatif, segments alphanumériques + « . _ - », '
-                . 'premier caractère différent de « . »).',
+                'chemin de nœud non sûr « %s » (le jeton racine « %s », ou un chemin relatif dont chaque '
+                . 'segment est alphanumérique + « . _ - » et ne commence pas par « . »).',
                 $path,
+                self::ROOT_PATH,
             ));
         }
         if ($plafond !== null && $plafond <= 0) {

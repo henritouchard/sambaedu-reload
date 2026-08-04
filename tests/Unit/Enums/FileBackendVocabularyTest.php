@@ -1,0 +1,180 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Enums;
+
+use App\Enums\FileBackendName;
+use App\Enums\FileBackendObservation;
+use App\Enums\FileBackendOutcome;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+/**
+ * Story 60.3 — le VOCABULAIRE du contrat de backend, épinglé.
+ *
+ * Trois enums fermées, et trois propriétés qu'on ne veut pas voir dériver : la
+ * colonne n'accueille que ce que le code sait résoudre, les sept résultats disent
+ * sept choses différentes, et les deux déclins ne se confondent jamais.
+ */
+class FileBackendVocabularyTest extends TestCase
+{
+    // =========================================================================
+    // Le nom : deux cases, et pas une de plus
+    // =========================================================================
+
+    /**
+     * L'ANCRAGE STRUCTUREL du squelette jetable : aucun backend distant n'a de
+     * valeur de colonne. Le squelette écrit contre l'instance réelle vit sous
+     * `tests/Integration/`, il n'est ni enregistré au conteneur, ni sélectionnable
+     * par la colonne, ni atteignable depuis l'interface — et il ne PEUT pas
+     * l'être, faute d'un nom dans ce vocabulaire.
+     */
+    #[Test]
+    public function the_column_vocabulary_carries_no_remote_backend_case(): void
+    {
+        $this->assertSame(['posix', 'preview'], FileBackendName::values());
+
+        foreach (FileBackendName::values() as $value) {
+            $this->assertStringNotContainsStringIgnoringCase('cloud', $value);
+            $this->assertStringNotContainsStringIgnoringCase('delegue', $value);
+        }
+    }
+
+    #[Test]
+    public function every_backend_name_has_a_human_label_and_no_raw_value_reaches_the_screen(): void
+    {
+        foreach (FileBackendName::cases() as $case) {
+            $this->assertNotSame('', $case->label());
+            $this->assertNotSame($case->value, $case->label());
+            $this->assertNotSame('', $case->description());
+        }
+    }
+
+    #[Test]
+    public function an_unknown_column_value_is_never_part_of_the_vocabulary(): void
+    {
+        $this->assertFalse(FileBackendName::isKnown('nextcloud'));
+        $this->assertFalse(FileBackendName::isKnown(null));
+        $this->assertTrue(FileBackendName::isKnown('posix'));
+    }
+
+    // =========================================================================
+    // Les sept résultats
+    // =========================================================================
+
+    #[Test]
+    public function there_are_exactly_seven_outcomes(): void
+    {
+        $this->assertSame([
+            'conforme',
+            'applique',
+            'en_attente',
+            'echec',
+            'non_exprimable',
+            'non_implemente',
+            'non_execute',
+        ], FileBackendOutcome::values());
+    }
+
+    #[Test]
+    public function the_seven_outcomes_have_seven_distinct_labels(): void
+    {
+        $labels = array_map(static fn (FileBackendOutcome $o): string => $o->label(), FileBackendOutcome::cases());
+
+        $this->assertCount(7, array_unique($labels), 'deux résultats qui se lisent pareil se confondront à l\'écran');
+    }
+
+    /**
+     * LA CORRECTION, épinglée : les deux déclins ne sont pas interchangeables.
+     * Le permanent est une limite du MODÈLE du backend ; le temporaire est une
+     * dette de NOTRE code. Les écraser l'un sur l'autre écrirait une
+     * contre-vérité — le serveur de fichiers historique SAIT plafonner.
+     */
+    #[Test]
+    public function the_two_declines_are_never_interchangeable(): void
+    {
+        $permanent = FileBackendOutcome::NonExprimable;
+        $temporaire = FileBackendOutcome::NonImplemente;
+        $parConception = FileBackendOutcome::NonExecute;
+
+        foreach ([$permanent, $temporaire, $parConception] as $decline) {
+            $this->assertTrue($decline->isDecline(), $decline->value);
+        }
+
+        $this->assertTrue($permanent->isModelLimit());
+        $this->assertFalse($permanent->isImplementationDebt());
+        $this->assertFalse($permanent->isByDesign());
+
+        $this->assertTrue($temporaire->isImplementationDebt());
+        $this->assertFalse($temporaire->isModelLimit());
+        $this->assertFalse($temporaire->isByDesign());
+
+        $this->assertTrue($parConception->isByDesign());
+        $this->assertFalse($parConception->isModelLimit());
+        $this->assertFalse($parConception->isImplementationDebt());
+
+        $this->assertNotSame($permanent->label(), $temporaire->label());
+    }
+
+    #[Test]
+    public function exactly_three_outcomes_require_a_detail(): void
+    {
+        $requiring = array_values(array_filter(
+            FileBackendOutcome::cases(),
+            static fn (FileBackendOutcome $o): bool => $o->requiresDetail(),
+        ));
+
+        $this->assertSame(
+            [FileBackendOutcome::Echec, FileBackendOutcome::NonExprimable, FileBackendOutcome::NonImplemente],
+            $requiring,
+        );
+    }
+
+    #[Test]
+    public function only_the_two_settled_states_count_as_converged(): void
+    {
+        $converged = array_values(array_filter(
+            FileBackendOutcome::cases(),
+            static fn (FileBackendOutcome $o): bool => $o->isConverged(),
+        ));
+
+        $this->assertSame([FileBackendOutcome::Conforme, FileBackendOutcome::Applique], $converged);
+    }
+
+    /**
+     * Aucun code de transport dans le vocabulaire : les trois sémantiques natives
+     * mesurées se normalisent en un ÉTAT, elles ne se nomment pas.
+     */
+    #[Test]
+    public function no_outcome_value_looks_like_a_transport_code(): void
+    {
+        foreach (FileBackendOutcome::values() as $value) {
+            $this->assertSame(0, preg_match('/\d/', $value), 'valeur numérique dans le vocabulaire : ' . $value);
+            foreach (['http', 'status', 'code'] as $forbidden) {
+                $this->assertStringNotContainsStringIgnoringCase($forbidden, $value);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Les quatre observations
+    // =========================================================================
+
+    #[Test]
+    public function the_observation_vocabulary_is_closed_and_distinguishes_absent_from_unobservable(): void
+    {
+        $this->assertSame(['observe', 'absent', 'non_observable', 'echec'], FileBackendObservation::values());
+
+        $this->assertTrue(FileBackendObservation::Observe->carriesGrants());
+        $this->assertFalse(FileBackendObservation::Absent->carriesGrants());
+        $this->assertFalse(FileBackendObservation::NonObservable->carriesGrants());
+        $this->assertFalse(FileBackendObservation::Echec->carriesGrants());
+
+        $this->assertTrue(FileBackendObservation::Echec->requiresDetail());
+        $this->assertNotSame(
+            FileBackendObservation::Absent->label(),
+            FileBackendObservation::NonObservable->label(),
+        );
+    }
+}

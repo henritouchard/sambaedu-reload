@@ -7,8 +7,17 @@ use App\Models\NetworkShareAssignable;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\WorkstationGroup;
+use App\Enums\FileBackendName;
+use App\Enums\FileBackendOutcome;
+use App\Services\Filesystem\Backend\FileBackendRegistry;
+use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\NetworkShareValidator;
+use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
+use App\Services\Filesystem\Plan\PlanNode;
+use App\Services\Filesystem\Plan\PlanSubject;
+use App\Services\Filesystem\SharePlanProjector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
@@ -50,6 +59,18 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     // à chaque frappe). `null` = non calculé.
     public ?array $drift = null;
 
+    // Story 60.3 — le backend est une propriété VISIBLE du partage (il détermine
+    // le chemin d'accès de l'utilisateur), et volontairement NON ÉDITABLE : tant
+    // qu'aucun flux ne route par la colonne, un sélecteur serait une propriété qui
+    // ment. Éditabilité et routage arrivent ensemble en 60.4.
+    public string $backendLabel = '';
+    public string $backendDescription = '';
+
+    // Aperçu du plan AVANT application. `null` tant qu'il n'a pas été demandé —
+    // on ne projette pas un plan à chaque rendu de page.
+    public bool $isPlanPreviewOpen = false;
+    public ?array $planPreview = null;
+
     public function mount(string $id): void
     {
         abort_unless(Gate::allows('view-networkshare'), 403);
@@ -70,6 +91,131 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $this->label = (string) ($share->label ?? '');
         $this->description = (string) ($share->description ?? '');
         $this->letter = (string) ($share->letter ?? '');
+
+        $backend = $share->backendName();
+        $this->backendLabel = $backend->label();
+        $this->backendDescription = $backend->description();
+    }
+
+    // --- Story 60.3 : aperçu du plan avant application ----------------------
+
+    /**
+     * Projette le partage en plan NEUTRE, le soumet au backend d'aperçu obtenu
+     * VIA LE REGISTRE (le chemin du contrat, jamais un raccourci vers la classe)
+     * et prépare le rendu.
+     */
+    public function openPlanPreview(): void
+    {
+        abort_unless(Gate::allows('view-networkshare'), 403);
+
+        $share = $this->share?->fresh();
+        if ($share === null) {
+            return;
+        }
+
+        try {
+            $plan = app(SharePlanProjector::class)->project($share);
+            // Le backend d'APERÇU, jamais celui du partage : on montre ce que le
+            // plan dit sans rien écrire. Résolu par le REGISTRE — le chemin du
+            // contrat, pas un raccourci vers la classe : le jour où l'aperçu
+            // pourra s'appuyer sur l'autorité réelle du partage (60.4), c'est
+            // cette ligne qui changera, et elle seule.
+            $backend = app(FileBackendRegistry::class)->get(FileBackendName::Preview);
+            $report = $backend->provision($plan);
+        } catch (\Throwable $e) {
+            // Un plan non projetable (nom de répertoire hérité illisible) ou un
+            // backend sans implémentation : on le DIT, on ne montre pas un aperçu
+            // partiel qui laisserait croire à une intention comprise.
+            $this->toastError("Aperçu impossible : {$e->getMessage()}");
+
+            return;
+        }
+
+        $this->planPreview = $this->presentPlan($plan, $report, $backend->name());
+        $this->isPlanPreviewOpen = true;
+    }
+
+    public function closePlanPreview(): void
+    {
+        $this->isPlanPreviewOpen = false;
+    }
+
+    /**
+     * Met le plan et le rapport en forme d'affichage.
+     *
+     * Les sujets sont résolus PAR IDENTITÉ INTERNE, en lot (deux requêtes au
+     * plus) : le plan ne porte que des identités, et c'est au-dessus de la ligne
+     * de contrat qu'on leur redonne un nom SE5 — jamais un nom système.
+     */
+    private function presentPlan(FilePlan $plan, ReconciliationReport $report, FileBackendName $backendName): array
+    {
+        $userIds = [];
+        $groupIds = [];
+        foreach ($plan->nodes as $node) {
+            foreach ($node->grants as $grant) {
+                if ($grant->subject->type === PlanSubject::TYPE_USER) {
+                    $userIds[$grant->subject->id] = true;
+                } else {
+                    $groupIds[$grant->subject->id] = true;
+                }
+            }
+        }
+
+        $userLabels = $userIds === []
+            ? []
+            : User::whereIn('id', array_keys($userIds))->pluck('login', 'id')->all();
+        $groupRows = $groupIds === []
+            ? collect()
+            : UserGroup::whereIn('id', array_keys($groupIds))->get(['id', 'name', 'display_name']);
+        $groupLabels = [];
+        foreach ($groupRows as $g) {
+            $groupLabels[(int) $g->id] = (string) ($g->display_name ?: $g->name);
+        }
+
+        $nodes = [];
+        foreach ($plan->nodes as $node) {
+            $entry = $report->for($node->path);
+
+            $grants = [];
+            foreach ($node->grants as $grant) {
+                $subject = $grant->subject;
+                if ($subject->type === PlanSubject::TYPE_USER) {
+                    $label = ($userLabels[$subject->id] ?? "#{$subject->id}") . ' (utilisateur)';
+                } else {
+                    $label = ($groupLabels[$subject->id] ?? "#{$subject->id}") . " (groupe d'utilisateurs)";
+                }
+
+                $grants[] = [
+                    'label' => $label,
+                    'access_label' => $grant->access === PlanGrant::ACCESS_RW ? 'Modifier' : 'Lire',
+                    'suspended' => ! $grant->isActive(),
+                ];
+            }
+
+            $nodes[] = [
+                'path' => $node->path,
+                // La racine se dit « (racine) » — jamais son jeton brut, qui est un
+                // détail de représentation et ne veut rien dire pour un administrateur.
+                'display_path' => $node->path === PlanNode::ROOT_PATH ? '(racine)' : $node->path,
+                'label' => $node->label,
+                'nature' => $node->nature->label(),
+                'plafond' => $node->plafond,
+                'closure' => $node->closure,
+                'grants' => $grants,
+                'outcome' => $entry?->outcome->value ?? FileBackendOutcome::Echec->value,
+                'detail' => $entry?->detail,
+            ];
+        }
+
+        return [
+            'backend' => [
+                'label' => $backendName->label(),
+                'description' => $backendName->description(),
+            ],
+            'root' => $plan->rootPath,
+            'template' => $plan->templateKey,
+            'nodes' => $nodes,
+        ];
     }
 
     // --- Assignations actuelles --------------------------------------------
@@ -462,6 +608,12 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 <x-organisms.page title="Lecteur réseau géré" :scrollable="true" :back="route('admin.shares')"
     back-text="Retour aux lecteurs réseau">
     <x-slot:actions>
+        {{-- Story 60.3 — l'aperçu est READ-ONLY : il n'écrit rien, il montre. --}}
+        <button type="button" class="btn btn-outline btn-sm" wire:click="openPlanPreview"
+            wire:loading.attr="disabled" wire:target="openPlanPreview">
+            <span wire:loading.remove wire:target="openPlanPreview"><i class="fa-solid fa-eye"></i> Aperçu du plan</span>
+            <span wire:loading wire:target="openPlanPreview"><span class="loading loading-spinner loading-xs"></span> …</span>
+        </button>
         @can('manage-networkshare')
             <button type="button" class="btn btn-error btn-sm" wire:click="deleteShare"
                 wire:confirm="Supprimer ce répertoire ? Les assignations seront retirées (le dossier serveur est conservé).">
@@ -552,6 +704,13 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                                     @else
                                         <span class="badge badge-ghost badge-sm">Lettre auto</span>
                                     @endif
+                                    {{-- Story 60.3 — autorité d'écriture des droits. VISIBLE (elle
+                                         détermine le chemin d'accès de l'utilisateur), NON ÉDITABLE
+                                         tant qu'aucun flux ne route par elle. --}}
+                                    <span class="badge badge-outline badge-sm gap-1 tooltip" data-tip="{{ $backendDescription }}">
+                                        <i class="fa-solid fa-server text-[10px]"></i>
+                                        {{ $backendLabel }}
+                                    </span>
                                 </h2>
                             </div>
                             @can('manage-networkshare')
@@ -706,6 +865,19 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                     </div>
                 </div>
             @endif
+
+    {{-- ===================== Modale : aperçu du plan (Story 60.3) ===================== --}}
+    <x-molecules.modal wire:model="isPlanPreviewOpen" size="max-w-4xl" height="h-auto"
+        close-method="closePlanPreview"
+        title="Aperçu du plan" icon="fa-eye text-primary"
+        subtitle="Ce que ce partage dit, avant toute application. Rien n'est écrit.">
+        @if ($planPreview !== null)
+            @include('pages::admin.shares._partials.plan-preview', ['preview' => $planPreview])
+        @endif
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closePlanPreview">Fermer</button>
+        </x-slot:footer>
+    </x-molecules.modal>
 
     {{-- ===================== Modale : ajouter une assignation (recherche dynamique) ===================== --}}
     @can('manage-networkshare')

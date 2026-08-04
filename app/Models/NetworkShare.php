@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\FileBackendName;
+use App\Exceptions\Filesystem\UnknownFileBackendException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -26,9 +28,17 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  *    `UserGroup` (`user:<login>` / `group:<unix>`). Une assignation
  *    `WorkstationGroup` est MONTAGE-SEUL (aucune ACL — invariant).
  *
+ * **Story 60.3 — `backend` : l'autorité d'écriture des droits.** Le partage porte
+ * le NOM du backend qui écrit ses droits (`posix` par défaut — c'est ce que sont
+ * tous les partages en place). La colonne est VISIBLE (elle détermine le chemin
+ * d'accès de l'utilisateur) mais n'est ni `$fillable`, ni éditable depuis l'UI :
+ * tant qu'aucun flux de provisioning ne route par elle, un sélecteur serait une
+ * propriété qui ment. Routage et éditabilité arrivent ensemble en 60.4.
+ *
  * @property int $id
  * @property string $name
  * @property string $directory_name
+ * @property FileBackendName $backend
  * @property string|null $label
  * @property string|null $description
  * @property string|null $letter
@@ -60,6 +70,12 @@ class NetworkShare extends Model
 
     protected $table = 'network_shares';
 
+    /**
+     * `backend` en est VOLONTAIREMENT ABSENT (story 60.3) : aucun chemin
+     * d'écriture de masse latent tant que rien ne route par cette colonne. La
+     * retirer d'ici est ce qui empêche un `create([...])` ou un `fill()` de faire
+     * entrer, par inadvertance, une autorité d'écriture que personne n'honore.
+     */
     protected $fillable = [
         'name',
         'directory_name',
@@ -67,6 +83,31 @@ class NetworkShare extends Model
         'description',
         'letter',
         'created_by_user_id',
+    ];
+
+    /**
+     * Story 60.3 — le nom de backend est du VOCABULAIRE, pas une chaîne libre.
+     *
+     * Le cast sert la lecture ordinaire. Le chemin SANCTIONNÉ, celui qui échoue en
+     * nommant ce qui était attendu, est {@see backendName()} : c'est lui qu'appelle
+     * la résolution et c'est lui qu'appelle l'affichage.
+     */
+    protected $casts = [
+        'backend' => FileBackendName::class,
+    ];
+
+    /**
+     * Story 60.3 — le défaut du MODÈLE recopie le défaut du SCHÉMA.
+     *
+     * Sans lui, une instance fraîchement créée n'aurait pas d'autorité d'écriture
+     * en mémoire tant qu'elle n'a pas été relue, et {@see backendName()} devrait
+     * choisir entre échouer sur un cas parfaitement normal ou se rabattre en
+     * silence sur un défaut — les deux mauvais. Recopier le défaut le supprime.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'backend' => 'posix',
     ];
 
     /**
@@ -120,6 +161,34 @@ class NetworkShare extends Model
             'network_share_id',
             'assignable_id',
         )->withPivot('access')->withTimestamps();
+    }
+
+    /**
+     * Story 60.3 — l'AUTORITÉ D'ÉCRITURE de ce partage, en vocabulaire fermé.
+     *
+     * **Le chemin sanctionné de lecture de la colonne.** Il lit la valeur BRUTE
+     * (avant cast) pour pouvoir échouer en nommant ce qui était attendu, plutôt
+     * que sur l'erreur générique du moteur de casts. Une valeur hors vocabulaire
+     * ne se rabat JAMAIS sur un défaut : provisionner au hasard un partage dont
+     * l'autorité est illisible est exactement ce qu'il faut empêcher.
+     *
+     * @throws UnknownFileBackendException valeur hors vocabulaire, ou colonne non chargée
+     */
+    public function backendName(): FileBackendName
+    {
+        $raw = $this->getAttributes()['backend'] ?? null;
+
+        if ($raw instanceof FileBackendName) {
+            return $raw;
+        }
+
+        $name = is_string($raw) ? FileBackendName::tryFrom($raw) : null;
+
+        if ($name === null) {
+            throw UnknownFileBackendException::unknownValue($raw);
+        }
+
+        return $name;
     }
 
     /**
