@@ -19,7 +19,9 @@ use App\Models\DirectoryTemplate;
  * dilapider en injectant un service d'exécution ici.
  *
  * **Ce que ce résolveur ne fait PAS.** Il ne pose aucune permission, ne dérive
- * aucun nom système, n'invente aucune racine absolue. Il produit un plan NEUTRE ;
+ * aucun nom système, n'invente aucune racine absolue — la ZONE qu'il recopie
+ * depuis la recette (story 60.5) est un jeton neutre, que seule la garde de chemin
+ * du backend sait traduire en racine réelle. Il produit un plan NEUTRE ;
  * la traduction vers un plan de fichiers concret appartient au contrat de backend
  * (story 60.3) et passe APRÈS cette ligne. En 60.1, ce résolveur n'a pour
  * consommateur que ses tests.
@@ -96,7 +98,7 @@ final class PlanResolver
             }
         }
 
-        return new FilePlan((string) $template->key, $rootPath, $roles, $nodes);
+        return new FilePlan((string) $template->key, $rootPath, $roles, $nodes, $template->rootAnchor());
     }
 
     // =========================================================================
@@ -130,7 +132,14 @@ final class PlanResolver
         $closure = $this->closureFor($grantSpecs, $roleKeys);
 
         if (! $nature->expandsPerMember()) {
-            $path = $this->substitute($specPath, $groupValues, sprintf('le chemin du nœud « %s »', $specPath));
+            // Story 60.5 — le JETON RACINE ne se substitue pas et ne se valide pas
+            // comme un chemin : il désigne la racine du plan elle-même. Le faire
+            // passer par la substitution le refuserait comme « chemin relatif non
+            // sûr » — ce qu'il est, et c'est précisément pour cela qu'il est un
+            // jeton.
+            $path = $specPath === PlanNode::ROOT_PATH
+                ? PlanNode::ROOT_PATH
+                : $this->substitute($specPath, $groupValues, sprintf('le chemin du nœud « %s »', $specPath));
 
             return [new PlanNode(
                 $path,

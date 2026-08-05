@@ -9,6 +9,7 @@ use App\Models\UserGroup;
 use App\Models\WorkstationGroup;
 use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
+use App\Enums\PlanNodeNature;
 use App\Services\Filesystem\Backend\FileBackendRegistry;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\NetworkShareService;
@@ -18,7 +19,6 @@ use App\Services\Filesystem\Plan\FilePlan;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
-use App\Services\Filesystem\SharePlanProjector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
@@ -89,6 +89,47 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public bool $isPlanPreviewOpen = false;
     public ?array $planPreview = null;
 
+    /**
+     * Story 60.5 — l'ORIGINE du partage : la recette dont il est la
+     * matérialisation, le groupe qu'il cloisonne, et l'emplacement RÉEL de sa
+     * racine côté serveur. `null` pour un partage ordinaire, qui n'a pas d'origine.
+     *
+     * L'emplacement vient du BACKEND, par le contrat : l'orchestrateur ne connaît
+     * qu'une zone logique et un chemin relatif, et c'est ce qui le rend portable.
+     * C'est aussi le chemin que la liste blanche du système doit couvrir — la
+     * première chose qu'on vérifie quand toute une matérialisation décline.
+     *
+     * @var array{template:string,group:string,location:?string}|null
+     */
+    public ?array $treeOrigin = null;
+
+    /**
+     * Story 60.5 — les nœuds ACTIVABLES du plan, avec leur état.
+     *
+     * Une entrée ABSENTE de la donnée d'activation vaut ACTIF : c'est la décision
+     * de l'espace d'échange historique, créé actif. Suspendre VIDE l'octroi
+     * suspendable ; le dossier et les données restent — ce n'est jamais une
+     * suppression, et rien à l'écran ne doit laisser croire le contraire.
+     *
+     * @var list<array{path:string,label:string,active:bool}>
+     */
+    public array $activableNodes = [];
+
+    /**
+     * Story 60.5 — le DERNIER RAPPORT de réconciliation, par nœud.
+     *
+     * Un partage plat a un nœud : « ça a marché ou pas » suffisait. Un arbre en a
+     * quatre plus un par élève, et la question de l'administrateur devient
+     * « LEQUEL a échoué ». C'est l'arbre qui donne enfin son audience à ce rapport,
+     * écrit et testé depuis la story 60.4 mais rendu nulle part.
+     *
+     * Il arrive en TABLEAU : un rapport ne se reconstruit pas sans repasser par sa
+     * fabrique et son plan, et pour l'AFFICHER le tableau suffit.
+     *
+     * @var array{backend:string,nodes:list<array<string,mixed>>}|null
+     */
+    public ?array $lastReport = null;
+
     public function mount(string $id): void
     {
         abort_unless(Gate::allows('view-networkshare'), 403);
@@ -113,6 +154,149 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $backend = $share->backendName();
         $this->backendLabel = $backend->label();
         $this->backendDescription = $backend->description();
+
+        $this->loadTreeOrigin($share);
+        $this->loadLastReport($share);
+    }
+
+    /**
+     * Story 60.5 — origine et nœuds activables. Silencieux et sans effet pour un
+     * partage ordinaire : il n'a pas d'origine, et il n'a rien à activer.
+     */
+    private function loadTreeOrigin(NetworkShare $share): void
+    {
+        $this->treeOrigin = null;
+        $this->activableNodes = [];
+
+        if (! $share->hasRecipeOrigin()) {
+            return;
+        }
+
+        $share->loadMissing(['directoryTemplate', 'userGroup']);
+
+        try {
+            $plan = app(NetworkShareService::class)->planFor($share);
+            $location = app(FileBackendRegistry::class)->forShare($share)->location($plan);
+        } catch (\Throwable $e) {
+            // Un lien cassé (recette ou groupe supprimé) ne doit pas rendre la
+            // fiche illisible : on montre ce qu'on sait, on tait ce qu'on ignore.
+            $this->treeOrigin = [
+                'template' => (string) ($share->directoryTemplate?->label ?? 'recette introuvable'),
+                'group' => (string) ($share->userGroup?->display_name ?: $share->userGroup?->name ?: 'groupe introuvable'),
+                'location' => null,
+            ];
+
+            return;
+        }
+
+        $this->treeOrigin = [
+            'template' => (string) ($share->directoryTemplate?->label ?? ''),
+            'group' => (string) ($share->userGroup?->display_name ?: $share->userGroup?->name ?: ''),
+            'location' => $location,
+        ];
+
+        $activation = $share->nodeActivation();
+
+        foreach ($share->directoryTemplate?->nodes() ?? [] as $spec) {
+            if (! is_array($spec) || ($spec['nature'] ?? null) !== PlanNodeNature::Activable->value) {
+                continue;
+            }
+            $path = (string) ($spec['path'] ?? '');
+            if ($path === '') {
+                continue;
+            }
+
+            $this->activableNodes[] = [
+                'path' => $path,
+                'label' => (string) ($spec['label'] ?? $path),
+                'active' => $activation[$path] ?? true,
+            ];
+        }
+    }
+
+    /** Story 60.5 — le dernier rapport connu, en tableau, pour affichage. */
+    private function loadLastReport(NetworkShare $share): void
+    {
+        $report = app(NetworkShareService::class)->lastReport($share);
+
+        if ($report === null) {
+            $this->lastReport = null;
+
+            return;
+        }
+
+        $nodes = [];
+        foreach ((array) ($report['nodes'] ?? []) as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+            $path = (string) ($node['path'] ?? '');
+            $outcome = FileBackendOutcome::tryFrom((string) ($node['outcome'] ?? ''));
+
+            $nodes[] = [
+                // La racine se dit « (racine) » — jamais son jeton brut.
+                'display_path' => $path === PlanNode::ROOT_PATH ? '(racine)' : $path,
+                'outcome' => $outcome?->value ?? FileBackendOutcome::Echec->value,
+                'label' => $outcome?->label() ?? 'Inconnu',
+                'detail' => isset($node['detail']) && is_string($node['detail']) && $node['detail'] !== ''
+                    ? $node['detail']
+                    : null,
+            ];
+        }
+
+        $this->lastReport = ['backend' => (string) ($report['backend'] ?? ''), 'nodes' => $nodes];
+    }
+
+    /**
+     * Story 60.5 — bascule un nœud ACTIVABLE de l'arbre.
+     *
+     * Persiste l'état PUIS enfile la réconciliation : la pose est quadratique, et
+     * le cycle d'une requête n'est pas le bon endroit pour l'attendre.
+     *
+     * **La bascule de l'arbre historique est une AUTRE bascule**, sur un autre
+     * arbre, avec son propre écran. Rien ici ne la pilote, et rien ici ne doit
+     * laisser croire le contraire.
+     */
+    public function toggleNode(string $path): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        $share = $this->share?->fresh();
+        if ($share === null || ! $share->hasRecipeOrigin()) {
+            return;
+        }
+
+        $known = array_column($this->activableNodes, 'path');
+        if (! in_array($path, $known, true)) {
+            // Un chemin qui n'est pas un nœud activable de la recette : refus net
+            // plutôt qu'une entrée orpheline dans la donnée d'activation.
+            $this->toastError('Ce dossier n\'est pas activable dans cette recette.');
+
+            return;
+        }
+
+        $activation = $share->nodeActivation();
+        $next = ! ($activation[$path] ?? true);
+        $activation[$path] = $next;
+
+        $share->node_activation = $activation;
+        $share->save();
+
+        $this->share = $share;
+        $this->loadShare();
+
+        $queued = app(NetworkShareService::class)->queueReconciliation($share);
+        $this->reconciliationEngaged = $queued;
+        $this->reconciliationFailure = app(NetworkShareService::class)->lastFailure($share);
+
+        if ($queued) {
+            $this->toastSuccess($next
+                ? 'Dossier réactivé. La mise en place des droits est engagée.'
+                : 'Dossier suspendu : les accès seront vidés, le dossier et son contenu sont conservés. '
+                    . 'La mise en place des droits est engagée.');
+        } else {
+            $this->toastError('L\'état a été enregistré, mais la mise en place des droits n\'a pas pu être engagée.');
+        }
     }
 
     // --- Story 60.3 : aperçu du plan avant application ----------------------
@@ -132,7 +316,11 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         }
 
         try {
-            $plan = app(SharePlanProjector::class)->project($share);
+            // Story 60.5 — la projection passe par l'ORCHESTRATEUR, qui route selon
+            // l'origine du partage. Court-circuiter vers la projection plate
+            // montrerait, pour un partage d'arbre, un aperçu à un seul nœud sans
+            // ses audiences : un aperçu FAUX est pire qu'une absence d'aperçu.
+            $plan = app(NetworkShareService::class)->planFor($share);
             // Le backend d'APERÇU, jamais celui du partage : on montre ce que le
             // plan dit sans rien écrire. Résolu par le REGISTRE — le chemin du
             // contrat, pas un raccourci vers la classe : le jour où l'aperçu
@@ -835,6 +1023,25 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                                     <span class="whitespace-pre-line">{{ $description }}</span>
                                 </div>
                             @endif
+                            {{-- Story 60.5 — l'ORIGINE : de quelle recette ce partage est la
+                                 matérialisation, quel groupe il cloisonne, et OÙ il vit
+                                 réellement. Ce dernier point est ce qu'on va vérifier à la
+                                 main, et ce que la liste blanche du système doit couvrir. --}}
+                            @if ($treeOrigin !== null)
+                                <div class="flex items-center gap-2 text-base-content/70" data-share-origin>
+                                    <i class="fa-solid fa-diagram-project w-4 text-center opacity-50"></i>
+                                    <span>{{ $treeOrigin['template'] }}</span>
+                                    <span class="text-base-content/40 text-xs">·</span>
+                                    <span>{{ $treeOrigin['group'] }}</span>
+                                </div>
+                                @if ($treeOrigin['location'] !== null)
+                                    <div class="flex items-center gap-2 text-base-content/70">
+                                        <i class="fa-solid fa-hard-drive w-4 text-center opacity-50"></i>
+                                        <span class="font-mono break-all">{{ $treeOrigin['location'] }}</span>
+                                        <span class="text-base-content/40 text-xs">(emplacement serveur)</span>
+                                    </div>
+                                @endif
+                            @endif
                         </dl>
                     @endif
                 </div>
@@ -944,6 +1151,109 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                         </button>
                     @endif
                 @endcan
+            </div>
+        </div>
+    @endif
+
+    {{-- ===================== Dossiers activables (Story 60.5) =====================
+         Suspendre VIDE les accès du dossier ; le dossier et son contenu RESTENT.
+         Le libellé le dit en toutes lettres — c'est la distinction que tout le
+         modèle a passé un critère entier à établir, et la confondre avec une
+         suppression serait la seule erreur irréparable de cet écran. --}}
+    @if ($activableNodes !== [])
+        <div class="card bg-base-100 shadow mb-6" data-share-activable>
+            <div class="card-body">
+                <h2 class="card-title text-base">
+                    <i class="fa-solid fa-toggle-on text-primary"></i> Dossiers activables
+                    <span class="badge badge-neutral badge-sm">{{ count($activableNodes) }}</span>
+                </h2>
+                <p class="text-xs text-base-content/60">
+                    Suspendre un dossier retire l'accès des élèves : le dossier et les documents qu'il
+                    contient sont conservés, et un rétablissement rend l'accès tel qu'il était.
+                </p>
+                <div class="overflow-x-auto mt-2">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Dossier</th>
+                                <th>État</th>
+                                @can('manage-networkshare')
+                                    <th class="text-right">Action</th>
+                                @endcan
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($activableNodes as $node)
+                                <tr>
+                                    <td>
+                                        <div>{{ $node['label'] }}</div>
+                                        <div class="text-xs text-base-content/50 font-mono">{{ $node['path'] }}</div>
+                                    </td>
+                                    <td>
+                                        @if ($node['active'])
+                                            <span class="badge badge-success badge-sm">Actif</span>
+                                        @else
+                                            <span class="badge badge-warning badge-sm">Suspendu</span>
+                                        @endif
+                                    </td>
+                                    @can('manage-networkshare')
+                                        <td class="text-right">
+                                            <button type="button" class="btn btn-xs btn-outline"
+                                                wire:click="toggleNode(@js($node['path']))"
+                                                wire:loading.attr="disabled" wire:target="toggleNode">
+                                                {{ $node['active'] ? 'Suspendre' : 'Réactiver' }}
+                                            </button>
+                                        </td>
+                                    @endcan
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ===================== Dernier passage, par nœud (Story 60.5) =====================
+         Un partage plat a un nœud : « ça a marché ou pas » suffisait. Un arbre en a
+         quatre plus un par élève, et la question devient « LEQUEL a échoué ». Le
+         rapport est lu depuis un TABLEAU : un rapport ne se reconstruit pas sans
+         repasser par sa fabrique et son plan, et pour l'afficher le tableau suffit. --}}
+    @if ($lastReport !== null && $lastReport['nodes'] !== [])
+        <div class="card bg-base-100 shadow mb-6" data-share-last-report>
+            <div class="card-body">
+                <h2 class="card-title text-base">
+                    <i class="fa-solid fa-clipboard-check text-primary"></i> Dernier passage sur les droits
+                </h2>
+                <div class="overflow-x-auto mt-2">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Dossier</th>
+                                <th>Issue</th>
+                                <th>Détail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($lastReport['nodes'] as $node)
+                                @php
+                                    $badge = match ($node['outcome']) {
+                                        'conforme' => 'badge-success',
+                                        'applique' => 'badge-info',
+                                        'en_attente' => 'badge-ghost',
+                                        'non_implemente', 'non_exprimable' => 'badge-warning',
+                                        default => 'badge-error',
+                                    };
+                                @endphp
+                                <tr>
+                                    <td class="font-mono text-xs">{{ $node['display_path'] }}</td>
+                                    <td><span class="badge {{ $badge }} badge-sm">{{ $node['label'] }}</span></td>
+                                    <td class="text-xs text-base-content/70">{{ $node['detail'] ?? '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     @endif

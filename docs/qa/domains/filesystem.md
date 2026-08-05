@@ -1218,8 +1218,17 @@ recette en DB et délègue au socle (`provision()`, `NetworkShareValidator`).
 
 ### Scénario 60.1-3 — La matérialisation 34.3 est strictement inchangée
 
-1. Sur `/app/shares`, « Créer depuis un template » : matérialiser un
-   `profs_to_eleves` comme avant.
+> ⚠️ **Ne pas utiliser `profs_to_eleves` pour ce scénario** — défaut 34.3 constaté
+> le 2026-08-04, indépendant de l'Epic 60 : son rôle « Équipe enseignante (dépose) »
+> est contraint à `group_type = 'equipe'`, un type que le repli 4.13 ne produit plus
+> (`Classe_X`/`Equipe_X`/`PP_X` → une ligne nue `type='classe'`). Le picker est vide
+> et muet, la recette est immatérialisable. Utiliser **`direction_to_all`** ou
+> **`group_space`** (`group_type = null`). Correctif suivi dans
+> `_bmad-output/todo/_bugs.md` : recâbler la recette sur
+> `RoleResolutionStrategy::EdgeRole` livrée en 60.2.
+
+1. Sur `/admin/settings/files?tab=lecteurs-reseaux`, « Créer depuis un template » :
+   matérialiser un `direction_to_all` comme avant.
 2. **Attendu** : comportement identique à 34.3 — mêmes assignations, mêmes
    `access`, même provisioning. Aucun message nouveau, aucune option nouvelle
    dans le formulaire (l'arbre n'est exposé nulle part).
@@ -1244,7 +1253,7 @@ recette en DB et délègue au socle (`provision()`, `NetworkShareValidator`).
 
 - [ ] 60.1-1 : migration jouée, 2 colonnes nullables ajoutées, rien d'autre
 - [ ] 60.1-2 : les 4 recettes restent sans arbre (`hasTreeSpec()` faux), seeder inchangé et idempotent
-- [ ] 60.1-3 : « Créer depuis un template » se comporte exactement comme en 34.3
+- [ ] 60.1-3 : « Créer depuis un template » se comporte exactement comme en 34.3 (avec `direction_to_all` — `profs_to_eleves` est cassée par un défaut 34.3, cf. encadré)
 - [ ] 60.1-4 : `getfacl` inchangé sur les partages classe **et** sur les répertoires réseau
 - [ ] 60.1-5 : `migrate:rollback` propre, données 34.3 intactes
 - [ ] **Aucune UI, aucune route, aucune commande** n'a été ajoutée — si quelque chose d'observable est apparu, c'est un défaut
@@ -1524,21 +1533,46 @@ autre raison, les scénarios ci-dessous mesureront la mauvaise chose.
 C'est le seul protocole qui établit « aucune entrée ne bouge sur une instance en
 place ». À faire sur une instance qui a DÉJÀ des répertoires provisionnés.
 
+**L'instantané doit être DÉTERMINISTE, sinon le diff ment.** `getfacl -R` descend
+dans l'ordre du système de fichiers, qui n'est pas stable d'un passage à l'autre :
+un même état pourrait produire deux fichiers différents. Et `sort` sans locale
+imposée ignore la ponctuation, ce qui suffit à réordonner des chemins. D'où la
+forme ci-dessous — chemins énumérés puis triés explicitement, en-têtes `# file:`
+CONSERVÉS (sans elles, on ne sait plus à quel chemin appartient chaque bloc) :
+
+```sh
+# à mettre dans ~/acl-snapshot.sh sur le serveur
+#!/bin/sh
+export LC_ALL=C
+find /var/sambaedu/Partages -print0 | sort -z | xargs -0 -r getfacl -p
+```
+
 1. **Avant tout déploiement du code de la story**, capturer l'état complet :
    ```
-   cd /var/sambaedu/Partages
-   for d in */ ; do echo "### $d" ; getfacl -R -c -E -p "$d" ; done > /tmp/acl-avant.txt
+   sh ~/acl-snapshot.sh > /tmp/acl-avant.txt
    ```
    (le `.trash` éventuel est inclus, c'est voulu — il ne doit pas bouger non plus)
 2. Déployer la story.
 3. Sur **chaque** répertoire, cliquer « Resynchroniser » depuis sa fiche, puis
    laisser la file traiter (ou `php artisan queue:work --stop-when-empty`).
-4. Recapturer :
+4. Recapturer et comparer :
    ```
-   cd /var/sambaedu/Partages
-   for d in */ ; do echo "### $d" ; getfacl -R -c -E -p "$d" ; done > /tmp/acl-apres.txt
+   sh ~/acl-snapshot.sh > /tmp/acl-apres.txt
    diff -u /tmp/acl-avant.txt /tmp/acl-apres.txt
    ```
+
+**Vue d'ensemble lisible** (pour se repérer, pas pour comparer) — une ligne par
+chemin, mode, propriétaire et groupe :
+
+```sh
+export LC_ALL=C
+find /var/sambaedu/Partages -printf '%p\t%M\t%u:%g\n' | sort \
+  | awk -F'\t' '{printf "%-11s %-28s %s\n", $2, $3, $1}'
+```
+
+Le mode affiché ici est le mode POSIX classique : il ne dit pas qu'une liste
+d'accès étendue existe. Pour la voir, `getfacl` sur le chemin — ou `ls -ld`, dont
+le `+` en fin de mode la signale.
 
 - [ ] 60.4-1a — **le diff est VIDE**. Toute ligne de différence est un défaut de la
       story, pas un réglage : la remonter telle quelle.
@@ -1729,6 +1763,303 @@ succès :
 - [ ] Prérequis P1 à P4 vérifiés et inchangés
 - [ ] Suite automatisée verte sur l'hôte
 
+## Story 60.5 — Le seed SE4 dans une racine NEUVE, et la comparaison des deux arbres
+
+**Ce que cette story change sur le serveur, en une phrase :** SE5 sait désormais
+matérialiser l'arbre de partage d'une classe **dans une racine à lui**, distincte de
+l'arbre historique, auquel il **n'écrit plus jamais un octet**. Les deux arbres
+coexistent : l'historique reste le seul servi aux établissements, le neuf existe
+pour être **comparé**.
+
+**Deux arbres, deux commandes, à ne jamais confondre :**
+
+| | arbre HISTORIQUE | arbre NEUF |
+|---|---|---|
+| racine | `/var/sambaedu/Classes` | `/var/sambaedu/ClassesSE5` (`SAMBAEDU_CLASS_TREES_ROOT`) |
+| servi aux postes | **oui** (`[classes]`) | **non** — aucune exposition SMB dans cette story |
+| commande | `shares:resync-class` | `shares:materialize-class-trees` |
+| bascule `_echange` | fiche du GROUPE | fiche du PARTAGE (`/admin/shares/<id>`) |
+
+L'arbre neuf **ne se vérifie donc PAS depuis un poste** : il se lit en `getfacl`
+côté serveur. Une absence de constat côté poste n'est pas un échec — c'est le
+comportement voulu pendant la phase de comparaison.
+
+### Prérequis 60.5
+
+- [ ] **60.5-P1 — le peuplement des recettes a été rejoué.**
+      `php artisan db:seed --class=DirectoryTemplateSeeder` →
+      `php artisan tinker --execute="echo App\Models\DirectoryTemplate::count();"`
+      doit rendre **5** (la 5ᵉ est `classe_se4`).
+      Sans ce passage, `shares:materialize-class-trees` sort en code **2** avec un
+      message explicite : c'est voulu, ce n'est pas un succès silencieux.
+
+- [ ] **60.5-P2 — LA LISTE BLANCHE `sudo` COUVRE LA RACINE NEUVE.** *(§[PROD], hors git)*
+      C'est le prérequis d'infra de cette story, et le seul dont l'oubli produit un
+      symptôme uniforme et déroutant : **toute** la matérialisation décline avec un
+      refus de permission, y compris sur des classes parfaitement saines.
+      La liste blanche autorise aujourd'hui `mkdir` / `setfacl` / `chown` / `chgrp` /
+      `mv` sous `/var/sambaedu/Classes` et `/var/sambaedu/Partages` ; elle doit
+      couvrir **le même jeu de commandes sous `/var/sambaedu/ClassesSE5`**.
+      Vérification rapide, avant toute autre chose :
+      ```bash
+      sudo -n mkdir -p /var/sambaedu/ClassesSE5/.probe && sudo -n rmdir /var/sambaedu/ClassesSE5/.probe && echo OK
+      ```
+      `OK` ⇒ prérequis tenu. Un refus ⇒ **arrêter ici** : tous les scénarios qui
+      suivent échoueraient pour cette seule raison.
+
+- [ ] **60.5-P3 — un ouvrier de file tourne.** Identique au prérequis 60.4-P5, et
+      pour la même raison : les écrans ENFILENT. Sans ouvrier, tout dit « engagé »
+      et rien ne se produit. La commande de peuplement, elle, s'exécute en DIRECT
+      et n'en a pas besoin — c'est délibéré.
+
+- [ ] **60.5-P4 — un instantané de l'arbre historique est pris AVANT tout.**
+      C'est la pièce à conviction du scénario 60.5-2 ; sans elle, l'invariance ne
+      se prouve pas, elle s'affirme.
+      ```bash
+      sudo getfacl -R /var/sambaedu/Classes > ~/classes-avant.facl
+      wc -l ~/classes-avant.facl        # doit être NON VIDE
+      ```
+
+### Scénario 60.5-1 — Peupler l'arbre neuf (simulation, puis réel)
+
+1. **Simulation d'abord.** Elle ne crée rien, n'écrit rien, ne lance aucun processus :
+   ```bash
+   php artisan shares:materialize-class-trees --dry-run
+   ```
+2. Puis **une seule classe**, choisie parce que ses groupes d'annuaire se résolvent
+   (`getent group equipe_<base>` et `getent group classe_<base>` répondent) :
+   ```bash
+   php artisan shares:materialize-class-trees --class=<nom de la classe>
+   ```
+3. Enfin le parc entier, une fois la première classe vérifiée :
+   ```bash
+   php artisan shares:materialize-class-trees
+   ```
+
+- [ ] 60.5-1a — la simulation liste les classes et dit, pour chacune, « arbre à
+      créer » ou « arbre déjà relié » ; **`/var/sambaedu/ClassesSE5` est resté vide**.
+- [ ] 60.5-1b — après le passage réel sur une classe, l'arbre est **complet** :
+      ```bash
+      ls -a /var/sambaedu/ClassesSE5/Classe_<nom>
+      ```
+      → `_travail`, `_travail/devoirs`, `_profs`, `_echange`, **et un dossier par
+      élève** (nommé par son identifiant de connexion).
+- [ ] 60.5-1c — le partage **apparaît dans la liste** `/admin/settings/files?tab=lecteurs-reseaux`
+      et sa fiche affiche son **emplacement serveur réel** (`/var/sambaedu/ClassesSE5/Classe_<nom>`),
+      la recette dont il vient et le groupe qu'il cloisonne.
+- [ ] 60.5-1d — **rejouer la commande n'émet rien** : le second passage relit l'état
+      et le trouve conforme.
+      ```bash
+      php artisan shares:materialize-class-trees --class=<nom> -v
+      ```
+      → toujours code **0**, et `getfacl -R` de l'arbre neuf **inchangé**.
+- [ ] 60.5-1e — sur le parc entier, un nombre notable de classes **déclinent** en
+      nommant le groupe d'annuaire introuvable (« classes déchets » dont les groupes
+      ne se résolvent pas). Ce sont **exactement** celles que `shares:resync-class`
+      saute déjà. Comparer les deux listes :
+      ```bash
+      php artisan shares:resync-class --dry-run | sort > /tmp/legacy-skip.txt
+      ```
+      → les mêmes classes doivent être écartées des deux côtés. Un écart ici est un
+      vrai signal, à remonter.
+
+### Scénario 60.5-2 — LA PREUVE : l'arbre historique n'a pas bougé d'un bit
+
+C'est **la** vérification de cette story. « Aucune ACL ne bouge » n'est plus une
+précaution, c'est une propriété : la garde de chemin n'a **aucun jeton** pour
+l'arbre historique, donc aucun chemin ne peut y être fabriqué. On le **constate**
+plutôt que de le croire.
+
+1. Après TOUS les gestes du scénario 60.5-1 (et de préférence après ceux des
+   scénarios 60.5-3 et 60.5-4) :
+   ```bash
+   sudo getfacl -R /var/sambaedu/Classes > ~/classes-apres.facl
+   diff ~/classes-avant.facl ~/classes-apres.facl && echo "INVARIANT TENU"
+   ```
+
+- [ ] 60.5-2a — le `diff` est **VIDE**. Pas « presque vide », pas « seulement des
+      dates » : `getfacl` n'écrit pas d'horodatage, donc toute ligne de diff est un
+      vrai changement de droits et **fait échouer cette vérification**.
+- [ ] 60.5-2b — les dates de modification des répertoires historiques n'ont pas
+      bougé non plus :
+      ```bash
+      sudo find /var/sambaedu/Classes -maxdepth 2 -newer ~/classes-avant.facl
+      ```
+      → **aucune sortie**.
+- [ ] 60.5-2c — aucune trace d'écriture SE5 dans l'arbre historique côté journal :
+      ```bash
+      sudo grep -c '/var/sambaedu/Classes/' storage/logs/laravel.log
+      ```
+      → les seules occurrences éventuelles viennent de `shares:resync-class`, qui est
+      **l'outil de cet arbre-là** et reste parfaitement légitime. Vérifier qu'aucune
+      ne provient de `shares:materialize-class-trees` ni d'une réconciliation de
+      partage.
+
+### Scénario 60.5-3 — Le DIFF DES DEUX ARBRES : l'écart attendu, et rien d'autre
+
+L'épreuve du langage. Pour une même classe, les deux arbres doivent dire la même
+chose — à **UN écart documenté près**, sur la racine seule.
+
+1. Choisir une classe présente **des deux côtés** et provisionnée par
+   `shares:resync-class` (arbre historique) ET par `shares:materialize-class-trees`
+   (arbre neuf).
+2. Comparer, nœud par nœud, en forme canonique :
+   ```bash
+   cd /var/sambaedu
+   for n in . _travail _travail/devoirs _profs _echange; do
+     echo "=== $n ==="
+     diff <(sudo getfacl -c -E "Classes/Classe_<nom>/$n"    2>/dev/null | sort) \
+          <(sudo getfacl -c -E "ClassesSE5/Classe_<nom>/$n" 2>/dev/null | sort)
+   done
+   ```
+
+- [ ] 60.5-3a — sur `_travail`, `_travail/devoirs`, `_profs`, `_echange` et sur les
+      dossiers d'élèves : **diff VIDE**.
+- [ ] 60.5-3b — sur la **racine** (`.`), et là seulement, le diff porte
+      **exactement** ces trois lignes, ni plus ni moins :
+      - historique seulement : `default:group:equipe_<base>:rwx`
+      - neuf seulement : `default:group:equipe_<base>:r-x`
+      - neuf seulement : `default:group:classe_<base>:r-x`
+- [ ] 60.5-3c — **tout autre écart est un vrai signal.** Ne pas l'écarter, ne pas
+      l'expliquer après coup : c'est le langage de recette qui doit être interrogé,
+      et le développement rouvert. C'est toute la valeur de cette comparaison.
+
+**Ce que cet écart est, et pourquoi il n'est ni reproduit ni corrigé.** Sur la
+racine, l'ACL d'héritage de l'arbre historique ne reflète pas son ACL d'accès :
+l'équipe y est en écriture alors qu'elle est en lecture-traversée en accès, et la
+classe n'y a **aucune** entrée d'héritage. C'est un **accident de séquence** — le
+jeu canonique pose l'équipe en écriture avec ses miroirs, puis un ajustement
+redescend l'accès sans toucher aux miroirs. L'arbre neuf, lui, dit la même chose en
+accès et en héritage : la forme saine, celle que **tous les autres nœuds de l'arbre
+historique ont déjà**. Effet réel : l'héritage ne concerne que des enfants créés à
+la racine hors plan, et seuls les administrateurs peuvent y créer. On le documente,
+la décision se prendra à la migration.
+
+**Combien de racines le portent.** Sur l'instance de référence (mesure du
+2026-08-05) : **21 racines sur 150**. Les **129 autres n'ont aucune entrée
+`classe_` du tout** — leurs groupes d'annuaire ne se résolvent pas, et les DEUX
+pré-contrôles les sautent. C'est une observation à consigner, pas un défaut à
+traiter.
+
+- [ ] 60.5-3d — noter le compte observé sur CETTE instance :
+      ```bash
+      sudo getfacl -R /var/sambaedu/Classes 2>/dev/null | grep -c 'default:group:equipe_.*:rwx'
+      ```
+
+**Un écart de CONTENU va apparaître avec le temps, et ce n'est pas un défaut.** Au
+changement de classe d'un élève, l'arbre historique **archive** son dossier dans sa
+nouvelle classe (comportement conservé) ; l'arbre neuf laisse les données **en
+place** — un nœud disparu du plan n'est plus gouverné, il n'est pas détruit. Sur
+deux arbres vivants, les contenus divergent donc. C'est un écart de contenu, jamais
+d'ACL : la comparaison ci-dessus ne le voit pas, et il ne doit pas être lu comme
+une régression. Le rapatriement délibéré appartient à la story de migration.
+
+### Scénario 60.5-4 — La bascule `_echange` de l'arbre NEUF
+
+Deux bascules, deux arbres, indépendantes. Celle de la fiche du GROUPE pilote
+l'arbre historique ; celle de la fiche du PARTAGE pilote l'arbre neuf. **Aucune ne
+pilote l'autre**, et rien à l'écran ne doit laisser croire le contraire.
+
+1. Ouvrir `/admin/shares/<id du partage d'arbre>`, encart **« Dossiers activables »**.
+2. Cliquer **Suspendre** sur l'espace d'échange, laisser la file traiter, puis :
+   ```bash
+   sudo getfacl -c -E /var/sambaedu/ClassesSE5/Classe_<nom>/_echange
+   ```
+
+- [ ] 60.5-4a — l'entrée `group:classe_<base>` est passée à `---`, **et son miroir
+      d'héritage aussi**.
+- [ ] 60.5-4b — **le dossier existe toujours et son contenu est intact** : suspendre
+      vide un accès, cela ne supprime rien.
+      ```bash
+      sudo ls -la /var/sambaedu/ClassesSE5/Classe_<nom>/_echange
+      ```
+- [ ] 60.5-4c — l'entrée de l'équipe, elle, n'a pas bougé (elle n'est pas suspendable).
+- [ ] 60.5-4d — **l'arbre historique n'a pas bougé** : rejouer le scénario 60.5-2,
+      diff toujours vide. En particulier, `/var/sambaedu/Classes/Classe_<nom>/_echange`
+      est inchangé.
+- [ ] 60.5-4e — **Réactiver** rend l'état d'origine, à l'identique.
+
+### Scénario 60.5-5 — Créer une classe NEUVE matérialise son arbre
+
+1. Créer un groupe de type `classe` depuis `/app/users/groups` (ou par la
+   synchronisation d'annuaire).
+2. Laisser la file traiter, puis regarder `/var/sambaedu/ClassesSE5`.
+
+- [ ] 60.5-5a — le partage d'arbre existe dans la liste des répertoires réseau,
+      **sans lettre** (rien ne dit qu'il doit être monté).
+- [ ] 60.5-5b — l'arborescence complète est là (4 dossiers fixes ; aucun dossier
+      d'élève tant que la classe est vide — c'est un arbre valide).
+- [ ] 60.5-5c — rattacher un élève à la classe → après traitement, **son dossier
+      personnel apparaît**, avec son entrée nominative.
+- [ ] 60.5-5d — **UN SEUL** partage est créé automatiquement : l'arbre. La recette
+      plate « profs → élèves », pourtant accrochée au même type de groupe, ne se
+      matérialise **jamais** toute seule.
+- [ ] 60.5-5e — **supprimer le groupe ne supprime RIEN sur le disque** : la ligne du
+      partage survit (son lien de groupe est délié), l'arborescence reste. C'est
+      l'administrateur qui décide, depuis la fiche du partage.
+
+### Scénario 60.5-6 — « Profs → élèves » redevient matérialisable, et un sélecteur vide PARLE
+
+Cette recette était **inutilisable depuis cinq semaines** : elle demandait un
+groupe de type `equipe`, type que l'import d'annuaire ne produit plus (comptage :
+`classe 302`, `equipe 0`). Le sélecteur s'affichait vide, et **muet**.
+
+1. `/admin/settings/files?tab=lecteurs-reseaux` → « Créer depuis un template » →
+   choisir **« Profs → élèves »**.
+
+- [ ] 60.5-6a — l'écran ne demande plus une cible par rôle, mais **UN groupe de
+      matérialisation** ; la liste propose les classes.
+- [ ] 60.5-6b — l'**aperçu** dit les audiences résolues : « <classe> — encadrants »
+      en lecture/écriture, « <classe> » en lecture seule.
+- [ ] 60.5-6c — après matérialisation, `getfacl` sur le répertoire créé sous
+      `/var/sambaedu/Partages` porte **exactement deux audiences** :
+      `group:equipe_<base>:rwx` et `group:classe_<base>:r-x`.
+- [ ] 60.5-6d — **le sélecteur vide parle.** Pour l'éprouver : choisir une recette
+      dont un rôle n'a aucun candidat sur cette instance (par exemple sur une
+      instance sans aucun groupe). Le message « aucun groupe éligible… » s'affiche,
+      il **nomme le type attendu**, et le bouton « Matérialiser » est **désactivé**.
+      Plus jamais un vide muet.
+
+### Ce qui n'est PAS observable — et pourquoi le dire
+
+- **Sans ouvrier de file, RIEN de ce qui passe par un écran ne se produit.** La
+  bascule d'un dossier activable, la création d'un groupe, un rattachement d'élève :
+  tous ENFILENT. L'écran dit « engagé » et **ne ment pas** — mais si la file ne
+  tourne pas, l'arbre ne bouge jamais. Symptôme : `getfacl` inchangé alors que
+  l'écran annonce l'inverse. Le contrôle `sambaedu:doctor --tag=queue` le constate
+  désormais **a posteriori** (seuil : un travail disponible non pris depuis plus de
+  15 minutes). Seule `shares:materialize-class-trees` s'exécute en direct.
+- **L'arbre neuf n'est exposé en SMB nulle part.** Ne pas le chercher depuis un
+  poste : `[classes]` continue de pointer sur l'arbre historique, et c'est voulu.
+  Une absence de constat côté poste **n'est pas un succès**, ce n'est simplement
+  pas la question.
+- **Le sujet `pp_<base>` n'est émis nulle part.** La recette ne liste que le rôle
+  d'arête d'encadrement : le groupe des enseignants d'une classe contient déjà ses
+  professeurs principaux. Aucune entrée `pp_` ne doit apparaître dans l'arbre neuf ;
+  si l'une s'y trouve, c'est un défaut.
+- **Le plafond de zone** reste non piloté par SE5 (story suspendue) : aucun quota
+  n'est posé sur l'arbre neuf. Dette datée, pas panne.
+- **La suite automatisée ne tourne pas sur la VM** (pas de `pdo_sqlite`) : elle est
+  exécutée sur la machine hôte.
+
+### Checklist rapide — Story 60.5
+
+- [ ] 60.5-P1 : 5 recettes seedées (`classe_se4` présente)
+- [ ] 60.5-P2 : **`sudo` autorise la racine neuve** (sinon tout décline pour cette seule raison)
+- [ ] 60.5-P3 : un ouvrier de file tourne
+- [ ] 60.5-P4 : instantané `getfacl -R` de l'arbre historique pris AVANT
+- [ ] 60.5-1a/b : simulation sans effet, puis arbre neuf complet sous la racine neuve
+- [ ] 60.5-1d : second passage → **aucune écriture**
+- [ ] 60.5-1e : les classes sautées sont **les mêmes** des deux côtés
+- [ ] **60.5-2a : `getfacl -R` de l'arbre historique AVANT/APRÈS → diff VIDE**
+- [ ] 60.5-3a/b : diff des deux arbres = **le sédiment de racine, et rien d'autre**
+- [ ] 60.5-3d : compte des racines portant le sédiment, noté
+- [ ] 60.5-4a/b/e : suspension → accès vidé, **données intactes**, retour à l'identique
+- [ ] 60.5-4d : l'arbre historique n'a toujours pas bougé
+- [ ] 60.5-5a/d/e : classe neuve → arbre complet, **un seul** partage auto, suppression sans destruction
+- [ ] 60.5-6a/c/d : « profs → élèves » matérialisable, deux audiences compilées, sélecteur vide qui PARLE
+- [ ] Suite automatisée verte sur l'hôte
+
 ---
 
 *Dernière mise à jour : 2026-08-04 (Story 60.3 — le contrat `FileBackend` et le backend `preview` : interface à 5 méthodes de forme distante (name/provision/deprovision/inspect/quota, aucun `bool`), enums fermées `FileBackendName` (posix|preview) / `FileBackendOutcome` (7 états, dont `non_exprimable` PERMANENT ≠ `non_implemente` TEMPORAIRE ≠ `non_execute` PAR CONCEPTION) / `FileBackendObservation` (4 statuts), rapports à COMPLÉTUDE VALIDÉE À LA CONSTRUCTION (un rapport qui omet un nœud est inconstructible) et `detail` obligatoire au constructeur, racine `PlanNode::ROOT_PATH` devenue nœud de première classe, colonne `network_shares.backend` NOT NULL défaut `posix` (hors `$fillable`, non éditable), registre par nom fail-closed, `SharePlanProjector` (partage plat → plan neutre), squelette Nextcloud JETABLE vert contre l'instance réelle — PREMIER LIVRABLE VISIBLE DE L'EPIC : badge backend + aperçu du plan avant application ; services d'exécution et seeder INTOUCHÉS, aucun flux ne route par la colonne)*
@@ -1738,3 +2069,5 @@ succès :
 *Mise à jour précédente : 2026-08-04 (Story 60.1 — la recette devient un arbre : colonnes additives nullables `path_pattern`/`nodes_spec` sur `directory_templates`, enum fermée `PlanNodeNature` (4 natures), DTO de plan neutres + résolution PURE `PlanResolver`, clôture calculée par nœud (AC9, issue du spike 60.0), garde de neutralité + test d'architecture verrouillant la ligne de coupe ; AUCUN effet observable en production — services d'exécution et seeder INTOUCHÉS)*
 
 *Mise à jour précédente : 2026-06-30 (Story 34.3 — Templates de répertoire : table `directory_templates` + `DirectoryTemplateSeeder` (4 recettes, Q3 option B) + `DirectoryTemplateService::materialize` (transaction + validation réutilisée 34.2, mapping de maille non redérivé) + 2e modale « Créer depuis un template » sur `/app/shares` (formulaire dynamique, aperçu, gating `networkshare.manage`) ; casiers « élèves→profs » par-élève reportés 34.x ; socle figé INTOUCHÉ ; **post-review** : surfaçage warnings AC2 [#1], pré-check unicité service [M-1], garde-fou seeder [M-2], test cible manquante [#2])*
+
+*Mise à jour : 2026-08-05 (Story 60.5 — le seed SE4 dans une racine NEUVE : 5ᵉ recette `classe_se4` (six nœuds, racine comprise, `edge_roles: [manager]` seul), zone logique `PlanAnchor` portée par le plan et traduite par la garde de chemin SEULE (double ancrage `reseau`/`classes`, clé `filesystem.class_trees_root`, défaut `/var/sambaedu/ClassesSE5`), origine `directory_template_id`/`user_group_id`/`node_activation` sur `network_shares`, déclencheurs de création/appartenance SCOPÉS aux recettes d'arbre, commande `shares:materialize-class-trees`, bascule des dossiers activables + dernier rapport par nœud sur la fiche du partage, `profs_to_eleves` RECÂBLÉE sur le rôle d'arête + sélecteur vide qui PARLE, contrôle `sambaedu:doctor --tag=queue` — **l'arbre de classe HISTORIQUE, `ShareService`, `AclService` et `shares:resync-class` sont INTOUCHÉS : zéro diff, et SE5 n'a plus aucun chemin d'écriture vers `/var/sambaedu/Classes`**)*

@@ -178,4 +178,24 @@ interface FileBackend
      * STRUCTURANT dans le contrat, et exécuté par personne ici.
      */
     public function quota(FilePlan $plan): ReconciliationReport;
+
+    /**
+     * Story 60.5 — OÙ ce plan vit, dans les termes de ce backend, POUR AFFICHAGE.
+     *
+     * **Pourquoi le contrat porte cette question, et pas l'orchestrateur.** Depuis
+     * que SE5 gouverne deux zones disjointes, « où est mon partage ? » est devenu
+     * une vraie question d'administration : c'est l'endroit où l'on va vérifier les
+     * droits à la main, et l'endroit qu'il faut autoriser dans la liste blanche du
+     * système. Or seul un backend sait répondre — l'orchestrateur, lui, ne connaît
+     * qu'une zone logique et un chemin relatif, et c'est exactement ce qui le rend
+     * portable. Faire remonter la réponse par le contrat est donc la seule façon de
+     * l'afficher sans redescendre la ligne de coupe d'un cran.
+     *
+     * **C'est une chaîne d'AFFICHAGE, pas une adresse à réutiliser.** Rien du
+     * domaine ne doit la consommer pour agir : un backend distant y répondra une
+     * adresse qui n'a aucun sens pour un système de fichiers local. `null` quand le
+     * plan n'a pas d'emplacement — refusé par la garde du backend, ou backend qui
+     * n'écrit nulle part.
+     */
+    public function location(FilePlan $plan): ?string;
 }

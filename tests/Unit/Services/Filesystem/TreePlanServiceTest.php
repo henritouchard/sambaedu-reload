@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Filesystem;
 
+use App\Enums\PlanAnchor;
 use App\Exceptions\Filesystem\PlanResolutionException;
 use App\Models\DirectoryTemplate;
 use App\Models\User;
@@ -119,13 +120,16 @@ class TreePlanServiceTest extends TestCase
         $plan = $this->service->planFor($group);
 
         $this->assertNotNull($plan);
-        $this->assertSame('Classes/Classe_3emeA', $plan->rootPath);
+        // Story 60.5 — la racine du plan est UN segment : la ZONE est portée par
+        // l'ancre logique, plus par un segment de tête du motif de chemin.
+        $this->assertSame('Classe_3emeA', $plan->rootPath);
+        $this->assertSame(PlanAnchor::Classes, $plan->anchor);
 
-        // 4 nœuds fixes + 1 nœud par élève.
+        // 5 nœuds fixes (racine comprise) + 1 nœud par élève.
         $paths = array_map(static fn ($n): string => $n->path, $plan->nodes);
         sort($paths);
         $this->assertSame(
-            ['_echange', '_profs', '_travail', '_travail/devoirs', 'u0002', 'u0003'],
+            ['.', '_echange', '_profs', '_travail', '_travail/devoirs', 'u0002', 'u0003'],
             $paths,
         );
     }
@@ -141,7 +145,7 @@ class TreePlanServiceTest extends TestCase
         $plan = $this->service->planFor($this->classGroup('Classe_3emeA'));
 
         $this->assertNotNull($plan);
-        $this->assertSame('Classes/Classe_3emeA', $plan->rootPath);
+        $this->assertSame('Classe_3emeA', $plan->rootPath);
     }
 
     #[Test]
@@ -197,7 +201,11 @@ class TreePlanServiceTest extends TestCase
             array_map($forme, $this->subjectsOf($aTroisCents, 'equipe')),
             'l\'audience a changé de forme avec l\'effectif : la garde de la mesure est tombée',
         );
-        $this->assertCount(2, $this->subjectsOf($aTroisCents, 'equipe'), 'deux rôles d\'arête listés ⇒ deux sujets, pas 300');
+        $this->assertCount(
+            1,
+            $this->subjectsOf($aTroisCents, 'equipe'),
+            'un rôle d\'arête listé ⇒ UN sujet abstrait, que le groupe compte 3 membres ou 300',
+        );
 
         // Et l'ENSEMBLE des sujets d'audience du plan entier est le même : ce que
         // l'effectif fait varier, ce sont les NŒUDS, jamais les audiences.
@@ -219,14 +227,24 @@ class TreePlanServiceTest extends TestCase
 
         // Seuls les nœuds PAR MEMBRE varient avec l'effectif — et ils coûtent une
         // entrée par nœud, jamais une audience entière sur un même nœud.
-        $this->assertCount(4 + 2, $aTrois->nodes, '4 nœuds fixes + 2 élèves');
-        $this->assertCount(4 + 292, $aTroisCents->nodes, '4 nœuds fixes + 292 élèves');
+        $this->assertCount(5 + 2, $aTrois->nodes, '5 nœuds fixes (racine comprise) + 2 élèves');
+        $this->assertCount(5 + 292, $aTroisCents->nodes, '5 nœuds fixes (racine comprise) + 292 élèves');
     }
 
     #[Test]
     public function each_listed_edge_role_yields_exactly_one_abstract_subject(): void
     {
-        $this->autoResolvableClassTreeTemplate()->save();
+        // La recette SEEDÉE ne liste qu'un rôle d'arête (arbitrage 60.5 : le
+        // surensemble est déjà dans l'annuaire). Le MÉCANISME, lui, doit valoir
+        // pour n'importe quelle liste : on l'éprouve donc sur une variante à deux
+        // rôles, plutôt que de compter sur ce que la recette du jour se trouve
+        // contenir — une propriété du mécanisme ne doit pas dépendre d'une donnée.
+        $template = $this->autoResolvableClassTreeTemplate();
+        $roles = $template->roles_spec;
+        $roles[0]['resolution']['edge_roles'] = ['manager', 'owner'];
+        $template->roles_spec = $roles;
+        $template->save();
+
         $group = $this->withMembers($this->classGroup('3emeA'), ['manager' => 1, 'owner' => 1]);
 
         $subjects = $this->subjectsOf($this->service->planFor($group), 'equipe');
@@ -250,7 +268,8 @@ class TreePlanServiceTest extends TestCase
 
         $subjects = $this->subjectsOf($this->service->planFor($group), 'equipe');
 
-        $this->assertCount(2, $subjects);
+        $this->assertCount(1, $subjects);
+        $this->assertSame('manager', (string) $subjects[0]->edgeRole);
     }
 
     #[Test]
@@ -635,7 +654,7 @@ class TreePlanServiceTest extends TestCase
         $natures = array_values(array_unique(array_map(static fn ($n): string => $n->nature->value, $plan->nodes)));
         sort($natures);
         $this->assertSame(['activable', 'contenu_libre', 'par_membre', 'partagee'], $natures);
-        $this->assertCount(2, $this->subjectsOf($plan, 'equipe'));
+        $this->assertCount(1, $this->subjectsOf($plan, 'equipe'));
 
         $this->assertPlanIsNeutral($plan, 'plan issu de la chaîne complète');
 

@@ -137,4 +137,14 @@ final class PreviewBackend implements FileBackend
         return $base . ' Rôles sans octroi ici (clôture reçue du plan) : '
             . implode(', ', $node->closure) . '.';
     }
+
+    /**
+     * Story 60.5 — l'aperçu n'écrit NULLE PART, donc il n'a pas d'emplacement.
+     * Rendre un chemin plausible serait la pire réponse : elle laisserait croire
+     * qu'un aperçu vise un endroit réel.
+     */
+    public function location(FilePlan $plan): ?string
+    {
+        return null;
+    }
 }

@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Filesystem;
 
 use App\Enums\FileBackendOutcome;
+use App\Exceptions\Filesystem\PlanResolutionException;
 use App\Jobs\ReconcileNetworkShareJob;
+use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
 use App\Models\QuotaAuditLog;
 use App\Models\QuotaRule;
+use App\Models\UserGroup;
 use App\Services\Filesystem\Backend\FileBackendRegistry;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeReconciliation;
@@ -91,6 +94,7 @@ class NetworkShareService
         private readonly SharePlanProjector $projector,
         private readonly FileBackendRegistry $registry,
         private readonly PlanStateComparator $comparator,
+        private readonly TreePlanService $treePlans = new TreePlanService(),
     ) {
     }
 
@@ -345,12 +349,54 @@ class NetworkShareService
     // Interne
     // =========================================================================
 
-    /** @throws \App\Exceptions\Filesystem\PlanResolutionException */
-    private function planFor(NetworkShare $share): FilePlan
+    /**
+     * Story 60.5 — LE ROUTAGE : deux origines, un seul plan.
+     *
+     * Un partage ORDINAIRE se projette comme il l'a toujours fait : sa racine, ses
+     * assignations, rien d'autre. Un partage issu d'une RECETTE se projette par
+     * elle — parce que ses audiences ne sont pas toutes exprimables en
+     * assignations : « les enseignants de cette classe » est un rôle porté sur
+     * l'arête d'appartenance, qu'aucune ligne d'assignation ne sait dire.
+     *
+     * Les deux régimes se rejoignent ensuite : les assignations d'un partage issu
+     * d'une recette ajoutent des octrois sur sa racine (union au plus permissif).
+     * C'est ce qui laisse à l'administrateur la main sur un cas particulier sans
+     * toucher à la recette de tout le parc.
+     *
+     * **Aucun partage en place ne change de plan**, et c'est un garde-fou d'epic
+     * testé : sans origine, on ne passe même pas par la recette.
+     *
+     * @throws \App\Exceptions\Filesystem\PlanResolutionException
+     */
+    public function planFor(NetworkShare $share): FilePlan
     {
         $share->loadMissing('assignments');
 
-        return $this->projector->project($share);
+        if (! $share->hasRecipeOrigin()) {
+            return $this->projector->project($share);
+        }
+
+        $share->loadMissing(['directoryTemplate', 'userGroup']);
+        $template = $share->directoryTemplate;
+        $group = $share->userGroup;
+
+        if (! $template instanceof DirectoryTemplate || ! $group instanceof UserGroup) {
+            // Échec EXPLICITE, jamais un repli sur la projection ordinaire : celle-ci
+            // rendrait un plan APPAUVRI (les audiences de la recette manqueraient),
+            // que la réconciliation prendrait pour l'état désiré et matérialiserait
+            // en retirant des accès. Un lien cassé se répare, il ne s'interprète pas.
+            throw PlanResolutionException::make(sprintf(
+                'le partage « %s » se réclame d\'une recette et d\'un groupe qui ne se chargent pas : '
+                . 'rien n\'a été projeté.',
+                (string) $share->directory_name,
+            ));
+        }
+
+        $plan = $template->hasTreeSpec()
+            ? $this->treePlans->planUsing($group, $template, [], $share->nodeActivation())
+            : $this->treePlans->flatPlanUsing($group, $template, (string) $share->directory_name);
+
+        return $this->projector->withInstanceGrants($plan, $share);
     }
 
     private function rememberReport(NetworkShare $share, ReconciliationReport $report): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Filesystem;
 
+use App\Enums\PlanNodeNature;
 use App\Enums\RoleResolutionStrategy;
 use App\Exceptions\Filesystem\InvalidTreeSpecException;
 use App\Exceptions\Filesystem\PlanResolutionException;
@@ -12,6 +13,8 @@ use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\UserGroup;
 use App\Services\Filesystem\Plan\FilePlan;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
+use App\Services\Filesystem\Plan\PlanGrant;
+use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanResolutionContext;
 use App\Services\Filesystem\Plan\PlanResolver;
 use App\Services\Filesystem\Plan\PlanSubject;
@@ -76,12 +79,18 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * qui remplace les groupes multiples de l'ancien système.
  *
  * ---------------------------------------------------------------------------
- * **AUCUN CONSOMMATEUR DE PRODUCTION, ET C'EST UN CHOIX.** Personne n'appelle ce
- * service en dehors des tests. Le déclencheur « créer un groupe matérialise son
- * arbre » est câblé en 60.5, quand un backend saura exécuter un arbre et que la
- * recette classe sera seedée et accrochée. Le brancher maintenant produirait soit
- * du code mort, soit — pire — un appel à la matérialisation 34.3, qui ne connaît
- * pas les arbres. La chaîne est livrée complète et DORMANTE.
+ * ---------------------------------------------------------------------------
+ * **STORY 60.5 — LA CHAÎNE EST BRANCHÉE.** Ce service n'est plus dormant : la
+ * création d'un groupe de classe matérialise son arbre, un changement
+ * d'appartenance enfile sa réconciliation, et une commande peuple le parc
+ * existant. Trois consommateurs, un seul chemin.
+ *
+ * **Ce qui reste hors de cette story, et le restera jusqu'à la story de
+ * MIGRATION** : l'arbre de classe HISTORIQUE. Il continue d'être servi, écrit et
+ * gouverné par le chemin figé de la story 5.2, auquel rien d'ici ne touche. Les
+ * deux arbres vivent côte à côte, dans des zones DISJOINTES, chacun avec son
+ * autorité d'écriture — et c'est cette disjonction qui rend « une seule autorité
+ * par zone » vraie sans qu'aucune des deux ne cède.
  */
 final class TreePlanService
 {
@@ -116,7 +125,7 @@ final class TreePlanService
         }
 
         // Une recette accrochée doit savoir se résoudre seule : c'est la création
-        // du groupe qui l'appellera (60.5), et il n'y a personne pour saisir une
+        // du groupe qui l'appelle (story 60.5), et il n'y a personne pour saisir une
         // cible à ce moment-là. On le revérifie à la LECTURE, pas seulement à
         // l'écriture : un accrochage peut arriver par un chemin qui ne passe pas
         // par le modèle (import, correction manuelle en base).
@@ -147,6 +156,93 @@ final class TreePlanService
         return $this->resolver->resolve(
             $template,
             $this->contextFor($group, $template, $designatedTargets, $nodeActivation),
+        );
+    }
+
+    /**
+     * Story 60.5 — le plan d'un partage PLAT dont les octrois viennent d'une
+     * RECETTE.
+     *
+     * **Pourquoi ce cas existe, et pourquoi il n'est pas un arbre.** La recette
+     * « profs → élèves » désigne deux audiences dont l'une — les enseignants d'une
+     * classe — n'est PAS un groupe : c'est un rôle porté sur l'arête
+     * d'appartenance. Aucune ligne d'assignation ne sait dire cela ; seule une
+     * résolution de recette le sait. Mais le partage, lui, reste ce qu'il a
+     * toujours été : UN répertoire réseau nommé par l'administrateur, dans la zone
+     * des répertoires réseau. On résout donc les RÔLES par la recette, et on les
+     * pose sur l'unique nœud racine, dont le chemin vient du partage.
+     *
+     * La nature du nœud est « contenu libre » pour la même raison qu'à la
+     * projection ordinaire : le plan gouverne les DROITS de la racine, jamais
+     * l'existence de son contenu — sans quoi le premier fichier déposé deviendrait
+     * un écart à réconcilier.
+     *
+     * La CLÔTURE est vide, et c'est exact : sur un plan à un seul nœud portant tous
+     * les rôles de la recette, aucun rôle n'est resté sans octroi. Elle est
+     * calculée, comme partout ailleurs, jamais posée à la main.
+     *
+     * @throws InvalidTreeSpecException
+     * @throws PlanResolutionException
+     */
+    public function flatPlanUsing(UserGroup $group, DirectoryTemplate $template, string $rootPath): FilePlan
+    {
+        if ($template->hasTreeSpec()) {
+            throw PlanResolutionException::make(sprintf(
+                'la recette « %s » porte un arbre : elle ne se projette pas en partage plat.',
+                (string) $template->key,
+            ));
+        }
+
+        $context = $this->contextFor($group, $template);
+
+        $grants = [];
+        $granted = [];
+        foreach ($template->roles() as $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+            $roleKey = $role['key'] ?? null;
+            if (! is_string($roleKey) || $roleKey === '') {
+                continue;
+            }
+
+            $access = ($role['access'] ?? PlanGrant::ACCESS_RO) === PlanGrant::ACCESS_RW
+                ? PlanGrant::ACCESS_RW
+                : PlanGrant::ACCESS_RO;
+
+            foreach ($context->targetsForRole($roleKey) as $subject) {
+                $grants[] = new PlanGrant($roleKey, $subject, $access);
+                $granted[$roleKey] = true;
+            }
+        }
+
+        $roles = [];
+        $roleKeys = [];
+        foreach ($template->roles() as $role) {
+            $roleKey = is_array($role) ? ($role['key'] ?? null) : null;
+            if (is_string($roleKey) && $roleKey !== '') {
+                $roles[$roleKey] = $context->targetsForRole($roleKey);
+                $roleKeys[] = $roleKey;
+            }
+        }
+
+        return new FilePlan(
+            (string) $template->key,
+            $rootPath,
+            $roles,
+            [new PlanNode(
+                PlanNode::ROOT_PATH,
+                (string) $template->label,
+                PlanNodeNature::ContenuLibre,
+                $grants,
+                true,
+                null,
+                array_values(array_filter(
+                    array_unique($roleKeys),
+                    static fn (string $key): bool => ! isset($granted[$key]),
+                )),
+            )],
+            $template->rootAnchor(),
         );
     }
 

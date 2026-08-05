@@ -20,7 +20,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * Story 60.3 — un répertoire réseau PLAT, projeté en PLAN neutre.
  *
  * C'est le pont qui rend l'aperçu possible AVANT que la chaîne recette→arbre ne
- * soit accrochée (60.5). Un partage 34.x n'a pas d'arborescence : il EST sa racine,
+ * soit accrochée. Un partage 34.x n'a pas d'arborescence : il EST sa racine,
  * avec des assignations. Le projeter donne donc un plan à UN nœud — et c'est
  * précisément pour ça que la racine devait devenir un nœud de première classe.
  *
@@ -104,6 +104,76 @@ final class SharePlanProjector
                 ),
             ],
         );
+    }
+
+    /**
+     * Story 60.5 — SURCHARGE D'INSTANCE : les assignations d'un partage issu d'une
+     * recette ajoutent des octrois SUR SA RACINE.
+     *
+     * Un partage d'arbre tire ses audiences de sa recette. Mais l'administrateur
+     * doit pouvoir en ouvrir l'accès à quelqu'un d'autre — un professeur
+     * documentaliste, une direction — sans pour autant modifier la recette de
+     * TOUTES les classes. C'est exactement ce que les assignations font déjà pour
+     * les partages ordinaires : on les réemploie, telles quelles, sur la racine.
+     *
+     * **Union AU PLUS PERMISSIF, et rien d'autre.** Deux octrois qui visent le même
+     * sujet se fondent en un seul, au niveau le plus élevé des deux. C'est la règle
+     * additive de l'epic — jamais un sous-ensemble silencieux — et c'est aussi ce
+     * qui empêche une même audience d'être écrite deux fois : un doublon d'entrée
+     * ferait relire l'état comme non conforme à chaque passage, et le partage se
+     * réécrirait indéfiniment sans jamais converger.
+     *
+     * Le rôle d'origine de l'octroi conservé est celui du PLAN quand il existe : la
+     * recette est la description de référence, l'assignation ne fait que l'élargir.
+     */
+    public function withInstanceGrants(FilePlan $plan, NetworkShare $share): FilePlan
+    {
+        $extra = $this->grantsOf($share);
+        if ($extra === []) {
+            return $plan;
+        }
+
+        $root = $plan->node(PlanNode::ROOT_PATH);
+        if ($root === null) {
+            // Un plan sans racine ne peut pas recevoir de surcharge de racine. Ce
+            // n'est pas un état atteignable par les recettes du dépôt ; on le dit
+            // en ne faisant rien, plutôt qu'en fabriquant un nœud que la recette
+            // n'a pas décrit.
+            return $plan;
+        }
+
+        /** @var array<string, PlanGrant> $merged */
+        $merged = [];
+        foreach ([...$root->grants, ...$extra] as $grant) {
+            $key = $grant->subject->sortKey();
+            $kept = $merged[$key] ?? null;
+
+            if ($kept === null) {
+                $merged[$key] = $grant;
+
+                continue;
+            }
+            if ($kept->access !== PlanGrant::ACCESS_RW && $grant->access === PlanGrant::ACCESS_RW) {
+                $merged[$key] = new PlanGrant($kept->roleKey, $kept->subject, PlanGrant::ACCESS_RW, $kept->suspendable);
+            }
+        }
+
+        $nodes = [];
+        foreach ($plan->nodes as $node) {
+            $nodes[] = $node->path === PlanNode::ROOT_PATH
+                ? new PlanNode(
+                    $node->path,
+                    $node->label,
+                    $node->nature,
+                    array_values($merged),
+                    $node->active,
+                    $node->plafond,
+                    $node->closure,
+                )
+                : $node;
+        }
+
+        return new FilePlan($plan->templateKey, $plan->rootPath, $plan->roles, $nodes, $plan->anchor);
     }
 
     /**

@@ -1,6 +1,7 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Enums\RoleResolutionStrategy;
 use App\Exceptions\Filesystem\NetworkShareLetterCollisionException;
 use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
@@ -61,6 +62,15 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
      * @var array<string, mixed>
      */
     public array $roleSelections = [];
+
+    /**
+     * Story 60.5 — le GROUPE DE MATÉRIALISATION d'une recette auto-résolvable :
+     * l'unique chose qu'elle demande, puisqu'elle déduit tout le reste.
+     */
+    public ?int $materializationGroupId = null;
+
+    /** Clé du sélecteur de groupe de matérialisation dans les messages d'aide. */
+    public const MATERIALIZATION_PICKER = '@groupe';
 
     // --- Sélection multiple + suppression groupée ---------------------------
     /** @var array<int, string> ids (string, cf. x-molecules.select-all-checkbox) sélectionnés */
@@ -376,22 +386,40 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public function templates(): array
     {
         return DirectoryTemplate::orderBy('id')->get()
+            // Story 60.5 — LES RECETTES QUI SE MATÉRIALISENT SEULES NE SONT PAS
+            // PROPOSÉES ICI. Cet écran fait naître un partage à partir d'un nom
+            // choisi à la main ; une recette d'arbre, elle, tient son nom et son
+            // emplacement de son groupe. Les mélanger produisait deux issues,
+            // toutes deux fausses : l'arbre existe déjà et l'unicité de la ligne
+            // casse en erreur non rattrapée (une page 500 au lieu d'un message),
+            // ou il n'existe pas encore et l'écran fabrique un partage au nom
+            // arbitraire ET AVEC UNE LETTRE, alors qu'un arbre naît sans lettre.
+            // Le sélecteur ne propose donc que ce qu'il sait faire naître.
+            ->reject(fn (DirectoryTemplate $t): bool => $t->materializesOnGroupCreation())
             ->map(fn (DirectoryTemplate $t): array => [
                 'key' => $t->key,
                 'label' => $t->label,
                 'description' => $t->description,
                 'roles' => $t->roles(),
-            ])->all();
+            ])->values()->all();
     }
 
-    /** Recette sélectionnée (modèle), ou null. */
+    /**
+     * Recette sélectionnée (modèle), ou null.
+     *
+     * La clé arrive du navigateur : filtrer le catalogue rendu ne suffit pas, il
+     * faut refuser la recette ici aussi. Une garde qui ne vit que dans la liste
+     * affichée protège l'étourderie, pas la requête forgée.
+     */
     public function selectedTemplate(): ?DirectoryTemplate
     {
         if ($this->selectedTemplateKey === '') {
             return null;
         }
 
-        return DirectoryTemplate::where('key', $this->selectedTemplateKey)->first();
+        $template = DirectoryTemplate::where('key', $this->selectedTemplateKey)->first();
+
+        return $template?->materializesOnGroupCreation() ? null : $template;
     }
 
     /**
@@ -404,6 +432,14 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     {
         $template = $this->selectedTemplate();
         if ($template === null) {
+            return [];
+        }
+
+        // Story 60.5 — une recette AUTO-RÉSOLVABLE ne demande aucune cible par
+        // rôle : elle les déduit toutes d'un seul groupe. Lui présenter des
+        // sélecteurs de rôle serait demander une saisie qui ne sert à rien — et,
+        // pour un rôle porté par une arête, une saisie IMPOSSIBLE.
+        if ($this->isAutoResolvable()) {
             return [];
         }
 
@@ -449,6 +485,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             return [];
         }
 
+        if ($this->isAutoResolvable()) {
+            return $this->autoResolvedPreview($template);
+        }
+
         $candidates = $this->roleCandidates();
         $preview = [];
 
@@ -467,6 +507,181 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                     'access' => $access,
                 ];
             }
+        }
+
+        return $preview;
+    }
+
+    // =========================================================================
+    // Story 60.5 — le flux à UN SEUL sélecteur, et le picker qui PARLE
+    // =========================================================================
+
+    /**
+     * `true` si la recette choisie sait trouver toutes ses cibles à partir d'un
+     * seul groupe.
+     *
+     * C'est ce qui répare « profs → élèves » : son rôle enseignant désigne « les
+     * membres de la classe qui portent le rôle d'encadrement », audience qu'AUCUN
+     * sélecteur de groupe ne pourra jamais désigner — elle n'est pas un groupe.
+     */
+    public function isAutoResolvable(): bool
+    {
+        $template = $this->selectedTemplate();
+
+        if ($template === null || $template->attachedGroupType() === null) {
+            return false;
+        }
+
+        try {
+            return $template->isAutoResolvable();
+        } catch (\Throwable) {
+            // Une recette dont la règle de résolution est illisible ne doit pas
+            // faire tomber l'écran : elle retombe sur le flux à cibles saisies,
+            // qui échouera explicitement à la matérialisation.
+            return false;
+        }
+    }
+
+    /**
+     * Groupes éligibles comme GROUPE DE MATÉRIALISATION de la recette choisie.
+     *
+     * @return array<int, array{id:int,label:string}>
+     */
+    public function materializationCandidates(): array
+    {
+        $template = $this->selectedTemplate();
+        $type = $template?->attachedGroupType();
+
+        if ($type === null || ! $this->isAutoResolvable()) {
+            return [];
+        }
+
+        return UserGroup::query()
+            ->whereRaw('LOWER(type) = ?', [mb_strtolower($type)])
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['id', 'name', 'display_name'])
+            ->map(fn (UserGroup $g): array => ['id' => (int) $g->id, 'label' => (string) ($g->display_name ?: $g->name)])
+            ->all();
+    }
+
+    /**
+     * **UN SÉLECTEUR VIDE DOIT LE DIRE.**
+     *
+     * C'est le silence qui a rendu « profs → élèves » inutilisable pendant cinq
+     * semaines : la recette contraignait un type de groupe que l'import d'annuaire
+     * ne produit plus, le sélecteur s'affichait vide, et rien — ni message, ni
+     * journal, ni bouton désactivé — ne disait pourquoi. La garde vaut pour TOUTES
+     * les recettes, pas seulement pour celle qui a révélé le défaut.
+     *
+     * @return array<string, string> clé de rôle (ou clé du groupe de matérialisation) => message
+     */
+    public function emptyPickerNotices(): array
+    {
+        $template = $this->selectedTemplate();
+        if ($template === null) {
+            return [];
+        }
+
+        if ($this->isAutoResolvable()) {
+            if ($this->materializationCandidates() !== []) {
+                return [];
+            }
+
+            return [self::MATERIALIZATION_PICKER => sprintf(
+                'Aucun groupe éligible : cette recette se matérialise à partir d\'un groupe de type '
+                . '« %s », et aucun n\'existe sur cette instance.',
+                (string) $template->attachedGroupType(),
+            )];
+        }
+
+        $notices = [];
+        foreach ($this->roleCandidates() as $roleKey => $candidates) {
+            if ($candidates !== []) {
+                continue;
+            }
+
+            $role = $template->role((string) $roleKey);
+            $groupType = $role['group_type'] ?? null;
+
+            $notices[(string) $roleKey] = is_string($groupType) && $groupType !== ''
+                ? sprintf(
+                    'Aucun groupe éligible pour ce rôle : il attend un groupe de type « %s », et aucun '
+                    . 'n\'existe sur cette instance.',
+                    $groupType,
+                )
+                : 'Aucun candidat éligible pour ce rôle sur cette instance.';
+        }
+
+        return $notices;
+    }
+
+    /**
+     * `true` si la matérialisation est IMPOSSIBLE faute de candidats — le bouton
+     * est alors désactivé, plutôt que d'offrir un geste qui échouera.
+     */
+    public function materializationBlocked(): bool
+    {
+        return $this->selectedTemplate() !== null && $this->emptyPickerNotices() !== [];
+    }
+
+    /**
+     * Aperçu d'une recette auto-résolvable : les AUDIENCES telles qu'elles seront
+     * résolues, à partir du groupe choisi.
+     *
+     * Il dit ce que la recette va faire, pas ce que l'administrateur a saisi — et
+     * c'est précisément ce qu'on veut voir avant de matérialiser une recette dont
+     * les cibles se déduisent.
+     *
+     * @return array<int, array{label:string,maille:string,access:string}>
+     */
+    private function autoResolvedPreview(DirectoryTemplate $template): array
+    {
+        $groupId = (int) $this->materializationGroupId;
+        if ($groupId <= 0) {
+            return [];
+        }
+
+        $group = UserGroup::find($groupId);
+        if ($group === null) {
+            return [];
+        }
+
+        $groupLabel = (string) ($group->display_name ?: $group->name);
+        $preview = [];
+
+        foreach ($template->roles() as $role) {
+            $roleKey = (string) ($role['key'] ?? '');
+            $access = \App\Models\NetworkShareAssignable::accessLabel((string) ($role['access'] ?? 'ro'));
+
+            try {
+                $resolution = $template->resolutionOf($role);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            $audience = match ($resolution['strategy']) {
+                RoleResolutionStrategy::Itself => $groupLabel,
+                RoleResolutionStrategy::EdgeRole => sprintf(
+                    '%s — %s',
+                    $groupLabel,
+                    implode(', ', array_map(
+                        static fn (string $edgeRole): string => match ($edgeRole) {
+                            'manager' => 'encadrants',
+                            'owner' => 'responsables',
+                            default => 'membres',
+                        },
+                        $resolution['edge_roles'],
+                    )),
+                ),
+                default => $groupLabel,
+            };
+
+            $preview[] = [
+                'label' => $audience,
+                'maille' => (string) ($role['label'] ?? $roleKey),
+                'access' => $access,
+            ];
         }
 
         return $preview;
@@ -512,8 +727,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public function updatedSelectedTemplateKey(): void
     {
         // Changement de recette → réinitialise les sélections de cibles (les rôles
-        // exposés changent dynamiquement).
+        // exposés changent dynamiquement) ET le groupe de matérialisation, dont le
+        // type éligible change avec la recette.
         $this->roleSelections = [];
+        $this->materializationGroupId = null;
         $this->resetErrorBag();
     }
 
@@ -525,6 +742,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->templateLabel = '';
         $this->templateLetter = '';
         $this->roleSelections = [];
+        $this->materializationGroupId = null;
         $this->resetErrorBag();
     }
 
@@ -579,6 +797,15 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             return;
         }
 
+        // Story 60.5 — un sélecteur SANS candidat ne doit jamais laisser lancer un
+        // geste qui échouera : le bouton est déjà désactivé à l'écran, la garde est
+        // rejouée ici parce qu'un composant peut être appelé sans passer par lui.
+        if ($this->materializationBlocked()) {
+            $this->toastError(implode(' ', $this->emptyPickerNotices()));
+
+            return;
+        }
+
         // Construit le mapping rôle → liste d'IDs sélectionnés (normalisé).
         $roles = [];
         foreach ($template->roles() as $role) {
@@ -593,6 +820,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 'label' => $validated['templateLabel'] ?? null,
                 'letter' => $validated['templateLetter'] ?? null,
                 'roles' => $roles,
+                'group_id' => $this->materializationGroupId,
             ], deferProvisioning: true);
         } catch (NetworkShareLetterCollisionException $e) {
             // Collision de lettre : rollback transactionnel déjà effectué (aucune
@@ -603,6 +831,21 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             // Format / lettre réservée / rôles invalides (cardinalité, cible
             // introuvable, typage de groupe) — refus AVANT écriture.
             $this->toastError($e->getMessage());
+            return;
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Un partage EXISTE DÉJÀ pour ce couple recette/groupe : l'unicité de
+            // la ligne le dit, et l'administrateur doit l'apprendre par un message,
+            // pas par une page d'erreur. La cause reste au journal — l'écran ne
+            // rend jamais un message de base de données.
+            Log::warning('Shares: matérialisation refusée par la base', [
+                'template' => $this->selectedTemplateKey,
+                'group_id' => $this->materializationGroupId,
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError(
+                'Ce répertoire existe déjà pour cette recette et ce groupe : aucune création n\'a eu lieu.'
+            );
+
             return;
         }
 
@@ -876,6 +1119,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     @php($selectedTpl = $this->selectedTemplate())
     @php($roleCandidates = $selectedTpl ? $this->roleCandidates() : [])
     @php($preview = $selectedTpl ? $this->templatePreview() : [])
+    @php($emptyPickers = $selectedTpl ? $this->emptyPickerNotices() : [])
     <x-molecules.modal wire:model="isTemplateOpen" size="max-w-3xl" height="h-auto"
         title="Créer un répertoire depuis un template" icon="fa-wand-magic-sparkles text-primary">
 
@@ -931,6 +1175,34 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 </div>
             </x-molecules.modal.section>
 
+            {{-- Story 60.5 — le flux à UN SEUL sélecteur : une recette auto-résolvable
+                 déduit toutes ses cibles du groupe choisi. C'est ce qui répare
+                 « profs → élèves », dont le rôle enseignant désigne une audience
+                 qu'aucun sélecteur de groupe ne pourrait jamais nommer. --}}
+            @if ($this->isAutoResolvable())
+                <x-molecules.modal.section title="Groupe de matérialisation" icon="fa-users text-primary" dense>
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text font-medium">
+                                Groupe <span class="text-error">*</span>
+                            </span>
+                        </label>
+                        <select wire:model.live="materializationGroupId" class="select select-bordered select-sm"
+                            @disabled($emptyPickers !== [])>
+                            <option value="">— choisir —</option>
+                            @foreach ($this->materializationCandidates() as $cand)
+                                <option value="{{ $cand['id'] }}">{{ $cand['label'] }}</option>
+                            @endforeach
+                        </select>
+                        @if (isset($emptyPickers['@groupe']))
+                            <div class="alert alert-warning mt-2 text-xs" data-empty-picker="@groupe">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <span>{{ $emptyPickers['@groupe'] }}</span>
+                            </div>
+                        @endif
+                    </div>
+                </x-molecules.modal.section>
+            @else
             <x-molecules.modal.section title="Cibles du template" icon="fa-users text-primary" dense>
                 <div class="space-y-3">
                     @foreach ($selectedTpl->roles() as $role)
@@ -951,7 +1223,8 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                 </span>
                             </label>
                             <select wire:model.live="roleSelections.{{ $roleKey }}" class="select select-bordered select-sm"
-                                @if($isMany) multiple size="4" @endif>
+                                @if($isMany) multiple size="4" @endif
+                                @disabled(isset($emptyPickers[$roleKey]))>
                                 @unless($isMany)
                                     <option value="">— choisir —</option>
                                 @endunless
@@ -959,18 +1232,31 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                     <option value="{{ $cand['id'] }}">{{ $cand['label'] }}</option>
                                 @endforeach
                             </select>
+                            {{-- **UN SÉLECTEUR VIDE DOIT LE DIRE.** C'est le silence qui a
+                                 rendu une recette inutilisable pendant cinq semaines. --}}
+                            @if (isset($emptyPickers[$roleKey]))
+                                <div class="alert alert-warning mt-2 text-xs" data-empty-picker="{{ $roleKey }}">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                    <span>{{ $emptyPickers[$roleKey] }}</span>
+                                </div>
+                            @endif
                         </div>
                     @endforeach
                 </div>
             </x-molecules.modal.section>
+            @endif
 
-            <x-molecules.modal.section title="Aperçu des assignations" icon="fa-list-check text-primary" dense>
+            <x-molecules.modal.section title="Aperçu des accès" icon="fa-list-check text-primary" dense>
                 @if (count($preview) === 0)
-                    <div class="text-sm text-base-content/50 py-2">Sélectionnez les cibles ci-dessus pour prévisualiser les assignations.</div>
+                    <div class="text-sm text-base-content/50 py-2">
+                        {{ $this->isAutoResolvable()
+                            ? 'Choisissez le groupe ci-dessus pour voir les accès qui en seront déduits.'
+                            : 'Sélectionnez les cibles ci-dessus pour prévisualiser les assignations.' }}
+                    </div>
                 @else
-                    <table class="table table-sm">
+                    <table class="table table-sm" data-template-preview>
                         <thead>
-                            <tr class="text-xs uppercase"><th>Cible</th><th>Maille</th><th>Accès</th></tr>
+                            <tr class="text-xs uppercase"><th>Destinataires</th><th>Rôle</th><th>Accès</th></tr>
                         </thead>
                         <tbody>
                             @foreach ($preview as $row)
@@ -997,8 +1283,11 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         </x-slot:footerNote>
         <x-slot:footer>
             <button type="button" class="btn btn-ghost" wire:click="closeTemplate">Annuler</button>
+            {{-- Story 60.5 — un sélecteur sans candidat DÉSACTIVE la matérialisation :
+                 offrir un geste dont on sait qu'il échouera est une autre forme du
+                 silence qu'on répare ici. --}}
             <button type="button" class="btn btn-primary" wire:click="createFromTemplate" wire:loading.attr="disabled" wire:target="createFromTemplate"
-                @disabled(! $selectedTpl)>
+                @disabled(! $selectedTpl || $emptyPickers !== [])>
                 <span wire:loading.remove wire:target="createFromTemplate"><i class="fa-solid fa-wand-magic-sparkles"></i> Matérialiser</span>
                 <span wire:loading wire:target="createFromTemplate"><span class="loading loading-spinner loading-xs"></span> Création...</span>
             </button>

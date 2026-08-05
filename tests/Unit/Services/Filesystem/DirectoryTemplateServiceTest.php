@@ -97,24 +97,70 @@ class DirectoryTemplateServiceTest extends TestCase
         $this->assertSame(3, $share->assignments()->count());
     }
 
+    /**
+     * Story 60.5 — « profs → élèves » a changé de FLUX, parce qu'elle avait cessé
+     * de fonctionner.
+     *
+     * Elle demandait un groupe de type « équipe » pour son rôle enseignant. Ce type
+     * n'est plus produit depuis le repliement 4.13 : le sélecteur était vide, et la
+     * recette était impossible à matérialiser — pendant cinq semaines, sans que
+     * rien ne le dise. L'équipe enseignante est désormais un RÔLE SUR L'ARÊTE du
+     * groupe classe, et la recette se résout à partir d'UN seul groupe.
+     *
+     * La ligne créée porte donc son ORIGINE (recette + groupe) : ses octrois
+     * viendront de la recette, pas de ses assignations. L'assignation restante
+     * porte l'autre axe — la VISIBILITÉ du lecteur.
+     */
     #[Test]
-    public function profs_to_eleves_grants_equipe_rw_and_classe_ro(): void
+    public function profs_to_eleves_materializes_from_a_single_class_group(): void
     {
-        $equipe = UserGroup::create(['name' => 'profs6eB', 'type' => 'equipe']);
         $classe = UserGroup::create(['name' => '6eB', 'type' => 'classe']);
 
         $result = $this->service->materialize($this->template(DirectoryTemplate::KEY_PROFS_TO_ELEVES), [
             'name' => 'Devoirs 6eB',
             'directory_name' => 'devoirs_6eb',
             'letter' => 'Q:',
-            'roles' => [
-                'profs' => [$equipe->id],
-                'eleves' => [$classe->id],
-            ],
+            'group_id' => $classe->id,
         ]);
 
-        $this->assertAssignment($result->share, UserGroup::class, $equipe->id, 'rw');
-        $this->assertAssignment($result->share, UserGroup::class, $classe->id, 'ro');
+        $share = $result->share->fresh();
+
+        $this->assertSame($this->template(DirectoryTemplate::KEY_PROFS_TO_ELEVES)->id, $share->directory_template_id);
+        $this->assertSame($classe->id, $share->user_group_id);
+        $this->assertTrue($share->hasRecipeOrigin());
+
+        // La visibilité : le groupe classe, dont les enseignants sont membres.
+        $this->assertAssignment($share, UserGroup::class, $classe->id, 'ro');
+        $this->assertCount(1, $share->assignments);
+    }
+
+    /** Un groupe du mauvais type est refusé AVANT toute écriture. */
+    #[Test]
+    public function profs_to_eleves_refuses_a_materialization_group_of_the_wrong_type(): void
+    {
+        $projet = UserGroup::create(['name' => 'Robotique', 'type' => 'projet']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/type « classe »/u');
+
+        $this->service->materialize($this->template(DirectoryTemplate::KEY_PROFS_TO_ELEVES), [
+            'name' => 'Devoirs',
+            'directory_name' => 'devoirs_ko',
+            'group_id' => $projet->id,
+        ]);
+    }
+
+    /** Et l'absence de groupe le dit, plutôt que de créer un partage vide. */
+    #[Test]
+    public function an_auto_resolvable_recipe_asks_for_its_materialization_group(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/Choisissez le groupe/u');
+
+        $this->service->materialize($this->template(DirectoryTemplate::KEY_PROFS_TO_ELEVES), [
+            'name' => 'Devoirs',
+            'directory_name' => 'devoirs_sans_groupe',
+        ]);
     }
 
     #[Test]

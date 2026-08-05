@@ -59,7 +59,7 @@ class ReconcileNetworkShareJob implements ShouldQueue
      * personne ne l'apprenne. Positionnée au constructeur (la propriété est déjà
      * déclarée par le trait de mise en file).
      */
-    private const CONNECTION = 'database';
+    public const CONNECTION = 'database';
 
     public function __construct(
         public readonly int $shareId,

@@ -52,11 +52,13 @@ final class PlanNode
      * Alias de {@see GroupNameNormalizer::ROOT_NODE_PATH} — une seule valeur, un
      * seul endroit où elle vit.
      *
-     * **Ce qui n'est PAS ouvert ici** : le vocabulaire de recette (`nodes_spec`)
-     * n'accepte toujours pas « . » comme chemin de nœud écrit. C'est un legs NOMMÉ
-     * à la story 60.5, celle qui exprimera les droits de la racine du partage
-     * classe. Ouvrir les deux d'un coup aurait mêlé une contrainte de contrat
-     * (mesurée) à un choix de langage (non tranché).
+     * **Story 60.5 — le vocabulaire de recette l'accepte désormais aussi.** Il ne
+     * l'acceptait pas en 60.3 : ouvrir les deux d'un coup aurait mêlé une
+     * contrainte de contrat (mesurée) à un choix de langage (non tranché). Le choix
+     * est fait — sans nœud racine, la racine d'un arbre n'a aucun octroi exprimable,
+     * et le partage de classe historique n'est tout simplement pas dicible. Hors de
+     * la position racine, « . » reste interdit partout : le motif de segment le
+     * refuse, et c'est ce qui garde le jeton d'être un segment.
      */
     public const ROOT_PATH = GroupNameNormalizer::ROOT_NODE_PATH;
 

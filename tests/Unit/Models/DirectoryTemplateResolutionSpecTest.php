@@ -10,7 +10,6 @@ use App\Models\DirectoryTemplate;
 use App\Models\User;
 use App\Models\UserGroup;
 use Database\Seeders\DirectoryTemplateSeeder;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,6 +30,9 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
     use RefreshDatabase;
 
     private const MIGRATION = 'database/migrations/2026_08_04_150000_add_attached_group_type_to_directory_templates.php';
+
+    /** Story 60.5 — la détente de l'unicité, empilée sur la précédente. */
+    private const RELAX_MIGRATION = 'database/migrations/2026_08_05_110000_relax_attached_group_type_uniqueness.php';
 
     /**
      * Recette d'épreuve : un seul rôle, dont on fait varier la règle.
@@ -63,47 +65,88 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
     // La migration : additive, nullable, réversible
     // =========================================================================
 
+    /**
+     * Story 60.5 — l'accrochage n'est plus l'exception absolue qu'il était.
+     *
+     * Deux recettes s'accrochent désormais au type `classe` : l'ARBRE de partage de
+     * classe, et la recette PLATE « profs → élèves » réparée. Les trois autres
+     * restent muettes. Le test dit l'état exact plutôt qu'une règle globale qui a
+     * cessé d'être vraie.
+     */
     #[Test]
-    public function the_column_exists_and_the_seeded_recipes_stay_unattached(): void
+    public function the_column_exists_and_only_the_class_recipes_are_attached(): void
     {
         $this->assertTrue(Schema::hasColumn('directory_templates', 'attached_group_type'));
 
         (new DirectoryTemplateSeeder())->run();
 
-        $this->assertSame(4, DirectoryTemplate::count());
+        $this->assertSame(5, DirectoryTemplate::count());
 
-        foreach (DirectoryTemplate::all() as $template) {
-            $this->assertNull($template->attached_group_type, "La recette {$template->key} ne doit être accrochée à rien.");
-            $this->assertNull($template->attachedGroupType());
-        }
+        $attached = DirectoryTemplate::whereNotNull('attached_group_type')
+            ->orderBy('key')
+            ->pluck('attached_group_type', 'key')
+            ->all();
+
+        $this->assertSame(
+            [
+                DirectoryTemplate::KEY_CLASSE_SE4 => 'classe',
+                DirectoryTemplate::KEY_PROFS_TO_ELEVES => 'classe',
+            ],
+            $attached,
+        );
     }
 
+    /**
+     * Réversibilité — DANS L'ORDRE, et c'est le point.
+     *
+     * La story 60.5 a détendu l'unicité posée par la 60.2 : rejouer le `down()` de
+     * la 60.2 sans avoir d'abord défait la 60.5 chercherait un index unique qui
+     * n'existe plus. Une réversibilité qui ne vaudrait qu'en sautant une marche
+     * n'en est pas une.
+     */
     #[Test]
     public function the_migration_is_reversible(): void
     {
-        $migration = require base_path(self::MIGRATION);
+        $attachment = require base_path(self::MIGRATION);
+        $relaxation = require base_path(self::RELAX_MIGRATION);
 
-        $migration->down();
+        $relaxation->down();
+        $attachment->down();
         $this->assertFalse(Schema::hasColumn('directory_templates', 'attached_group_type'));
 
-        $migration->up();
+        $attachment->up();
+        $relaxation->up();
         $this->assertTrue(Schema::hasColumn('directory_templates', 'attached_group_type'));
 
-        // Les données de 34.3 ont survécu au va-et-vient.
+        // Les données ont survécu au va-et-vient.
         (new DirectoryTemplateSeeder())->run();
-        $this->assertSame(4, DirectoryTemplate::count());
+        $this->assertSame(5, DirectoryTemplate::count());
     }
 
     // =========================================================================
     // Le DÉFAUT : l'absence de règle vaut « cible désignée » (iso-34.3)
     // =========================================================================
 
+    /**
+     * Story 60.5 — les TROIS recettes que cette story ne touche pas restent en
+     * cible désignée, mot pour mot.
+     *
+     * Les deux autres changent, et chacune a son test : « profs → élèves » est
+     * RÉPARÉE (elle contraignait un type de groupe qui n'existe plus), et l'arbre
+     * de classe est NEUF.
+     */
     #[Test]
-    public function the_four_seeded_recipes_stay_valid_and_designated_without_any_change(): void
+    public function the_untouched_seeded_recipes_stay_valid_and_designated_without_any_change(): void
     {
         (new DirectoryTemplateSeeder())->run();
 
-        foreach (DirectoryTemplate::all() as $template) {
+        $untouched = [
+            DirectoryTemplate::KEY_DIRECTION_TO_ALL,
+            DirectoryTemplate::KEY_USER_TO_USER,
+            DirectoryTemplate::KEY_GROUP_SPACE,
+        ];
+
+        foreach (DirectoryTemplate::whereIn('key', $untouched)->get() as $template) {
             $template->assertValidResolutionSpec();
             $template->assertValidTreeSpec();
 
@@ -115,9 +158,26 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
                 );
             }
 
-            // Aucune n'est auto-résolvable, donc aucune n'est accrochable — ce qui
-            // est exactement l'état voulu : elles se matérialisent à la main.
+            // Non auto-résolvables, donc non accrochées : elles se matérialisent à
+            // la main, avec leurs cibles saisies. C'est exactement l'état voulu.
             $this->assertFalse($template->isAutoResolvable());
+            $this->assertNull($template->attachedGroupType());
+        }
+    }
+
+    /** Story 60.5 — les deux recettes accrochées savent, elles, se résoudre seules. */
+    #[Test]
+    public function both_class_recipes_resolve_their_targets_on_their_own(): void
+    {
+        (new DirectoryTemplateSeeder())->run();
+
+        foreach ([DirectoryTemplate::KEY_PROFS_TO_ELEVES, DirectoryTemplate::KEY_CLASSE_SE4] as $key) {
+            $template = DirectoryTemplate::where('key', $key)->firstOrFail();
+
+            $template->assertValidResolutionSpec();
+            $template->assertValidTreeSpec();
+            $this->assertTrue($template->isAutoResolvable(), "La recette {$key} doit se résoudre seule.");
+            $this->assertSame('classe', $template->attachedGroupType());
         }
     }
 
@@ -360,24 +420,44 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
         $template->assertAttachable();
     }
 
+    /**
+     * Story 60.5 — RENVERSEMENT ASSUMÉ de la règle de 60.2.
+     *
+     * Une recette SANS arbre peut désormais s'accrocher : l'accrochage dit « je
+     * sais trouver mes cibles à partir d'un groupe de ce type », ce qui est vrai
+     * d'un partage plat comme d'un arbre. C'est ce qui rend « profs → élèves »
+     * réparable. Ce que l'accrochage ne lui donne PAS, c'est la matérialisation
+     * automatique — sinon chaque classe créée naîtrait avec un partage plat que
+     * personne n'a demandé.
+     */
     #[Test]
-    public function a_treeless_recipe_cannot_attach(): void
+    public function a_treeless_recipe_may_attach_but_never_materializes_by_itself(): void
     {
         $template = $this->templateWithResolution(['strategy' => 'self']);
         $template->attached_group_type = 'classe';
 
-        $this->expectException(InvalidTreeSpecException::class);
-        $this->expectExceptionMessageMatches('/aucun arbre/u');
-
         $template->assertAttachable();
+        $template->save();
+
+        $this->assertSame('classe', $template->fresh()->attachedGroupType());
+        $this->assertFalse(
+            $template->materializesOnGroupCreation(),
+            'une recette plate accrochée ne doit JAMAIS se matérialiser à la création d\'un groupe',
+        );
+
+        // Et elle n'est pas ce que la chaîne groupe → arbre va chercher.
+        $this->assertNull(DirectoryTemplate::attachedTo('classe'));
     }
 
     #[Test]
     public function an_unattachable_recipe_cannot_even_be_persisted_with_an_attachment(): void
     {
         // La donnée d'accrochage n'a pas d'écran : la garde est à l'écriture, au
-        // seul endroit par lequel toute écriture passe.
-        $template = $this->templateWithResolution(['strategy' => 'self']);
+        // seul endroit par lequel toute écriture passe. Ce qui reste inattachable,
+        // c'est une recette dont un rôle attend une SAISIE : à la création d'un
+        // groupe comme au flux à un seul sélecteur, personne n'est là pour la
+        // fournir.
+        $template = $this->templateWithResolution(null);
         $template->attached_group_type = 'classe';
 
         $this->expectException(InvalidTreeSpecException::class);
@@ -385,26 +465,49 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
         $template->save();
     }
 
+    /**
+     * Story 60.5 — l'unicité SURVIT, rétrécie à ce qu'elle visait vraiment.
+     *
+     * Deux recettes d'ARBRE sur le même type poseraient la question à laquelle rien
+     * ne peut répondre : quel arbre ce groupe matérialise-t-il ? La garde est
+     * désormais applicative — et elle NOMME la recette qui occupe déjà la place, ce
+     * qu'un index n'aurait jamais su faire.
+     */
     #[Test]
-    public function two_recipes_cannot_be_attached_to_the_same_type(): void
+    public function two_tree_recipes_cannot_be_attached_to_the_same_type(): void
     {
         $this->autoResolvableClassTreeTemplate()->save();
 
         $second = $this->autoResolvableClassTreeTemplate();
         $second->key = 'classe_share_auto_bis';
 
-        $this->expectException(QueryException::class);
+        $this->expectException(InvalidTreeSpecException::class);
+        $this->expectExceptionMessageMatches('/porte déjà la recette d\'arbre/u');
 
         $second->save();
+    }
+
+    /** Mais un arbre et un partage plat cohabitent parfaitement sur le même type. */
+    #[Test]
+    public function a_tree_recipe_and_a_flat_one_may_share_the_same_attached_type(): void
+    {
+        $this->autoResolvableClassTreeTemplate()->save();
+
+        $flat = $this->templateWithResolution(['strategy' => 'self']);
+        $flat->attached_group_type = 'classe';
+        $flat->save();
+
+        $this->assertSame(2, DirectoryTemplate::where('attached_group_type', 'classe')->count());
+        $this->assertSame('classe_share_auto', DirectoryTemplate::attachedTo('classe')?->key);
     }
 
     #[Test]
     public function several_recipes_may_stay_unattached(): void
     {
-        // La contrainte d'unicité ne contraint que les valeurs présentes : c'est
-        // ce qui permet aux 4 recettes de 34.3 de cohabiter, toutes non accrochées.
+        // L'accrochage reste l'exception : trois des cinq recettes seedées ne se
+        // prononcent pas, et se matérialisent avec leurs cibles saisies.
         (new DirectoryTemplateSeeder())->run();
 
-        $this->assertSame(4, DirectoryTemplate::whereNull('attached_group_type')->count());
+        $this->assertSame(3, DirectoryTemplate::whereNull('attached_group_type')->count());
     }
 }

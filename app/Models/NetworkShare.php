@@ -8,6 +8,7 @@ use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\UnknownFileBackendException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
@@ -35,6 +36,14 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * tant qu'aucun flux de provisioning ne route par elle, un sélecteur serait une
  * propriété qui ment. Routage et éditabilité arrivent ensemble en 60.4.
  *
+ * **Story 60.5 — l'ORIGINE : « ce partage EST l'arbre de ce groupe, d'après cette
+ * recette ».** Trois colonnes additives nullables relient un partage à ce qui l'a
+ * produit. Leur absence est l'état normal de tous les partages en place : ils n'ont
+ * pas d'origine, et n'en auront jamais. Ce que l'origine change, c'est la façon
+ * dont le partage se projette en PLAN — par la recette plutôt que par ses seules
+ * assignations. Les assignations, elles, ne disparaissent pas : elles restent
+ * l'axe de VISIBILITÉ, et ajoutent des octrois sur la racine.
+ *
  * @property int $id
  * @property string $name
  * @property string $directory_name
@@ -43,6 +52,9 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * @property string|null $description
  * @property string|null $letter
  * @property int|null $created_by_user_id
+ * @property int|null $directory_template_id
+ * @property int|null $user_group_id
+ * @property array<string, bool>|null $node_activation
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
  */
@@ -94,6 +106,7 @@ class NetworkShare extends Model
      */
     protected $casts = [
         'backend' => FileBackendName::class,
+        'node_activation' => 'array',
     ];
 
     /**
@@ -189,6 +202,67 @@ class NetworkShare extends Model
         }
 
         return $name;
+    }
+
+    // =========================================================================
+    // Story 60.5 — l'origine du partage
+    // =========================================================================
+
+    /** La recette dont ce partage est la matérialisation, ou `null`. */
+    public function directoryTemplate(): BelongsTo
+    {
+        return $this->belongsTo(DirectoryTemplate::class, 'directory_template_id');
+    }
+
+    /** Le groupe de cloisonnement dont ce partage porte l'arbre, ou `null`. */
+    public function userGroup(): BelongsTo
+    {
+        return $this->belongsTo(UserGroup::class, 'user_group_id');
+    }
+
+    /**
+     * `true` si ce partage se projette PAR SA RECETTE plutôt que par ses seules
+     * assignations.
+     *
+     * Il faut les DEUX : une recette sans groupe ne sait pas qui elle cloisonne,
+     * un groupe sans recette ne sait pas ce qu'il matérialise. Un lien à moitié
+     * effacé — par la suppression d'un groupe, qui met sa colonne à `null` sans
+     * emporter le partage — ne doit surtout pas se projeter à moitié : il retombe
+     * sur la projection ordinaire, qui décrit l'existant sans rien inventer.
+     */
+    public function hasRecipeOrigin(): bool
+    {
+        return $this->directory_template_id !== null && $this->user_group_id !== null;
+    }
+
+    /**
+     * État d'activation des nœuds ACTIVABLES : chemin de nœud TEL QU'ÉCRIT dans la
+     * recette => actif.
+     *
+     * **Une entrée ABSENTE vaut ACTIF.** C'est la décision D6=A, celle de l'espace
+     * d'échange historique, créé actif : un partage neuf n'a donc rien à écrire, et
+     * le JSON ne porte que les écarts au défaut. Une entrée dont le chemin ne
+     * correspond à aucun nœud de la recette (recette modifiée après coup) est
+     * simplement IGNORÉE par la résolution — jamais une erreur, jamais un nœud
+     * fantôme.
+     *
+     * @return array<string, bool>
+     */
+    public function nodeActivation(): array
+    {
+        $raw = $this->node_activation;
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($raw as $path => $active) {
+            if (is_string($path) && $path !== '') {
+                $out[$path] = (bool) $active;
+            }
+        }
+
+        return $out;
     }
 
     /**

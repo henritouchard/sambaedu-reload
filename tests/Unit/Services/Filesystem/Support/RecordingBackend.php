@@ -108,4 +108,10 @@ final class RecordingBackend implements FileBackend
 
         return ReconciliationReport::coveringCapped($this->name(), $plan, []);
     }
+
+    /** Story 60.5 — emplacement d'affichage : ce double n'écrit sur aucun disque. */
+    public function location(FilePlan $plan): ?string
+    {
+        return null;
+    }
 }

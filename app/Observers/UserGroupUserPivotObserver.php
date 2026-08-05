@@ -7,6 +7,7 @@ namespace App\Observers;
 use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\ClassTreeShareService;
 use App\Services\Filesystem\ShareService;
 use App\Services\GroupRightsProfileService;
 use App\Services\UserGroupService;
@@ -111,6 +112,7 @@ class UserGroupUserPivotObserver
     public function created(UserGroupUserPivot $pivot): void
     {
         $this->reconcileProfiles($pivot);
+        $this->queueTreeReconciliation($pivot);
 
         if (! self::$syncEnabled) {
             return;
@@ -121,11 +123,50 @@ class UserGroupUserPivotObserver
     public function deleted(UserGroupUserPivot $pivot): void
     {
         $this->reconcileProfiles($pivot);
+        $this->queueTreeReconciliation($pivot);
 
         if (! self::$syncEnabled) {
             return;
         }
         $this->dispatch($pivot, isAttach: false);
+    }
+
+    /**
+     * Story 60.5 — DEUX AUTORITÉS, DEUX ZONES, AUCUN CONFLIT.
+     *
+     * Cette méthode enfile la réconciliation de l'arbre NEUF, gouverné par le plan.
+     * {@see dispatch()}, juste en dessous, gouverne l'arbre HISTORIQUE (chemin figé
+     * de la story 5.2, archivage implicite compris) et ne bouge pas d'une ligne. Les
+     * deux zones sont DISJOINTES par construction — la garde de chemin du backend
+     * n'a aucun jeton pour l'arbre historique — et c'est cette disjonction qui fait
+     * tenir « une seule autorité d'écriture par zone » sans qu'aucune des deux ne
+     * cède. Ne surtout pas « factoriser » les deux voies : elles décrivent des états
+     * désirés différents, sur des arbres différents, et leur seule ressemblance est
+     * de partir du même événement.
+     *
+     * **Elle ne CRÉE aucun partage.** Un rattachement n'est pas une demande de
+     * partage : elle réconcilie les arbres qui existent déjà. Le nœud personnel du
+     * nouvel élève apparaît donc par réconciliation, jamais par un chemin
+     * parallèle qui saurait créer un dossier tout seul.
+     *
+     * **Elle est ancrée AVANT le garde de projection d'annuaire**, sous
+     * l'interrupteur dédié du canal fichiers : ce drapeau-là est coupé par des
+     * chemins — imports, tests d'annuaire — qui n'ont aucune raison de suspendre
+     * les fichiers.
+     */
+    private function queueTreeReconciliation(UserGroupUserPivot $pivot): void
+    {
+        $groupId = (int) ($pivot->user_group_id ?? 0);
+        if ($groupId <= 0) {
+            return;
+        }
+
+        $group = UserGroup::find($groupId);
+        if (! $group) {
+            return;
+        }
+
+        app(ClassTreeShareService::class)->reconcileExistingQuietly($group);
     }
 
     /**
@@ -140,6 +181,14 @@ class UserGroupUserPivotObserver
      */
     public function updated(UserGroupUserPivot $pivot): void
     {
+        // Story 60.5 — un changement de RÔLE D'ARÊTE change les audiences de
+        // l'arbre neuf (l'équipe enseignante EST un rôle d'arête depuis l'Epic 42) :
+        // il enfile sa réconciliation, sous son propre interrupteur et avant les
+        // gardes de l'annuaire.
+        if ($pivot->wasChanged('role')) {
+            $this->queueTreeReconciliation($pivot);
+        }
+
         // Guard commun : `$syncEnabled=false` (imports users, tests) suspend
         // AUSSI le resync AD ; `$adResyncEnabled=false` = read-back en cours.
         if (! self::$syncEnabled || ! self::$adResyncEnabled) {

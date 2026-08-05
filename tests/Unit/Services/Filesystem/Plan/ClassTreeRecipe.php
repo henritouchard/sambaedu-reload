@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Filesystem\Plan;
 
+use App\Enums\PlanAnchor;
 use App\Models\DirectoryTemplate;
 use App\Models\UserGroup;
 use App\Services\Filesystem\Plan\PlanResolutionContext;
@@ -143,19 +144,32 @@ trait ClassTreeRecipe
     }
 
     /**
-     * Story 60.2 — LA MÊME recette, rendue AUTO-RÉSOLVABLE et accrochable au type
-     * `classe`. C'est exactement ce que la story 60.5 seedera, et l'écrire ici en
-     * décor est la répétition générale.
+     * Story 60.2 → 60.5 — LA MÊME recette, rendue AUTO-RÉSOLVABLE et accrochée au
+     * type `classe`.
      *
-     * Deux rôles seulement, et deux stratégies :
-     *  - `equipe` en stratégie d'ARÊTE sur `manager|owner`. C'est la seule façon
-     *    de dire « les enseignants de cette classe » : depuis le repliement 4.13,
-     *    l'équipe pédagogique n'a plus de ligne à elle en base. Deux rôles
-     *    d'arête listés ⇒ DEUX sujets abstraits, quel que soit l'effectif.
-     *  - `classe` en stratégie « lui-même » : le groupe de matérialisation entier.
+     * **C'est le SEED, écrit en décor.** Un test d'équivalence
+     * ({@see \Tests\Unit\Database\Seeders\ClassTreeRecipeEquivalenceTest}) épingle
+     * que ce décor et la 5ᵉ recette seedée disent exactement la même chose. Deux
+     * descriptions du partage de classe qui divergeraient rendraient tous les tests
+     * qui s'appuient sur ce décor faussement rassurants.
      *
-     * Aucun rôle en cible désignée : c'est la condition d'accrochage, et c'est ce
-     * qui permettra à la création d'un groupe de matérialiser son arbre seule.
+     * **Trois corrections apportées par la story 60.5** — chacune était un piège
+     * nommé :
+     *
+     *  1. **La RACINE existe.** Le décor 60.2 n'avait pas de nœud « . » : la racine
+     *     n'avait donc aucun octroi exprimé, alors que la racine historique porte
+     *     la traversée de l'équipe ET de la classe. Sans elle, la comparaison des
+     *     deux arbres était tout simplement infaisable.
+     *  2. **`edge_roles` liste `manager` SEUL.** « L'équipe = gestionnaires ∪
+     *     propriétaires » semble plus juste ; c'est faux deux fois. Cela émettrait
+     *     DEUX sujets, donc une entrée d'audience supplémentaire que l'arbre
+     *     historique n'a pas — un écart non documenté, c'est-à-dire un échec. Et le
+     *     surensemble est déjà DANS l'annuaire : le groupe des enseignants d'une
+     *     classe contient ses professeurs principaux. Un seul rôle d'arête suffit
+     *     donc à dire exactement ce que l'existant dit.
+     *  3. **Le motif de chemin est RELATIF À SA ZONE.** Il ne porte plus de segment
+     *     de tête : la zone est portée par l'ancre logique du plan, et la racine
+     *     d'un plan est UN segment — la garde de chemin refuse le reste.
      *
      * @param  string|null  $attachedType  type de groupe accroché (`null` = non accrochée)
      */
@@ -166,81 +180,111 @@ trait ClassTreeRecipe
             'label' => 'Partage de classe (auto-résolvable)',
             'description' => 'La recette que la création d\'un groupe classe pourra matérialiser seule.',
             'attached_group_type' => $attachedType,
-            'roles_spec' => [
-                [
-                    'key' => 'equipe',
-                    'label' => 'Équipe enseignante',
-                    'maille' => UserGroup::class,
-                    'group_type' => 'classe',
-                    'access' => 'rw',
-                    'cardinality' => 'one',
-                    'resolution' => [
-                        'strategy' => 'edge_role',
-                        'edge_roles' => ['manager', 'owner'],
-                    ],
-                ],
-                [
-                    'key' => 'classe',
-                    'label' => 'Élèves de la classe',
-                    'maille' => UserGroup::class,
-                    'group_type' => 'classe',
-                    'access' => 'ro',
-                    'cardinality' => 'one',
-                    'resolution' => ['strategy' => 'self'],
-                ],
-            ],
-            'path_pattern' => 'Classes/Classe_{group.bare_name}',
-            'nodes_spec' => [
-                [
-                    'path' => '_travail',
-                    'label' => 'Documents de travail',
-                    'nature' => 'partagee',
-                    'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'ro'],
-                    ],
-                ],
-                [
-                    'path' => '_travail/devoirs',
-                    'label' => 'Dépôt des devoirs',
-                    'nature' => 'contenu_libre',
-                    'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'ro'],
-                    ],
-                ],
-                [
-                    'path' => '_profs',
-                    'label' => 'Espace des enseignants',
-                    'nature' => 'partagee',
-                    'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                    ],
-                ],
-                [
-                    'path' => '_echange',
-                    'label' => 'Espace d\'échange',
-                    'nature' => 'activable',
-                    'activable' => true,
-                    'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'rw', 'suspendable' => true],
-                    ],
-                ],
-                [
-                    'path' => '{member.login}',
-                    'label' => 'Dossier personnel',
-                    'nature' => 'par_membre',
-                    'edge_role' => 'member',
-                    'plafond' => 2147483648,
-                    'grants' => [
-                        ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
-                        ['role' => 'equipe', 'access' => 'rw'],
-                    ],
-                ],
-            ],
+            'root_anchor' => PlanAnchor::Classes->value,
+            'roles_spec' => self::CLASS_TREE_ROLES,
+            'path_pattern' => self::CLASS_TREE_PATH_PATTERN,
+            'nodes_spec' => self::CLASS_TREE_NODES,
         ]);
     }
+
+    /**
+     * Motif de chemin de l'arbre de classe, RELATIF à sa zone : le préfixe
+     * `Classe_` est CONSERVÉ (symétrie du diff avec l'arbre historique, et
+     * migration bon marché le jour venu).
+     */
+    public const CLASS_TREE_PATH_PATTERN = 'Classe_{group.bare_name}';
+
+    /**
+     * Les DEUX rôles de l'arbre de classe et leurs stratégies.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public const CLASS_TREE_ROLES = [
+        [
+            'key' => 'equipe',
+            'label' => 'Équipe enseignante',
+            'maille' => UserGroup::class,
+            'group_type' => 'classe',
+            'access' => 'rw',
+            'cardinality' => 'one',
+            'resolution' => [
+                'strategy' => 'edge_role',
+                'edge_roles' => ['manager'],
+            ],
+        ],
+        [
+            'key' => 'classe',
+            'label' => 'Élèves de la classe',
+            'maille' => UserGroup::class,
+            'group_type' => 'classe',
+            'access' => 'ro',
+            'cardinality' => 'one',
+            'resolution' => ['strategy' => 'self'],
+        ],
+    ];
+
+    /**
+     * Les SIX nœuds de l'arbre de classe.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public const CLASS_TREE_NODES = [
+        [
+            'path' => '.',
+            'label' => 'Racine du partage de classe',
+            'nature' => 'partagee',
+            'grants' => [
+                ['role' => 'equipe', 'access' => 'ro'],
+                ['role' => 'classe', 'access' => 'ro'],
+            ],
+        ],
+        [
+            'path' => '_travail',
+            'label' => 'Documents de travail',
+            'nature' => 'partagee',
+            'grants' => [
+                ['role' => 'equipe', 'access' => 'rw'],
+                ['role' => 'classe', 'access' => 'ro'],
+            ],
+        ],
+        [
+            'path' => '_travail/devoirs',
+            'label' => 'Devoirs distribués aux élèves',
+            'nature' => 'contenu_libre',
+            'grants' => [
+                ['role' => 'equipe', 'access' => 'rw'],
+                ['role' => 'classe', 'access' => 'ro'],
+            ],
+        ],
+        [
+            'path' => '_profs',
+            'label' => 'Espace des enseignants',
+            'nature' => 'partagee',
+            'grants' => [
+                ['role' => 'equipe', 'access' => 'rw'],
+            ],
+        ],
+        [
+            'path' => '_echange',
+            'label' => 'Espace d\'échange',
+            'nature' => 'activable',
+            'activable' => true,
+            'grants' => [
+                ['role' => 'equipe', 'access' => 'rw'],
+                ['role' => 'classe', 'access' => 'rw', 'suspendable' => true],
+            ],
+        ],
+        [
+            'path' => '{member.login}',
+            'label' => 'Dossier personnel de l\'élève',
+            'nature' => 'par_membre',
+            'edge_role' => 'member',
+            'grants' => [
+                ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
+                ['role' => 'equipe', 'access' => 'rw'],
+            ],
+        ],
+    ];
 
     /**
      * Contexte de résolution : un groupe au nom DÉJÀ préfixé, quatre membres

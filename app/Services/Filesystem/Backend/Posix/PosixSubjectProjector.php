@@ -55,6 +55,31 @@ use Illuminate\Support\Facades\Process;
  * suffit au seul cas que la story suivante doit rendre iso.
  *
  * ---------------------------------------------------------------------------
+ * **STORY 60.5 — LE TRIO D'ANNUAIRE EST L'ARTEFACT COMPILÉ QUE D4 RECOMMANDAIT.**
+ *
+ * La mesure d'ouverture d'epic concluait qu'une audience doit se compiler en
+ * GROUPE DÉRIVÉ, jamais en énumération de personnes : à 3 000 entrées nominatives
+ * la pose coûte 63 s, et le système la refuse tout court au-delà de 5 457. La
+ * recommandation était donc « fabriquer un groupe dérivé ». Cet artefact EXISTE
+ * DÉJÀ : le trio ci-dessus, entretenu par la synchronisation d'annuaire, EST le
+ * groupe dérivé d'une classe. Aucune fabrique nouvelle n'est donc introduite —
+ * en inventer une aurait créé un second jeu de groupes à entretenir, décrivant
+ * exactement la même chose que le premier.
+ *
+ * **L'IMPORT DU SERVICE HISTORIQUE RESTE, ET C'EST UN RENVERSEMENT ASSUMÉ.**
+ *
+ * L'ancienne rédaction de la story 60.5 prévoyait de descendre ici une recopie de
+ * la dérivation des noms, parce qu'elle tuait le service historique. Il VIT
+ * désormais : les deux arbres de classe coexistent, et ils doivent porter les
+ * MÊMES groupes d'annuaire. Descendre une recopie créerait DEUX autorités de
+ * dérivation des noms au moment précis où leur divergence serait la plus
+ * dangereuse — une recopie qui dérive silencieusement rendrait la comparaison des
+ * deux arbres fausse sans que rien ne tombe. Une fonction, deux consommateurs,
+ * identité des noms garantie PAR CONSTRUCTION plutôt que par un test
+ * d'équivalence. La descente appartient à la story de MIGRATION, avec la mort du
+ * service.
+ *
+ * ---------------------------------------------------------------------------
  * **AUCUN NOM DE GROUPE N'EST INVENTÉ.** Avant d'écrire un octroi de groupe, on
  * vérifie que le nom se résout côté système ({@see groupExists()} — lecture NSS,
  * sans élévation de privilège, exactement le mécanisme déjà en service pour les

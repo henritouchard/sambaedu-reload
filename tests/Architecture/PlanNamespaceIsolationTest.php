@@ -240,10 +240,16 @@ class PlanNamespaceIsolationTest extends TestCase
      * invisibles, et le jour où l'un d'eux meurt, personne ne l'aurait remarqué.
      *
      *  - `ShareService` — chemin figé du partage de classe depuis la story 5.2.
-     *    Sa méthode de création de partage de classe MEURT en 60.5, une fois le
-     *    référentiel d'arbre vert. Zéro diff exigé par la story 60.4.
+     *    **Il VIT, et son sort n'est plus celui qu'annonçait la story 60.4.** La
+     *    story 60.5 a tranché contre l'écrasement de l'arbre historique : SE5 écrit
+     *    désormais ses arbres de classe dans une racine NEUVE, les deux arbres
+     *    COEXISTENT, et celui-ci reste le seul réellement servi aux établissements.
+     *    Le supprimer aujourd'hui couperait le chemin qui alimente cet arbre-là.
+     *    Son extinction appartient à la story de MIGRATION (bascule de l'arbre
+     *    servi, rapatriement délibéré des données, descente de la dérivation des
+     *    noms), qui n'a pas de calendrier promis. Zéro diff exigé par la 60.5.
      *  - `AclService` — garde de chemin et pose de droits de la baseline 5.2, même
-     *    sort, même story. Zéro diff exigé.
+     *    vie, même sort, même story de migration. Zéro diff exigé.
      *  - `HomeDirService` — répertoires personnels, hors du périmètre de l'epic 60
      *    (le plan de fichiers ne les gouverne pas encore).
      *  - `XfsQuotaService` — plafonds de zone. La story qui les brancherait au plan
@@ -750,5 +756,93 @@ class PlanNamespaceIsolationTest extends TestCase
     public function the_recipe_model_stays_importable_by_design(): void
     {
         self::assertSame([], $this->violations('use App\Models\DirectoryTemplate;'));
+    }
+
+    // =========================================================================
+    // Story 60.5 — l'emplacement d'affichage : la seule chaîne que le contrat
+    // laisse remonter, et la seule promesse qui n'était portée que par un mot
+    // =========================================================================
+
+    /**
+     * Les consommateurs AUTORISÉS de l'emplacement d'affichage rendu par le
+     * contrat. Liste FERMÉE, et courte par nature : c'est un texte à montrer.
+     *
+     * @var list<string>
+     */
+    private const LOCATION_CONSUMERS = [
+        'resources/views/pages/admin/shares/[id]/index.blade.php',
+    ];
+
+    /**
+     * **UNE CHAÎNE D'AFFICHAGE QUI RESSEMBLE À UNE ADRESSE UTILISABLE.**
+     *
+     * Le contrat le dit en toutes lettres : cette valeur se montre, elle ne se
+     * consomme pas pour agir — un backend distant y répondra quelque chose qui
+     * n'a aucun sens pour un système de fichiers local. Mais c'est, dans tout ce
+     * contrat, la SEULE garantie qui ne repose que sur une phrase : le
+     * constructeur des rapports est privé, leur complétude est vérifiée à la
+     * construction, leur sérialisation LÈVE. Ici, rien — et la valeur de retour a
+     * l'apparence d'un chemin qu'on pourrait passer à une commande.
+     *
+     * Cet epic a rencontré quatre fois la même signature de défaut : une garantie
+     * vraie sur le chemin heureux et fausse ailleurs. On ferme donc la liste de
+     * ceux qui appellent, plutôt que de compter sur la lecture du commentaire.
+     */
+    #[Test]
+    public function the_display_location_is_only_ever_read_by_a_screen(): void
+    {
+        $callers = [];
+
+        foreach ([
+            (new Finder())->files()->in(realpath(self::repoPath('app')))->name('*.php'),
+            (new Finder())->files()->in(realpath(self::repoPath('resources/views/pages')))->name('*.blade.php'),
+        ] as $finder) {
+            foreach ($finder as $file) {
+                if (! str_contains((string) $file->getContents(), '->location(')) {
+                    continue;
+                }
+
+                $relative = str_replace(self::repoPath(''), '', (string) $file->getRealPath());
+
+                // Les implémentations RENDENT cette valeur : ce sont elles qui
+                // savent où le plan vit. Elles ne la consomment pas.
+                if (str_contains($relative, 'Services/Filesystem/Backend/')) {
+                    continue;
+                }
+
+                $callers[] = $relative;
+            }
+        }
+
+        sort($callers);
+        $allowed = self::LOCATION_CONSUMERS;
+        sort($allowed);
+
+        self::assertSame(
+            $allowed,
+            $callers,
+            'L\'EMPLACEMENT D\'AFFICHAGE A ÉTÉ CONSOMMÉ AILLEURS QUE PAR UN ÉCRAN. Le contrat le rend '
+            . 'pour être MONTRÉ, jamais pour agir : un backend distant y répond une adresse qui n\'a aucun '
+            . 'sens pour un système de fichiers local, et un appelant qui la traiterait comme un chemin '
+            . 'marcherait tant qu\'un seul backend existe. Si ce nouvel appelant est légitime, il rejoint '
+            . 'la liste fermée — après qu\'on a vérifié qu\'il ne fait qu\'afficher.',
+        );
+    }
+
+    /**
+     * MÉTA-TEST D'AIGUILLE : la garde ci-dessus doit réellement voir un appel.
+     * Sans lui, une liste vide face à un balayage aveugle passerait au vert.
+     */
+    #[Test]
+    public function the_display_location_guard_actually_sees_a_call(): void
+    {
+        $screen = (string) file_get_contents(self::repoPath(self::LOCATION_CONSUMERS[0]));
+
+        self::assertStringContainsString(
+            '->location(',
+            $screen,
+            'la garde de l\'emplacement d\'affichage ne surveille plus rien : son seul consommateur connu '
+            . 'ne l\'appelle plus. Retirer la garde avec l\'appel, ou corriger la liste.',
+        );
     }
 }

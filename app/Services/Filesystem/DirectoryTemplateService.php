@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Filesystem;
 
+use App\Enums\RoleResolutionStrategy;
 use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
@@ -53,7 +54,14 @@ class DirectoryTemplateService
      * elle l'exécute en direct. Le résultat DIT lequel des deux a eu lieu — il
      * n'affirme jamais un provisionnement accompli qui ne l'est pas.
      *
-     * @param  array{name?:string,directory_name?:string,label?:string|null,letter?:string|null,roles?:array<string,list<int>>}  $params
+     * **Story 60.5 — DEUX FLUX, choisis par la RECETTE.** Une recette
+     * auto-résolvable et accrochée ne demande plus une cible par rôle : elle
+     * demande UN groupe de matérialisation (`group_id`), et déduit tout le reste.
+     * C'est ce qui répare « profs → élèves », dont l'audience « les enseignants de
+     * cette classe » n'est pas un groupe mais un rôle porté sur l'arête — chose
+     * qu'aucun sélecteur de groupe ne pourra jamais désigner.
+     *
+     * @param  array{name?:string,directory_name?:string,label?:string|null,letter?:string|null,roles?:array<string,list<int>>,group_id?:int|null}  $params
      *
      * @throws InvalidArgumentException                            format / lettre réservée / rôles invalides (AVANT écriture)
      * @throws \App\Exceptions\Filesystem\NetworkShareLetterCollisionException  collision de lettre (rollback transactionnel)
@@ -97,10 +105,14 @@ class DirectoryTemplateService
         }
 
         // --- Plan d'assignations dérivé de la recette (Q6 : rôles du pattern) -
-        $plan = $this->buildAssignmentPlan($template, $params['roles'] ?? []);
+        $group = $this->materializationGroup($template, $params['group_id'] ?? null);
+
+        $plan = $group !== null
+            ? $this->buildAutoAssignmentPlan($template, $group)
+            : $this->buildAssignmentPlan($template, $params['roles'] ?? []);
 
         // --- Transaction : share + pivot + assertNoLetterCollision AVANT commit
-        $share = DB::transaction(function () use ($name, $directoryName, $label, $letter, $plan): NetworkShare {
+        $share = DB::transaction(function () use ($name, $directoryName, $label, $letter, $plan, $template, $group): NetworkShare {
             $share = NetworkShare::create([
                 'name' => $name,
                 'directory_name' => $directoryName,
@@ -108,6 +120,16 @@ class DirectoryTemplateService
                 'letter' => $letter,
                 'created_by_user_id' => $this->currentUserId(),
             ]);
+
+            // L'ORIGINE (story 60.5) : ce partage se projettera par SA RECETTE, pas
+            // par ses seules assignations. Écrite hors de `create()` parce que ces
+            // colonnes ne sont pas de la saisie d'écran — elles ne doivent jamais
+            // entrer par un remplissage de masse.
+            if ($group !== null) {
+                $share->directory_template_id = $template->id;
+                $share->user_group_id = $group->id;
+                $share->save();
+            }
 
             foreach ($plan as $row) {
                 NetworkShareAssignable::create([
@@ -142,6 +164,102 @@ class DirectoryTemplateService
             warnings: $this->validator->warnings($share),
             provisioning: $state,
         );
+    }
+
+    /**
+     * Story 60.5 — le GROUPE DE MATÉRIALISATION d'une recette auto-résolvable, ou
+     * `null` si la recette relève du flux à cibles saisies.
+     *
+     * Une recette accrochée et auto-résolvable dit « donne-moi un groupe de ce
+     * type, je déduis le reste ». Le groupe doit donc exister ET être du type
+     * accroché : sans cette vérification, la recette résoudrait ses rôles sur un
+     * groupe qui n'a ni les arêtes ni les audiences qu'elle attend, et le résultat
+     * serait un partage silencieusement vide.
+     *
+     * @throws InvalidArgumentException
+     */
+    private function materializationGroup(DirectoryTemplate $template, mixed $groupId): ?UserGroup
+    {
+        $attached = $template->attachedGroupType();
+        if ($attached === null || ! $template->isAutoResolvable()) {
+            return null;
+        }
+
+        $id = (int) $groupId;
+        if ($id <= 0) {
+            throw new InvalidArgumentException(
+                'Choisissez le groupe à partir duquel matérialiser cette recette : elle en déduit toutes ses cibles.'
+            );
+        }
+
+        $group = UserGroup::find($id);
+        if ($group === null) {
+            throw new InvalidArgumentException('Groupe de matérialisation introuvable.');
+        }
+        if (mb_strtolower((string) $group->type) !== $attached) {
+            throw new InvalidArgumentException(sprintf(
+                'Cette recette se matérialise à partir d\'un groupe de type « %s ».',
+                $attached,
+            ));
+        }
+
+        return $group;
+    }
+
+    /**
+     * Story 60.5 — les assignations d'une recette AUTO-RÉSOLVABLE.
+     *
+     * **Elles ne portent pas les droits, elles portent la VISIBILITÉ.** Les octrois
+     * réels de ce partage viennent de la résolution de la recette, à la projection
+     * en plan ; ce que les assignations ajoutent, c'est le montage du lecteur chez
+     * les utilisateurs concernés — l'autre axe du modèle, et le seul que les
+     * assignations sachent porter.
+     *
+     * **Un rôle résolu par l'ARÊTE ne produit AUCUNE assignation**, et c'est une
+     * limite de forme, pas un oubli : « les membres de ce groupe qui portent tel
+     * rôle » n'est pas une cible assignable — le pivot ne connaît qu'un type et un
+     * identifiant. Cela ne retire rien à personne : ces membres appartiennent au
+     * groupe, dont l'assignation les fait déjà monter le lecteur.
+     *
+     * @return list<array{type:class-string,id:int,access:string}>
+     */
+    private function buildAutoAssignmentPlan(DirectoryTemplate $template, UserGroup $group): array
+    {
+        $plan = [];
+        $seen = [];
+
+        foreach ($template->roles() as $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $strategy = $template->resolutionOf($role)['strategy'];
+            if ($strategy !== RoleResolutionStrategy::Itself) {
+                continue;
+            }
+
+            $access = ($role['access'] ?? 'ro') === 'rw' ? 'rw' : 'ro';
+            $key = UserGroup::class . '#' . $group->id;
+
+            if (isset($seen[$key])) {
+                // Deux rôles « lui-même » sur le même groupe : une seule ligne, au
+                // niveau le plus élevé. L'union au plus permissif, ici aussi.
+                if ($access === 'rw') {
+                    foreach ($plan as $index => $row) {
+                        if ($row['id'] === (int) $group->id) {
+                            $plan[$index]['access'] = 'rw';
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            $seen[$key] = true;
+            $plan[] = ['type' => UserGroup::class, 'id' => (int) $group->id, 'access' => $access];
+        }
+
+        return $plan;
     }
 
     /**

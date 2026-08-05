@@ -340,7 +340,9 @@ final class PosixFileBackend implements FileBackend
             return 'la cible d\'archivage est refusée par la garde du serveur de fichiers.';
         }
 
-        $trash = $this->executor->makeTrashRoot($this->guard->trashRoot());
+        // La corbeille est celle de la ZONE du plan (story 60.5) : un arbre de
+        // classe ne s'archive jamais dans l'espace exposé des répertoires réseau.
+        $trash = $this->executor->makeTrashRoot($this->guard->trashRoot($plan->anchor));
         if (! $trash->ok) {
             return 'création de l\'espace d\'archivage impossible : ' . $this->trim($trash->error);
         }
@@ -582,5 +584,15 @@ final class PosixFileBackend implements FileBackend
     private function trim(string $error): string
     {
         return PosixDiagnostic::neutralize($error);
+    }
+
+    /**
+     * Story 60.5 — l'emplacement RÉEL de la racine du plan, ou `null` si la garde
+     * la refuse. C'est là que l'exploitant ira lire les droits à la main, et c'est
+     * ce chemin que la liste blanche du système doit couvrir.
+     */
+    public function location(FilePlan $plan): ?string
+    {
+        return $this->guard->planRoot($plan);
     }
 }

@@ -25,16 +25,22 @@ class DirectoryTemplateTreeMigrationTest extends TestCase
     private const MIGRATION = 'database/migrations/2026_08_04_120000_add_tree_spec_to_directory_templates.php';
 
     #[Test]
-    public function the_two_columns_exist_and_the_seeded_recipes_stay_treeless(): void
+    public function the_two_columns_exist_and_the_flat_seeded_recipes_stay_treeless(): void
     {
         $this->assertTrue(Schema::hasColumn('directory_templates', 'path_pattern'));
         $this->assertTrue(Schema::hasColumn('directory_templates', 'nodes_spec'));
 
         (new DirectoryTemplateSeeder())->run();
 
-        $this->assertSame(4, DirectoryTemplate::count());
+        $this->assertSame(5, DirectoryTemplate::count());
 
-        foreach (DirectoryTemplate::all() as $template) {
+        // Story 60.5 — la 5ᵉ recette porte un arbre, c'est sa raison d'être. Les
+        // QUATRE recettes plates de 34.3 restent, elles, sans arbre : leur
+        // matérialisation n'a pas changé d'un octet.
+        $flat = DirectoryTemplate::where('key', '!=', DirectoryTemplate::KEY_CLASSE_SE4)->get();
+        $this->assertCount(4, $flat);
+
+        foreach ($flat as $template) {
             $this->assertNull($template->path_pattern, "La recette {$template->key} ne doit porter aucun motif de chemin.");
             $this->assertNull($template->nodes_spec, "La recette {$template->key} ne doit porter aucun nœud.");
             $this->assertFalse($template->hasTreeSpec());
@@ -58,9 +64,9 @@ class DirectoryTemplateTreeMigrationTest extends TestCase
         $this->assertTrue(Schema::hasColumn('directory_templates', 'path_pattern'));
         $this->assertTrue(Schema::hasColumn('directory_templates', 'nodes_spec'));
 
-        // Et les données de 34.3 ont survécu au va-et-vient : la migration ne
-        // touche QUE les deux colonnes qu'elle ajoute.
+        // Et les données ont survécu au va-et-vient : la migration ne touche QUE
+        // les deux colonnes qu'elle ajoute.
         (new DirectoryTemplateSeeder())->run();
-        $this->assertSame(4, DirectoryTemplate::count());
+        $this->assertSame(5, DirectoryTemplate::count());
     }
 }

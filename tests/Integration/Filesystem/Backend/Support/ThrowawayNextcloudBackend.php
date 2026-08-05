@@ -434,4 +434,10 @@ final class ThrowawayNextcloudBackend implements FileBackend
 
         return ['status' => $status, 'body' => (string) $raw];
     }
+
+    /** Story 60.5 — emplacement d'affichage : ce double n'écrit sur aucun disque. */
+    public function location(FilePlan $plan): ?string
+    {
+        return null;
+    }
 }

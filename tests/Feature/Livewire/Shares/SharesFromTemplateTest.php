@@ -6,6 +6,7 @@ namespace Tests\Feature\Livewire\Shares;
 
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
+use App\Models\DirectoryTemplate;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
@@ -91,41 +92,64 @@ class SharesFromTemplateTest extends TestCase
     #[Test]
     public function dynamic_form_shows_roles_of_selected_template(): void
     {
-        UserGroup::create(['name' => 'profs6e', 'type' => 'equipe']);
+        UserGroup::create(['name' => 'direction', 'type' => 'equipe']);
         UserGroup::create(['name' => '6eB', 'type' => 'classe']);
         $this->actingAs($this->manager());
 
         Livewire::test(self::PAGE)
             ->call('openTemplate')
-            ->set('selectedTemplateKey', 'profs_to_eleves')
-            ->assertSee('Équipe enseignante')
-            ->assertSee('Classe');
+            ->set('selectedTemplateKey', 'direction_to_all')
+            ->assertSee('Source (direction / équipe qui publie)')
+            ->assertSee('Destinataires');
     }
 
+    /**
+     * Story 60.5 — « profs → élèves » ne demande plus qu'UN groupe : ses deux rôles
+     * s'en déduisent. L'aperçu dit les AUDIENCES résolues, pas la saisie.
+     */
     #[Test]
-    public function preview_reflects_selected_targets(): void
+    public function an_auto_resolvable_recipe_asks_for_a_single_group_and_previews_resolved_audiences(): void
     {
-        $equipe = UserGroup::create(['name' => 'profs6e', 'type' => 'equipe']);
         $classe = UserGroup::create(['name' => '6eB', 'type' => 'classe']);
         $this->actingAs($this->manager());
 
         $component = Livewire::test(self::PAGE)
             ->call('openTemplate')
             ->set('selectedTemplateKey', 'profs_to_eleves')
-            ->set('roleSelections.profs', $equipe->id)
-            ->set('roleSelections.eleves', $classe->id);
+            ->assertSee('Groupe de matérialisation')
+            ->set('materializationGroupId', $classe->id);
+
+        $preview = $component->instance()->templatePreview();
+
+        $this->assertCount(2, $preview);
+        $labels = array_column($preview, 'label');
+        $this->assertContains('6eB — encadrants', $labels, 'l\'audience enseignante est un RÔLE D\'ARÊTE, dit comme tel');
+        $this->assertContains('6eB', $labels);
+    }
+
+    #[Test]
+    public function preview_reflects_selected_targets(): void
+    {
+        $direction = UserGroup::create(['name' => 'direction', 'type' => 'equipe']);
+        $classe = UserGroup::create(['name' => '6eB', 'type' => 'classe']);
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', 'direction_to_all')
+            ->set('roleSelections.source', $direction->id)
+            ->set('roleSelections.destinataires', [$classe->id]);
 
         $preview = $component->instance()->templatePreview();
         $this->assertCount(2, $preview);
         $labels = array_column($preview, 'label');
-        $this->assertContains('profs6e', $labels);
+        $this->assertContains('direction', $labels);
         $this->assertContains('6eB', $labels);
     }
 
     #[Test]
     public function materializes_a_share_with_assignments_and_provisions(): void
     {
-        $equipe = UserGroup::create(['name' => 'profs6e', 'type' => 'equipe']);
         $classe = UserGroup::create(['name' => '6eB', 'type' => 'classe']);
         $admin = $this->manager();
         $this->actingAs($admin);
@@ -136,20 +160,17 @@ class SharesFromTemplateTest extends TestCase
             ->set('templateName', 'Devoirs 6eB')
             ->set('templateDirectoryName', 'devoirs_6eb')
             ->set('templateLetter', 'P:')
-            ->set('roleSelections.profs', $equipe->id)
-            ->set('roleSelections.eleves', $classe->id)
+            ->set('materializationGroupId', $classe->id)
             ->call('createFromTemplate')
             ->assertHasNoErrors();
 
         $share = NetworkShare::where('directory_name', 'devoirs_6eb')->first();
         $this->assertNotNull($share);
         $this->assertSame($admin->id, $share->created_by_user_id);
-        $this->assertDatabaseHas('network_share_assignables', [
-            'network_share_id' => $share->id,
-            'assignable_type' => UserGroup::class,
-            'assignable_id' => $equipe->id,
-            'access' => 'rw',
-        ]);
+        // Story 60.5 — le partage porte son ORIGINE : ses octrois viendront de la
+        // recette, l'assignation ne porte que la visibilité du lecteur.
+        $this->assertTrue($share->hasRecipeOrigin());
+        $this->assertSame($classe->id, $share->user_group_id);
         $this->assertDatabaseHas('network_share_assignables', [
             'network_share_id' => $share->id,
             'assignable_type' => UserGroup::class,
@@ -304,5 +325,157 @@ class SharesFromTemplateTest extends TestCase
             ->assertStatus(403);
 
         $this->assertDatabaseCount('network_shares', 0);
+    }
+
+    // =========================================================================
+    // Story 60.5 — UN SÉLECTEUR VIDE DOIT LE DIRE
+    // =========================================================================
+
+    /**
+     * **Le cas régressif, celui qui a coûté cinq semaines.** Une recette dont un
+     * rôle contraint un type de groupe SANS AUCUNE occurrence affichait un
+     * sélecteur vide et muet : ni message, ni bouton désactivé, ni journal. On ne
+     * pouvait ni matérialiser la recette, ni comprendre pourquoi.
+     */
+    #[Test]
+    public function an_empty_role_picker_says_why_and_disables_the_materialization(): void
+    {
+        // Aucun groupe d'aucun type : le rôle « source » de la publication
+        // descendante n'a rien à proposer.
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', 'direction_to_all');
+
+        $notices = $component->instance()->emptyPickerNotices();
+
+        $this->assertArrayHasKey('source', $notices);
+        $this->assertStringContainsString('Aucun', $notices['source']);
+        $this->assertTrue($component->instance()->materializationBlocked());
+
+        $component->assertSee('Aucun candidat éligible pour ce rôle');
+    }
+
+    /**
+     * Le cas EXACT du défaut : un rôle qui attend un type de groupe disparu. Le
+     * message NOMME le type attendu — c'est ce qui rend le diagnostic possible sans
+     * lire le code du seeder.
+     */
+    #[Test]
+    public function a_role_constrained_to_a_vanished_group_type_names_that_type(): void
+    {
+        $template = \App\Models\DirectoryTemplate::where('key', 'direction_to_all')->firstOrFail();
+        $roles = $template->roles_spec;
+        $roles[0]['group_type'] = 'equipe'; // type que l'import ne produit plus
+        $template->roles_spec = $roles;
+        $template->save();
+
+        UserGroup::create(['name' => '6eB', 'type' => 'classe']);
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', 'direction_to_all');
+
+        $notices = $component->instance()->emptyPickerNotices();
+
+        $this->assertArrayHasKey('source', $notices);
+        $this->assertStringContainsString('equipe', $notices['source']);
+    }
+
+    /** Une matérialisation bloquée est REFUSÉE, même si le geste est déclenché. */
+    #[Test]
+    public function a_blocked_materialization_is_refused_server_side_too(): void
+    {
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', 'direction_to_all')
+            ->set('templateName', 'Publication')
+            ->set('templateDirectoryName', 'publication')
+            ->call('createFromTemplate');
+
+        $this->assertDatabaseCount('network_shares', 0);
+    }
+
+    /** Et quand tout va bien, aucun message ne s'affiche : la garde ne crie pas. */
+    #[Test]
+    public function a_populated_picker_stays_silent(): void
+    {
+        UserGroup::create(['name' => 'direction', 'type' => 'equipe']);
+        UserGroup::create(['name' => '6eB', 'type' => 'classe']);
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', 'direction_to_all');
+
+        $this->assertSame([], $component->instance()->emptyPickerNotices());
+        $this->assertFalse($component->instance()->materializationBlocked());
+    }
+
+    /**
+     * Le sélecteur de groupe de matérialisation obéit à la MÊME règle : sans classe
+     * sur l'instance, il le dit.
+     */
+    #[Test]
+    public function an_empty_materialization_picker_says_why_too(): void
+    {
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', 'profs_to_eleves');
+
+        $notices = $component->instance()->emptyPickerNotices();
+
+        $this->assertArrayHasKey('@groupe', $notices);
+        $this->assertStringContainsString('classe', $notices['@groupe']);
+        $this->assertTrue($component->instance()->materializationBlocked());
+    }
+
+    // =========================================================================
+    // L'écran manuel ne propose QUE ce qu'il sait faire naître
+    // =========================================================================
+
+    /**
+     * Une recette d'arbre tient son nom et son emplacement de son groupe ; cet
+     * écran, lui, fait naître un partage à partir d'un nom saisi et d'une lettre.
+     * Les mélanger produisait deux issues, toutes deux fausses : l'unicité de la
+     * ligne cassait en erreur non rattrapée quand l'arbre existait déjà, ou l'écran
+     * fabriquait un partage au nom arbitraire ET AVEC UNE LETTRE, alors qu'un arbre
+     * naît sans lettre.
+     */
+    #[Test]
+    public function the_manual_picker_never_offers_a_self_materialising_recipe(): void
+    {
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)->call('openTemplate');
+
+        $keys = array_column($component->instance()->templates(), 'key');
+
+        $this->assertNotContains(DirectoryTemplate::KEY_CLASSE_SE4, $keys);
+        $this->assertContains('profs_to_eleves', $keys, 'les recettes manuelles restent proposées');
+    }
+
+    /**
+     * La clé arrive du navigateur : filtrer la liste rendue ne suffit pas. Une
+     * garde qui ne vit que dans l'affichage protège l'étourderie, pas la requête
+     * forgée — et c'est le chemin par lequel un partage fantôme letré naissait.
+     */
+    #[Test]
+    public function a_forged_key_for_a_self_materialising_recipe_resolves_to_nothing(): void
+    {
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::PAGE)
+            ->call('openTemplate')
+            ->set('selectedTemplateKey', DirectoryTemplate::KEY_CLASSE_SE4);
+
+        $this->assertNull($component->instance()->selectedTemplate());
+        $this->assertSame([], $component->instance()->materializationCandidates());
     }
 }

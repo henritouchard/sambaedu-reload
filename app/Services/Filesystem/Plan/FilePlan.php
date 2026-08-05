@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Filesystem\Plan;
 
+use App\Enums\PlanAnchor;
 use App\Exceptions\Filesystem\PlanResolutionException;
 
 /**
@@ -11,9 +12,9 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  * à un groupe et à ses appartenances.
  *
  * **Neutre.** Le plan ne contient ni mode POSIX, ni ligne d'ACL, ni nom de groupe
- * Unix, ni chemin absolu. Il dit QUOI (des chemins relatifs, des sujets par
- * identité interne, un accès `ro|rw`, des plafonds, une clôture) ; il ne dit
- * jamais COMMENT. C'est la ligne de coupe de l'epic, et elle passe AVANT la
+ * Unix, ni chemin absolu. Il dit QUOI (une ZONE logique, des chemins relatifs, des
+ * sujets par identité interne, un accès `ro|rw`, des plafonds, une clôture) ; il ne
+ * dit jamais COMMENT. C'est la ligne de coupe de l'epic, et elle passe AVANT la
  * dérivation des ACL. Deux gardes la tiennent : un test d'architecture scanne les
  * imports de ce namespace, un test de garde scanne la sérialisation. Le premier
  * est un scan textuel — il attrape l'étourderie (un `use` de commodité), pas une
@@ -37,13 +38,26 @@ final class FilePlan
     /**
      * Version du FORMAT de plan. Sérialisée : un plan relu par une version
      * ultérieure doit pouvoir se reconnaître avant de se comparer.
+     *
+     * **Elle ne bouge PAS pour l'ancre de la story 60.5**, et c'est un choix. La
+     * clé `anchor` est ADDITIVE et son absence a un sens EXACT — la zone par
+     * défaut, celle de tous les plans écrits jusqu'ici. Un plan sérialisé avant
+     * 60.5 se relit donc sans perte et signifie exactement ce qu'il signifiait.
+     * Bumper la version aurait rendu illisibles des rapports en cache qui sont
+     * parfaitement valides, pour ne rien protéger.
      */
     public const VERSION = 1;
 
     /** Clé stable de la recette d'origine. */
     public readonly string $templateKey;
 
-    /** Racine RELATIVE résolue, ex. `Classes/Classe_3emeA`. */
+    /**
+     * Story 60.5 — ZONE logique du plan : un jeton NEUTRE d'un vocabulaire fermé,
+     * jamais un chemin. Seule la garde de chemin du backend sait le traduire.
+     */
+    public readonly PlanAnchor $anchor;
+
+    /** Racine RELATIVE résolue, ex. `Classe_3emeA`. */
     public readonly string $rootPath;
 
     /** @var array<string, list<PlanSubject>> rôle de recette => sujets résolus (clés triées) */
@@ -56,8 +70,13 @@ final class FilePlan
      * @param  array<string, list<PlanSubject>>  $roles
      * @param  list<PlanNode>  $nodes
      */
-    public function __construct(string $templateKey, string $rootPath, array $roles = [], array $nodes = [])
-    {
+    public function __construct(
+        string $templateKey,
+        string $rootPath,
+        array $roles = [],
+        array $nodes = [],
+        PlanAnchor $anchor = PlanAnchor::Reseau,
+    ) {
         if (! GroupNameNormalizer::isSafeRelativePath($rootPath)) {
             throw PlanResolutionException::make(sprintf(
                 'racine de plan non sûre « %s » (un plan ne porte que des chemins relatifs).',
@@ -85,6 +104,7 @@ final class FilePlan
         }
 
         $this->templateKey = $templateKey;
+        $this->anchor = $anchor;
         $this->rootPath = $rootPath;
         $this->roles = $roles;
         $this->nodes = array_values($nodes);
@@ -173,6 +193,7 @@ final class FilePlan
         return [
             'version' => self::VERSION,
             'template' => $this->templateKey,
+            'anchor' => $this->anchor->value,
             'root' => $this->rootPath,
             'roles' => $roles,
             'nodes' => array_map(static fn (PlanNode $n): array => $n->toArray(), $this->nodes),
@@ -211,6 +232,25 @@ final class FilePlan
             );
         }
 
+        // L'ancre est ADDITIVE : absente, elle vaut la zone par défaut (le sens
+        // exact de tous les plans écrits avant la story 60.5). PRÉSENTE mais hors
+        // vocabulaire, elle est REFUSÉE — se rabattre sur le défaut ferait
+        // silencieusement relire un plan dans la mauvaise zone, c'est-à-dire au
+        // mauvais endroit du disque.
+        $anchorRaw = $data['anchor'] ?? null;
+        if ($anchorRaw === null) {
+            $anchor = PlanAnchor::default();
+        } else {
+            $anchor = PlanAnchor::isKnown($anchorRaw) ? PlanAnchor::from((string) $anchorRaw) : null;
+            if ($anchor === null) {
+                throw PlanResolutionException::make(sprintf(
+                    'zone logique inconnue « %s » (attendu : %s).',
+                    is_scalar($anchorRaw) ? (string) $anchorRaw : gettype($anchorRaw),
+                    implode('|', PlanAnchor::values()),
+                ));
+            }
+        }
+
         return new self(
             (string) ($data['template'] ?? ''),
             (string) ($data['root'] ?? ''),
@@ -219,6 +259,7 @@ final class FilePlan
                 static fn (array $n): PlanNode => PlanNode::fromArray($n),
                 array_values((array) ($data['nodes'] ?? [])),
             ),
+            $anchor,
         );
     }
 

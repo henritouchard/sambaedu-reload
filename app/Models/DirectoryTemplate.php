@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\PlanAnchor;
 use App\Enums\PlanNodeNature;
 use App\Enums\RoleResolutionStrategy;
 use App\Exceptions\Filesystem\InvalidTreeSpecException;
@@ -40,6 +41,16 @@ use Illuminate\Database\Eloquent\Model;
  * `attached_group_type`). L'absence de `resolution` vaut « cible désignée à la
  * matérialisation » : les 4 recettes seedées ne savent pas qu'il y a du nouveau.
  *
+ * ---------------------------------------------------------------------------
+ * Story 60.5 — la recette dit aussi DANS QUELLE ZONE son arbre vit (colonne
+ * additive nullable `root_anchor`, {@see PlanAnchor}) — un jeton NEUTRE, jamais un
+ * chemin. Et l'ACCROCHAGE change de portée : il vaut désormais « cette recette sait
+ * se résoudre seule à partir d'un groupe de ce type », sans plus exiger un arbre.
+ * Ce qu'une recette d'ARBRE accrochée gagne en plus, et elle seule, c'est la
+ * MATÉRIALISATION AUTOMATIQUE à la création d'un groupe
+ * ({@see materializesOnGroupCreation()}) — voir le docblock de cette méthode pour
+ * la raison, qui est une histoire de 302 partages non demandés.
+ *
  * @property int $id
  * @property string $key
  * @property string $label
@@ -48,6 +59,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $path_pattern
  * @property array<int, array<string, mixed>>|null $nodes_spec
  * @property string|null $attached_group_type
+ * @property string|null $root_anchor
  */
 class DirectoryTemplate extends Model
 {
@@ -56,6 +68,12 @@ class DirectoryTemplate extends Model
     public const KEY_PROFS_TO_ELEVES = 'profs_to_eleves';
     public const KEY_USER_TO_USER = 'user_to_user';
     public const KEY_GROUP_SPACE = 'group_space';
+
+    /**
+     * Story 60.5 — la 5ᵉ recette : le partage de classe historique, dit en
+     * vocabulaire de plan et matérialisé dans la racine NEUVE.
+     */
+    public const KEY_CLASSE_SE4 = 'classe_se4';
 
     /**
      * Mailles autorisées dans une recette (sous-ensemble STRICT des
@@ -160,6 +178,7 @@ class DirectoryTemplate extends Model
         'path_pattern',
         'nodes_spec',
         'attached_group_type',
+        'root_anchor',
     ];
 
     protected $casts = [
@@ -238,8 +257,77 @@ class DirectoryTemplate extends Model
             if ($attached !== null) {
                 $template->attached_group_type = mb_strtolower($attached);
                 $template->assertAttachable();
+                $template->assertSingleTreeAttachment();
+            }
+
+            // La zone est du VOCABULAIRE, pas une chaîne libre : une valeur hors
+            // table ferait résoudre le plan dans une zone que la garde de chemin ne
+            // sait pas traduire — c'est-à-dire nulle part, mais découvert bien plus
+            // tard, à l'exécution.
+            $anchor = $template->root_anchor;
+            if ($anchor !== null && ! PlanAnchor::isKnown($anchor)) {
+                throw InvalidTreeSpecException::make(sprintf(
+                    'zone logique inconnue « %s » sur la recette « %s » (attendu : %s).',
+                    is_scalar($anchor) ? (string) $anchor : gettype($anchor),
+                    (string) $template->key,
+                    implode('|', PlanAnchor::values()),
+                ));
             }
         });
+    }
+
+    /**
+     * Story 60.5 — ZONE logique de l'arbre de cette recette, jeton NEUTRE.
+     *
+     * L'absence vaut la zone par défaut : les recettes qui ne se prononcent pas
+     * vivent là où elles ont toujours vécu.
+     */
+    public function rootAnchor(): PlanAnchor
+    {
+        $raw = $this->root_anchor;
+
+        return PlanAnchor::isKnown($raw) ? PlanAnchor::from((string) $raw) : PlanAnchor::default();
+    }
+
+    /**
+     * Un type de groupe n'a qu'UNE recette d'arbre.
+     *
+     * Sans cette garde, `attachedTo()` devrait choisir entre deux arbres accrochés
+     * au même type — et le plan d'un groupe dépendrait de l'ordre d'insertion en
+     * base. Une ambiguïté silencieuse sur « quel arbre ce groupe matérialise » est
+     * exactement le genre de question dont on ne se pose jamais qu'après.
+     *
+     * Les recettes PLATES ne sont pas concernées : plusieurs peuvent s'accrocher au
+     * même type, puisque leur matérialisation reste un geste manuel et explicite.
+     *
+     * @throws InvalidTreeSpecException
+     */
+    public function assertSingleTreeAttachment(): void
+    {
+        if (! $this->hasTreeSpec()) {
+            return;
+        }
+
+        $type = $this->attachedGroupType();
+        if ($type === null) {
+            return;
+        }
+
+        $rival = static::query()
+            ->whereRaw('LOWER(attached_group_type) = ?', [mb_strtolower($type)])
+            ->whereNotNull('path_pattern')
+            ->when($this->exists, fn ($q) => $q->whereKeyNot($this->getKey()))
+            ->when(! $this->exists && is_string($this->key), fn ($q) => $q->where('key', '!=', (string) $this->key))
+            ->first();
+
+        if ($rival !== null) {
+            throw InvalidTreeSpecException::makeResolution(sprintf(
+                'le type de groupe « %s » porte déjà la recette d\'arbre « %s » : un groupe ne matérialise '
+                . 'qu\'un seul arbre, et deux candidates rendraient le choix dépendant de l\'ordre de la base.',
+                $type,
+                (string) $rival->key,
+            ));
+        }
     }
 
     /**
@@ -390,10 +478,21 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * La recette accrochée à `$groupType`, ou `null` si ce type n'en a aucune.
+     * La recette d'ARBRE accrochée à `$groupType`, ou `null` si ce type n'en a
+     * aucune.
      *
      * `null` est l'état NORMAL de la quasi-totalité des types : ce n'est pas une
      * anomalie, et l'appelant ne doit pas la traiter comme telle.
+     *
+     * **Pourquoi « d'arbre » est dans le nom du résultat, story 60.5.** Depuis que
+     * l'accrochage vaut « sait se résoudre seule », PLUSIEURS recettes peuvent
+     * s'accrocher au même type — sur le type `classe`, l'arbre du partage de classe
+     * et la recette plate « profs → élèves » y sont toutes les deux. Cette méthode
+     * sert la chaîne groupe → arbre : lui laisser rendre « la première venue »
+     * aurait fait dépendre le plan d'un ordre d'insertion en base. Elle rend donc
+     * la recette d'arbre, et la garde d'écriture ci-dessus interdit qu'il y en ait
+     * deux pour un même type. Pour l'éligibilité d'une recette au flux manuel, la
+     * question ne se pose pas : on part de la recette, pas du type.
      */
     public static function attachedTo(string $groupType): ?self
     {
@@ -409,30 +508,49 @@ class DirectoryTemplate extends Model
         // « pas de recette » silencieux au lieu d'un accrochage.
         return static::query()
             ->whereRaw('LOWER(attached_group_type) = ?', [mb_strtolower($type)])
+            ->whereNotNull('path_pattern')
+            ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * Story 60.5 — `true` si la CRÉATION d'un groupe de ce type doit matérialiser
+     * cette recette toute seule.
+     *
+     * **La propriété des seules recettes d'ARBRE, et c'est délibéré.** Deux
+     * recettes s'accrochent au type `classe` depuis cette story. Si la création de
+     * groupe matérialisait toute recette accrochée, chaque classe naîtrait avec un
+     * partage plat « profs → élèves » que personne n'a demandé — une matérialisation
+     * de masse par surprise, sur les 302 classes d'une instance en place.
+     *
+     * Accrochage = ÉLIGIBILITÉ à l'auto-résolution (le flux manuel n'a plus qu'un
+     * groupe à demander) ; matérialisation automatique = propriété de l'arbre.
+     */
+    public function materializesOnGroupCreation(): bool
+    {
+        return $this->attachedGroupType() !== null && $this->hasTreeSpec();
     }
 
     /**
      * Vérifie qu'une recette PEUT s'accrocher à un type de groupe.
      *
-     * Deux conditions, et elles disent la même chose sous deux angles : la recette
-     * doit porter un ARBRE (sans arbre, il n'y a rien à matérialiser) et être
-     * AUTO-RÉSOLVABLE (aucun rôle en cible désignée). Une recette accrochée est
-     * appelée par la création d'un groupe, pas par un humain devant un formulaire :
-     * tout ce qu'elle ne sait pas déduire, personne ne le lui fournira.
+     * **Une seule condition depuis la story 60.5 : être AUTO-RÉSOLVABLE** (aucun
+     * rôle en cible désignée). L'accrochage dit « à partir d'un groupe de ce type,
+     * cette recette sait trouver toutes ses cibles seule » — c'est vrai d'un arbre
+     * comme d'un partage plat, et c'est ce qui permet au flux « créer depuis une
+     * recette » de ne plus demander qu'UN groupe.
+     *
+     * **Ce que l'accrochage n'implique plus** : la matérialisation automatique à la
+     * création d'un groupe. Elle reste réservée aux recettes d'arbre
+     * ({@see materializesOnGroupCreation()}). Exiger un arbre ICI, comme le faisait
+     * la story 60.2, revenait à confondre les deux — et interdisait de réparer une
+     * recette plate dont les rôles savent pourtant se résoudre.
      *
      * @throws InvalidTreeSpecException
      */
     public function assertAttachable(): void
     {
         $this->assertValidResolutionSpec();
-
-        if (! $this->hasTreeSpec()) {
-            throw InvalidTreeSpecException::makeResolution(sprintf(
-                'la recette « %s » ne porte aucun arbre : elle ne peut pas s\'accrocher à un type de groupe.',
-                (string) $this->key,
-            ));
-        }
 
         foreach ($this->roles() as $role) {
             if (! is_array($role)) {
@@ -668,11 +786,31 @@ class DirectoryTemplate extends Model
                 ));
             }
 
-            $this->assertValidPathTemplate(
-                $path,
-                sprintf('le chemin du nœud « %s »', $path),
-                memberAllowed: $nature === PlanNodeNature::ParMembre,
-            );
+            $isRootNode = $path === GroupNameNormalizer::ROOT_NODE_PATH;
+
+            // Story 60.5 — LE JETON RACINE s'ouvre au vocabulaire de recette.
+            //
+            // Sans lui, la racine d'un arbre n'a aucun octroi exprimable, et le
+            // partage de classe historique — dont la racine porte la traversée de
+            // l'équipe et de la classe — n'est tout simplement pas dicible. Le
+            // jeton reste un JETON : hors de la position racine, « . » demeure
+            // interdit partout (le motif de segment le refuse déjà), et un nœud par
+            // membre ne peut pas l'être — il doit porter le nom du membre.
+            if ($isRootNode) {
+                if ($nature === PlanNodeNature::ParMembre) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le jeton racine « %s » ne peut pas désigner un nœud par membre : la racine d\'un '
+                        . 'arbre est UN dossier, pas un dossier par personne.',
+                        GroupNameNormalizer::ROOT_NODE_PATH,
+                    ));
+                }
+            } else {
+                $this->assertValidPathTemplate(
+                    $path,
+                    sprintf('le chemin du nœud « %s »', $path),
+                    memberAllowed: $nature === PlanNodeNature::ParMembre,
+                );
+            }
 
             $hasMemberPlaceholder = str_contains($path, '{' . self::PLACEHOLDER_MEMBER_LOGIN . '}');
             if ($nature === PlanNodeNature::ParMembre && ! $hasMemberPlaceholder) {
