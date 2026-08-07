@@ -130,12 +130,23 @@ class MaterializeClassTreesCommandTest extends TestCase
     }
 
     /**
-     * **Une classe dont les groupes d'annuaire ne se résolvent pas DÉCLINE**, sans
-     * rien écrire — iso le pré-contrôle de l'arbre historique, qui saute exactement
-     * les mêmes classes.
+     * **Une classe dont les groupes d'annuaire ne se résolvent pas est SAUTÉE — et
+     * rien n'est créé, ni ligne ni dossier.**
+     *
+     * Cette règle a REMPLACÉ la précédente, qui créait quand même la ligne « pour
+     * qu'elle porte la trace du refus ». L'intention était bonne et la mesure sur
+     * instance l'a démentie : 129 des 150 classes d'un parc réel n'ont aucun groupe
+     * d'annuaire résolvable, vestiges d'imports successifs. Le premier passage a
+     * donc créé **301 lignes de partage et 301 dossiers**, dont environ 280
+     * durablement en erreur dans la liste des partages — une trace que personne ne
+     * peut lire, qui masque les vrais défauts, et qui salit l'écran pour toujours.
+     *
+     * Le pré-contrôle passe désormais AVANT toute création, comme celui de l'arbre
+     * historique, qui saute exactement les mêmes classes depuis toujours. Sauté
+     * n'est pas échoué : le code de retour ne s'en émeut pas.
      */
     #[Test]
-    public function a_class_whose_directory_groups_do_not_resolve_declines_without_writing(): void
+    public function a_class_whose_directory_groups_do_not_resolve_is_skipped_without_creating_anything(): void
     {
         Process::fake([
             'getent group *' => Process::result(output: '', errorOutput: '', exitCode: 2),
@@ -145,10 +156,15 @@ class MaterializeClassTreesCommandTest extends TestCase
         UserGroup::create(['name' => 'Classe_Dechet', 'type' => 'classe']);
         $this->seedRecipes();
 
-        $this->artisan('shares:materialize-class-trees')->assertExitCode(1);
+        $this->artisan('shares:materialize-class-trees')
+            ->expectsOutputToContain('1 sautée(s)')
+            ->assertExitCode(0);
 
-        // La LIGNE est créée — elle porte la trace du refus, et l'écran la montre.
-        $this->assertSame(1, NetworkShare::count());
+        // AUCUNE ligne : c'est tout l'objet du changement.
+        $this->assertSame(0, NetworkShare::count());
+
+        // Et aucun dossier : le pré-contrôle passe avant la création.
+        Process::assertNotRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'mkdir'));
 
         // Ce qui n'a JAMAIS été écrit, c'est l'octroi lui-même : aucune commande
         // émise ne nomme un groupe que le serveur ne résout pas. C'est le point

@@ -93,6 +93,18 @@ Nom sans espace ni accent (cf. note #15). Exemple : `TEST6A`.
 3. Réponse HTTP 403 (page d'erreur Laravel).
 4. Logs Laravel : aucune écriture BDD, aucun dispatch ApplyQuotaJob.
 
+> ⛔ **Scénarios 5.1c-8 à 5.1c-13 et 5.1d-5/5.1d-6 : SUSPENDUS depuis le
+> 2026-08-05.** L'onglet « Quotas & FS » a été retiré (décision Henri) : sa grille
+> de quotas par défaut par profil n'appliquait rien à personne — elle écrivait
+> `SystemSetting('quota.defaults')`, clé que la résolution ne lit pas. Il n'existe
+> donc plus d'UI pour les défauts, la période de grâce ni la corbeille. Les valeurs
+> déjà persistées **restent en vigueur** (cron `trash:purge` 02h00 inclus) et
+> restent pilotables en CLI (`php artisan trash:purge`) et en tinker.
+> La **story 5.1e** réinstalle un **défaut global unique** (fin des 4 profils) plus
+> les cartes grâce et corbeille dans l'onglet « Personnels et partagés » — ces
+> scénarios seront réécrits à ce moment-là, pas avant. Ne pas les jouer : ils
+> décrivent une interface qui n'existe plus.
+
 ### Scénario 5.1c-8 — Page `/admin/settings` accessible
 
 1. Se reconnecter en `admin` (server.admin).
@@ -296,6 +308,11 @@ $u->update(['quota_snapshot' => [
 
 ### Scénario 5.1d-5 — Bouton "Purger maintenant" UI
 
+> ⛔ **SUSPENDU depuis le 2026-08-05** — l'onglet « Quotas & FS » qui portait ce
+> bouton a été retiré (cf. encadré du bloc 5.1c). La purge reste jouable en CLI
+> (`php artisan trash:purge`, scénarios 5.1d-3/5.1d-4). Le bouton revient en carte
+> « Corbeille » avec la story 5.1e.
+
 1. Re-créer un dossier vieux : `sudo mkdir /home/trash/manual-test && sudo touch -d '60 days ago' /home/trash/manual-test`.
 2. Aller sur `/admin/settings?tab=quotas-fs` (en tant que `server.admin`).
 3. Section "Corbeille (/home/trash)" — cliquer sur **Purger maintenant**.
@@ -307,6 +324,11 @@ $u->update(['quota_snapshot' => [
      trace l'action.
 
 ### Scénario 5.1d-6 — Planification automatique à 02h00
+
+> ⛔ **Étape 1 SUSPENDUE depuis le 2026-08-05** — le toggle n'a plus d'UI (cf.
+> encadré du bloc 5.1c). Basculer la valeur en tinker pour jouer les étapes 2-5,
+> qui restent valables :
+> `SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => true]);`
 
 1. Activer le toggle dans `/admin/settings → Quotas & FS` :
    `Purge automatique (cron 02h00)` → on.

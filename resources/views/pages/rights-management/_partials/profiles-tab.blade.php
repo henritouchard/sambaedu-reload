@@ -39,8 +39,7 @@
                         Appartenir à l'un de ces groupes attribue automatiquement son profil de droits.
                     </p>
                 </div>
-                <button type="button" class="btn btn-primary btn-sm"
-                    wire:click="openAssignProfileModal">
+                <button type="button" class="btn btn-primary btn-sm" wire:click="openAssignProfileModal">
                     <i class="fa-solid fa-user-plus mr-1"></i>
                     Donner des permissions à un groupe
                 </button>
@@ -50,9 +49,10 @@
                 <div class="text-center py-10 px-4">
                     <div class="text-3xl mb-3 opacity-20"><i class="fa-solid fa-users-rectangle"></i></div>
                     <p class="text-sm text-base-content/60 max-w-lg mx-auto">
-                        Aucun groupe ne porte de permissions. Utilisez
-                        <strong>« Donner des permissions à un groupe »</strong> pour qu'une simple
-                        appartenance suffise à attribuer un profil de droits.
+                        Aucun groupe ne porte de permissions.
+                        <strong>« Donner des permissions à un groupe »</strong> vous permettra d'attribuer un profil de
+                        permissions à un groupe, de sorte qu'une simple
+                        appartenance à ce groupe suffise à octroyer les permissions pour tous ses membres.
                     </p>
                 </div>
             @else
@@ -74,7 +74,8 @@
                                         <div class="font-medium">{{ $carrier['group_label'] }}</div>
                                         <div class="text-xs text-base-content/50 font-mono">
                                             {{ $carrier['group_name'] }}
-                                            <span class="badge badge-ghost badge-xs ml-1">{{ $carrier['group_type'] }}</span>
+                                            <span
+                                                class="badge badge-ghost badge-xs ml-1">{{ $carrier['group_type'] }}</span>
                                         </div>
                                     </td>
                                     <td>
@@ -85,12 +86,14 @@
                                             </a>
                                             <div class="mt-1">
                                                 @if ($carrier['is_seeded'])
-                                                    <span class="badge badge-info badge-xs" title="Profil livré par défaut">
+                                                    <span class="badge badge-info badge-xs"
+                                                        title="Profil livré par défaut">
                                                         <i class="fa-solid fa-lock mr-1"></i> initial
                                                     </span>
                                                 @else
                                                     <span class="badge badge-accent badge-xs">
-                                                        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> personnalisé
+                                                        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>
+                                                        personnalisé
                                                     </span>
                                                 @endif
                                                 <span class="text-xs text-base-content/50 font-mono ml-1">
@@ -102,7 +105,8 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
-                                        <span class="badge badge-ghost badge-sm">{{ $carrier['permissions_count'] }}</span>
+                                        <span
+                                            class="badge badge-ghost badge-sm">{{ $carrier['permissions_count'] }}</span>
                                     </td>
                                     <td class="text-center">
                                         <span class="badge badge-ghost badge-sm">{{ $carrier['users_count'] }}</span>
@@ -155,8 +159,7 @@
                         <thead>
                             <tr>
                                 <th class="w-12">
-                                    <x-molecules.select-all-checkbox class="checkbox-sm"
-                                        :ids="array_column($unattachedProfilesList, 'name')"
+                                    <x-molecules.select-all-checkbox class="checkbox-sm" :ids="array_column($unattachedProfilesList, 'name')"
                                         model="selectedProfiles" />
                                 </th>
                                 <th>Nom</th>
@@ -170,16 +173,16 @@
                                 <tr class="cursor-pointer" wire:key="unattached-{{ $profile['id'] }}"
                                     onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.rights-management.profiles.show', ['id' => $profile['id']]) }}'">
                                     <td class="checkbox-cell p-0">
-                                        <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
-                                            <input type="checkbox"
-                                                class="checkbox checkbox-sm"
-                                                wire:model.live="selectedProfiles"
-                                                value="{{ $profile['name'] }}" />
+                                        <label
+                                            class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
+                                            <input type="checkbox" class="checkbox checkbox-sm"
+                                                wire:model.live="selectedProfiles" value="{{ $profile['name'] }}" />
                                         </label>
                                     </td>
                                     <td>
                                         <div class="font-medium">{{ $profile['label'] }}</div>
-                                        <div class="text-xs text-base-content/50 font-mono">{{ $profile['name'] }}</div>
+                                        <div class="text-xs text-base-content/50 font-mono">{{ $profile['name'] }}
+                                        </div>
                                     </td>
                                     <td>
                                         @if ($profile['is_seeded'])
@@ -195,7 +198,8 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
-                                        <span class="badge badge-ghost badge-sm">{{ $profile['permissions_count'] }}</span>
+                                        <span
+                                            class="badge badge-ghost badge-sm">{{ $profile['permissions_count'] }}</span>
                                     </td>
                                     <td class="text-center">
                                         <span class="badge badge-ghost badge-sm">{{ $profile['users_count'] }}</span>

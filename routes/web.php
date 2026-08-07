@@ -419,11 +419,13 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings');
 
-    // /admin/quotas — Quotas & FS est désormais l'onglet « Quotas & FS » de
-    // /admin/settings/files (décision Henri 2026-07-17, iso migration shares).
-    // `/admin/quotas` redirige vers cet onglet ; le nom `admin.quotas` reste
-    // stable pour les liens et bookmarks existants.
-    Route::redirect('/quotas', '/admin/settings/files?tab=quotas-fs')->name('quotas');
+    // /admin/quotas — l'onglet « Quotas & FS » a été RETIRÉ (décision Henri
+    // 2026-08-05) : sa grille de quotas par défaut par profil n'appliquait rien à
+    // personne (elle écrivait `SystemSetting('quota.defaults')`, clé que la
+    // résolution ne lit pas — cf. story 5.1e, qui réinstallera un défaut GLOBAL en
+    // carte dans « Personnels et partagés »). La route redirige vers la page hôte ;
+    // le nom `admin.quotas` reste stable pour les liens et bookmarks existants.
+    Route::redirect('/quotas', '/admin/settings/files?tab=personnels-partages')->name('quotas');
 
     // /admin/settings/profils-itinerants — Profils itinérants est désormais l'onglet
     // « Profils itinérants » de /admin/settings/files (décision Henri 2026-07-17, iso

@@ -55,7 +55,8 @@ class MaterializeClassTreesCommand extends Command
 {
     protected $signature = 'shares:materialize-class-trees
         {--class= : Nom (ou nom nu) d\'une classe précise ; sinon tous les groupes du type accroché}
-        {--dry-run : Liste ce qui serait matérialisé, sans rien créer ni écrire}';
+        {--dry-run : Liste ce qui serait matérialisé, sans rien créer ni écrire}
+        {--show-skipped : Détaille aussi les classes sautées faute de groupes dans l\'annuaire}';
 
     protected $description = 'Matérialise l\'arbre de classe NEUF (racine dédiée) des groupes existants. '
         . 'N\'écrit JAMAIS dans l\'arbre historique. Codes : 0=ok ; 1=au moins un échec ; 2=aucune recette d\'arbre accrochée.';
@@ -87,6 +88,8 @@ class MaterializeClassTreesCommand extends Command
         $done = 0;
         $skipped = 0;
         $failed = 0;
+        $ignored = 0;
+        $verbose = (bool) $this->option('show-skipped');
 
         foreach ($templates as $template) {
             $type = (string) $template->attachedGroupType();
@@ -149,6 +152,23 @@ class MaterializeClassTreesCommand extends Command
                     continue;
                 }
 
+                // Sautée : l'annuaire ne connaît pas les groupes de cette classe.
+                // Ce n'est pas un échec du geste, c'est un refus de le tenter — et
+                // le distinguer est ce qui rend la sortie lisible sur une instance
+                // qui porte des centaines de classes vestigiales.
+                if ($result['skipped'] ?? false) {
+                    $ignored++;
+                    if ($verbose) {
+                        $this->line(sprintf(
+                            '  <fg=gray>–</> %s — %s',
+                            (string) $group->name,
+                            (string) $result['reason'],
+                        ));
+                    }
+
+                    continue;
+                }
+
                 $failed++;
                 $this->line(sprintf(
                     '  <fg=yellow>!</> %s — %s',
@@ -165,11 +185,18 @@ class MaterializeClassTreesCommand extends Command
         }
 
         $this->newLine();
-        $this->info(sprintf('%d arbre(s) matérialisé(s), %d en échec ou déclinés.', $done, $failed));
+        $this->info(sprintf(
+            '%d arbre(s) matérialisé(s), %d en échec, %d sautée(s) faute de groupes dans l\'annuaire%s.',
+            $done,
+            $failed,
+            $ignored,
+            $ignored > 0 && ! $verbose ? ' (--show-skipped pour les détailler)' : '',
+        ));
 
         Log::info('[shares:materialize-class-trees] terminé', [
             'materialized' => $done,
             'failed' => $failed,
+            'skipped_unknown_groups' => $ignored,
             'class_filter' => $classFilter !== '' ? $classFilter : null,
         ]);
 

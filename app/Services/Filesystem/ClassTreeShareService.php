@@ -133,6 +133,28 @@ class ClassTreeShareService
 
         $plan = app(TreePlanService::class)->planUsing($group, $template);
 
+        // DEUX GROUPES QUI MÈNENT AU MÊME DOSSIER — cas RÉEL, mesuré sur instance.
+        //
+        // Le nom du dossier se dérive du nom du groupe, dépouillé de son préfixe.
+        // Un groupe résiduel littéralement nommé « Classe_3emeA » et le groupe
+        // « 3emeA » produisent donc la MÊME cible. Sans cette garde, la seconde
+        // écriture heurtait l'unicité de la ligne et l'opérateur recevait une
+        // erreur de base de données brute — illisible, et surtout muette sur ce
+        // qu'il faut réparer : la donnée, pas le code.
+        $occupant = NetworkShare::where('directory_name', $plan->rootPath)->first();
+        if ($occupant !== null) {
+            throw new \RuntimeException(sprintf(
+                'le dossier « %s » est déjà celui du partage #%d%s : deux groupes mènent au même '
+                . 'emplacement. Le groupe #%d (« %s ») ne peut donc pas matérialiser son arbre — '
+                . 'vérifiez s\'il ne fait pas doublon avec un groupe résiduel préfixé.',
+                $plan->rootPath,
+                $occupant->id,
+                $occupant->user_group_id !== null ? ' (groupe #' . $occupant->user_group_id . ')' : '',
+                (int) $group->id,
+                (string) $group->name,
+            ));
+        }
+
         $share = new NetworkShare([
             'name' => $this->shareNameFor($group, $plan->rootPath),
             'directory_name' => $plan->rootPath,
@@ -156,14 +178,42 @@ class ClassTreeShareService
      *                        écran ou un observateur : elle est ENFILÉE — la pose
      *                        est quadratique en nombre d'entrées, et le cycle d'une
      *                        requête n'est pas le bon endroit pour l'attendre.
-     * @return array{share:NetworkShare|null,materialized:bool,reason:string|null}
+     * @return array{share:NetworkShare|null,materialized:bool,skipped:bool,reason:string|null}
      */
     public function materialize(UserGroup $group, DirectoryTemplate $template, bool $direct = false): array
     {
+        // SAUTÉE N'EST PAS ÉCHOUÉE, et les confondre rend la sortie illisible.
+        //
+        // Une instance réelle porte des groupes de type « classe » auxquels
+        // l'annuaire ne fait correspondre AUCUN groupe système — vestiges d'import,
+        // classes déchets. Le refus d'écrire une entrée sur un nom inconnu est
+        // correct et voulu ; en faire un échec ne l'est pas. Le chemin historique
+        // les compte à part depuis toujours, avec leur motif ; mesuré sur instance,
+        // les mêler aux vrais échecs noyait DEUX problèmes réels sous trois cents
+        // lignes de bruit. On pose donc le même pré-contrôle, et la même catégorie.
+        // **Le pré-contrôle ne vaut QUE hors requête**, parce qu'il interroge les
+        // bases de noms du serveur : un appel système n'a rien à faire dans le
+        // cycle d'un écran, et la règle vaut ici comme partout ailleurs depuis que
+        // la pose est enfilée. Les écrans et les observateurs enfilent donc sans
+        // sonder ; leur cas est d'ailleurs différent, une classe qu'on vient de
+        // créer voit ses groupes d'annuaire naître avec elle.
+        $missing = $direct ? app(ShareService::class)->unresolvedClassGroups($group) : [];
+        if ($missing !== []) {
+            return [
+                'share' => null,
+                'materialized' => false,
+                'skipped' => true,
+                'reason' => sprintf(
+                    'l\'annuaire ne connaît pas %s — aucun arbre n\'a été créé.',
+                    implode(' ni ', array_map(static fn (string $g): string => '« ' . $g . ' »', $missing)),
+                ),
+            ];
+        }
+
         try {
             $share = $this->ensureShare($group, $template);
         } catch (Throwable $e) {
-            return ['share' => null, 'materialized' => false, 'reason' => $e->getMessage()];
+            return ['share' => null, 'materialized' => false, 'skipped' => false, 'reason' => $e->getMessage()];
         }
 
         $ok = $direct
@@ -173,8 +223,45 @@ class ClassTreeShareService
         return [
             'share' => $share,
             'materialized' => $ok,
-            'reason' => $ok ? null : $this->shares->lastFailure($share),
+            'skipped' => false,
+            // Un rapport dont TOUS les nœuds sont en échec n'a pas de « raison de
+            // préparation » : la préparation a réussi, c'est la pose qui décline.
+            // Aller la chercher dans le rapport évite le « voir la fiche du
+            // partage » qui oblige l'opérateur à quitter sa console pour trois
+            // cents classes.
+            'reason' => $ok ? null : ($this->shares->lastFailure($share) ?? $this->firstNodeReason($share)),
         ];
+    }
+
+    /**
+     * Le premier motif DISTINCT rendu par les nœuds du dernier rapport, borné.
+     *
+     * Les nœuds d'un même arbre déclinent presque toujours pour la même raison ;
+     * répéter cinq fois la même phrase n'apprend rien de plus qu'une fois.
+     */
+    private function firstNodeReason(NetworkShare $share): ?string
+    {
+        $report = $this->shares->lastReport($share);
+        if ($report === null) {
+            return null;
+        }
+
+        $reasons = [];
+        foreach ($report['nodes'] as $node) {
+            $detail = trim((string) ($node['detail'] ?? ''));
+            if ($detail !== '') {
+                $reasons[$detail] = true;
+            }
+        }
+
+        if ($reasons === []) {
+            return null;
+        }
+
+        $first = (string) array_key_first($reasons);
+        $extra = count($reasons) - 1;
+
+        return $extra > 0 ? $first . sprintf(' (+%d autre(s) motif(s))', $extra) : $first;
     }
 
     /**

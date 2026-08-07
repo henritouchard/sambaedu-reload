@@ -40,10 +40,24 @@
         <env name="APP_CONTEXT_CACHE_DRIVER" value="array"/><!-- Story 16.15 : store dédié app_context forcé en array pour les tests -->
         <env name="LOG_CHANNEL" value="null"/>
         <!-- Tests par défaut sur SQLite :memory: (schémas créés manuellement
-             par setUp() des tests). Pour lancer contre Postgres sambaedu_test
-             (nécessaire pour Windows/Wpkg), supprimer ces 2 lignes. -->
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+             par setUp() des tests).
+
+             CES DEUX LIGNES SONT UN DÉFAUT, PAS UNE GARDE. Vérifié : `force`
+             ne l'emporte PAS sur une variable déjà exportée dans le shell, ni
+             sous `artisan test` ni sous `phpunit`. La protection réelle est
+             ailleurs — {@see \Tests\TestCase} refuse de démarrer sur toute base
+             qui n'est ni SQLite ni suffixée `_test`, et fait échouer chaque test
+             avec un message explicite. C'est elle qui tient, pas ceci.
+
+             ⚠️ POUR LANCER CONTRE POSTGRES (nécessaire pour Windows/Wpkg) :
+             retirer ces deux lignes NE MÈNE PAS à une base de test. `DB_DATABASE`
+             est alors hérité du `.env`, donc la base de l'instance — la garde
+             ci-dessus vous arrêtera, mais autant nommer la base explicitement :
+
+                 DB_CONNECTION=pgsql DB_DATABASE=sambaedu_test vendor/bin/phpunit
+        -->
+        <env name="DB_CONNECTION" value="sqlite" force="true"/>
+        <env name="DB_DATABASE" value=":memory:" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
