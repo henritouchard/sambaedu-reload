@@ -10,6 +10,8 @@ use App\Models\UserGroup;
 use App\Services\Filesystem\DirectoryTemplateService;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\NetworkShareValidator;
+use App\Services\Filesystem\Plan\PlanGrant;
+use App\Support\RoleCatalog;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Title;
@@ -473,6 +475,28 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     }
 
     /**
+     * Story 62.4 — LE LIBELLÉ D'UN RÔLE DE RECETTE, désormais dérivé de ses VERBES.
+     *
+     * La recette dit quatre verbes ; l'assignation qui en naîtra n'en connaît que
+     * deux niveaux. L'aperçu montre donc ce que l'administrateur obtiendra
+     * VRAIMENT — le niveau d'assignation — dérivé par exactement la même règle que
+     * la matérialisation ({@see \App\Services\Filesystem\DirectoryTemplateService}) :
+     * est « Modifier » tout ce qui MUTE. Ce n'est pas une interface nouvelle,
+     * c'est le même badge qu'hier, lu dans le vocabulaire d'aujourd'hui.
+     *
+     * @param  array<string, mixed>  $role
+     */
+    private static function roleAccessLabel(array $role): string
+    {
+        $verbs = is_array($role['verbs'] ?? null) ? $role['verbs'] : [];
+        $access = array_intersect(PlanGrant::MUTATION_VERBS, $verbs) !== []
+            ? \App\Models\NetworkShareAssignable::ACCESS_RW
+            : \App\Models\NetworkShareAssignable::ACCESS_RO;
+
+        return \App\Models\NetworkShareAssignable::accessLabel($access);
+    }
+
+    /**
      * Aperçu des assignations qui seront créées (cible → maille → access), AVANT
      * matérialisation.
      *
@@ -495,7 +519,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         foreach ($template->roles() as $role) {
             $roleKey = (string) ($role['key'] ?? '');
             $maille = (string) ($role['maille'] ?? '');
-            $access = \App\Models\NetworkShareAssignable::accessLabel((string) ($role['access'] ?? 'ro'));
+            $access = self::roleAccessLabel($role);
             $mailleLabel = $maille === User::class ? 'Utilisateur' : "Groupe d'utilisateurs";
 
             $byId = collect($candidates[$roleKey] ?? [])->keyBy('id');
@@ -652,7 +676,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
         foreach ($template->roles() as $role) {
             $roleKey = (string) ($role['key'] ?? '');
-            $access = \App\Models\NetworkShareAssignable::accessLabel((string) ($role['access'] ?? 'ro'));
+            $access = self::roleAccessLabel($role);
 
             try {
                 $resolution = $template->resolutionOf($role);
@@ -665,12 +689,24 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 RoleResolutionStrategy::EdgeRole => sprintf(
                     '%s — %s',
                     $groupLabel,
+                    // Story 62.3 — l'aperçu d'audience lit le VOCABULAIRE DÉCLARÉ
+                    // du type de groupe, plus un `match` local.
+                    //
+                    // Ce `match` était le dernier survivant du dépôt, et il
+                    // mentait deux fois : « membres » était son `default`, donc un
+                    // rôle personnalisé (`tuteur`, créé au catalogue de 62.1) y
+                    // était rendu « membres » comme n'importe quoi d'autre ; et il
+                    // ignorait le type du groupe alors que `$group` est juste
+                    // au-dessus. Une recette accrochée à une classe annonçait
+                    // « encadrants » là où tous les autres écrans disaient
+                    // « Enseignant ».
+                    //
+                    // DIVERGENCE NOMMÉE ET ASSUMÉE : l'aperçu affiche désormais
+                    // « 3A — Enseignant » au lieu de « 3A — encadrants ». C'est le
+                    // libellé que l'administrateur voit partout ailleurs, et celui
+                    // qu'il peut renommer.
                     implode(', ', array_map(
-                        static fn (string $edgeRole): string => match ($edgeRole) {
-                            'manager' => 'encadrants',
-                            'owner' => 'responsables',
-                            default => 'membres',
-                        },
+                        fn (string $edgeRole): string => RoleCatalog::label($group->type, $edgeRole),
                         $resolution['edge_roles'],
                     )),
                 ),
@@ -1218,8 +1254,9 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                         </span>
                                     @endif
                                 </span>
-                                <span class="label-text-alt badge badge-sm {{ ($role['access'] ?? 'ro') === 'rw' ? 'badge-success' : 'badge-info' }}">
-                                    {{ \App\Models\NetworkShareAssignable::accessLabel((string) ($role['access'] ?? 'ro')) }}
+                                @php($roleMutates = array_intersect(\App\Services\Filesystem\Plan\PlanGrant::MUTATION_VERBS, (array) ($role['verbs'] ?? [])) !== [])
+                                <span class="label-text-alt badge badge-sm {{ $roleMutates ? 'badge-success' : 'badge-info' }}">
+                                    {{ \App\Models\NetworkShareAssignable::accessLabel($roleMutates ? 'rw' : 'ro') }}
                                 </span>
                             </label>
                             <select wire:model.live="roleSelections.{{ $roleKey }}" class="select select-bordered select-sm"

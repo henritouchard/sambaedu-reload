@@ -64,6 +64,16 @@ class GroupShowMembersTabsTest extends TestCase
                 $table->timestamps();
             });
         }
+        // Story 62.3 — les libellés de rôle par TYPE de groupe (« Élève »,
+        // « Enseignant », « Professeur principal ») ÉTAIENT une constante de code ;
+        // ils sont désormais des DÉCLARATIONS en base, posées par la migration.
+        // Ce fichier travaille sur un schéma FABRIQUÉ À LA MAIN (patron des tests
+        // de groupes) : il doit donc porter cette table comme il porte déjà
+        // `quota_rules`, faute de quoi la résolution retombe — correctement — sur
+        // les libellés génériques, et les assertions de cette suite mesureraient le
+        // repli au lieu du vocabulaire scolaire qu'elles épinglent depuis 42.3.
+        $this->createGroupTypeRoleDeclarations();
+
         $this->app->bind(ShareService::class, function () {
             $mock = Mockery::mock(ShareService::class);
             $mock->shouldReceive('getStatus')->andReturn(['exists' => false]);
@@ -86,6 +96,39 @@ class GroupShowMembersTabsTest extends TestCase
         parent::tearDown();
     }
 
+
+    /**
+     * La table des déclarations et les trois lignes de `classe`, telles que la
+     * migration 62.3 les pose.
+     */
+    private function createGroupTypeRoleDeclarations(): void
+    {
+        if (! Schema::hasTable('group_type_roles')) {
+            Schema::create('group_type_roles', function (Blueprint $table): void {
+                $table->id();
+                $table->string('group_type_key', 50);
+                $table->string('group_role_key', 20);
+                $table->string('label')->nullable();
+                $table->timestamps();
+                $table->unique(['group_type_key', 'group_role_key']);
+            });
+        }
+
+        foreach (
+            [
+                ['classe', 'member', 'Élève'],
+                ['classe', 'manager', 'Enseignant'],
+                ['classe', 'owner', 'Professeur principal'],
+            ] as [$typeKey, $roleKey, $label]
+        ) {
+            \Illuminate\Support\Facades\DB::table('group_type_roles')->updateOrInsert(
+                ['group_type_key' => $typeKey, 'group_role_key' => $roleKey],
+                ['label' => $label, 'created_at' => now(), 'updated_at' => now()],
+            );
+        }
+
+        \App\Support\RoleCatalog::flush();
+    }
 
     private function makeAdmin(string $login = 'manager'): User
     {

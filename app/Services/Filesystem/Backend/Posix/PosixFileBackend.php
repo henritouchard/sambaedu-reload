@@ -14,6 +14,7 @@ use App\Services\Filesystem\Backend\NodeReconciliation;
 use App\Services\Filesystem\Backend\ObservedGrant;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -42,11 +43,30 @@ use Illuminate\Support\Facades\Cache;
  * même si toutes ses entrées sont posées — un succès partiel ne masque jamais un
  * échec ; un octroi que SE5 ne sait pas projeter rend le nœud en dette même si le
  * dossier vient d'être créé — la dette prime sur « j'ai changé quelque chose ».
- * `non_exprimable` n'est jamais produit ici : POSIX n'a aucune limite de MODÈLE
- * dans cette story (l'absence de plafond est une dette de notre code, pas une
- * limite du système de fichiers), et l'écrire serait une contre-vérité.
- * `en_attente` non plus : ce backend est synchrone — c'est l'orchestrateur qui,
- * au-dessus, dit « engagé, pas achevé » quand il enfile la réconciliation.
+ * `en_attente` n'est jamais produit ici : ce backend est synchrone — c'est
+ * l'orchestrateur qui, au-dessus, dit « engagé, pas achevé » quand il enfile la
+ * réconciliation.
+ *
+ * **`non_exprimable` EST produit ici depuis la story 62.4.** La phrase inverse a
+ * figuré à cette place tant que les octrois étaient binaires ; elle est devenue
+ * FAUSSE le jour où ils sont devenus combinables, et une garantie périmée dans un
+ * docblock est pire qu'une garantie absente. Deux cas, tous deux des limites de
+ * MODÈLE — permanentes, propriété du système de fichiers, jamais une dette de
+ * notre code :
+ *  - un octroi qui demande de SUPPRIMER sans pouvoir CRÉER : les deux verbes
+ *    passent par le même levier, et l'accorder donnerait la création, un verbe que
+ *    la recette n'écrit pas. Le verbe n'est pas rendu, le reste l'est, le nœud le
+ *    dit ;
+ *  - un octroi « déposer sans effacer » posé sur un nœud où un AUTRE octroi actif
+ *    porte la suppression : la restriction qui approcherait la nuance retirerait à
+ *    celui-là l'effacement du travail des autres. On ne la pose pas, et là encore
+ *    le nœud le dit.
+ *
+ * Aucun des deux ne se confond avec `non_implemente`, qui reste réservé à ce que
+ * le système SAIT faire et que SE5 ne pilote pas : le plafond de zone, et les rôles
+ * d'arête que la projection de sujets ne sait pas encore rendre. Un test aligne les
+ * deux CÔTE À CÔTE, précisément parce que les écraser l'un sur l'autre est la
+ * simplification la plus tentante du dépôt.
  *
  * ---------------------------------------------------------------------------
  * **L'IDEMPOTENCE EST DEVENUE VRAIE, ET C'EST LE SEUL CHANGEMENT DE COMPORTEMENT.**
@@ -104,11 +124,24 @@ final class PosixFileBackend implements FileBackend
      */
     private const STRUCTURAL_NAMED = ['domain\040admins', 'domain admins'];
 
+    /**
+     * Story 62.5 — la forme CANONIQUE d'un couloir d'accès dérivé, telle qu'elle se
+     * relit.
+     *
+     * Elle est ici, et surtout PAS dans la table de reprojection {@see verbsOf()} :
+     * un couloir n'est pas un verbe, aucune observation ne sait le dire
+     * ({@see \App\Services\Filesystem\Backend\ObservedGrant} valide contre le
+     * vocabulaire fermé du plan), et l'ajouter à la table percerait la ligne que la
+     * story 62.4 a fermée à dessein. Un couloir se FILTRE, il ne se traduit pas.
+     */
+    private const TRAVERSAL_MODE = '--x';
+
     public function __construct(
         private readonly PosixPathGuard $guard,
         private readonly PosixAclCompiler $compiler,
         private readonly PosixSubjectProjector $projector,
         private readonly PosixExecutor $executor,
+        private readonly PosixTraversalPlanner $traversalPlanner = new PosixTraversalPlanner(),
     ) {
     }
 
@@ -154,7 +187,11 @@ final class PosixFileBackend implements FileBackend
             );
         }
 
-        $compiled = $this->compiler->compile($node);
+        // Story 62.5 — les COULOIRS d'accès dérivés de ce nœud, calculés par le
+        // planificateur et par lui seul. La relecture appelle le MÊME calcul : deux
+        // dérivations qui divergeraient donneraient soit une repose à chaque
+        // passage, soit une dérive que personne ne verrait.
+        $compiled = $this->compiler->compile($node, $this->traversalPlanner->forNode($plan, $node));
 
         // Garde-fou d'échelle : le nœud entier est refusé, aucun geste n'est tenté.
         if ($compiled->isBlocked()) {
@@ -177,7 +214,12 @@ final class PosixFileBackend implements FileBackend
             $created = true;
         }
 
-        if (! $created && $this->isAlreadyConform($path, $compiled)) {
+        // L'état effectif de TÊTE, lu UNE fois : il sert à la fois à décider de la
+        // conformité et à savoir s'il reste une restriction de suppression à
+        // retirer. Le relire deux fois donnerait deux vérités possibles.
+        $effective = $created ? null : $this->readState($path);
+
+        if ($effective !== null && $this->matches($effective, $compiled)) {
             $outcomes[] = FileBackendOutcome::Conforme;
 
             return $this->collapse($node->path, $outcomes, $details);
@@ -193,15 +235,49 @@ final class PosixFileBackend implements FileBackend
 
         $failed = 0;
         $firstError = '';
-        foreach ($compiled->acls as $acl) {
-            $applied = $this->executor->applyAcl($path, $acl);
+        $record = function (PosixCommandOutcome $applied) use (&$failed, &$firstError): void {
             if (! $applied->ok) {
                 $failed++;
                 if ($firstError === '') {
                     $firstError = $this->trim($applied->error);
                 }
             }
+        };
+
+        if ($compiled->isDifferentiated()) {
+            // Story 62.4 — dossiers et fichiers n'attendent pas la même chose : on
+            // pose en DEUX passages ciblés. Un passage unique aurait forcément
+            // accordé un verbe de trop d'un côté ou de l'autre.
+            foreach ($compiled->acls as $acl) {
+                $record($this->executor->applyAclToDirectories($path, $acl));
+            }
+            foreach ($compiled->fileAcls as $acl) {
+                $record($this->executor->applyAclToFiles($path, $acl));
+            }
+        } else {
+            foreach ($compiled->acls as $acl) {
+                $record($this->executor->applyAcl($path, $acl));
+            }
         }
+
+        // Story 62.5 — LES COULOIRS, POSÉS EN DERNIER ET SUR LA TÊTE SEULE.
+        //
+        // En dernier parce que la purge et les poses de nœud viennent d'écrire tout
+        // le reste ; sur la tête seule parce qu'un couloir est un attribut de CE
+        // répertoire — le diffuser plus bas donnerait la traversée à du contenu que
+        // le plan ne gouverne même pas.
+        foreach ($compiled->traversalAcls as $acl) {
+            $record($this->executor->applyAclToHead($path, $acl));
+        }
+
+        // La restriction de suppression est un mode du DOSSIER : elle se pose (ou
+        // se retire) à part, et seulement quand l'état voulu diffère du constaté.
+        if ($compiled->restrictsDeletion) {
+            $record($this->executor->restrictDeletionToOwner($path));
+        } elseif ($effective !== null && $effective['restricted']) {
+            $record($this->executor->releaseDeletionRestriction($path));
+        }
+
         if ($failed > 0) {
             $outcomes[] = FileBackendOutcome::Echec;
             $details[] = sprintf('%d droit(s) n\'ont pas pu être posés : %s', $failed, $firstError);
@@ -221,24 +297,76 @@ final class PosixFileBackend implements FileBackend
     }
 
     /**
-     * L'état effectif du répertoire de TÊTE est-il déjà celui que le plan décrit ?
+     * L'état effectif du répertoire de TÊTE, ou `null` si on n'a pas pu le lire.
      *
-     * La comparaison est SÉMANTIQUE : la forme d'entrée abrégée et la forme de
-     * sortie canonique sont ramenées l'une à l'autre avant d'être comparées, sans
-     * quoi un état parfaitement conforme se lirait comme une dérive à chaque
-     * passage. Une lecture en échec vaut « pas conforme » — on préfère réécrire un
-     * état déjà bon que de déclarer conforme ce qu'on n'a pas pu lire.
+     * Une lecture en échec vaut « je ne sais pas », et « je ne sais pas » n'est
+     * jamais « conforme » : on préfère réécrire un état déjà bon que de déclarer
+     * conforme ce qu'on n'a pas pu lire.
+     *
+     * @return array{acls: list<string>, restricted: bool}|null
      */
-    private function isAlreadyConform(string $path, CompiledNodeAcl $compiled): bool
+    private function readState(string $path): ?array
     {
         $read = $this->executor->readAcl($path);
         if (! $read->ok) {
-            return false;
+            return null;
         }
 
-        $effective = AclFormat::normalizeSet(preg_split('/\R/', $read->output) ?: []);
+        return [
+            'acls' => AclFormat::normalizeSet(preg_split('/\R/', $read->output) ?: []),
+            'restricted' => self::readsAsRestricted($read->output),
+        ];
+    }
 
-        return $effective === AclFormat::normalizeSet($compiled->acls);
+    /**
+     * L'état lu est-il déjà celui que le plan décrit ?
+     *
+     * La comparaison des entrées est SÉMANTIQUE : la forme d'entrée abrégée et la
+     * forme de sortie canonique sont ramenées l'une à l'autre avant d'être
+     * comparées, sans quoi un état parfaitement conforme se lirait comme une dérive
+     * à chaque passage.
+     *
+     * **La restriction de suppression entre dans la comparaison, et il le fallait.**
+     * Sans elle, un nœud qui la demande se serait relu « conforme » avant qu'elle
+     * soit posée — ou, l'ayant posée, se serait vu la reposer à chaque passage :
+     * dans les deux cas l'idempotence promise par le contrat aurait été fausse.
+     *
+     * **Story 62.5 — les COULOIRS aussi, et pour exactement la même raison.** Ils
+     * sont dans l'état de tête relu ; les omettre de l'ensemble comparé aurait fait
+     * relire « dérivé » un nœud parfaitement conforme, donc reposer à chaque
+     * passage. Et la réciproque tient toute seule : un couloir devenu caduc — l'octroi
+     * profond a disparu — n'est plus attendu, l'ensemble diffère, et la purge qui
+     * ouvre la repose l'emporte.
+     *
+     * @param  array{acls: list<string>, restricted: bool}  $effective
+     */
+    private function matches(array $effective, CompiledNodeAcl $compiled): bool
+    {
+        return $effective['acls'] === AclFormat::normalizeSet($compiled->headAcls())
+            && $effective['restricted'] === $compiled->restrictsDeletion;
+    }
+
+    /**
+     * La restriction de suppression est-elle posée, d'après l'EN-TÊTE de la
+     * relecture ?
+     *
+     * C'est le seul endroit où l'outil la dit — et c'est exactement pour cela que
+     * l'option qui supprimait l'en-tête a été retirée de la commande de lecture.
+     * L'en-tête n'est émis que si un drapeau est effectivement posé : son absence
+     * est donc une réponse, pas une ignorance.
+     */
+    private static function readsAsRestricted(string $raw): bool
+    {
+        foreach (preg_split('/\R/', $raw) ?: [] as $line) {
+            $line = trim($line);
+            if (! str_starts_with($line, '# flags:')) {
+                continue;
+            }
+
+            return str_contains(substr($line, strlen('# flags:')), 't');
+        }
+
+        return false;
     }
 
     // =========================================================================
@@ -373,9 +501,11 @@ final class PosixFileBackend implements FileBackend
      * en nombre et sans nom système, et la comparaison la traitera comme un écart.
      *
      * **Une entrée VIDE est une observation, pas une absence.** Une entrée présente
-     * sans aucun droit se relit en accès « aucun » — c'est la forme matérialisée
-     * d'un octroi suspendu, et la confondre avec l'absence d'entrée referait au
-     * niveau du vocabulaire l'erreur que le modèle a démontée.
+     * sans aucun droit se relit en LISTE DE VERBES VIDE — c'est la forme
+     * matérialisée d'un octroi suspendu, et la confondre avec l'absence d'entrée
+     * referait au niveau du vocabulaire l'erreur que le modèle a démontée. Le plan,
+     * lui, ne dit jamais « aucun » : un octroi y porte toujours au moins un verbe.
+     * L'asymétrie est voulue, et c'est elle qui rend la suspension observable.
      *
      * **Le plafond n'est pas regardé** (`plafondObserve = false` partout) : SE5 ne
      * pilote pas les plafonds de zone, la story qui le ferait est suspendue. Dette
@@ -420,6 +550,18 @@ final class PosixFileBackend implements FileBackend
 
         $grants = [];
         $unmapped = 0;
+        $restricted = self::readsAsRestricted($read->output);
+
+        // Story 62.5 — les couloirs ATTENDUS ici, par le MÊME planificateur que la
+        // pose. Ils ne sont PAS des octrois observés : le plan n'attend rien de ces
+        // sujets sur ce nœud, et les compter en ferait des « entrées en trop » à
+        // chaque comparaison — un bruit de dérive perpétuel sur chaque instance.
+        /** @var array<string, PosixTraversal> $expectedTraversals */
+        $expectedTraversals = [];
+        foreach ($this->traversalPlanner->forNode($plan, $node) as $traversal) {
+            $expectedTraversals[$traversal->key()] = $traversal;
+        }
+        $seenTraversals = [];
 
         foreach (AclFormat::parseEntries($read->output) as $entry) {
             // Les miroirs d'héritage ne sont pas des octrois : ils décrivent ce
@@ -439,16 +581,35 @@ final class PosixFileBackend implements FileBackend
                 continue;
             }
 
-            $access = $this->accessOf($entry['mode']);
-            if ($access === null) {
+            // Une entrée de traversée ATTENDUE est STRUCTURELLE au même titre que le
+            // jeu de base : elle appartient au contrat du répertoire, pas à son
+            // audience. Le filtre porte sur le SUJET ATTENDU **et** sur la forme
+            // exacte du couloir — une traversée étrangère, ou un couloir attendu
+            // écrit autrement, reste un écart. Sans cette précision, « tout ce qui
+            // ressemble à un couloir » deviendrait absous.
+            if (AclFormat::normalizeMode($entry['mode']) === self::TRAVERSAL_MODE) {
+                $subject = $this->subjectOf($type, $qualifier, $index);
+                $key = $subject instanceof PlanSubject ? $subject->sortKey() : null;
+
+                if ($key !== null && isset($expectedTraversals[$key])) {
+                    $seenTraversals[$key] = true;
+
+                    continue;
+                }
+
                 $unmapped++;
 
                 continue;
             }
 
-            $subject = $type === 'user'
-                ? $this->projector->subjectForLogin(AclFormat::unescape($qualifier), $index['logins'])
-                : ($index['groups'][strtolower(AclFormat::unescape($qualifier))] ?? null);
+            $verbs = $this->verbsOf($entry['mode'], $restricted);
+            if ($verbs === null) {
+                $unmapped++;
+
+                continue;
+            }
+
+            $subject = $this->subjectOf($type, $qualifier, $index);
 
             if (! $subject instanceof PlanSubject) {
                 $unmapped++;
@@ -456,7 +617,24 @@ final class PosixFileBackend implements FileBackend
                 continue;
             }
 
-            $grants[] = new ObservedGrant($subject, $access);
+            $grants[] = new ObservedGrant($subject, $verbs);
+        }
+
+        $missing = array_values(array_filter(
+            $expectedTraversals,
+            static fn (PosixTraversal $t): bool => ! isset($seenTraversals[$t->key()]),
+        ));
+
+        $details = [];
+        if ($unmapped > 0) {
+            $details[] = sprintf(
+                '%d entrée(s) relue(s) ne correspondent à aucune identité connue de SE5 : elles sont '
+                . 'comptées comme écart, pas ignorées.',
+                $unmapped,
+            );
+        }
+        if ($missing !== []) {
+            $details[] = self::missingTraversalDetail($missing);
         }
 
         return NodeObservation::observed(
@@ -464,34 +642,128 @@ final class PosixFileBackend implements FileBackend
             $grants,
             null,
             false,
-            $unmapped > 0
-                ? sprintf(
-                    '%d entrée(s) relue(s) ne correspondent à aucune identité connue de SE5 : elles sont '
-                    . 'comptées comme écart, pas ignorées.',
-                    $unmapped,
-                )
-                : null,
+            $details === [] ? null : implode(' ', $details),
         );
     }
 
     /**
-     * Niveau d'accès de plan d'un mode relu.
+     * Le sujet de plan d'une entrée relue, ou `null` si rien de connu ne lui
+     * correspond.
      *
-     * Un mode entièrement vide se dit « aucun » — c'est un octroi suspendu
-     * matérialisé, pas une absence. Un mode qui ne se réduit ni à `ro`, ni à `rw`,
-     * ni au vide (l'exécution seule, par exemple) n'est PAS traduit : il serait
-     * faux de le ramener à l'un des trois, et le compter en écart est la seule
-     * réponse honnête.
+     * Extrait de la boucle de relecture par la story 62.5 : elle a désormais DEUX
+     * endroits qui doivent traduire un qualifier (l'octroi observé, le couloir
+     * attendu), et deux traductions qui divergeraient feraient qu'une même entrée
+     * serait reconnue d'un côté et comptée en écart de l'autre.
+     *
+     * @param  array{groups: array<string, PlanSubject>, logins: array<string, PlanSubject>}  $index
      */
-    private function accessOf(string $mode): ?string
+    private function subjectOf(string $type, string $qualifier, array $index): ?PlanSubject
     {
-        $normalized = AclFormat::normalizeMode($mode);
+        return $type === 'user'
+            ? $this->projector->subjectForLogin(AclFormat::unescape($qualifier), $index['logins'])
+            : ($index['groups'][strtolower(AclFormat::unescape($qualifier))] ?? null);
+    }
 
-        if ($normalized === '---') {
-            return ObservedGrant::ACCESS_NONE;
+    /**
+     * Story 62.5 — la phrase d'un COULOIR ATTENDU QUI MANQUE, en vocabulaire de
+     * plan.
+     *
+     * Elle ne dit ni mode, ni bit, ni commande : elle dit qu'un passage manque, vers
+     * combien de dossiers plus profonds, et pour quels rôles. C'est ce qui suffit à
+     * l'administrateur — et c'est ce `detail` non vide qui fait classer le nœud en
+     * ÉCART par le comparateur d'état, sans qu'une seule de ses lignes ait eu besoin
+     * de changer.
+     *
+     * @param  list<PosixTraversal>  $missing
+     */
+    private static function missingTraversalDetail(array $missing): string
+    {
+        $roles = [];
+        $paths = [];
+        foreach ($missing as $traversal) {
+            foreach ($traversal->roleKeys as $role) {
+                $roles[$role] = true;
+            }
+            foreach ($traversal->nodePaths as $path) {
+                $paths[$path] = true;
+            }
         }
+        $roleNames = array_keys($roles);
+        sort($roleNames, SORT_STRING);
 
-        return AclFormat::modeToAccess($normalized);
+        return sprintf(
+            'le couloir d\'accès dérivé vers %d dossier(s) plus profond(s) n\'est pas en place pour %d '
+            . 'rôle(s) (%s) : sans lui, ce qui leur est accordé plus bas reste hors d\'atteinte.',
+            count($paths),
+            count($missing),
+            implode(', ', array_map(static fn (string $r): string => '« ' . $r . ' »', $roleNames)),
+        );
+    }
+
+    /**
+     * Story 62.4 — LES VERBES qu'un mode relu représente, ou `null` si ce mode ne
+     * se réduit à aucune combinaison honnête.
+     *
+     * **La table est FERMÉE, et courte, parce que la lecture est celle du
+     * répertoire de TÊTE.** Le mode d'un dossier dit ce qu'on peut y faire ; il ne
+     * dit rien de ce qu'on peut faire au CONTENU des fichiers qu'il contient. Une
+     * relecture qui prétendrait distinguer « lire » de « lire + éditer » depuis le
+     * seul dossier inventerait la moitié de sa réponse.
+     *
+     *  | mode relu | restriction | verbes rendus                      |
+     *  |-----------|-------------|------------------------------------|
+     *  | vide      | —           | AUCUN (suspension matérialisée)    |
+     *  | lecture   | —           | lire                               |
+     *  | complet   | non         | les quatre                         |
+     *  | complet   | oui         | lire, éditer, créer                |
+     *  | autre     | —           | `null` — compté en ÉCART           |
+     *
+     * **Ce que cette table ne sait pas faire, et qu'elle ne fait donc pas
+     * semblant de faire.** Les combinaisons où fichiers et dossiers reçoivent des
+     * niveaux différents (« lire + éditer », « lire + créer + supprimer »…) se
+     * relisent ici de façon APPROCHÉE, et la comparaison les rapporte donc en
+     * ÉCART — jamais en conforme. C'est le comportement voulu : un écart de trop
+     * se voit et se discute, une conformité de trop est une fuite silencieuse. La
+     * relecture fine du contenu demanderait une descente récursive que ce backend
+     * ne fait pas, par la même décision qu'en 60.4.
+     *
+     * **Story 62.5 — la table N'A PAS BOUGÉ, et c'est un choix.** Les couloirs
+     * d'accès dérivés produisent une forme d'entrée que cette table rend `null`,
+     * donc « écart ». La tentation était d'y ajouter une ligne ; elle est refusée :
+     * un couloir n'exprime AUCUN verbe, et le déclarer comme tel ferait remonter en
+     * observation quelque chose que le plan n'a jamais écrit. Les couloirs ATTENDUS
+     * sont donc écartés en amont, comme les entrées structurelles ; ceux qui ne sont
+     * pas attendus tombent ici, en écart — exactement comme avant.
+     *
+     * **Sur une instance en place, aucun bruit** : les recettes migrées ne portent
+     * que « lire » seul et les quatre verbes, deux lignes de la table qui se
+     * relisent EXACTEMENT. Les combinaisons approchées n'entrent qu'avec l'écran de
+     * composition (62.6), qui saura griser ce qu'un backend ne sait pas rendre.
+     *
+     * **Review 62.4 #3 — la reprojection peut SUR-DÉCLARER « éditer ».** Un dossier
+     * en `rwx` avec restriction se relit `{lire, editer, creer}`, que l'octroi ait
+     * demandé `editer` ou non : le mode d'un dossier ne dit rien du droit d'écrire
+     * dans les fichiers qu'il contient, et cette relecture porte sur le répertoire
+     * de TÊTE. Un octroi `{lire, creer}` sera donc rapporté en écart avec « éditer
+     * observé en trop » — écart réel (le désir n'est pas rendu tel quel), mais dont
+     * le DÉTAIL nomme un droit qui n'existe sur aucun fichier. Conséquence pour
+     * 62.6, qui misera sur l'écran de dérive : ne pas présenter ce détail comme la
+     * preuve qu'un droit a été accordé. Aucune recette d'aujourd'hui n'atteint ce
+     * cas — les deux combinaisons produites par la migration Q3 ferment la boucle
+     * exactement.
+     *
+     * @return list<string>|null
+     */
+    private function verbsOf(string $mode, bool $restricted): ?array
+    {
+        return match (AclFormat::normalizeMode($mode)) {
+            '---' => [],
+            'r-x' => [PlanGrant::VERB_LIRE],
+            'rwx' => $restricted
+                ? [PlanGrant::VERB_LIRE, PlanGrant::VERB_EDITER, PlanGrant::VERB_CREER]
+                : PlanGrant::VERBS,
+            default => null,
+        };
     }
 
     // =========================================================================

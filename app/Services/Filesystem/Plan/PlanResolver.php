@@ -207,7 +207,10 @@ final class PlanResolver
         foreach ($grantSpecs as $grantSpec) {
             /** @var array<string, mixed> $grantSpec */
             $role = (string) $grantSpec['role'];
-            $access = (string) $grantSpec['access'];
+            // Story 62.4 — la recette dit une LISTE de verbes. Aucune tolérance
+            // pour l'ancienne clé scalaire : une recette non migrée est refusée à
+            // la validation, elle n'arrive jamais jusqu'ici.
+            $verbs = (array) ($grantSpec['verbs'] ?? []);
             $suspendable = (bool) ($grantSpec['suspendable'] ?? false);
 
             if ($role === DirectoryTemplate::TREE_ROLE_MEMBER) {
@@ -223,7 +226,7 @@ final class PlanResolver
             }
 
             foreach ($subjects as $subject) {
-                $grant = new PlanGrant($role, $subject, $access, $suspendable);
+                $grant = new PlanGrant($role, $subject, $verbs, $suspendable);
 
                 // Suspendre, ce n'est ni retirer l'octroi ni supprimer le nœud :
                 // l'accès reste écrit, il est seulement vidé.

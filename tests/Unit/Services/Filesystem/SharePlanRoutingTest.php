@@ -205,7 +205,7 @@ class SharePlanRoutingTest extends TestCase
         ));
 
         $this->assertCount(1, $onTheClass, 'une seule entrée par sujet : un doublon empêcherait toute convergence');
-        $this->assertSame(PlanGrant::ACCESS_RW, $onTheClass[0]->access, 'union au plus permissif');
+        $this->assertSame(PlanGrant::VERBS, $onTheClass[0]->verbs, 'union des ENSEMBLES de verbes, au plus permissif');
     }
 
     /** Sans assignation, la surcharge ne touche à rien. */

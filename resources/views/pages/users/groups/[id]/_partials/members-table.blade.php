@@ -7,11 +7,19 @@
      par héritage de scope Blade (@include partage get_defined_vars()) — il
      gate l'option « Prof principal » (D3). --}}
 @php($withHeadTeacher = $withHeadTeacher ?? false)
-{{-- Story 60.2 — libellés du rôle d'arête par TYPE de groupe, depuis la table
-     canonique : « Enseignant » en classe, « Porteur » en projet, « Référent » en
-     équipe, repli générique ailleurs. Les VALEURS envoyées au serveur restent
-     `member|manager|owner`. --}}
-@php($edgeRoleOptions = \App\Support\EdgeRoleLabels::options($type ?? null))
+{{-- Story 60.2 → 62.3 — libellés du rôle d'arête par TYPE de groupe, depuis les
+     DÉCLARATIONS administrables : « Enseignant » en classe, « Porteur » en projet,
+     « Référent » en équipe, repli sur le catalogue ailleurs. Les VALEURS envoyées
+     au serveur restent des clés de rôle (`member|manager|owner`, et tout rôle du
+     catalogue depuis 62.1). --}}
+@php($edgeRoleOptions = \App\Support\RoleCatalog::options($type ?? null))
+{{-- Story 62.3 — l'INVENTAIRE du select est de la donnée, plus trois `<option>`
+     figées. Pour un type déclaré (`classe`, `projet`, `equipe` seedés), le rendu
+     est IDENTIQUE à celui d'avant. Pour un type SANS déclaration, tout le
+     catalogue devient proposable : c'est l'aboutissement assumé de 62.1 — un rôle
+     « Tuteur » créé à l'écran était jusqu'ici INATTRIBUABLE faute d'`<option>`
+     pour le porter. --}}
+@php($assignableEdgeRoles = \App\Support\RoleCatalog::assignableKeys($type ?? null))
 <div class="overflow-x-auto">
     <table class="table table-zebra">
         <thead>
@@ -45,10 +53,25 @@
                             <select wire:key="member-role-{{ $member['id'] }}"
                                 wire:change="updateMemberRole({{ $member['id'] }}, $event.target.value)"
                                 class="select select-bordered select-sm">
-                                <option value="member" @selected($member['edge_role'] === 'member')>{{ $edgeRoleOptions['member'] }}</option>
-                                <option value="manager" @selected($member['edge_role'] === 'manager')>{{ $edgeRoleOptions['manager'] }}</option>
-                                @if (($type ?? null) === 'classe' || $member['edge_role'] === 'owner')
-                                    <option value="owner" @selected($member['edge_role'] === 'owner')>{{ $edgeRoleOptions['owner'] }}</option>
+                                @foreach ($assignableEdgeRoles as $assignableRole)
+                                    {{-- D3 en LITTÉRAL, conservée : « Professeur
+                                         principal » n'est proposé que sur une classe.
+                                         Elle survit à la contrainte de déclaration
+                                         parce qu'un type SANS déclaration retombe sur
+                                         TOUT le catalogue, `owner` compris — sans elle,
+                                         un `cours` en proposerait un. --}}
+                                    @if ($assignableRole !== 'owner' || ($type ?? null) === 'classe' || $member['edge_role'] === 'owner')
+                                        <option value="{{ $assignableRole }}" @selected($member['edge_role'] === $assignableRole)>{{ $edgeRoleOptions[$assignableRole] ?? $assignableRole }}</option>
+                                    @endif
+                                @endforeach
+                                {{-- La valeur COURANTE est toujours rendue, même hors
+                                     déclaration : un `owner` hérité sur un projet reste
+                                     visible et CONSERVABLE. Sans cette option, le simple
+                                     fait de re-choisir dans la liste dégraderait l'arête
+                                     en silence — c'est la généralisation de la clause
+                                     `|| edge_role === 'owner'` d'avant 62.3. --}}
+                                @if (! in_array($member['edge_role'], $assignableEdgeRoles, true))
+                                    <option value="{{ $member['edge_role'] }}" selected>{{ $member['edge_role_label'] }}</option>
                                 @endif
                             </select>
                         @else

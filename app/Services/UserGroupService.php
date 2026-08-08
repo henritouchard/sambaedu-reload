@@ -15,6 +15,7 @@ use App\Constants\Ldap\MainGroups;
 use App\Repositories\GroupRepository;
 use App\Repositories\RightRepository;
 use App\Repositories\UserGroupRepository;
+use App\Support\GroupTypeCatalog;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -785,7 +786,7 @@ class UserGroupService
             // vocabulaire (SQLite ne borne pas les varchar — NFR-S4) n'est
             // JAMAIS préservée, le dérivé s'applique (aucune exception — D6).
             $existing = isset($existingRoles[$memberId]) ? (string) $existingRoles[$memberId] : null;
-            if ($isTrioFold && $existing !== null && in_array($existing, UserGroupUserPivot::ROLES, true)) {
+            if ($isTrioFold && $existing !== null && in_array($existing, UserGroupUserPivot::roles(), true)) {
                 if ($role === UserGroupUserPivot::ROLE_MEMBER
                     && !$hasEquipeCn
                     && ($existing === UserGroupUserPivot::ROLE_MANAGER || $existing === UserGroupUserPivot::ROLE_OWNER)) {
@@ -1195,7 +1196,7 @@ class UserGroupService
                 continue; // D2.1 — owner autoritaire, pas de dérivation.
             }
             $edgeRole = $edgeRolesByUserId[$userId] ?? null;
-            if ($edgeRole === null || !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
+            if ($edgeRole === null || !in_array($edgeRole, UserGroupUserPivot::roles(), true)) {
                 $idsNeedingDerivedRole[] = $userId;
             }
         }
@@ -1226,7 +1227,7 @@ class UserGroupService
                 // vocabulaire » — pas de warning parasite à chaque projection.
                 $edgeRole = null;
             }
-            if ($edgeRole !== null && !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
+            if ($edgeRole !== null && !in_array($edgeRole, UserGroupUserPivot::roles(), true)) {
                 Log::warning('[UserGroupService] Rôle d\'arête hors vocabulaire — fallback rôle dérivé', [
                     'group' => $rawName,
                     'user_id' => $userId,
@@ -1447,6 +1448,19 @@ class UserGroupService
     }
 
     /**
+     * Story 62.2 — LE POINT D'ÉTRANGLEMENT du vocabulaire de type.
+     *
+     * **Pourquoi la garde vit ici et PAS sur le modèle `UserGroup`.** Elle a besoin
+     * d'être franchie par tout ce qui vient d'un écran, et contournée par tout ce
+     * qui vient d'ailleurs. Le balayage d'annuaire assigne `$group->type`
+     * directement, avec ce que `detectTypeFromAdGroupName()` a détecté ; des
+     * dizaines de tests créent des `UserGroup` à des types exotiques pour éprouver
+     * autre chose. Poser la garde sur le modèle Eloquent — ou pire, une clé
+     * étrangère sur la colonne — ferait échouer ces chemins-là, alors qu'ils n'ont
+     * jamais été le problème. Le problème, c'est qu'un formulaire pouvait écrire
+     * n'importe quelle chaîne de 50 caractères. C'est exactement la frontière que
+     * la story 42.1 a choisie pour le rôle d'arête, et pour les mêmes raisons.
+     *
      * @return array{name:string, display_name:?string, type:string, ad_dn:?string}
      */
     private function validateData(array $data, ?UserGroup $existing = null): array
@@ -1465,6 +1479,21 @@ class UserGroupService
 
         if ($type === '') {
             throw new \InvalidArgumentException('Le type du groupe est obligatoire.');
+        }
+
+        // Comparaison EXACTE : les deux pickers fournissent la clé telle qu'elle
+        // est cataloguée, et `user_groups.type` n'a jamais été normalisé. Relâcher
+        // la casse ici créerait, à la première saisie, un groupe `Classe` que
+        // `attachedTo('classe')` apparie mais que `where('type', 'classe')` ne
+        // compte pas.
+        $vocabulary = GroupTypeCatalog::keys();
+        if (! in_array($type, $vocabulary, true)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Type de groupe inconnu : « %s ». Types au catalogue : %s. Un type se crée dans '
+                . '« Paramètres › Groupes & droits › Types de groupes ».',
+                $type,
+                implode(', ', $vocabulary),
+            ));
         }
 
         $displayName = $displayNameRaw !== '' ? $displayNameRaw : null;

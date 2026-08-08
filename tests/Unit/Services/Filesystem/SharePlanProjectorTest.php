@@ -106,11 +106,11 @@ class SharePlanProjectorTest extends TestCase
         $subjects = array_map(static fn (PlanGrant $g): array => [
             $g->subject->type,
             $g->subject->id,
-            $g->access,
+            $g->verbs,
         ], $grants);
 
-        $this->assertContains([PlanSubject::TYPE_USER, (int) $user->id, PlanGrant::ACCESS_RW], $subjects);
-        $this->assertContains([PlanSubject::TYPE_USER_GROUP, (int) $group->id, PlanGrant::ACCESS_RO], $subjects);
+        $this->assertContains([PlanSubject::TYPE_USER, (int) $user->id, PlanGrant::VERBS], $subjects);
+        $this->assertContains([PlanSubject::TYPE_USER_GROUP, (int) $group->id, [PlanGrant::VERB_LIRE]], $subjects);
     }
 
     /**

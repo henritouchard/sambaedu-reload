@@ -5,7 +5,8 @@ use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Services\UserGroupService;
-use App\Support\EdgeRoleLabels;
+use App\Support\GroupTypeCatalog;
+use App\Support\RoleCatalog;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
@@ -97,7 +98,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             // PP), AUCUNE collision de nom (piège 42.1 #5). Arête vide/hors
             // vocabulaire (donnée sale) → affichée « Élève » (D1).
             $edgeRoleRaw = (string) ($user->pivot->role ?? '');
-            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::ROLES, true)
+            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::roles(), true)
                 ? $edgeRoleRaw
                 : UserGroupUserPivot::ROLE_MEMBER;
 
@@ -117,7 +118,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 // owner`) n'est rendue comme texte visible. Story 60.2 — le
                 // libellé vient de la table CANONIQUE par type de groupe, plus
                 // d'un `match` local écrit pour le seul cas scolaire.
-                'edge_role_label' => EdgeRoleLabels::label($groupType, $edgeRole),
+                'edge_role_label' => RoleCatalog::label($groupType, $edgeRole),
             ];
         }) ?? collect();
     }
@@ -156,8 +157,21 @@ new #[Title('Groupe utilisateur')] class extends Component {
         if ($role === UserGroupUserPivot::ROLE_OWNER && $group->type !== 'classe') {
             $this->toastError(sprintf(
                 'Le rôle « %s » n\'est disponible que pour les classes.',
-                EdgeRoleLabels::label('classe', UserGroupUserPivot::ROLE_OWNER),
+                RoleCatalog::label('classe', UserGroupUserPivot::ROLE_OWNER),
             ));
+            return;
+        }
+
+        // Story 62.3 — LA CONTRAINTE DE DÉCLARATION, premier des trois points
+        // d'étranglement HUMAINS. Elle est APRÈS D3, délibérément : sur une
+        // classe, `owner` est déclaré et D3 laisse passer ; sur un `projet`, D3
+        // parle en premier avec son message spécifique, qui reste celui que les
+        // tests de non-régression épinglent. Même lecture du type que D3 — le
+        // `$group->type` DB, jamais la propriété Livewire (review 42.3 #3).
+        try {
+            RoleCatalog::assertAssignable($group->type, $role);
+        } catch (InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
             return;
         }
 
@@ -297,8 +311,27 @@ new #[Title('Groupe utilisateur')] class extends Component {
             // D5 — jamais owner au rattachement, même payload forgé.
             $this->toastError(sprintf(
                 'Le rôle « %s » ne peut pas être choisi au rattachement.',
-                EdgeRoleLabels::label('classe', UserGroupUserPivot::ROLE_OWNER),
+                RoleCatalog::label('classe', UserGroupUserPivot::ROLE_OWNER),
             ));
+            return;
+        }
+
+        // Story 62.3 — deuxième point humain, et LE point qui PARLE : c'est ici
+        // que l'administrateur choisit un rôle pour un rattachement. Le type est
+        // relu en BASE et jamais pris sur `$this->type` — propriété Livewire
+        // publique, donc ré-hydratée du client et forgeable (review 42.3 #3) ;
+        // sans cette relecture, un payload annonçant `type = cours` désarmerait
+        // la contrainte sur une classe.
+        $group = $this->userGroupService->getById($this->groupId);
+        if ($group === null) {
+            $this->toastError('Groupe introuvable — rechargez la page.');
+            return;
+        }
+
+        try {
+            RoleCatalog::assertAssignable($group->type, $role);
+        } catch (InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
             return;
         }
 
@@ -384,6 +417,17 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 if ($chosen === UserGroupUserPivot::ROLE_OWNER) {
                     continue;
                 }
+                // Story 62.3 — troisième point humain. Il refuse en SILENCE
+                // (`continue`), exactement comme les deux refus juste au-dessus :
+                // ce chemin traite un état CLIENT déjà validé par
+                // `setPendingRole()`, et tout ce qui y arrive de non conforme est
+                // un payload forgé ou un état périmé — pas un choix à commenter.
+                // C'est `setPendingRole()` qui parle à l'humain.
+                try {
+                    RoleCatalog::assertAssignable($updatedGroup->type, $chosen);
+                } catch (InvalidArgumentException) {
+                    continue;
+                }
 
                 $overrides[$uid] = $chosen;
             }
@@ -416,21 +460,26 @@ new #[Title('Groupe utilisateur')] class extends Component {
         $this->editing = false;
     }
 
+    /**
+     * Story 62.2 — le libellé vient du CATALOGUE, plus d'un `match` local.
+     *
+     * Le `match` qui vivait ici ignorait `role` et `function` et rendait donc
+     * « Role »/« Function » là où la fiche utilisateur disait « Rôle »/« Fonction ».
+     * Les deux écrans lisent désormais la même ligne : c'est une divergence
+     * corrigée, la seule que la bascule change.
+     */
     public function typeLabel(): string
     {
-        return match ($this->type) {
-            'classe' => 'Classe',
-            'cours' => 'Cours',
-            'matiere' => 'Matière',
-            'matiere_classe' => 'Matière / Classe',
-            'projet' => 'Projet',
-            'equipe' => 'Équipe',
-            'custom' => 'Personnalisé',
-            'other_group' => 'Autre',
-            default => ucfirst($this->type),
-        };
+        return GroupTypeCatalog::label($this->type);
     }
 
+    /**
+     * La COULEUR reste un `match` local sur des clés immuables.
+     *
+     * Le catalogue porte un libellé et une icône, pas une charte : y ajouter une
+     * colonne de couleur serait administrer une décision que personne n'a demandé
+     * à prendre.
+     */
     public function typeBadgeClass(): string
     {
         return match ($this->type) {

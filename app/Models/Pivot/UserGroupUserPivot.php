@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Pivot;
 
+use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use InvalidArgumentException;
 
@@ -35,13 +36,14 @@ class UserGroupUserPivot extends Pivot
     public $timestamps = false;
 
     /**
-     * Story 42.1 — Vocabulaire BORNÉ du rôle d'arête `user_group_user.role`.
+     * Story 42.1 → 62.1 — les trois clés HISTORIQUES du rôle d'arête
+     * `user_group_user.role`.
      *
      * Le rôle d'un user DANS un groupe est un attribut d'arête `string`. Story
      * 60.2 — ce vocabulaire est GÉNÉRIQUE : il qualifie une appartenance, il ne
      * décrit aucun métier scolaire et n'est pas un niveau d'accès (l'accès est
      * l'autre côté du mappage, `ro|rw`). Le libellé MÉTIER dépend du type de
-     * groupe et vit dans {@see \App\Support\EdgeRoleLabels} — `manager` se lit
+     * groupe et vit dans {@see \App\Support\RoleCatalog} — `manager` se lit
      * « Enseignant » en classe, « Porteur » en projet, « Référent » en équipe :
      *  - `member`  : membre simple, sans rôle de gestion sur ce groupe ;
      *  - `manager` : membre qui gère le groupe (posé par défaut pour un
@@ -56,6 +58,14 @@ class UserGroupUserPivot extends Pivot
      * test — `project_sqlite_tests_no_varchar_enforcement`). La garde applicative
      * {@see self::assertValidRole()} est donc la SEULE frontière côté SE5 ; PG
      * lèverait un 22001 seulement à l'écriture d'une valeur > 20 en prod.
+     *
+     * **Ces trois-là restent des CONSTANTES, et c'est délibéré.** Story 62.1 : le
+     * vocabulaire n'est plus borné, il est CATALOGUÉ ({@see self::roles()}) — un
+     * établissement peut y ajouter « tuteur ». Mais ces trois clés-ci sont écrites
+     * EN LITTÉRAL par du code vivant (dérivation au rattachement, garde
+     * « professeur principal ⇒ classe », projection d'annuaire `PP_`, recettes
+     * seedées) : elles sont structurelles, elles se seedent, elles ne se
+     * suppriment jamais.
      */
     public const ROLE_MEMBER = 'member';
 
@@ -64,15 +74,20 @@ class UserGroupUserPivot extends Pivot
     public const ROLE_OWNER = 'owner';
 
     /**
-     * Liste exhaustive du vocabulaire de rôle d'arête (borne applicative).
+     * Story 62.1 — le vocabulaire de rôle d'arête, LU dans le catalogue.
      *
-     * @var array<int,string>
+     * Ce n'est plus une constante : le catalogue ({@see \App\Models\GroupRole})
+     * est administrable depuis `/admin/settings/groups`. La lecture est mémoïsée
+     * dans {@see RoleCatalog} et garantit TOUJOURS au moins les trois clés
+     * historiques, même sur une base non seedée — le plancher est un invariant,
+     * pas une commodité.
+     *
+     * @return list<string>
      */
-    public const ROLES = [
-        self::ROLE_MEMBER,
-        self::ROLE_MANAGER,
-        self::ROLE_OWNER,
-    ];
+    public static function roles(): array
+    {
+        return RoleCatalog::keys();
+    }
 
     /**
      * Story 4.14 — cast booléen de l'attribut d'arête `is_head_teacher`.
@@ -99,20 +114,22 @@ class UserGroupUserPivot extends Pivot
     // brownfield) jusqu'à la migration destructive `dropColumn` post-42.4.
 
     /**
-     * Story 42.1 — Garde applicative du vocabulaire de rôle d'arête.
+     * Story 42.1 → 62.1 — Garde applicative du vocabulaire de rôle d'arête.
      *
      * SQLite ne borne pas les varchar : tout chemin applicatif qui reçoit une
      * valeur de rôle NON constante (backfill, helper de dérivation, futurs
      * consommateurs) DOIT passer par cette garde. Lève une
-     * {@see InvalidArgumentException} hors {@see self::ROLES}.
+     * {@see InvalidArgumentException} hors du catalogue ({@see self::roles()}).
      */
     public static function assertValidRole(string $role): void
     {
-        if (!in_array($role, self::ROLES, true)) {
+        $roles = self::roles();
+
+        if (!in_array($role, $roles, true)) {
             throw new InvalidArgumentException(sprintf(
                 'Rôle d\'arête invalide : « %s ». Vocabulaire attendu : %s.',
                 $role,
-                implode('|', self::ROLES)
+                implode('|', $roles)
             ));
         }
     }

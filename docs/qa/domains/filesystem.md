@@ -2082,9 +2082,349 @@ groupe de type `equipe`, type que l'import d'annuaire ne produit plus (comptage 
 - [ ] 60.5-6a/c/d : « profs → élèves » matérialisable, deux audiences compilées, sélecteur vide qui PARLE
 - [ ] Suite automatisée verte sur l'hôte
 
+## Story 62.4 — Les droits à quatre verbes, et ce que POSIX déclare ne pas savoir rendre
+
+**Ce que cette story change sur le serveur, en une phrase :** les droits du plan de
+fichiers ne se disent plus « lecture seule / lecture-écriture » mais en **quatre
+verbes combinables** — `lire`, `editer`, `creer`, `supprimer` — et, **sur une
+instance en place, absolument rien ne bouge sur le disque**. C'est ce dernier point
+que la vérification terrain doit établir, pas le premier.
+
+**Pourquoi rien ne doit bouger.** La conversion des recettes stockées est
+volontairement la plus généreuse possible (décision Henri Q3, 2026-08-08) :
+
+| recette AVANT | recette APRÈS | ce que le disque porte |
+|---|---|---|
+| `ro` | `lire` | `r-x` — identique |
+| `rw` | `lire` + `editer` + `creer` + `supprimer` | `rwx` — identique |
+
+Aucune recette livrée ne demande donc « déposer sans effacer », la seule
+combinaison qui ferait poser un drapeau nouveau sur un dossier. Les combinaisons
+fines deviennent EXPRIMABLES, elles ne sont pas encore UTILISÉES : l'écran qui
+permettra de les composer est la story 62.6.
+
+**Ce que POSIX ne sait pas rendre, et qu'il DIT désormais.** Deux cas, tous deux
+inatteignables avec les recettes d'aujourd'hui, mais qui apparaîtront dès 62.6 :
+
+- **« supprimer sans créer »** — les deux verbes passent par la même permission
+  d'écriture du dossier. L'accorder donnerait aussi la création. Le verbe n'est
+  donc pas rendu, le reste de l'octroi l'est, et le nœud remonte
+  « non supporté par ce backend » avec sa raison, en français ;
+- **« créer sans supprimer » (déposer sans effacer)** — rendu de façon APPROCHÉE
+  par le drapeau `t` (sticky) sur le dossier : le déposant peut encore retirer SES
+  PROPRES dépôts. C'est une dégradation réelle, et elle est déclarée. Elle n'est
+  PAS posée si un autre octroi du même dossier porte `supprimer` — elle lui
+  retirerait l'effacement du travail des autres.
+
+### Prérequis
+
+- **62.4-P1** — instance avec des partages **déjà provisionnés** par SE5 (sinon il
+  n'y a rien à comparer avant/après).
+- **62.4-P2** — accès `root` au serveur de fichiers pour `getfacl -R` et `stat`.
+- **62.4-P3** — la migration `2026_08_08_140000_migrate_directory_template_access_to_verbs`
+  n'a PAS encore été jouée au moment de l'instantané « avant ».
+
+### 62.4-1 — L'INSTANTANÉ AVANT/APRÈS : la vérification qui compte
+
+C'est LA vérification de cette story. Tout le reste est secondaire.
+
+```bash
+# AVANT toute migration, sur le serveur :
+find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -maxdepth 3 \
+  -type d -exec getfacl -p {} \; > ~/acl-avant-62-4.txt
+
+# Déployer + migrer + re-seeder les recettes :
+php artisan migrate
+php artisan db:seed --class=DirectoryTemplateSeeder
+
+# Rejouer une réconciliation sur quelques partages représentatifs
+# (au moins : un partage plat ro+rw, un arbre de classe, un dossier d'échange).
+
+find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -maxdepth 3 \
+  -type d -exec getfacl -p {} \; > ~/acl-apres-62-4.txt
+
+diff ~/acl-avant-62-4.txt ~/acl-apres-62-4.txt
+```
+
+- [ ] **62.4-1a** — `diff` **VIDE**. Aucune entrée n'a bougé, aucun mode n'a bougé.
+      Un diff non vide est un ÉCHEC de la story, pas un ajustement à documenter :
+      il signifierait qu'une recette a changé de sens à la migration.
+- [ ] **62.4-1b** — aucun dossier ne porte le drapeau `t`. À vérifier
+      explicitement, parce que c'est le seul changement de MODE que cette story
+      pourrait provoquer :
+      ```bash
+      find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -type d -perm -1000 | head
+      ```
+      **Attendu : aucune ligne.**
+- [ ] **62.4-1c** — une seconde réconciliation sur un partage déjà conforme n'émet
+      **aucune écriture** (l'idempotence tient malgré la nouvelle lecture de
+      drapeau). Le rapport dit « Déjà conforme ».
+
+### 62.4-2 — LE STICKY FACE À SAMBA : la question ouverte
+
+**Pourquoi c'est une question et pas une case à cocher.** Le drapeau `t` est un
+mécanisme POSIX. Un partage SMB, lui, présente aux clients Windows un modèle de
+droits NT, et `smbd` fait la traduction. Deux comportements ne sont **pas** connus
+d'avance et doivent être MESURÉS avant que 62.6 ne rende la combinaison
+choisissable :
+
+1. le membre de `domain admins` est-il lui aussi soumis à la restriction ? (En
+   POSIX pur, seuls le propriétaire du fichier, le propriétaire du dossier et
+   `root` échappent au sticky. `domain admins` a un accès `rwx` par ACL, mais n'est
+   ni l'un ni l'autre.)
+2. le refus de suppression remonte-t-il au client Windows comme un refus
+   compréhensible, ou comme une erreur générique illisible ?
+
+Protocole (à faire sur un partage de test, JAMAIS sur un partage servi) :
+
+```bash
+# Poser la situation à la main sur un dossier de test :
+mkdir -p /var/sambaedu/Partages/test62_4
+setfacl -m group:classe_3emea:rwx /var/sambaedu/Partages/test62_4
+chmod +t /var/sambaedu/Partages/test62_4
+# Un fichier déposé par un élève A :
+sudo -u <eleveA> touch /var/sambaedu/Partages/test62_4/depot-A.txt
+```
+
+- [ ] **62.4-2a** — depuis une session Windows de l'**élève B** (même groupe) :
+      la suppression de `depot-A.txt` est-elle **refusée** ? Noter le message exact.
+- [ ] **62.4-2b** — l'élève **A** peut-il supprimer SON fichier ? (Attendu : oui —
+      c'est précisément la dégradation assumée.)
+- [ ] **62.4-2c** — depuis une session **membre de `domain admins`** : la
+      suppression est-elle possible ? **Noter la réponse** : elle décide si le
+      libellé de 62.6 doit avertir que la restriction s'applique aussi aux
+      administrateurs.
+- [ ] **62.4-2d** — l'onglet « Sécurité » de Windows sur ce dossier : le mappage NT
+      montre-t-il quelque chose d'incohérent avec ce qui vient d'être observé ?
+      Copie d'écran si oui.
+
+À l'issue : **nettoyer** (`chmod -t`, `setfacl -b`, `rmdir`).
+
+### 62.4-3 — La sélection par type d'objet (`find`) : à autoriser AVANT 62.6
+
+Deux combinaisons de verbes exigent de poser un niveau **différent** sur les
+dossiers et sur les fichiers (par exemple « lire + éditer » : écrire dans les
+fichiers sans pouvoir en créer ni en retirer). L'outil de listes d'accès n'a aucun
+sélecteur de type : SE5 émet alors
+
+```
+sudo find <chemin> -type d -exec setfacl -P -m <entrée> {} +
+sudo find <chemin> -type f -exec setfacl -P -m <entrée> {} +
+sudo find <chemin> -type d -exec chmod +t {} +
+```
+
+**Aucune recette d'aujourd'hui n'atteint ces gestes** — ils n'apparaîtront qu'avec
+62.6. Mais `find` n'est pas dans la liste blanche d'élévation des instances.
+
+- [ ] **62.4-3a** — vérifier ce que dit la liste blanche actuelle :
+      ```bash
+      grep -rn "find" /etc/sudoers.d/ | head
+      ```
+- [ ] **62.4-3b** — **avant le déploiement de 62.6**, ajouter `find` à la liste
+      blanche (ou décider explicitement de ne pas le faire, auquel cas les
+      combinaisons différenciées échoueront — bruyamment, en nommant leur cause,
+      jamais en posant un droit approximatif).
+- [ ] **62.4-3c** — tant que 62.6 n'est pas livrée, confirmer qu'**aucune**
+      commande `find` n'est émise en exploitation :
+      ```bash
+      grep -c "sudo find" /var/log/sambaedu/*.log
+      ```
+      **Attendu : 0.**
+
+### 62.4-4 — L'écran de conformité parle verbes
+
+- [ ] **62.4-4a** — sur la fiche d'un partage, l'encart de conformité affiche
+      « Lire » ou « Lire + Éditer + Créer + Supprimer », jamais `ro`, `rw`, `rwx`
+      ni aucun mode.
+- [ ] **62.4-4b** — sur un partage dont on a retiré un droit à la main
+      (`setfacl -m group:X:rx`), l'écart s'affiche avec **les deux listes de
+      verbes**, attendue et constatée.
+- [ ] **62.4-4c** — l'aperçu d'une recette (modale « Créer depuis un template »)
+      montre toujours les badges « Lire »/« Modifier » des assignations : ce
+      vocabulaire-là, celui du MONTAGE, n'a pas changé et ne doit pas changer.
+
+### 62.4-5 — Recettes non migrées : le bruit est voulu
+
+- [ ] **62.4-5a** — si une instance porte une recette modifiée à la main et restée
+      au vocabulaire `access`, sa validation échoue avec un message qui NOMME le
+      vocabulaire abandonné (« champ inconnu `access` » ou « vocabulaire ABANDONNÉ »).
+      C'est le comportement attendu : une recette non migrée doit être bruyante,
+      jamais lue de travers.
+
+### Checklist rapide — Story 62.4
+
+- [ ] 62.4-P1/P2/P3 : instance provisionnée, accès root, instantané pris AVANT
+- [ ] **62.4-1a : `getfacl -R` avant/après → diff VIDE** (la vérification pivot)
+- [ ] 62.4-1b : aucun dossier ne porte le drapeau `t`
+- [ ] 62.4-1c : second passage → aucune écriture
+- [ ] 62.4-2a/b/c/d : effet réel du sticky sur SMB, **réponse `domain admins` notée**
+- [ ] 62.4-3a/b : `find` dans la liste blanche, ou décision explicite, AVANT 62.6
+- [ ] 62.4-3c : aucune commande `find` émise aujourd'hui
+- [ ] 62.4-4a/b/c : l'écran parle verbes, l'assignation reste binaire
+- [ ] 62.4-5a : une recette non migrée est refusée BRUYAMMENT
+- [ ] Suite automatisée verte sur l'hôte
+
+
+## Story 62.5 — La traversée dérivée, et la recette qui refuse un dossier inatteignable
+
+**Ce que cette story change sur le serveur, en une phrase :** rien — et c'est ce
+« rien » qu'il faut établir. Le mécanisme qui rend un dossier profond ATTEIGNABLE
+existe désormais, il se calcule à chaque passage, et **sur les recettes livrées il
+ne produit aucune entrée** : le planificateur rend l'ensemble vide sur chacun de
+leurs nœuds.
+
+**Le problème, dit sur le mécanisme.** Pour ouvrir `a/b/c`, il faut pouvoir
+traverser `a` et `a/b`. Jusqu'ici le compilateur travaillait nœud par nœud : un rôle
+octroyé sur `a/b/c` mais absent de `a` n'avait aucune entrée sur `a`, et la pose de
+`a` referme le dossier pour tout le monde. La recette était « conforme », le rapport
+vert, le dossier un mirage.
+
+**Ce que SE5 fait désormais, et surtout ce qu'il ne fait pas :**
+
+- il DÉRIVE un « couloir d'accès » sur chaque ancêtre déclaré, pour les rôles
+  d'audience servis en profondeur ;
+- ce couloir **n'accorde rien de plus** : on passe devant la porte, on n'entre pas.
+  Le rôle qui lit `a/b/c` **ne peut pas lister `a`**, ni y lire, ni y écrire ;
+- il ne dérive **jamais** pour un dossier PERSONNEL (un couloir par élève ferait
+  250 entrées nominatives sur la racine d'une classe). L'atteignabilité des dossiers
+  personnels est garantie autrement : la recette est **refusée à l'écriture** si un
+  ancêtre n'accorde rien à une audience qui contient ces membres ;
+- il ne perce **jamais** une suspension : quand l'espace d'échange est fermé, ce qui
+  est dessous l'est aussi.
+
+**La décision de conception, pour mémoire :** la traversée est calculée dans le
+backend, PAS dans le plan. Le plan continue de ne dire QUE ce que l'administrateur a
+écrit — c'est ce qui évitera, le jour de l'Epic 61, qu'un « octroi de traversée » se
+transforme en accès réel propagé à tout un sous-arbre sur un plan de fichiers
+distant.
+
+### Prérequis
+
+- **62.5-P1** — instance avec des partages **déjà provisionnés** par SE5 (arbre de
+  classe compris), sinon il n'y a rien à comparer.
+- **62.5-P2** — accès `root` au serveur de fichiers pour `getfacl -R`.
+- **62.5-P3** — pour la partie « première traversée réelle » (62.5-3), l'éditeur
+  d'arborescence de la **story 62.6** doit être livré : aucune recette d'aujourd'hui
+  ne produit de couloir, et c'est précisément le point.
+
+### 62.5-1 — L'INSTANTANÉ AVANT/APRÈS : aucune entrée ne bouge
+
+C'est LA vérification de cette story, et elle est identique dans sa forme à celle de
+la 62.4.
+
+```bash
+# AVANT déploiement, sur le serveur :
+find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -maxdepth 3 \
+  -type d -exec getfacl -p {} \; > ~/acl-avant-62-5.txt
+
+# Déployer, puis rejouer une réconciliation sur les mêmes partages
+# (au moins : un partage plat, un arbre de classe avec des dossiers élèves,
+#  un dossier d'échange ACTIF et un SUSPENDU).
+
+find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -maxdepth 3 \
+  -type d -exec getfacl -p {} \; > ~/acl-apres-62-5.txt
+
+diff ~/acl-avant-62-5.txt ~/acl-apres-62-5.txt
+```
+
+- [ ] **62.5-1a — le diff est VIDE.** Aucune entrée ajoutée, aucune retirée, aucun
+      mode changé. Si une entrée en `--x` apparaît quelque part, **arrêter et
+      remonter** : la dérivation sur-octroie sur une recette livrée, ce qui n'est pas
+      censé être possible.
+- [ ] **62.5-1b — aucune entrée `--x` nulle part** :
+      `grep -c ':--x' ~/acl-apres-62-5.txt` doit rendre `0`.
+- [ ] **62.5-1c — second passage : aucune écriture.** Relancer la réconciliation ;
+      les nœuds rendent tous `conforme` et le journal ne montre aucune commande de
+      pose. C'est l'idempotence, vérifiée AVEC le nouveau calcul dans la boucle.
+- [ ] **62.5-1d — aucun bruit de dérive.** Ouvrir l'encart de dérive de deux ou
+      trois partages : ils doivent être `conforme`, sans « entrée en trop » ni détail.
+
+### 62.5-2 — Le jeu de commandes n'a pas bougé
+
+- [ ] **62.5-2a** — aucune commande nouvelle : la story n'ajoute **aucun binaire**.
+      Le couloir se pose avec la commande de pose déjà en liste blanche, simplement
+      privée de son option de descente (`setfacl -P -m … <chemin>`, **sans `-R`**).
+      Rien à ajouter à la liste blanche d'élévation.
+- [ ] **62.5-2b** — vérifier dans le journal d'un passage qu'aucune commande de pose
+      de couloir n'est émise aujourd'hui (conséquence directe de 62.5-1b).
+
+### 62.5-3 — LA PREMIÈRE TRAVERSÉE RÉELLE (à jouer APRÈS la story 62.6)
+
+Ces vérifications demandent une recette qui produise un couloir, donc l'éditeur
+d'arborescence. **Elles sont la seule façon d'établir que le mécanisme fait ce que
+le code croit qu'il fait** — tout le reste est vérifié automatiquement sur l'hôte.
+
+Situation à construire : un arbre où un rôle reçoit un octroi sur un nœud PROFOND
+(par exemple `_travail/prive`) **sans aucun octroi sur `_travail` ni sur la racine**.
+
+- [ ] **62.5-3a — le couloir est posé, et seulement lui.**
+      `getfacl -p <racine>/_travail` montre une entrée `group:<rôle>:--x` — pas
+      `r-x`, pas `rwx` — et **aucune** entrée `default:group:<rôle>:…`.
+- [ ] **62.5-3b — le couloir ne descend pas.** `getfacl -p` sur un sous-dossier de
+      `_travail` créé à la main, et sur un fichier qui s'y trouve : **aucune** entrée
+      pour ce rôle. Une pose récursive se verrait ici.
+- [ ] **62.5-3c — la traversée n'accorde rien de plus, en session POSIX/SSH.** Avec
+      un compte membre du rôle :
+      - `ls <racine>/_travail` → **refusé** (on ne liste pas) ;
+      - `cd <racine>/_travail/prive && ls` → **autorisé** (on atteint le dossier
+        profond) ;
+      - `touch <racine>/_travail/x` → **refusé**.
+- [ ] **62.5-3d — LE POINT À OBSERVER EN VRAI : le même essai depuis SMB.** Monter
+      le partage depuis un poste Windows avec ce compte, puis :
+      - le dossier `_travail` doit être **inaccessible en listage** ;
+      - le chemin complet `\\serveur\<partage>\_travail\prive` doit s'ouvrir en
+        tapant l'adresse directement.
+      **Noter le comportement observé, quel qu'il soit.** Le mappage NT ACL de
+      « traverser sans lire » n'est pas garanti iso-POSIX : le serveur de fichiers
+      peut traduire la traversée-sans-lecture d'une façon qui la rend inutilisable
+      pour un client Windows (dossier invisible ET inatteignable), ou au contraire
+      trop permissive. C'est la seule inconnue de cette story, et elle ne se lève que
+      sur une vraie machine.
+- [ ] **62.5-3e — retrait.** Retirer l'octroi profond, réconcilier, vérifier que
+      l'entrée `--x` a **disparu** de `_travail` : un couloir devenu caduc ne survit
+      pas à un passage.
+- [ ] **62.5-3f — une suspension n'est pas percée.** Sur un espace d'échange
+      SUSPENDU portant un nœud profond accordé au même rôle : l'entrée du rôle sur
+      l'espace d'échange doit rester **`---`** (la suspension matérialisée), pas
+      `--x`.
+
+### 62.5-4 — La recette refuse ce qui serait inatteignable
+
+À jouer depuis l'éditeur (62.6) ou, d'ici là, en tinker sur une recette de test.
+
+- [ ] **62.5-4a** — déclarer `a/b/c` sans déclarer `a/b` : refus nommant le chemin
+      fautif **et** l'ancêtre manquant.
+- [ ] **62.5-4b** — déclarer un nœud sous un dossier « à contenu libre » : refus
+      disant que le contenu de cet ancêtre n'est pas gouverné par le plan.
+- [ ] **62.5-4c** — déclarer un dossier par membre dont un ancêtre n'accorde rien à
+      une audience contenant ces membres : refus nommant l'ancêtre ET le rôle
+      d'arête. Le message doit rester en français métier, sans un mot du mécanisme.
+- [ ] **62.5-4d** — les 5 recettes livrées restent valides sans modification
+      (`php artisan db:seed --class=DirectoryTemplateSeeder` passe, et une
+      réconciliation d'arbre de classe reste `conforme`).
+
+### Checklist rapide — Story 62.5
+
+- [ ] 62.5-P1/P2 : instance provisionnée, accès root, instantané pris AVANT
+- [ ] **62.5-1a : `getfacl` avant/après → diff VIDE** (la vérification pivot)
+- [ ] 62.5-1b : `grep -c ':--x'` rend 0
+- [ ] 62.5-1c : second passage → aucune écriture
+- [ ] 62.5-1d : encart de dérive propre, aucun bruit
+- [ ] 62.5-2a/b : aucun binaire nouveau, aucune pose de couloir aujourd'hui
+- [ ] 62.5-3a→3f (APRÈS 62.6) : couloir posé, non descendu, `ls` refusé / `cd` OK,
+      **comportement SMB NOTÉ**, retrait effectif, suspension non percée
+- [ ] 62.5-4a/b/c/d : les quatre refus parlent, les recettes livrées passent
+- [ ] Suite automatisée verte sur l'hôte
+
+
+
 ---
 
-*Dernière mise à jour : 2026-08-04 (Story 60.3 — le contrat `FileBackend` et le backend `preview` : interface à 5 méthodes de forme distante (name/provision/deprovision/inspect/quota, aucun `bool`), enums fermées `FileBackendName` (posix|preview) / `FileBackendOutcome` (7 états, dont `non_exprimable` PERMANENT ≠ `non_implemente` TEMPORAIRE ≠ `non_execute` PAR CONCEPTION) / `FileBackendObservation` (4 statuts), rapports à COMPLÉTUDE VALIDÉE À LA CONSTRUCTION (un rapport qui omet un nœud est inconstructible) et `detail` obligatoire au constructeur, racine `PlanNode::ROOT_PATH` devenue nœud de première classe, colonne `network_shares.backend` NOT NULL défaut `posix` (hors `$fillable`, non éditable), registre par nom fail-closed, `SharePlanProjector` (partage plat → plan neutre), squelette Nextcloud JETABLE vert contre l'instance réelle — PREMIER LIVRABLE VISIBLE DE L'EPIC : badge backend + aperçu du plan avant application ; services d'exécution et seeder INTOUCHÉS, aucun flux ne route par la colonne)*
+*Dernière mise à jour : 2026-08-08 (Story 62.5 — la traversée DÉRIVÉE et la validation parent→enfant : la traversée est calculée dans le BACKEND (`PosixTraversalPlanner`, décision docblockée et épinglée par test — le plan, sa clôture, sa sérialisation et `PlanStateComparator` restent à ZÉRO DIFF), un « couloir d'accès » dérivé des octrois profonds RENDUS des descendants déclarés, posé en TÊTE SEULE sans miroir d'héritage ni entrée fichier et sans aucun binaire nouveau, qui **n'accorde rien de plus** (le rôle qui lit `a/b/c` ne peut pas lister `a`) ; le NOMINATIF ne dérive jamais (sa contrepartie est une règle de couverture à la validation), une suspension n'est jamais percée, un octroi rendu vide n'ouvre aucun couloir ; l'inspection FILTRE les couloirs attendus comme des entrées structurelles (table de reprojection 62.4 INCHANGÉE, zéro bruit de dérive) et DIT ceux qui manquent ; quatre règles parent→enfant nouvelles sur `assertValidTreeSpec()` (ancêtre non déclaré, nœud sous contenu libre, dossiers par membre imbriqués de rôles d'arête différents, couverture des membres énumérés) — **impact sur les référentiels figés : ZÉRO littéral, la dérivation rend l'ensemble VIDE sur toutes les recettes livrées, épinglé par un test dédié** ; aucune UI, aucune migration, rien de persisté)*
+
+*Mise à jour précédente : 2026-08-08 (Story 62.4 — les droits à quatre verbes : `PlanGrant` porte une LISTE de verbes `lire|editer|creer|supprimer` (contrat sémantique Q2 au docblock — éditer = contenu d'un fichier existant SEULEMENT, renommer = créer + supprimer, déplacer = supprimer à la source + créer à destination), `FilePlan::VERSION` → 2 avec refus NOMMÉ de l'ancienne clé `access`, migration de données Q3 (`ro` → `lire`, `rw` → les quatre — le seul mappage qui ne retire aucun accès), matrice de dégradation POSIX DÉRIVÉE de deux axes (fichier / dossier) + drapeau de nœud, `non_exprimable` désormais PRODUIT par le backend posix (supprimer sans créer ; créer sans supprimer sur un nœud mixte) sans jamais se confondre avec `non_implemente`, `find` entre au jeu fermé pour la pose différenciée et la restriction de suppression — **le référentiel figé n'a pas changé d'un caractère : sur une instance en place, aucune entrée ne bouge** ; assignations, `AclFormat::modeToAccess()` et `PosixSubjectProjector` INTOUCHÉS)*
+
+*Mise à jour précédente : 2026-08-04 (Story 60.3 — le contrat `FileBackend` et le backend `preview` : interface à 5 méthodes de forme distante (name/provision/deprovision/inspect/quota, aucun `bool`), enums fermées `FileBackendName` (posix|preview) / `FileBackendOutcome` (7 états, dont `non_exprimable` PERMANENT ≠ `non_implemente` TEMPORAIRE ≠ `non_execute` PAR CONCEPTION) / `FileBackendObservation` (4 statuts), rapports à COMPLÉTUDE VALIDÉE À LA CONSTRUCTION (un rapport qui omet un nœud est inconstructible) et `detail` obligatoire au constructeur, racine `PlanNode::ROOT_PATH` devenue nœud de première classe, colonne `network_shares.backend` NOT NULL défaut `posix` (hors `$fillable`, non éditable), registre par nom fail-closed, `SharePlanProjector` (partage plat → plan neutre), squelette Nextcloud JETABLE vert contre l'instance réelle — PREMIER LIVRABLE VISIBLE DE L'EPIC : badge backend + aperçu du plan avant application ; services d'exécution et seeder INTOUCHÉS, aucun flux ne route par la colonne)*
 
 *Mise à jour précédente : 2026-08-04 (Story 60.2 — résolution de rôle par règle : enum fermée `RoleResolutionStrategy` (self · designated [défaut, iso-34.3] · pattern · edge_role) portée par la clé additive `resolution` de `roles_spec` et validée sur le modèle, colonne additive nullable UNIQUE `attached_group_type`, assembleur `TreePlanService` (SQL seulement, hors namespace pur, test d'architecture étendu), décomposition « matière × classe » en deux segments de chemin, table canonique `EdgeRoleLabels` recâblée sur les trois écrans — SEUL changement visible : les libellés de rôle d'arête suivent le type de groupe ; la chaîne groupe→plan est livrée COMPLÈTE et DORMANTE, services d'exécution et seeder INTOUCHÉS)*
 

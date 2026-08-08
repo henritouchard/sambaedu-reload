@@ -277,7 +277,7 @@ class FakePropagatingBackendTest extends TestCase
             foreach ($observation->grants as $grant) {
                 $this->assertInstanceOf(ObservedGrant::class, $grant);
                 $this->assertContains($grant->subject->type, PlanSubject::TYPES);
-                $this->assertContains($grant->access, ['ro', 'rw']);
+                $this->assertSame([], array_diff($grant->verbs, \App\Services\Filesystem\Plan\PlanGrant::VERBS));
             }
         }
     }

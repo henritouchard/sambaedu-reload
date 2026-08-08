@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
  * `user_group_user.role` depuis l'existant (`is_head_teacher` + `users.role`).
  *
  * Chaque arête préexistante reçoit exactement un rôle du vocabulaire borné
- * {@see UserGroupUserPivot::ROLES} selon la précédence `owner > manager > member` :
+ * {@see UserGroupUserPivot::roles()} selon la précédence `owner > manager > member` :
  *  - `owner`   si `is_head_teacher = true` (le professeur principal — 4.14) ;
  *  - `manager` sinon si le user a `users.role = 'prof'` (professeur membre) ;
  *  - `member`  sinon (élève, admin, autre, null).

@@ -67,7 +67,7 @@ final class PlanSubject
             throw PlanResolutionException::make(sprintf(
                 'rôle d\'arête inconnu « %s » (attendu : %s).',
                 $edgeRole,
-                implode('|', GroupNameNormalizer::EDGE_ROLES),
+                implode('|', GroupNameNormalizer::edgeRoles()),
             ));
         }
 

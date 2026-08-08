@@ -59,12 +59,12 @@ class FilePlanSerializationTest extends TestCase
     }
 
     #[Test]
-    public function grants_are_ordered_by_subject_then_access(): void
+    public function grants_are_ordered_by_subject_then_verbs(): void
     {
         $node = new PlanNode('_travail', 'Travail', PlanNodeNature::Partagee, [
-            new PlanGrant('b', PlanSubject::group(9), 'rw'),
-            new PlanGrant('a', PlanSubject::user(4), 'ro'),
-            new PlanGrant('c', PlanSubject::group(2, 'owner'), 'ro'),
+            new PlanGrant('b', PlanSubject::group(9), PlanGrant::VERBS),
+            new PlanGrant('a', PlanSubject::user(4), [PlanGrant::VERB_LIRE]),
+            new PlanGrant('c', PlanSubject::group(2, 'owner'), [PlanGrant::VERB_LIRE]),
         ]);
 
         $this->assertSame(

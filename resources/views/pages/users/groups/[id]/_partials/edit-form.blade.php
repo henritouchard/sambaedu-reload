@@ -1,3 +1,23 @@
+{{-- Story 62.3 — le select de rôle au rattachement lit la DONNÉE.
+
+     Avant, ses deux `<option>` étaient EN DUR : « Élève » et « Prof », quel que
+     soit le type du groupe — sur un projet, on proposait donc « Élève »/« Prof »
+     pour ce qui allait s'afficher « Membre »/« Porteur » une ligne plus bas.
+
+     DIVERGENCE NOMMÉE ET ASSUMÉE : sur une classe, « Prof » devient
+     « Enseignant ». « Prof » était un raccourci écrit dans cette vue et nulle part
+     ailleurs ; le libellé canonique déclaré pour `classe`×`manager` — celui que la
+     table des membres, la fiche utilisateur et l'aperçu de partage affichent tous
+     — est « Enseignant ».
+
+     `owner` est EXCLU : D5 (« jamais professeur principal au rattachement ») est
+     déjà appliquée côté serveur par `setPendingRole()`. L'exclusion est ici pour
+     que l'écran ne propose pas ce que le serveur refusera. --}}
+@php($pendingRoleOptions = \App\Support\RoleCatalog::options($type ?? null))
+@php($pendingAssignableRoles = array_values(array_filter(
+    \App\Support\RoleCatalog::assignableKeys($type ?? null),
+    static fn (string $roleKey): bool => $roleKey !== \App\Models\Pivot\UserGroupUserPivot::ROLE_OWNER,
+)))
 <div class="max-w-4xl">
     <div class="card bg-base-100 shadow-sm">
         <div class="card-body space-y-4">
@@ -69,8 +89,9 @@
                                             wire:change="setPendingRole({{ $option['value'] }}, $event.target.value)"
                                             class="select select-bordered select-xs w-full">
                                             @php($currentPendingRole = $pendingRoles[$option['value']] ?? $option['default_role'])
-                                            <option value="member" @selected($currentPendingRole === 'member')>Élève</option>
-                                            <option value="manager" @selected($currentPendingRole === 'manager')>Prof</option>
+                                            @foreach ($pendingAssignableRoles as $pendingAssignableRole)
+                                                <option value="{{ $pendingAssignableRole }}" @selected($currentPendingRole === $pendingAssignableRole)>{{ $pendingRoleOptions[$pendingAssignableRole] ?? $pendingAssignableRole }}</option>
+                                            @endforeach
                                         </select>
                                     </div>
                                 @endif

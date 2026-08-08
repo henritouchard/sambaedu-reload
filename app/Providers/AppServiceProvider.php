@@ -216,6 +216,42 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Story 62.1 — LA COUTURE DE PURETÉ. Le namespace du plan de fichiers vit
+        // au-dessus de la ligne de contrat : il n'interroge rien, et un test
+        // d'architecture le vérifie sur le TEXTE des fichiers. Le vocabulaire de
+        // rôle d'arête, lui, est désormais une table administrable. La source
+        // ENTRE donc dans le plan par injection, une fois, ici — le plan ne va
+        // jamais la chercher. Sans cette ligne, le normalizer retomberait sur son
+        // repli littéral (`member|manager|owner`) et un rôle nouveau du catalogue
+        // serait refusé par la résolution.
+        \App\Services\Filesystem\Plan\GroupNameNormalizer::useEdgeRoles(
+            static fn (): array => \App\Support\RoleCatalog::keys(),
+        );
+
+        // Review 62.1 #1 — la mémo du catalogue est une propriété STATIQUE, et
+        // `RoleCatalog::flush()` n'est déclenchée que par les hooks d'écriture du
+        // modèle, donc uniquement dans le PROCESSUS qui a écrit. Sous PHP-FPM ça
+        // suffit (chaque requête repart d'un moteur neuf) ; un worker
+        // `queue:work --queue=sync --max-time=3600`
+        // (`scripts/config/laravel-queue-sync.service`) est un process CLI qui
+        // enchaîne les jobs SANS réinitialiser les statiques : un rôle créé à
+        // l'écran resterait invisible du worker jusqu'à une heure. Conséquence
+        // réelle mesurée sur le code : `UserGroupService` (projection AD) lit
+        // `UserGroupUserPivot::roles()` et traite toute valeur absente du
+        // vocabulaire comme « hors vocabulaire » — l'arête `tuteur` d'un
+        // enseignant serait projetée avec le rôle DÉRIVÉ, dans le mauvais groupe
+        // d'annuaire. On repart donc du catalogue à chaque job, au prix d'une
+        // requête par job. Le patron `Queue::before` est déjà en service plus bas
+        // pour `queue_task_runs`.
+        Queue::before(static function (): void {
+            \App\Support\RoleCatalog::flush();
+            // Story 62.2 — le catalogue de TYPES de groupes a exactement la même
+            // mémo statique et le même worker au long cours. Le job de
+            // synchronisation d'annuaire valide des groupes : un type créé à
+            // l'écran lui resterait invisible jusqu'à une heure.
+            \App\Support\GroupTypeCatalog::flush();
+        });
+
         // Enregistrer les observers pour la synchronisation AD
         WorkstationGroup::observe(WorkstationGroupObserver::class);
         UserGroup::observe(UserGroupObserver::class);

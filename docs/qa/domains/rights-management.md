@@ -1519,3 +1519,472 @@ bloquant**.
 >
 > `setProfile()` reste le bon point d'entrée même en tinker : il pose le lien, re-projette les
 > membres et journalise le geste.
+
+---
+
+## Section 20 — Le catalogue de rôles d'appartenance (Story 62.1, 2026-08-08)
+
+**Le modèle en une phrase.** Le rôle porté par une **appartenance** (`user_group_user.role`) n'est
+plus un vocabulaire fermé écrit dans le code : c'est une **table administrable**, `group_roles`, où
+chaque ligne est **une clé immuable ⇔ un libellé modifiable**, plus un rang d'affichage. La clé est
+ce qui est stocké et ce que visent les arborescences ; le libellé est ce qui se lit à l'écran.
+
+> ⚠️ **À ne pas confondre avec la Section 19.** Un *rôle d'appartenance* (ici) qualifie « qui est
+> quoi dans ce groupe » ; un *profil de droits* (Spatie, Section 19) accorde des permissions dans
+> SE5. Rien de cette story ne touche `users.role`, les rôles Spatie, ni la table `roles`. C'est
+> précisément pour éviter la collision que la table s'appelle `group_roles`.
+
+**Ce qui doit rester vrai à chaque scénario** : aucune appartenance ne change de valeur, aucune
+recette de répertoire ne casse, et l'affichage des trois rôles historiques est **identique au
+comportement d'avant la story** (« Élève »/« Enseignant »/« Professeur principal » en classe,
+« Porteur » en projet, « Référent » en équipe, « Membre »/« Gestionnaire »/« Propriétaire » ailleurs).
+
+**Code de référence** :
+- `database/migrations/2026_08_08_120000_create_group_roles_table.php` — table + normalisation des arêtes hors vocabulaire
+- `database/seeders/GroupRoleSeeder.php` — les 3 lignes historiques (idempotent)
+- `app/Models/GroupRole.php` — clé immuable, décomptes d'usage, refus de suppression nommés
+- `app/Support/RoleCatalog.php` — le point de lecture unique (mémoïsé, plancher historique)
+- `app/Services/Filesystem/Plan/GroupNameNormalizer.php` + `app/Providers/AppServiceProvider.php` — la couture d'injection du vocabulaire dans le plan de fichiers
+- `resources/views/pages/admin/settings/groups/**` — la page « Groupes & droits » et son onglet « Rôles »
+
+### Pré-requis Section 20
+
+- Migrations appliquées : `php artisan migrate:status` → `2026_08_08_120000_create_group_roles_table` en `Ran`.
+- **Seed obligatoire** : `sudo -u www-admin php artisan db:seed --class=GroupRoleSeeder`
+  (idempotent — le rejouer ne crée pas de doublon).
+- Un compte `server.admin`, un compte non-admin, une classe `3A` avec un professeur principal
+  (`owner`), un enseignant (`manager`) et un élève (`member`).
+
+### Scénario 20.1 — La page existe, et elle n'annonce que ce qui existe
+
+1. `/admin/settings` → section **« Groupes & droits »** → carte **« Rôles & groupes »**.
+2. **Attendu** : `/admin/settings/groups`, titre « Groupes & droits », **un seul onglet** :
+   « Rôles ». Les onglets « Types de groupes » (62.2) et « Arborescences » (62.6) **ne doivent pas
+   apparaître**, même grisés — un onglet qui annonce une fonction inatteignable est un défaut.
+3. Forcer `?tab=nimportequoi` → la page retombe sur « Rôles » sans message d'erreur.
+4. **Accès** : se connecter avec le compte non-admin → l'URL est refusée. Aucune permission Spatie
+   nouvelle n'a été créée (`/app/rights-management` ne montre aucune permission `grouprole.*`).
+
+### Scénario 20.2 — Les trois lignes historiques, et leurs usages comptés
+
+1. Onglet « Rôles ».
+2. **Attendu** : trois lignes dans cet ordre — `member`/« Membre », `manager`/« Gestionnaire »,
+   `owner`/« Propriétaire », chacune marquée **« structurel »**, chacune avec sa clé rendue
+   discrètement en style code.
+3. **Attendu** : trois compteurs par ligne — appartenances, recettes, types de groupes. Sur une
+   instance vivante, `member` doit compter des **milliers** d'appartenances et au moins **une**
+   recette (le partage de classe seedé pose `edge_role: member` sur le dossier par élève).
+4. Contre-épreuve arithmétique :
+   `SELECT role, count(*) FROM user_group_user GROUP BY role;` doit rendre exactement les
+   compteurs « appartenances » affichés — **et ne rendre AUCUNE autre valeur que
+   `member`/`manager`/`owner`** (voir 20.7).
+
+### Scénario 20.3 — Créer un rôle : la clé est dérivée, prévisualisée, puis figée
+
+1. **« Ajouter un rôle »** → saisir le libellé `Tuteur de stage`.
+2. **Attendu** : la modale affiche **« Clé dérivée » `tuteur_de_stage`** *avant* validation, et
+   dit qu'elle est figée à la création.
+3. Valider → toast de succès, la ligne apparaît **en dernier** dans la liste.
+4. Rouvrir la ligne en **« Modifier »** → **Attendu** : seul le libellé est éditable, et un texte
+   explique que la clé est immuable. Aucun champ de clé.
+5. Cas limites à essayer :
+   - libellé très long (`Référent numérique de circonscription`) → clé **tronquée à 20
+     caractères**, jamais refusée (20 = la largeur de la colonne d'appartenance) ;
+   - libellé `Manager` → **refus** avec un message métier (« la clé `manager` est déjà prise ») ;
+   - libellé sans aucune lettre (`### 42`) → **refus** (« ce libellé ne produit aucune clé
+     utilisable »).
+
+### Scénario 20.4 — Le rôle neuf est immédiatement utilisable sur une appartenance
+
+1. Ouvrir la page de la classe `3A` → colonne « Rôle » d'un membre.
+2. **Attendu** : la liste de choix contient désormais **« Tuteur de stage »**, à la suite des
+   rôles historiques (qui, eux, s'affichent toujours « Élève »/« Enseignant »/« Professeur
+   principal » — c'est une classe).
+3. Poser `Tuteur de stage` sur un élève, recharger : la valeur tient.
+4. Revenir sur `/admin/settings/groups` → la ligne `tuteur_de_stage` compte **1 appartenance** et
+   **1 type de groupe**.
+
+### Scénario 20.5 — Renommer un libellé ne touche AUCUNE donnée (le cœur)
+
+1. Relever d'abord l'état : `SELECT role, count(*) FROM user_group_user GROUP BY role;` et
+   `SELECT key, roles_spec, nodes_spec FROM directory_templates ORDER BY key;`.
+2. Modifier le libellé de `manager` : « Gestionnaire » → **« Encadrant »**.
+3. **Attendu, sur les données** : les deux requêtes ci-dessus rendent **exactement** la même chose
+   qu'avant. Toute différence est un **incident bloquant**.
+4. **Attendu, à l'écran** : sur un groupe de type `projet`, le rôle continue de se lire
+   **« Porteur »** ; sur une `classe`, **« Enseignant »** ; sur un type non tranché (`cours`),
+   il se lit désormais **« Encadrant »**. C'est voulu : les libellés par type de groupe sont encore
+   du code et priment (ils deviennent une donnée en story 62.3).
+5. Remettre « Gestionnaire ».
+
+### Scénario 20.6 — Supprimer : REFUS nommé, jamais de cascade (CRITIQUE)
+
+1. Tenter de supprimer `manager` → **refus** immédiat, message « rôle structurel », **aucune
+   modale de confirmation**. Idem pour `member` et `owner`.
+2. Tenter de supprimer `tuteur_de_stage` alors qu'un élève le porte → **refus** nommant le
+   décompte (« Refusé : 1 appartenance porte ce rôle »).
+3. **Contre-épreuve d'écriture** : après ce refus, vérifier que le rôle est toujours en base ET
+   que l'appartenance de l'élève n'a **pas** été remise à `member`. Une cascade silencieuse est un
+   **incident bloquant**.
+4. Retirer le rôle de l'élève (le repasser à « Élève »), revenir : la suppression propose alors une
+   **confirmation**, et aboutit avec un toast.
+5. **Recettes** : créer un rôle `pilote`, l'utiliser dans une arborescence (story 62.6 — ou en
+   tinker sur `directory_templates.roles_spec[].resolution.edge_roles`), puis tenter de le
+   supprimer → refus mentionnant « 1 recette ». Vérifier que la recette n'a pas été modifiée.
+
+### Scénario 20.7 — Migration : plus aucune appartenance hors vocabulaire
+
+1. **Avant** de migrer, sur une base réelle :
+   `SELECT DISTINCT role FROM user_group_user;` — noter toute valeur hors
+   `member`/`manager`/`owner` (donnée héritée : la lecture les affichait déjà « Élève »/« Membre »
+   depuis la story 42.3, mais la colonne, elle, les gardait).
+2. Migrer. La migration **normalise** ces valeurs vers `member` et **journalise le nombre de lignes
+   touchées** (`[62.1] Arêtes normalisées vers « member »` dans `storage/logs/laravel.log`).
+3. **Attendu après** : `SELECT DISTINCT role FROM user_group_user;` ne rend plus que les clés du
+   catalogue. Le nombre de lignes normalisées doit correspondre à ce qui a été relevé en 1.
+4. **Attendu** : aucune ligne déjà à `member`/`manager`/`owner` n'a changé — les compteurs par rôle
+   des trois clés historiques ne bougent que du report des valeurs héritées.
+
+### Scénario 20.8 — Réordonner l'affichage
+
+1. Sur `owner`, cliquer **« Monter »** deux fois.
+2. **Attendu** : l'ordre de la liste devient `owner`, `member`, `manager` ; les flèches de bout de
+   liste sont désactivées.
+3. **Attendu, ailleurs dans l'application** : la liste de choix « Rôle » d'un membre de groupe suit
+   **le même ordre**. C'est le seul effet visible d'un réordonnancement.
+4. Remettre l'ordre d'origine.
+
+### Scénario 20.9 — Instance non seedée : le plancher tient
+
+1. Sur une instance de test, vider le catalogue : `DELETE FROM group_roles;`.
+2. **Attendu** : l'application **continue de fonctionner** — rattacher un utilisateur à un groupe,
+   ouvrir une page de groupe, éditer un rôle de membre. Le vocabulaire minimal
+   (`member`/`manager`/`owner`) ne disparaît **jamais**, quel que soit l'état de la table.
+3. **Attendu** : les libellés retombent sur « Membre »/« Gestionnaire »/« Propriétaire » (et les
+   libellés scolaires en classe), c'est-à-dire exactement l'affichage seedé.
+4. **Attendu** : un rôle créé plus tôt (`tuteur_de_stage`) n'est **plus** proposé et une
+   appartenance qui le porterait se **lit** « Élève »/« Membre ». Rejouer
+   `db:seed --class=GroupRoleSeeder` restaure les trois lignes historiques ; les rôles supprimés,
+   eux, sont à recréer.
+
+### Post-correctifs & non-régressions — Section 20
+
+- **Le partage de classe n'a pas bougé.** Provisionner un partage de classe et comparer les droits
+  posés avec ceux d'avant la story : 62.1 ne touche pas la compilation des permissions.
+- **Les cinq recettes seedées restent valides** :
+  `php artisan db:seed --class=DirectoryTemplateSeeder` ne doit lever aucune erreur de validation.
+- **Aucun onglet orphelin** : après la story 62.2, vérifier que l'onglet « Types de groupes »
+  apparaît *avec* son contenu — jamais avant.
+
+---
+
+## Section 21 — Le catalogue de types de groupes (Story 62.2, 2026-08-08)
+
+**Le modèle en une phrase.** Le **type** porté par un groupe d'utilisateurs (`user_groups.type`)
+cesse d'être une chaîne libre sans référentiel : c'est une **table administrable**, `group_types`,
+où chaque ligne est **une clé immuable ⇔ un libellé modifiable + une icône**, plus un rang
+d'affichage. La clé est ce qui est stocké, ce que les arborescences visent
+(`directory_templates.attached_group_type`) et ce que le code métier compare en littéral ; le
+libellé est ce qui se lit à l'écran.
+
+> ⚠️ **Ce qui change dans la vie de tous les jours.** Les listes déroulantes « Type » de la création
+> d'un groupe et de l'édition SQL ne sont plus écrites en dur : elles affichent le catalogue. Trois
+> conséquences visibles et VOULUES : `Rôle` et `Fonction` (que le balayage d'annuaire écrit depuis
+> toujours) deviennent sélectionnables ; `Matière / Classe`, qui manquait à l'écran d'édition SQL,
+> y apparaît enfin ; et un type créé dans les paramètres est immédiatement proposé.
+
+> ⚠️ **L'invariant d'accrochage n'est PAS « une recette par type ».** L'index unique posé en 60.2 a
+> été délibérément relâché en 60.5. La règle vivante est plus étroite : **un type ne porte qu'une
+> recette d'ARBRE** ; les recettes **plates** peuvent être plusieurs. Le type `classe` en porte deux
+> dans le catalogue livré. L'écran des types le dit noir sur blanc sous la liste.
+
+**Ce qui doit rester vrai à chaque scénario** : aucun groupe ne change de type, aucune recette ne
+casse, et l'affichage des types est **identique au comportement d'avant la story** — à une
+correction près, nommée au scénario 21.4.
+
+**Code de référence** :
+- `database/migrations/2026_08_08_160000_create_group_types_table.php` — table + les 9 statiques + la **découverte dynamique**
+- `database/seeders/GroupTypeSeeder.php` — les 9 lignes statiques (idempotent, ne ressuscite jamais un type découvert)
+- `app/Models/GroupType.php` — clé immuable, décomptes d'usage, accrochages, refus de suppression nommés
+- `app/Support/GroupTypeCatalog.php` — le point de lecture unique (mémoïsé, plancher des 9)
+- `app/Services/UserGroupService.php` (`validateData`) et `app/Models/DirectoryTemplate.php` (garde `saving`) — les **deux** points d'écriture
+- `resources/views/pages/admin/settings/groups/_partials/types-tab.blade.php` — l'onglet
+
+### Pré-requis Section 21
+
+- Migrations appliquées : `php artisan migrate:status` → `2026_08_08_160000_create_group_types_table` en `Ran`.
+- **Seed recommandé** : `sudo -u www-admin php artisan db:seed --class=GroupTypeSeeder`
+  (idempotent — la migration a déjà posé les 9 lignes ; le seed les resynchronise sur la baseline
+  de code après une modification d'écran).
+- Un compte `server.admin`, un compte non-admin.
+- **Un relevé PRÉALABLE, à faire avant de migrer** (c'est le pivot du scénario 21.2) :
+  `SELECT type, COUNT(*) FROM user_groups GROUP BY type ORDER BY 2 DESC;` — garder la sortie.
+
+### Scénario 21.1 — L'onglet existe, et il n'annonce que ce qui existe
+
+1. `/admin/settings` → section **« Groupes & droits »** → la carte **« Rôles & groupes »** parle
+   désormais aussi des **types de groupes**. Aucune carte nouvelle, aucune section nouvelle.
+2. Ouvrir la page → deux onglets : **« Rôles »** et **« Types de groupes »**. Aucun onglet
+   « Arborescences » (story 62.6, pas encore livrée).
+3. `?tab=types` ouvre directement l'onglet ; `?tab=nimportequoi` retombe sur **« Rôles »**.
+4. **Attendu, compte non-admin** : la page est refusée (403 / redirection). Aucune permission
+   nouvelle n'a été créée — `server.admin` seul.
+
+### Scénario 21.2 — La reprise de la base réelle (LE scénario critique)
+
+1. Comparer le relevé pris en pré-requis à la liste affichée dans l'onglet.
+2. **Attendu** : **toute** valeur de `type` réellement présente en base a une ligne. Les 9 valeurs
+   recensées (`Personnalisé`, `Classe`, `Cours`, `Matière`, `Matière / Classe`, `Projet`, `Équipe`,
+   `Rôle`, `Fonction`) sont en tête, dans l'ordre historique des listes déroulantes.
+3. **Attendu, et c'est le point le plus important** : une valeur exotique du parc (`class`, `autre`,
+   une casse inattendue…) apparaît **à sa valeur EXACTE**, jamais corrigée ni fusionnée avec sa
+   voisine. Si la base contenait `classe` ET `Classe`, l'écran montre **deux lignes**, chacune avec
+   son propre décompte de groupes. C'est un signal honnête sur l'état de la donnée, pas un défaut.
+4. **Contre-épreuve d'écriture (bloquante si elle échoue)** : rejouer
+   `SELECT type, COUNT(*) FROM user_groups GROUP BY type;` — la sortie doit être **identique au
+   caractère près** à celle du pré-requis. La migration lit `user_groups`, elle n'y écrit jamais.
+5. Relancer `php artisan migrate` : rien ne se passe (migration déjà jouée). Le cas échéant,
+   rejouer le seed : aucun doublon, et **aucun type découvert n'est recréé s'il a été supprimé**.
+
+### Scénario 21.3 — Créer un type : la clé est dérivée, prévisualisée, puis figée
+
+1. **« Ajouter un type »** → saisir « Club de lecture ». La **clé dérivée** s'affiche en direct :
+   `club_de_lecture`. Saisir une icône Font Awesome (`fa-solid fa-guitar`) : l'aperçu suit.
+2. Laisser l'icône vide → l'aperçu montre l'icône générique `fa-solid fa-users`. C'est licite.
+3. Enregistrer → le type apparaît en fin de liste, avec **0 groupe** et **aucune arborescence**.
+4. Rouvrir en modification : le libellé et l'icône sont modifiables, **la clé n'est pas affichée
+   comme un champ** — un texte explique qu'elle est immuable.
+5. **Attendu** : saisir un libellé qui reproduit une clé existante (« Classe ») est **refusé sous le
+   champ**, avec un message métier — jamais une erreur SQL brute.
+6. Saisir un libellé qui ne produit aucune lettre (« 123 ») est refusé de même.
+
+### Scénario 21.4 — Le type neuf est immédiatement utilisable, et l'affichage n'a pas bougé
+
+1. `/users` → **« Nouveau groupe »** : la liste « Type » contient **« Club de lecture »**, ainsi que
+   **« Rôle »** et **« Fonction »**. Créer un groupe de ce type.
+2. Ouvrir la fiche du groupe : le badge affiche **« Club de lecture »**.
+3. **Parité d'affichage à vérifier sur des groupes EXISTANTS** — une classe, un projet, une équipe,
+   un `Matiere_x@y` : les libellés lus sur la fiche groupe, sur la fiche utilisateur et dans le
+   tiroir de sélection de groupes doivent être **ceux d'avant la story**.
+4. **La seule divergence corrigée, à constater** : un groupe de type `role` ou `function` affichait
+   « Role » / « Function » sur la **fiche groupe** (et « Rôle » / « Fonction » sur la fiche
+   utilisateur). Les deux écrans disent maintenant **« Rôle »** et **« Fonction »**.
+5. **Le tiroir de sélection de groupes** (bouton « Groupes » d'une fiche utilisateur) affichait la
+   **valeur technique brute** en description (`matiere_classe`). Il affiche désormais le libellé.
+6. **Édition SQL d'un groupe** (`/users/sql-groups/<id>`) : ouvrir un groupe `Matiere_x@y` et
+   enregistrer **sans rien changer** → son type reste `matiere_classe`. Avant la story, la liste
+   déroulante omettait cette valeur et l'enregistrement la **déclassait silencieusement**.
+
+### Scénario 21.5 — Renommer un libellé ou une icône ne touche AUCUNE donnée (le cœur)
+
+1. Renommer « Classe » en **« Division »**, et changer son icône.
+2. **Attendu** : le badge des fiches de groupes de classe se lit « Division » partout.
+3. **Attendu** : `SELECT DISTINCT type FROM user_groups;` est **inchangé** — la colonne porte
+   toujours `classe`.
+4. **Attendu** : `SELECT key, attached_group_type FROM directory_templates;` est **inchangé**.
+5. **Attendu, le plus important** : provisionner (ou re-provisionner) le partage d'une classe →
+   **les droits posés sont exactement les mêmes qu'avant le renommage**. Comparer un `getfacl -R`
+   avant/après : le diff doit être **vide**.
+6. Remettre « Classe » (ou rejouer `db:seed --class=GroupTypeSeeder`, qui resynchronise la baseline).
+
+### Scénario 21.6 — Supprimer : REFUS nommés, jamais de cascade (CRITIQUE)
+
+1. Tenter de supprimer **« Classe »** → **refus** immédiat, message « type structurel », **aucune
+   modale de confirmation**. Idem pour les huit autres types recensés, même s'ils ne portent aucun
+   groupe : le prochain balayage d'annuaire les réécrirait.
+2. Tenter de supprimer « Club de lecture » alors qu'un groupe le porte → **refus** nommant le
+   décompte (« Refusé : 1 groupe porte ce type »).
+3. **Contre-épreuve d'écriture** : après ce refus, vérifier que le type est toujours en base **ET**
+   que le groupe porte toujours son type. Une cascade silencieuse est un **incident bloquant**.
+4. Supprimer le groupe, revenir : la suppression propose alors une **confirmation**, et aboutit.
+5. **Arborescences** : accrocher une recette à un type (en base, ou via 62.6 quand elle existera),
+   puis tenter de supprimer ce type → refus mentionnant « 1 arborescence ». Vérifier que la recette
+   n'a pas été modifiée.
+
+### Scénario 21.7 — L'accrochage d'arborescence, lu et gardé
+
+1. Dans l'onglet, la colonne **« Arborescence »** montre, pour `classe`, la clé de la recette
+   d'**arbre** accrochée, **plus** un badge « + 1 plate ». Les autres types affichent « — ».
+2. **Attendu** : la note sous la liste énonce la règle (« Un type de groupe ne porte qu'une seule
+   recette d'arborescence… ; les recettes plates peuvent être plusieurs »).
+3. **Attendu** : aucun bouton n'attribue ni ne retire un accrochage — c'est la lecture seule
+   jusqu'à la story 62.6.
+4. **Garde du second point d'écriture**, à éprouver en tinker :
+   `DirectoryTemplate::create([... 'attached_group_type' => 'classse' ...])` → **refus nommé**
+   citant le type fautif et renvoyant à l'écran d'administration. Avant la story, cet accrochage
+   était accepté et ne s'appariait simplement… jamais.
+5. **Non-régression 60.5** : créer une **seconde** recette d'ARBRE accrochée à `classe` → refus,
+   message inchangé (« le type de groupe « classe » porte déjà la recette d'arbre … »). Créer une
+   seconde recette **plate** sur `classe` → **acceptée**.
+
+### Scénario 21.8 — Le balayage d'annuaire ne déclasse rien
+
+1. Lancer une synchronisation AD complète sur une base réelle.
+2. **Attendu** : aucun groupe ne bascule en `custom`. Les CN `Classe_`, `Equipe_`, `PP_`, `Cours_`,
+   `Projet_`, `Matiere_`, `Matiere_x@y`, ainsi que les groupes principaux et de fonction,
+   conservent le type qu'ils avaient.
+3. **Attendu** : le balayage n'est **pas** bridé par le catalogue — il écrit directement en base,
+   la garde de vocabulaire vit au service. Un type détecté et absent du catalogue serait donc écrit
+   quand même : c'est voulu, et un test automatisé vérifie qu'aucune détection ne peut produire une
+   valeur hors catalogue.
+
+### Scénario 21.9 — Réordonner l'affichage
+
+1. Sur « Classe », cliquer **« Monter »** : elle passe devant « Personnalisé ».
+2. **Attendu, ailleurs dans l'application** : les listes déroulantes « Type » de la création d'un
+   groupe et de l'édition SQL suivent **le même ordre**. C'est le seul effet visible.
+3. Remettre l'ordre d'origine (ou rejouer le seed).
+
+### Scénario 21.10 — Instance non seedée : le plancher tient
+
+1. Sur une instance de test, vider le catalogue : `DELETE FROM group_types;`.
+2. **Attendu** : l'application **continue de fonctionner** — créer un groupe de type `classe`,
+   ouvrir une fiche de groupe, provisionner un partage de classe. Le vocabulaire des neuf types
+   recensés ne disparaît **jamais**, quel que soit l'état de la table.
+3. **Attendu** : les libellés retombent sur ceux du code (« Classe », « Matière / Classe », …),
+   c'est-à-dire exactement l'affichage seedé.
+4. **Attendu** : un type créé plus tôt (« Club de lecture ») n'est **plus** proposé, et un groupe qui
+   le porterait se **lit** « Club_de_lecture » (repli `ucfirst`). Rejouer
+   `db:seed --class=GroupTypeSeeder` restaure les neuf lignes ; les types découverts ou créés, eux,
+   sont à recréer — ou à retrouver en rejouant la migration sur une base neuve.
+
+### Post-correctifs & non-régressions — Section 21
+
+- **Le partage de classe n'a pas bougé.** Provisionner un partage de classe et comparer les droits
+  posés avec ceux d'avant la story : 62.2 ne touche pas la compilation des permissions.
+- **Les recettes seedées restent valides**, leurs **deux** accrochages `classe` compris :
+  `php artisan db:seed --class=DirectoryTemplateSeeder` ne doit lever aucune erreur.
+- **Aucun onglet orphelin** : « Types de groupes » apparaît *avec* son contenu ; « Arborescences »
+  n'apparaîtra qu'avec la story 62.6.
+- **Déploiement** : `php artisan migrate` **puis**, si l'écran a déjà été utilisé,
+  `php artisan db:seed --class=GroupTypeSeeder`.
+
+---
+
+## Section 22 — Les rôles disponibles par type de groupe (Story 62.3, 2026-08-08)
+
+**Ce que la story change, en une phrase** : les libellés de rôle par type de groupe
+(« Élève » dans une classe, « Porteur » dans un projet, « Référent » dans une équipe)
+étaient écrits en **code** ; ils sont devenus des **lignes administrables**, et cette même
+donnée décide désormais **quels rôles sont attribuables** dans un type.
+
+**Où ça se passe** : `/admin/settings/groups?tab=types` → « Modifier » un type → section
+« Rôles disponibles ». Aucun onglet ni page nouvelle.
+
+**Pré-déploiement VM** :
+
+```
+php artisan migrate
+php artisan db:seed --class=GroupTypeRoleSeeder   # seulement si l'écran a déjà servi
+```
+
+> La migration pose elle-même les **sept** déclarations de reprise. Le seeder ne sert qu'à
+> resynchroniser une instance en place sur la baseline du code.
+
+### Scénario 22.1 — La parité : rien n'a bougé à l'écran
+
+1. Ouvrir la page d'un groupe de type `classe` (onglets Élèves / Profs).
+2. **Attendu** : la colonne « Rôle » lit exactement comme avant — « Élève », « Enseignant »,
+   « Professeur principal ». Le select propose les **mêmes trois** options, dans le même ordre.
+3. Ouvrir un groupe de type `projet`, puis `equipe`.
+4. **Attendu** : « Membre » / « Porteur » sur un projet, « Membre » / « Référent » sur une
+   équipe. **« Professeur principal » n'est PAS proposé** hors classe.
+5. Ouvrir un groupe de type `cours` (ou tout type sans déclaration).
+6. **Attendu** : libellés génériques « Membre » / « Gestionnaire », et **tout le catalogue**
+   de rôles proposé — c'est le régime de repli.
+
+### Scénario 22.2 — Déclarer un rôle sur un type réel
+
+1. `/admin/settings/groups?tab=types`, « Modifier » sur **Projet**.
+2. **Attendu** : la section « Rôles disponibles » montre `Membre` et `Gestionnaire` cochés,
+   avec « Porteur » dans le champ « Libellé dans ce type » du second, et le champ du premier
+   **vide** (déclaré sans surcharge — le placeholder rappelle le libellé du catalogue).
+3. Remplacer « Porteur » par « Chef de projet », enregistrer.
+4. **Attendu** : la colonne « Rôles disponibles » de la liste affiche « Membre » et
+   « Chef de projet » ; la page d'un groupe `projet` lit « Chef de projet » ; **aucun autre
+   type** n'a bougé (une classe dit toujours « Enseignant »).
+5. Vider le champ et réenregistrer.
+6. **Attendu** : retour à « Gestionnaire », le libellé du catalogue. Vider ≠ effacer : la
+   déclaration reste, seule la surcharge disparaît.
+
+### Scénario 22.3 — Le refus de retrait, avec son décompte
+
+1. Choisir une **classe peuplée** : au moins deux enseignants y sont `manager`.
+2. `tab=types` → « Modifier » sur **Classe** → **décocher** « Gestionnaire » → Enregistrer.
+3. **Attendu** : un toast d'erreur nommant le décompte — « Refusé : N appartenances portent le
+   rôle "Enseignant" dans des groupes de type "classe". Aucune donnée n'a été modifiée… ».
+4. **Attendu, et c'est le point à vérifier vraiment** : **rien** n'a été enregistré. Rouvrir la
+   modale — la coche est revenue, et si vous aviez aussi changé le **libellé du type** ou
+   coché un autre rôle dans la même soumission, **ces changements-là non plus** ne sont
+   passés. C'est du tout-ou-rien.
+5. Décocher à la place un rôle qu'**aucune** appartenance ne porte (ex. « Professeur
+   principal » sur une classe sans PP désigné).
+6. **Attendu** : accepté. Le rôle disparaît du select de cette classe, et la valeur des
+   membres n'est pas touchée.
+
+### Scénario 22.4 — La contrainte d'attribution mord aux points humains
+
+1. Créer un rôle « Tuteur » dans l'onglet **Rôles**.
+2. Le déclarer sur **Projet** seulement (scénario 22.2).
+3. Sur un groupe `projet` : le select de la colonne « Rôle » propose « Tuteur ».
+4. Sur un groupe `classe` : « Tuteur » **n'est pas** proposé — la classe déclare trois rôles,
+   et il n'en fait pas partie.
+5. Sur un groupe `cours` (sans déclaration) : « Tuteur » **est** proposé — régime de repli.
+6. Rattacher un utilisateur à un projet depuis « Modifier le groupe » : le select de rôle du
+   candidat propose « Membre » / « Chef de projet » / « Tuteur », **jamais** « Professeur
+   principal » (interdit au rattachement depuis 42.3).
+
+> **Divergence assumée à signaler** : sur une classe, ce select disait « Prof » ; il dit
+> maintenant « Enseignant ». « Prof » était un raccourci écrit dans cette seule vue.
+
+### Scénario 22.5 — Une appartenance héritée reste visible et conservable
+
+1. Trouver (ou fabriquer en base) une appartenance portant un rôle que son type **ne déclare
+   pas** — typiquement un `owner` sur un `projet`.
+2. Ouvrir la page du groupe.
+3. **Attendu** : le membre affiche « Propriétaire », et cette valeur est **présente dans le
+   select, sélectionnée**. Ré-enregistrer sans y toucher ne la dégrade pas.
+4. **Attendu** : la choisir pour un AUTRE membre est en revanche refusée (toast métier).
+
+### Scénario 22.6 — L'aperçu de partage dit le vocabulaire du type
+
+1. `/admin/shares` → recette auto-résolvable « profs → élèves » → choisir une classe.
+2. **Attendu** : l'aperçu d'audience affiche « **3A — Enseignant** ».
+3. **Divergence assumée** : il affichait « 3A — encadrants ». L'ancien texte venait d'un
+   `match` écrit dans cette seule vue, qui ignorait le type et rendait « membres » n'importe
+   quel rôle personnalisé.
+
+### Scénario 22.7 — Suppressions croisées
+
+1. Onglet **Rôles** → supprimer « Tuteur » alors qu'un type le déclare.
+2. **Attendu** : refusé, avec « N type(s) de groupes déclarent ce rôle » et le renvoi vers
+   l'onglet « Types de groupes ». Retirer les déclarations, puis réessayer : accepté.
+3. Onglet **Types** → créer un type « Club », lui déclarer deux rôles, puis le supprimer
+   (aucun groupe ne le porte, aucune arborescence ne s'y accroche).
+4. **Attendu** : suppression acceptée, et ses déclarations partent avec lui. Ce n'est pas une
+   cascade : une déclaration est un **attribut** du type, comme son icône.
+
+### Scénario 22.8 — Une clé de type héritée (non-slug)
+
+1. Si l'instance porte un type découvert par la migration 62.2 (`Custom`, `class`, …), ouvrir
+   sa modale d'édition.
+2. **Attendu** : la section « Rôles disponibles » fonctionne normalement — cocher, libeller,
+   enregistrer. Une clé héritée n'est pas un slug, et rien ne l'exige.
+3. **Attendu** : `Custom` et `custom` restent **distincts** — déclarer sur l'un ne déclare
+   pas sur l'autre.
+
+### Post-correctifs & non-régressions — Section 22
+
+- **Le partage de classe n'a pas bougé.** Provisionner un partage de classe et comparer les
+  droits posés avec ceux d'avant la story : 62.3 ne touche que de l'affichage et une garde de
+  saisie, jamais la compilation des permissions.
+- **Le balayage d'annuaire reste LIBRE.** Lancer un `sync-from-ad` sur un établissement : les
+  rôles écrits par l'import ne sont **jamais** refusés par la contrainte, y compris sur un type
+  qui ne les déclarerait pas. C'est un contrat, pas un oubli — l'annuaire est autoritaire sur
+  son propre flux.
+- **Renommer un libellé local ne touche aucune donnée dérivée** : ni une appartenance, ni une
+  recette, ni un plan de fichiers résolu.
+- **Instance non migrée / table absente** : l'application continue de fonctionner, les libellés
+  retombent sur ceux du catalogue, et **tous** les rôles restent attribuables. La dégradation
+  est journalisée (`[RoleCatalog] Déclarations de rôles par type de groupe illisibles`) — si
+  cette ligne apparaît en production, c'est une panne de base, pas une base neuve.

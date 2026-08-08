@@ -8,6 +8,7 @@ use App\Repositories\UserRepository;
 use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
+use App\Support\GroupTypeCatalog;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
@@ -77,7 +78,12 @@ new class extends Component {
                     static fn($group): array => [
                         'cn' => (string) $group->name,
                         'name' => (string) ($group->display_name ?: $group->name),
-                        'description' => (string) ($group->type ?? ''),
+                        // Story 62.2 — la description rendait la VALEUR TECHNIQUE
+                        // nue (`matiere_classe`, et « » pour un groupe sans type).
+                        // Elle lit le catalogue, comme les deux fiches : plus
+                        // jamais une clé de base de données en texte d'écran (D1
+                        // de la story 42.3).
+                        'description' => GroupTypeCatalog::label($group->type),
                         'dn' => (string) ($group->ad_dn ?? ''),
                     ],
                 )

@@ -21,7 +21,16 @@ namespace App\Services\Filesystem\Plan;
  * ({@see \Tests\Unit\Services\Filesystem\Plan\GroupNameNormalizerTest}) : si l'une
  * des deux dérive, le test tombe.
  *
- * Tout est `static` et sans état : aucun accès disque, réseau, base ou shell.
+ * Tout est `static` : aucun accès disque, réseau, base ou shell.
+ *
+ * **Une seule exception, et elle est nommée** (story 62.1) : le vocabulaire de
+ * rôle d'arête n'est plus une constante recopiée, c'est un catalogue
+ * administrable. Il ENTRE ici par injection ({@see self::useEdgeRoles()}), posée
+ * au démarrage de l'application ; ce fichier ne va jamais le chercher. En
+ * l'absence d'injection — les tests purs de ce namespace — le repli littéral des
+ * trois clés historiques s'applique. La propriété statique du résolveur est le
+ * seul état de la classe, et c'est le prix exact de la coupe : sans elle, il
+ * faudrait interroger une table depuis un namespace qui n'en a pas le droit.
  */
 final class GroupNameNormalizer
 {
@@ -72,15 +81,70 @@ final class GroupNameNormalizer
     public const TYPE_MATIERE_CLASSE = 'matiere_classe';
 
     /**
-     * Vocabulaire BORNÉ du rôle d'arête (`member|manager|owner`).
+     * Story 62.1 — REPLI du vocabulaire de rôle d'arête : les trois clés
+     * historiques, en littéraux locaux.
      *
-     * Recopié plutôt qu'importé, même raison que ci-dessus : le pivot d'arête est
-     * un modèle Eloquent, et le plan ne connaît que des identités internes. Le
-     * test d'équivalence épingle cette liste sur le vocabulaire stocké réel.
+     * Il sert exactement dans un cas : quand aucun résolveur n'a été installé,
+     * c'est-à-dire hors application démarrée — les tests PURS de ce namespace. Au
+     * runtime, le fournisseur de services installe TOUJOURS le résolveur
+     * ({@see self::useEdgeRoles()}), et c'est le catalogue administrable qui parle.
+     *
+     * Le repli n'élargit rien : il RESTREINT au vocabulaire historique. Une clé
+     * nouvelle du catalogue est refusée tant que le résolveur n'est pas là — ce
+     * qui, hors application démarrée, est le comportement correct.
      *
      * @var list<string>
      */
-    public const EDGE_ROLES = ['member', 'manager', 'owner'];
+    private const FALLBACK_EDGE_ROLES = ['member', 'manager', 'owner'];
+
+    /**
+     * Source INJECTÉE du vocabulaire de rôle d'arête.
+     *
+     * **Pourquoi une injection et pas une lecture directe.** Ce namespace est
+     * AU-DESSUS de la ligne de contrat : il n'interroge rien, ne charge aucun
+     * modèle d'identité, et c'est verrouillé par un test d'architecture dont le
+     * scan est textuel. Le catalogue, lui, est une table. La seule couture qui
+     * concilie les deux est celle-ci : le vocabulaire ENTRE dans le plan, le plan
+     * ne va jamais le chercher. La mémoïsation vit du côté qui a le droit de lire.
+     *
+     * @var (callable(): list<string>)|null
+     */
+    private static $edgeRoleResolver = null;
+
+    /**
+     * Installe (ou retire, avec `null`) la source du vocabulaire de rôle d'arête.
+     *
+     * Appelée une fois au démarrage de l'application. Les tests qui veulent
+     * exercer le repli la remettent à `null`.
+     *
+     * @param  (callable(): list<string>)|null  $resolver
+     */
+    public static function useEdgeRoles(?callable $resolver): void
+    {
+        self::$edgeRoleResolver = $resolver;
+    }
+
+    /**
+     * Le vocabulaire de rôle d'arête EN VIGUEUR.
+     *
+     * Une source qui rendrait une liste vide est traitée comme absente : un
+     * vocabulaire vide ne refuserait pas seulement les rôles nouveaux, il
+     * refuserait `member` — donc toute arête, donc tout plan.
+     *
+     * @return list<string>
+     */
+    public static function edgeRoles(): array
+    {
+        $resolver = self::$edgeRoleResolver;
+
+        if ($resolver === null) {
+            return self::FALLBACK_EDGE_ROLES;
+        }
+
+        $roles = array_values(array_filter($resolver(), 'is_string'));
+
+        return $roles === [] ? self::FALLBACK_EDGE_ROLES : $roles;
+    }
 
     /**
      * Nom court d'un groupe : préfixe de type retiré (insensible à la casse,
@@ -247,9 +311,9 @@ final class GroupNameNormalizer
         return self::isSafeSegment($login);
     }
 
-    /** `true` si `$role` appartient au vocabulaire borné du rôle d'arête. */
+    /** `true` si `$role` appartient au vocabulaire de rôle d'arête en vigueur. */
     public static function isKnownEdgeRole(mixed $role): bool
     {
-        return is_string($role) && in_array($role, self::EDGE_ROLES, true);
+        return is_string($role) && in_array($role, self::edgeRoles(), true);
     }
 }

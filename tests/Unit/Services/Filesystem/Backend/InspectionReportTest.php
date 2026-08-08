@@ -120,21 +120,36 @@ class InspectionReportTest extends TestCase
     #[Test]
     public function an_observed_grant_speaks_internal_identities_and_plan_access(): void
     {
-        $grant = new ObservedGrant(PlanSubject::group(7), PlanGrant::ACCESS_RO);
+        $grant = new ObservedGrant(PlanSubject::group(7), [PlanGrant::VERB_LIRE]);
 
         $this->assertSame(
-            ['subject' => ['type' => 'user_group', 'id' => 7, 'edge_role' => null], 'access' => 'ro'],
+            ['subject' => ['type' => 'user_group', 'id' => 7, 'edge_role' => null], 'verbs' => [PlanGrant::VERB_LIRE]],
             $grant->toArray(),
         );
     }
 
     #[Test]
-    public function an_observed_grant_refuses_an_access_outside_the_plan_vocabulary(): void
+    public function an_observed_grant_refuses_a_verb_outside_the_plan_vocabulary(): void
     {
         $this->expectException(InvalidBackendReportException::class);
-        $this->expectExceptionMessage('accès observé inconnu');
+        $this->expectExceptionMessage('verbe observé inconnu');
 
-        new ObservedGrant(PlanSubject::user(1), 'rwx');
+        // Un mode système relu tel quel : la relecture doit le REFUSER, pas le
+        // laisser entrer dans le vocabulaire de plan.
+        new ObservedGrant(PlanSubject::user(1), ['rwx']);
+    }
+
+    /**
+     * Story 62.4 — la liste VIDE est licite pour une OBSERVATION, et elle seule :
+     * c'est la forme matérialisée d'une suspension. Le plan, lui, la refuse.
+     */
+    #[Test]
+    public function an_observed_grant_may_carry_no_verb_at_all(): void
+    {
+        $grant = new ObservedGrant(PlanSubject::user(1), []);
+
+        self::assertTrue($grant->isEmpty());
+        self::assertSame([], $grant->toArray()['verbs']);
     }
 
     #[Test]
@@ -146,7 +161,7 @@ class InspectionReportTest extends TestCase
         new NodeObservation(
             '_profs',
             FileBackendObservation::NonObservable,
-            [new ObservedGrant(PlanSubject::group(7), PlanGrant::ACCESS_RO)],
+            [new ObservedGrant(PlanSubject::group(7), [PlanGrant::VERB_LIRE])],
         );
     }
 
@@ -163,12 +178,12 @@ class InspectionReportTest extends TestCase
     public function observed_grants_are_sorted_deterministically(): void
     {
         $a = NodeObservation::observed('_profs', [
-            new ObservedGrant(PlanSubject::group(11), PlanGrant::ACCESS_RW),
-            new ObservedGrant(PlanSubject::user(3), PlanGrant::ACCESS_RO),
+            new ObservedGrant(PlanSubject::group(11), PlanGrant::VERBS),
+            new ObservedGrant(PlanSubject::user(3), [PlanGrant::VERB_LIRE]),
         ]);
         $b = NodeObservation::observed('_profs', [
-            new ObservedGrant(PlanSubject::user(3), PlanGrant::ACCESS_RO),
-            new ObservedGrant(PlanSubject::group(11), PlanGrant::ACCESS_RW),
+            new ObservedGrant(PlanSubject::user(3), [PlanGrant::VERB_LIRE]),
+            new ObservedGrant(PlanSubject::group(11), PlanGrant::VERBS),
         ]);
 
         $this->assertSame($a->toArray(), $b->toArray());

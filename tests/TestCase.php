@@ -2,6 +2,8 @@
 
 namespace Tests;
 
+use App\Support\GroupTypeCatalog;
+use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -44,6 +46,16 @@ abstract class TestCase extends BaseTestCase
         // vide le cache statique à chaque test pour forcer la ré-inscription.
         Component::flushCache();
         Component::forgetFactory();
+        // Story 62.1 — la lecture du catalogue de rôles est MÉMOÏSÉE dans une
+        // propriété statique. Elle est vidée par les hooks `saved`/`deleted` du
+        // modèle, mais un rollback de RefreshDatabase/DatabaseTransactions ne
+        // dispatche AUCUN événement Eloquent : sans ce vidage, un test qui crée
+        // « tuteur » empoisonnerait le suivant (dont la base ne le contient plus).
+        RoleCatalog::flush();
+        // Story 62.2 — même mécanisme, même piège : le catalogue de TYPES de
+        // groupes est mémoïsé dans une propriété statique que seul un événement
+        // Eloquent vide.
+        GroupTypeCatalog::flush();
     }
 
     /**

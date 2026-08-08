@@ -446,6 +446,18 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.files');
 
+    // /admin/settings/groups — Story 62.1 : « Groupes & droits », page HÔTE à
+    // onglets du modèle groupes/rôles/droits (Epic 62). UN SEUL onglet pour
+    // l'instant — « Rôles », le catalogue des rôles d'arête (clé immuable ⇔
+    // libellé modifiable, ordre d'affichage, refus de suppression nommés). Les
+    // onglets « Types de groupes » (62.2) et « Arborescences » (62.6) viendront
+    // ici : on n'affiche pas d'onglet fantôme avant qu'il existe.
+    // `can:server.admin` SEUL (Q4 = A, décision Henri 2026-08-08) : aucune
+    // permission Spatie nouvelle, comme toutes les pages /admin/settings.
+    Route::livewire('/settings/groups', 'pages::admin.settings.groups.index')
+        ->middleware('can:server.admin')
+        ->name('settings.groups');
+
     // /admin/settings/app-profiles — Story 36.7 : catalogue des profils applicatifs
     // itinérants (Firefox/Thunderbird…) redirigés vers le home réseau. Édition du
     // `spec` de la projection `app_profile` de la capacité `roaming_app_profile`

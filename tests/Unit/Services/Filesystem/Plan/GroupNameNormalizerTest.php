@@ -10,6 +10,7 @@ use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\ShareService;
+use App\Support\RoleCatalog;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -78,23 +79,149 @@ class GroupNameNormalizerTest extends TestCase
         );
     }
 
+    /**
+     * Story 62.1 — l'ÉQUIVALENCE ÉPINGLÉE a changé de nature, pas d'objet.
+     *
+     * Le vocabulaire de rôle d'arête n'est plus une constante recopiée : c'est un
+     * catalogue administrable, et le plan le reçoit par injection. Ce qui reste à
+     * surveiller, c'est que les DEUX LECTURES disent la même chose — sinon on a
+     * simplement remplacé une recopie qui pouvait dériver par une couture qui le
+     * peut aussi.
+     *
+     * Le REPLI du normalizer (aucun résolveur installé) doit valoir exactement le
+     * plancher historique ; avec le résolveur installé, il doit valoir le
+     * catalogue.
+     */
     #[Test]
     public function the_edge_role_vocabulary_is_the_stored_one(): void
     {
+        // Avec le résolveur installé au boot : le catalogue fait foi, et il est
+        // identique à ce que le pivot expose.
         $this->assertSame(
-            array_values(UserGroupUserPivot::ROLES),
-            GroupNameNormalizer::EDGE_ROLES,
+            array_values(UserGroupUserPivot::roles()),
+            GroupNameNormalizer::edgeRoles(),
             'Le vocabulaire de rôle d\'arête du plan doit rester celui qui est STOCKÉ.',
         );
+
+        // Sans résolveur (tests purs du namespace, application non démarrée) : le
+        // repli littéral vaut le plancher historique, ni plus ni moins.
+        try {
+            GroupNameNormalizer::useEdgeRoles(null);
+
+            $this->assertSame(
+                RoleCatalog::HISTORICAL_KEYS,
+                GroupNameNormalizer::edgeRoles(),
+                'Le repli du normalizer doit valoir exactement le plancher historique.',
+            );
+        } finally {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => RoleCatalog::keys());
+        }
     }
 
+    /**
+     * Story 62.1 — un rôle NOUVEAU du catalogue traverse le plan sans rejet, dès
+     * lors que le résolveur runtime est installé.
+     */
     #[Test]
-    public function the_access_vocabulary_is_the_existing_neutral_one(): void
+    public function a_new_catalogued_role_is_known_to_the_plan(): void
     {
-        // Le plan réutilise le vocabulaire NEUTRE déjà en service (`ro|rw`) — il
-        // n'invente pas un dialecte, et il n'emprunte surtout aucun mode système.
-        $this->assertSame(NetworkShareAssignable::ACCESS_RO, PlanGrant::ACCESS_RO);
-        $this->assertSame(NetworkShareAssignable::ACCESS_RW, PlanGrant::ACCESS_RW);
+        $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole('tuteur'));
+
+        try {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => ['member', 'manager', 'owner', 'tuteur']);
+
+            $this->assertTrue(GroupNameNormalizer::isKnownEdgeRole('tuteur'));
+            $this->assertTrue(GroupNameNormalizer::isKnownEdgeRole('member'));
+            $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole('inconnu'));
+        } finally {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => RoleCatalog::keys());
+        }
+    }
+
+    /**
+     * Une source qui rendrait une liste VIDE ne doit pas vider le vocabulaire :
+     * elle refuserait `member`, donc toute arête, donc tout plan.
+     */
+    #[Test]
+    public function an_empty_resolver_falls_back_instead_of_emptying_the_vocabulary(): void
+    {
+        try {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => []);
+
+            $this->assertSame(RoleCatalog::HISTORICAL_KEYS, GroupNameNormalizer::edgeRoles());
+            $this->assertTrue(GroupNameNormalizer::isKnownEdgeRole('member'));
+        } finally {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => RoleCatalog::keys());
+        }
+    }
+
+    /**
+     * Story 62.4 — L'ÉPINGLE RETOURNÉE.
+     *
+     * Elle affirmait, depuis 60.1, que le plan RÉUTILISAIT le vocabulaire binaire
+     * des assignations. Ce n'est plus vrai, et la supprimer aurait laissé le
+     * nouveau monde sans témoin : elle affirme donc désormais l'inverse, et la
+     * propriété qui le rend tenable.
+     *
+     *  - les deux vocabulaires sont DISJOINTS : le plan parle verbes, l'assignation
+     *    parle deux niveaux, et aucune valeur de l'un n'est une valeur de l'autre —
+     *    une confusion de vocabulaire ne peut plus passer inaperçue ;
+     *  - la traduction est TOTALE dans les deux sens : toute valeur d'un côté a une
+     *    image de l'autre. C'est ce qui garantit qu'aucune valeur ne « tombe »
+     *    silencieusement à la frontière.
+     */
+    #[Test]
+    public function the_plan_speaks_verbs_and_the_assignment_stays_binary(): void
+    {
+        $binary = [NetworkShareAssignable::ACCESS_RO, NetworkShareAssignable::ACCESS_RW];
+
+        $this->assertSame(
+            [],
+            array_intersect($binary, PlanGrant::VERBS),
+            'les deux vocabulaires doivent rester DISJOINTS : sinon une valeur mal placée passerait inaperçue',
+        );
+
+        // assignation → plan : les deux niveaux ont une image, et elles diffèrent.
+        $toPlan = [
+            NetworkShareAssignable::ACCESS_RO => [PlanGrant::VERB_LIRE],
+            NetworkShareAssignable::ACCESS_RW => PlanGrant::VERBS,
+        ];
+        $this->assertSame($binary, array_keys($toPlan), 'la traduction doit couvrir TOUT le vocabulaire binaire');
+        $this->assertNotSame($toPlan[NetworkShareAssignable::ACCESS_RO], $toPlan[NetworkShareAssignable::ACCESS_RW]);
+
+        // plan → assignation : les 15 combinaisons non vides ont toutes une image.
+        $images = [];
+        foreach ($this->everyVerbCombination() as $verbs) {
+            $images[] = array_intersect(PlanGrant::MUTATION_VERBS, $verbs) !== []
+                ? NetworkShareAssignable::ACCESS_RW
+                : NetworkShareAssignable::ACCESS_RO;
+        }
+        $this->assertCount(15, $images, 'les 15 combinaisons non vides doivent toutes être traduites');
+        $seen = array_values(array_unique($images));
+        sort($seen);
+        $this->assertSame($binary, $seen, 'les DEUX niveaux doivent être atteints : la traduction est SURJECTIVE');
+    }
+
+    /**
+     * Les 15 combinaisons NON VIDES des quatre verbes. Le vide n'en est pas une :
+     * ce n'est pas un octroi.
+     *
+     * @return list<list<string>>
+     */
+    private function everyVerbCombination(): array
+    {
+        $out = [];
+        for ($mask = 1; $mask < 16; $mask++) {
+            $verbs = [];
+            foreach (PlanGrant::VERBS as $index => $verb) {
+                if (($mask & (1 << $index)) !== 0) {
+                    $verbs[] = $verb;
+                }
+            }
+            $out[] = $verbs;
+        }
+
+        return $out;
     }
 
     // =========================================================================

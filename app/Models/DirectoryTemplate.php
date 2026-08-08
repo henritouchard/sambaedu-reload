@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
 use App\Services\Filesystem\Plan\PlanGrant;
+use App\Support\GroupTypeCatalog;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -21,7 +22,8 @@ use Illuminate\Database\Eloquent\Model;
  * jamais édité en 34.3 — Q3 option B). Une recette décrit les RÔLES-cibles d'un
  * pattern métier récurrent ; {@see App\Services\Filesystem\DirectoryTemplateService}
  * lit `roles_spec` depuis la DB pour matérialiser un {@see NetworkShare} + ses
- * assignations par maille avec le bon `access`.
+ * assignations par maille au bon niveau (le vocabulaire binaire des
+ * assignations, traduit depuis les verbes de la recette — story 62.4).
  *
  * **Mailles autorisées dans une recette** : `User` et `UserGroup` UNIQUEMENT.
  * Aucune recette ne porte d'ACL sur un `WorkstationGroup` (invariant WG-montage-
@@ -164,9 +166,15 @@ class DirectoryTemplate extends Model
      * Clés admises dans un octroi de nœud. Fermée pour la même raison : aucun
      * champ d'interdiction n'est exprimable.
      *
+     * **Story 62.4 — `verbs` REMPLACE `access`, il ne cohabite pas avec lui.**
+     * C'est le vocabulaire de clés FERMÉ qui rend une recette non migrée bruyante :
+     * elle est refusée avec « champ inconnu », jamais lue de travers. Accepter les
+     * deux clés « par tolérance » recréerait le JSON à deux vocabulaires que le
+     * garde-fou d'epic interdit.
+     *
      * @var list<string>
      */
-    public const TREE_GRANT_KEYS = ['role', 'access', 'suspendable'];
+    public const TREE_GRANT_KEYS = ['role', 'verbs', 'suspendable'];
 
     protected $table = 'directory_templates';
 
@@ -241,6 +249,20 @@ class DirectoryTemplate extends Model
      * par lequel toute écriture passe. Elle ne se déclenche QUE si un accrochage
      * est effectivement posé : les 4 recettes seedées, non accrochées, ne la
      * rencontrent jamais.
+     *
+     * **Story 62.2 — le type accroché est désormais du VOCABULAIRE.** La migration
+     * de 60.2 affirmait « Pas de clé étrangère : il n'existe pas de table des
+     * types » ; il en existe une depuis la story 62.2 ({@see \App\Models\GroupType}),
+     * et la référence reste faite PAR CLÉ IMMUABLE, sans clé étrangère — décision
+     * D2 de l'epic 62, par cohérence avec le catalogue de rôles de 62.1 : une
+     * valeur lisible en base plutôt qu'une jointure, et un refus NOMMÉ plutôt
+     * qu'un `RESTRICT` muet. Le docblock de la migration 60.2 n'est pas réécrit
+     * (l'histoire est append-only) ; celui-ci dit l'état d'aujourd'hui.
+     *
+     * Concrètement, un accrochage à un type qui n'existe pas au catalogue n'est
+     * plus un appariement silencieusement mort — le cas que le paragraphe suivant
+     * décrivait déjà pour la casse, « indiscernable d'une absence légitime ». Il
+     * est REFUSÉ, en nommant le type fautif.
      */
     protected static function booted(): void
     {
@@ -256,6 +278,7 @@ class DirectoryTemplate extends Model
             $attached = $template->attachedGroupType();
             if ($attached !== null) {
                 $template->attached_group_type = mb_strtolower($attached);
+                $template->assertAttachedTypeIsKnown();
                 $template->assertAttachable();
                 $template->assertSingleTreeAttachment();
             }
@@ -287,6 +310,46 @@ class DirectoryTemplate extends Model
         $raw = $this->root_anchor;
 
         return PlanAnchor::isKnown($raw) ? PlanAnchor::from((string) $raw) : PlanAnchor::default();
+    }
+
+    /**
+     * Story 62.2 — le type accroché doit EXISTER au catalogue.
+     *
+     * Sans cette garde, une recette pouvait s'accrocher à `classse` (faute de
+     * frappe), à un type supprimé, ou à un vocabulaire d'une autre instance :
+     * `attachedTo()` rendait alors `null`, qui est l'état parfaitement normal
+     * d'un type sans recette. L'erreur ne se voyait qu'au moment où l'on
+     * s'étonnait qu'un groupe ne matérialise rien — c'est-à-dire jamais.
+     *
+     * La comparaison est INSENSIBLE À LA CASSE, comme `attachedTo()` et comme la
+     * normalisation appliquée juste au-dessus : le catalogue peut contenir une
+     * valeur découverte en base à sa casse d'origine (`Classe`), et un accrochage
+     * à `classe` s'y apparie très bien.
+     *
+     * Le catalogue garantit un PLANCHER de neuf types quelle que soit l'état de la
+     * base ({@see \App\Support\GroupTypeCatalog}) : l'ordre migration/seeder n'est
+     * donc pas porteur, et la recette d'arbre de classe du seeder passe cette
+     * garde même sur une base qui n'a pas encore été seedée.
+     *
+     * @throws InvalidTreeSpecException
+     */
+    public function assertAttachedTypeIsKnown(): void
+    {
+        $type = $this->attachedGroupType();
+
+        if ($type === null || GroupTypeCatalog::isKnown($type)) {
+            return;
+        }
+
+        throw InvalidTreeSpecException::makeResolution(sprintf(
+            'type de groupe inconnu « %s » sur la recette « %s » : aucun type de ce nom au catalogue, donc '
+            . 'aucun groupe ne s\'y apparierait et la recette ne se matérialiserait jamais. Créez le type dans '
+            . '« Paramètres › Groupes & droits › Types de groupes », ou accrochez la recette à un type existant '
+            . '(%s).',
+            $type,
+            (string) $this->key,
+            implode(', ', GroupTypeCatalog::keys()),
+        ));
     }
 
     /**
@@ -438,7 +501,98 @@ class DirectoryTemplate extends Model
         foreach ($this->roles() as $role) {
             if (is_array($role)) {
                 $this->resolutionOf($role);
+                $this->assertValidRoleVerbs($role);
             }
+        }
+    }
+
+    /**
+     * Story 62.4 — les verbes portés par un RÔLE de recette (`roles_spec[].verbs`).
+     *
+     * Deux exigences, et la première est la plus utile : l'ancienne clé `access`
+     * est refusée NOMMÉMENT. `roles_spec` n'a pas de vocabulaire de clés fermé
+     * (les rôles portent librement `key`, `label`, `maille`, `group_type`,
+     * `cardinality`, `resolution`…), donc rien n'aurait signalé une recette non
+     * migrée : elle aurait simplement été lue avec les verbes par défaut, et un
+     * rôle en écriture serait devenu un rôle en lecture SANS UN MOT. C'est
+     * exactement la classe de silence que l'epic traque.
+     *
+     * L'absence de `verbs`, elle, reste licite et vaut `lire` — c'est le plancher
+     * historique d'un rôle qui ne se prononce pas.
+     *
+     * @param  array<string, mixed>  $role
+     *
+     * @throws InvalidTreeSpecException
+     */
+    private function assertValidRoleVerbs(array $role): void
+    {
+        $what = sprintf(
+            'le rôle « %s » de la recette « %s »',
+            is_scalar($role['key'] ?? null) ? (string) $role['key'] : '?',
+            (string) $this->key,
+        );
+
+        if (array_key_exists('access', $role)) {
+            throw InvalidTreeSpecException::make(sprintf(
+                '%s porte le vocabulaire ABANDONNÉ « access » : les droits se disent désormais en verbes '
+                . '(clé « verbs », valeurs %s). Cette recette n\'a pas été migrée.',
+                ucfirst($what),
+                implode('|', PlanGrant::VERBS),
+            ));
+        }
+
+        if (array_key_exists('verbs', $role)) {
+            self::assertValidVerbList($role['verbs'], $what);
+        }
+    }
+
+    /**
+     * Story 62.4 — garde COMMUNE aux deux endroits où une recette écrit des
+     * droits : les verbes d'un rôle et les verbes d'un octroi de nœud.
+     *
+     * Refuse : le scalaire nu (l'ancien `'rw'` recopié), la liste vide, le verbe
+     * inconnu, le doublon. Les messages suivent le patron des autres gardes de
+     * recette — ils nomment ce qui est attendu, pas seulement ce qui est faux.
+     *
+     * @throws InvalidTreeSpecException
+     */
+    private static function assertValidVerbList(mixed $verbs, string $what): void
+    {
+        if (! is_array($verbs)) {
+            throw InvalidTreeSpecException::make(sprintf(
+                '%s ne porte pas une LISTE de verbes (attendu : une liste parmi %s — le plan ne connaît '
+                . 'aucun mode système, et un scalaire nu appartient au vocabulaire abandonné).',
+                ucfirst($what),
+                implode('|', PlanGrant::VERBS),
+            ));
+        }
+
+        if ($verbs === []) {
+            throw InvalidTreeSpecException::make(sprintf(
+                '%s ne porte AUCUN verbe : une liste vide n\'est pas un octroi (attendu : au moins un de %s).',
+                ucfirst($what),
+                implode('|', PlanGrant::VERBS),
+            ));
+        }
+
+        $seen = [];
+        foreach ($verbs as $verb) {
+            if (! is_string($verb) || ! in_array($verb, PlanGrant::VERBS, true)) {
+                throw InvalidTreeSpecException::make(sprintf(
+                    'verbe « %s » inconnu sur %s (attendu : %s).',
+                    is_scalar($verb) ? (string) $verb : gettype($verb),
+                    $what,
+                    implode('|', PlanGrant::VERBS),
+                ));
+            }
+            if (isset($seen[$verb])) {
+                throw InvalidTreeSpecException::make(sprintf(
+                    'le verbe « %s » est écrit deux fois sur %s — une liste de verbes est un ENSEMBLE.',
+                    $verb,
+                    $what,
+                ));
+            }
+            $seen[$verb] = true;
         }
     }
 
@@ -592,7 +746,7 @@ class DirectoryTemplate extends Model
                 'le rôle « %s » en stratégie « %s » doit lister au moins un rôle d\'arête (%s).',
                 $roleKey,
                 RoleResolutionStrategy::EdgeRole->value,
-                implode('|', GroupNameNormalizer::EDGE_ROLES),
+                implode('|', GroupNameNormalizer::edgeRoles()),
             ));
         }
 
@@ -603,7 +757,7 @@ class DirectoryTemplate extends Model
                     'rôle d\'arête inconnu « %s » sur le rôle « %s » (attendu : %s).',
                     is_scalar($edgeRole) ? (string) $edgeRole : gettype($edgeRole),
                     $roleKey,
-                    implode('|', GroupNameNormalizer::EDGE_ROLES),
+                    implode('|', GroupNameNormalizer::edgeRoles()),
                 ));
             }
             if (in_array($edgeRole, $normalized, true)) {
@@ -742,6 +896,8 @@ class DirectoryTemplate extends Model
         }
 
         $seenPaths = [];
+        /** @var array<string, array{nature: PlanNodeNature, edge_role: ?string, grants: array<int, mixed>}> $declared */
+        $declared = [];
         foreach ($nodes as $index => $node) {
             if (! is_array($node)) {
                 throw InvalidTreeSpecException::make(sprintf('le nœud #%d n\'est pas une structure.', (int) $index));
@@ -826,7 +982,7 @@ class DirectoryTemplate extends Model
                     throw InvalidTreeSpecException::make(sprintf(
                         'le nœud par membre « %s » doit déclarer un rôle d\'arête connu (%s).',
                         $path,
-                        implode('|', GroupNameNormalizer::EDGE_ROLES),
+                        implode('|', GroupNameNormalizer::edgeRoles()),
                     ));
                 }
             } elseif (array_key_exists('edge_role', $node) && $node['edge_role'] !== null) {
@@ -850,7 +1006,250 @@ class DirectoryTemplate extends Model
                 throw InvalidTreeSpecException::make(sprintf('le chemin de nœud « %s » est déclaré deux fois.', $path));
             }
             $seenPaths[$path] = true;
+
+            $declared[$path] = [
+                'nature' => $nature,
+                'edge_role' => $nature === PlanNodeNature::ParMembre ? (string) $node['edge_role'] : null,
+                'grants' => is_array($node['grants'] ?? null) ? $node['grants'] : [],
+            ];
         }
+
+        // Story 62.5 — LES RÈGLES PARENT→ENFANT, APRÈS la boucle et jamais avant.
+        //
+        // Elles ne portent que sur des nœuds DÉJÀ individuellement valides. L'ordre
+        // n'est pas cosmétique : une recette qui écrit `depots/{member.login}` sur un
+        // nœud partagé doit s'entendre dire que le jeton du membre n'a rien à faire
+        // là — pas que son ancêtre « depots » n'est pas déclaré. Le second message
+        // est vrai, il est simplement moins utile, et il volerait la place du premier.
+        $this->assertReachableTree($declared);
+    }
+
+    /**
+     * Story 62.5 — **UN OCTROI QUE PERSONNE NE PEUT ATTEINDRE EST REFUSÉ À
+     * L'ÉCRITURE.**
+     *
+     * Le compilateur travaille nœud par nœud : il ne voit jamais l'arbre. Une
+     * recette peut donc être parfaitement « conforme » nœud à nœud et décrire un
+     * dossier auquel personne n'arrive — parce que la pose de son ancêtre le referme
+     * pour tout le monde, ou parce que cet ancêtre n'est gouverné par personne. Le
+     * couloir d'accès dérivé
+     * ({@see \App\Services\Filesystem\Backend\Posix\PosixTraversalPlanner}) répare
+     * le premier cas pour les AUDIENCES ; ces quatre règles ferment tout le reste,
+     * STATIQUEMENT, et nomment le chemin fautif.
+     *
+     * @param  array<string, array{nature: PlanNodeNature, edge_role: ?string, grants: array<int, mixed>}>  $declared
+     *
+     * @throws InvalidTreeSpecException
+     */
+    private function assertReachableTree(array $declared): void
+    {
+        foreach ($declared as $path => $node) {
+            // RÈGLE 1 — chaque préfixe strict doit être un nœud DÉCLARÉ.
+            //
+            // Un ancêtre non déclaré est un dossier HORS CONTRAT : aucune entrée ne
+            // peut y vivre, l'inspection ne le regarde pas, et la pose récursive de
+            // l'ancêtre déclaré le plus proche le referme pour tout le monde. Le
+            // nœud profond est alors soit inatteignable, soit gouverné par personne
+            // — les deux sont des mensonges de recette.
+            //
+            // **Le nœud racine n'est PAS exigé**, et c'est calibré sur l'existant :
+            // une recette peut n'avoir que des nœuds de premier niveau, sans jamais
+            // se prononcer sur la racine de son propre partage. C'est l'état livré
+            // par la story 60.5 — hors contrat, mais pas aggravé ici. La règle ne
+            // porte donc que sur les préfixes STRICTS, jamais sur la racine.
+            foreach (self::strictAncestorsOf($path) as $ancestor) {
+                if (! array_key_exists($ancestor, $declared)) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud « %s » est inatteignable : son ancêtre « %s » n\'est pas un nœud de la recette.',
+                        $path,
+                        $ancestor,
+                    ));
+                }
+            }
+
+            // Les ancêtres qui GOUVERNENT ce nœud. La racine, quand elle est
+            // déclarée, en fait partie : elle n'est pas un préfixe de chaîne, mais
+            // elle est bel et bien le dossier par lequel on passe pour atteindre
+            // n'importe quel nœud — et c'est elle qui porte, dans la recette de
+            // classe, l'audience par laquelle les élèves atteignent leur dossier
+            // personnel. L'oublier ici aurait rendu la règle 4 vide de sens sur la
+            // seule recette d'arbre livrée.
+            $governing = self::strictAncestorsOf($path);
+            if ($path !== GroupNameNormalizer::ROOT_NODE_PATH
+                && array_key_exists(GroupNameNormalizer::ROOT_NODE_PATH, $declared)) {
+                array_unshift($governing, GroupNameNormalizer::ROOT_NODE_PATH);
+            }
+
+            foreach ($governing as $ancestor) {
+                // RÈGLE 2 — rien ne se déclare sous un contenu libre.
+                if ($declared[$ancestor]['nature'] === PlanNodeNature::ContenuLibre) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud « %s » vit sous « %s », dont le contenu n\'est pas gouverné par le plan : '
+                        . 'y déclarer un nœud est une contradiction.',
+                        $path,
+                        $ancestor,
+                    ));
+                }
+
+                // RÈGLE 3 — deux énumérations de membres qui ne parlent pas des
+                // mêmes personnes ne s'imbriquent pas.
+                //
+                // Un nœud NON par membre sous un nœud par membre est déjà impossible
+                // par construction (son chemin porterait le jeton du membre, interdit
+                // hors d'un nœud par membre) — un test l'épingle plutôt que de le
+                // croire. Reste le cas qui, lui, est écrivable : deux nœuds par
+                // membre imbriqués visant des rôles d'arête DIFFÉRENTS. Le dossier
+                // d'un membre du second n'existe pas chez le premier.
+                if ($declared[$ancestor]['nature'] === PlanNodeNature::ParMembre
+                    && $node['nature'] === PlanNodeNature::ParMembre
+                    && $declared[$ancestor]['edge_role'] !== $node['edge_role']) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud par membre « %s » (rôle d\'arête « %s ») vit sous le nœud par membre « %s », '
+                        . 'qui énumère les membres portant « %s » : l\'ancêtre n\'existe pas pour ces '
+                        . 'personnes-là.',
+                        $path,
+                        (string) $node['edge_role'],
+                        $ancestor,
+                        (string) $declared[$ancestor]['edge_role'],
+                    ));
+                }
+
+                // RÈGLE 4 — LA CONTREPARTIE STATIQUE DU « LE NOMINATIF NE DÉRIVE
+                // PAS ».
+                //
+                // Un dossier par membre n'obtient AUCUN couloir dérivé : le dériver
+                // poserait une entrée nominative par personne sur chaque ancêtre
+                // partagé. L'atteignabilité de ces dossiers repose donc entièrement
+                // sur une AUDIENCE qui, par construction, contient les membres visés
+                // — le groupe lui-même, ou les porteurs du même rôle d'arête. Sans
+                // elle, chaque élève aurait un dossier personnel dont il ne
+                // franchirait jamais la porte d'entrée.
+                if ($node['nature'] === PlanNodeNature::ParMembre
+                    && ! $this->coversEdgeRole($declared[$ancestor]['grants'], (string) $node['edge_role'])) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud par membre « %s » est inatteignable : son ancêtre « %s » n\'octroie rien à '
+                        . 'une audience qui contient les membres portant le rôle d\'arête « %s » (attendu : un '
+                        . 'octroi à un rôle résolu par « %s », ou par « %s » listant « %s »).',
+                        $path,
+                        $ancestor,
+                        (string) $node['edge_role'],
+                        RoleResolutionStrategy::Itself->value,
+                        RoleResolutionStrategy::EdgeRole->value,
+                        (string) $node['edge_role'],
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * Les préfixes STRICTS d'un chemin de nœud, du plus proche de la racine au plus
+     * proche du nœud, RACINE EXCLUE.
+     *
+     * Le jeton racine n'est pas un segment : il n'a pas d'ancêtre, et il n'apparaît
+     * jamais dans cette liste (voir le pourquoi à la règle 1). Les chemins sont ceux
+     * de la RECETTE — placeholders compris — ce qui est exactement la bonne maille :
+     * la substitution est déterministe, donc deux chemins de recette qui se
+     * préfixent se préfixent aussi une fois résolus.
+     *
+     * @return list<string>
+     */
+    private static function strictAncestorsOf(string $path): array
+    {
+        if ($path === GroupNameNormalizer::ROOT_NODE_PATH) {
+            return [];
+        }
+
+        $segments = explode('/', $path);
+        array_pop($segments);
+
+        $ancestors = [];
+        $current = '';
+        foreach ($segments as $segment) {
+            $current = $current === '' ? $segment : $current . '/' . $segment;
+            $ancestors[] = $current;
+        }
+
+        return $ancestors;
+    }
+
+    /**
+     * Les octrois de ce nœud contiennent-ils une audience qui, PAR CONSTRUCTION,
+     * couvre les membres portant ce rôle d'arête ?
+     *
+     * Deux règles de résolution seulement le garantissent : le groupe LUI-MÊME (tous
+     * ses membres, quel que soit leur rôle d'arête) et les PORTEURS DU MÊME rôle
+     * d'arête. Un groupe apparenté par motif ou une cible désignée à la
+     * matérialisation ne disent rien de qui en fait partie — les accepter reviendrait
+     * à valider une atteignabilité qu'on espère au lieu de la garantir. Le jeton du
+     * membre énuméré ne compte pas non plus : il n'est pas une audience, il est UNE
+     * personne, et il ne vit que sur le nœud par membre lui-même.
+     *
+     * @param  array<int, mixed>  $grants
+     */
+    /**
+     * L'octroi accorde-t-il la lecture ? (Review 62.5 #2.)
+     *
+     * L'absence de `verbs` vaut « lire » — plancher historique d'un rôle qui ne se
+     * prononce pas, posé en 62.4 et conservé ici sans exception.
+     *
+     * @param  array<string, mixed>  $grant
+     */
+    private function grantCarriesRead(array $grant): bool
+    {
+        if (! array_key_exists('verbs', $grant)) {
+            return true;
+        }
+
+        return is_array($grant['verbs'])
+            && in_array(PlanGrant::VERB_LIRE, $grant['verbs'], true);
+    }
+
+    private function coversEdgeRole(array $grants, string $edgeRole): bool
+    {
+        foreach ($grants as $grant) {
+            if (! is_array($grant)) {
+                continue;
+            }
+            $roleKey = $grant['role'] ?? null;
+            if (! is_string($roleKey) || $roleKey === self::TREE_ROLE_MEMBER) {
+                continue;
+            }
+
+            $role = $this->role($roleKey);
+            if ($role === null) {
+                continue;
+            }
+
+            // Review 62.5 #2 — un octroi qui n'accorde pas la LECTURE ne couvre
+            // rien. La règle cherchait un rôle couvrant par sa STRATÉGIE, sans
+            // jamais regarder ce qu'il accorde : un octroi `supprimer` seul — liste
+            // non vide, donc parfaitement valide depuis 62.4 — suffisait à déclarer
+            // l'ancêtre couvert. Le dossier personnel en dessous était alors validé
+            // « atteignable » et compilait « conforme », en restant un mirage :
+            // exactement le défaut que cette story existe pour éliminer, réintroduit
+            // par sa propre validation.
+            //
+            // La règle est énoncée en termes MÉTIER, pas en termes de backend : une
+            // audience qui gouverne un ancêtre doit pouvoir l'ouvrir. Elle vaut donc
+            // pour tous les backends, et pas seulement parce que POSIX ne rend rien
+            // de ce cas précis.
+            if (! $this->grantCarriesRead($grant)) {
+                continue;
+            }
+
+            $resolution = $this->resolutionOf($role);
+
+            if ($resolution['strategy'] === RoleResolutionStrategy::Itself) {
+                return true;
+            }
+            if ($resolution['strategy'] === RoleResolutionStrategy::EdgeRole
+                && in_array($edgeRole, $resolution['edge_roles'], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -894,8 +1293,9 @@ class DirectoryTemplate extends Model
 
     /**
      * Valide les octrois d'un nœud : rôle connu (ou jeton du membre énuméré sur un
-     * nœud par membre), accès dans le vocabulaire neutre `ro|rw`, suspendable
-     * seulement là où quelque chose peut suspendre.
+     * nœud par membre), LISTE DE VERBES non vide et sans doublon dans le
+     * vocabulaire neutre des quatre verbes, suspendable seulement là où quelque
+     * chose peut suspendre.
      *
      * @param  list<string>  $roleKeys
      *
@@ -925,20 +1325,17 @@ class DirectoryTemplate extends Model
             }
 
             $role = $grant['role'] ?? null;
-            $access = $grant['access'] ?? null;
+            $verbs = $grant['verbs'] ?? null;
             $suspendable = (bool) ($grant['suspendable'] ?? false);
 
             if (! is_string($role) || $role === '') {
                 throw InvalidTreeSpecException::make(sprintf('un octroi du nœud « %s » ne référence aucun rôle.', $path));
             }
-            if (! in_array($access, PlanGrant::ACCESSES, true)) {
-                throw InvalidTreeSpecException::make(sprintf(
-                    'accès « %s » inconnu sur le nœud « %s » (attendu : %s — le plan ne connaît aucun mode système).',
-                    is_scalar($access) ? (string) $access : gettype($access),
-                    $path,
-                    implode('|', PlanGrant::ACCESSES),
-                ));
-            }
+
+            self::assertValidVerbList(
+                $verbs,
+                sprintf('l\'octroi du rôle « %s » sur le nœud « %s »', is_string($role) ? $role : '?', $path),
+            );
 
             if ($role === self::TREE_ROLE_MEMBER) {
                 if ($nature !== PlanNodeNature::ParMembre) {
@@ -966,7 +1363,7 @@ class DirectoryTemplate extends Model
 
             if (isset($seenRoles[$role])) {
                 throw InvalidTreeSpecException::make(sprintf(
-                    'le rôle « %s » reçoit deux octrois sur le nœud « %s » — un rôle, un accès.',
+                    'le rôle « %s » reçoit deux octrois sur le nœud « %s » — un rôle, une liste de verbes.',
                     $role,
                     $path,
                 ));

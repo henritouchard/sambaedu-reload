@@ -17,6 +17,7 @@ use App\Services\Filesystem\Backend\NodeObservation;
 use App\Services\Filesystem\Backend\ObservedGrant;
 use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -105,7 +106,7 @@ class ShareDriftPanelTest extends TestCase
             FileBackendName::Posix,
             $plan,
             [NodeObservation::observed(PlanNode::ROOT_PATH, [
-                new ObservedGrant(PlanSubject::user((int) $alice->id), 'ro'),
+                new ObservedGrant(PlanSubject::user((int) $alice->id), [PlanGrant::VERB_LIRE]),
             ], null, false, '1 entrée(s) relue(s) ne correspondent à aucune identité connue de SE5.')],
         );
 
@@ -137,7 +138,9 @@ class ShareDriftPanelTest extends TestCase
         self::assertStringContainsString('(racine)', $section);
         self::assertStringContainsString('alice (utilisateur)', $section);
         self::assertStringContainsString("3e A (groupe d'utilisateurs)", $section);
-        self::assertStringContainsString('Modifier', $section);
+        // Story 62.4 — l'encart parle VERBES : l'attendu est la liste complète,
+        // le constaté n'est plus que « Lire ». Le vocabulaire reste celui du plan.
+        self::assertStringContainsString('Lire + Éditer + Créer + Supprimer', $section);
         self::assertStringContainsString('Lire', $section);
     }
 
