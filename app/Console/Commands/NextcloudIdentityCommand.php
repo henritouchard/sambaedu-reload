@@ -37,6 +37,29 @@ class NextcloudIdentityCommand extends Command
 
     protected $description = 'Rattache explicitement un utilisateur SE5 à une identité Nextcloud, ou l\'en détache';
 
+    protected $help = <<<'HELP'
+    Rattache un utilisateur SE5 à son identité Nextcloud, consulte ce rattachement, ou
+    le retire.
+
+      <info>php artisan nextcloud:identity jdupont</info>                  ce qui est actuellement rattaché
+      <info>php artisan nextcloud:identity jdupont --set=jean.dupont</info>  rattacher
+      <info>php artisan nextcloud:identity jdupont --clear</info>            détacher
+
+    Sans option, la commande LIT et n'écrit rien.
+
+    <comment>--set</comment> vérifie l'identité auprès de l'instance Nextcloud AVANT d'écrire : une
+    identité que l'instance ne confirme pas n'est jamais enregistrée.
+
+    <comment>--clear</comment> ne retire que le rattachement côté SE5. <comment>Rien n'est supprimé côté
+    Nextcloud</comment> — ni compte, ni fichier. Détacher n'est jamais destructeur.
+
+    Cette commande et la modale de la page de gestion des fichiers exécutent le même
+    service : ce ne sont pas deux chemins différents.
+
+    Codes de retour : <info>0</info> rattaché ou déjà conforme · <info>1</info> refusé (identité non
+    confirmée, utilisateur inconnu, instance injoignable) · <info>2</info> usage invalide.
+    HELP;
+
     public function handle(NextcloudIdentityLinker $linker): int
     {
         $login = trim((string) $this->argument('login'));

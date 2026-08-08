@@ -24,6 +24,21 @@ class Se4ReplugCommand extends Command
 
     protected $description = 'Rollback de l\'extinction à blanc : restaure le FS legacy depuis .off et réactive le vhost sambaedu-legacy';
 
+    protected $help = <<<'HELP'
+    Rebranche le serveur SE4 : restaure son arborescence et réactive son hôte virtuel.
+
+      <info>php artisan se4:replug</info>
+
+    C'est le RETOUR ARRIÈRE exact de <info>se4:unplug</info>, et la raison pour laquelle
+    l'extinction peut être tentée sereinement.
+
+    Rejouable : le rechargement d'Apache est inconditionnel, de sorte qu'une commande
+    relancée après un échec en cours de séquence converge toujours vers l'état
+    rebranché.
+
+    Sans effet une fois <info>se4:purge</info> passée — celle-là n'a pas de retour arrière.
+    HELP;
+
     public function handle(): int
     {
         if (! $this->ensureRoot() || ! $this->ensureLegacyPathConfigured()) {

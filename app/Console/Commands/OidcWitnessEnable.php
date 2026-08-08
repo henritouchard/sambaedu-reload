@@ -76,6 +76,21 @@ class OidcWitnessEnable extends Command
     /** @var string */
     protected $description = 'Provisionne l\'app-témoin SSO (client OIDC + fichier de credentials 0600).';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Met en place l'application témoin qui sert à vérifier de bout en bout que
+    l'authentification unique fonctionne : déclaration de son client, et dépôt de son
+    fichier d'identifiants avec des droits restreints.
+
+      <info>php artisan oidc:witness:enable</info>
+      <info>php artisan oidc:witness:enable --rotate</info>   révoque l'existant et régénère un secret
+
+    Rejouable sans risque.
+
+    Le secret n'est ni affiché ni journalisé : il est écrit directement dans le
+    fichier d'identifiants que le témoin lira. Rien à recopier, donc rien à perdre.
+    HELP;
+
     public function handle(OidcClientRegistry $registry): int
     {
         $existing = WitnessCredentials::load();

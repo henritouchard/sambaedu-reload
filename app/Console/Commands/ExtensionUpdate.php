@@ -38,6 +38,21 @@ class ExtensionUpdate extends Command
     /** @var string */
     protected $description = "Met à jour une extension « app » installée vers la version publiée par sa source.";
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Met à jour une extension applicative installée vers la version publiée par sa
+    source.
+
+      <info>php artisan ext:update monoutil</info>
+
+    Ce qui est mis à jour, c'est LE PAQUET ET LE SERVICE, rien d'autre. Le port, le
+    fragment Apache, le fichier d'environnement et le client d'authentification sont
+    attachés à l'extension, pas à sa version : ils sont conservés tels quels. Rien
+    n'étant régénéré, aucun secret n'est affiché.
+
+    Codes de retour : <info>0</info> succès, ou rien à faire · <info>1</info> refus ou échec.
+    HELP;
+
     public function handle(ExtensionInstallService $installer): int
     {
         $key = (string) $this->argument('key');

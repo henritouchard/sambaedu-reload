@@ -29,6 +29,20 @@ class ControlHubReportComplianceCommand extends Command
 
     protected $description = 'Émet le rapport de conformité état-intégral vers l\'autorité amont (contrat managé, canal ③)';
 
+    protected $help = <<<'HELP'
+    Émet vers l'autorité amont le rapport de conformité décrivant l'état intégral de
+    cette instance.
+
+    Planifiée toutes les minutes, la commande gère elle-même sa cadence réelle :
+    elle n'émet qu'une fois l'intervalle configuré écoulé (un quart d'heure par
+    défaut). Elle s'arrête avant même de mettre un travail en file s'il n'existe
+    aucun contrat actif ou aucune connexion valide — de quoi ne rien empiler
+    inutilement sur une instance autonome.
+
+    L'émission proprement dite est confiée à la file d'attente : la commande rend la
+    main tout de suite, et les tentatives en cas d'échec relèvent du travail en file.
+    HELP;
+
     /** Watermark de dernière émission (throttle cadence fixe, sans colonne BDD). */
     private const LAST_RUN_CACHE_KEY = 'controlHub_compliance_last_run';
 

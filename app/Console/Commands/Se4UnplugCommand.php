@@ -34,6 +34,27 @@ class Se4UnplugCommand extends Command
 
     protected $description = 'Extinction à blanc du legacy : désactive le vhost sambaedu-legacy et déplace le FS legacy vers .off (réversible via se4:replug)';
 
+    protected $help = <<<'HELP'
+    Éteint le serveur SE4 sans le détruire : désactivation de son hôte virtuel,
+    rechargement d'Apache, puis mise de côté de son arborescence.
+
+      <info>php artisan se4:unplug</info>
+      <info>php artisan se4:unplug --days=30</info>
+      <info>php artisan se4:unplug --force</info>
+
+    <comment>Réversible</comment> — <info>se4:replug</info> remet tout en place. Et rejouable : le
+    rechargement d'Apache est inconditionnel, une commande relancée après un échec en
+    cours de séquence converge vers l'état éteint.
+
+    Un contrôle préalable rejoue le verdict de <info>se4:status</info> : si le legacy a
+    encore été sollicité récemment, l'extinction est ABANDONNÉE. <comment>--force</comment> passe
+    outre — à n'utiliser qu'en sachant qui vous allez couper.
+
+    Un second contrôle refuse d'éteindre une instance dont l'hôte virtuel SE5 pointe
+    encore dans l'arborescence legacy : l'éteindre y ferait tomber le démarrage réseau
+    des postes.
+    HELP;
+
     public function handle(): int
     {
         if (! $this->ensureRoot() || ! $this->ensureLegacyPathConfigured()) {

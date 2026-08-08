@@ -35,6 +35,33 @@ class NextcloudProvisionCommand extends Command
 
     protected $description = 'Provisionne l\'accès Nextcloud : montages external storage SMB + comptes utilisateurs';
 
+    protected $help = <<<'HELP'
+    Provisionne l'accès Nextcloud : les montages de stockage externe vers les partages
+    du serveur, et les comptes des utilisateurs.
+
+      <info>php artisan nextcloud:provision --dry-run</info>      ce qui serait fait, sans aucune écriture
+      <info>php artisan nextcloud:provision</info>
+      <info>php artisan nextcloud:provision --users-only</info>
+      <info>php artisan nextcloud:provision --mounts-only</info>
+
+    <comment>--dry-run</comment> n'émet AUCUNE écriture — ni montage, ni compte, ni mise en cache
+    d'identité. Il lit l'état de l'instance, car un aperçu qui ne regarde pas la
+    réalité ne vaut rien.
+
+    <comment>Les codes de retour portent une information, lisez-les :</comment>
+
+      <info>0</info>  convergé — les montages sont en place et les comptes adoptés ;
+      <info>1</info>  échecs PARTIELS — quelque chose a abouti, autre chose a échoué ; les
+         compteurs affichés disent quoi. Un passage qui monte les stockages mais
+         échoue sur les comptes tombe ici, et le dit ;
+      <info>2</info>  rien n'a été tenté — configuration incomplète, fonction désactivée,
+         instance injoignable, privilèges insuffisants, ou provisionnement déjà en
+         cours.
+
+    Le bouton de la page de gestion des fichiers met en file ce même traitement : ce
+    ne sont pas deux chemins différents.
+    HELP;
+
     public function handle(NextcloudProvisioningService $service): int
     {
         $dryRun = (bool) $this->option('dry-run');

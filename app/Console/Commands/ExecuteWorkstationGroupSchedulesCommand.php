@@ -24,6 +24,19 @@ class ExecuteWorkstationGroupSchedulesCommand extends Command
 
     protected $description = 'Exécute les programmations horaires des WorkstationGroups dues au tick courant';
 
+    protected $help = <<<'HELP'
+    Déclenche les programmations horaires des groupes de postes arrivées à échéance —
+    allumages et extinctions planifiés.
+
+    Planifiée chaque minute. Elle est délibérément LÉGÈRE : elle lit ce qui est dû et
+    met les actions en file, sans jamais parler au réseau elle-même. L'allumage et
+    l'extinction réels sont exécutés par le service de traitement en arrière-plan.
+
+    <comment>Conséquence pratique :</comment> si des postes ne s'allument pas alors que la
+    programmation est correcte, ce n'est pas ici qu'il faut chercher — vérifiez que
+    les travailleurs de file d'attente tournent.
+    HELP;
+
     public function handle(WorkstationGroupScheduleService $service): int
     {
         try {

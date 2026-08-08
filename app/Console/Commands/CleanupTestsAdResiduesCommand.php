@@ -34,6 +34,23 @@ class CleanupTestsAdResiduesCommand extends Command
 
     protected $description = 'Supprime les résidus de tests dans AD (OU=Parcs, OU=Computers) et Postgres (workstation_groups, app_profiles).';
 
+    protected $help = <<<'HELP'
+    Supprime dans l'annuaire et en base les objets laissés derrière eux par les tests
+    de comparaison — groupes et postes aux noms auto-générés.
+
+      <info>php artisan tests:cleanup-ad-residues</info>           aperçu (par défaut)
+      <info>php artisan tests:cleanup-ad-residues --apply</info>   supprime, après confirmation
+
+    Seuls les noms portant une marque machine (horodatage ou identifiant unique en
+    suffixe) sont visés. <comment>Les objets nommés à la main sont préservés</comment> — ils ne
+    correspondent pas au motif.
+
+    <comment>--pattern</comment> remplace le motif par le vôtre : vérifiez TOUJOURS le résultat en
+    aperçu avant d'appliquer, c'est une commande qui supprime.
+
+    ⚠️ Réservée aux environnements de test.
+    HELP;
+
     /**
      * Pattern par défaut : préfixe `Test` + suffixe timestamp Unix (10 chiffres)
      * ou hex `uniqid()` (≥13). Insensible à la casse côté préfixe pour

@@ -32,10 +32,28 @@ class WorkstationJwtRotateKeys extends Command
 {
     /** @var string */
     protected $signature = 'workstation:jwt:rotate-keys
-        {--grace-days=7 : (Phase 3+) Grace period in days where old kid is still accepted.}';
+        {--grace-days=7 : Durée en jours pendant laquelle l\'ancienne clé reste acceptée.}';
 
     /** @var string */
-    protected $description = '(Phase 3+ STUB) Rotate JWT signing key (new kid) with grace period.';
+    protected $description = 'Fait tourner la clé de signature JWT des postes — NON IMPLÉMENTÉE, la rotation se fait manuellement.';
+
+    /** @var string */
+    protected $help = <<<'HELP'
+    ⚠️ <comment>Cette commande n'est PAS implémentée</comment> : la lancer échoue délibérément.
+    Elle existe pour signaler l'emplacement prévu de la rotation automatique.
+
+    Une seule clé de signature est active à la fois, et sa rotation se fait
+    aujourd'hui À LA MAIN, dans cet ordre :
+
+      1. changer la clé active en configuration ;
+      2. régénérer les fichiers appariés :
+         <info>php artisan auth:ca:init --force</info>
+      3. révoquer les jetons encore en circulation, poste par poste :
+         <info>php artisan workstation:revoke &lt;uuid&gt;</info>
+
+    Chaque poste devra ensuite se ré-enrôler. Ne conduisez cette séquence qu'en
+    sachant que vous allez couper tous les postes en cours.
+    HELP;
 
     public function handle(): int
     {

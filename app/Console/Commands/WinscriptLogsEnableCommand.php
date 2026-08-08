@@ -21,7 +21,21 @@ final class WinscriptLogsEnableCommand extends Command
 
     protected $signature = 'winscript-logs:enable';
 
-    protected $description = 'Active le logging centralisé des scripts d\'applications (wrapper opt-in 17.2).';
+    protected $description = 'Active le logging centralisé des scripts d\'applications.';
+
+    protected $help = <<<'HELP'
+    Active la journalisation centralisée des scripts d'applications : chaque script
+    est enveloppé de façon à remonter son exécution au serveur.
+
+      <info>php artisan winscript-logs:enable</info>
+
+    L'indicateur est écrit dans le fichier d'environnement sans en abîmer le reste,
+    puis le cache de configuration est invalidé — la bascule est effective
+    immédiatement.
+
+    Pour vérifier l'état courant, y compris l'adresse de collecte réellement
+    utilisée : <info>winscript-logs:status</info>.
+    HELP;
 
     public function handle(): int
     {

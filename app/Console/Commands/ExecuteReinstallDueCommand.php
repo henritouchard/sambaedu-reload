@@ -26,6 +26,18 @@ class ExecuteReinstallDueCommand extends Command
 
     protected $description = 'Déclenche les réinstallations OS dûes (throttlé par vagues — plafond de concurrence)';
 
+    protected $help = <<<'HELP'
+    Déclenche les réinstallations de postes arrivées à échéance, par vagues bornées
+    par un plafond de postes traités simultanément.
+
+    Planifiée chaque minute. Comme les programmations de groupes, elle est LÉGÈRE :
+    elle lit ce qui est dû et met en file ; le redémarrage forcé ou le réveil réseau
+    sont exécutés par le service de traitement en arrière-plan.
+
+    Le plafond de concurrence est là pour éviter qu'un parc entier ne se réinstalle en
+    même temps et ne sature le réseau ou le serveur d'images.
+    HELP;
+
     public function handle(WorkstationReinstallService $service): int
     {
         try {

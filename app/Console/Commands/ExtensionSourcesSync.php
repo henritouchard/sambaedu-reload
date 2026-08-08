@@ -37,6 +37,27 @@ class ExtensionSourcesSync extends Command
     /** @var string */
     protected $description = "Synchronise le catalogue des sources d'extensions distantes (signature Ed25519 vérifiée avant tout usage).";
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Synchronise le catalogue des sources d'extensions distantes. La signature du
+    catalogue est vérifiée AVANT toute exploitation : un catalogue non signé ou mal
+    signé est rejeté.
+
+      <info>php artisan ext:sources:sync</info>              toutes les sources actives
+      <info>php artisan ext:sources:sync depot-academique</info>  une seule
+
+    C'est exactement le moteur du bouton « Actualiser » de la page des sources — il
+    n'existe pas deux chemins de synchronisation, l'interface et la planification ne
+    peuvent donc pas diverger.
+
+    Rejouable sans risque : une source injoignable ou un catalogue refusé ne
+    SUPPRIMENT rien ; le dernier catalogue vérifié reste en place et SE5 continue de
+    fonctionner. Seul le statut de la source est mis à jour.
+
+    Codes de retour : <info>0</info> si toutes les sources traitées répondent · <info>1</info> si au
+    moins une est injoignable ou en erreur — de quoi alerter une supervision.
+    HELP;
+
     public function handle(RemoteCatalogSyncService $sync): int
     {
         $key = $this->argument('key');

@@ -33,6 +33,25 @@ class WpkgProcessReportsCommand extends Command
 
     protected $description = 'Traite les rapports WPKG (.txt) du partage SMB et les ingère via l\'API locale';
 
+    protected $help = <<<'HELP'
+    Relève les comptes rendus d'installation déposés par les postes sur le partage,
+    et les injecte dans SE5.
+
+      <info>php artisan wpkg:process-reports</info>
+      <info>php artisan wpkg:process-reports --path=/chemin/des/rapports</info>
+
+    Pour chaque fichier : le poste concerné est identifié, le rapport est transmis,
+    puis le fichier est ARCHIVÉ. En cas d'échec, <comment>le fichier est laissé en place</comment>
+    et sera retenté au passage suivant — rien n'est perdu si le serveur est
+    momentanément indisponible.
+
+    Le compte-rendu final donne le nombre de rapports traités, inchangés et en erreur.
+
+    <comment>Conséquence pratique :</comment> si l'état d'installation des postes n'avance plus,
+    regardez d'abord si les fichiers s'accumulent dans le répertoire de dépôt — c'est
+    le signe que ce relevé ne tourne pas.
+    HELP;
+
     public function handle(): int
     {
         $reportsPath = $this->option('path')

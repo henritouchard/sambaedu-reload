@@ -39,6 +39,25 @@ class ExtensionInstall extends Command
     /** @var string */
     protected $description = "Installe une extension de type « app » (paquet vérifié, client OIDC, service, exposition Apache).";
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Installe une extension applicative : vérification puis pose du paquet, création
+    de son client d'authentification, mise en service, et exposition derrière Apache.
+
+      <info>php artisan ext:install monoutil</info>
+      <info>php artisan ext:install monoutil --source=depot-academique</info>
+
+    <comment>--source</comment> ne sert qu'à lever une ambiguïté : si plusieurs sources publient la
+    même clé, il faut désigner celle qu'on veut.
+
+    ⚠️ <comment>Aucun secret n'est affiché.</comment> Le secret du client d'authentification ne
+    transite que vers le composant qui en a besoin : il n'apparaît ni en sortie, ni
+    dans les journaux. C'est délibéré — un secret passé dans l'historique d'un
+    terminal est un secret perdu.
+
+    Codes de retour : <info>0</info> succès, ou refus signalé sans effet · <info>1</info> échec.
+    HELP;
+
     public function handle(ExtensionInstallService $installer): int
     {
         $key = (string) $this->argument('key');

@@ -38,6 +38,28 @@ class OidcClientRegister extends Command
     /** @var string */
     protected $description = 'Déclare un client confidentiel au registre OIDC (SSO des extensions).';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Déclare une application cliente autorisée à authentifier ses utilisateurs auprès
+    de SE5.
+
+      <info>php artisan oidc:client:register "Mon outil" --redirect-uri=https://outil.exemple/callback</info>
+      <info>php artisan oidc:client:register "Mon outil" --redirect-uri=… --scope=profile</info>
+
+    L'URI de redirection est comparée à l'identique lors de l'authentification : la
+    moindre différence — un slash final, http au lieu de https — fait échouer la
+    connexion. Répétez l'option pour en déclarer plusieurs.
+
+    <comment>--scope</comment> restreint ce que le client a le droit de demander ; sans elle, tout
+    lui est accordé. Répétable.
+
+    ⚠️ <comment>Le secret n'est affiché qu'UNE SEULE FOIS</comment>, à la création. Il n'est stocké
+    nulle part en clair et ne peut pas être réaffiché. Un secret perdu ne se retrouve
+    pas : il se remplace, en révoquant le client et en le réenregistrant.
+
+    Codes de retour : <info>0</info> succès · <info>1</info> erreur de saisie ou d'exécution.
+    HELP;
+
     public function handle(OidcClientRegistry $registry): int
     {
         $name = (string) $this->argument('name');

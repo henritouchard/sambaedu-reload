@@ -61,7 +61,24 @@ class TrashPurgeCommand extends Command
         {--force : Ignore le garde-fou TTL <= 0 (purge même si pas configurée)}
         {--performed-by= : Nom à inscrire dans QuotaAuditLog (défaut: trash:purge)}';
 
-    protected $description = 'Purge les dossiers /home/trash/* plus vieux que quota.trash.ttl_days (Story 5.1d)';
+    protected $description = 'Purge les dossiers /home/trash/* plus vieux que quota.trash.ttl_days.';
+
+    protected $help = <<<'HELP'
+    Supprime définitivement les répertoires de la corbeille plus anciens que la durée
+    de conservation réglée dans les paramètres de quotas.
+
+      <info>php artisan trash:purge --dry-run</info>   liste les candidats
+      <info>php artisan trash:purge</info>
+
+    <comment>Garde-fou</comment> : si la durée de conservation n'est pas renseignée, la commande
+    AVERTIT et ne supprime rien — elle ne se tait jamais en détruisant. <comment>--force</comment>
+    passe outre ; ne l'utilisez qu'après avoir regardé l'aperçu.
+
+    Chaque suppression est journalisée ET tracée au journal d'audit des quotas.
+    <comment>--performed-by</comment> y inscrit un auteur parlant.
+
+    Le bouton « Purger maintenant » de l'interface exécute ce même traitement.
+    HELP;
 
     /**
      * Répertoire racine de la corbeille. Surchargeable en test via

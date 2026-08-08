@@ -28,6 +28,20 @@ class PruneAgentReportsCommand extends Command
 
     protected $description = 'Purge les agent_report_events et agent_report_history au-delà des rétentions config/agent.php';
 
+    protected $help = <<<'HELP'
+    Supprime les données de rapport des agents devenues trop anciennes. Deux
+    rétentions distinctes, lues dans <info>config/agent.php</info> :
+
+      <comment>agent_report_events</comment>    au-delà de <info>report_events_retention_days</info>  (14 jours par défaut)
+      <comment>agent_report_history</comment>   au-delà de <info>report_history_retention_days</info> (30 jours par défaut)
+
+    L'historique est purgé INCONDITIONNELLEMENT, que sa collecte soit active ou non :
+    la table reste donc vide quand la fonction est coupée, et les résidus d'une phase
+    de diagnostic terminée finissent par disparaître d'eux-mêmes.
+
+    Planifiée quotidiennement — vous n'avez normalement pas à la lancer à la main.
+    HELP;
+
     public function handle(): int
     {
         $eventsCutoff = now()->subDays(max(1, (int) config('agent.report_events_retention_days', 14)));

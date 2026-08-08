@@ -23,7 +23,21 @@ class ShortcutsBackfillIconsCommand extends Command
 {
     protected $signature = 'shortcuts:backfill-icons {--legacy-dir= : Dossier des icônes legacy name-addressed (défaut : config shortcut_icons.legacy_path)}';
 
-    protected $description = 'Content-adresse les icônes uploadées existantes (<name>.ico → <sha>.ico) et persiste icon_asset/icon_checksum (Story 27.7).';
+    protected $description = 'Content-adresse les icônes uploadées existantes (<name>.ico → <sha>.ico) et persiste icon_asset/icon_checksum.';
+
+    protected $help = <<<'HELP'
+    Reprend les icônes de raccourcis téléversées avant que celles-ci ne soient rangées
+    par empreinte de contenu, et les range selon la convention actuelle.
+
+      <info>php artisan shortcuts:backfill-icons</info>
+      <info>php artisan shortcuts:backfill-icons --legacy-dir=/chemin/des/icones</info>
+
+    Non destructive : les icônes sont COPIÉES, jamais supprimées. Les doublons sont
+    détectés par empreinte, une seconde exécution ne fait rien, et une icône absente
+    est signalée sans faire échouer la commande.
+
+    Reprise ponctuelle, à jouer une fois.
+    HELP;
 
     public function handle(ShortcutIconBackfiller $backfiller): int
     {

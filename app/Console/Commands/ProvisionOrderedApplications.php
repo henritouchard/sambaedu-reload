@@ -27,6 +27,22 @@ class ProvisionOrderedApplications extends Command
 
     protected $description = 'Matérialise en inventaire les applications ordonnées par le contrat amont depuis leur source de dépôt (idempotent, re-jouable).';
 
+    protected $help = <<<'HELP'
+    Matérialise dans l'inventaire local les applications commandées par le contrat
+    amont, en allant les chercher dans leur dépôt d'origine.
+
+    Cette matérialisation a normalement lieu toute seule à la réception d'un contrat.
+    Cette commande est le point de reprise MANUEL : après un incident, ou pour
+    provisionner une instance neuve.
+
+      <info>php artisan controlhub:provision-ordered-apps</info>
+
+    Rejouable sans risque : elle est idempotente, ce qui est déjà en place n'est pas
+    retraité.
+
+    Sans contrat amont actif, elle le dit et sort normalement sans rien écrire.
+    HELP;
+
     public function handle(OrderedApplicationProvisioner $provisioner): int
     {
         // NFR3 — standalone : sans contrat amont actif, ne rien écrire.

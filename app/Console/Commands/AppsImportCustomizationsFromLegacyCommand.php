@@ -28,11 +28,33 @@ use Illuminate\Support\Facades\Log;
 class AppsImportCustomizationsFromLegacyCommand extends Command
 {
     protected $signature = 'apps:import-customizations-from-legacy'
-        . ' {--kind=all : firefox|thunderbird|all}'
+        . ' {--kind=all : Périmètre de l\'import : firefox, thunderbird ou all.}'
         . ' {--dry-run : Scanne sans écrire en DB}'
         . ' {--verbose-files : Détaille chaque fichier scanné}';
 
     protected $description = 'Importe les overrides legacy JSON vers app_customizations.';
+
+    protected $help = <<<'HELP'
+    Importe les personnalisations d'applications du serveur SE4 — les fichiers JSON de
+    <info>/etc/sambaedu/applications/{firefox,thunderbird}/</info> — vers la table des
+    personnalisations SE5.
+
+    Le nom de chaque fichier détermine sa portée :
+
+      <comment>default.json</comment>, <comment>custom.json</comment>   personnalisation globale, par défaut
+      <comment>&lt;login&gt;.json</comment>                un utilisateur
+      <comment>&lt;nom&gt;.json</comment>                  un groupe d'utilisateurs ou un groupe de postes
+
+    Un fichier dont le nom ne correspond à AUCUN utilisateur ni groupe connu n'est pas
+    importé : il est seulement signalé dans les journaux. Contrôlez cette liste avant
+    de conclure que l'import est complet.
+
+      <info>php artisan apps:import-customizations-from-legacy --dry-run</info>
+      <info>php artisan apps:import-customizations-from-legacy --kind=firefox</info>
+
+    Import de migration, à jouer une fois au moment de basculer un établissement.
+    Il est idempotent : le rejouer met à jour au lieu de dupliquer.
+    HELP;
 
     public function handle(): int
     {

@@ -17,6 +17,26 @@ class SystemUpdateCommand extends Command
 
     protected $description = 'Exécute les étapes applicatives de mise à jour (artisan)';
 
+    protected $help = <<<'HELP'
+    Enchaîne les gestes applicatifs d'une mise à jour du serveur, dans l'ordre :
+
+      1. vidage des caches de configuration, de routes, de vues et applicatif ;
+      2. migrations de la base ;
+      3. peuplement des permissions et rôles, puis remise à zéro de leur cache ;
+      4. republication des ressources de l'interface ;
+      5. reconstruction des caches.
+
+      <info>php artisan sambaedu:app:update</info>
+      <info>php artisan sambaedu:app:update --skip-migrate --skip-optimize</info>
+
+    Appelée par le script de mise à jour du serveur ; chaque étape peut être écartée
+    si vous rejouez une séquence à la main.
+
+    ⚠️ <comment>--resync-seeded-roles</comment> ré-aligne les permissions des rôles fournis sur leur
+    définition d'origine, et ÉCRASE donc les ajustements faits depuis l'interface.
+    Ne l'utilisez que pour rattraper des rôles abîmés.
+    HELP;
+
     public function handle(): int
     {
         try {

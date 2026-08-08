@@ -42,6 +42,26 @@ class GpoDeployAgentBootstrapCommand extends Command
     /** @var string */
     protected $description = 'Publie + isole la GPO bootstrap agent SE_agent_bootstrap (idempotent, fail-soft).';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Publie et isole la stratégie de groupe d'amorçage de l'agent : dépôt dans le
+    partage de stratégies, blocage d'héritage, et liaison sur l'unité d'organisation
+    des postes de l'établissement.
+
+    Appelée par les scripts d'installation et de mise à jour du serveur, elle est
+    délibérément TOLÉRANTE : si le contrôleur de domaine est injoignable ou le mot de
+    passe d'administration absent, elle avertit et passe son tour — une mise à jour du
+    serveur ne doit jamais échouer pour cette raison.
+
+      <info>php artisan gpo:deploy-agent-bootstrap --dry-run</info>   affiche sans rien faire
+      <info>php artisan gpo:deploy-agent-bootstrap --force</info>     republie même si à jour
+      <info>php artisan gpo:deploy-agent-bootstrap --strict</info>    échoue vraiment en cas d'échec
+
+    Utilisez <comment>--strict</comment> quand vous diagnostiquez à la main ou en intégration
+    continue : sans lui, un échec réel sort en succès, ce qui est le comportement
+    voulu dans les scripts mais trompeur en diagnostic.
+    HELP;
+
     public function handle(AgentBootstrapPublisher $publisher): int
     {
         $force = (bool) $this->option('force');

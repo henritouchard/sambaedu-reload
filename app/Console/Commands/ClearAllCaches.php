@@ -21,8 +21,7 @@ class ClearAllCaches extends Command
                             {--views : Nettoyer uniquement le cache des vues}
                             {--app : Nettoyer uniquement le cache applicatif}
                             {--all : Nettoyer tous les caches (par défaut)}
-                            {--optimize : Reconstruire les caches après nettoyage}
-                            {--quiet : Exécution silencieuse}';
+                            {--optimize : Reconstruire les caches après nettoyage}';
 
     /**
      * The console command description.
@@ -30,6 +29,22 @@ class ClearAllCaches extends Command
      * @var string
      */
     protected $description = 'Nettoyer intelligemment tous les caches Laravel de SambaEdu';
+
+    protected $help = <<<'HELP'
+    Vide les caches Laravel de SE5 — configuration, routes, vues et cache applicatif.
+
+      <info>php artisan sambaedu:clear-cache</info>              tout
+      <info>php artisan sambaedu:clear-cache --config</info>     seulement la configuration
+      <info>php artisan sambaedu:clear-cache --views</info>      seulement les vues
+      <info>php artisan sambaedu:clear-cache --optimize</info>   vide PUIS reconstruit
+
+    Le premier réflexe quand une modification du fichier d'environnement ou d'un
+    fichier de configuration « ne prend pas » : c'est le cache de configuration qui
+    sert encore l'ancienne valeur.
+
+    <comment>--optimize</comment> est la forme à utiliser en production : laisser les caches vides
+    dégrade les performances jusqu'à leur reconstruction.
+    HELP;
 
     /**
      * Execute the console command.

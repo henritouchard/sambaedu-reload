@@ -20,6 +20,19 @@ final class WpkgCacheWarmupCommand extends Command
 
     protected $description = 'Pré-remplit le cache packages WPKG pour un poste ou tous les postes.';
 
+    protected $help = <<<'HELP'
+    Pré-calcule la liste des paquets à proposer aux postes, pour que le premier poste
+    qui se présente n'ait pas à attendre ce calcul.
+
+      <info>php artisan wpkg:cache:warmup --all</info>
+      <info>php artisan wpkg:cache:warmup --workstation=SALLE-B12-01</info>
+
+    Les deux options s'excluent : soit tout le parc, soit un poste.
+
+    Le geste naturel après un <info>wpkg:cache:flush</info>, ou avant une plage d'allumage
+    massif où beaucoup de postes vont solliciter le serveur en même temps.
+    HELP;
+
     public function handle(WorkstationPackagesResolver $resolver): int
     {
         $hostname = $this->option('workstation');

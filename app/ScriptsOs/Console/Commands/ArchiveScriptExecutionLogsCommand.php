@@ -39,7 +39,26 @@ final class ArchiveScriptExecutionLogsCommand extends Command
                             {--retention-days= : Âge maximum en jours (défaut: config scriptsos.retention_days)}
                             {--dry-run : Simulation sans suppression DB ni écriture archive}';
 
-    protected $description = 'Archive les logs script_execution_logs > N jours dans JSONL gzip mensuels puis purge la DB (Story 16.12).';
+    protected $description = 'Archive les logs script_execution_logs de plus de N jours dans des JSONL gzip mensuels, puis purge la base.';
+
+    protected $help = <<<'HELP'
+    Archive les journaux d'exécution des scripts plus anciens que la rétention (90
+    jours par défaut) dans des fichiers mensuels compressés, PUIS les supprime de la
+    base.
+
+      <info>php artisan script-logs:archive:rotate --dry-run</info>   simulation
+      <info>php artisan script-logs:archive:rotate</info>
+      <info>php artisan script-logs:archive:rotate --retention-days=365</info>
+
+    Les archives sont écrites sous <info>storage/archives/</info>, un fichier par mois, en
+    mode ajout : une seconde exécution sur le même mois complète le fichier au lieu de
+    l'écraser.
+
+    <comment>L'ordre compte</comment> : la suppression en base n'a lieu qu'APRÈS l'écriture de
+    l'archive. Un disque plein interrompt donc la rotation sans perdre de données.
+
+    Une rétention inférieure à un jour est refusée.
+    HELP;
 
     public function handle(): int
     {

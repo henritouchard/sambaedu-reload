@@ -45,6 +45,22 @@ class MigrationHealthCheck extends Command
     /** @var string */
     protected $description = 'Vérifie la santé de la migration auto-bootstrap. Alerte critical si ratio échecs > seuil.';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Mesure la santé de la migration automatique des postes sur une fenêtre glissante :
+    combien de tentatives, combien d'échecs, et dans quelle proportion.
+
+    Si le taux d'échec dépasse le seuil, une alerte de niveau critique est écrite au
+    journal, avec le détail des causes les plus fréquentes.
+
+      <info>php artisan migration:health-check</info>
+      <info>php artisan migration:health-check --days=30 --threshold=0.10</info>
+
+    <comment>La commande NE tombe JAMAIS en erreur</comment>, même quand elle alerte : son code de
+    retour ne dit rien de l'état du système. C'est délibéré — c'est le journal qu'il
+    faut surveiller, pas le code de sortie de la commande.
+    HELP;
+
     public function handle(): int
     {
         $days = max(1, (int) $this->option('days'));

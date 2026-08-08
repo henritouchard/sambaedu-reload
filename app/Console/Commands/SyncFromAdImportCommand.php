@@ -51,6 +51,27 @@ class SyncFromAdImportCommand extends Command
 
     protected $description = 'Rejoue en CLI les imports de la page « Synchronisation depuis l\'AD » (interactif ou non-interactif)';
 
+    protected $help = <<<'HELP'
+    Rejoue en ligne de commande les imports de la page « Synchronisation depuis
+    l'AD » : mêmes imports, même ordre, même sémantique.
+
+      <info>php artisan import:sync-from-ad --list</info>              ce qui est disponible
+      <info>php artisan import:sync-from-ad</info>                     interactif
+      <info>php artisan import:sync-from-ad users_establishment workstations --etab=0951234A</info>
+      <info>php artisan import:sync-from-ad --all --no-interaction --continue-on-error</info>
+
+    <comment>--etab</comment> désigne l'établissement par son UAI ; <info>0</info> vise le domaine entier.
+
+    Un import déjà passé est sauté. Par défaut la chaîne s'arrête à la première
+    erreur — <comment>--continue-on-error</comment> la fait poursuivre, ce qui est le mode à
+    privilégier dans un script d'après-installation.
+
+    ⚠️ La migration des droits est en SIMULATION tant que vous ne passez pas
+    <comment>--rights-execute</comment>. C'est délibéré : on regarde d'abord ce qui serait fait.
+
+    Import de migration, destiné à la bascule d'un établissement.
+    HELP;
+
     /** Décidé une fois au lancement : la migration des droits applique-t-elle réellement ? */
     private bool $rightsExecute = false;
 

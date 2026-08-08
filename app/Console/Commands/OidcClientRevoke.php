@@ -34,6 +34,22 @@ class OidcClientRevoke extends Command
     /** @var string */
     protected $description = 'Révoque (désactive) un client confidentiel du registre OIDC.';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Révoque une application cliente : elle n'obtient plus aucun jeton, et ceux déjà
+    émis cessent d'être acceptés.
+
+      <info>php artisan oidc:client:revoke mon-outil-a1b2c3</info>
+
+    <comment>Révoquer, c'est DÉSACTIVER, pas supprimer.</comment> La trace reste au registre — on
+    doit pouvoir dire plus tard qu'un client a existé et quand il a été coupé.
+
+    Rejouer la commande sur un client déjà révoqué ne fait rien et n'est pas une
+    erreur. En revanche un identifiant inconnu échoue : c'est presque toujours une
+    faute de frappe, et se taire vous laisserait croire à une révocation qui n'a pas
+    eu lieu.
+    HELP;
+
     public function handle(OidcClientRegistry $registry): int
     {
         $clientId = (string) $this->argument('client_id');

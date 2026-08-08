@@ -19,6 +19,18 @@ class WallpaperRebuildBadgesCommand extends Command
 
     protected $description = 'Rasterise les SVG sources des badges wallpaper en PNG 48×48 (build time).';
 
+    protected $help = <<<'HELP'
+    Reconstruit les images des badges du fond d'écran à partir de leurs sources
+    vectorielles.
+
+      <info>php artisan wallpaper:rebuild-badges</info>
+
+    Outil de développement, à lancer après avoir modifié une source vectorielle. Les
+    images produites sont versionnées dans le dépôt : le serveur n'a donc besoin
+    d'aucun outil de rendu vectoriel, et cette commande n'a pas à tourner en
+    production.
+    HELP;
+
     public function handle(): int
     {
         if (! class_exists('Imagick')) {

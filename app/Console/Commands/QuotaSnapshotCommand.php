@@ -43,6 +43,24 @@ class QuotaSnapshotCommand extends Command
 
     protected $description = 'Snapshot quotidien des quotas XFS — alimente users.quota_snapshot';
 
+    protected $help = <<<'HELP'
+    Relève une fois par nuit la consommation de quota de chaque utilisateur sur les
+    partitions gérées, et l'enregistre.
+
+      <info>php artisan quota:snapshot</info>
+      <info>php artisan quota:snapshot --partition=/home</info>
+
+    L'interface lit ces valeurs enregistrées : la liste des utilisateurs ne mesure
+    rien à l'affichage. C'est ce qui lui permet de rester rapide avec plusieurs
+    milliers de comptes.
+
+    Si une partition n'est pas interrogeable, la commande journalise l'incident et
+    CONSERVE le relevé précédent plutôt que d'écrire un état vide — une mesure
+    manquante ne doit pas se lire comme une consommation nulle.
+
+    Planifiée quotidiennement.
+    HELP;
+
     /**
      * Partitions gérées par défaut (ordre d'exécution déterministe).
      *

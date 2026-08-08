@@ -23,6 +23,22 @@ class TestLdapConnection extends Command
      */
     protected $description = 'Teste la connexion LDAP avec LdapRecord';
 
+    protected $help = <<<'HELP'
+    Vérifie que le serveur atteint bien l'annuaire, et affiche les paramètres qu'il
+    utilise réellement pour s'y connecter : hôtes, port, base de recherche, compte,
+    chiffrement.
+
+      <info>php artisan ldap:test-connection</info>
+
+    Strictement en lecture. C'est le premier geste de diagnostic quand une page
+    dépendant de l'annuaire reste vide ou renvoie une erreur : il départage un
+    problème de configuration d'un problème de contenu.
+
+    Le tableau affiché montre la configuration EFFECTIVE — celle du cache de
+    configuration si vous en avez un — et pas ce que vous croyez avoir écrit dans le
+    fichier d'environnement.
+    HELP;
+
     /**
      * Execute the console command.
      */

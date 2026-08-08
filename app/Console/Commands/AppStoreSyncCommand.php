@@ -21,6 +21,20 @@ class AppStoreSyncCommand extends Command
 
     protected $description = 'Synchronise le catalogue d\'applications depuis les dépôts distants';
 
+    protected $help = <<<'HELP'
+    Interroge tous les dépôts d'applications actifs et met le catalogue local à jour :
+    nouvelles applications, mises à jour de celles déjà connues.
+
+      <info>php artisan appstore:sync</info>
+      <info>php artisan appstore:sync --force</info>   ignore le cache et re-synchronise tout
+
+    Sans <comment>--force</comment>, un dépôt dont le catalogue n'a pas changé n'est pas retraité.
+
+    Le compte-rendu affiche le nombre de dépôts synchronisés, d'applications ajoutées
+    et mises à jour. Si un seul dépôt échoue, la commande se termine en ERREUR après
+    avoir listé les échecs — les dépôts sains ont malgré tout été traités.
+    HELP;
+
     public function handle(AppStoreService $appStoreService): int
     {
         $this->info('Synchronisation du catalogue d\'applications...');

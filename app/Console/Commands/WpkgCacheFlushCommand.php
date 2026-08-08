@@ -20,6 +20,20 @@ final class WpkgCacheFlushCommand extends Command
 
     protected $description = 'Vide les caches `wpkg:packages:*` (un poste ou tous les postes).';
 
+    protected $help = <<<'HELP'
+    Vide le cache de la liste des paquets calculée pour les postes.
+
+      <info>php artisan wpkg:cache:flush</info>                       tous les postes
+      <info>php artisan wpkg:cache:flush --workstation=SALLE-B12-01</info>   un seul
+
+    À utiliser quand un poste continue de se voir proposer d'anciennes applications
+    après un changement d'affectation : c'est le calcul mis en cache qui n'a pas été
+    invalidé.
+
+    Sans danger : le cache se reconstruit tout seul à la sollicitation suivante.
+    Pour le reconstruire tout de suite, enchaînez avec <info>wpkg:cache:warmup</info>.
+    HELP;
+
     public function handle(): int
     {
         $hostname = $this->option('workstation');

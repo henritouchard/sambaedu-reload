@@ -35,6 +35,23 @@ class SharesInspectFsCommand extends Command
 
     protected $description = 'Inspecte (read-only) les ACL POSIX d\'un répertoire legacy et classe ce qui serait importable en lecteur réseau géré.';
 
+    protected $help = <<<'HELP'
+    Lit les droits POSIX d'un répertoire et dit ce qui serait importable en lecteur
+    réseau géré. <comment>Aucune écriture</comment> — ni sur le disque, ni en base.
+
+      <info>php artisan shares:inspect-fs /var/sambaedu/MonDossier</info>
+      <info>php artisan shares:inspect-fs /var/sambaedu/MonDossier --json</info>
+
+    Le résultat range chaque entrée dans l'une de trois catégories :
+
+      <comment>exploitable</comment>    deviendrait une assignation, en lecture ou en écriture ;
+      <comment>structurel</comment>     socle canonique (propriétaire, groupe, masque) — ignoré ;
+      <comment>non exploitable</comment> utilisateur inconnu, accès ouvert à tous, exécution seule…
+
+    C'est l'aperçu de <info>shares:import-from-fs</info>, et l'outil à dégainer pour
+    répondre à « qu'y a-t-il vraiment sur ce dossier ? » sans rien risquer.
+    HELP;
+
     public function handle(AclInspectionService $service): int
     {
         $path = (string) $this->argument('path');

@@ -24,6 +24,19 @@ final class WinscriptLogsDisableCommand extends Command
 
     protected $description = 'Désactive le logging centralisé des scripts d\'applications (retour iso-legacy).';
 
+    protected $help = <<<'HELP'
+    Désactive la journalisation centralisée des scripts d'applications : les scripts
+    retrouvent leur forme d'origine, à l'identique du serveur SE4.
+
+      <info>php artisan winscript-logs:disable</info>
+
+    L'indicateur est écrit dans le fichier d'environnement sans en abîmer le reste,
+    puis le cache de configuration est invalidé — la bascule est effective
+    immédiatement.
+
+    Pour vérifier l'état courant : <info>winscript-logs:status</info>.
+    HELP;
+
     public function handle(): int
     {
         $alreadyDisabled = ! $this->loggingFlagEnabled();

@@ -19,6 +19,16 @@ class PruneWorkstationGroupScheduleRunsCommand extends Command
 
     protected $description = 'Purge les runs d\'historique des programmations plus anciens que N jours (défaut 30).';
 
+    protected $help = <<<'HELP'
+    Supprime l'historique d'exécution des programmations de groupes plus ancien que la
+    rétention demandée (30 jours par défaut).
+
+      <info>php artisan parc:prune-group-schedule-runs</info>
+      <info>php artisan parc:prune-group-schedule-runs --days=90</info>
+
+    Planifiée quotidiennement.
+    HELP;
+
     public function handle(WorkstationGroupScheduleService $service): int
     {
         $days = (int) $this->option('days');

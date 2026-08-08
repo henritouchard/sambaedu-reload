@@ -15,6 +15,25 @@ class CompareLegacyLaravelCommand extends Command
 
     protected $description = 'Compare le comportement Legacy vs Laravel pour les opérations AD';
 
+    protected $help = <<<'HELP'
+    Banc de comparaison : rejoue une même opération d'annuaire côté SE4 puis côté SE5,
+    et confronte ce que chacun a réellement écrit dans l'Active Directory.
+
+    Sept opérations sont couvertes, portant sur les groupes de postes (création,
+    renommage, suppression, déplacement…). Sans argument, un menu les propose.
+
+      <info>php artisan compare:legacy-laravel</info>          menu interactif
+      <info>php artisan compare:legacy-laravel 1</info>        l'opération n° 1
+      <info>php artisan compare:legacy-laravel all</info>      toutes
+      <info>php artisan compare:legacy-laravel 3 --compare</info>   rejouer la seule comparaison
+
+    <comment>--legacy</comment> et <comment>--laravel</comment> n'exécutent qu'un seul des deux côtés ; <comment>--show-logs</comment>
+    affiche la sortie complète même quand tout passe.
+
+    ⚠️ Cette commande ÉCRIT dans l'annuaire : elle crée puis supprime de vrais objets.
+    Réservez-la à un annuaire de test, jamais à un annuaire de production.
+    HELP;
+
     protected array $actions = [
         '1' => [
             'name' => 'Créer un WorkstationGroup',

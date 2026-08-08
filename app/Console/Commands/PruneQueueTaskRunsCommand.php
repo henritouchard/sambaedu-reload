@@ -26,7 +26,20 @@ class PruneQueueTaskRunsCommand extends Command
 {
     protected $signature = 'queue-task-runs:prune';
 
-    protected $description = 'Purge les queue_task_runs terminés au-delà des seuils de rétention (Story 29.10)';
+    protected $description = 'Purge les queue_task_runs terminés au-delà des seuils de rétention.';
+
+    protected $help = <<<'HELP'
+    Supprime l'historique d'exécution des traitements en arrière-plan devenu trop
+    ancien :
+
+      · les exécutions ABOUTIES au-delà de leur rétention (14 jours par défaut) ;
+      · les exécutions ÉCHOUÉES au-delà de la leur (30 jours par défaut).
+
+    <comment>Les exécutions ENCORE EN COURS ne sont jamais supprimées</comment>, quel que soit leur
+    âge : un traitement bloqué depuis trois mois est précisément ce qu'on veut voir.
+
+    Les deux rétentions se règlent en configuration. Planifiée quotidiennement.
+    HELP;
 
     public function handle(): int
     {

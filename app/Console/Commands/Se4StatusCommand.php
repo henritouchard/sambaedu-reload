@@ -25,6 +25,21 @@ class Se4StatusCommand extends Command
 
     protected $description = 'État de l\'extinction SE4 : bascule vhost/dossiers + verdict GO/NO-GO sur legacy_catchall_logs';
 
+    protected $help = <<<'HELP'
+    Dresse l'état d'extinction du serveur SE4 pour cette instance : hôte virtuel actif
+    ou non, arborescence en place ou mise de côté, et surtout ce qui a ENCORE frappé
+    le legacy sur la période d'observation.
+
+      <info>php artisan se4:status</info>
+      <info>php artisan se4:status --days=30</info>
+
+    Strictement en lecture, exécutable à tout moment.
+
+    Le verdict conclut sur la possibilité d'éteindre, et le CODE DE RETOUR le reflète
+    (<info>0</info> = on peut y aller) — de quoi enchaîner dans un script. C'est le contrôle
+    préalable qu'exécute <info>se4:unplug</info> avant d'agir.
+    HELP;
+
     public function handle(): int
     {
         if (! $this->ensureLegacyPathConfigured()) {

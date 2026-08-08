@@ -15,6 +15,21 @@ class TestInteractiveCommand extends Command
     protected $signature = 'tests:interactive {--quick : Lancer rapidement tous les tests de comparaison}';
     protected $description = 'Console interactive pour lancer les tests SambaEdu';
 
+    protected $help = <<<'HELP'
+    Console interactive de lancement des comparaisons entre SE4 et SE5 : un menu
+    propose les sept opérations d'annuaire couvertes, et exécute celle que vous
+    choisissez.
+
+      <info>php artisan tests:interactive</info>
+      <info>php artisan tests:interactive --quick</info>   enchaîne toutes les comparaisons
+
+    C'est l'habillage confortable de <info>compare:legacy-laravel</info>, auquel elle
+    délègue.
+
+    ⚠️ Les comparaisons ÉCRIVENT dans l'annuaire : elles créent puis suppriment de
+    vrais objets. Réservez-les à un annuaire de test.
+    HELP;
+
     private array $comparisonTests = [
         '1' => 'Créer un WorkstationGroup',
         '2' => 'Renommer un WorkstationGroup',

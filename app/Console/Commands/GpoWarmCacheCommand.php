@@ -37,7 +37,25 @@ class GpoWarmCacheCommand extends Command
         {--force : Flush le cache complet avant le warm-up.}';
 
     /** @var string */
-    protected $description = 'Warm le cache santé GPO (links + versionNumber par GPO). Appelé en schedule 22:00 + manuel.';
+    protected $description = 'Préchauffe le cache de santé GPO (liens et numéro de version par GPO).';
+
+    /** @var string */
+    protected $help = <<<'HELP'
+    Pré-remplit le cache de santé des stratégies de groupe — liens et numéro de
+    version de chaque stratégie — pour que la page d'administration n'ait pas à
+    interroger le contrôleur de domaine stratégie par stratégie à l'affichage.
+
+    Planifiée chaque soir, de sorte que le cache soit chaud à l'ouverture du matin.
+
+      <info>php artisan gpo:warm-cache</info>
+      <info>php artisan gpo:warm-cache --force</info>   vide entièrement le cache d'abord
+
+    <comment>--force</comment> est le geste à faire après un déploiement, ou dès qu'on soupçonne des
+    entrées périmées.
+
+    Codes de retour : <info>0</info> même si quelques stratégies ont échoué — le remplissage est
+    au mieux · <info>1</info> seulement si le contrôleur de domaine est globalement inaccessible.
+    HELP;
 
     public function handle(CachedGpoLookups $cache): int
     {

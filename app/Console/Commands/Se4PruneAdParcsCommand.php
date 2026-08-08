@@ -49,6 +49,25 @@ class Se4PruneAdParcsCommand extends Command
 
     protected $description = 'Purge prévisionnelle des CN hérités de OU=Parcs (lecture seule sans --confirm)';
 
+    protected $help = <<<'HELP'
+    Supprime dans l'annuaire les objets résiduels du conteneur des parcs, hérités du
+    serveur SE4.
+
+    Ce conteneur est devenu une zone en LECTURE SEULE pour SE5, qui n'y écrit plus
+    rien. Ce qui y subsiste n'a plus aucun lecteur côté SE5 — mais en a encore côté
+    SE4 tant que celui-ci sert.
+
+      <info>php artisan se4:prune-ad-parcs</info>             simulation (par défaut)
+      <info>php artisan se4:prune-ad-parcs --confirm</info>   supprime réellement
+
+    Sans <comment>--confirm</comment>, la commande est en LECTURE SEULE et peut être lancée à
+    n'importe quel moment pour voir ce qui serait retiré.
+
+    ⚠️ La suppression effective est REFUSÉE tant que le serveur SE4 n'a pas été
+    débranché : il y résout encore les parcs d'une machine. Purgez après extinction,
+    jamais avant.
+    HELP;
+
     /**
      * Seam de test (HÔTE, sans AD) : liste des entrées `OU=Parcs`. Chaque objet
      * doit exposer `getParcName(): ?string` et `getDn(): string`. Null = requête

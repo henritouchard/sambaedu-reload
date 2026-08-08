@@ -34,6 +34,22 @@ class OidcKeysInit extends Command
     /** @var string */
     protected $description = 'Initialise la paire de signature RS256 dédiée au fournisseur OIDC (SSO des extensions).';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Initialise la paire de clés qui signe les jetons d'identité émis par SE5.
+
+    À jouer à l'installation. Rejouable sans risque : une paire déjà présente est
+    signalée et laissée INTACTE — c'est pourquoi les scripts de mise à jour peuvent
+    l'appeler sur chaque instance sans précaution.
+
+      <info>php artisan oidc:keys:init</info>
+      <info>php artisan oidc:keys:init --force</info>   régénère, après confirmation
+
+    ⚠️ <comment>--force</comment> invalide tous les jetons déjà signés : chaque application cliente
+    devra reprendre la clé publique, et les sessions en cours tomberont. Les anciens
+    fichiers sont sauvegardés à côté. À réserver à une compromission.
+    HELP;
+
     public function handle(OidcKeyManager $keys): int
     {
         $force = (bool) $this->option('force');

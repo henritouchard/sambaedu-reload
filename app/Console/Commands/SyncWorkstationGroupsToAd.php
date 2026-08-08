@@ -20,6 +20,23 @@ class SyncWorkstationGroupsToAd extends Command
 
     protected $description = 'Synchronise les WorkstationGroups de la base SQL vers l\'Active Directory';
 
+    protected $help = <<<'HELP'
+    Projette vers l'Active Directory les groupes de postes (salles physiques et parcs
+    logiques) qui vivent en base SQL, et mémorise en retour l'identifiant d'annuaire
+    (<info>ad_guid</info>) et le DN de chaque objet créé.
+
+    Par défaut, seuls les groupes JAMAIS synchronisés sont traités (ceux dont
+    l'<info>ad_guid</info> est vide). Utilisez <info>--force</info> pour rejouer la
+    projection sur tous les groupes, y compris ceux déjà présents dans l'annuaire.
+
+      <info>php artisan ad:sync-workstation-groups --dry-run</info>   liste ce qui serait projeté
+      <info>php artisan ad:sync-workstation-groups --id=42</info>     un seul groupe
+      <info>php artisan ad:sync-workstation-groups --force</info>     rejoue tout
+
+    Les échecs sont comptés et détaillés groupe par groupe sans interrompre la boucle :
+    un annuaire partiellement injoignable ne fait pas perdre le travail déjà fait.
+    HELP;
+
     public function __construct(
         private AdSyncService $adSyncService
     ) {

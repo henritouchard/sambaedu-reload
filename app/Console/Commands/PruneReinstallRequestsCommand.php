@@ -20,6 +20,18 @@ class PruneReinstallRequestsCommand extends Command
 
     protected $description = 'Purge les réinstallations terminales (done/failed/canceled) plus anciennes que N jours (défaut 30).';
 
+    protected $help = <<<'HELP'
+    Supprime les demandes de réinstallation ARRIVÉES À TERME — abouties, échouées ou
+    annulées — plus anciennes que la rétention demandée (30 jours par défaut).
+
+      <info>php artisan parc:prune-reinstall-requests</info>
+      <info>php artisan parc:prune-reinstall-requests --days=90</info>
+
+    Les demandes encore en cours ne sont jamais touchées, quel que soit leur âge.
+
+    Planifiée quotidiennement.
+    HELP;
+
     public function handle(WorkstationReinstallService $service): int
     {
         $days = (int) $this->option('days');

@@ -34,7 +34,27 @@ final class RotateWpkgReportArchivesCommand extends Command
                             {--days= : Âge maximum en jours (défaut: config sambaedu.wpkg.reports_archive_retention_days)}
                             {--dry-run : Simulation sans suppression}';
 
-    protected $description = 'Rote les archives brutes des rapports WPKG (Story 15.5).';
+    protected $description = 'Rote les archives brutes des rapports WPKG.';
+
+    protected $help = <<<'HELP'
+    Supprime les comptes rendus d'installation archivés plus anciens que la rétention
+    (90 jours par défaut).
+
+      <info>php artisan wpkg:reports:archive:rotate --dry-run</info>   simulation
+      <info>php artisan wpkg:reports:archive:rotate</info>
+      <info>php artisan wpkg:reports:archive:rotate --days=365</info>
+
+    Elle ne touche QUE les rapports déjà archivés par <info>wpkg:process-reports</info> —
+    jamais ceux en attente de traitement.
+
+    Deux refus protègent l'opération : un répertoire d'archives non configuré, et une
+    rétention inférieure à un jour — qui reviendrait à supprimer les rapports du jour
+    même.
+
+    La sortie indique le nombre de fichiers supprimés et l'espace libéré.
+
+    Planifiée quotidiennement.
+    HELP;
 
     public function handle(): int
     {

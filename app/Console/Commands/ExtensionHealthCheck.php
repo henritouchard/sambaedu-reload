@@ -42,6 +42,27 @@ class ExtensionHealthCheck extends Command
     /** @var string */
     protected $description = "Sonde les backends des extensions `app` installées et persiste leur état de santé.";
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Sonde le backend de chaque extension applicative installée et ENREGISTRE ce
+    qu'elle observe.
+
+    C'est le seul chemin de mesure : les pastilles de la barre de navigation, la
+    bibliothèque et la fiche d'une extension LISENT cet état enregistré. Aucune page
+    n'interroge un backend au moment de son affichage.
+
+      <info>php artisan ext:health:check</info>          toutes les extensions installées
+      <info>php artisan ext:health:check monoutil</info>  une seule
+
+    Planifiée toutes les cinq minutes.
+
+    <comment>Un backend arrêté n'est PAS une erreur de cette commande</comment> : elle constate,
+    elle ne juge pas — un service peut avoir été stoppé volontairement. Elle sort donc
+    normalement même si tout est mort. Le seul échec possible est une clé d'extension
+    inconnue, c'est-à-dire une faute de frappe de votre part. Pour un verdict, c'est
+    <info>sambaedu:doctor --tag=extensions</info> qu'il faut interroger.
+    HELP;
+
     public function handle(ExtensionHealthService $health): int
     {
         $key = $this->argument('key');

@@ -44,7 +44,28 @@ class FederatedPurgeIdentitiesCommand extends Command
         {--dry-run : Liste les identités candidates sans anonymiser}
         {--force : Ignore le garde-fou pii_ttl_days <= 0 (purge même si non configurée)}';
 
-    protected $description = 'Anonymise les identités externes fédérées dont la rétention PII a expiré (Story 20.2 — RGPD)';
+    protected $description = 'Anonymise les identités externes fédérées dont la rétention des données personnelles a expiré (RGPD).';
+
+    protected $help = <<<'HELP'
+    Anonymise les identités des intervenants externes dont la durée de conservation
+    des données personnelles est écoulée.
+
+    <comment>Anonymisation, jamais suppression.</comment> Les données personnelles sont vidées,
+    l'identifiant d'origine est remplacé par une empreinte non réversible, les comptes
+    liés sont désactivés, et la ligne SURVIT : elle reste nécessaire à l'audit et à
+    l'intégrité de la base.
+
+      <info>php artisan federated:purge-identities --dry-run</info>   liste les candidates
+      <info>php artisan federated:purge-identities</info>
+
+    Deux garde-fous empêchent toute anonymisation non voulue : tant que la fonction
+    n'est pas activée en configuration, ou tant que la durée de conservation n'y est
+    pas renseignée, la commande AVERTIT et ne fait rien — elle ne se tait jamais en
+    détruisant. <comment>--force</comment> passe outre l'absence de durée configurée ; ne l'utilisez
+    qu'en sachant précisément ce que vous purgez.
+
+    Planifiée : vous n'avez normalement pas à la lancer à la main.
+    HELP;
 
     public function __construct(private readonly ExternalIdentityLifecycleService $lifecycle)
     {

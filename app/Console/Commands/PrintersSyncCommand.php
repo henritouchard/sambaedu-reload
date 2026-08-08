@@ -40,6 +40,26 @@ class PrintersSyncCommand extends Command
 
     protected $description = 'Réconcilie la table `printers` SER avec l\'état réel de CUPS (idempotent).';
 
+    protected $help = <<<'HELP'
+    Réconcilie la liste des imprimantes connues de SE5 avec l'état réel du serveur
+    d'impression.
+
+      <info>php artisan printers:sync --dry-run</info>   ce qui serait fait
+      <info>php artisan printers:sync</info>
+
+    Trois cas traités :
+
+      · imprimante présente sur le serveur mais inconnue de SE5 → ajoutée ;
+      · imprimante connue de SE5 mais disparue du serveur → marquée ORPHELINE, jamais
+        supprimée : ses rattachements aux groupes survivent, et une réintroduction la
+        retrouve telle quelle ;
+      · imprimante orpheline qui réapparaît → remise en service.
+
+    Idempotente : la relancer sur un état déjà aligné ne change rien.
+
+    Planifiée quotidiennement.
+    HELP;
+
     public function handle(CupsPrinterService $cups): int
     {
         $dryRun = (bool) $this->option('dry-run');

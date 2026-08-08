@@ -23,6 +23,21 @@ class AgentReleasePromoteCommand extends Command
 
     protected $description = 'Promeut une release agent comme version stable (défaut des postes sans ring)';
 
+    protected $help = <<<'HELP'
+    Désigne une version déjà publiée comme la version STABLE de l'agent — celle que
+    prennent tous les postes qui n'appartiennent à aucun ring.
+
+    Il y a au plus une stable à la fois : la promotion bascule le pointeur de façon
+    transactionnelle, sans état intermédiaire où deux versions seraient stables.
+
+      <info>php artisan agent:release:promote 2.16.0</info>
+
+    C'est aussi le geste de RETOUR ARRIÈRE : promouvoir à nouveau la version
+    précédente ramène l'ensemble du parc non ringué sur celle-ci.
+
+    La version doit déjà exister — publiez-la d'abord avec <info>agent:release:create</info>.
+    HELP;
+
     public function handle(ReleaseCreationService $releases): int
     {
         try {

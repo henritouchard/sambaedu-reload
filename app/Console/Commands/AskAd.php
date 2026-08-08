@@ -29,6 +29,22 @@ class AskAd extends Command
      */
     protected $description = 'Recherche un terme dans les différents OUs de l\'AD et en SQL';
 
+    protected $help = <<<'HELP'
+    Cherche un terme dans l'Active Directory et en base SQL, et affiche ce qu'il
+    trouve. Strictement en LECTURE : cette commande n'écrit jamais.
+
+    Sans <comment>--type</comment>, la recherche balaie toutes les unités d'organisation connues —
+    postes, parcs, utilisateurs, groupes, classes, équipes, cours, projets, matières,
+    équipements — puis la base SQL.
+
+      <info>php artisan ask:ad dupont</info>
+      <info>php artisan ask:ad SALLE-B12 --type=computers</info>
+      <info>php artisan ask:ad 3EME2 --type=classes</info>
+
+    C'est l'outil de diagnostic à dégainer en premier quand un objet « n'existe pas » :
+    il dit où il est réellement, et s'il est présent des deux côtés.
+    HELP;
+
     private LdapDnHelper $dnHelper;
 
     public function __construct(LdapDnHelper $dnHelper)

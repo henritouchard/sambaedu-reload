@@ -28,6 +28,22 @@ class ReconcileServiceCredentialTotpCommand extends Command
 
     protected $description = 'Synchronise le mot de passe AD des comptes de service TOTP avec la fenêtre 6 h courante';
 
+    protected $help = <<<'HELP'
+    Aligne le mot de passe des comptes de service à mot de passe temporaire sur la
+    fenêtre de six heures en cours.
+
+    Planifiée chaque minute, sans recouvrement : la fenêtre pendant laquelle un compte
+    peut être désaligné après un changement de fenêtre est ainsi bornée à une minute.
+    Les passages où rien n'a changé sont quasi gratuits — un compteur est comparé,
+    l'annuaire n'est pas touché.
+
+      <info>php artisan sambaedu:totp:reconcile</info>
+
+    Auto-réparante : le compteur n'avance qu'APRÈS une écriture confirmée dans
+    l'annuaire. Un échec est donc simplement rejoué au passage suivant, et aucun
+    désalignement ne peut s'installer durablement.
+    HELP;
+
     public function handle(ServiceCredentialTotpReconciler $reconciler): int
     {
         $results = $reconciler->reconcileAll();

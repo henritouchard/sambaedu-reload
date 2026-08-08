@@ -30,6 +30,26 @@ class AgentReleaseCreateCommand extends Command
 
     protected $description = 'Publie une release agent après contre-vérification du SHA-256 du binaire (refus si artefact incohérent)';
 
+    protected $help = <<<'HELP'
+    Publie une version de l'agent : enregistre en base le binaire déjà déposé dans le
+    répertoire des releases, après avoir recalculé son SHA-256 et l'avoir confronté à
+    celui que vous fournissez.
+
+    L'option <info>--hash</info> est OBLIGATOIRE : c'est l'empreinte produite par la
+    chaîne de compilation. Si elle ne correspond pas au fichier réellement présent,
+    la commande REFUSE de publier — aucune ligne n'est écrite. C'est la garantie
+    qu'un artefact corrompu ou substitué n'atteint jamais le parc.
+
+      <info>php artisan agent:release:create 2.16.0 sambaedu-agent-2.16.0.exe --hash=<sha256></info>
+      <info>php artisan agent:release:create 2.16.0 sambaedu-agent-2.16.0.exe --hash=<sha256> --stable</info>
+
+    <comment>--stable</comment> publie ET désigne la version comme stable dans le même geste ;
+    il y a au plus une stable à la fois, le basculement est transactionnel.
+
+    Publier ne déploie rien par soi-même : les postes sans ring prendront la stable,
+    les autres la version ciblée sur leur ring.
+    HELP;
+
     public function handle(ReleaseCreationService $releases): int
     {
         $hash = trim((string) $this->option('hash'));

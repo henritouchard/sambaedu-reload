@@ -40,7 +40,25 @@ class QuotaSeedFromLegacyCommand extends Command
         {--dry-run : Aperçu sans modification BDD}
         {--force : Écrase les règles existantes (defaults profils + per user/group)}';
 
-    protected $description = 'Importe les règles quotas du legacy MySQL → quota_rules + defaults profils (Story 5.1d)';
+    protected $description = 'Importe les règles de quotas du legacy MySQL vers quota_rules et les défauts par profil.';
+
+    protected $help = <<<'HELP'
+    Importe les règles de quotas du serveur SE4 : les quotas par utilisateur et par
+    groupe, ainsi que les valeurs par défaut de chaque profil.
+
+      <info>php artisan quota:seed-from-legacy --dry-run</info>   aperçu, sans écrire
+      <info>php artisan quota:seed-from-legacy</info>
+      <info>php artisan quota:seed-from-legacy --force</info>     écrase les règles existantes
+
+    Sans <comment>--force</comment>, une règle déjà présente en base est CONSERVÉE : l'import ne
+    défait pas ce que vous avez réglé depuis. Avec, il l'écrase — y compris les
+    valeurs par défaut des profils.
+
+    Chaque écriture est tracée au journal d'audit des quotas.
+
+    Import de migration, à jouer au moment de basculer un établissement. Il lit
+    directement la base du serveur SE4, qui doit donc être accessible.
+    HELP;
 
     /**
      * Defaults profils (Mo) — D4 validée par Henri 2026-04-27 :

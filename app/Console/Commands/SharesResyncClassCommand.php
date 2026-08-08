@@ -63,7 +63,24 @@ class SharesResyncClassCommand extends Command
         {--dry-run : Liste les classes candidates sans rien appliquer}
         {--performed-by= : Nom à inscrire dans quota_audit_logs (défaut: shares:resync-class)}';
 
-    protected $description = 'Re-applique les ACLs canoniques sur les partages de classe (Story 5.2). Exit codes : 0=ok ; 1=au moins une classe a échoué ; 2=toutes verrouillées (rien fait).';
+    protected $description = 'Ré-applique les ACL canoniques sur les partages de classe.';
+
+    protected $help = <<<'HELP'
+    Ré-applique les droits canoniques sur les partages de classe. C'est le filet de
+    sécurité après une dérive : une manipulation directe en ligne de commande, une
+    restauration, un droit modifié à la main.
+
+      <info>php artisan shares:resync-class --dry-run</info>            les classes candidates
+      <info>php artisan shares:resync-class</info>                      toutes
+      <info>php artisan shares:resync-class --class=3EME2</info>        une seule
+
+    Idempotente et non destructive : elle ne supprime rien, elle repose les droits
+    attendus. Chaque passage est tracé au journal d'audit ; <comment>--performed-by</comment>
+    permet d'y inscrire un auteur parlant.
+
+    Cette commande sert l'arborescence HISTORIQUE — la seule en service. Ne la
+    confondez pas avec <info>shares:materialize-class-trees</info>.
+    HELP;
 
     public function __construct(private ShareService $shareService)
     {

@@ -28,6 +28,25 @@ final class AgentToolsRegisterDefaultsCommand extends Command
 
     protected $description = 'Enregistre les outils agent obligatoires embarqués (portable Rainmeter) — idempotent, fail-soft.';
 
+    protected $help = <<<'HELP'
+    Enregistre les outils que l'agent doit obligatoirement trouver côté serveur, et
+    qui sont embarqués dans le dépôt — aujourd'hui le portable Rainmeter.
+
+    Appelée par les scripts d'installation et de mise à jour du serveur, elle garantit
+    la présence de l'outil sur une instance neuve où personne n'a encore rien téléversé
+    par l'interface.
+
+      <info>php artisan agent:tools:register-defaults</info>
+      <info>php artisan agent:tools:register-defaults --path=/chemin/vers/portable.zip</info>
+
+    Deux garanties de sûreté :
+
+      <comment>idempotente</comment>  si l'outil est déjà enregistré, elle ne fait rien — le contenu
+                    téléversé par l'administrateur n'est jamais écrasé ;
+      <comment>fail-soft</comment>    une source absente ou invalide n'interrompt PAS l'installation :
+                    la commande sort en succès avec un avertissement.
+    HELP;
+
     public function handle(AgentToolService $service): int
     {
         $path = $this->option('path');

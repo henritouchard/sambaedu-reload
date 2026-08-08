@@ -35,6 +35,23 @@ class ReprojectGroupProfiles extends Command
 
     protected $description = 'Re-projette les profils de droits portés par les groupes sur tous les utilisateurs AD (idempotent)';
 
+    protected $help = <<<'HELP'
+    Recalcule pour tous les utilisateurs issus de l'annuaire les droits que leur
+    confèrent leurs appartenances de groupe.
+
+      <info>php artisan users:reproject-group-profiles --dry-run</info>   compte les écritures
+      <info>php artisan users:reproject-group-profiles</info>
+
+    Trois usages :
+
+      · <comment>amorçage</comment> — matérialiser les droits de tout le parc lors d'un déploiement ;
+      · <comment>filet</comment> — rattraper les chemins qui modifient les appartenances sans
+        déclencher le recalcul (imports en masse, suppressions groupées) ;
+      · <comment>réparation</comment> — après un incident.
+
+    Idempotente : la rejouer sur un état sain ne change rien.
+    HELP;
+
     public function handle(GroupRightsProfileService $service): int
     {
         $dryRun = (bool) $this->option('dry-run');

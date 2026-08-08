@@ -31,6 +31,27 @@ class SeverControlHubLink extends Command
 
     protected $description = 'Reçoit le signal de rupture du lien amont (controlHub) : passe le contrat actif en severed (lève les verrous + bornage catalogue), conserve les valeurs effectives et trace la transition (idempotent, re-jouable).';
 
+    protected $help = <<<'HELP'
+    Rompt le lien avec l'autorité amont. C'est un acte DÉLIBÉRÉ, à ne pas confondre
+    avec une panne : un amont injoignable ne libère rien, seul ce signal le fait.
+
+    Conséquences immédiates :
+
+      · les verrous posés par le contrat tombent — les capacités concernées
+        redeviennent modifiables localement ;
+      · le bornage du catalogue d'applications est levé ;
+      · les valeurs actuellement en vigueur sont CONSERVÉES telles quelles : rien ne
+        change sur les postes, l'état effectif est simplement déverrouillé ;
+      · la transition est tracée au journal d'audit.
+
+      <info>php artisan controlhub:sever-link --actor=henri --reason="fin de convention"</info>
+
+    <comment>--actor</comment> et <comment>--reason</comment> alimentent la trace d'audit — renseignez-les, c'est
+    tout ce qui restera pour expliquer la rupture plus tard.
+
+    Rejouable : sur un lien déjà rompu, ou sur une instance autonome, elle ne fait rien.
+    HELP;
+
     public function handle(ControlHubContractSeveranceService $severanceService): int
     {
         $actor = $this->option('actor');

@@ -28,6 +28,21 @@ class AgentReleaseTargetCommand extends Command
 
     protected $description = 'Cible un ring (= un WorkstationGroup) sur une version de release agent';
 
+    protected $help = <<<'HELP'
+    Cible un ring sur une version précise de l'agent. Un ring est un groupe de postes
+    existant — salle physique ou parc logique — désigné par son nom.
+
+    Les postes du ring prendront cette version au lieu de la stable. C'est le
+    mécanisme de déploiement progressif : on cible d'abord une salle témoin, on
+    observe, puis on promeut la version en stable pour tout le parc.
+
+      <info>php artisan agent:release:target 2.16.0 SalleB12</info>
+
+    Re-cibler le même ring — y compris sur la version qu'il porte déjà, cas du retour
+    arrière — rafraîchit la date de ciblage. Cette récence départage les rings quand
+    un poste appartient à plusieurs d'entre eux : le ciblage le plus récent gagne.
+    HELP;
+
     public function handle(ReleaseCreationService $releases): int
     {
         $groupName = (string) $this->argument('group');

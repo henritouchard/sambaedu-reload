@@ -18,6 +18,30 @@ class SyncUsersFromAdCommand extends Command
 
     protected $description = 'Synchronise automatiquement les utilisateurs depuis l\'AD vers SQL';
 
+    protected $help = <<<'HELP'
+    Importe les utilisateurs de l'annuaire vers la base.
+
+      <info>php artisan users:sync-from-ad</info>                       incrémental, mis en file
+      <info>php artisan users:sync-from-ad --mode=full --now</info>     complet, immédiat
+      <info>php artisan users:sync-from-ad --scope=tree</info>
+
+    <comment>--mode</comment> : <info>delta</info> ne reprend que ce qui a changé depuis le dernier passage ;
+    <info>full</info> rebalaie tout.
+
+    <comment>--scope</comment> délimite le périmètre d'établissement : <info>all</info>, <info>tree</info> ou
+    <info>memberOf</info>.
+
+    Par défaut la commande MET EN FILE et rend la main aussitôt — c'est le mode à
+    préférer sur un gros annuaire. <comment>--now</comment> exécute dans le terminal et affiche la
+    progression ; utile pour diagnostiquer, mais bloquant.
+
+    <comment>--reset-delta-cursor</comment> repart de zéro pour l'incrémental, quand on soupçonne le
+    curseur d'avoir sauté des modifications.
+
+    <comment>Cette commande n'A JAMAIS d'effet de désactivation</comment>, même en mode complet :
+    les départs relèvent de <info>users:reconcile-departures</info>.
+    HELP;
+
     public function handle(UserSyncService $userSyncService): int
     {
         $scope = (string) $this->option('scope');

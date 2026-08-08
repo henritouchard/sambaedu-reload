@@ -26,6 +26,21 @@ class ReconcileImposedWorkstationGroups extends Command
 
     protected $description = 'Garantit l\'existence des groupes imposés par le contrat amont (création/confirmation idempotente + levée du verrou des non-imposés).';
 
+    protected $help = <<<'HELP'
+    Garantit que les groupes de postes imposés par le contrat amont existent bien :
+    elle crée ceux qui manquent, confirme ceux qui sont déjà là, et LÈVE le verrou
+    des groupes qui ne sont plus imposés — sans jamais les supprimer.
+
+    Elle a normalement lieu toute seule à la réception d'un contrat. Cette commande
+    est le point de reprise MANUEL : après un incident, ou pour provisionner une
+    instance neuve.
+
+      <info>php artisan controlhub:reconcile-imposed-groups</info>
+
+    Rejouable sans risque. Sans contrat amont actif, elle le dit et sort normalement
+    sans rien écrire.
+    HELP;
+
     public function handle(ImposedWorkstationGroupReconciler $reconciler): int
     {
         // NFR3 — standalone : sans contrat amont actif, ne rien écrire.

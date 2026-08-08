@@ -45,13 +45,31 @@ class WorkstationRevoke extends Command
 {
     /** @var string */
     protected $signature = 'workstation:revoke
-        {uuid : Workstation UUID to revoke}
-        {--reason=manual_admin : Revocation reason (string label).}
-        {--by=admin : Who triggered (audit only).}
-        {--dry-run : Show what would be revoked, do not touch DB.}';
+        {uuid : UUID du poste dont les jetons doivent être révoqués.}
+        {--reason=manual_admin : Motif de la révocation (libellé libre, tracé).}
+        {--by=admin : Auteur du déclenchement (audit uniquement).}
+        {--dry-run : Affiche ce qui serait révoqué sans rien écrire en base.}';
 
     /** @var string */
-    protected $description = 'Revoke all active refresh tokens for a workstation_uuid (Phase 2).';
+    protected $description = 'Révoque tous les jetons de rafraîchissement actifs d\'un poste.';
+
+    /** @var string */
+    protected $help = <<<'HELP'
+    Révoque tous les jetons de rafraîchissement encore actifs d'un poste, désigné par
+    son identifiant unique.
+
+      <info>php artisan workstation:revoke &lt;uuid&gt; --dry-run</info>   ce qui serait révoqué
+      <info>php artisan workstation:revoke &lt;uuid&gt; --reason="poste volé" --by=henri</info>
+
+    <comment>Conséquence :</comment> le poste ne peut plus renouveler son accès et devra se
+    ré-enrôler. C'est le geste à faire sur un poste perdu, volé, ou sorti du parc.
+
+    <comment>--reason</comment> et <comment>--by</comment> n'alimentent que la trace — mais c'est tout ce qui
+    restera pour expliquer la révocation plus tard, renseignez-les.
+
+    <comment>--dry-run</comment> n'écrit rien : utilisez-le pour confirmer que vous visez bien le
+    bon poste avant d'agir.
+    HELP;
 
     public function handle(WorkstationJwtRefreshService $refreshService, WorkstationJwtRevocationChecker $checker): int
     {

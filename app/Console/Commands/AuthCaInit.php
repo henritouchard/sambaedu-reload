@@ -40,6 +40,27 @@ class AuthCaInit extends Command
     /** @var string */
     protected $description = 'Initialise la PKI locale (CA root + cert serveur HTTPS) + paire JWT RS256.';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Initialise la petite autorité de certification locale utilisée par le canal
+    poste ↔ serveur : certificat racine, certificat serveur HTTPS, et la paire de
+    clés RS256 qui signe les jetons des postes.
+
+    À jouer UNE FOIS à l'installation. Les fichiers gérés sont listés en sortie, ainsi
+    que le bloc de configuration Apache et nginx à reporter à la main dans votre
+    serveur web — SE5 ne modifie pas sa configuration à votre place.
+
+      <info>php artisan auth:ca:init</info>
+      <info>php artisan auth:ca:init --regenerate-server-only</info>   rotation du seul certificat serveur
+      <info>php artisan auth:ca:init --force</info>                    tout régénérer (confirmation demandée)
+
+    <comment>--force</comment> régénère AUSSI la clé de signature : tous les jetons déjà émis
+    deviennent invalides et chaque poste devra se ré-enrôler. À réserver à une
+    compromission. Utilisez <comment>--no-interaction</comment> pour l'automatisation.
+
+    Codes de retour : <info>0</info> succès · <info>1</info> erreur · <info>2</info> options incompatibles.
+    HELP;
+
     public function handle(CaInitializer $initializer): int
     {
         $force = (bool) $this->option('force');

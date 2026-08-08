@@ -34,6 +34,21 @@ class ProfilesSnapshotCommand extends Command
 
     protected $description = 'Snapshot quotidien des tailles de profils itinérants — alimente users.profile_snapshot + profiles.orphans';
 
+    protected $help = <<<'HELP'
+    Mesure une fois par nuit la taille des profils itinérants et enregistre le
+    résultat : la taille par utilisateur, et la liste des profils ORPHELINS — un
+    dossier de profil sans compte correspondant.
+
+    L'interface lit ensuite ces valeurs enregistrées. <comment>C'est le SEUL moment où
+    l'arborescence des profils est parcourue</comment> : aucune page ne mesure quoi que ce
+    soit à l'affichage, et c'est une contrainte de performance à ne pas contourner.
+
+    En cas d'échec — répertoire absent, mesure impossible — la commande journalise et
+    CONSERVE la mesure précédente plutôt que d'écrire un état vide.
+
+    Planifiée quotidiennement.
+    HELP;
+
     public function handle(RoamingProfileService $service): int
     {
         $start = microtime(true);

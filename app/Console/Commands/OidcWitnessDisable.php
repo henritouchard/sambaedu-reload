@@ -29,6 +29,20 @@ class OidcWitnessDisable extends Command
     /** @var string */
     protected $description = 'Retire l\'app-témoin SSO (révoque son client OIDC, supprime ses credentials).';
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Retire l'application témoin d'authentification : révoque son client et supprime
+    son fichier d'identifiants.
+
+      <info>php artisan oidc:witness:disable</info>
+
+    Rejouable : sur une instance déjà nettoyée, elle le signale et n'est pas en erreur.
+
+    La révocation désactive le client sans le supprimer — sa trace reste au registre.
+    Une fois retirée, la page de démonstration échoue de façon EXPLICITE : c'est
+    voulu, pour qu'un témoin coupé se voie au lieu de se deviner.
+    HELP;
+
     public function handle(OidcClientRegistry $registry): int
     {
         $credentials = WitnessCredentials::load();

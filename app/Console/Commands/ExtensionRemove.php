@@ -33,6 +33,24 @@ class ExtensionRemove extends Command
     /** @var string */
     protected $description = "Désinstalle une extension de type « app » (service, Apache, paquet, environnement, client OIDC).";
 
+    /** @var string */
+    protected $help = <<<'HELP'
+    Désinstalle une extension applicative : service, exposition Apache, paquet,
+    environnement et client d'authentification, retirés dans l'ordre inverse de
+    l'installation.
+
+      <info>php artisan ext:remove monoutil</info>
+
+    Chaque étape tolère l'absence de son objet. La commande est donc à la fois la
+    désinstallation nominale ET l'outil de nettoyage d'une installation restée à
+    mi-chemin : elle se rejoue sans risque.
+
+    Elle REFUSE une extension de simple lien, qui ne s'installe pas et se retire
+    depuis la bibliothèque.
+
+    Codes de retour : <info>0</info> succès, ou refus signalé sans effet · <info>1</info> échec.
+    HELP;
+
     public function handle(ExtensionInstallService $installer): int
     {
         $key = (string) $this->argument('key');

@@ -49,6 +49,29 @@ class ReconcileUserDepartures extends Command
 
     protected $description = 'Désactive les utilisateurs absents d\'un balayage AD complet (garde anti-désactivation en masse)';
 
+    protected $help = <<<'HELP'
+    Traite les DÉPARTS : après un balayage complet de l'annuaire, tout compte encore
+    actif issu de l'annuaire mais qui n'y figure plus est désactivé et détaché de ses
+    groupes.
+
+      <info>php artisan users:reconcile-departures --dry-run</info>   le plan complet, sans écrire
+      <info>php artisan users:reconcile-departures</info>
+
+    Sans elle, la base ne serait le reflet fidèle que des ARRIVÉES — et un compte
+    parti conserverait ses droits.
+
+    <comment>C'est une commande DISTINCTE de la synchronisation, délibérément.</comment> Une
+    synchronisation complète lancée à la main ne désactive JAMAIS personne : seule
+    cette commande le fait, et l'on sait donc toujours ce qui peut couper des accès.
+
+    Un seuil anti-désactivation en masse interrompt l'opération si le nombre de
+    départs est anormalement élevé — typiquement un annuaire partiellement répondu.
+    <comment>--force</comment> lève ce seuil, mais JAMAIS les contrôles de bonne santé du
+    balayage lui-même : un balayage douteux n'est jamais exploité.
+
+    Planifiée la nuit.
+    HELP;
+
     public function handle(
         UserSyncService $userSyncService,
         UserDepartureReconciliationService $reconciliation

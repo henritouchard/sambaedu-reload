@@ -23,6 +23,20 @@ final class WinscriptLogsStatusCommand extends Command
 
     protected $description = 'Affiche l\'état courant du logging centralisé des scripts d\'applications (lecture seule).';
 
+    protected $help = <<<'HELP'
+    Affiche si la journalisation centralisée des scripts d'applications est active, et
+    vers quelle adresse les exécutions sont remontées.
+
+      <info>php artisan winscript-logs:status</info>
+
+    Strictement en lecture, aucune écriture.
+
+    L'état affiché est l'état EFFECTIF — celui que voit réellement le générateur de
+    scripts, cache de configuration compris — et pas ce que vous croyez avoir écrit
+    dans le fichier d'environnement. C'est précisément ce qui rend cette commande
+    utile après une bascule qui « ne prend pas ».
+    HELP;
+
     public function handle(): int
     {
         $enabled = $this->loggingFlagEnabled();

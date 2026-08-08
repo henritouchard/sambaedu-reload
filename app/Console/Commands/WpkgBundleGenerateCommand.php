@@ -26,6 +26,25 @@ final class WpkgBundleGenerateCommand extends Command
 
     protected $description = 'Génère le bundle WPKG natif SE5 pré-substitué (scripts + packages.xml) servi statiquement par Apache.';
 
+    protected $help = <<<'HELP'
+    Génère le paquet de déploiement WPKG servi aux postes : scripts et catalogue,
+    avec les valeurs propres à cette instance déjà substituées.
+
+      <info>php artisan wpkg:bundle</info>
+      <info>php artisan wpkg:bundle --no-regenerate</info>   projette le catalogue existant tel quel
+
+    À lancer à l'installation et après tout changement de configuration qui touche
+    l'identité du serveur. <comment>Pas à chaque requête</comment> : le paquet est ensuite servi en
+    statique par Apache, sans faire tourner l'application — c'est tout l'intérêt.
+
+    Le profil propre à chaque poste ne fait PAS partie du paquet : l'agent le dépose
+    lui-même localement.
+
+    ⚠️ Après génération, vérifiez que le sous-dossier produit appartient bien à
+    l'utilisateur du serveur web. À défaut, Apache répondra 404 sur des fichiers qui
+    existent pourtant.
+    HELP;
+
     public function handle(WpkgBundleGenerator $generator, PackagesXmlService $packagesXml): int
     {
         // Story 27.19 — Le bundle n'est qu'une PROJECTION du catalogue module ;

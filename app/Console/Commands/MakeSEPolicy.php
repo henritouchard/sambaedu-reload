@@ -21,6 +21,19 @@ class MakeSEPolicy extends Command
      */
     protected $description = 'Crée une policy avec enregistrement automatique des gates et méthodes CRUD';
 
+    protected $help = <<<'HELP'
+    Génère une classe de politique d'autorisation SE5 dans <info>app/Policies/</info>, avec
+    ses méthodes de consultation et de modification et l'enregistrement automatique
+    des autorisations associées.
+
+      <info>php artisan make:SEpolicy Machine</info>
+
+    Outil de développement. Refuse d'écraser une politique existante.
+
+    La sortie rappelle le nom des autorisations créées et comment les tester dans un
+    composant.
+    HELP;
+
     /**
      * Execute the console command.
      */

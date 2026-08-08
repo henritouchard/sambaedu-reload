@@ -23,6 +23,16 @@ class MigrateDelegationsCommand extends Command
 
     protected $description = 'Migre les délégations legacy depuis l\'AD vers la table SQL delegations';
 
+    protected $help = <<<'HELP'
+    Importe les délégations d'administration du serveur SE4 depuis l'annuaire vers la
+    base SE5, en les rattachant aux groupes de postes correspondants.
+
+      <info>php artisan sambaedu:migrate-delegations --dry-run</info>   aperçu
+      <info>php artisan sambaedu:migrate-delegations</info>
+
+    Import de migration, à jouer au moment de basculer un établissement.
+    HELP;
+
     public function handle(): int
     {
         $dryRun = $this->option('dry-run');

@@ -58,8 +58,28 @@ class MaterializeClassTreesCommand extends Command
         {--dry-run : Liste ce qui serait matérialisé, sans rien créer ni écrire}
         {--show-skipped : Détaille aussi les classes sautées faute de groupes dans l\'annuaire}';
 
-    protected $description = 'Matérialise l\'arbre de classe NEUF (racine dédiée) des groupes existants. '
-        . 'N\'écrit JAMAIS dans l\'arbre historique. Codes : 0=ok ; 1=au moins un échec ; 2=aucune recette d\'arbre accrochée.';
+    protected $description = 'Matérialise l\'arbre de classe neuf (racine dédiée) des groupes existants, sans jamais toucher l\'arbre historique.';
+
+    protected $help = <<<'HELP'
+    Peuple l'arborescence de classe NEUVE pour les classes qui existaient déjà avant
+    qu'elle soit introduite.
+
+    La création d'une classe matérialise désormais son arborescence toute seule ; cette
+    commande rattrape l'existant, sans quoi la nouvelle arborescence ne se remplirait
+    qu'au fil des créations à venir.
+
+      <info>php artisan shares:materialize-class-trees --dry-run</info>
+      <info>php artisan shares:materialize-class-trees --class=3EME2</info>
+      <info>php artisan shares:materialize-class-trees --show-skipped</info>
+
+    ⚠️ <comment>Deux arborescences, deux commandes — à ne jamais confondre.</comment> Celle-ci
+    peuple l'arborescence NEUVE. <info>shares:resync-class</info> entretient l'arborescence
+    HISTORIQUE, la seule réellement servie aux établissements. Elles écrivent dans des
+    zones disjointes ; cette commande n'écrit JAMAIS dans l'historique.
+
+    Une classe dont les groupes d'annuaire ne se résolvent pas est DÉCLINÉE sans rien
+    écrire. C'est fréquent et normal — <comment>--show-skipped</comment> détaille lesquelles.
+    HELP;
 
     public function __construct(private readonly ClassTreeShareService $trees)
     {

@@ -56,6 +56,25 @@ class PrinterDriversSyncCommand extends Command
 
     protected $description = 'Réconcilie la table `printer_drivers` SER avec l\'état réel de Samba (idempotent).';
 
+    protected $help = <<<'HELP'
+    Réconcilie la liste des pilotes d'impression connus de SE5 avec ceux réellement
+    publiés par Samba.
+
+      <info>php artisan printer-drivers:sync --dry-run</info>   ce qui serait fait
+      <info>php artisan printer-drivers:sync</info>
+
+    Trois cas traités :
+
+      · pilote présent dans Samba mais inconnu de SE5 → ajouté ;
+      · pilote connu de SE5 mais disparu de Samba → marqué ORPHELIN, jamais supprimé,
+        de sorte que ses rattachements survivent à une réintroduction ;
+      · pilote orphelin qui réapparaît dans Samba → remis en service.
+
+    Idempotente : la relancer sur un état déjà aligné ne change rien.
+
+    Planifiée quotidiennement, peu après la synchronisation des imprimantes.
+    HELP;
+
     public function handle(PrintDriverService $driverService): int
     {
         $dryRun = (bool) $this->option('dry-run');

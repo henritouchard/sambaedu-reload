@@ -24,6 +24,21 @@ class UpdateApiDocumentation extends Command
      */
     protected $description = 'Mettre à jour la documentation API Swagger de SambaEdu';
 
+    protected $help = <<<'HELP'
+    Régénère la documentation d'API au format Swagger à partir des annotations du
+    code.
+
+      <info>php artisan sambaedu:update-docs</info>
+      <info>php artisan sambaedu:update-docs --check</info>   vérifie sans régénérer
+      <info>php artisan sambaedu:update-docs --force</info>   régénère même si déjà présente
+
+    <comment>--check</comment> est la forme à utiliser en intégration continue : elle dit si la
+    documentation publiée est en retard sur le code, sans rien écrire.
+
+    Ne concerne QUE la documentation d'API destinée aux intégrateurs — pas la
+    documentation utilisateur, ni les fiches techniques du dépôt.
+    HELP;
+
     /**
      * Execute the console command.
      */

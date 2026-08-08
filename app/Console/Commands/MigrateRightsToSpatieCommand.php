@@ -43,6 +43,24 @@ class MigrateRightsToSpatieCommand extends Command
      */
     protected $description = 'Migre les assignations de droits bitmask legacy (branche rights_rdn + délégations scopées delegations_rdn) vers rôles et délégations Spatie (one-shot, idempotente).';
 
+    protected $help = <<<'HELP'
+    Convertit les attributions de droits du serveur SE4 — groupes de droits et
+    délégations périmétrées portés par l'annuaire — en rôles et délégations SE5.
+
+      <info>php artisan sambaedu:migrate-rights-to-spatie --dry-run</info>   plan de migration
+      <info>php artisan sambaedu:migrate-rights-to-spatie</info>
+
+    Idempotente : la rejouer ne crée aucun doublon.
+
+    Le passage effectif produit un rapport à l'écran ET un journal horodaté sous
+    <info>storage/logs/</info> — c'est lui qu'il faudra relire pour comprendre pourquoi un
+    utilisateur a tel rôle.
+
+    Import de migration, à jouer au moment de basculer un établissement.
+
+    Codes de retour : <info>0</info> succès · <info>1</info> erreur bloquante.
+    HELP;
+
     public function __construct(
         private readonly RightsMigrationService $migrationService,
     ) {

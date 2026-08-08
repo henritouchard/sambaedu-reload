@@ -10,7 +10,25 @@ use Illuminate\Support\Facades\Log;
 class ControlHubHeartbeatCommand extends Command
 {
     protected $signature = 'controlhub:heartbeat';
-    protected $description = 'Execute ControlHub heartbeat if conditions are met';
+    protected $description = 'Émet le battement de cœur vers l\'autorité amont (controlHub) si les conditions sont réunies.';
+
+    protected $help = <<<'HELP'
+    Signale au controlHub que cette instance est vivante.
+
+    La commande décide ELLE-MÊME s'il y a lieu d'émettre, et ne fait rien — en
+    sortant normalement — dans chacun de ces cas :
+
+      · le battement de cœur est désactivé dans la configuration ;
+      · aucune connexion amont n'est enregistrée ;
+      · la connexion existe mais son battement de cœur est désactivé ;
+      · l'intervalle depuis le dernier envoi n'est pas écoulé.
+
+    Dans ce dernier cas, elle affiche la date du dernier battement et celle du
+    prochain autorisé — utile pour comprendre un silence apparent.
+
+    Planifiée : vous n'avez normalement pas à la lancer à la main. Le faire ne force
+    rien, l'intervalle reste respecté.
+    HELP;
 
     public function handle()
     {

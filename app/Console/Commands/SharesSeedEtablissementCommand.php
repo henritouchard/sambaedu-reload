@@ -37,6 +37,25 @@ class SharesSeedEtablissementCommand extends Command
 
     protected $description = 'Amorce les partages établissement (Documents, Progs) en lecteurs réseau gérés plats (dry-run par défaut).';
 
+    protected $help = <<<'HELP'
+    Amorce les partages d'établissement historiques (documents, logiciels) sous forme
+    de lecteurs réseau gérés.
+
+      <info>php artisan shares:seed-etablissement</info>           aperçu
+      <info>php artisan shares:seed-etablissement --apply</info>   crée réellement
+
+    <comment>Les lecteurs sont créés SANS audience.</comment> Qui y accède, et en lecture ou en
+    écriture, est une décision de politique propre à chaque établissement : la
+    commande ne la devine pas, vous la posez ensuite.
+
+    Le modèle géré est PLAT — un dossier, une audience, un axe lecture ou écriture. Il
+    ne reproduit pas les sous-découpages hétérogènes du serveur SE4. Si vous avez
+    besoin de distinguer consultation et dépôt, créez deux lecteurs distincts.
+
+    L'ancien sous-dossier ouvert à tous n'est délibérément pas repris : le modèle géré
+    refuse l'accès universel.
+    HELP;
+
     /**
      * Lecteurs établissement canoniques : nom affiché → nom de répertoire FS.
      * Audience vide (assignée ensuite par l'admin).

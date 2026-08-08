@@ -24,6 +24,24 @@ class Se4PurgeCommand extends Command
 
     protected $description = 'Suppression définitive du FS legacy .off (trash, jamais rm -rf) — après le GO d\'observation';
 
+    protected $help = <<<'HELP'
+    Supprime DÉFINITIVEMENT l'arborescence du serveur SE4 mise de côté lors de son
+    extinction.
+
+      <info>php artisan se4:purge --confirm</info>
+
+    <comment>Geste irréversible</comment> — le dernier de la séquence d'extinction. À ne jouer
+    qu'après une période d'observation concluante, quand vous êtes certain que plus
+    rien n'a besoin du legacy.
+
+    Deux refus protègent l'opération : sans <comment>--confirm</comment>, et tant que l'extinction
+    n'est pas effectivement en place (arborescence encore active ou hôte virtuel
+    toujours servi).
+
+    L'arborescence part à la corbeille du système, jamais par une suppression brutale
+    — c'est une règle du projet, et cela laisse une ultime chance de récupération.
+    HELP;
+
     public function handle(): int
     {
         if (! $this->ensureRoot()) {

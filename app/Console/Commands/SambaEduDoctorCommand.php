@@ -36,6 +36,28 @@ final class SambaEduDoctorCommand extends Command
 
     protected $description = 'Diagnostique les pré-requis environnementaux SambaEdu (read-only).';
 
+    protected $help = <<<'HELP'
+    Passe en revue les pré-requis de l'environnement et rend un verdict. Strictement
+    en LECTURE : le diagnostic ne répare rien.
+
+      <info>php artisan sambaedu:doctor</info>                    tous les contrôles
+      <info>php artisan sambaedu:doctor --tag=gpo</info>          un domaine
+      <info>php artisan sambaedu:doctor --tag=gpo,cache</info>    plusieurs
+      <info>php artisan sambaedu:doctor --json</info>             sortie exploitable par un script
+
+    Les contrôles sont découverts automatiquement : les domaines disponibles sont les
+    noms de tags visibles dans le rapport complet.
+
+    <comment>Les codes de retour portent le verdict :</comment>
+
+      <info>0</info>  tout va bien ;
+      <info>1</info>  des avertissements seulement ;
+      <info>2</info>  au moins une erreur.
+
+    C'est la commande à lancer en premier sur une instance dont on ne sait rien, et
+    celle qui rend un verdict là où les commandes de sonde se contentent de constater.
+    HELP;
+
     public function handle(): int
     {
         $tags = $this->parseTags();

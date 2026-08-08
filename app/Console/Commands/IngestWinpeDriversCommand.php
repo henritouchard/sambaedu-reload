@@ -28,6 +28,25 @@ final class IngestWinpeDriversCommand extends Command
 
     protected $description = 'Ingère une archive de pilotes NIC WinPE (.exe/.zip) dans le pack persistant winpe-drivers.';
 
+    protected $help = <<<'HELP'
+    Extrait une archive de pilotes réseau et l'ajoute au jeu de pilotes injecté dans
+    l'environnement d'installation Windows.
+
+    Deux formats sont acceptés : les exécutables d'installation constructeur et les
+    archives compressées.
+
+      <info>php artisan ipxe:winpe-drivers:ingest intel-i219 /tmp/PROWinx64.exe</info>
+
+    La famille est le nom sous lequel les pilotes sont rangés — choisissez-le parlant,
+    c'est ce que vous relirez plus tard. La commande récapitule les pilotes
+    effectivement ingérés.
+
+    À faire quand un modèle de poste ne voit pas le réseau au démarrage sur le réseau :
+    c'est presque toujours un pilote de carte absent de l'environnement d'installation.
+
+    Elle échoue franchement si l'archive est illisible ou ne contient aucun pilote.
+    HELP;
+
     public function handle(WinpeDriverIngestor $ingestor): int
     {
         $famille = (string) $this->argument('famille');

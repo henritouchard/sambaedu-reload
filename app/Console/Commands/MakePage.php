@@ -38,6 +38,20 @@ class MakePage extends Command
      */
     protected $description = 'Crée une page Livewire 4 SFC (single-file component) + sa route livewire, conforme au filesystem-based router';
 
+    protected $help = <<<'HELP'
+    Génère une page complète conforme au routage par arborescence : le composant
+    monofichier, son service, et la route correspondante.
+
+      <info>php artisan make:page reports</info>
+      <info>php artisan make:page admin/settings/reports</info>
+
+    Le chemin donné devient le chemin d'URL et l'arborescence de fichiers : chaque
+    segment est un dossier sous <info>resources/views/pages/</info>, et la page elle-même est
+    l'<info>index.blade.php</info> du dernier dossier.
+
+    Outil de développement. Sans argument, la commande demande le chemin.
+    HELP;
+
     /**
      * Execute the console command.
      */

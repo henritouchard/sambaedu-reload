@@ -46,6 +46,28 @@ class SharesImportFromFsCommand extends Command
 
     protected $description = 'Importe les ACL POSIX d\'un répertoire legacy en assignations d\'un lecteur réseau géré (dry-run par défaut ; --apply pour écrire).';
 
+    protected $help = <<<'HELP'
+    Importe les droits d'accès d'un répertoire hérité du serveur SE4 sous forme de
+    lecteur réseau géré : les entrées d'ACL exploitables deviennent des assignations,
+    puis le disque est reprovisionné à partir de la base.
+
+      <info>php artisan shares:import-from-fs /var/sambaedu/MonDossier</info>            aperçu
+      <info>php artisan shares:import-from-fs /var/sambaedu/MonDossier --apply</info>    écrit
+
+    <comment>Ce qui est importé, c'est l'INTENTION D'ACCÈS — qui a lecture, qui a écriture —
+    pas l'emplacement.</comment> La commande crée un NOUVEAU répertoire géré sous
+    <info>Partages/</info> et NE DÉPLACE PAS le contenu du dossier d'origine. Le déplacement
+    des données est une opération distincte, à mener séparément.
+
+    Les entrées non exploitables — utilisateur inconnu, accès ouvert à tous, droit
+    d'exécution seul — sont IGNORÉES et LISTÉES, jamais devinées. Utilisez
+    <comment>--strict</comment> pour que leur présence fasse échouer l'import plutôt que de le
+    laisser passer incomplet.
+
+    Import de migration : une fois fait, c'est la base qui fait autorité et le disque
+    n'en est plus que la projection.
+    HELP;
+
     public function handle(AclInspectionService $inspection, NetworkShareService $shareService): int
     {
         $path = (string) $this->argument('path');

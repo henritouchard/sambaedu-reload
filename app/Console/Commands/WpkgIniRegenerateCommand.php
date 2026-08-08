@@ -20,6 +20,18 @@ final class WpkgIniRegenerateCommand extends Command
 
     protected $description = 'Régénère le fichier `.ini` WPKG d\'un ou de tous les postes.';
 
+    protected $help = <<<'HELP'
+    Régénère le fichier de configuration WPKG propre à chaque poste.
+
+      <info>php artisan wpkg:ini:regenerate --all</info>
+      <info>php artisan wpkg:ini:regenerate --workstation=SALLE-B12-01</info>
+
+    Les deux options s'excluent : soit tout le parc, soit un poste.
+
+    À lancer après un changement qui modifie ce que ces fichiers contiennent, quand
+    on ne veut pas attendre leur régénération naturelle.
+    HELP;
+
     public function handle(WorkstationIniGenerator $generator): int
     {
         $hostname = $this->option('workstation');
