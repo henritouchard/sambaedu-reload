@@ -5,7 +5,7 @@ use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Services\UserGroupService;
-use App\Support\EdgeRoleLabels;
+use App\Support\RoleCatalog;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
@@ -97,7 +97,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             // PP), AUCUNE collision de nom (piège 42.1 #5). Arête vide/hors
             // vocabulaire (donnée sale) → affichée « Élève » (D1).
             $edgeRoleRaw = (string) ($user->pivot->role ?? '');
-            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::ROLES, true)
+            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::roles(), true)
                 ? $edgeRoleRaw
                 : UserGroupUserPivot::ROLE_MEMBER;
 
@@ -117,7 +117,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 // owner`) n'est rendue comme texte visible. Story 60.2 — le
                 // libellé vient de la table CANONIQUE par type de groupe, plus
                 // d'un `match` local écrit pour le seul cas scolaire.
-                'edge_role_label' => EdgeRoleLabels::label($groupType, $edgeRole),
+                'edge_role_label' => RoleCatalog::label($groupType, $edgeRole),
             ];
         }) ?? collect();
     }
@@ -156,7 +156,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
         if ($role === UserGroupUserPivot::ROLE_OWNER && $group->type !== 'classe') {
             $this->toastError(sprintf(
                 'Le rôle « %s » n\'est disponible que pour les classes.',
-                EdgeRoleLabels::label('classe', UserGroupUserPivot::ROLE_OWNER),
+                RoleCatalog::label('classe', UserGroupUserPivot::ROLE_OWNER),
             ));
             return;
         }
@@ -297,7 +297,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             // D5 — jamais owner au rattachement, même payload forgé.
             $this->toastError(sprintf(
                 'Le rôle « %s » ne peut pas être choisi au rattachement.',
-                EdgeRoleLabels::label('classe', UserGroupUserPivot::ROLE_OWNER),
+                RoleCatalog::label('classe', UserGroupUserPivot::ROLE_OWNER),
             ));
             return;
         }

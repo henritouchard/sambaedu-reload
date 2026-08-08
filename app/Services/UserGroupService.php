@@ -785,7 +785,7 @@ class UserGroupService
             // vocabulaire (SQLite ne borne pas les varchar — NFR-S4) n'est
             // JAMAIS préservée, le dérivé s'applique (aucune exception — D6).
             $existing = isset($existingRoles[$memberId]) ? (string) $existingRoles[$memberId] : null;
-            if ($isTrioFold && $existing !== null && in_array($existing, UserGroupUserPivot::ROLES, true)) {
+            if ($isTrioFold && $existing !== null && in_array($existing, UserGroupUserPivot::roles(), true)) {
                 if ($role === UserGroupUserPivot::ROLE_MEMBER
                     && !$hasEquipeCn
                     && ($existing === UserGroupUserPivot::ROLE_MANAGER || $existing === UserGroupUserPivot::ROLE_OWNER)) {
@@ -1195,7 +1195,7 @@ class UserGroupService
                 continue; // D2.1 — owner autoritaire, pas de dérivation.
             }
             $edgeRole = $edgeRolesByUserId[$userId] ?? null;
-            if ($edgeRole === null || !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
+            if ($edgeRole === null || !in_array($edgeRole, UserGroupUserPivot::roles(), true)) {
                 $idsNeedingDerivedRole[] = $userId;
             }
         }
@@ -1226,7 +1226,7 @@ class UserGroupService
                 // vocabulaire » — pas de warning parasite à chaque projection.
                 $edgeRole = null;
             }
-            if ($edgeRole !== null && !in_array($edgeRole, UserGroupUserPivot::ROLES, true)) {
+            if ($edgeRole !== null && !in_array($edgeRole, UserGroupUserPivot::roles(), true)) {
                 Log::warning('[UserGroupService] Rôle d\'arête hors vocabulaire — fallback rôle dérivé', [
                     'group' => $rawName,
                     'user_id' => $userId,

@@ -10,6 +10,7 @@ use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\ShareService;
+use App\Support\RoleCatalog;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -78,14 +79,80 @@ class GroupNameNormalizerTest extends TestCase
         );
     }
 
+    /**
+     * Story 62.1 — l'ÉQUIVALENCE ÉPINGLÉE a changé de nature, pas d'objet.
+     *
+     * Le vocabulaire de rôle d'arête n'est plus une constante recopiée : c'est un
+     * catalogue administrable, et le plan le reçoit par injection. Ce qui reste à
+     * surveiller, c'est que les DEUX LECTURES disent la même chose — sinon on a
+     * simplement remplacé une recopie qui pouvait dériver par une couture qui le
+     * peut aussi.
+     *
+     * Le REPLI du normalizer (aucun résolveur installé) doit valoir exactement le
+     * plancher historique ; avec le résolveur installé, il doit valoir le
+     * catalogue.
+     */
     #[Test]
     public function the_edge_role_vocabulary_is_the_stored_one(): void
     {
+        // Avec le résolveur installé au boot : le catalogue fait foi, et il est
+        // identique à ce que le pivot expose.
         $this->assertSame(
-            array_values(UserGroupUserPivot::ROLES),
-            GroupNameNormalizer::EDGE_ROLES,
+            array_values(UserGroupUserPivot::roles()),
+            GroupNameNormalizer::edgeRoles(),
             'Le vocabulaire de rôle d\'arête du plan doit rester celui qui est STOCKÉ.',
         );
+
+        // Sans résolveur (tests purs du namespace, application non démarrée) : le
+        // repli littéral vaut le plancher historique, ni plus ni moins.
+        try {
+            GroupNameNormalizer::useEdgeRoles(null);
+
+            $this->assertSame(
+                RoleCatalog::HISTORICAL_KEYS,
+                GroupNameNormalizer::edgeRoles(),
+                'Le repli du normalizer doit valoir exactement le plancher historique.',
+            );
+        } finally {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => RoleCatalog::keys());
+        }
+    }
+
+    /**
+     * Story 62.1 — un rôle NOUVEAU du catalogue traverse le plan sans rejet, dès
+     * lors que le résolveur runtime est installé.
+     */
+    #[Test]
+    public function a_new_catalogued_role_is_known_to_the_plan(): void
+    {
+        $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole('tuteur'));
+
+        try {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => ['member', 'manager', 'owner', 'tuteur']);
+
+            $this->assertTrue(GroupNameNormalizer::isKnownEdgeRole('tuteur'));
+            $this->assertTrue(GroupNameNormalizer::isKnownEdgeRole('member'));
+            $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole('inconnu'));
+        } finally {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => RoleCatalog::keys());
+        }
+    }
+
+    /**
+     * Une source qui rendrait une liste VIDE ne doit pas vider le vocabulaire :
+     * elle refuserait `member`, donc toute arête, donc tout plan.
+     */
+    #[Test]
+    public function an_empty_resolver_falls_back_instead_of_emptying_the_vocabulary(): void
+    {
+        try {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => []);
+
+            $this->assertSame(RoleCatalog::HISTORICAL_KEYS, GroupNameNormalizer::edgeRoles());
+            $this->assertTrue(GroupNameNormalizer::isKnownEdgeRole('member'));
+        } finally {
+            GroupNameNormalizer::useEdgeRoles(static fn (): array => RoleCatalog::keys());
+        }
     }
 
     #[Test]

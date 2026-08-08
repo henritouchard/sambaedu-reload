@@ -81,7 +81,7 @@ final class PlanResolutionContext
                 throw PlanResolutionException::make(sprintf(
                     'rôle d\'arête inconnu pour le membre #%d (attendu : %s).',
                     $id,
-                    implode('|', GroupNameNormalizer::EDGE_ROLES),
+                    implode('|', GroupNameNormalizer::edgeRoles()),
                 ));
             }
             if (isset($seen[$id])) {

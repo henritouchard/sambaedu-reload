@@ -11,7 +11,7 @@
      canonique : « Enseignant » en classe, « Porteur » en projet, « Référent » en
      équipe, repli générique ailleurs. Les VALEURS envoyées au serveur restent
      `member|manager|owner`. --}}
-@php($edgeRoleOptions = \App\Support\EdgeRoleLabels::options($type ?? null))
+@php($edgeRoleOptions = \App\Support\RoleCatalog::options($type ?? null))
 <div class="overflow-x-auto">
     <table class="table table-zebra">
         <thead>
