@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -48,6 +49,15 @@ class GroupTypeRole extends Model
 {
     protected $table = 'group_type_roles';
 
+    /**
+     * Le seul type sur lequel `owner` a un sens (review 62.3 #1).
+     *
+     * Même littéral que la garde D3 des points de rattachement — volontairement,
+     * pour qu'un `grep 'classe'` les trouve ensemble le jour où cette règle
+     * changera.
+     */
+    public const OWNER_TYPE_KEY = 'classe';
+
     /** @var list<string> */
     protected $fillable = ['group_type_key', 'group_role_key', 'label'];
 
@@ -58,6 +68,7 @@ class GroupTypeRole extends Model
             $declaration->assertPairIsImmutable();
             $declaration->assertRoleKeyIsKnown();
             $declaration->assertTypeKeyIsKnown();
+            $declaration->assertOwnerStaysOnClasse();
         });
 
         // La résolution des libellés est MÉMOÏSÉE dans `RoleCatalog` : toute
@@ -156,6 +167,43 @@ class GroupTypeRole extends Model
                 $key,
             ));
         }
+    }
+
+    /**
+     * Review 62.3 #1 — `owner` ne se déclare que sur `classe`.
+     *
+     * La règle D3 vit en littéraux aux trois points d'écriture, et elle y reste :
+     * c'est elle qui garde le rattachement, indépendamment de toute déclaration.
+     * Mais rien n'empêchait de DÉCLARER `owner` sur un projet — et le bouton
+     * « tous les rôles du catalogue » de la modale le faisait en un clic.
+     *
+     * La déclaration était alors mort-née : `assignableKeys('projet')` rendait
+     * `owner`, un badge « Propriétaire » s'affichait, et pas un seul chemin ne
+     * pouvait jamais l'attribuer. Cosmétique aujourd'hui ; un piège pour **62.6**,
+     * qui construira sa matrice rôles × verbes à partir de `assignableKeys()` et y
+     * proposerait un octroi que personne ne pourra jamais recevoir.
+     *
+     * La règle est donc portée là aussi, dans les mêmes termes littéraux : deux
+     * expressions d'une même règle valent mieux qu'une règle et un trou.
+     */
+    private function assertOwnerStaysOnClasse(): void
+    {
+        if ((string) $this->group_role_key !== UserGroupUserPivot::ROLE_OWNER) {
+            return;
+        }
+
+        if ((string) $this->group_type_key === self::OWNER_TYPE_KEY) {
+            return;
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            'Le rôle « %s » ne se déclare que sur le type « %s » : il porte la désignation du '
+            . 'professeur principal, qui n\'a de sens que dans une classe. Aucun rattachement ne '
+            . 'pourrait l\'attribuer sur « %s ».',
+            RoleCatalog::label(self::OWNER_TYPE_KEY, UserGroupUserPivot::ROLE_OWNER),
+            self::OWNER_TYPE_KEY,
+            (string) $this->group_type_key,
+        ));
     }
 
     /**

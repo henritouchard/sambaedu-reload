@@ -303,4 +303,62 @@ class GroupTypeRoleGuardsTest extends TestCase
         $this->assertNotNull($type->deletionRefusal());
         $this->assertSame(1, DB::table('group_type_roles')->where('group_type_key', 'club')->count());
     }
+
+    // =========================================================================
+    // Review 62.3 #1 — `owner` ne se déclare que sur `classe`
+    // =========================================================================
+
+    /**
+     * Le défaut : rien n'empêchait de DÉCLARER `owner` sur un projet, et le bouton
+     * « tous les rôles du catalogue » de la modale le faisait en un clic. La
+     * déclaration était mort-née — la règle D3 bloque de toute façon l'attribution
+     * aux trois points humains — mais `assignableKeys('projet')` rendait `owner`,
+     * un badge « Propriétaire » s'affichait, et **62.6** aurait construit sa matrice
+     * rôles × verbes sur cette promesse vide.
+     */
+    #[Test]
+    public function owner_cannot_be_declared_outside_a_classe(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        GroupTypeRole::create([
+            'group_type_key' => 'projet',
+            'group_role_key' => UserGroupUserPivot::ROLE_OWNER,
+        ]);
+    }
+
+    /** Un refus n'écrit rien : la table reste exactement dans l'état d'avant. */
+    #[Test]
+    public function the_refused_owner_declaration_writes_nothing(): void
+    {
+        $before = DB::table('group_type_roles')->orderBy('id')->get()->toJson();
+
+        try {
+            GroupTypeRole::create([
+                'group_type_key' => 'equipe',
+                'group_role_key' => UserGroupUserPivot::ROLE_OWNER,
+            ]);
+            self::fail('La déclaration aurait dû être refusée.');
+        } catch (InvalidArgumentException) {
+            self::assertSame($before, DB::table('group_type_roles')->orderBy('id')->get()->toJson());
+        }
+    }
+
+    /** L'autre moitié : sur `classe`, elle reste parfaitement licite. */
+    #[Test]
+    public function owner_stays_declarable_on_a_classe(): void
+    {
+        GroupTypeRole::where('group_type_key', 'classe')
+            ->where('group_role_key', UserGroupUserPivot::ROLE_OWNER)
+            ->delete();
+
+        $declaration = GroupTypeRole::create([
+            'group_type_key' => 'classe',
+            'group_role_key' => UserGroupUserPivot::ROLE_OWNER,
+            'label' => 'Professeur principal',
+        ]);
+
+        self::assertTrue($declaration->exists);
+        self::assertContains(UserGroupUserPivot::ROLE_OWNER, RoleCatalog::assignableKeys('classe'));
+    }
 }

@@ -76,6 +76,22 @@ class NoEdgeRoleLabelLiteralsInViewsTest extends TestCase
      * Les libellés qui ont RÉELLEMENT été écrits en dur dans ce dépôt, plus ceux
      * du catalogue livré.
      *
+     * **Review 62.3 #3 — la portée exacte de cette liste, pour ne rien promettre
+     * de plus.** Elle est FERMÉE : la règle 1 ne signale un bras
+     * `'manager' => '<texte>'` que si `<texte>` y figure. Un futur libellé jamais
+     * vu dans ce dépôt — « Chef », « Animateur » — passerait donc au travers ;
+     * le reviewer l'a vérifié en rejouant le motif. Cette règle protège contre la
+     * RÉGRESSION des sites connus, elle n'est pas un garde-fou général.
+     *
+     * Ce qui l'est : la **règle 2**, qui interdit d'associer une clé de rôle à un
+     * texte dans un `<option>` sans condition sur le contenu — et c'est là que
+     * vivait le risque principal, les deux sites trouvés hors inventaire de 62.1
+     * étant des selects.
+     *
+     * Élargir la règle 1 demanderait de renoncer à la liste fermée pour une
+     * heuristique, au prix de faux positifs à calibrer (cinq sont déjà épargnés
+     * ici). Le choix de la liste est donc assumé, pas subi.
+     *
      * @var list<string>
      */
     private const FORBIDDEN_LABELS = [

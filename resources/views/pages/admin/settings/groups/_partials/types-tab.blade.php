@@ -3,6 +3,7 @@
 use App\Components\Traits\WithToasts;
 use App\Models\GroupType;
 use App\Models\GroupTypeRole;
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Support\GroupTypeCatalog;
 use App\Support\RoleCatalog;
 use Illuminate\Support\Facades\DB;
@@ -168,7 +169,28 @@ new class extends Component {
      */
     public function getRoleCatalogProperty(): array
     {
-        return RoleCatalog::rows();
+        $rows = RoleCatalog::rows();
+
+        // Review 62.3 #1 — `owner` porte la désignation du professeur principal :
+        // il n'a de sens qu'en classe, et la règle D3 empêche de toute façon de
+        // l'attribuer ailleurs. Le proposer ici produisait une déclaration
+        // mort-née — et le bouton « tous les rôles » la posait en un clic. Le
+        // modèle la refuse désormais ; on ne la propose pas non plus, pour que le
+        // refus reste une garde et non une expérience utilisateur.
+        // La clé se relit sur la LIGNE éditée, jamais sur une propriété du
+        // composant : c'est le même réflexe que la garde de `setPendingRole()`,
+        // qui a dû relire son type en base parce qu'un payload forgé la
+        // désarmait. En création, il n'y a pas de ligne — et un type neuf n'est
+        // jamais `classe`, qui existe déjà.
+        $editedKey = $this->isEditing && $this->editId !== null
+            ? (string) (GroupType::find($this->editId)?->key ?? '')
+            : '';
+
+        if ($editedKey !== GroupTypeRole::OWNER_TYPE_KEY) {
+            unset($rows[UserGroupUserPivot::ROLE_OWNER]);
+        }
+
+        return $rows;
     }
 
     /** Clé prévisualisée dans la modale de création (jamais en édition). */

@@ -153,6 +153,17 @@ return new class extends Migration
             if ($exists) {
                 // Rejouée : on ne réécrit PAS le libellé local. Un administrateur
                 // a pu le changer depuis l'écran des types — le sien fait foi.
+                //
+                // Review 62.3 #2 — ne pas lire cette phrase comme une garantie
+                // GÉNÉRALE : elle vaut pour CETTE migration. `GroupTypeRoleSeeder`
+                // a le contrat INVERSE et assumé — il RESYNCHRONISE la baseline,
+                // donc il réécrit les libellés locaux, et un test l'épingle. Les
+                // deux sont volontairement différents : une migration ne doit
+                // jamais défaire un geste d'administration, un seeder de baseline
+                // est justement l'outil qu'on lance pour revenir à l'état de
+                // référence. La conséquence d'exploitation est réelle et va au
+                // runbook : lancer le seeder sur une instance où l'écran a servi
+                // écrase les libellés locaux, sans confirmation.
                 continue;
             }
 
