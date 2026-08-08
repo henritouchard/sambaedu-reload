@@ -2093,3 +2093,275 @@ groupe de type `equipe`, type que l'import d'annuaire ne produit plus (comptage 
 *Mise à jour précédente : 2026-06-30 (Story 34.3 — Templates de répertoire : table `directory_templates` + `DirectoryTemplateSeeder` (4 recettes, Q3 option B) + `DirectoryTemplateService::materialize` (transaction + validation réutilisée 34.2, mapping de maille non redérivé) + 2e modale « Créer depuis un template » sur `/app/shares` (formulaire dynamique, aperçu, gating `networkshare.manage`) ; casiers « élèves→profs » par-élève reportés 34.x ; socle figé INTOUCHÉ ; **post-review** : surfaçage warnings AC2 [#1], pré-check unicité service [M-1], garde-fou seeder [M-2], test cible manquante [#2])*
 
 *Mise à jour : 2026-08-05 (Story 60.5 — le seed SE4 dans une racine NEUVE : 5ᵉ recette `classe_se4` (six nœuds, racine comprise, `edge_roles: [manager]` seul), zone logique `PlanAnchor` portée par le plan et traduite par la garde de chemin SEULE (double ancrage `reseau`/`classes`, clé `filesystem.class_trees_root`, défaut `/var/sambaedu/ClassesSE5`), origine `directory_template_id`/`user_group_id`/`node_activation` sur `network_shares`, déclencheurs de création/appartenance SCOPÉS aux recettes d'arbre, commande `shares:materialize-class-trees`, bascule des dossiers activables + dernier rapport par nœud sur la fiche du partage, `profs_to_eleves` RECÂBLÉE sur le rôle d'arête + sélecteur vide qui PARLE, contrôle `sambaedu:doctor --tag=queue` — **l'arbre de classe HISTORIQUE, `ShareService`, `AclService` et `shares:resync-class` sont INTOUCHÉS : zéro diff, et SE5 n'a plus aucun chemin d'écriture vers `/var/sambaedu/Classes`**)*
+
+---
+
+## Story 61.1 — Nextcloud en chemin d'accès (external storage)
+
+**Ce que cette story change, en une phrase :** Nextcloud **monte les partages SMB
+déjà existants** (`partages` et `users`) et devient un chemin d'accès de plus vers
+les mêmes fichiers, avec les mêmes droits — **rien sur le disque ne bouge, aucun
+droit n'est écrit nulle part, et le lecteur réseau ne change pas d'un octet**.
+
+**Le mécanisme, et pourquoi il rend le cloisonnement gratuit.** Le montage est en
+« identifiants de connexion, enregistrés en session »
+(`password::sessioncredentials`) : à chaque accès web, Nextcloud se présente à
+Samba **avec les identifiants de l'utilisateur connecté**. C'est donc l'ACL POSIX
+du kernel qui tranche, exactement comme pour le lecteur H:/K:. Aucun droit n'est
+dupliqué côté Nextcloud, aucun credential utilisateur n'y est stocké, et
+`hide unreadable = Yes` (posé en `[global]` côté Samba) masque au web ce qu'il
+masque déjà au lecteur. **Corollaire** : l'utilisateur doit se connecter à
+Nextcloud avec ses identifiants AD — d'où le provisionnement des comptes et la
+propagation du mot de passe.
+
+**Les deux montages, et rien d'autre :**
+
+| Montage | Cible SMB | Équivalent poste |
+|---|---|---|
+| « Partages » | `\\<se4fs>\partages\` (racine `/var/sambaedu/Partages`) | répertoires réseau gérés (M:..Z:) |
+| « Documents » | `\\<se4fs>\users\$user\` (`$user` substitué par Nextcloud) | lecteur K: |
+
+L'arbre de classe (`H:`) **n'est PAS monté** : le partage SMB de la zone
+`ClassesSE5` n'existe pas encore côté Samba. Dette nommée, pas oubli.
+
+### Prérequis d'instance — à vérifier AVANT tout le reste
+
+- [ ] **61.1-P1** — l'app « Stockage externe » est active :
+  `occ app:enable files_external`. Sans elle, l'endpoint d'administration répond
+  `404` et le « Tester la connexion » dit « app files_external absente ».
+- [ ] **61.1-P2** — **le backend SMB est disponible sur l'hôte Nextcloud** :
+  paquet `smbclient` **ou** extension `php-smbclient`. **⚠️ PIÈGE MESURÉ
+  (2026-08-08) : installer le paquet NE SUFFIT PAS — la détection des backends est
+  mise en cache, il faut REDÉMARRER le service Nextcloud.** Sans cela le
+  provisionnement échoue en `422 Invalid storage backend "smb"`, avec l'app
+  pourtant active et le compte pourtant admin.
+- [ ] **61.1-P3** — un **compte administrateur** de l'instance, et un **app
+  password** généré pour lui (Nextcloud › Paramètres personnels › Sécurité). Le
+  mot de passe de session ne convient pas si la double authentification est
+  active.
+- [ ] **61.1-P4** — **l'instance Nextcloud atteint le serveur SMB** (réseau, DNS,
+  ports 445). C'est le prérequis dont AUCUN test ne peut rendre compte (voir « Ce
+  qui n'est PAS observable »).
+- [ ] **61.1-P5** — un ouvrier de file tourne (le bouton « Provisionner » enfile).
+
+### 61.1-1 — La configuration et les trois diagnostics
+
+- [ ] **61.1-1a** — `/admin/settings/files`, onglet « Personnels et partagés » :
+  la carte **« Accès Nextcloud »** n'est plus grisée. L'activer révèle le bloc de
+  connexion (URL, compte admin, app password, serveur SMB, vérification TLS).
+- [ ] **61.1-1b** — saisir une URL **sans schéma** (`cloud.etab.fr`) : refusée à la
+  saisie, message « doit commencer par http:// ou https:// ». Un slash final est
+  toléré.
+- [ ] **61.1-1c** — saisir l'app password puis quitter le champ : le champ **se
+  vide**, la mention passe à « Un app password est enregistré (chiffré) ».
+  **Recharger la page : le secret n'est jamais réaffiché.** Contrôle
+  complémentaire : `Ctrl+U` (source de la page) → le secret n'y figure pas.
+- [ ] **61.1-1d** — « Tester la connexion » avec une **URL injoignable** → message
+  « Instance Nextcloud injoignable à l'adresse … ».
+- [ ] **61.1-1e** — « Tester la connexion » avec un **compte non administrateur** →
+  message « … n'est pas administrateur de l'instance ».
+- [ ] **61.1-1f** — « Tester la connexion » avec `files_external` **désactivée**
+  (`occ app:disable files_external`) → message citant `files_external` et la
+  commande d'activation. **Les trois messages doivent être différents** : c'est
+  tout leur intérêt (chacun se corrige à un endroit différent).
+- [ ] **61.1-1g** — configuration incomplète (compte admin vide, ou secret absent) :
+  « Tester la connexion » et `php artisan nextcloud:provision` **nomment ce qui
+  manque** et n'émettent **aucun appel**.
+
+### 61.1-2 — Le provisionnement des montages
+
+- [ ] **61.1-2a** — `php artisan nextcloud:provision --dry-run` : le tableau annonce
+  « serait créé » pour les deux montages. **Vérifier dans l'écran d'administration
+  Nextcloud (Paramètres › Administration › Stockages externes) : RIEN n'a été
+  créé.**
+- [ ] **61.1-2b** — `php artisan nextcloud:provision --mounts-only` : les deux
+  montages apparaissent côté Nextcloud, type **SMB/CIFS**, authentification
+  « Identifiants de connexion, enregistrés en session », **aucun groupe ni
+  utilisateur en « Disponible pour »** (= tous).
+- [ ] **61.1-2c** — **REJEU** : relancer la même commande. Le rapport dit « déjà
+  conforme » pour les deux, et **l'écran Nextcloud contient toujours DEUX entrées,
+  pas quatre**. C'est le contrôle pivot : `files_external` ne dédoublonne pas de
+  lui-même.
+- [ ] **61.1-2d** — renommer un des deux montages **côté Nextcloud** (« Partages »
+  → « Zzz »), relancer : le rapport dit « mis à jour », le nom revient à
+  « Partages », et **aucune entrée supplémentaire** n'est créée.
+- [ ] **61.1-2e** — créer **à la main** côté Nextcloud un troisième stockage
+  externe quelconque, relancer : il est **toujours là, inchangé**, et le rapport ne
+  le mentionne pas. SE5 ne gouverne que ce qu'il a déclaré.
+- [ ] **61.1-2f** — ⚠️ **le statut affiché par Nextcloud sur ces deux montages sera
+  rouge, « Storage unauthorized / Session unavailable ». C'EST NORMAL et ce n'est
+  pas un échec** : avec des identifiants de session, il n'y a personne à
+  authentifier hors session utilisateur, donc le statut est inévaluable. SE5 ne le
+  lit pas. Le seul verdict qui compte est celui du parcours 61.1-4.
+
+### 61.1-3 — Les comptes utilisateurs
+
+- [ ] **61.1-3a** — `php artisan nextcloud:provision --users-only` sur une instance
+  **à synchro LDAP** : compteur `adoptés` = population AD active, `créés` = 0,
+  `introuvables` = 0.
+- [ ] **61.1-3b** — même commande sur une instance **sans comptes** : compteur
+  `introuvables` non nul, et **AUCUN compte n'est créé côté Nextcloud**. Vérifier
+  dans Nextcloud › Utilisateurs. C'est délibéré : un compte fabriqué avec un mot de
+  passe aléatoire serait un compte auquel personne ne peut se connecter, et le
+  compteur passerait au vert pour rien.
+- [ ] **61.1-3c** — **rejeu** : relancer. Les utilisateurs déjà résolus ne
+  provoquent **aucun appel** à l'instance (l'identité est cachée en base). Contrôle
+  : `SELECT login, nextcloud_user_id FROM users WHERE nextcloud_user_id IS NOT NULL LIMIT 5;`
+- [ ] **61.1-3d** — les comptes `source = 'federated'` (techniciens controlHub)
+  sont comptés en « hors périmètre » et **jamais** interrogés : ils n'ont ni home
+  ni mot de passe AD.
+- [ ] **61.1-3e** — **créer un utilisateur** dans SE5 (`/app/users/new`) : le compte
+  Nextcloud est créé **au fil de l'eau** avec le mot de passe AD. Vérifier la
+  connexion web de ce compte immédiatement après.
+- [ ] **61.1-3f** — **changer le mot de passe** de cet utilisateur (fiche
+  utilisateur, ou réinitialisation en masse) : sa connexion web Nextcloud
+  fonctionne **avec le nouveau mot de passe**. Sans cette propagation, le montage
+  cesserait d'authentifier au premier changement.
+- [ ] **61.1-3g** — désactiver la capacité « Accès Nextcloud », créer un
+  utilisateur, changer un mot de passe : **aucun appel** n'est émis vers l'instance
+  (contrôle : journal applicatif sans entrée `nextcloud.*`).
+
+### 61.1-4 — LE PARCOURS RÉEL (celui qui vaut la story)
+
+- [ ] **61.1-4a** — se connecter à Nextcloud **en tant qu'élève**, avec ses
+  identifiants AD. Les dossiers **« Partages »** et **« Documents »** sont visibles
+  dans « Fichiers ».
+- [ ] **61.1-4b** — « Documents » montre **le contenu du home de cet élève**, et
+  celui-là seulement.
+- [ ] **61.1-4c** — **LE CONTRÔLE DE CLOISONNEMENT** : sous « Partages », l'élève
+  voit **exactement** ce qu'il voit depuis son lecteur réseau sur le poste — et
+  **pas `_profs`**. Comparer côte à côte : explorateur Windows d'un côté, Nextcloud
+  de l'autre. Toute différence est un défaut, dans un sens comme dans l'autre.
+- [ ] **61.1-4d** — se connecter **en tant qu'enseignant** : il voit `_profs`, et
+  peut y écrire.
+- [ ] **61.1-4e** — créer un fichier depuis Nextcloud, puis le retrouver **depuis le
+  poste** sur le lecteur réseau (et inversement). C'est le même octet, pas une
+  copie.
+- [ ] **61.1-4f** — **retirer un accès côté SE5** (désassigner l'utilisateur du
+  répertoire réseau, réconcilier), puis rafraîchir Nextcloud : le dossier disparaît
+  de sa vue. L'autorité n'a pas bougé de place.
+
+### 61.1-5 — `getfacl` : le contrôle de NON-EFFET
+
+Cette story ne doit émettre **aucune commande système**. Le contrôle est donc un
+contrôle de **non-effet**, et il se fait au diff.
+
+```bash
+# AVANT toute activation de la capacité
+getfacl -R /var/sambaedu/Partages > /root/acl-avant-61-1.txt
+getfacl -R /var/sambaedu/Classes  >> /root/acl-avant-61-1.txt
+getfacl -R /home                  >> /root/acl-avant-61-1.txt
+
+# … activer la capacité, provisionner, dérouler 61.1-2, 61.1-3 et 61.1-4 …
+
+getfacl -R /var/sambaedu/Partages > /root/acl-apres-61-1.txt
+getfacl -R /var/sambaedu/Classes  >> /root/acl-apres-61-1.txt
+getfacl -R /home                  >> /root/acl-apres-61-1.txt
+
+diff /root/acl-avant-61-1.txt /root/acl-apres-61-1.txt
+```
+
+- [ ] **61.1-5a** — **le diff est VIDE.** Toute ligne est un défaut : cette story
+  n'a aucun chemin d'écriture vers le système de fichiers.
+  (Réserve honnête : si le parcours 61.1-4e a créé un fichier depuis Nextcloud, ce
+  fichier apparaîtra — c'est une écriture d'UTILISATEUR par Samba, pas une écriture
+  de SE5. Le distinguer, ou prendre l'instantané avant 61.1-4e.)
+
+### Ce qui n'est PAS observable — à ne pas confondre avec un succès
+
+- **Le montage FONCTIONNEL exige que l'instance Nextcloud atteigne le serveur SMB.**
+  Aucun test automatisé n'en rend compte : ni la suite sur l'hôte (aucun réseau),
+  ni le test d'intégration contre l'instance de sondage (qui prouve le CANAL
+  d'écriture de la configuration, avec une cible SMB fictive). Seul le parcours
+  61.1-4 le prouve.
+- **Le statut affiché par Nextcloud sur les deux montages n'est pas un verdict**
+  (voir 61.1-2f). Un statut rouge avec un parcours 61.1-4 vert = tout va bien.
+- **La suite automatisée ne tourne pas sur la VM** (pas de `pdo_sqlite`) : elle est
+  exécutée sur la machine hôte.
+- **Le test d'intégration du canal est skippé par défaut** : il exige
+  `NC_SPIKE_URL`, `NC_SPIKE_ADMIN`, `NC_SPIKE_PASSWORD` et s'exécute depuis le
+  checkout principal (`vendor/bin/phpunit -c phpunit.integration.xml --filter NextcloudProvisioningCanalTest`),
+  jamais depuis un worktree.
+- **Une instance à synchro LDAP refuse la propagation de mot de passe** : c'est
+  toléré et journalisé en debug, ce n'est pas une panne — ses mots de passe
+  viennent de l'annuaire, pas de SE5.
+
+### 61.1-6 — Corrections de review (2026-08-08) : ce qui change à l'exploitation
+
+Cinq corrections ont été appliquées après la revue de code. Trois se voient depuis
+le poste d'exploitation ; les vérifier une fois.
+
+- [ ] **61.1-6a — le champ « serveur de fichiers SMB » peut rester VIDE.**
+  Il n'est pas un élément de connexion : laissé vide, il vaut le serveur de
+  fichiers déjà connu de l'instance (`sambaedu.se4fs_name`, le jeton `<se4fs>` des
+  UNC de lecteurs), et le formulaire l'annonce en indication de saisie.
+  **Contrôle** : le laisser vide, « Tester la connexion » → vert ; provisionner →
+  le rapport dit `SMB //<nom du serveur>/partages`. Créer un utilisateur et
+  changer un mot de passe : les deux doivent produire leur effet côté Nextcloud.
+  (Avant correction, ce champ vide rendait **muets, sans aucune trace**, la
+  création de compte et la propagation de mot de passe.)
+
+- [ ] **61.1-6b — un compte NC n'est plus adopté « par ressemblance ».**
+  L'autocomplétion de Nextcloud cherche par sous-chaîne : un candidat unique
+  n'est pas une preuve d'identité. SE5 n'adopte désormais **que l'homonyme
+  exact** (casse indifférente). Un login SE5 dont l'instance ne connaît pas
+  l'homonyme est donc rapporté **`introuvable`**, même quand des comptes proches
+  existent — et le rapport les **nomme** (« non adoptés : … »).
+  **Contrôle** : sur une instance où un compte `p.durand-martin` existe sans
+  `p.durand`, `nextcloud:provision --users-only` doit compter un `introuvable`
+  citant `p.durand-martin`, et **ne rien écrire** dans `users.nextcloud_user_id`.
+  **Pourquoi c'est un gain** : l'identité adoptée sert ensuite à propager les mots
+  de passe — un quasi-homonyme adopté aurait fait écraser le mot de passe d'un
+  compte tiers au premier changement AD.
+  ⚠️ **Conséquence à connaître** : sur une instance dont les identifiants NC ne
+  sont PAS les logins (mappage sur un GUID), le balayage ne résout plus rien tout
+  seul et rapporte des `introuvables`. C'est délibéré ; le rattachement demandera
+  un geste explicite (hors périmètre 61.1).
+
+- [ ] **61.1-6c — une exécution en cours (ou interrompue) se voit à l'écran.**
+  Le rapport n'est écrit qu'à la fin d'une exécution : un traitement en file tué
+  ne laissait rien à voir. Un bandeau « Provisionnement en cours depuis … »
+  apparaît maintenant pendant l'exécution.
+  **Contrôle** : lancer le provisionnement par le bouton, rafraîchir le rapport →
+  le bandeau est là ; à la fin, il disparaît et le rapport se met à jour.
+  **Si le bandeau persiste longtemps après la fin attendue**, l'exécution a été
+  interrompue : relancer. Il s'efface de lui-même au bout de 30 minutes (durée du
+  verrou d'exécution). Rappel : le travail déclare désormais un délai maximal de
+  1500 s, inférieur au verrou — les unités `queue:work` n'ont pas besoin de
+  `--timeout`.
+
+- [ ] **61.1-6d — les journaux d'une réinitialisation en masse restent lisibles.**
+  Deux changements sans effet visible à l'écran, mais qui se constatent dans
+  `storage/logs` :
+  1. sur une instance à **synchro LDAP**, le refus de changer un mot de passe
+     (403 / OCS `997`) est journalisé en `debug` sous
+     `nextcloud.user.password.not_applicable` — plus **aucun** WARNING par
+     utilisateur à la rentrée ;
+  2. si l'instance est **injoignable**, la propagation est abandonnée pour tout
+     le lot dès le premier échec réseau, avec **un seul**
+     `nextcloud.user.password.batch_skipped` disant combien de comptes n'ont pas
+     été propagés — au lieu de payer 15 s de délai par élève dans la requête.
+  **Contrôle** : couper l'accès à l'instance, réinitialiser un lot d'une dizaine
+  d'élèves → la réinitialisation AD aboutit pour **tous**, la page répond
+  normalement, et le journal ne contient **qu'une** ligne d'avertissement
+  Nextcloud.
+
+### Checklist rapide — Story 61.1
+
+- [ ] 61.1-P1/P2 : `files_external` active **et** `smbclient` installé **+ service redémarré**
+- [ ] 61.1-P3/P4 : compte admin + app password ; l'instance atteint le serveur SMB
+- [ ] 61.1-1c : **le secret n'apparaît jamais dans la page** (source comprise)
+- [ ] 61.1-1d/e/f : **trois diagnostics, trois messages différents**
+- [ ] 61.1-2a : `--dry-run` → **rien de créé côté Nextcloud**
+- [ ] **61.1-2c : rejeu → DEUX montages, pas quatre**
+- [ ] 61.1-2e : montage créé à la main → **intact**
+- [ ] 61.1-2f : statut rouge « Session unavailable » = **normal**, pas un échec
+- [ ] **61.1-3b : aucun compte fabriqué au backfill** (`introuvables` rapportés)
+- [ ] 61.1-3f : après changement de mot de passe, la connexion web **fonctionne encore**
+- [ ] **61.1-4c : un élève ne voit pas `_profs`** — cloisonnement identique au lecteur
+- [ ] **61.1-5a : `getfacl` avant/après → diff VIDE**
+- [ ] Suite automatisée verte sur l'hôte
+
+---
+
+*Dernière mise à jour : 2026-08-08 (Story 61.1 — Nextcloud en chemin d'accès : deux montages `files_external` SMB « Partages » et « Documents » en `password::sessioncredentials` applicables à TOUS, idempotents par signature canonique normalisée (le slash initial que l'instance ajoute au point de montage est le piège d'idempotence n°1), client `NextcloudAdminClient` unique point de sortie HTTP sur `Http::` (falsifiable, zéro curl nu dans le code nouveau), credential admin chiffré dans `service_credentials` (`nextcloud_admin`), colonne-CACHE `users.nextcloud_user_id` hors `$fillable` (jamais l'AD — contre-modèle `Id NC` de SE4), création de compte au fil de l'eau + adoption `102` + **jamais de mot de passe inventé au backfill**, propagation du mot de passe sous double condition, commande `nextcloud:provision` (`--dry-run`/`--users-only`/`--mounts-only`, codes 0/1/2) et bouton enfilant le MÊME service, quatrième diagnostic `smbclient` manquant mesuré le 2026-08-08 — **ZÉRO droit écrit, ZÉRO commande système, `app/Services/Filesystem/**` et `FileBackendName` INTOUCHÉS**)*

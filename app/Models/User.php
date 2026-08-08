@@ -43,6 +43,11 @@ use Livewire\Wireable;
  * @property string|null $email
  * @property string|null $dn
  * @property string|null $ad_guid
+ * @property string|null $nextcloud_user_id  CACHE de résolution de l'identité Nextcloud (story 61.1) —
+ *                                           PAS une autorité : la vérité est chez Nextcloud, la colonne
+ *                                           est nullable et reconstructible par `nextcloud:provision`.
+ *                                           Volontairement HORS `$fillable` : elle s'écrit nominativement
+ *                                           depuis le provisionnement, jamais par assignation de masse.
  * @property string $role
  * @property string|null $school_code
  * @property string|null $school_name

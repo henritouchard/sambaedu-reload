@@ -610,6 +610,13 @@ class UserService
 
             $this->userRepository->invalidateCache($login);
 
+            // Story 61.1 — propagation au compte Nextcloud. Sans elle, sur une
+            // instance sans synchro LDAP, ce changement CASSE le montage : le
+            // mécanisme « identifiants de connexion, enregistrés en session »
+            // exige que Nextcloud accepte les identifiants AD. Fail-soft, sous
+            // double condition (capacité active ET identité résolue).
+            $this->propagateNextcloudPassword($login, $newPassword);
+
             return true;
         } catch (\Exception $e) {
             Log::error('UserService changePasswordInAd error: ' . $e->getMessage(), [
@@ -944,6 +951,13 @@ class UserService
         $partialFailures = [];
         $success = true;
 
+        // Story 61.1 (revue #5) — UN SEUL provisionneur pour tout le lot, parce
+        // qu'il porte le disjoncteur : à la première instance injoignable, les
+        // propagations suivantes sont abandonnées d'un bloc au lieu de payer le
+        // délai HTTP par utilisateur (jusqu'à 15 s chacun) dans une requête
+        // synchrone. La réinitialisation AD, elle, n'est jamais affectée.
+        $nextcloudBatch = $this->nextcloudProvisionerOrNull();
+
         foreach ($orderedLogins as $login) {
             $sqlUser = $sqlUsers[$login] ?? null;
             if ($sqlUser === null) {
@@ -969,6 +983,12 @@ class UserService
 
                 // 3) Invalider cache AD
                 $this->userRepository->invalidateCache($login);
+
+                // 3bis) Story 61.1 — propagation au compte Nextcloud (même
+                // raison qu'en réinitialisation unitaire : sans elle le montage
+                // en identifiants de session cesse d'authentifier). Fail-soft :
+                // ne fait jamais échouer le lot.
+                $this->propagateNextcloudPassword($login, $newPassword, $nextcloudBatch);
 
                 // 4) Double-write SQL : timestamp pwd_reset_at (jamais le mdp)
                 // Transaction courte autour du seul save() — pas d'appel LDAP à l'intérieur
@@ -1022,6 +1042,16 @@ class UserService
                 ];
 
                 $success = false;
+            }
+        }
+
+        // Story 61.1 (revue #5) — la clôture du lot : UN avertissement pour tous
+        // les comptes non propagés, jamais un par utilisateur.
+        if ($nextcloudBatch !== null) {
+            try {
+                $nextcloudBatch->flushBatchSkips();
+            } catch (\Throwable) {
+                // La visibilité Nextcloud ne fait pas échouer une réinitialisation AD.
             }
         }
 
@@ -1321,6 +1351,18 @@ class UserService
 
         // Créer le dossier home
         $this->homeDirService->createHomeDirectory($login);
+
+        // Story 61.1 — le compte Nextcloud, AVANT le chemin rclone.
+        //
+        // L'ordre n'est pas indifférent : `configureUserCloud()` demande à
+        // l'instance un app password pour le couple login/mot de passe AD. Sans
+        // compte Nextcloud, cette demande échoue — et échouait silencieusement
+        // jusqu'ici sur toute instance sans synchro LDAP. On assure donc le compte
+        // d'abord, avec le mot de passe qu'on a EN MAIN à cet instant (le seul
+        // moment, avec le changement de mot de passe, où SE5 le connaît).
+        //
+        // Fail-soft : un échec Nextcloud ne bloque jamais la création SE5.
+        $this->ensureNextcloudAccount($login, $password);
 
         // Configuration cloud si activée
         $noCloud = $this->config->get('no_cloud', '0') == '1';
@@ -1877,8 +1919,14 @@ class UserService
                 return;
             }
 
-            // 2. Récupérer l'ID cloud
-            $cloudId = $this->getNextcloudUserId($cloudUri, $login, $password);
+            // 2. Récupérer l'ID cloud — Story 61.1 (AC6) : le CACHE d'abord.
+            //
+            // Seule retouche autorisée à ce chemin legacy. Quand la colonne
+            // `users.nextcloud_user_id` est remplie, la résolution a déjà eu lieu
+            // et un second aller-retour n'apprendrait rien. Colonne vide ⇒
+            // comportement d'origine, à l'octet près.
+            $cloudId = $this->cachedNextcloudUserId($login)
+                ?? $this->getNextcloudUserId($cloudUri, $login, $password);
 
             // 3. Créer la config rclone
             $rcloneDir = "/home/" . $login . "/.config/rclone";
@@ -1923,6 +1971,98 @@ class UserService
             Log::warning("Erreur lors de la configuration cloud pour $login", [
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    // =========================================================================
+    // Story 61.1 — LES TROIS CROCHETS NEXTCLOUD
+    //
+    // Ils sont ici, et le CLIENT est ailleurs. Le service de provisionnement est
+    // résolu par le conteneur au point d'appel plutôt qu'injecté au constructeur :
+    // ce constructeur est câblé dans une quarantaine d'endroits (et construit à la
+    // main dans plusieurs tests), et lui ajouter une dépendance obligatoire aurait
+    // fait payer à tout le dépôt une fonctionnalité que la plupart des instances
+    // n'activent pas. C'est le même précédent que `app(UserGroupService::class)`
+    // plus haut dans cette classe.
+    //
+    // Les trois sont FAIL-SOFT et bordés d'un `catch (\Throwable)` : aucun d'eux ne
+    // doit pouvoir faire échouer une création de compte ou un changement de mot de
+    // passe AD. La visibilité vient du journal, pas de l'exception.
+    // =========================================================================
+
+    /**
+     * Assure le compte Nextcloud à la création SE5 (AC5).
+     *
+     * Ne fait RIEN — et n'émet aucun appel — quand la capacité « Accès Nextcloud »
+     * est éteinte ou la configuration incomplète.
+     */
+    private function ensureNextcloudAccount(string $login, string $password): void
+    {
+        try {
+            app(\App\Services\Nextcloud\NextcloudUserProvisioner::class)
+                ->ensureAccountAtCreation($login, $password);
+        } catch (\Throwable $e) {
+            Log::warning('nextcloud.user.create.hook_error', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Propage le nouveau mot de passe au compte Nextcloud (AC7), sous double
+     * condition portée par le provisionneur : capacité active ET identité résolue.
+     *
+     * `$batch` — le provisionneur PARTAGÉ d'une réinitialisation en masse : c'est
+     * lui qui porte le disjoncteur de lot (revue #5). Quand il est absent, on est
+     * sur le chemin unitaire : on résout un provisionneur pour l'occasion et on
+     * clôt le « lot » d'un seul élément immédiatement, sans quoi une instance
+     * injoignable serait muette — ce que l'AC7 interdit.
+     */
+    private function propagateNextcloudPassword(
+        string $login,
+        string $newPassword,
+        ?\App\Services\Nextcloud\NextcloudUserProvisioner $batch = null,
+    ): void {
+        try {
+            $provisioner = $batch ?? app(\App\Services\Nextcloud\NextcloudUserProvisioner::class);
+            $provisioner->propagatePassword($login, $newPassword);
+
+            if ($batch === null) {
+                $provisioner->flushBatchSkips();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('nextcloud.user.password.hook_error', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Le provisionneur d'un LOT, ou `null` si le conteneur ne peut pas le
+     * construire. Résolu UNE fois avant la boucle : son état de disjoncteur n'a
+     * de sens que partagé par toutes les itérations du même lot.
+     */
+    private function nextcloudProvisionerOrNull(): ?\App\Services\Nextcloud\NextcloudUserProvisioner
+    {
+        try {
+            return app(\App\Services\Nextcloud\NextcloudUserProvisioner::class);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Identité Nextcloud CACHÉE de l'utilisateur, ou null si jamais résolue (AC6).
+     */
+    private function cachedNextcloudUserId(string $login): ?string
+    {
+        try {
+            return app(\App\Services\Nextcloud\NextcloudUserProvisioner::class)
+                ->cachedIdentity($login);
+        } catch (\Throwable) {
+            return null;
         }
     }
 

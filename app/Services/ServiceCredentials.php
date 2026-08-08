@@ -111,6 +111,40 @@ class ServiceCredentials
     }
 
     /**
+     * Story 61.1 — ENREGISTRE UN SECRET FOURNI DE L'EXTÉRIEUR.
+     *
+     * Toutes les méthodes ci-dessus GÉNÈRENT le secret : c'est le cas de
+     * `se4install`, dont SE5 est l'émetteur. L'app password admin d'une instance
+     * Nextcloud est l'inverse — il est émis par l'instance et saisi par
+     * l'administrateur ; SE5 ne peut que le conserver. Il a pourtant exactement le
+     * même besoin (chiffré at-rest, mutable au runtime, survivant au reboot), donc
+     * le même domicile plutôt qu'une colonne en clair dans un JSON de réglages.
+     *
+     * Pas de secret TOTP : ce compte n'en a pas, et en générer un ferait croire à
+     * une rotation qui n'existe pas.
+     */
+    public function put(string $name, string $secret): void
+    {
+        $record = ServiceCredential::query()->updateOrCreate(
+            ['name' => $name],
+            ['secret' => $secret],
+        );
+
+        $this->memo[$name] = $record;
+    }
+
+    /**
+     * Retire un secret conservé. Utilisé quand l'administrateur révoque l'app
+     * password côté instance : laisser l'ancien en base ferait échouer chaque
+     * appel avec un « privilège insuffisant » qui désignerait le mauvais coupable.
+     */
+    public function forget(string $name): void
+    {
+        ServiceCredential::query()->where('name', $name)->delete();
+        unset($this->memo[$name]);
+    }
+
+    /**
      * Génère un mot de passe de base alphanumérique (pas de symboles — voir
      * SECRET_LENGTH). Ne persiste rien.
      */
