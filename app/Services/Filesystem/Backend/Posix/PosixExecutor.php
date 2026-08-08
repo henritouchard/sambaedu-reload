@@ -54,6 +54,25 @@ use Illuminate\Support\Facades\Process;
  * l'appelant, chaque argument par l'échappement d'argument ici, chaque commande
  * par la liste blanche côté système. Aucun chemin n'est construit par
  * concaténation non validée.
+ *
+ * **Review 62.4 #2 — l'alternative écartée, et ce que `find` change VRAIMENT à la
+ * surface privilégiée.** L'autre voie était de parcourir l'arbre côté PHP et
+ * d'appeler l'outil dossier par dossier : elle évitait un binaire de plus, au prix
+ * de N élévations au lieu d'une, sur des arbres de classe qui comptent des
+ * milliers de dossiers. Elle a été écartée pour ce coût, et parce qu'elle
+ * déplacerait dans l'applicatif une sélection que le système fait mieux — pas
+ * parce qu'elle serait moins sûre.
+ *
+ * Il faut dire l'autre moitié, que le premier jet passait sous silence : `find`
+ * avec `-exec` autorise, en soi, l'exécution de n'importe quoi en root. Mais la
+ * liste blanche de ce chemin porte DÉJÀ `chmod` et `chown` — dont `chmod 4755` sur
+ * un interpréteur suffit à la même fin. L'identité de service est donc déjà
+ * équivalente-root par construction, ce qui est la doctrine tranchée en 56.2
+ * (« option A », non rouverte hors d'un chantier sécurité explicite). `find`
+ * n'ouvre donc AUCUNE capacité nouvelle ; il rend seulement plus visible une
+ * propriété qui existait avant lui. Ce constat n'est pas une permission de
+ * relâcher les gardes ci-dessus : il dit seulement que le débat sur cette ligne se
+ * tient au niveau de l'identité de service, pas au niveau de cette story.
  */
 final class PosixExecutor
 {

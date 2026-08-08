@@ -120,6 +120,22 @@ class PosixVerbRoundTripTest extends TestCase
                     $observed,
                     "{$label} : une combinaison différenciée ne doit JAMAIS se relire conforme",
                 );
+
+                // Review 62.4 #3 — l'assertion ci-dessus compare l'observé au
+                // RENDU. Or ce que le comparateur oppose à l'observé, c'est le
+                // DÉSIR du plan (`grant->verbs`). Les deux coïncidaient tant que
+                // rendu = désiré ; pour une combinaison différenciée mais EXACTE
+                // ils coïncident encore, et l'assertion précédente ne dit alors
+                // plus rien de ce qui compte. On épingle donc aussi le désir : une
+                // combinaison différenciée ne doit pas davantage se relire égale à
+                // ce que l'administrateur a demandé — sans quoi l'écran de dérive
+                // de 62.6 afficherait « conforme » sur un état que le disque ne
+                // porte pas.
+                self::assertNotSame(
+                    [$canonical],
+                    $observed,
+                    "{$label} : une combinaison différenciée ne doit pas se relire égale au DÉSIR du plan",
+                );
                 $approximate++;
 
                 continue;

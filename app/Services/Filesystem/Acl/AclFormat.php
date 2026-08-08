@@ -91,7 +91,14 @@ final class AclFormat
     }
 
     /**
-     * Parse la sortie brute de `getfacl -c -E` en entrées structurées.
+     * Parse la sortie brute de `getfacl -E` — avec ou sans `-c`.
+     *
+     * Review 62.4 #4 — ce docblock affirmait `-c` (sortie sans en-tête). Depuis la
+     * story 62.4, `PosixFileBackend::readAcl()` appelle `getfacl -E -p`, SANS `-c` :
+     * l'en-tête est la seule façon de voir le drapeau de restriction du dossier.
+     * L'analyse est correcte dans les deux cas — les lignes d'en-tête commencent
+     * par « # » et sont filtrées — mais un lecteur ne doit pas présumer `-c` en
+     * amont.
      *
      * @return list<array{default: bool, type: string, qualifier: ?string, mode: string, raw: string}>
      *         `type` ∈ `user|group|other|mask`. `qualifier` = login/groupe pour

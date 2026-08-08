@@ -81,6 +81,21 @@ class DirectoryTemplateService
         $letter = $this->normalizedLetter($params['letter'] ?? null);
 
         // --- Validation AVANT toute écriture (AC2) --------------------------
+
+        // Review 62.4 #1 — la recette elle-même d'abord, avant ses paramètres.
+        // `assertValidRoleVerbs()` refuse NOMMÉMENT l'ancienne clé `access` : c'est
+        // la seule chose qui distingue une recette non migrée d'un rôle qui,
+        // légitimement, ne se prononce pas (les deux se présentent ici comme une
+        // absence de `verbs`). Sans cet appel, la garde existait mais n'était
+        // branchée que sur le chemin ARBRE et sur le hook `saving` d'un
+        // accrochage : le chemin des recettes PLATES — celui que `materialize()`
+        // emprunte réellement — retombait sur le plancher `lire`, et un rôle en
+        // ÉCRITURE devenait un rôle en LECTURE sans un mot. Exactement le silence
+        // que la story dit traquer, et que son runbook (62.4-5a) promet bruyant.
+        // Atteignable par restauration d'une sauvegarde antérieure à la migration
+        // sans la rejouer, ou par écriture SQL directe.
+        $template->assertValidResolutionSpec();
+
         if ($name === '') {
             throw new InvalidArgumentException('Le nom du répertoire est requis.');
         }

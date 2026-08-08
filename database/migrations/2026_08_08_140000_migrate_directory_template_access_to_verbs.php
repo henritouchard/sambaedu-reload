@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Services\Filesystem\Plan\PlanGrant;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Story 62.4 — LES RECETTES PASSENT AUX QUATRE VERBES. Une fois, ici, jamais
@@ -139,7 +140,22 @@ return new class extends Migration
             }
 
             $access = is_string($spec['access']) ? $spec['access'] : 'ro';
-            $verbs = self::UP[$access] ?? self::UP['ro'];
+            $verbs = self::UP[$access] ?? null;
+
+            if ($verbs === null) {
+                // Review 62.4 #5 — le repli sur « lire » restait la bonne réponse
+                // (il RETIRE plutôt qu'il n'accorde : jamais un gain d'accès sur
+                // une donnée qu'on ne comprend pas), mais il était MUET. Or toute
+                // cette story tient sur « jamais une conversion silencieuse » : une
+                // valeur d'accès qui n'est ni `ro` ni `rw` est une donnée corrompue,
+                // et son passage à « lire » seul est précisément le genre de perte
+                // qu'on doit pouvoir retrouver dans un journal après coup.
+                Log::warning(
+                    '[migration 62.4] Valeur d\'accès inconnue dans une recette — convertie en « lire » seul.',
+                    ['access' => $spec['access'], 'index' => $index],
+                );
+                $verbs = self::UP['ro'];
+            }
 
             $rebuilt = [];
             foreach ($spec as $key => $value) {

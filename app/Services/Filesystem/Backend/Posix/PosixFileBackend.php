@@ -603,6 +603,18 @@ final class PosixFileBackend implements FileBackend
      * relisent EXACTEMENT. Les combinaisons approchées n'entrent qu'avec l'écran de
      * composition (62.6), qui saura griser ce qu'un backend ne sait pas rendre.
      *
+     * **Review 62.4 #3 — la reprojection peut SUR-DÉCLARER « éditer ».** Un dossier
+     * en `rwx` avec restriction se relit `{lire, editer, creer}`, que l'octroi ait
+     * demandé `editer` ou non : le mode d'un dossier ne dit rien du droit d'écrire
+     * dans les fichiers qu'il contient, et cette relecture porte sur le répertoire
+     * de TÊTE. Un octroi `{lire, creer}` sera donc rapporté en écart avec « éditer
+     * observé en trop » — écart réel (le désir n'est pas rendu tel quel), mais dont
+     * le DÉTAIL nomme un droit qui n'existe sur aucun fichier. Conséquence pour
+     * 62.6, qui misera sur l'écran de dérive : ne pas présenter ce détail comme la
+     * preuve qu'un droit a été accordé. Aucune recette d'aujourd'hui n'atteint ce
+     * cas — les deux combinaisons produites par la migration Q3 ferment la boucle
+     * exactement.
+     *
      * @return list<string>|null
      */
     private function verbsOf(string $mode, bool $restricted): ?array

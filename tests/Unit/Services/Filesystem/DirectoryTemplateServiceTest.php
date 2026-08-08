@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Filesystem;
 
 use App\Jobs\ReconcileNetworkShareJob;
+use App\Exceptions\Filesystem\InvalidTreeSpecException;
 use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
@@ -16,6 +17,7 @@ use App\Services\Filesystem\DirectoryTemplateService;
 use App\Services\Filesystem\TemplateMaterializationResult;
 use Database\Seeders\DirectoryTemplateSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
@@ -66,6 +68,79 @@ class DirectoryTemplateServiceTest extends TestCase
     private function template(string $key): DirectoryTemplate
     {
         return DirectoryTemplate::where('key', $key)->firstOrFail();
+    }
+
+    // =========================================================================
+    // Review 62.4 #1 — une recette NON MIGRÉE est refusée, et elle est refusée ICI
+    // =========================================================================
+
+    #[Test]
+    public function materializing_a_recipe_still_on_the_old_access_vocabulary_is_refused_loudly(): void
+    {
+        // Le défaut : `assignmentAccessOf()` lisait `roles_spec[].verbs` et
+        // retombait sur le plancher « lire » quand la clé était absente. Une ligne
+        // restée sur l'ancien vocabulaire (`access`) — restauration d'une
+        // sauvegarde antérieure à la migration sans la rejouer, écriture SQL
+        // directe — se matérialisait donc SANS erreur, en transformant un rôle en
+        // ÉCRITURE en rôle en LECTURE. Silencieusement : exactement ce que la
+        // story dit traquer, et ce que son runbook promet bruyant.
+        $direction = UserGroup::create(['name' => 'direction', 'type' => 'equipe']);
+        $classe = UserGroup::create(['name' => '6eA', 'type' => 'classe']);
+
+        $template = $this->template(DirectoryTemplate::KEY_DIRECTION_TO_ALL);
+
+        // On remet UN rôle sur l'ancienne clé, sans toucher au reste.
+        $roles = $template->roles_spec;
+        $roles[0]['access'] = 'rw';
+        unset($roles[0]['verbs']);
+        // Écriture directe : le hook `saving` ne garde que les recettes accrochées,
+        // et c'est précisément le trou qu'on épingle.
+        DB::table('directory_templates')
+            ->where('id', $template->id)
+            ->update(['roles_spec' => json_encode($roles)]);
+
+        $this->expectException(InvalidTreeSpecException::class);
+
+        $this->service->materialize($template->fresh(), [
+            'name' => 'Publication direction',
+            'directory_name' => 'pub_direction',
+            'letter' => 'P:',
+            'roles' => [
+                'source' => [$direction->id],
+                'destinataires' => [$classe->id],
+            ],
+        ]);
+    }
+
+    #[Test]
+    public function a_refused_recipe_writes_nothing_at_all(): void
+    {
+        $direction = UserGroup::create(['name' => 'direction', 'type' => 'equipe']);
+        $classe = UserGroup::create(['name' => '6eA', 'type' => 'classe']);
+
+        $template = $this->template(DirectoryTemplate::KEY_DIRECTION_TO_ALL);
+        $roles = $template->roles_spec;
+        $roles[0]['access'] = 'rw';
+        unset($roles[0]['verbs']);
+        DB::table('directory_templates')
+            ->where('id', $template->id)
+            ->update(['roles_spec' => json_encode($roles)]);
+
+        try {
+            $this->service->materialize($template->fresh(), [
+                'name' => 'Publication direction',
+                'directory_name' => 'pub_direction',
+                'letter' => 'P:',
+                'roles' => [
+                    'source' => [$direction->id],
+                    'destinataires' => [$classe->id],
+                ],
+            ]);
+            self::fail('La matérialisation aurait dû être refusée.');
+        } catch (InvalidTreeSpecException) {
+            // Le refus tombe AVANT toute écriture : c'est ce qui le rend sûr.
+            self::assertSame(0, NetworkShare::where('directory_name', 'pub_direction')->count());
+        }
     }
 
     // =========================================================================
