@@ -179,6 +179,19 @@ new class extends Component {
                 'label' => trim($this->label),
                 'sort_order' => ((int) GroupRole::max('sort_order')) + 1,
             ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Review 62.1 #3 — le contrôle d'unicité ci-dessus est un
+            // check-then-act : deux soumissions concurrentes du même libellé
+            // (double-clic, deux onglets) le passent toutes les deux et se
+            // disputent la contrainte unique en base. Sans ce catch dédié, la
+            // perdante affichait le SQLSTATE brut dans le champ « libellé ». Elle
+            // reçoit le même message métier que le contrôle préalable.
+            $this->addError('label', sprintf(
+                'La clé « %s » est déjà prise par un rôle du catalogue. Choisissez un autre libellé.',
+                $key,
+            ));
+
+            return;
         } catch (\Throwable $e) {
             // Garde du modèle (format, longueur) : message métier, jamais un 500.
             $this->addError('label', $e->getMessage());

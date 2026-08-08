@@ -6,6 +6,7 @@ namespace App\Support;
 
 use App\Models\GroupRole;
 use App\Models\Pivot\UserGroupUserPivot;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -217,9 +218,30 @@ final class RoleCatalog
             }
 
             return $catalog;
-        } catch (Throwable) {
+        } catch (Throwable $e) {
             // Pas de connexion (test unitaire nu), schéma absent, migration en
             // cours : le plancher tient.
+            //
+            // Review 62.1 #2 — mais il tenait en SILENCE. Une vraie panne de base
+            // en production (bascule de réplique, pool épuisé, droits révoqués)
+            // empruntait exactement le même chemin qu'une base non migrée : les
+            // rôles administrés disparaissaient du vocabulaire, un rôle
+            // personnalisé se faisait rejeter, et aucune ligne de journal ne
+            // permettait de relier le symptôme à l'incident. On journalise donc la
+            // dégradation. Pas de risque d'inondation : `rows()` mémoïse même un
+            // résultat vide, donc cette lecture n'a lieu qu'une fois par processus
+            // (par flush). Le journal est lui-même gardé, parce que ce chemin doit
+            // rester traversable par un test unitaire nu, sans application bootée.
+            try {
+                Log::warning(
+                    '[RoleCatalog] Catalogue des rôles illisible — repli sur le plancher historique '
+                    . '(member|manager|owner). Les rôles administrés sont temporairement ignorés.',
+                    ['exception' => $e->getMessage()],
+                );
+            } catch (Throwable) {
+                // Aucune application bootée : le repli reste la bonne réponse.
+            }
+
             return [];
         }
     }
