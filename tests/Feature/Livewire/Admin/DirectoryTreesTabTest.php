@@ -542,7 +542,7 @@ class DirectoryTreesTabTest extends TestCase
 
         $offered = array_keys($component->get('audienceOptions'));
 
-        $this->assertSame('groupe', $offered[0]);
+        $this->assertSame('@groupe', $offered[0]);
         foreach (RoleCatalog::keys() as $roleKey) {
             if ($roleKey === UserGroupUserPivot::ROLE_OWNER) {
                 continue; // Réservé au type `classe` — vérifié à part.
@@ -572,7 +572,7 @@ class DirectoryTreesTabTest extends TestCase
         $offered = array_keys($component->get('audienceOptions'));
         $declared = RoleCatalog::assignableKeys('projet');
 
-        $this->assertSame(['groupe', ...$declared], $offered);
+        $this->assertSame(['@groupe', ...$declared], $offered);
 
         $undeclared = $component->get('undeclaredRoles');
         $this->assertNotSame([], $undeclared, 'un type fermé doit nommer ce qu\'il ne déclare pas');
@@ -608,11 +608,12 @@ class DirectoryTreesTabTest extends TestCase
 
         $component = Livewire::test(self::TAB)
             ->call('openEditor', 'projet')
-            ->set('pendingAudience', 'groupe')
+            ->set('pendingAudience', '@groupe')
             ->call('addAudience');
 
         $role = $component->get('rolesSpec')[0];
 
+        // Le jeton du MENU est `@groupe` ; la clé STOCKÉE reste `groupe` (décision SM 2).
         $this->assertSame('groupe', $role['key']);
         $this->assertSame(UserGroup::class, $role['maille']);
         $this->assertSame('projet', $role['group_type']);
@@ -632,12 +633,103 @@ class DirectoryTreesTabTest extends TestCase
 
         $component = Livewire::test(self::TAB)
             ->call('openEditor', 'projet')
-            ->set('pendingAudience', 'groupe')
+            ->set('pendingAudience', '@groupe')
             ->call('addAudience')
-            ->set('pendingAudience', 'groupe')
+            ->set('pendingAudience', '@groupe')
             ->call('addAudience');
 
         $this->assertCount(1, $component->get('rolesSpec'));
+    }
+
+    /**
+     * Review 62.6 #2 — un rôle du catalogue peut légitimement s'appeler « Groupe » :
+     * `GroupRole::KEY_PATTERN` n'a aucun mot réservé, et le slug est `groupe`.
+     *
+     * Il ne doit PAS écraser l'entrée « tout le groupe » du menu. Sans le jeton
+     * préfixé `@groupe`, l'ajouter écrirait une résolution `self` à la place de
+     * `edge_role` : une audience qui ne vise pas ce que l'administrateur a demandé,
+     * stockée sans un mot.
+     */
+    #[Test]
+    public function a_catalog_role_named_groupe_does_not_shadow_the_whole_group_audience(): void
+    {
+        $this->grant(['server.admin']);
+        GroupRole::create(['key' => 'groupe', 'label' => 'Groupe', 'sort_order' => 95]);
+        RoleCatalog::flush();
+
+        $component = Livewire::test(self::TAB)->call('openEditor', 'projet');
+        $options = $component->get('audienceOptions');
+
+        $this->assertSame('Tout le groupe', $options['@groupe'] ?? null);
+        $this->assertArrayHasKey('groupe', $options);
+        $this->assertNotSame('Tout le groupe', $options['groupe']);
+
+        // Le rôle du catalogue s'ajoute bien en rôle d'ARÊTE…
+        $component->set('pendingAudience', 'groupe')->call('addAudience');
+        $this->assertSame(
+            ['strategy' => 'edge_role', 'edge_roles' => ['groupe']],
+            $component->get('rolesSpec')[0]['resolution'],
+        );
+
+        // …et « tout le groupe » se heurte alors à la clé STOCKÉE déjà prise :
+        // refus métier, pas une seconde audience homonyme (décision SM 2).
+        $component->set('pendingAudience', '@groupe')->call('addAudience');
+        $this->assertCount(1, $component->get('rolesSpec'));
+    }
+
+    /**
+     * Review 62.6 #3 — AC7 : la clé est vérifiée AVANT l'écriture
+     * (`where('key')->exists()`), donc deux soumissions concurrentes peuvent se
+     * disputer la même clé. La perdante doit recevoir un message MÉTIER, jamais un
+     * SQLSTATE brut, et ne rien écrire.
+     *
+     * La course est reproduite POUR DE VRAI, sans mock : la ligne rivale est
+     * insérée depuis l'événement `creating`, c'est-à-dire dans la fenêtre exacte
+     * qui sépare la vérification de l'insertion.
+     */
+    #[Test]
+    public function a_race_on_the_recipe_key_is_refused_in_business_language(): void
+    {
+        $this->grant(['server.admin']);
+
+        $before = DirectoryTemplate::count();
+
+        DirectoryTemplate::creating(static function (DirectoryTemplate $template): void {
+            static $raced = false;
+            if ($raced) {
+                return;
+            }
+            $raced = true;
+
+            DirectoryTemplate::withoutEvents(static function () use ($template): void {
+                $rival = new DirectoryTemplate;
+                $rival->key = (string) $template->key;
+                $rival->label = 'Recette concurrente';
+                $rival->roles_spec = [];
+                $rival->save();
+            });
+        });
+
+        $component = Livewire::test(self::TAB)
+            ->call('openEditor', 'projet')
+            ->set('label', 'Arbre de projet')
+            ->set('pathPattern', 'Projet_{group.bare_name}')
+            ->set('pendingAudience', '@groupe')
+            ->call('addAudience')
+            ->call('addNode')
+            ->set('nodesSpec.0.path', '.')
+            ->set('nodesSpec.0.label', 'Racine')
+            ->call('toggleVerb', 0, 'groupe', PlanGrant::VERB_LIRE)
+            ->call('save')
+            ->assertHasErrors('tree');
+
+        $message = (string) ($component->errors()->first('tree') ?? '');
+        $this->assertStringContainsString('modifiées ailleurs', $message);
+        $this->assertStringNotContainsString('SQLSTATE', $message);
+
+        // Seule la rivale a atterri : le refus n'écrit rien.
+        $this->assertSame($before + 1, DirectoryTemplate::count());
+        $this->assertNull(DirectoryTemplate::where('key', 'arbre_de_projet')->first()?->attachedGroupType());
     }
 
     #[Test]
@@ -1002,7 +1094,7 @@ class DirectoryTreesTabTest extends TestCase
             ->call('openEditor', 'projet')
             ->set('label', 'Arbre de projet')
             ->set('pathPattern', 'Projet_{group.bare_name}')
-            ->set('pendingAudience', 'groupe')
+            ->set('pendingAudience', '@groupe')
             ->call('addAudience')
             ->call('addNode')
             ->set('nodesSpec.0.path', '.')

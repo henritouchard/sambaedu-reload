@@ -3391,6 +3391,23 @@ matérialiser, puis :
 
 ### 62.6-6 — L'ARBORESCENCE NEXTCLOUD : où l'écran doit dire « non exprimable »
 
+> ⚠️ **CETTE SECTION N'EST PAS ENCORE JOUABLE EN ENTIER, et il faut le savoir avant
+> de s'y mettre.** Aucun backend Nextcloud n'implémente le contrat `FileBackend` à ce
+> jour : **aucune arborescence n'est servie par Nextcloud**, donc la situation à
+> construire ci-dessous ne peut pas l'être. Les cases 62.6-6a à 62.6-6d sont écrites
+> pour le jour où ce sera le cas ; **62.6-6e**, lui, se joue déjà (il porte sur le
+> cloisonnement mesuré en 61.3, pas sur l'éditeur).
+>
+> **Et l'écran n'y répondrait pas encore correctement.** Le grisé des verbes interroge
+> aujourd'hui la déclaration du serveur de fichiers historique **par son nom de
+> classe** — le contrat `FileBackend` n'expose rien qui dise ce qu'un backend sait
+> rendre en verbes (il n'a que `quota()`, seul point réellement routé par le registre,
+> d'où le fait que 62.6-6a fonctionnera, lui, sans changement d'écran). Étendre le
+> contrat était hors du périmètre de 62.6 (zéro diff sous `app/`). Trois méthodes
+> devront alors passer par le registre : `verbAnalysis()`, `verbIsExpressible()` et
+> `nodeCarriesRestriction()`. **Tant que ce n'est pas fait, 62.6-6d ÉCHOUERA** — et
+> c'est un défaut connu et daté, pas une surprise à découvrir sur le terrain.
+
 **Pourquoi cette section existe.** La matrice de ce que l'on sait rendre est **par
 backend**, jamais globale. Mesuré contre une instance réelle (61.3), Nextcloud rend
 **nativement** les quatre verbes dans n'importe quelle combinaison : le grisé de
@@ -3420,8 +3437,11 @@ racine.
       Nextcloud, poser « Lire + Supprimer » (la combinaison que le serveur de fichiers
       historique refuse) et vérifier, dans les permissions avancées du dossier
       d'équipe, que la valeur relue correspond exactement à ce qui a été demandé.
-      **Si l'écran grisait cette case sur un partage Nextcloud, ce serait un défaut**
-      — la règle du grisé doit venir du backend concerné, pas d'une constante.
+      **Attendu AUJOURD'HUI : cette case ÉCHOUE** — l'écran grisera « Supprimer », parce
+      que le grisé interroge encore la déclaration du serveur de fichiers historique
+      (voir l'avertissement en tête de section). Elle reste écrite parce qu'elle est le
+      critère d'acceptation du jour où les trois méthodes passeront par le registre : la
+      règle du grisé doit venir du backend concerné, pas d'une classe câblée en dur.
 - [ ] **62.6-6e — le cloisonnement tient.** Depuis un compte élève, le dossier privé
       des enseignants est **refusé** et **disparaît du listage** (comportement
       mesuré en 61.3). L'aperçu l'avait annoncé par la phrase de clôture (62.6-2b).

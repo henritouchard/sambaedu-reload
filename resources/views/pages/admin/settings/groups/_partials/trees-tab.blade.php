@@ -90,6 +90,24 @@ new class extends Component {
      */
     private const DEFAULT_ANCHOR = PlanAnchor::Classes;
 
+    /**
+     * Le jeton qui DÉSIGNE « tout le groupe » dans la liste des audiences.
+     *
+     * Préfixé `@`, exactement comme `TREE_ROLE_MEMBER` (`@member`) l'est dans le
+     * modèle — et pour la MÊME raison : une clé de rôle du catalogue est un slug
+     * `[a-z][a-z0-9_]*` (`GroupRole::KEY_PATTERN`), donc un rôle libellé « Groupe »
+     * produit la clé `groupe`. Sans le préfixe, ce rôle écraserait silencieusement
+     * l'entrée sentinelle du menu, et l'ajouter écrirait une résolution `self` à la
+     * place de `edge_role` : une audience qui ne vise pas ce que l'administrateur
+     * a demandé, stockée sans un mot.
+     *
+     * Le jeton ne sert qu'au MENU. La clé STOCKÉE reste `groupe` (décision SM 2).
+     */
+    private const AUDIENCE_WHOLE_GROUP = '@groupe';
+
+    /** La clé écrite dans `roles_spec` pour l'audience « tout le groupe ». */
+    private const AUDIENCE_WHOLE_GROUP_KEY = 'groupe';
+
     /** @var array<int, array<string, mixed>> */
     public array $rows = [];
 
@@ -514,7 +532,7 @@ new class extends Component {
      */
     public function getAudienceOptionsProperty(): array
     {
-        $options = ['groupe' => 'Tout le groupe'];
+        $options = [self::AUDIENCE_WHOLE_GROUP => 'Tout le groupe'];
 
         foreach (RoleCatalog::assignableKeys($this->typeKey) as $roleKey) {
             if (! $this->ownerIsOfferedHere($roleKey)) {
@@ -589,22 +607,27 @@ new class extends Component {
             return;
         }
 
+        $isWholeGroup = $key === self::AUDIENCE_WHOLE_GROUP;
+        // Le jeton du MENU et la clé STOCKÉE sont deux choses : la déduplication
+        // porte sur la clé stockée, sinon un rôle de catalogue nommé `groupe`
+        // pourrait s'ajouter à côté de « tout le groupe » et les octrois de nœud ne
+        // sauraient plus laquelle des deux audiences ils visent.
+        $storedKey = $isWholeGroup ? self::AUDIENCE_WHOLE_GROUP_KEY : $key;
+
         foreach ($this->rolesSpec as $role) {
-            if (is_array($role) && ($role['key'] ?? null) === $key) {
+            if (is_array($role) && ($role['key'] ?? null) === $storedKey) {
                 $this->toastError(sprintf(
                     'La recette porte déjà une audience de clé « %s » : deux audiences ne peuvent pas partager '
                     . 'la même clé, les octrois de nœud ne sauraient plus laquelle ils visent.',
-                    $key,
+                    $storedKey,
                 ));
 
                 return;
             }
         }
 
-        $isWholeGroup = $key === 'groupe';
-
         $this->rolesSpec[] = [
-            'key' => $key,
+            'key' => $storedKey,
             'label' => $isWholeGroup ? $options[$key] : RoleCatalog::label($this->typeKey, $key),
             'maille' => UserGroup::class,
             'group_type' => $this->typeKey,
@@ -612,7 +635,7 @@ new class extends Component {
             'cardinality' => 'one',
             'resolution' => $isWholeGroup
                 ? ['strategy' => \App\Enums\RoleResolutionStrategy::Itself->value]
-                : ['strategy' => \App\Enums\RoleResolutionStrategy::EdgeRole->value, 'edge_roles' => [$key]],
+                : ['strategy' => \App\Enums\RoleResolutionStrategy::EdgeRole->value, 'edge_roles' => [$storedKey]],
         ];
 
         $this->pendingAudience = '';
@@ -787,16 +810,22 @@ new class extends Component {
      * champs de MODE, même « juste pour une info-bulle » : ils appartiennent au
      * mécanisme, pas au plan.
      *
-     * **La matrice est PAR BACKEND, jamais globale.** Mesuré contre une instance
-     * réelle (story 61.3), un plan de fichiers distant peut rendre NATIVEMENT les
-     * quatre verbes dans n'importe quelle combinaison : y appliquer le grisé du
-     * serveur de fichiers historique serait un mensonge. Le jour où une
-     * arborescence sera servie par un autre backend, c'est CETTE méthode qui
-     * changera — le Blade, lui, ne connaît que le résultat, et n'a aucune constante
-     * qui énumère les combinaisons exprimables.
+     * **La matrice DOIT être par backend, et elle ne l'est PAS ENCORE ici — dit
+     * franchement.** Mesuré contre une instance réelle (story 61.3), un plan de
+     * fichiers distant rend NATIVEMENT les quatre verbes dans n'importe quelle
+     * combinaison : y appliquer le grisé du serveur de fichiers historique serait un
+     * mensonge. Or cette méthode interroge la déclaration du serveur historique **par
+     * son nom de classe**, pas via le registre — parce que le contrat `FileBackend`
+     * n'expose AUCUNE déclaration de ce qu'un backend sait rendre en verbes (il n'a
+     * que `quota()`, que l'aperçu interroge bien, lui, par le registre). Étendre le
+     * contrat était hors du périmètre de cette story (zéro diff sous `app/`).
      *
-     * Aujourd'hui, les arborescences sont exécutées par le serveur de fichiers
-     * historique ; c'est donc sa déclaration qu'on interroge.
+     * C'est **exact aujourd'hui** : seul le serveur de fichiers historique exécute des
+     * arborescences. Ça cessera de l'être dès qu'un autre backend en exécutera une —
+     * et alors ce ne sont PAS une mais **trois** méthodes qui devront passer par le
+     * registre : `verbAnalysis()`, `verbIsExpressible()` et `nodeCarriesRestriction()`,
+     * une fois le contrat étendu. Le Blade, lui, restera intact : il ne connaît que
+     * le résultat et n'a aucune constante qui énumère les combinaisons exprimables.
      *
      * @param  list<string>  $verbs
      * @return array{rendered: list<string>, missing: list<string>, empty: bool, exact: bool,
@@ -1509,9 +1538,12 @@ new class extends Component {
     /**
      * Le backend qui EXÉCUTE les arborescences aujourd'hui.
      *
-     * Une seule ligne, et c'est le point de bascule : quand une arborescence sera
-     * servie par un autre plan de fichiers, c'est ici que la question se posera —
-     * pas dans une constante d'écran qui énumérerait des combinaisons.
+     * Ce que cette ligne bascule RÉELLEMENT : la déclaration de **plafond** de
+     * l'aperçu, qui passe par le registre. Elle ne bascule PAS le grisé des verbes,
+     * qui interroge encore la déclaration du serveur de fichiers historique par son
+     * nom de classe faute d'un point d'extension au contrat — voir le docblock de
+     * `verbAnalysis()`, qui nomme les trois méthodes concernées. Le jour où une
+     * arborescence sera servie ailleurs, changer cette seule ligne ne suffira pas.
      */
     private function executingBackendName(): FileBackendName
     {
