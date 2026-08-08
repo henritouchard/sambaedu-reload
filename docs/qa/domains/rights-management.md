@@ -1858,3 +1858,133 @@ correction près, nommée au scénario 21.4.
   n'apparaîtra qu'avec la story 62.6.
 - **Déploiement** : `php artisan migrate` **puis**, si l'écran a déjà été utilisé,
   `php artisan db:seed --class=GroupTypeSeeder`.
+
+---
+
+## Section 22 — Les rôles disponibles par type de groupe (Story 62.3, 2026-08-08)
+
+**Ce que la story change, en une phrase** : les libellés de rôle par type de groupe
+(« Élève » dans une classe, « Porteur » dans un projet, « Référent » dans une équipe)
+étaient écrits en **code** ; ils sont devenus des **lignes administrables**, et cette même
+donnée décide désormais **quels rôles sont attribuables** dans un type.
+
+**Où ça se passe** : `/admin/settings/groups?tab=types` → « Modifier » un type → section
+« Rôles disponibles ». Aucun onglet ni page nouvelle.
+
+**Pré-déploiement VM** :
+
+```
+php artisan migrate
+php artisan db:seed --class=GroupTypeRoleSeeder   # seulement si l'écran a déjà servi
+```
+
+> La migration pose elle-même les **sept** déclarations de reprise. Le seeder ne sert qu'à
+> resynchroniser une instance en place sur la baseline du code.
+
+### Scénario 22.1 — La parité : rien n'a bougé à l'écran
+
+1. Ouvrir la page d'un groupe de type `classe` (onglets Élèves / Profs).
+2. **Attendu** : la colonne « Rôle » lit exactement comme avant — « Élève », « Enseignant »,
+   « Professeur principal ». Le select propose les **mêmes trois** options, dans le même ordre.
+3. Ouvrir un groupe de type `projet`, puis `equipe`.
+4. **Attendu** : « Membre » / « Porteur » sur un projet, « Membre » / « Référent » sur une
+   équipe. **« Professeur principal » n'est PAS proposé** hors classe.
+5. Ouvrir un groupe de type `cours` (ou tout type sans déclaration).
+6. **Attendu** : libellés génériques « Membre » / « Gestionnaire », et **tout le catalogue**
+   de rôles proposé — c'est le régime de repli.
+
+### Scénario 22.2 — Déclarer un rôle sur un type réel
+
+1. `/admin/settings/groups?tab=types`, « Modifier » sur **Projet**.
+2. **Attendu** : la section « Rôles disponibles » montre `Membre` et `Gestionnaire` cochés,
+   avec « Porteur » dans le champ « Libellé dans ce type » du second, et le champ du premier
+   **vide** (déclaré sans surcharge — le placeholder rappelle le libellé du catalogue).
+3. Remplacer « Porteur » par « Chef de projet », enregistrer.
+4. **Attendu** : la colonne « Rôles disponibles » de la liste affiche « Membre » et
+   « Chef de projet » ; la page d'un groupe `projet` lit « Chef de projet » ; **aucun autre
+   type** n'a bougé (une classe dit toujours « Enseignant »).
+5. Vider le champ et réenregistrer.
+6. **Attendu** : retour à « Gestionnaire », le libellé du catalogue. Vider ≠ effacer : la
+   déclaration reste, seule la surcharge disparaît.
+
+### Scénario 22.3 — Le refus de retrait, avec son décompte
+
+1. Choisir une **classe peuplée** : au moins deux enseignants y sont `manager`.
+2. `tab=types` → « Modifier » sur **Classe** → **décocher** « Gestionnaire » → Enregistrer.
+3. **Attendu** : un toast d'erreur nommant le décompte — « Refusé : N appartenances portent le
+   rôle "Enseignant" dans des groupes de type "classe". Aucune donnée n'a été modifiée… ».
+4. **Attendu, et c'est le point à vérifier vraiment** : **rien** n'a été enregistré. Rouvrir la
+   modale — la coche est revenue, et si vous aviez aussi changé le **libellé du type** ou
+   coché un autre rôle dans la même soumission, **ces changements-là non plus** ne sont
+   passés. C'est du tout-ou-rien.
+5. Décocher à la place un rôle qu'**aucune** appartenance ne porte (ex. « Professeur
+   principal » sur une classe sans PP désigné).
+6. **Attendu** : accepté. Le rôle disparaît du select de cette classe, et la valeur des
+   membres n'est pas touchée.
+
+### Scénario 22.4 — La contrainte d'attribution mord aux points humains
+
+1. Créer un rôle « Tuteur » dans l'onglet **Rôles**.
+2. Le déclarer sur **Projet** seulement (scénario 22.2).
+3. Sur un groupe `projet` : le select de la colonne « Rôle » propose « Tuteur ».
+4. Sur un groupe `classe` : « Tuteur » **n'est pas** proposé — la classe déclare trois rôles,
+   et il n'en fait pas partie.
+5. Sur un groupe `cours` (sans déclaration) : « Tuteur » **est** proposé — régime de repli.
+6. Rattacher un utilisateur à un projet depuis « Modifier le groupe » : le select de rôle du
+   candidat propose « Membre » / « Chef de projet » / « Tuteur », **jamais** « Professeur
+   principal » (interdit au rattachement depuis 42.3).
+
+> **Divergence assumée à signaler** : sur une classe, ce select disait « Prof » ; il dit
+> maintenant « Enseignant ». « Prof » était un raccourci écrit dans cette seule vue.
+
+### Scénario 22.5 — Une appartenance héritée reste visible et conservable
+
+1. Trouver (ou fabriquer en base) une appartenance portant un rôle que son type **ne déclare
+   pas** — typiquement un `owner` sur un `projet`.
+2. Ouvrir la page du groupe.
+3. **Attendu** : le membre affiche « Propriétaire », et cette valeur est **présente dans le
+   select, sélectionnée**. Ré-enregistrer sans y toucher ne la dégrade pas.
+4. **Attendu** : la choisir pour un AUTRE membre est en revanche refusée (toast métier).
+
+### Scénario 22.6 — L'aperçu de partage dit le vocabulaire du type
+
+1. `/admin/shares` → recette auto-résolvable « profs → élèves » → choisir une classe.
+2. **Attendu** : l'aperçu d'audience affiche « **3A — Enseignant** ».
+3. **Divergence assumée** : il affichait « 3A — encadrants ». L'ancien texte venait d'un
+   `match` écrit dans cette seule vue, qui ignorait le type et rendait « membres » n'importe
+   quel rôle personnalisé.
+
+### Scénario 22.7 — Suppressions croisées
+
+1. Onglet **Rôles** → supprimer « Tuteur » alors qu'un type le déclare.
+2. **Attendu** : refusé, avec « N type(s) de groupes déclarent ce rôle » et le renvoi vers
+   l'onglet « Types de groupes ». Retirer les déclarations, puis réessayer : accepté.
+3. Onglet **Types** → créer un type « Club », lui déclarer deux rôles, puis le supprimer
+   (aucun groupe ne le porte, aucune arborescence ne s'y accroche).
+4. **Attendu** : suppression acceptée, et ses déclarations partent avec lui. Ce n'est pas une
+   cascade : une déclaration est un **attribut** du type, comme son icône.
+
+### Scénario 22.8 — Une clé de type héritée (non-slug)
+
+1. Si l'instance porte un type découvert par la migration 62.2 (`Custom`, `class`, …), ouvrir
+   sa modale d'édition.
+2. **Attendu** : la section « Rôles disponibles » fonctionne normalement — cocher, libeller,
+   enregistrer. Une clé héritée n'est pas un slug, et rien ne l'exige.
+3. **Attendu** : `Custom` et `custom` restent **distincts** — déclarer sur l'un ne déclare
+   pas sur l'autre.
+
+### Post-correctifs & non-régressions — Section 22
+
+- **Le partage de classe n'a pas bougé.** Provisionner un partage de classe et comparer les
+  droits posés avec ceux d'avant la story : 62.3 ne touche que de l'affichage et une garde de
+  saisie, jamais la compilation des permissions.
+- **Le balayage d'annuaire reste LIBRE.** Lancer un `sync-from-ad` sur un établissement : les
+  rôles écrits par l'import ne sont **jamais** refusés par la contrainte, y compris sur un type
+  qui ne les déclarerait pas. C'est un contrat, pas un oubli — l'annuaire est autoritaire sur
+  son propre flux.
+- **Renommer un libellé local ne touche aucune donnée dérivée** : ni une appartenance, ni une
+  recette, ni un plan de fichiers résolu.
+- **Instance non migrée / table absente** : l'application continue de fonctionner, les libellés
+  retombent sur ceux du catalogue, et **tous** les rôles restent attribuables. La dégradation
+  est journalisée (`[RoleCatalog] Déclarations de rôles par type de groupe illisibles`) — si
+  cette ligne apparaît en production, c'est une panne de base, pas une base neuve.

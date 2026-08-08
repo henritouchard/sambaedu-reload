@@ -152,13 +152,17 @@ class GroupRole extends Model
      *
      *  - `edges`       : arêtes d'appartenance qui portent cette valeur ;
      *  - `templates`   : recettes de répertoire qui VISENT cette clé ;
-     *  - `group_types` : types de groupes DISTINCTS observés sur ces arêtes.
+     *  - `group_types` : types de groupes qui DÉCLARENT ce rôle.
      *
-     * Le dernier est une lecture d'USAGE, pas une déclaration : rien ne dit
-     * aujourd'hui qu'un rôle « s'applique » à un type de groupe. La story 62.3
-     * apportera la déclaration ; d'ici là, cette colonne répond à la seule
-     * question qu'on peut honnêtement poser à la base — « où ce rôle sert-il,
-     * en fait ? ».
+     * **Story 62.3 — le dernier a changé de nature, et c'est un progrès.** En
+     * 62.1 il comptait les types OBSERVÉS sur les arêtes : une lecture d'usage
+     * assumée comme transitoire, faute de pouvoir poser la vraie question. La
+     * déclaration existe désormais ({@see \App\Models\GroupTypeRole}), donc la
+     * colonne répond à « où ce rôle a-t-il un SENS ? » plutôt qu'à « où
+     * traîne-t-il ? ». Les deux chiffres diffèrent volontairement : un rôle peut
+     * être déclaré partout sans qu'aucune arête ne le porte (il vient d'être
+     * ouvert), ou porté par des arêtes héritées sur un type qui ne le déclare
+     * plus — et c'est `edges` qui garde la mémoire de ce second cas.
      *
      * @return array{edges: int, templates: int, group_types: int}
      */
@@ -184,22 +188,23 @@ class GroupRole extends Model
     }
 
     /**
-     * Types de groupes DISTINCTS portant au moins une arête de cette clé.
+     * Story 62.3 — types de groupes qui DÉCLARENT ce rôle.
      *
-     * Un groupe sans type (`null`) n'est pas un type : il ne compte pas.
+     * L'index unique de `group_type_roles` garantit une ligne par paire ; le
+     * `distinct` n'en est pas moins écrit, parce que c'est la question posée
+     * (« combien de TYPES ») et pas une propriété du schéma qu'on aurait exploitée
+     * en silence.
      */
     public static function countGroupTypes(string $key): int
     {
-        if (! Schema::hasTable('user_group_user') || ! Schema::hasTable('user_groups')) {
+        if (! Schema::hasTable('group_type_roles')) {
             return 0;
         }
 
-        return DB::table('user_group_user')
-            ->join('user_groups', 'user_groups.id', '=', 'user_group_user.user_group_id')
-            ->where('user_group_user.role', $key)
-            ->whereNotNull('user_groups.type')
+        return DB::table('group_type_roles')
+            ->where('group_role_key', $key)
             ->distinct()
-            ->count('user_groups.type');
+            ->count('group_type_key');
     }
 
     /**
@@ -280,6 +285,21 @@ class GroupRole extends Model
         }
 
         $usage = $this->usage();
+
+        // Story 62.3 — motif DÉCLARATION, traité à part et en premier parce que
+        // c'est le seul dont la résolution est à portée de main de l'admin : il
+        // suffit de décocher le rôle sur les types concernés, et le message dit
+        // où aller. Les deux autres motifs, eux, demandent de toucher des arêtes
+        // ou des recettes.
+        if ($usage['group_types'] > 0) {
+            return sprintf(
+                'Refusé : %s ce rôle. Aucune donnée n\'a été modifiée — retirez-le d\'abord de ces types '
+                . 'depuis l\'onglet « Types de groupes ».',
+                $usage['group_types'] > 1
+                    ? sprintf('%d types de groupes déclarent', $usage['group_types'])
+                    : '1 type de groupes déclare',
+            );
+        }
 
         if ($usage['edges'] === 0 && $usage['templates'] === 0) {
             return null;

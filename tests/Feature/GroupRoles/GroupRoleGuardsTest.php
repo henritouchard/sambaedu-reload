@@ -271,7 +271,13 @@ class GroupRoleGuardsTest extends TestCase
 
         $this->assertNotNull($refusal);
         $this->assertStringContainsString('3 appartenances', $refusal);
-        $this->assertSame(['edges' => 3, 'templates' => 0, 'group_types' => 1], $role->usage());
+        // Story 62.3 — MISE À JOUR D'INVENTAIRE : `group_types` comptait les types
+        // OBSERVÉS sur les arêtes (donc 1, la classe) ; il compte désormais les
+        // types qui DÉCLARENT le rôle. `tuteur` n'est déclaré nulle part — d'où 0.
+        // L'écart entre les deux chiffres est exactement le cas que la story
+        // rendait visible : une arête peut porter un rôle que son type ne reconnaît
+        // pas (donnée héritée), et c'est `edges` qui en garde la mémoire.
+        $this->assertSame(['edges' => 3, 'templates' => 0, 'group_types' => 0], $role->usage());
 
         // AUCUNE écriture n'a eu lieu : le rôle est toujours là, les arêtes aussi.
         $this->assertTrue(GroupRole::where('key', 'tuteur')->exists());

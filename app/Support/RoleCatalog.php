@@ -6,8 +6,10 @@ namespace App\Support;
 
 use App\Models\GroupRole;
 use App\Models\Pivot\UserGroupUserPivot;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -33,11 +35,16 @@ use Throwable;
  * doit jamais faire refuser `member` par la garde d'arête. Le repli RESTREINT au
  * vocabulaire historique — il n'élargit rien : une valeur inconnue reste refusée.
  *
- * **Les libellés par TYPE de groupe sont encore du code, et c'est transitoire.**
- * La table {@see self::BY_GROUP_TYPE} est la recopie littérale de celle qui
- * mourait avec la classe supprimée. Elle devient une DONNÉE en story 62.3 (« le
- * catalogue de types de groupes porte ses propres libellés de rôle ») ; d'ici là,
- * elle prime sur le libellé générique du catalogue, exactement comme avant.
+ * **Story 62.3 — les libellés par TYPE de groupe ne sont plus du code.** La table
+ * privée qui les portait ici, dernier vestige de la classe supprimée en 62.1, est
+ * MORTE : ses lignes sont devenues des DÉCLARATIONS administrables
+ * ({@see \App\Models\GroupTypeRole}), lues ici et surchargeables depuis l'onglet
+ * « Types de groupes ». Une déclaration dit deux choses à la fois : que ce rôle a
+ * un SENS dans ce type (c'est la base de {@see self::assignableKeys()}), et
+ * éventuellement comment il s'y DIT (le libellé local, optionnel). Un
+ * administrateur qui renomme « Gestionnaire » voit désormais où sa modification
+ * est masquée, et peut la lever — c'est la clôture du point reporté par la review
+ * 62.1 #4.
  *
  * **Ce que la classe ne fait PAS.** Elle n'est pas importée par le namespace pur
  * du plan de fichiers ({@see \App\Services\Filesystem\Plan\GroupNameNormalizer}),
@@ -75,41 +82,35 @@ final class RoleCatalog
     ];
 
     /**
-     * Libellés SPÉCIFIQUES par type de groupe — **donnée de la story 62.3**,
-     * encore écrite en code ici.
-     *
-     * Le même `manager` se lit « Enseignant » dans une classe, « Porteur » dans un
-     * projet, « Référent » dans une équipe. Une entrée absente retombe sur le
-     * libellé du catalogue : inutile de recopier les trois rôles quand un seul se
-     * dit autrement.
-     *
-     * @var array<string, array<string, string>>
-     */
-    private const BY_GROUP_TYPE = [
-        'classe' => [
-            UserGroupUserPivot::ROLE_MEMBER => 'Élève',
-            UserGroupUserPivot::ROLE_MANAGER => 'Enseignant',
-            UserGroupUserPivot::ROLE_OWNER => 'Professeur principal',
-        ],
-        'projet' => [
-            UserGroupUserPivot::ROLE_MANAGER => 'Porteur',
-        ],
-        'equipe' => [
-            UserGroupUserPivot::ROLE_MANAGER => 'Référent',
-        ],
-    ];
-
-    /**
      * Mémo : `clé => libellé`, dans l'ordre d'affichage du catalogue.
      *
      * @var array<string, string>|null
      */
     private static ?array $memo = null;
 
+    /**
+     * Mémo des DÉCLARATIONS par type, sous deux index.
+     *
+     * `exact` : clé de type telle que STOCKÉE => [rôle => libellé local|null].
+     * `lower` : clé de type ABAISSÉE => idem, une seule clé déclarante par
+     * entrée (voir {@see self::readDeclarations()}).
+     *
+     * Elle vit ICI et pas dans une classe à part : `flush()` vide les deux mémos
+     * d'un coup, donc elle hérite gratuitement du `Queue::before` de
+     * `AppServiceProvider` (review 62.1 #1 : un worker `queue:work --max-time=3600`
+     * ne réinitialise aucune statique) et du `setUp()` de `tests/TestCase.php`.
+     * Une mémo séparée avec son propre flush rejouerait cette review à
+     * l'identique.
+     *
+     * @var array{exact: array<string, array<string, ?string>>, lower: array<string, array<string, ?string>>}|null
+     */
+    private static ?array $declarationsMemo = null;
+
     /** Vide la mémoïsation. Appelée par les hooks d'écriture et par les tests. */
     public static function flush(): void
     {
         self::$memo = null;
+        self::$declarationsMemo = null;
     }
 
     /**
@@ -128,6 +129,13 @@ final class RoleCatalog
      * Un rôle vide ou hors catalogue (donnée héritée) est lu comme `member` — même
      * normalisation que les écrans de groupes depuis la story 42.3 : on affiche le
      * rôle le moins doté plutôt qu'une valeur technique ou un vide.
+     *
+     * Précédence, inchangée depuis 60.2 sauf pour la SOURCE du premier terme :
+     * libellé LOCAL déclaré → libellé du catalogue → repli générique → clé brute.
+     * Un rôle déclaré avec `label = null` (déclaré SANS surcharge) tombe donc au
+     * libellé du catalogue, et un rôle NON déclaré reste AFFICHÉ : la lecture ne
+     * refuse jamais rien. Un `owner` hérité sur un projet se lit
+     * « Propriétaire » — c'est de la donnée existante, pas une attribution.
      */
     public static function label(?string $groupType, ?string $roleKey): string
     {
@@ -137,12 +145,238 @@ final class RoleCatalog
             ? $roleKey
             : UserGroupUserPivot::ROLE_MEMBER;
 
-        $type = $groupType === null ? '' : mb_strtolower(trim($groupType));
+        $local = self::declarationsFor($groupType)[$role] ?? null;
 
-        return self::BY_GROUP_TYPE[$type][$role]
+        return $local
             ?? $rows[$role]
             ?? self::GENERIC_FALLBACK[$role]
             ?? $role;
+    }
+
+    /**
+     * Story 62.3 — les rôles ATTRIBUABLES dans un groupe de ce type, dans l'ordre
+     * d'affichage du catalogue.
+     *
+     * Deux régimes, et c'est délibéré :
+     *  - **type DÉCLARÉ** (au moins une déclaration) : ses rôles déclarés, et eux
+     *    seuls. C'est la contrainte que l'epic demandait — on n'attribue pas un
+     *    rôle qu'un type ne reconnaît pas ;
+     *  - **type SANS déclaration** : TOUT le catalogue. Un type découvert en base
+     *    (`class`, `Custom`) ou créé à l'écran n'a aucune déclaration, et le
+     *    priver de tout rôle le rendrait inutilisable — la déclaration est une
+     *    restriction volontaire, pas un péage d'entrée.
+     *
+     * Un rôle déclaré puis supprimé du catalogue de rôles ne ressort pas ici : la
+     * liste est un sous-ensemble ORDONNÉ de {@see self::keys()}. Ce cas ne devrait
+     * pas exister — {@see \App\Models\GroupRole::deletionRefusal()} refuse la
+     * suppression d'un rôle déclaré — mais l'ordre du catalogue reste la seule
+     * source d'ordre, y compris quand la donnée est incohérente.
+     *
+     * @return list<string>
+     */
+    public static function assignableKeys(?string $groupType): array
+    {
+        $declared = self::declarationsFor($groupType);
+
+        if ($declared === []) {
+            return self::keys();
+        }
+
+        return array_values(array_filter(
+            self::keys(),
+            static fn (string $role): bool => array_key_exists($role, $declared),
+        ));
+    }
+
+    /**
+     * Story 62.3 — LA CONTRAINTE D'ATTRIBUTION, et la FRONTIÈRE qu'elle trace.
+     *
+     * Lève si ce rôle n'est pas attribuable dans un groupe de ce type.
+     *
+     * **Où elle mord — et où elle NE mord PAS, délibérément.** Elle vit aux trois
+     * points d'étranglement HUMAINS, ceux où quelqu'un CHOISIT un rôle en
+     * connaissant le groupe, tous dans `resources/views/pages/users/groups/[id]/` :
+     * `updateMemberRole()`, `setPendingRole()`, et la revalidation de `save()`.
+     *
+     * Elle n'est PAS sur le modèle pivot, PAS dans
+     * {@see \App\Models\Pivot\UserGroupUserPivot::assertValidRole()}, PAS dans un
+     * événement Eloquent — c'est le précédent posé par 62.2 (garde au service, pas
+     * sur `UserGroup`) et il tient pour la même raison : ces chemins-là écrivent
+     * des arêtes sans qu'aucun humain n'ait rien choisi, et les brider casserait
+     * le flux dont l'annuaire est autoritaire. `assertValidRole()` en particulier
+     * est appelée par `defaultRoleForGlobalRole()` sur le chemin d'import « D6
+     * fail-soft intégral, jamais de levée », et elle ne connaît même pas le type
+     * du groupe.
+     *
+     * **Le recensement des écrivains de `user_group_user.role`**, pour que le
+     * prochain lecteur n'ait pas à refaire l'audit :
+     *  - GARDÉS (humains) : `updateMemberRole()`, `setPendingRole()`, `save()` ;
+     *  - LIBRES (dérivation, import, reprise) : `UserGroupService` (balayage AD et
+     *    fold du trio), `UserService::persistUserGroupsToSql()` (import
+     *    d'utilisateurs), `User::userGroupSyncPayloadWithDerivedRole()` (payload
+     *    partagé fiche user / drawer), `MergeLegacyUserGroups` et
+     *    `BackfillUserGroupUserRoles` (reprises one-shot), les factories et les
+     *    tests.
+     *
+     * **Ce qui rend l'ensemble cohérent n'est pas la garde, c'est la
+     * COMPOSITION** : les chemins libres n'écrivent que des CONSTANTES du plancher
+     * (`member|manager|owner`), et les déclarations de reprise les couvrent —
+     * `classe` déclare les trois, `projet` et `equipe` déclarent `member` et
+     * `manager`, les autres types n'ont pas de déclaration donc pas de contrainte.
+     * Un test épingle cette composition (« import ⊆ déclarations seedées »), jumeau
+     * du « balayage ⊆ plancher » de 62.2 : si quelqu'un ampute le seed, il tombe.
+     */
+    public static function assertAssignable(?string $groupType, string $roleKey): void
+    {
+        $assignable = self::assignableKeys($groupType);
+
+        if (in_array($roleKey, $assignable, true)) {
+            return;
+        }
+
+        $type = $groupType === null ? '' : trim($groupType);
+
+        throw new InvalidArgumentException(sprintf(
+            'Le rôle « %s » n\'est pas déclaré pour les groupes de type « %s ». Vocabulaire déclaré : %s. '
+            . 'Ajoutez-le depuis l\'onglet « Types de groupes » des réglages.',
+            self::label($groupType, $roleKey),
+            $type === '' ? '—' : $type,
+            implode(', ', array_map(
+                static fn (string $role): string => self::label($groupType, $role),
+                $assignable,
+            )),
+        ));
+    }
+
+    /**
+     * Les déclarations qui s'appliquent à ce type, `rôle => libellé local|null`.
+     *
+     * **Deux appariements, dans cet ordre, et c'est docblocké parce que ce n'est
+     * pas un hasard de tri :**
+     *  1. correspondance EXACTE sur la clé stockée (trimée). Elle prime : si
+     *     `Custom` et `custom` déclarent tous deux, un groupe stocké `Custom` lit
+     *     les siennes ;
+     *  2. à défaut, correspondance sur la clé ABAISSÉE — la normalisation
+     *     historique de la résolution (minuscule + trim, story 60.2), celle que la
+     *     parité de 62.1 épingle (`label('Classe', 'member') === 'Élève'`). En cas
+     *     d'homonymie de casse, le bucket appartient ENTIÈREMENT au premier type
+     *     déclarant dans l'ordre du catalogue de types : fusionner les
+     *     déclarations de deux types produirait un vocabulaire qui n'est celui
+     *     d'aucun des deux.
+     *
+     * @return array<string, ?string>
+     */
+    public static function declarationsFor(?string $groupType): array
+    {
+        $raw = $groupType === null ? '' : trim($groupType);
+
+        if ($raw === '') {
+            return [];
+        }
+
+        $maps = self::declarations();
+
+        return $maps['exact'][$raw] ?? $maps['lower'][mb_strtolower($raw)] ?? [];
+    }
+
+    /**
+     * Les deux index des déclarations, mémoïsés.
+     *
+     * @return array{exact: array<string, array<string, ?string>>, lower: array<string, array<string, ?string>>}
+     */
+    private static function declarations(): array
+    {
+        if (self::$declarationsMemo !== null) {
+            return self::$declarationsMemo;
+        }
+
+        return self::$declarationsMemo = self::readDeclarations();
+    }
+
+    /**
+     * Lecture BRUTE des déclarations, ordonnée par le rang du type déclarant.
+     *
+     * **Pourquoi elle est défensive, et pourquoi elle JOURNALISE.** Même raison
+     * que {@see self::readCatalog()} : ce point de lecture est traversé par des
+     * chemins antérieurs à la table (garde d'arête, validation de recette,
+     * résolveur de plan), dont beaucoup de tests unitaires sur schéma fabriqué à
+     * la main. Absence de table ⇒ aucune déclaration, donc régime de REPLI (tout
+     * le catalogue attribuable, libellés génériques) — jamais une exception dans
+     * un écran, et jamais un refus d'attribution causé par une panne. Review
+     * 62.1 #2 : une panne de base ne doit pas être indiscernable d'une base non
+     * migrée, on journalise donc la dégradation ; et le journal est lui-même gardé,
+     * parce que ce chemin doit rester traversable sans application bootée.
+     *
+     * @return array{exact: array<string, array<string, ?string>>, lower: array<string, array<string, ?string>>}
+     */
+    private static function readDeclarations(): array
+    {
+        $empty = ['exact' => [], 'lower' => []];
+
+        try {
+            if (! Schema::hasTable('group_type_roles')) {
+                return $empty;
+            }
+
+            $rank = [];
+            if (Schema::hasTable('group_types')) {
+                $position = 0;
+                foreach (
+                    DB::table('group_types')->orderBy('sort_order')->orderBy('id')->get(['key']) as $type
+                ) {
+                    $rank[(string) $type->key] = $position++;
+                }
+            }
+
+            $rows = DB::table('group_type_roles')
+                ->orderBy('id')
+                ->get(['group_type_key', 'group_role_key', 'label'])
+                ->all();
+
+            // Ordre du CATALOGUE de types : c'est lui qui départage une homonymie
+            // de casse. Une clé absente du catalogue (déclaration posée par une
+            // migration sur un type disparu) passe en dernier, sans disparaître.
+            usort($rows, static function (object $a, object $b) use ($rank): int {
+                $rankA = $rank[(string) $a->group_type_key] ?? PHP_INT_MAX;
+                $rankB = $rank[(string) $b->group_type_key] ?? PHP_INT_MAX;
+
+                return [$rankA, (string) $a->group_type_key] <=> [$rankB, (string) $b->group_type_key];
+            });
+
+            $exact = [];
+            $lower = [];
+            $lowerOwner = [];
+
+            foreach ($rows as $row) {
+                $type = (string) $row->group_type_key;
+                $role = (string) $row->group_role_key;
+                $label = $row->label === null ? null : (string) $row->label;
+
+                $exact[$type][$role] = $label;
+
+                $lowerKey = mb_strtolower(trim($type));
+                $lowerOwner[$lowerKey] ??= $type;
+
+                if ($lowerOwner[$lowerKey] === $type) {
+                    $lower[$lowerKey][$role] = $label;
+                }
+            }
+
+            return ['exact' => $exact, 'lower' => $lower];
+        } catch (Throwable $e) {
+            try {
+                Log::warning(
+                    '[RoleCatalog] Déclarations de rôles par type de groupe illisibles — repli sur le régime '
+                    . 'générique (tous les rôles attribuables, libellés du catalogue). Les libellés locaux et '
+                    . 'la contrainte d\'attribution sont temporairement ignorés.',
+                    ['exception' => $e->getMessage()],
+                );
+            } catch (Throwable) {
+                // Aucune application bootée : le repli reste la bonne réponse.
+            }
+
+            return $empty;
+        }
     }
 
     /**

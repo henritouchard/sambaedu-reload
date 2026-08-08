@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Support\GroupTypeCatalog;
+use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -107,7 +108,43 @@ class GroupType extends Model
         // La lecture du catalogue est MÉMOÏSÉE : toute écriture doit la périmer,
         // sinon l'écran qui vient de créer « club » continue de refuser la clé.
         static::saved(fn () => GroupTypeCatalog::flush());
-        static::deleted(fn () => GroupTypeCatalog::flush());
+        static::deleted(function (self $type): void {
+            $type->dropOwnRoleDeclarations();
+            GroupTypeCatalog::flush();
+        });
+    }
+
+    /**
+     * Story 62.3 — la suppression d'un type EMPORTE ses déclarations de rôles.
+     *
+     * **Et ce n'est PAS une cascade au sens des refus.** La distinction est celle
+     * qui structure tout l'epic : `deletionRefusal()` protège des données MÉTIER
+     * que la suppression réécrirait silencieusement — l'appartenance de gens
+     * réels, l'accrochage d'une arborescence. Les déclarations, elles, sont des
+     * ATTRIBUTS du type, au même titre que son icône ou son rang d'affichage :
+     * elles ne décrivent que lui, elles ne sont référencées par aucune arête, et
+     * les laisser derrière produirait des lignes orphelines qui rendraient
+     * inutilisable une clé recréée plus tard sous le même nom.
+     *
+     * Ce hook ne s'exécute donc QUE sur une suppression déjà jugée légitime : le
+     * refus, lui, est évalué avant, et il n'écrit rien.
+     */
+    private function dropOwnRoleDeclarations(): void
+    {
+        if (! Schema::hasTable('group_type_roles')) {
+            return;
+        }
+
+        $removed = DB::table('group_type_roles')
+            ->where('group_type_key', (string) $this->key)
+            ->delete();
+
+        if ($removed > 0) {
+            // Les déclarations nourrissent une mémo statique de résolution : une
+            // suppression par requête directe ne dispatche aucun événement
+            // Eloquent, donc c'est ici qu'il faut la périmer.
+            RoleCatalog::flush();
+        }
     }
 
     /** Slug snake_case borné, dérivé d'un libellé saisi (patron `GroupRole`). */

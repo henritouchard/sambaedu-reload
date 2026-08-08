@@ -39,10 +39,35 @@ class RoleCatalogFloorTest extends TestCase
         $this->assertSame('Gestionnaire', RoleCatalog::label(null, 'manager'));
         $this->assertSame('Propriétaire', RoleCatalog::label(null, 'owner'));
 
-        // Et les surcharges par type continuent de s'appliquer : elles sont encore
-        // du code (donnée de 62.3).
-        $this->assertSame('Élève', RoleCatalog::label('classe', 'member'));
-        $this->assertSame('Porteur', RoleCatalog::label('projet', 'manager'));
+        // Story 62.3 — MISE À JOUR D'INVENTAIRE, pas d'affaiblissement. Les
+        // libellés par type ÉTAIENT du code (une constante privée de `RoleCatalog`) : ils
+        // survivaient donc à l'absence de toute table, et ce test l'épinglait.
+        // Ils sont désormais des DÉCLARATIONS en base ; sur une base non migrée
+        // il n'y en a aucune, et le régime de REPLI s'applique — libellés
+        // génériques, exactement ce que la lecture défensive promet. C'est la
+        // contrepartie assumée de la bascule code→donnée : ce qui est administrable
+        // ne peut pas, par construction, survivre à l'absence de sa table.
+        $this->assertSame('Membre', RoleCatalog::label('classe', 'member'));
+        $this->assertSame('Gestionnaire', RoleCatalog::label('projet', 'manager'));
+    }
+
+    /**
+     * Story 62.3 — sans déclarations, TOUT le catalogue reste attribuable.
+     *
+     * C'est le pendant exact de `the_floor_narrows_it_never_opens` : le repli des
+     * déclarations ne doit jamais faire REFUSER une attribution qui marchait. Une
+     * base non migrée, une panne de lecture, un test sur schéma nu — aucun de ces
+     * états ne doit rendre un groupe non administrable.
+     */
+    #[Test]
+    public function without_declarations_every_catalog_role_stays_assignable(): void
+    {
+        foreach ([null, 'classe', 'projet', 'equipe', 'inconnu'] as $type) {
+            $this->assertSame(['member', 'manager', 'owner'], RoleCatalog::assignableKeys($type));
+            RoleCatalog::assertAssignable($type, 'owner');
+        }
+
+        $this->assertSame([], RoleCatalog::declarationsFor('classe'));
     }
 
     #[Test]

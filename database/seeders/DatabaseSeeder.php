@@ -45,6 +45,13 @@ class DatabaseSeeder extends Seeder
             // migration. ⚠️ Pré-déploiement VM :
             // `db:seed --class=GroupTypeSeeder`.
             GroupTypeSeeder::class,
+            // Story 62.3 — les DÉCLARATIONS (type × rôle → libellé local) :
+            // quels rôles ont un sens dans une classe, un projet, une équipe.
+            // APRÈS les deux catalogues, dont elle référence les clés — la garde
+            // du modèle exige que le type existe. Idempotent/rejouable, ne touche
+            // aucune appartenance. ⚠️ Pré-déploiement VM :
+            // `db:seed --class=GroupTypeRoleSeeder`.
+            GroupTypeRoleSeeder::class,
             // Story 54.1 — registre d'extensions : source « embarquée » +
             // chargement des manifests du dépôt (`resources/extensions/*`),
             // dont la tuile Documentation (`/doc`). Idempotent/rejouable :

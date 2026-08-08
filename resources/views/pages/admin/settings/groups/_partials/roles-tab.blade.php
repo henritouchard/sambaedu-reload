@@ -338,8 +338,11 @@ new class extends Component {
                     Un rôle qualifie une <strong>appartenance</strong> à un groupe (« qui est quoi dans ce
                     groupe ? »), pas un niveau d'accès aux fichiers. Sa <strong>clé</strong> est stockée sur
                     l'appartenance et visée par les arborescences : elle ne change jamais. Son
-                    <strong>libellé</strong>, lui, se modifie librement — et certains types de groupes le
-                    traduisent déjà (un « Gestionnaire » se lit « Enseignant » dans une classe).
+                    <strong>libellé</strong>, lui, se modifie librement — et il peut être
+                    <strong>traduit par type de groupe</strong> : un « Gestionnaire » se lit « Enseignant »
+                    dans une classe, « Porteur » dans un projet. Ces traductions ne sont pas figées, elles
+                    s'administrent dans l'onglet <strong>« Types de groupes »</strong>, qui décide aussi
+                    quels rôles y sont attribuables.
                 </p>
             </div>
         </div>
@@ -369,7 +372,9 @@ new class extends Component {
                 <td class="text-sm">
                     <span class="badge badge-sm badge-outline">{{ $row['usage']['edges'] }} appartenance{{ $row['usage']['edges'] > 1 ? 's' : '' }}</span>
                     <span class="badge badge-sm badge-outline">{{ $row['usage']['templates'] }} recette{{ $row['usage']['templates'] > 1 ? 's' : '' }}</span>
-                    <span class="badge badge-sm badge-outline">{{ $row['usage']['group_types'] }} type{{ $row['usage']['group_types'] > 1 ? 's' : '' }} de groupe</span>
+                    {{-- Story 62.3 — plus un usage observé sur les arêtes, mais le
+                         nombre de types qui DÉCLARENT ce rôle. --}}
+                    <span class="badge badge-sm badge-outline">déclaré par {{ $row['usage']['group_types'] }} type{{ $row['usage']['group_types'] > 1 ? 's' : '' }}</span>
                 </td>
                 <td class="text-right whitespace-nowrap">
                     <button type="button" class="btn btn-ghost btn-xs" wire:click="moveUp({{ $row['id'] }})"

@@ -2,7 +2,10 @@
 
 use App\Components\Traits\WithToasts;
 use App\Models\GroupType;
+use App\Models\GroupTypeRole;
 use App\Support\GroupTypeCatalog;
+use App\Support\RoleCatalog;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -64,6 +67,27 @@ new class extends Component {
 
     public string $icon = '';
 
+    // --- Rôles déclarés par le type (story 62.3) ------------------------------
+
+    /**
+     * Clés de rôle COCHÉES dans la modale d'édition.
+     *
+     * Propriété publique de tableau, pilotée par `wire:model` sur les cases et par
+     * `x-molecules.select-all-checkbox` en tête — jamais `@checked` + `wire:click`
+     * (convention maison : le composant de sélection globale écrit les PROPRIÉTÉS
+     * DOM par `x-effect`, et le morph Livewire ne resynchronise que l'attribut).
+     *
+     * @var array<int, string>
+     */
+    public array $selectedRoleKeys = [];
+
+    /**
+     * Libellés LOCAUX saisis, `clé de rôle => texte` (vide = pas de surcharge).
+     *
+     * @var array<string, string>
+     */
+    public array $roleLabels = [];
+
     // --- Modale de suppression ----------------------------------------------
     public bool $isDeleteOpen = false;
 
@@ -96,8 +120,55 @@ new class extends Component {
                 'protected' => $type->isProtected(),
                 'usage' => $type->usage(),
                 'attachment' => $type->attachment(),
+                // Story 62.3 — ce que le type DÉCLARE, dans l'ordre du catalogue
+                // de rôles. Vide = régime de repli (tous les rôles disponibles),
+                // rendu « — » à l'écran.
+                'declared_roles' => $this->declaredRolesOf((string) $type->key),
             ])
             ->all();
+    }
+
+    /**
+     * Les rôles déclarés par un type, prêts à afficher.
+     *
+     * Le libellé montré est le LOCAL s'il existe, sinon celui du catalogue : c'est
+     * exactement ce que la résolution rendra à l'écran d'un groupe de ce type.
+     *
+     * @return list<array{key: string, label: string, local: bool}>
+     */
+    private function declaredRolesOf(string $typeKey): array
+    {
+        $declared = GroupTypeRole::declaredFor($typeKey);
+        $catalog = RoleCatalog::rows();
+
+        $rows = [];
+        foreach (array_keys($catalog) as $roleKey) {
+            if (! array_key_exists($roleKey, $declared)) {
+                continue;
+            }
+
+            $local = $declared[$roleKey];
+            $rows[] = [
+                'key' => $roleKey,
+                'label' => $local ?? ($catalog[$roleKey] ?? $roleKey),
+                'local' => $local !== null,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Le catalogue de rôles proposé dans la modale, `clé => libellé du catalogue`.
+     *
+     * C'est le libellé GÉNÉRIQUE qui sert de placeholder au champ « Libellé dans
+     * ce type » : l'admin voit ce qui s'appliquera s'il ne saisit rien.
+     *
+     * @return array<string, string>
+     */
+    public function getRoleCatalogProperty(): array
+    {
+        return RoleCatalog::rows();
     }
 
     /** Clé prévisualisée dans la modale de création (jamais en édition). */
@@ -139,6 +210,21 @@ new class extends Component {
         $this->editId = (int) $type->id;
         $this->label = (string) $type->label;
         $this->icon = (string) ($type->icon ?? '');
+
+        // Story 62.3 — l'état des déclarations, lu sur la clé EXACTE de la ligne
+        // éditée : on édite CETTE ligne du catalogue, pas ce que la résolution
+        // apparierait (une ligne héritée `Custom` ne se voit pas attribuer les
+        // déclarations de `custom`).
+        $declared = GroupTypeRole::declaredFor((string) $type->key);
+        $this->selectedRoleKeys = array_values(array_filter(
+            RoleCatalog::keys(),
+            static fn (string $roleKey): bool => array_key_exists($roleKey, $declared),
+        ));
+        $this->roleLabels = [];
+        foreach (RoleCatalog::keys() as $roleKey) {
+            $this->roleLabels[$roleKey] = (string) ($declared[$roleKey] ?? '');
+        }
+
         $this->isModalOpen = true;
     }
 
@@ -153,6 +239,8 @@ new class extends Component {
         $this->editId = null;
         $this->label = '';
         $this->icon = '';
+        $this->selectedRoleKeys = [];
+        $this->roleLabels = [];
         $this->resetErrorBag();
     }
 
@@ -179,6 +267,19 @@ new class extends Component {
                 return;
             }
 
+            // Story 62.3 — les REFUS de retrait sont évalués AVANT toute écriture.
+            // Ce n'est pas une optimisation : l'AC exige le tout-ou-rien sur la
+            // soumission ENTIÈRE — ni les retraits, ni les ajouts, ni les libellés
+            // locaux, ni même le renommage du type ne doivent passer si l'un des
+            // retraits est refusé. Un refus tardif, après écriture partielle,
+            // serait pire que pas de refus du tout.
+            $refusal = $this->declarationRemovalRefusal($type);
+            if ($refusal !== null) {
+                $this->toastError($refusal);
+
+                return;
+            }
+
             // La CLÉ n'est jamais touchée ici : seules `label` et `icon`
             // changent, et c'est exactement ce que l'AC « un renommage ne touche
             // aucune donnée dérivée » exige.
@@ -186,7 +287,24 @@ new class extends Component {
             $type->icon = $icon;
 
             try {
-                $type->save();
+                DB::transaction(function () use ($type): void {
+                    $type->save();
+                    $this->applyRoleDeclarations($type);
+                });
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Le contrôle d'existence de `applyRoleDeclarations()` est un
+                // check-then-act : deux soumissions concurrentes (double-clic,
+                // deux onglets) déclarant la même paire se disputent l'index
+                // unique composite. La perdante reçoit un message métier, jamais
+                // un SQLSTATE brut (leçon de la review 62.1 #3). La transaction a
+                // déjà tout annulé.
+                $this->addError('label', sprintf(
+                    'Les rôles de ce type viennent d\'être modifiés ailleurs (%s). Rouvrez la fenêtre pour '
+                    . 'repartir de l\'état courant.',
+                    (string) $type->key,
+                ));
+
+                return;
             } catch (\Throwable $e) {
                 // Review 62.2 #1 — la branche création interceptait déjà les gardes
                 // du modèle, pas celle-ci : une garde qui refusait ce type rendait
@@ -251,6 +369,91 @@ new class extends Component {
         $this->toastSuccess(sprintf('Le type « %s » a été créé (clé « %s »).', (string) $type->label, $key));
         $this->close();
         $this->loadRows();
+    }
+
+    // --- Déclarations de rôles (story 62.3) -----------------------------------
+
+    /**
+     * Les clés de rôle retenues par la soumission, dans l'ordre du CATALOGUE.
+     *
+     * Le tableau qui arrive du client est filtré contre le catalogue : un payload
+     * forgé ne peut donc déclarer qu'un rôle qui existe, et l'ordre stocké ne
+     * dépend pas de l'ordre de cochage.
+     *
+     * @return list<string>
+     */
+    private function submittedRoleKeys(): array
+    {
+        $submitted = array_map('strval', $this->selectedRoleKeys);
+
+        return array_values(array_filter(
+            RoleCatalog::keys(),
+            static fn (string $roleKey): bool => in_array($roleKey, $submitted, true),
+        ));
+    }
+
+    /**
+     * Le premier refus de retrait de cette soumission, ou `null`.
+     *
+     * Évalué AVANT toute écriture (voir `save()`) : c'est ce qui rend le
+     * tout-ou-rien vrai, et pas seulement annoncé.
+     */
+    private function declarationRemovalRefusal(GroupType $type): ?string
+    {
+        $kept = $this->submittedRoleKeys();
+
+        $existing = GroupTypeRole::where('group_type_key', (string) $type->key)->get();
+
+        foreach ($existing as $declaration) {
+            if (in_array((string) $declaration->group_role_key, $kept, true)) {
+                continue;
+            }
+
+            $refusal = $declaration->removalRefusal();
+            if ($refusal !== null) {
+                return $refusal;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Applique le delta (retraits, ajouts, libellés locaux) — sous transaction.
+     *
+     * Les retraits refusés ont déjà été écartés par
+     * {@see self::declarationRemovalRefusal()} ; ceux qui restent ne portent
+     * aucune appartenance.
+     */
+    private function applyRoleDeclarations(GroupType $type): void
+    {
+        $typeKey = (string) $type->key;
+        $kept = $this->submittedRoleKeys();
+
+        $existing = GroupTypeRole::where('group_type_key', $typeKey)->get()
+            ->keyBy(fn (GroupTypeRole $declaration): string => (string) $declaration->group_role_key);
+
+        foreach ($existing as $roleKey => $declaration) {
+            if (! in_array((string) $roleKey, $kept, true)) {
+                $declaration->delete();
+            }
+        }
+
+        foreach ($kept as $roleKey) {
+            $local = trim((string) ($this->roleLabels[$roleKey] ?? ''));
+
+            $declaration = $existing[$roleKey] ?? new GroupTypeRole([
+                'group_type_key' => $typeKey,
+                'group_role_key' => $roleKey,
+            ]);
+
+            // Le modèle normalise déjà `''` → `null` ; on le passe tel quel pour
+            // que la règle vive à UN seul endroit.
+            $declaration->label = $local;
+            $declaration->save();
+        }
+
+        RoleCatalog::flush();
     }
 
     // --- Ordre d'affichage ---------------------------------------------------
@@ -398,11 +601,12 @@ new class extends Component {
     </div>
 
     <x-organisms.data-table
-        colgroup="<colgroup><col style='width: 24%'><col style='width: 18%'><col style='width: 16%'><col style='width: 22%'><col style='width: 20%'></colgroup>">
+        colgroup="<colgroup><col style='width: 20%'><col style='width: 13%'><col style='width: 12%'><col style='width: 22%'><col style='width: 16%'><col style='width: 17%'></colgroup>">
         <x-slot:header>
             <th>Libellé</th>
             <th>Clé</th>
             <th>Groupes</th>
+            <th>Rôles disponibles</th>
             <th>Arborescence</th>
             <th class="text-right">Actions</th>
         </x-slot:header>
@@ -420,6 +624,19 @@ new class extends Component {
                     <span class="badge badge-sm badge-outline" data-testid="groups-count-{{ $row['key'] }}">
                         {{ $row['usage']['groups'] }} groupe{{ $row['usage']['groups'] > 1 ? 's' : '' }}
                     </span>
+                </td>
+                {{-- Story 62.3 — le vocabulaire déclaré, lu tel qu'il s'affichera
+                     sur un groupe de ce type (libellé local sinon catalogue). Un
+                     type sans déclaration montre « — » : tout le catalogue lui est
+                     disponible, il n'a rien restreint. --}}
+                <td class="text-sm" data-testid="declared-roles-{{ $row['key'] }}">
+                    @forelse ($row['declared_roles'] as $declaredRole)
+                        <span class="badge badge-sm {{ $declaredRole['local'] ? 'badge-primary badge-outline' : 'badge-ghost' }}">
+                            {{ $declaredRole['label'] }}
+                        </span>
+                    @empty
+                        <span class="opacity-50">—</span>
+                    @endforelse
                 </td>
                 <td class="text-sm" data-testid="attachment-{{ $row['key'] }}">
                     @if ($row['attachment']['tree'] !== null)
@@ -513,6 +730,79 @@ new class extends Component {
                 </div>
             @endif
         </x-molecules.modal.section>
+
+        {{-- Story 62.3 — LES RÔLES DISPONIBLES DANS CE TYPE.
+
+             La section n'existe qu'à l'ÉDITION : un type neuf naît sans
+             déclaration, donc en régime de repli, et proposer de déclarer avant
+             que la clé n'existe demanderait d'écrire des lignes sur un type qui
+             pourrait ne jamais être créé. La modale de création reste intouchée.
+
+             Tout y est OPTIONNEL — aucune étoile d'obligatoire : ne rien cocher
+             est un état légitime et documenté juste sous la liste. --}}
+        @if ($isEditing)
+            <x-molecules.modal.section title="Rôles disponibles" icon="fa-user-tag text-primary" dense>
+                <p class="text-xs text-base-content/70">
+                    Cochez les rôles qui ont un sens dans ce type de groupe. Pour chacun, vous pouvez donner
+                    un <strong>libellé local</strong> — c'est ainsi que le rôle se lira sur les groupes de ce
+                    type (un « Gestionnaire » se dit « Enseignant » dans une classe).
+                </p>
+
+                <div class="flex items-center gap-2 mt-3 pb-2 border-b border-base-300">
+                    <x-molecules.select-all-checkbox :ids="array_keys($this->roleCatalog)" model="selectedRoleKeys"
+                        class="checkbox-sm" data-testid="select-all-roles" aria-label="Tous les rôles" />
+                    <span class="text-xs font-medium opacity-70">Tous les rôles du catalogue</span>
+                </div>
+
+                <div class="flex flex-col gap-3 mt-3">
+                    @foreach ($this->roleCatalog as $roleKey => $roleLabel)
+                        <div class="flex flex-col gap-1" wire:key="declare-role-{{ $roleKey }}">
+                            <label class="label cursor-pointer justify-start gap-2 p-0">
+                                <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
+                                    value="{{ $roleKey }}" wire:model.live="selectedRoleKeys"
+                                    data-testid="declare-role-{{ $roleKey }}" />
+                                <span class="label-text font-medium">{{ $roleLabel }}</span>
+                                <code class="text-xs opacity-50">{{ $roleKey }}</code>
+                            </label>
+
+                            @if (in_array((string) $roleKey, array_map('strval', $selectedRoleKeys), true))
+                                <div class="flex flex-col gap-1 w-full pl-7">
+                                    <label class="label" for="role-local-label-{{ $roleKey }}">
+                                        <span class="label-text text-xs opacity-70">Libellé dans ce type</span>
+                                    </label>
+                                    <input id="role-local-label-{{ $roleKey }}" type="text"
+                                        wire:model.live="roleLabels.{{ $roleKey }}"
+                                        class="input input-bordered input-sm w-full"
+                                        placeholder="{{ $roleLabel }}"
+                                        data-testid="role-local-label-{{ $roleKey }}" />
+                                    <span class="text-xs opacity-60">
+                                        Laissé vide, le libellé du catalogue (« {{ $roleLabel }} ») s'applique.
+                                    </span>
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+
+                @if ($selectedRoleKeys === [])
+                    {{-- Le régime de repli est DIT avant d'enregistrer, pas
+                         découvert après : cocher un seul rôle fait basculer le
+                         type d'« ouvert à tout » à « restreint à ce qui est
+                         déclaré ». --}}
+                    <p class="text-xs text-warning mt-3" data-testid="no-declaration-notice">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        Sans déclaration, tous les rôles du catalogue sont disponibles avec leur libellé
+                        générique. Cocher au moins un rôle <strong>restreint</strong> ce type aux rôles cochés.
+                    </p>
+                @endif
+
+                <p class="text-xs text-base-content/60 mt-3">
+                    Retirer un rôle porté par des appartenances existantes est <strong>refusé</strong> : le
+                    message vous dira combien. Rien n'est enregistré tant que ce refus tient — libellés
+                    compris.
+                </p>
+            </x-molecules.modal.section>
+        @endif
 
         <x-slot:footer>
             <button type="button" class="btn btn-ghost" wire:click="close">Annuler</button>
