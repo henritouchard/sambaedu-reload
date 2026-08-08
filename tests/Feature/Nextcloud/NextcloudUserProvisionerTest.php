@@ -288,6 +288,61 @@ class NextcloudUserProvisionerTest extends TestCase
     }
 
     // =====================================================================
+    // CORRECTION DE REVUE #2 — LA GARDE D'UNICITÉ VAUT AUSSI POUR LA
+    // RÉSOLUTION AUTOMATIQUE
+    //
+    // Le geste manuel n'est pas le seul chemin d'écriture du cache : le balayage
+    // en est un autre. La garde ferme la CLASSE de défauts, pas un de ses
+    // chemins — et dans le balayage, le refus est COMPTÉ ET RAPPORTÉ, jamais une
+    // exception qui interromprait le lot.
+    // =====================================================================
+
+    #[Test]
+    public function an_identity_already_held_by_another_user_is_reported_and_never_overwritten(): void
+    {
+        $this->configure();
+
+        $holder = User::query()->create(['login' => 'a.dupont', 'role' => 'prof', 'is_active' => true, 'source' => 'ad']);
+        $holder->nextcloud_user_id = 'compte-partage';
+        $holder->saveQuietly();
+
+        $user = User::query()->create(['login' => 'p.durand', 'role' => 'prof', 'is_active' => true, 'source' => 'ad']);
+
+        Http::fake([
+            '*/ocs/v1.php/cloud/users/p.durand*' => Http::response(self::ocs(100, ['id' => 'compte-partage']), 200),
+        ]);
+
+        $report = new \App\Services\Nextcloud\NextcloudProvisioningReport();
+        $client = app(\App\Services\Nextcloud\NextcloudClientFactory::class)->make();
+
+        // Aucune exception : le lot continue.
+        $this->provisioner()->adopt($user, $client, $report, dryRun: false);
+
+        self::assertNull(User::query()->where('login', 'p.durand')->value('nextcloud_user_id'));
+        self::assertSame('compte-partage', User::query()->where('login', 'a.dupont')->value('nextcloud_user_id'));
+
+        // …et le refus est COMPTÉ, en nommant le détenteur.
+        self::assertSame(1, $report->userCounters()['echecs']);
+        self::assertSame(0, $report->userCounters()['adoptes']);
+        self::assertStringContainsString('a.dupont', $report->userIssues()[0]['detail']);
+    }
+
+    /** Le détenteur légitime est ré-adopté sans bruit : sa propre valeur n'est pas un conflit. */
+    #[Test]
+    public function the_legitimate_holder_is_re_adopted_without_conflict(): void
+    {
+        $this->configure();
+
+        $user = User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        Http::fake(['*' => Http::response(self::ocs(102, [], 'User already exists'), 200)]);
+
+        $this->provisioner()->ensureAccountAtCreation('alice', 'MotDePasseAd1!');
+        $this->provisioner()->ensureAccountAtCreation('alice', 'MotDePasseAd1!');
+
+        self::assertSame('alice', $user->fresh()->nextcloud_user_id);
+    }
+
+    // =====================================================================
     // AC6 — le cache lu par le chemin legacy
     // =====================================================================
 

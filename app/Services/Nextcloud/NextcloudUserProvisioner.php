@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Nextcloud;
 
+use App\Enums\NextcloudInstanceMode;
+use App\Exceptions\Nextcloud\NextcloudConfigurationException;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
@@ -102,8 +104,11 @@ final class NextcloudUserProvisioner
      */
     public function ensureAccountAtCreation(string $login, string $password): void
     {
-        $client = $this->factory->makeOrNull();
-        if ($client === null) {
+        try {
+            $client = $this->factory->make();
+        } catch (NextcloudConfigurationException $e) {
+            $this->traceDelegatedSkip('nextcloud.user.create.delegated_mode', $login, $e);
+
             return;
         }
 
@@ -127,7 +132,19 @@ final class NextcloudUserProvisioner
 
         // L'identifiant est celui que NOUS avons envoyé — première étape de la
         // résolution ordonnée (AC6), et la seule qui ne coûte aucun appel.
-        $this->cacheIdentity($login, $login);
+        $held = $this->cacheIdentity($login, $login);
+
+        if ($held !== null) {
+            // Deux logins SE5 distincts ne peuvent pas être homonymes du même
+            // compte : si ça arrive, la colonne a été écrite ailleurs à tort, et
+            // l'écraser mettrait la prochaine propagation de mot de passe sur le
+            // compte d'un tiers. On ne l'écrase pas, et on le DIT.
+            Log::warning('nextcloud.identity.cache.conflict', [
+                'login' => $login,
+                'nextcloud_user_id' => $login,
+                'held_by' => $held,
+            ]);
+        }
 
         Log::info($result->alreadyConforming ? 'nextcloud.user.adopted' : 'nextcloud.user.created', [
             'login' => $login,
@@ -182,7 +199,28 @@ final class NextcloudUserProvisioner
         }
 
         if (! $dryRun) {
-            $this->cacheIdentity($login, $resolved);
+            $held = $this->cacheIdentity($login, $resolved);
+
+            if ($held !== null) {
+                // **Compté et rapporté, JAMAIS une exception** : un balayage de
+                // rentrée ne s'interrompt pas parce qu'un compte est ambigu — mais
+                // il ne l'écrit pas non plus, et l'exploitant lit lequel.
+                Log::warning('nextcloud.identity.cache.conflict', [
+                    'login' => $login,
+                    'nextcloud_user_id' => $resolved,
+                    'held_by' => $held,
+                ]);
+
+                $report->countUserFailed($login, sprintf(
+                    'Identité Nextcloud « %s » déjà rattachée à l\'utilisateur SE5 « %s » : rien n\'a été '
+                    . 'écrit. Deux comptes SE5 pointant la même identité feraient qu\'un changement de mot '
+                    . 'de passe de l\'un écraserait le compte de l\'autre.',
+                    $resolved,
+                    $held,
+                ));
+
+                return;
+            }
         }
 
         $report->countUserAdopted();
@@ -211,8 +249,11 @@ final class NextcloudUserProvisioner
             return;
         }
 
-        $client = $this->factory->makeOrNull();
-        if ($client === null) {
+        try {
+            $client = $this->factory->make();
+        } catch (NextcloudConfigurationException $e) {
+            $this->traceDelegatedSkip('nextcloud.user.password.delegated_mode', $login, $e);
+
             return;
         }
 
@@ -403,15 +444,90 @@ final class NextcloudUserProvisioner
     }
 
     /**
+     * Story 61.2 — LE MODE DÉLÉGUÉ COUPE CES CROCHETS, ET LE DIT EN `debug`.
+     *
+     * La fabrique rend `null` pour trois raisons : capacité éteinte, configuration
+     * incomplète, ou **mode délégué**. Les deux premières sont déjà couvertes par
+     * le silence de 61.1 (une instance qui n'utilise pas Nextcloud ne doit pas voir
+     * ses créations d'utilisateurs bavarder). La troisième mérite une trace, mais
+     * une trace SEULEMENT.
+     *
+     * **Pourquoi `debug` et pas `warning`.** Capacité active + mode délégué est un
+     * état CONFIGURÉ et LÉGITIME : la gestion des comptes est une opération
+     * d'administration, et le mode déclaré ne la porte pas. Un avertissement par
+     * création d'utilisateur — ou par élève lors d'une réinitialisation en masse à
+     * la rentrée — serait exactement la pollution que le finding #3 de la revue
+     * 61.1 a déjà fait corriger. Le refus CRIE là où l'administrateur agit
+     * (commande en code 2 nommant le mode, bouton désactivé avec son motif), pas
+     * dans le flux de vie des utilisateurs.
+     *
+     * ---------------------------------------------------------------------------
+     * **CORRECTION DE REVUE (61.2 #5) — LE MODE EST PORTÉ PAR LE REFUS, PLUS RELU.**
+     * Cette trace relisait `files.policy` — un `SELECT` de plus, sans cache, **par
+     * compte sauté**, alors que la configuration venait tout juste d'être lue par
+     * {@see NextcloudConnectionConfig::current()} quelques lignes plus haut. Sur un
+     * import de rentrée, c'était un doublement des requêtes pour produire une ligne
+     * de `debug`.
+     *
+     * Le refus lui-même transporte désormais le mode déclaré
+     * ({@see NextcloudConfigurationException::$declaredMode}) : la trace ne relit
+     * plus rien du tout, et le tri reste EXACT — seul un refus de MODE porte un mode
+     * (la capacité éteinte et la configuration incomplète n'en portent pas, et ne
+     * tracent donc rien, comme avant).
+     * ---------------------------------------------------------------------------
+     */
+    private function traceDelegatedSkip(string $event, string $login, NextcloudConfigurationException $refusal): void
+    {
+        if ($refusal->declaredMode !== NextcloudInstanceMode::Delegue) {
+            return;
+        }
+
+        Log::debug($event, [
+            'login' => $login,
+            'mode' => NextcloudInstanceMode::Delegue->value,
+            'reason' => 'la gestion des comptes est une opération d\'administration ; le mode délégué ne la porte pas',
+        ]);
+    }
+
+    /**
      * Écriture du cache. `saveQuietly` : ce n'est pas un changement d'état métier,
      * aucun observateur n'a de raison de s'en émouvoir.
+     *
+     * ---------------------------------------------------------------------------
+     * **CORRECTION DE REVUE (61.2 #2) — LA GARDE D'UNICITÉ EST À TOUS LES POINTS
+     * D'ÉCRITURE, pas seulement au geste manuel.** Une identité Nextcloud portée par
+     * deux logins SE5 fait que la propagation de mot de passe de l'un écrase le
+     * compte de l'autre. Le rattachement explicite s'en garde
+     * ({@see NextcloudIdentityLinker}) ; la résolution automatique doit s'en garder
+     * au même titre — deux logins distincts ne peuvent normalement pas être
+     * homonymes du même compte, mais la garde ne coûte rien et ferme la CLASSE
+     * entière de défauts plutôt qu'un de ses chemins.
+     * ---------------------------------------------------------------------------
+     *
+     * Rend le login SE5 qui détient déjà cette identité — auquel cas **rien n'est
+     * écrit** — ou `null` quand l'écriture a pu se faire (ou n'avait pas lieu
+     * d'être). **Jamais d'exception** : un balayage de rentrée ne s'interrompt pas
+     * sur un compte ambigu, il le rapporte.
      */
-    private function cacheIdentity(string $login, string $nextcloudUserId): void
+    private function cacheIdentity(string $login, string $nextcloudUserId): ?string
     {
         try {
             $user = User::query()->where('login', $login)->first();
             if ($user === null) {
-                return;
+                return null;
+            }
+
+            if ((string) ($user->nextcloud_user_id ?? '') === $nextcloudUserId) {
+                return null;
+            }
+
+            $holder = User::query()
+                ->where('nextcloud_user_id', $nextcloudUserId)
+                ->where('login', '!=', $login)
+                ->value('login');
+
+            if (is_string($holder) && $holder !== '') {
+                return $holder;
             }
 
             // Hors `$fillable` par conception : l'affectation est NOMINATIVE, ce
@@ -421,5 +537,7 @@ final class NextcloudUserProvisioner
         } catch (\Throwable $e) {
             Log::warning('nextcloud.identity.cache.failed', ['login' => $login, 'error' => $e->getMessage()]);
         }
+
+        return null;
     }
 }

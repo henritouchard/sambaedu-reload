@@ -43,7 +43,7 @@ final class NextcloudProvisioningReport
         'exclus' => 0,
     ];
 
-    /** @var list<array{login: string, issue: string, detail: string}> */
+    /** @var list<array{login: string, issue: string, detail: string, candidates: list<string>}> */
     private array $userIssues = [];
 
     private ?NextcloudConnectionProbe $probe = null;
@@ -137,7 +137,11 @@ final class NextcloudProvisioningReport
                 . (count($discardedCandidates) > 5 ? ', …' : '') . '.';
         }
 
-        $this->addIssue($login, 'introuvable', $detail);
+        // Story 61.2 — les candidats écartés voyagent aussi en STRUCTURE, pas
+        // seulement dans la phrase : la modale de rattachement (AC7) pré-remplit le
+        // champ avec le premier d'entre eux. Reparser le texte du détail aurait fait
+        // dépendre un geste d'écriture de la ponctuation d'un message.
+        $this->addIssue($login, 'introuvable', $detail, $discardedCandidates);
     }
 
     public function countUserFailed(string $login, string $detail): void
@@ -226,12 +230,20 @@ final class NextcloudProvisioningReport
         ];
     }
 
-    private function addIssue(string $login, string $issue, string $detail): void
+    /**
+     * @param  list<string>  $candidates  Identifiants proposés par l'instance et NON adoptés.
+     */
+    private function addIssue(string $login, string $issue, string $detail, array $candidates = []): void
     {
         if (count($this->userIssues) >= self::MAX_LISTED_LOGINS) {
             return;
         }
 
-        $this->userIssues[] = ['login' => $login, 'issue' => $issue, 'detail' => $detail];
+        $this->userIssues[] = [
+            'login' => $login,
+            'issue' => $issue,
+            'detail' => $detail,
+            'candidates' => array_values($candidates),
+        ];
     }
 }

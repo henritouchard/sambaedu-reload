@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nextcloud;
 
+use App\Enums\NextcloudInstanceMode;
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
 use App\Services\FilePolicyService;
 use App\Services\ServiceCredentials;
@@ -36,9 +37,10 @@ final class NextcloudConnectionConfig
      * Nom du credential admin dans `service_credentials`.
      *
      * Choisi pour être lisible dans un `SELECT name FROM service_credentials` à
-     * côté de `se4install` : il dit le compte, pas l'usage. Le jour où 61.2 ajoute
-     * un compte porteur délégué, il s'appellera autrement et les deux
-     * cohabiteront sans ambiguïté.
+     * côté de `se4install` : il dit le compte, pas l'usage. La story 61.2 a ajouté
+     * le compte porteur délégué sous {@see NextcloudDelegateConfig::CREDENTIAL_NAME}
+     * — les deux cohabitent sans ambiguïté, et un aller-retour de mode ne perd
+     * aucun des deux.
      */
     public const CREDENTIAL_NAME = 'nextcloud_admin';
 
@@ -85,6 +87,20 @@ final class NextcloudConnectionConfig
 
         if (! $policy['nextcloud']) {
             throw NextcloudConfigurationException::capabilityDisabled();
+        }
+
+        // ---------------------------------------------------------------------
+        // **Story 61.2 — LE MODE GATE ICI, ET NULLE PART AILLEURS.** Toute
+        // opération d'administration (montages globaux, comptes) passe par cette
+        // configuration : la refuser en mode délégué garantit qu'aucun appel
+        // d'administration n'est ÉMIS avec un compte qui ne l'est pas — la garde
+        // est structurelle, pas répartie sur chaque appelant, donc aucun appelant
+        // ne peut l'oublier.
+        // ---------------------------------------------------------------------
+        $mode = NextcloudInstanceMode::fromStored($policy['nextcloud_mode']);
+
+        if ($mode !== NextcloudInstanceMode::Admin) {
+            throw NextcloudConfigurationException::wrongMode($mode, NextcloudInstanceMode::Admin);
         }
 
         $credentials ??= app(ServiceCredentials::class);
