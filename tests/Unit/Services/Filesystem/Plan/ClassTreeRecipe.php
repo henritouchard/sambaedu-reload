@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\Filesystem\Plan;
 use App\Enums\PlanAnchor;
 use App\Models\DirectoryTemplate;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanResolutionContext;
 use App\Services\Filesystem\Plan\PlanSubject;
 
@@ -16,6 +17,15 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * Cette recette n'est PAS seedée (aucune recette n'est modifiée par la story
  * 60.1) : elle existe uniquement pour prouver que le langage est assez expressif
  * pour porter le partage classe historique — c'est ce qui débloquera la story
+ * **Story 62.4 — les PARAMÈTRES de cette fixture disent désormais des VERBES**
+ * (`'verbs' => PlanGrant::VERBS` là où elle écrivait `'access' => 'rw'`,
+ * `[PlanGrant::VERB_LIRE]` là où elle écrivait `'ro'`). C'est le mappage de
+ * migration, appliqué à une recette de test comme il l'a été aux recettes en base.
+ * Rien d'ATTENDU n'a bougé nulle part : les référentiels figés qui consomment cette
+ * fixture comparent des chaînes de sortie, et elles sont identiques au caractère
+ * près — c'est précisément ce qui fait de leur immobilité la preuve que la
+ * traduction est juste.
+ *
  * 60.5. Elle exerce les QUATRE natures, les TROIS rôles d'arête, un groupe au nom
  * déjà préfixé (piège du double préfixe) et un plafond.
  *
@@ -58,7 +68,7 @@ trait ClassTreeRecipe
                     'label' => 'Équipe enseignante',
                     'maille' => UserGroup::class,
                     'group_type' => 'equipe',
-                    'access' => 'rw',
+                    'verbs' => PlanGrant::VERBS,
                     'cardinality' => 'one',
                 ],
                 [
@@ -66,7 +76,7 @@ trait ClassTreeRecipe
                     'label' => 'Élèves de la classe',
                     'maille' => UserGroup::class,
                     'group_type' => 'classe',
-                    'access' => 'ro',
+                    'verbs' => [PlanGrant::VERB_LIRE],
                     'cardinality' => 'one',
                 ],
                 [
@@ -74,7 +84,7 @@ trait ClassTreeRecipe
                     'label' => 'Enseignants référents',
                     'maille' => UserGroup::class,
                     'group_type' => 'classe',
-                    'access' => 'rw',
+                    'verbs' => PlanGrant::VERBS,
                     'cardinality' => 'one',
                 ],
             ],
@@ -85,8 +95,8 @@ trait ClassTreeRecipe
                     'label' => 'Documents de travail',
                     'nature' => 'partagee',
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'ro'],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
                     ],
                 ],
                 [
@@ -94,8 +104,8 @@ trait ClassTreeRecipe
                     'label' => 'Dépôt des devoirs',
                     'nature' => 'contenu_libre',
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'ro'],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
                     ],
                 ],
                 [
@@ -104,8 +114,8 @@ trait ClassTreeRecipe
                     'label' => 'Espace des enseignants',
                     'nature' => 'partagee',
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'referents', 'access' => 'rw'],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'referents', 'verbs' => PlanGrant::VERBS],
                     ],
                 ],
                 [
@@ -115,8 +125,8 @@ trait ClassTreeRecipe
                     'nature' => 'activable',
                     'activable' => true,
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'rw', 'suspendable' => true],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'classe', 'verbs' => PlanGrant::VERBS, 'suspendable' => true],
                     ],
                 ],
                 [
@@ -127,8 +137,8 @@ trait ClassTreeRecipe
                     'edge_role' => 'member',
                     'plafond' => 2147483648,
                     'grants' => [
-                        ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
-                        ['role' => 'equipe', 'access' => 'rw'],
+                        ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
                     ],
                 ],
             ],
@@ -205,7 +215,7 @@ trait ClassTreeRecipe
             'label' => 'Équipe enseignante',
             'maille' => UserGroup::class,
             'group_type' => 'classe',
-            'access' => 'rw',
+            'verbs' => PlanGrant::VERBS,
             'cardinality' => 'one',
             'resolution' => [
                 'strategy' => 'edge_role',
@@ -217,7 +227,7 @@ trait ClassTreeRecipe
             'label' => 'Élèves de la classe',
             'maille' => UserGroup::class,
             'group_type' => 'classe',
-            'access' => 'ro',
+            'verbs' => [PlanGrant::VERB_LIRE],
             'cardinality' => 'one',
             'resolution' => ['strategy' => 'self'],
         ],
@@ -234,8 +244,8 @@ trait ClassTreeRecipe
             'label' => 'Racine du partage de classe',
             'nature' => 'partagee',
             'grants' => [
-                ['role' => 'equipe', 'access' => 'ro'],
-                ['role' => 'classe', 'access' => 'ro'],
+                ['role' => 'equipe', 'verbs' => [PlanGrant::VERB_LIRE]],
+                ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
             ],
         ],
         [
@@ -243,8 +253,8 @@ trait ClassTreeRecipe
             'label' => 'Documents de travail',
             'nature' => 'partagee',
             'grants' => [
-                ['role' => 'equipe', 'access' => 'rw'],
-                ['role' => 'classe', 'access' => 'ro'],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
             ],
         ],
         [
@@ -252,8 +262,8 @@ trait ClassTreeRecipe
             'label' => 'Devoirs distribués aux élèves',
             'nature' => 'contenu_libre',
             'grants' => [
-                ['role' => 'equipe', 'access' => 'rw'],
-                ['role' => 'classe', 'access' => 'ro'],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
             ],
         ],
         [
@@ -261,7 +271,7 @@ trait ClassTreeRecipe
             'label' => 'Espace des enseignants',
             'nature' => 'partagee',
             'grants' => [
-                ['role' => 'equipe', 'access' => 'rw'],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
             ],
         ],
         [
@@ -270,8 +280,8 @@ trait ClassTreeRecipe
             'nature' => 'activable',
             'activable' => true,
             'grants' => [
-                ['role' => 'equipe', 'access' => 'rw'],
-                ['role' => 'classe', 'access' => 'rw', 'suspendable' => true],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                ['role' => 'classe', 'verbs' => PlanGrant::VERBS, 'suspendable' => true],
             ],
         ],
         [
@@ -280,8 +290,8 @@ trait ClassTreeRecipe
             'nature' => 'par_membre',
             'edge_role' => 'member',
             'grants' => [
-                ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
-                ['role' => 'equipe', 'access' => 'rw'],
+                ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
             ],
         ],
     ];

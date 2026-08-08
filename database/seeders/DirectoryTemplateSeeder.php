@@ -8,6 +8,7 @@ use App\Enums\PlanAnchor;
 use App\Models\DirectoryTemplate;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
 
@@ -35,6 +36,25 @@ use Illuminate\Support\Facades\Log;
  *
  * INVARIANT (vérifié en test) : aucune recette ne porte de maille
  * `WorkstationGroup` — toutes les ACL portent sur `User`/`UserGroup`.
+ *
+ * ---------------------------------------------------------------------------
+ * **Story 62.4 — LES DROITS SONT DITS EN VERBES, ET LA BASELINE EST DEVENUE
+ * MAXIMALEMENT PERMISSIVE. C'est une contrepartie ASSUMÉE, pas un accident.**
+ *
+ * L'ancien vocabulaire binaire a été traduit selon la décision Q3 (Henri,
+ * 2026-08-08) : `ro` → `lire` SEUL, `rw` → les QUATRE verbes
+ * ({@see PlanGrant::VERBS}). C'est le seul mappage qui ne RETIRE d'accès à
+ * personne — la doctrine de l'epic est additive, et une baseline qui aurait
+ * « profité » du nouveau vocabulaire pour resserrer les droits aurait cassé, en
+ * silence, des usages en place le jour du déploiement.
+ *
+ * Conséquence à assumer et à corriger PLUS TARD, pas ici : partout où une recette
+ * disait « lecture/écriture », les audiences peuvent désormais aussi SUPPRIMER —
+ * ce qu'elles pouvaient déjà, puisque c'est exactement ce que le mode d'écriture
+ * historique accordait. Le raffinement (« les élèves déposent mais n'effacent
+ * pas ») devient EXPRIMABLE dès maintenant, et se règlera à l'écran de la story
+ * 62.6. Le faire ici, à l'aveugle, changerait le comportement d'instances en
+ * place sans que personne ne l'ait demandé.
  *
  * ⚠️ Pré-déploiement VM : `php artisan db:seed --class=DirectoryTemplateSeeder`.
  */
@@ -97,7 +117,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Source (direction / équipe qui publie)',
                         'maille' => UserGroup::class,
                         'group_type' => null,
-                        'access' => 'rw',
+                        'verbs' => PlanGrant::VERBS,
                         'cardinality' => 'one',
                     ],
                     [
@@ -105,7 +125,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Destinataires (groupes qui lisent)',
                         'maille' => UserGroup::class,
                         'group_type' => null,
-                        'access' => 'ro',
+                        'verbs' => [PlanGrant::VERB_LIRE],
                         'cardinality' => 'many',
                     ],
                 ],
@@ -151,7 +171,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Enseignants de la classe (déposent)',
                         'maille' => UserGroup::class,
                         'group_type' => 'classe',
-                        'access' => 'rw',
+                        'verbs' => PlanGrant::VERBS,
                         'cardinality' => 'one',
                         'resolution' => [
                             'strategy' => 'edge_role',
@@ -163,7 +183,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Élèves de la classe (lecture seule)',
                         'maille' => UserGroup::class,
                         'group_type' => 'classe',
-                        'access' => 'ro',
+                        'verbs' => [PlanGrant::VERB_LIRE],
                         'cardinality' => 'one',
                         'resolution' => ['strategy' => 'self'],
                     ],
@@ -180,7 +200,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Premier utilisateur',
                         'maille' => User::class,
                         'group_type' => null,
-                        'access' => 'rw',
+                        'verbs' => PlanGrant::VERBS,
                         'cardinality' => 'one',
                     ],
                     [
@@ -188,7 +208,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Second utilisateur',
                         'maille' => User::class,
                         'group_type' => null,
-                        'access' => 'rw',
+                        'verbs' => PlanGrant::VERBS,
                         'cardinality' => 'one',
                     ],
                 ],
@@ -204,7 +224,7 @@ class DirectoryTemplateSeeder extends Seeder
                         'label' => 'Groupe d\'utilisateurs',
                         'maille' => UserGroup::class,
                         'group_type' => null,
-                        'access' => 'rw',
+                        'verbs' => PlanGrant::VERBS,
                         'cardinality' => 'one',
                     ],
                 ],
@@ -274,7 +294,7 @@ class DirectoryTemplateSeeder extends Seeder
                     'label' => 'Équipe enseignante',
                     'maille' => UserGroup::class,
                     'group_type' => 'classe',
-                    'access' => 'rw',
+                    'verbs' => PlanGrant::VERBS,
                     'cardinality' => 'one',
                     // `manager` SEUL, et c'est un arbitrage, pas un oubli. Ajouter
                     // `owner` émettrait un SECOND sujet d'audience — donc une
@@ -292,7 +312,7 @@ class DirectoryTemplateSeeder extends Seeder
                     'label' => 'Élèves de la classe',
                     'maille' => UserGroup::class,
                     'group_type' => 'classe',
-                    'access' => 'ro',
+                    'verbs' => [PlanGrant::VERB_LIRE],
                     'cardinality' => 'one',
                     'resolution' => ['strategy' => 'self'],
                 ],
@@ -306,8 +326,8 @@ class DirectoryTemplateSeeder extends Seeder
                     // racine. Aucun rôle n'est en clôture ici — les deux ont reçu
                     // quelque chose.
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'ro'],
-                        ['role' => 'classe', 'access' => 'ro'],
+                        ['role' => 'equipe', 'verbs' => [PlanGrant::VERB_LIRE]],
+                        ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
                     ],
                 ],
                 [
@@ -315,8 +335,8 @@ class DirectoryTemplateSeeder extends Seeder
                     'label' => 'Documents de travail',
                     'nature' => 'partagee',
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'ro'],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
                     ],
                 ],
                 [
@@ -326,8 +346,8 @@ class DirectoryTemplateSeeder extends Seeder
                     'label' => 'Devoirs distribués aux élèves',
                     'nature' => 'contenu_libre',
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'ro'],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]],
                     ],
                 ],
                 [
@@ -335,7 +355,7 @@ class DirectoryTemplateSeeder extends Seeder
                     'label' => 'Espace des enseignants',
                     'nature' => 'partagee',
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
                     ],
                 ],
                 [
@@ -344,8 +364,8 @@ class DirectoryTemplateSeeder extends Seeder
                     'nature' => 'activable',
                     'activable' => true,
                     'grants' => [
-                        ['role' => 'equipe', 'access' => 'rw'],
-                        ['role' => 'classe', 'access' => 'rw', 'suspendable' => true],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'classe', 'verbs' => PlanGrant::VERBS, 'suspendable' => true],
                     ],
                 ],
                 [
@@ -354,8 +374,8 @@ class DirectoryTemplateSeeder extends Seeder
                     'nature' => 'par_membre',
                     'edge_role' => 'member',
                     'grants' => [
-                        ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
-                        ['role' => 'equipe', 'access' => 'rw'],
+                        ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS],
+                        ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
                     ],
                 ],
             ],

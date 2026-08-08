@@ -7,7 +7,6 @@ namespace App\Services\Filesystem;
 use App\Enums\FileBackendObservation;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeObservation;
-use App\Services\Filesystem\Backend\ObservedGrant;
 use App\Services\Filesystem\Plan\FilePlan;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
@@ -24,8 +23,8 @@ use App\Services\Filesystem\Plan\PlanSubject;
  *
  * Elle remplace l'audit de dérive de l'Epic 34, qui comparait des LIGNES DE
  * PERMISSION BRUTES et les affichait telles quelles à l'administrateur. Ici, tout
- * est en vocabulaire de plan : un nœud, un sujet par son identité interne, un
- * accès attendu et un accès constaté. Les quatre statuts agrégés de l'audit
+ * est en vocabulaire de plan : un nœud, un sujet par son identité interne, les
+ * verbes attendus et les verbes constatés. Les quatre statuts agrégés de l'audit
  * historique survivent — un contrôleur d'environnement les consomme — mais ce sont
  * des VUES DÉRIVÉES des écarts, jamais le fait primaire.
  *
@@ -35,17 +34,33 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * Les trois états d'un octroi (ACTIF / SUSPENDU / rôle en CLÔTURE) doivent
  * traverser la comparaison sans jamais se confondre :
  *
- *  | désiré                    | observé              | verdict                                  |
- *  |---------------------------|----------------------|------------------------------------------|
- *  | ACTIF `ro`/`rw`           | même accès           | conforme                                 |
- *  | ACTIF `ro`/`rw`           | accès moindre        | ÉCART                                    |
- *  | ACTIF `ro`/`rw`           | « aucun »            | ÉCART                                    |
- *  | ACTIF `ro`/`rw`           | absent               | ÉCART                                    |
- *  | SUSPENDU                  | « aucun »            | CONFORME — la suspension est appliquée   |
- *  | SUSPENDU                  | `ro`/`rw`            | ÉCART — la suspension a FUI              |
- *  | SUSPENDU                  | absent               | ÉCART — matérialisation manquante        |
- *  | (aucun octroi au plan)    | quel que soit l'accès| ÉCART — en trop                          |
- *  | rôle en CLÔTURE           | —                    | RIEN : ni attendu, ni écart              |
+ *  | désiré                    | observé               | verdict                                 |
+ *  |---------------------------|-----------------------|-----------------------------------------|
+ *  | ACTIF (verbes V)          | EXACTEMENT V          | conforme                                |
+ *  | ACTIF (verbes V)          | un sous-ensemble de V | ÉCART — il manque des verbes            |
+ *  | ACTIF (verbes V)          | un surensemble de V   | ÉCART — il y a des verbes en trop       |
+ *  | ACTIF (verbes V)          | aucun verbe           | ÉCART                                   |
+ *  | ACTIF (verbes V)          | absent                | ÉCART                                   |
+ *  | SUSPENDU                  | aucun verbe           | CONFORME — la suspension est appliquée  |
+ *  | SUSPENDU                  | au moins un verbe     | ÉCART — la suspension a FUI             |
+ *  | SUSPENDU                  | absent                | ÉCART — matérialisation manquante       |
+ *  | (aucun octroi au plan)    | quels que soient les verbes | ÉCART — en trop                   |
+ *  | rôle en CLÔTURE           | —                     | RIEN : ni attendu, ni écart             |
+ *
+ * **Story 62.4 — l'égalité est une ÉGALITÉ D'ENSEMBLES, pas une comparaison de
+ * niveaux.** Avec deux niveaux ordonnés, « moindre » avait un sens. Avec quatre
+ * verbes combinables, deux octrois peuvent être INCOMPARABLES, et la seule question
+ * honnête est « est-ce exactement ce qu'on voulait ? ». Un observé qui en fait
+ * MOINS et un observé qui en fait PLUS sont tous deux des écarts — le second l'est
+ * même davantage, puisque c'est un droit que personne n'a écrit.
+ *
+ * **Un désir INEXPRIMABLE reste un écart, et on ne le maquille pas.** Quand un
+ * backend déclare ne pas savoir rendre un verbe ({@see \App\Enums\FileBackendOutcome::NonExprimable}),
+ * le disque ne porte pas ce verbe — et la comparaison le dit. Absoudre l'écart
+ * « parce qu'on savait » reviendrait à afficher conforme un état qui ne l'est pas :
+ * l'administrateur perdrait le seul endroit où la limite se voit en continu. Le
+ * grisé de ce qui n'est pas exprimable appartient à l'écran de composition (62.6),
+ * pas à la comparaison.
  *
  * Les deux lignes qui comptent le plus sont les deux du milieu. « Suspendu observé
  * aucun = conforme » est ce qui empêche une désactivation d'être relue comme une
@@ -104,8 +119,8 @@ final class PlanStateComparator
      *     detail: string|null,
      *     differences: list<array{
      *       subject: array{type:string,id:int,edge_role:string|null},
-     *       expected: string|null,
-     *       observed: string|null,
+     *       expected: list<string>|null,
+     *       observed: list<string>|null,
      *     }>,
      *   }>,
      * }
@@ -136,7 +151,7 @@ final class PlanStateComparator
     }
 
     /**
-     * @return array{path:string,status:string,detail:string|null,differences:list<array{subject:array{type:string,id:int,edge_role:string|null},expected:string|null,observed:string|null}>}
+     * @return array{path:string,status:string,detail:string|null,differences:list<array{subject:array{type:string,id:int,edge_role:string|null},expected:list<string>|null,observed:list<string>|null}>}
      */
     private function compareNode(PlanNode $node, NodeObservation $observation): array
     {
@@ -158,33 +173,35 @@ final class PlanStateComparator
         foreach ($node->grants as $grant) {
             $key = $grant->subject->sortKey();
             // Un octroi SUSPENDU attend la forme matérialisée de la suspension :
-            // une entrée présente et vide. Un octroi actif attend son accès.
-            $expected[$key] = $grant->isActive() ? $grant->access : ObservedGrant::ACCESS_NONE;
+            // une entrée présente et VIDE. Un octroi actif attend ses verbes.
+            $expected[$key] = $grant->isActive() ? $grant->verbs : [];
             $subjects[$key] = $grant->subject;
         }
 
         $observed = [];
         foreach ($observation->grants as $grant) {
             $key = $grant->subject->sortKey();
-            $observed[$key] = $grant->access;
+            $observed[$key] = $grant->verbs;
             $subjects[$key] ??= $grant->subject;
         }
 
         $differences = [];
 
-        foreach ($expected as $key => $access) {
+        foreach ($expected as $key => $verbs) {
             $seen = $observed[$key] ?? null;
-            if ($seen === $access) {
+            // Égalité d'ENSEMBLES : les deux listes sont en ordre canonique, donc
+            // l'identité stricte de listes EST l'égalité d'ensembles.
+            if ($seen === $verbs) {
                 continue;
             }
-            $differences[] = $this->difference($subjects[$key], $access, $seen);
+            $differences[] = $this->difference($subjects[$key], $verbs, $seen);
         }
 
-        foreach ($observed as $key => $access) {
+        foreach ($observed as $key => $verbs) {
             if (array_key_exists($key, $expected)) {
                 continue;
             }
-            $differences[] = $this->difference($subjects[$key], null, $access);
+            $differences[] = $this->difference($subjects[$key], null, $verbs);
         }
 
         usort(
@@ -209,9 +226,11 @@ final class PlanStateComparator
     }
 
     /**
-     * @return array{subject:array{type:string,id:int,edge_role:string|null},expected:string|null,observed:string|null}
+     * @param  list<string>|null  $expected  `null` = le plan n'attend rien ici
+     * @param  list<string>|null  $observed  `null` = aucune entrée relue
+     * @return array{subject:array{type:string,id:int,edge_role:string|null},expected:list<string>|null,observed:list<string>|null}
      */
-    private function difference(PlanSubject $subject, ?string $expected, ?string $observed): array
+    private function difference(PlanSubject $subject, ?array $expected, ?array $observed): array
     {
         return [
             'subject' => $subject->toArray(),
@@ -243,14 +262,41 @@ final class PlanStateComparator
         return self::STATUS_CONFORME;
     }
 
-    /** Libellé FR d'un accès, pour l'affichage. `null` = rien à cet endroit. */
-    public static function accessLabel(?string $access): string
+    /**
+     * Libellé FR d'une liste de VERBES, pour l'affichage.
+     *
+     * Trois cas, et ils sont distincts : `null` = il n'y a rien à cet endroit (le
+     * plan n'attend rien, ou rien n'a été relu) ; la liste VIDE = une entrée
+     * présente qui ne donne rien, c'est-à-dire une suspension matérialisée ; sinon,
+     * les verbes énumérés dans leur ordre canonique.
+     *
+     * L'affichage est libre de ses libellés — l'ordre canonique est un choix de
+     * sérialisation, pas de présentation ; on le suit ici parce qu'il rend deux
+     * lignes de tableau comparables à l'œil.
+     *
+     * @param  list<string>|null  $verbs
+     */
+    public static function accessLabel(?array $verbs): string
     {
-        return match ($access) {
-            PlanGrant::ACCESS_RO => 'Lire',
-            PlanGrant::ACCESS_RW => 'Modifier',
-            ObservedGrant::ACCESS_NONE => 'Aucun',
-            default => '—',
+        if ($verbs === null) {
+            return '—';
+        }
+        if ($verbs === []) {
+            return 'Aucun';
+        }
+
+        return implode(' + ', array_map(self::verbLabel(...), $verbs));
+    }
+
+    /** Libellé FR d'un verbe. Vocabulaire de PLAN : aucun mot de mécanisme. */
+    public static function verbLabel(string $verb): string
+    {
+        return match ($verb) {
+            PlanGrant::VERB_LIRE => 'Lire',
+            PlanGrant::VERB_EDITER => 'Éditer',
+            PlanGrant::VERB_CREER => 'Créer',
+            PlanGrant::VERB_SUPPRIMER => 'Supprimer',
+            default => $verb,
         };
     }
 }

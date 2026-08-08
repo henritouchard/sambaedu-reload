@@ -104,7 +104,7 @@ class PosixInspectTest extends TestCase
         self::assertCount(1, $observation->grants, 'le miroir d\'héritage n\'est pas un octroi observé');
         self::assertSame(PlanSubject::TYPE_USER, $observation->grants[0]->subject->type);
         self::assertSame((int) $user->id, $observation->grants[0]->subject->id);
-        self::assertSame('ro', $observation->grants[0]->access);
+        self::assertSame([PlanGrant::VERB_LIRE], $observation->grants[0]->verbs);
     }
 
     #[Test]
@@ -120,7 +120,7 @@ class PosixInspectTest extends TestCase
 
         self::assertCount(1, $observation->grants);
         self::assertSame((int) $classe->id, $observation->grants[0]->subject->id);
-        self::assertSame('rw', $observation->grants[0]->access);
+        self::assertSame(PlanGrant::VERBS, $observation->grants[0]->verbs);
     }
 
     /**
@@ -137,7 +137,7 @@ class PosixInspectTest extends TestCase
         $observation = app(PosixFileBackend::class)->inspect($this->plan())->for(PlanNode::ROOT_PATH);
 
         self::assertCount(1, $observation->grants);
-        self::assertSame(ObservedGrant::ACCESS_NONE, $observation->grants[0]->access);
+        self::assertSame([], $observation->grants[0]->verbs);
     }
 
     /**
@@ -242,7 +242,7 @@ class PosixInspectTest extends TestCase
         $this->fakeAcl(...[...self::STRUCTURAL, 'group:classe_3sb-1229y:rwx']);
 
         $observation = app(PosixFileBackend::class)->inspect($this->plan('proj', [
-            new PlanGrant('@role', PlanSubject::group((int) $classe->id, 'member'), PlanGrant::ACCESS_RW),
+            new PlanGrant('@role', PlanSubject::group((int) $classe->id, 'member'), PlanGrant::VERBS),
         ]))->for(PlanNode::ROOT_PATH);
 
         self::assertSame('member', $observation->grants[0]->subject->edgeRole);

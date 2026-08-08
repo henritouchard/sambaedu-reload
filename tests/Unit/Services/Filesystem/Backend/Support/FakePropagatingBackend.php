@@ -158,7 +158,7 @@ final class FakePropagatingBackend implements FileBackend
 
             $grants = [];
             foreach ($this->effectiveGrantsOf($plan, $node) as $grant) {
-                $grants[] = new ObservedGrant($grant->subject, $grant->access);
+                $grants[] = new ObservedGrant($grant->subject, $grant->verbs);
             }
 
             $observations[] = NodeObservation::observed(

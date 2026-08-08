@@ -7,6 +7,7 @@ namespace Tests\Unit\Models;
 use App\Exceptions\Filesystem\InvalidTreeSpecException;
 use App\Models\DirectoryTemplate;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Models\WorkstationGroup;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -36,8 +37,8 @@ class DirectoryTemplateTreeSpecTest extends TestCase
             'key' => 'probe',
             'label' => 'Sonde',
             'roles_spec' => [
-                ['key' => 'equipe', 'label' => 'Équipe', 'maille' => UserGroup::class, 'access' => 'rw', 'cardinality' => 'one'],
-                ['key' => 'classe', 'label' => 'Classe', 'maille' => UserGroup::class, 'access' => 'ro', 'cardinality' => 'one'],
+                ['key' => 'equipe', 'label' => 'Équipe', 'maille' => UserGroup::class, 'verbs' => PlanGrant::VERBS, 'cardinality' => 'one'],
+                ['key' => 'classe', 'label' => 'Classe', 'maille' => UserGroup::class, 'verbs' => [PlanGrant::VERB_LIRE], 'cardinality' => 'one'],
             ],
             'path_pattern' => $pattern,
             'nodes_spec' => $nodes,
@@ -51,7 +52,7 @@ class DirectoryTemplateTreeSpecTest extends TestCase
             'path' => '_travail',
             'label' => 'Travail',
             'nature' => 'partagee',
-            'grants' => [['role' => 'equipe', 'access' => 'rw']],
+            'grants' => [['role' => 'equipe', 'verbs' => PlanGrant::VERBS]],
         ], $overrides);
     }
 
@@ -143,7 +144,7 @@ class DirectoryTemplateTreeSpecTest extends TestCase
             $rejected = false;
             try {
                 $this->template([$this->node(['grants' => [
-                    ['role' => 'equipe', 'access' => 'rw', $field => true],
+                    ['role' => 'equipe', 'verbs' => PlanGrant::VERBS, $field => true],
                 ]])])->assertValidTreeSpec();
             } catch (InvalidTreeSpecException) {
                 $rejected = true;
@@ -262,20 +263,74 @@ class DirectoryTemplateTreeSpecTest extends TestCase
     // Octrois
     // =========================================================================
 
+    /**
+     * Story 62.4 — la garde de vocabulaire, exercée sur les QUATRE formes fausses
+     * qu'un auteur de recette écrira vraiment : le mode système, le scalaire nu de
+     * l'ancien vocabulaire, la liste vide et le doublon.
+     */
     #[Test]
-    public function an_unknown_access_is_rejected(): void
+    public function an_unknown_verb_list_is_rejected(): void
     {
         $this->assertRejected(
-            $this->template([$this->node(['grants' => [['role' => 'equipe', 'access' => 'rwx']]])]),
-            'inconnu sur le nœud',
+            $this->template([$this->node(['grants' => [['role' => 'equipe', 'verbs' => ['rwx']]]])]),
+            'inconnu sur',
         );
+
+        // Le scalaire nu : c'est exactement ce qu'une recette NON MIGRÉE porte.
+        $this->assertRejected(
+            $this->template([$this->node(['grants' => [['role' => 'equipe', 'verbs' => 'rw']]])]),
+            'ne porte pas une LISTE de verbes',
+        );
+
+        $this->assertRejected(
+            $this->template([$this->node(['grants' => [['role' => 'equipe', 'verbs' => []]]])]),
+            'AUCUN verbe',
+        );
+
+        $this->assertRejected(
+            $this->template([$this->node(['grants' => [
+                ['role' => 'equipe', 'verbs' => [PlanGrant::VERB_LIRE, PlanGrant::VERB_LIRE]],
+            ]])]),
+            'écrit deux fois',
+        );
+    }
+
+    /**
+     * Story 62.4 — l'ancienne clé `access` est refusée par le vocabulaire de clés
+     * FERMÉ. C'est ce qui rend une recette non migrée BRUYANTE au lieu de la faire
+     * lire de travers (avec les verbes par défaut, c'est-à-dire en lecture seule).
+     */
+    #[Test]
+    public function the_abandoned_access_key_is_refused_loudly_on_a_node_grant(): void
+    {
+        $this->assertRejected(
+            $this->template([$this->node(['grants' => [['role' => 'equipe', 'access' => 'rw']]])]),
+            'inconnu(s) « access »',
+        );
+    }
+
+    /**
+     * Story 62.4 — même exigence côté RÔLES, où il n'y a pas de vocabulaire de clés
+     * fermé : sans cette garde, un rôle non migré aurait été lu avec les verbes par
+     * défaut, et un rôle en écriture serait devenu un rôle en lecture SANS UN MOT.
+     */
+    #[Test]
+    public function the_abandoned_access_key_is_refused_loudly_on_a_role(): void
+    {
+        $template = $this->template([$this->node()]);
+        $roles = $template->roles_spec;
+        unset($roles[0]['verbs']);
+        $roles[0]['access'] = 'rw';
+        $template->roles_spec = $roles;
+
+        $this->assertRejected($template, 'vocabulaire ABANDONNÉ');
     }
 
     #[Test]
     public function a_grant_to_a_role_absent_from_the_recipe_is_rejected(): void
     {
         $this->assertRejected(
-            $this->template([$this->node(['grants' => [['role' => 'direction', 'access' => 'rw']]])]),
+            $this->template([$this->node(['grants' => [['role' => 'direction', 'verbs' => PlanGrant::VERBS]]])]),
             'absent de la recette',
         );
     }
@@ -285,7 +340,7 @@ class DirectoryTemplateTreeSpecTest extends TestCase
     {
         $this->assertRejected(
             $this->template([$this->node(['grants' => [
-                ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw'],
+                ['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS],
             ]])]),
             'n\'a de sens que sur un nœud par membre',
         );
@@ -296,7 +351,7 @@ class DirectoryTemplateTreeSpecTest extends TestCase
     {
         $this->assertRejected(
             $this->template([$this->node(['grants' => [
-                ['role' => 'equipe', 'access' => 'rw', 'suspendable' => true],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS, 'suspendable' => true],
             ]])]),
             'rien ne pourrait jamais le suspendre',
         );
@@ -307,8 +362,8 @@ class DirectoryTemplateTreeSpecTest extends TestCase
     {
         $this->assertRejected(
             $this->template([$this->node(['grants' => [
-                ['role' => 'equipe', 'access' => 'rw'],
-                ['role' => 'equipe', 'access' => 'ro'],
+                ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+                ['role' => 'equipe', 'verbs' => [PlanGrant::VERB_LIRE]],
             ]])]),
             'reçoit deux octrois',
         );
@@ -350,10 +405,10 @@ class DirectoryTemplateTreeSpecTest extends TestCase
             'key' => 'probe',
             'label' => 'Sonde',
             'roles_spec' => [
-                ['key' => 'parc', 'label' => 'Parc', 'maille' => WorkstationGroup::class, 'access' => 'rw', 'cardinality' => 'one'],
+                ['key' => 'parc', 'label' => 'Parc', 'maille' => WorkstationGroup::class, 'verbs' => PlanGrant::VERBS, 'cardinality' => 'one'],
             ],
             'path_pattern' => 'Partages/{group.name}',
-            'nodes_spec' => [$this->node(['grants' => [['role' => 'parc', 'access' => 'rw']]])],
+            'nodes_spec' => [$this->node(['grants' => [['role' => 'parc', 'verbs' => PlanGrant::VERBS]]])],
         ]);
 
         $this->assertFalse($template->respectsMountOnlyInvariant());

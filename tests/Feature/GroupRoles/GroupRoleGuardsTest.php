@@ -10,6 +10,7 @@ use App\Models\DirectoryTemplate;
 use App\Models\GroupRole;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
@@ -172,7 +173,7 @@ class GroupRoleGuardsTest extends TestCase
                 'label' => 'Audience',
                 'maille' => UserGroup::class,
                 'group_type' => 'classe',
-                'access' => 'rw',
+                'verbs' => PlanGrant::VERBS,
                 'cardinality' => 'one',
                 'resolution' => ['strategy' => 'edge_role', 'edge_roles' => ['tuteur']],
             ]],
@@ -182,7 +183,7 @@ class GroupRoleGuardsTest extends TestCase
                 'label' => 'Dossier personnel',
                 'nature' => 'par_membre',
                 'edge_role' => 'tuteur',
-                'grants' => [['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw']],
+                'grants' => [['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS]],
             ]],
         ]);
 
@@ -198,7 +199,7 @@ class GroupRoleGuardsTest extends TestCase
                 'label' => 'Audience',
                 'maille' => UserGroup::class,
                 'group_type' => 'classe',
-                'access' => 'rw',
+                'verbs' => PlanGrant::VERBS,
                 'cardinality' => 'one',
                 'resolution' => ['strategy' => 'edge_role', 'edge_roles' => ['inconnu']],
             ]],
@@ -291,7 +292,7 @@ class GroupRoleGuardsTest extends TestCase
                 'label' => 'Audience',
                 'maille' => UserGroup::class,
                 'group_type' => 'classe',
-                'access' => 'rw',
+                'verbs' => PlanGrant::VERBS,
                 'cardinality' => 'one',
                 'resolution' => ['strategy' => 'edge_role', 'edge_roles' => ['tuteur']],
             ]],
@@ -307,7 +308,7 @@ class GroupRoleGuardsTest extends TestCase
                 'label' => 'Dossier personnel',
                 'nature' => 'par_membre',
                 'edge_role' => 'tuteur',
-                'grants' => [['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'access' => 'rw']],
+                'grants' => [['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS]],
             ]],
         ]);
 
@@ -337,7 +338,7 @@ class GroupRoleGuardsTest extends TestCase
                 'label' => 'Élèves de la classe',
                 'maille' => UserGroup::class,
                 'group_type' => 'classe',
-                'access' => 'ro',
+                'verbs' => [PlanGrant::VERB_LIRE],
                 'cardinality' => 'one',
                 'resolution' => ['strategy' => 'self'],
             ]],

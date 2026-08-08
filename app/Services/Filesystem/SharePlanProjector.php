@@ -153,8 +153,15 @@ final class SharePlanProjector
 
                 continue;
             }
-            if ($kept->access !== PlanGrant::ACCESS_RW && $grant->access === PlanGrant::ACCESS_RW) {
-                $merged[$key] = new PlanGrant($kept->roleKey, $kept->subject, PlanGrant::ACCESS_RW, $kept->suspendable);
+            // Story 62.4 — l'union est celle des ENSEMBLES DE VERBES. Le niveau
+            // n'est plus une échelle à deux barreaux qu'on pouvait comparer : deux
+            // octrois peuvent être incomparables (« lire+éditer » et
+            // « lire+créer »), et le plus permissif des deux est leur RÉUNION.
+            // C'est la règle additive de l'epic, dite dans le vocabulaire qui la
+            // rend exacte.
+            $union = array_values(array_unique([...$kept->verbs, ...$grant->verbs]));
+            if ($union !== $kept->verbs) {
+                $merged[$key] = new PlanGrant($kept->roleKey, $kept->subject, $union, $kept->suspendable);
             }
         }
 
@@ -199,11 +206,39 @@ final class SharePlanProjector
             $grants[] = new PlanGrant(
                 self::ASSIGNMENT_ROLE,
                 $subject,
-                $assignment->isWritable() ? PlanGrant::ACCESS_RW : PlanGrant::ACCESS_RO,
+                self::verbsOf($assignment),
             );
         }
 
         return $grants;
+    }
+
+    /**
+     * Story 62.4 — LA TRADUCTION DU BORD : une assignation BINAIRE devient une
+     * liste de VERBES.
+     *
+     * **Les assignations restent binaires, et ce n'est pas un retard.** Le pivot
+     * `network_share_assignables` décrit l'autre axe du modèle — le MONTAGE d'un
+     * répertoire réseau chez ses destinataires — et son écran ne propose que deux
+     * niveaux, « Lire » et « Modifier ». Y faire entrer quatre verbes reviendrait à
+     * demander à l'administrateur de composer une matrice là où il choisit un
+     * montage. La finesse appartient au PLAN, qui décrit un arbre de dossiers ;
+     * elle se règlera à l'écran des recettes (story 62.6).
+     *
+     * La frontière a donc DEUX bords, et la traduction vit sur chacun :
+     *  - ici, assignation → plan : le mappage Q3, celui qui ne retire rien —
+     *    « Modifier » donne les QUATRE verbes, « Lire » donne `lire` seul ;
+     *  - à l'autre bord ({@see \App\Services\Filesystem\DirectoryTemplateService}),
+     *    recette → assignation : une liste de verbes redevient « Modifier » dès
+     *    qu'elle porte un verbe de mutation.
+     *
+     * Les deux sont TOTALES : toute valeur d'un côté a une image de l'autre.
+     *
+     * @return list<string>
+     */
+    private static function verbsOf(NetworkShareAssignable $assignment): array
+    {
+        return $assignment->isWritable() ? PlanGrant::VERBS : [PlanGrant::VERB_LIRE];
     }
 
     /**

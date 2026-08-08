@@ -10,6 +10,7 @@ use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -22,7 +23,9 @@ use InvalidArgumentException;
  * qui produit des `NetworkShare` standards : ce service ne réinvente NI le
  * provisioning ({@see NetworkShareService::provision()}), NI la projection agent,
  * NI la validation prédictive ({@see NetworkShareValidator}). Il ASSIGNE le bon
- * `UserGroup`/`User` avec le bon `access` ; le socle mappe au groupe Unix à
+ * `UserGroup`/`User` au bon niveau — les VERBES de la recette (story 62.4)
+ * traduits vers le vocabulaire binaire des assignations, voir
+ * {@see assignmentAccessOf()} ; le socle mappe au groupe Unix à
  * `provision()` (piège #3 — on NE redérive AUCUN nom de groupe Unix ici).
  *
  * **Invariant WG-montage-seul.** Une recette ne porte JAMAIS de maille
@@ -238,7 +241,7 @@ class DirectoryTemplateService
                 continue;
             }
 
-            $access = ($role['access'] ?? 'ro') === 'rw' ? 'rw' : 'ro';
+            $access = self::assignmentAccessOf($role);
             $key = UserGroup::class . '#' . $group->id;
 
             if (isset($seen[$key])) {
@@ -260,6 +263,42 @@ class DirectoryTemplateService
         }
 
         return $plan;
+    }
+
+    /**
+     * Story 62.4 — L'AUTRE BORD DE LA FRONTIÈRE : une liste de VERBES redevient un
+     * niveau BINAIRE d'assignation.
+     *
+     * La règle, en un mot : **est « Modifier » tout ce qui MUTE**. Un rôle dont les
+     * verbes croisent {@see PlanGrant::MUTATION_VERBS} (éditer, créer, supprimer)
+     * produit une assignation en écriture ; tout le reste produit une assignation
+     * en lecture.
+     *
+     * **Pourquoi une PERTE d'information est ici la bonne réponse.** Le pivot
+     * d'assignation décrit le MONTAGE d'un répertoire chez ses destinataires, pas
+     * l'arbre de droits qu'il contient — deux niveaux y suffisent, et son écran
+     * n'en propose pas d'autres. Faire remonter les quatre verbes jusqu'ici
+     * demanderait à l'administrateur de composer une matrice là où il choisit un
+     * montage, et obligerait la colonne, l'écran et l'import disque à changer
+     * ensemble pour ne rien gagner. La finesse vit dans le PLAN, et le plan est ce
+     * que le backend exécute ; l'assignation, elle, ne fait qu'ÉLARGIR une audience.
+     *
+     * Le bord symétrique — assignation → plan — vit dans
+     * {@see \App\Services\Filesystem\SharePlanProjector}. Les deux traductions sont
+     * TOTALES : toute valeur d'un côté a une image de l'autre.
+     *
+     * L'absence de la clé vaut « lire » seul, plancher historique d'un rôle qui ne
+     * se prononce pas.
+     *
+     * @param  array<string, mixed>  $role
+     */
+    private static function assignmentAccessOf(array $role): string
+    {
+        $verbs = is_array($role['verbs'] ?? null) ? $role['verbs'] : [];
+
+        return array_intersect(PlanGrant::MUTATION_VERBS, $verbs) !== []
+            ? NetworkShareAssignable::ACCESS_RW
+            : NetworkShareAssignable::ACCESS_RO;
     }
 
     /**
@@ -288,7 +327,7 @@ class DirectoryTemplateService
         foreach ($template->roles() as $role) {
             $roleKey = (string) ($role['key'] ?? '');
             $maille = (string) ($role['maille'] ?? '');
-            $access = ($role['access'] ?? 'ro') === 'rw' ? 'rw' : 'ro';
+            $access = self::assignmentAccessOf($role);
             $cardinality = ($role['cardinality'] ?? 'one') === 'many' ? 'many' : 'one';
             $groupType = $role['group_type'] ?? null;
             $roleLabel = (string) ($role['label'] ?? $roleKey);

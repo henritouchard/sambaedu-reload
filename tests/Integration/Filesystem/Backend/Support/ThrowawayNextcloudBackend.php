@@ -106,7 +106,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
                 );
             }
 
-            $share = $this->share($remotePath, $principal, $grant->access);
+            $share = $this->share($remotePath, $principal, $grant->verbs);
             if ($share === null) {
                 return NodeReconciliation::echec(
                     $node->path,
@@ -157,7 +157,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
 
                 // L'instruction de retrait, telle que mesurée : un octroi à zéro
                 // permission sur le nœud à refermer.
-                $this->share($remotePath, $principal, null);
+                $this->share($remotePath, $principal, []);
 
                 foreach ($this->sharesOf($remotePath) as $observed) {
                     if ($observed['name'] === $principal['name'] && $observed['type'] === $principal['type']) {
@@ -224,7 +224,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
                 if ($subject === null) {
                     continue;
                 }
-                $grants[] = new ObservedGrant($subject, $share['access']);
+                $grants[] = new ObservedGrant($subject, $share['verbs']);
             }
 
             $observations[] = NodeObservation::observed(
@@ -305,18 +305,43 @@ final class ThrowawayNextcloudBackend implements FileBackend
     }
 
     /**
-     * Pose (ou réémet) un octroi. `$access === null` = l'instruction de RETRAIT.
+     * Les QUATRE BITS NATIFS de ce plan de fichiers, et c'est le point de la
+     * préfiguration (story 62.4).
+     *
+     * Le vocabulaire de verbes du plan n'est pas une invention de SE5 : ce backend
+     * porte EXACTEMENT la même découpe, bit à bit, avec les mêmes frontières —
+     * mettre à jour le contenu d'un fichier est une permission, en créer un autre
+     * en est une seconde, en supprimer un troisième. La traduction est donc une
+     * SOMME, pas une interprétation : aucune dégradation, aucun déclin à déclarer,
+     * aucune limite de modèle. C'est la démonstration que la découpe tombe juste
+     * pour l'Epic 61.
+     *
+     * (Le bit de repartage n'est pas dans le vocabulaire du plan : SE5 ne le
+     * gouverne pas, et l'accorder serait un droit que personne n'a écrit.)
+     *
+     * @var array<string,int>
+     */
+    private const NATIVE_BITS = [
+        PlanGrant::VERB_LIRE => 1,
+        PlanGrant::VERB_EDITER => 2,
+        PlanGrant::VERB_CREER => 4,
+        PlanGrant::VERB_SUPPRIMER => 8,
+    ];
+
+    /**
+     * Pose (ou réémet) un octroi. Une liste de verbes VIDE = l'instruction de
+     * RETRAIT.
      *
      * @param  array{type:string,name:string}  $principal
+     * @param  list<string>  $verbs
      * @return array<string,mixed>|null `null` si le backend a refusé net
      */
-    private function share(string $path, array $principal, ?string $access): ?array
+    private function share(string $path, array $principal, array $verbs): ?array
     {
-        $permissions = match ($access) {
-            PlanGrant::ACCESS_RW => 31,
-            PlanGrant::ACCESS_RO => 1,
-            default => 0,
-        };
+        $permissions = 0;
+        foreach ($verbs as $verb) {
+            $permissions |= self::NATIVE_BITS[$verb] ?? 0;
+        }
 
         $response = $this->ocs('POST', '/ocs/v2.php/apps/files_sharing/api/v1/shares', [
             'path' => '/' . ltrim($path, '/'),
@@ -337,7 +362,12 @@ final class ThrowawayNextcloudBackend implements FileBackend
     /**
      * Les octrois RELUS d'un chemin, en vocabulaire de transport.
      *
-     * @return list<array{id:string,name:string,type:string,access:string}>
+     * La reprojection est la SYMÉTRIE exacte de la pose : chaque bit natif redonne
+     * son verbe, sans perte et sans approximation. Là où le serveur de fichiers
+     * historique doit déclarer ce qu'il ne sait pas rendre, celui-ci n'a rien à
+     * déclarer — et c'est précisément ce que la préfiguration devait montrer.
+     *
+     * @return list<array{id:string,name:string,type:string,verbs:list<string>}>
      */
     private function sharesOf(string $path): array
     {
@@ -363,7 +393,10 @@ final class ThrowawayNextcloudBackend implements FileBackend
                 'id' => (string) ($row['id'] ?? ''),
                 'name' => (string) ($row['share_with'] ?? ''),
                 'type' => $type,
-                'access' => ($permissions & 2) === 2 ? PlanGrant::ACCESS_RW : PlanGrant::ACCESS_RO,
+                'verbs' => array_values(array_filter(
+                    PlanGrant::VERBS,
+                    static fn (string $verb): bool => ($permissions & self::NATIVE_BITS[$verb]) === self::NATIVE_BITS[$verb],
+                )),
             ];
         }
 

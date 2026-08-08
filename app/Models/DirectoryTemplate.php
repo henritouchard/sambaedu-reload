@@ -21,7 +21,8 @@ use Illuminate\Database\Eloquent\Model;
  * jamais édité en 34.3 — Q3 option B). Une recette décrit les RÔLES-cibles d'un
  * pattern métier récurrent ; {@see App\Services\Filesystem\DirectoryTemplateService}
  * lit `roles_spec` depuis la DB pour matérialiser un {@see NetworkShare} + ses
- * assignations par maille avec le bon `access`.
+ * assignations par maille au bon niveau (le vocabulaire binaire des
+ * assignations, traduit depuis les verbes de la recette — story 62.4).
  *
  * **Mailles autorisées dans une recette** : `User` et `UserGroup` UNIQUEMENT.
  * Aucune recette ne porte d'ACL sur un `WorkstationGroup` (invariant WG-montage-
@@ -164,9 +165,15 @@ class DirectoryTemplate extends Model
      * Clés admises dans un octroi de nœud. Fermée pour la même raison : aucun
      * champ d'interdiction n'est exprimable.
      *
+     * **Story 62.4 — `verbs` REMPLACE `access`, il ne cohabite pas avec lui.**
+     * C'est le vocabulaire de clés FERMÉ qui rend une recette non migrée bruyante :
+     * elle est refusée avec « champ inconnu », jamais lue de travers. Accepter les
+     * deux clés « par tolérance » recréerait le JSON à deux vocabulaires que le
+     * garde-fou d'epic interdit.
+     *
      * @var list<string>
      */
-    public const TREE_GRANT_KEYS = ['role', 'access', 'suspendable'];
+    public const TREE_GRANT_KEYS = ['role', 'verbs', 'suspendable'];
 
     protected $table = 'directory_templates';
 
@@ -438,7 +445,98 @@ class DirectoryTemplate extends Model
         foreach ($this->roles() as $role) {
             if (is_array($role)) {
                 $this->resolutionOf($role);
+                $this->assertValidRoleVerbs($role);
             }
+        }
+    }
+
+    /**
+     * Story 62.4 — les verbes portés par un RÔLE de recette (`roles_spec[].verbs`).
+     *
+     * Deux exigences, et la première est la plus utile : l'ancienne clé `access`
+     * est refusée NOMMÉMENT. `roles_spec` n'a pas de vocabulaire de clés fermé
+     * (les rôles portent librement `key`, `label`, `maille`, `group_type`,
+     * `cardinality`, `resolution`…), donc rien n'aurait signalé une recette non
+     * migrée : elle aurait simplement été lue avec les verbes par défaut, et un
+     * rôle en écriture serait devenu un rôle en lecture SANS UN MOT. C'est
+     * exactement la classe de silence que l'epic traque.
+     *
+     * L'absence de `verbs`, elle, reste licite et vaut `lire` — c'est le plancher
+     * historique d'un rôle qui ne se prononce pas.
+     *
+     * @param  array<string, mixed>  $role
+     *
+     * @throws InvalidTreeSpecException
+     */
+    private function assertValidRoleVerbs(array $role): void
+    {
+        $what = sprintf(
+            'le rôle « %s » de la recette « %s »',
+            is_scalar($role['key'] ?? null) ? (string) $role['key'] : '?',
+            (string) $this->key,
+        );
+
+        if (array_key_exists('access', $role)) {
+            throw InvalidTreeSpecException::make(sprintf(
+                '%s porte le vocabulaire ABANDONNÉ « access » : les droits se disent désormais en verbes '
+                . '(clé « verbs », valeurs %s). Cette recette n\'a pas été migrée.',
+                ucfirst($what),
+                implode('|', PlanGrant::VERBS),
+            ));
+        }
+
+        if (array_key_exists('verbs', $role)) {
+            self::assertValidVerbList($role['verbs'], $what);
+        }
+    }
+
+    /**
+     * Story 62.4 — garde COMMUNE aux deux endroits où une recette écrit des
+     * droits : les verbes d'un rôle et les verbes d'un octroi de nœud.
+     *
+     * Refuse : le scalaire nu (l'ancien `'rw'` recopié), la liste vide, le verbe
+     * inconnu, le doublon. Les messages suivent le patron des autres gardes de
+     * recette — ils nomment ce qui est attendu, pas seulement ce qui est faux.
+     *
+     * @throws InvalidTreeSpecException
+     */
+    private static function assertValidVerbList(mixed $verbs, string $what): void
+    {
+        if (! is_array($verbs)) {
+            throw InvalidTreeSpecException::make(sprintf(
+                '%s ne porte pas une LISTE de verbes (attendu : une liste parmi %s — le plan ne connaît '
+                . 'aucun mode système, et un scalaire nu appartient au vocabulaire abandonné).',
+                ucfirst($what),
+                implode('|', PlanGrant::VERBS),
+            ));
+        }
+
+        if ($verbs === []) {
+            throw InvalidTreeSpecException::make(sprintf(
+                '%s ne porte AUCUN verbe : une liste vide n\'est pas un octroi (attendu : au moins un de %s).',
+                ucfirst($what),
+                implode('|', PlanGrant::VERBS),
+            ));
+        }
+
+        $seen = [];
+        foreach ($verbs as $verb) {
+            if (! is_string($verb) || ! in_array($verb, PlanGrant::VERBS, true)) {
+                throw InvalidTreeSpecException::make(sprintf(
+                    'verbe « %s » inconnu sur %s (attendu : %s).',
+                    is_scalar($verb) ? (string) $verb : gettype($verb),
+                    $what,
+                    implode('|', PlanGrant::VERBS),
+                ));
+            }
+            if (isset($seen[$verb])) {
+                throw InvalidTreeSpecException::make(sprintf(
+                    'le verbe « %s » est écrit deux fois sur %s — une liste de verbes est un ENSEMBLE.',
+                    $verb,
+                    $what,
+                ));
+            }
+            $seen[$verb] = true;
         }
     }
 
@@ -894,8 +992,9 @@ class DirectoryTemplate extends Model
 
     /**
      * Valide les octrois d'un nœud : rôle connu (ou jeton du membre énuméré sur un
-     * nœud par membre), accès dans le vocabulaire neutre `ro|rw`, suspendable
-     * seulement là où quelque chose peut suspendre.
+     * nœud par membre), LISTE DE VERBES non vide et sans doublon dans le
+     * vocabulaire neutre des quatre verbes, suspendable seulement là où quelque
+     * chose peut suspendre.
      *
      * @param  list<string>  $roleKeys
      *
@@ -925,20 +1024,17 @@ class DirectoryTemplate extends Model
             }
 
             $role = $grant['role'] ?? null;
-            $access = $grant['access'] ?? null;
+            $verbs = $grant['verbs'] ?? null;
             $suspendable = (bool) ($grant['suspendable'] ?? false);
 
             if (! is_string($role) || $role === '') {
                 throw InvalidTreeSpecException::make(sprintf('un octroi du nœud « %s » ne référence aucun rôle.', $path));
             }
-            if (! in_array($access, PlanGrant::ACCESSES, true)) {
-                throw InvalidTreeSpecException::make(sprintf(
-                    'accès « %s » inconnu sur le nœud « %s » (attendu : %s — le plan ne connaît aucun mode système).',
-                    is_scalar($access) ? (string) $access : gettype($access),
-                    $path,
-                    implode('|', PlanGrant::ACCESSES),
-                ));
-            }
+
+            self::assertValidVerbList(
+                $verbs,
+                sprintf('l\'octroi du rôle « %s » sur le nœud « %s »', is_string($role) ? $role : '?', $path),
+            );
 
             if ($role === self::TREE_ROLE_MEMBER) {
                 if ($nature !== PlanNodeNature::ParMembre) {
@@ -966,7 +1062,7 @@ class DirectoryTemplate extends Model
 
             if (isset($seenRoles[$role])) {
                 throw InvalidTreeSpecException::make(sprintf(
-                    'le rôle « %s » reçoit deux octrois sur le nœud « %s » — un rôle, un accès.',
+                    'le rôle « %s » reçoit deux octrois sur le nœud « %s » — un rôle, une liste de verbes.',
                     $role,
                     $path,
                 ));

@@ -186,7 +186,7 @@ class PlanResolverTest extends TestCase
         $this->assertCount(1, $nominative);
         $this->assertSame(PlanSubject::TYPE_USER, $nominative[0]->subject->type);
         $this->assertSame(self::USER_BRUNO_ID, $nominative[0]->subject->id);
-        $this->assertSame('rw', $nominative[0]->access);
+        $this->assertSame(PlanGrant::VERBS, $nominative[0]->verbs);
 
         // Le login n'est QUE le nom du dossier.
         $this->assertSame('bmartin', $node->path);
@@ -239,7 +239,7 @@ class PlanResolverTest extends TestCase
         $this->assertTrue($classeOff->suspendable);
         $this->assertTrue($classeOff->suspended);
         $this->assertFalse($classeOff->isActive());
-        $this->assertSame('rw', $classeOff->access, 'l\'accès reste écrit : il est suspendu, pas effacé');
+        $this->assertSame(PlanGrant::VERBS, $classeOff->verbs, 'les verbes restent écrits : l\'octroi est suspendu, pas effacé');
 
         // 4. … et celui de l'équipe reste actif.
         $equipeOff = $this->grantForRole($off, 'equipe');
@@ -293,7 +293,7 @@ class PlanResolverTest extends TestCase
     {
         $template = $this->classTreeTemplate();
         $nodes = $template->nodes();
-        $nodes[2]['grants'][] = ['role' => 'classe', 'access' => 'ro'];
+        $nodes[2]['grants'][] = ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]];
         $template->nodes_spec = $nodes;
 
         $plan = $this->resolver->resolve($template, $this->classTreeContext());
@@ -473,20 +473,47 @@ class PlanResolverTest extends TestCase
     // Aucun deny exprimable
     // =========================================================================
 
+    /**
+     * Story 62.4 — L'ÉPINGLE RETOURNÉE : le vocabulaire n'est plus « les deux
+     * niveaux positifs », c'est « les quatre verbes positifs ».
+     *
+     * Ce qui NE change pas, et qui est tout l'objet du test : il reste impossible
+     * d'écrire une interdiction. Ni « aucun », ni un refus, ni un mode système, ni
+     * une liste vide — cette dernière étant le seul ajout de la story à la liste
+     * des refus, parce qu'un octroi qui ne donne rien serait indiscernable d'une
+     * suspension appliquée.
+     */
     #[Test]
-    public function no_access_level_other_than_the_two_positive_ones_can_exist(): void
+    public function no_verb_other_than_the_four_positive_ones_can_exist(): void
     {
-        $this->assertSame(['ro', 'rw'], PlanGrant::ACCESSES);
+        $this->assertSame(['lire', 'editer', 'creer', 'supprimer'], PlanGrant::VERBS);
 
-        foreach (['none', 'deny', '---', 'rwx', ''] as $forbidden) {
+        foreach ([['none'], ['deny'], ['---'], ['rwx'], [''], ['ro'], ['rw'], []] as $forbidden) {
             $rejected = false;
             try {
                 new PlanGrant('equipe', PlanSubject::group(1), $forbidden);
             } catch (PlanResolutionException) {
                 $rejected = true;
             }
-            $this->assertTrue($rejected, 'accès accepté à tort : ' . $forbidden);
+            $this->assertTrue($rejected, 'octroi accepté à tort : ' . json_encode($forbidden));
         }
+    }
+
+    /**
+     * Story 62.4 — les verbes sont un ENSEMBLE ORDONNÉ CANONIQUEMENT, et c'est ce
+     * qui fait tenir le déterminisme octet pour octet de la story 60.1 : deux
+     * saisies du même octroi, dans deux ordres, se sérialisent identiquement.
+     */
+    #[Test]
+    public function verbs_are_deduplicated_and_ordered_canonically(): void
+    {
+        $grant = new PlanGrant('equipe', PlanSubject::group(1), ['supprimer', 'lire', 'supprimer', 'editer']);
+
+        $this->assertSame(['lire', 'editer', 'supprimer'], $grant->verbs);
+        $this->assertSame(
+            $grant->sortKey(),
+            (new PlanGrant('equipe', PlanSubject::group(1), ['lire', 'editer', 'supprimer']))->sortKey(),
+        );
     }
 
     #[Test]
@@ -494,7 +521,7 @@ class PlanResolverTest extends TestCase
     {
         $this->expectException(PlanResolutionException::class);
 
-        new PlanGrant('equipe', PlanSubject::group(1), 'rw', suspendable: false, suspended: true);
+        new PlanGrant('equipe', PlanSubject::group(1), PlanGrant::VERBS, suspendable: false, suspended: true);
     }
 
     // =========================================================================
@@ -562,7 +589,7 @@ class PlanResolverTest extends TestCase
                     'label' => 'Enseignants de la matière',
                     'maille' => UserGroup::class,
                     'group_type' => 'matiere_classe',
-                    'access' => 'rw',
+                    'verbs' => PlanGrant::VERBS,
                     'cardinality' => 'one',
                 ],
             ],
@@ -572,7 +599,7 @@ class PlanResolverTest extends TestCase
                     'path' => '_travail',
                     'label' => 'Documents de travail',
                     'nature' => 'partagee',
-                    'grants' => [['role' => 'equipe', 'access' => 'rw']],
+                    'grants' => [['role' => 'equipe', 'verbs' => PlanGrant::VERBS]],
                 ],
             ],
         ]);
