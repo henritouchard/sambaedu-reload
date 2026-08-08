@@ -83,7 +83,7 @@ fiches) · **🟡** fiche unique · **🔴** aucune fiche de référence.
 | **Lien amont controlHub** | `app/Services/ControlHub/` | [`api-controlhub-workstation-groups.md`](api-controlhub-workstation-groups.md) | [qa](qa/domains/controlhub-contract.md) | 🟡 |
 | **GPO & SYSVOL** | `app/Gpo/`, `app/Services/Gpo/` | *dette :* [`tech-debt-gpo.md`](tech-debt-gpo.md) | [qa](qa/domains/gpo.md) | 🔴 |
 | **Authentification & SSO** | `app/Auth/` (V1, OIDC, fédéré), `app/OidcWitness/` | *dette :* [`tech-debt-auth.md`](tech-debt-auth.md) | [qa](qa/domains/auth.md), [qa](qa/domains/federated-login.md) | 🔴 |
-| **Installation de postes (iPXE)** | `app/Ipxe/` | — | [qa](qa/domains/ipxe.md) | 🔴 |
+| **Installation de postes (iPXE)** | `app/Ipxe/` | [`ipxe/`](ipxe/README.md) — 6 fiches | [qa](qa/domains/ipxe.md) | ✅ |
 | **Extensions** | `app/Services/Extensions/`, `extensions/` | — | [qa](qa/domains/extensions.md) | 🔴 |
 | **Réseau (DHCP/DNS)** | `app/Services/Network/`, `scripts/system/` | — | [qa](qa/domains/network.md) | 🔴 |
 | **Scripts de session** | `app/ScriptsOs/` | — | — | 🔴 |
@@ -113,14 +113,12 @@ comparaison legacy ↔ SE5).
 
 Classés par volume de code non couvert :
 
-1. **Installation de postes (iPXE)** — le plus gros module sans aucune fiche de
-   référence. Seule une checklist de pré-production existe.
-2. **Authentification & SSO** — trois mécanismes distincts (jeton poste↔serveur,
+1. **Authentification & SSO** — trois mécanismes distincts (jeton poste↔serveur,
    OIDC, login fédéré) documentés seulement par leur dette et leurs checklists.
-3. **GPO & SYSVOL** — module natif documenté seulement par son registre de dette.
-4. **Extensions** et **réseau** — checklist de pré-production uniquement.
-5. **Diagnostic d'instance** et **scripts de session** — aucune trace.
-6. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
+2. **GPO & SYSVOL** — module natif documenté seulement par son registre de dette.
+3. **Extensions** et **réseau** — checklist de pré-production uniquement.
+4. **Diagnostic d'instance** et **scripts de session** — aucune trace.
+5. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
    référence**, et il n'apparaît même pas à la carte des domaines ci-dessus. Ce
    qu'il en reste d'écrit est réparti sans index : les décisions vivantes sont dans
    le code (rôle porté par l'arête user↔groupe, type de groupe fermé par la
@@ -129,12 +127,12 @@ Classés par volume de code non couvert :
    sont dans [`archive/group-model-multivertical-orientation.md`](archive/group-model-multivertical-orientation.md)
    et son entrée d'[`archive/README.md`](archive/README.md). Le domaine est à
    ouvrir au gabarit.
-7. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
+6. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
    beaucoup évolué depuis sa dernière génération, et un seul contrôleur du dépôt
    porte encore des annotations. À **refaire**, pas à rapiécer.
-8. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
+7. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
    accrétion successive ; l'index est à reconstruire.
-9. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
+8. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
    décisions des mécanismes : ils sont à passer au gabarit quand on les rouvre.
 
 ## 7. Écrire une fiche
