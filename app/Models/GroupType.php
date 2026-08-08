@@ -122,8 +122,31 @@ class GroupType extends Model
         return substr($slug, 0, self::KEY_MAX_LENGTH);
     }
 
+    /**
+     * Le format d'une clé se contrôle à la SAISIE, pas à la relecture.
+     *
+     * Review 62.2 #1 — cette garde s'appliquait à CHAQUE `save()`, alors que
+     * {@see assertKeyIsImmutable()} juste en dessous ne s'applique qu'à une clé
+     * modifiée. L'asymétrie était fatale : la migration de reprise insère
+     * délibérément les clés DÉCOUVERTES à leur valeur EXACTE, sans normalisation —
+     * c'est tout l'objet de l'AC1, et `Custom` en est l'exemple épinglé. Or aucune
+     * de ces lignes ne respecte le slug. Elles devenaient donc **injouables** :
+     * renommer le seul libellé de `Custom` levait une exception non interceptée
+     * (la branche création a un `try/catch`, pas la branche édition), et surtout
+     * « monter »/« descendre » N'IMPORTE QUEL type réécrit `sort_order` sur toute
+     * la liste — une seule ligne héritée non-slug cassait donc le réordonnancement
+     * du catalogue ENTIER.
+     *
+     * On garde donc exactement ce que l'AC visait — refuser une clé mal formée
+     * qu'un humain vient de saisir — sans refuser un héritage qu'on s'est
+     * justement interdit de renommer.
+     */
     private function assertKeyIsWellFormed(): void
     {
+        if ($this->exists && ! $this->isDirty('key')) {
+            return;
+        }
+
         $key = (string) $this->key;
 
         if ($key === '' || preg_match(self::KEY_PATTERN, $key) !== 1) {

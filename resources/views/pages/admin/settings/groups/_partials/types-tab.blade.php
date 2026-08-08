@@ -184,7 +184,19 @@ new class extends Component {
             // aucune donnée dérivée » exige.
             $type->label = trim($this->label);
             $type->icon = $icon;
-            $type->save();
+
+            try {
+                $type->save();
+            } catch (\Throwable $e) {
+                // Review 62.2 #1 — la branche création interceptait déjà les gardes
+                // du modèle, pas celle-ci : une garde qui refusait ce type rendait
+                // un 500 au lieu d'un message. Le défaut de fond est corrigé sur le
+                // modèle ; ce filet reste, par symétrie avec la création, pour toute
+                // garde future.
+                $this->addError('label', $e->getMessage());
+
+                return;
+            }
 
             $this->toastSuccess(sprintf('Le type se lit désormais « %s ».', (string) $type->label));
             $this->close();
