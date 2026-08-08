@@ -124,11 +124,24 @@ final class PosixFileBackend implements FileBackend
      */
     private const STRUCTURAL_NAMED = ['domain\040admins', 'domain admins'];
 
+    /**
+     * Story 62.5 — la forme CANONIQUE d'un couloir d'accès dérivé, telle qu'elle se
+     * relit.
+     *
+     * Elle est ici, et surtout PAS dans la table de reprojection {@see verbsOf()} :
+     * un couloir n'est pas un verbe, aucune observation ne sait le dire
+     * ({@see \App\Services\Filesystem\Backend\ObservedGrant} valide contre le
+     * vocabulaire fermé du plan), et l'ajouter à la table percerait la ligne que la
+     * story 62.4 a fermée à dessein. Un couloir se FILTRE, il ne se traduit pas.
+     */
+    private const TRAVERSAL_MODE = '--x';
+
     public function __construct(
         private readonly PosixPathGuard $guard,
         private readonly PosixAclCompiler $compiler,
         private readonly PosixSubjectProjector $projector,
         private readonly PosixExecutor $executor,
+        private readonly PosixTraversalPlanner $traversalPlanner = new PosixTraversalPlanner(),
     ) {
     }
 
@@ -174,7 +187,11 @@ final class PosixFileBackend implements FileBackend
             );
         }
 
-        $compiled = $this->compiler->compile($node);
+        // Story 62.5 — les COULOIRS d'accès dérivés de ce nœud, calculés par le
+        // planificateur et par lui seul. La relecture appelle le MÊME calcul : deux
+        // dérivations qui divergeraient donneraient soit une repose à chaque
+        // passage, soit une dérive que personne ne verrait.
+        $compiled = $this->compiler->compile($node, $this->traversalPlanner->forNode($plan, $node));
 
         // Garde-fou d'échelle : le nœud entier est refusé, aucun geste n'est tenté.
         if ($compiled->isBlocked()) {
@@ -243,6 +260,16 @@ final class PosixFileBackend implements FileBackend
             }
         }
 
+        // Story 62.5 — LES COULOIRS, POSÉS EN DERNIER ET SUR LA TÊTE SEULE.
+        //
+        // En dernier parce que la purge et les poses de nœud viennent d'écrire tout
+        // le reste ; sur la tête seule parce qu'un couloir est un attribut de CE
+        // répertoire — le diffuser plus bas donnerait la traversée à du contenu que
+        // le plan ne gouverne même pas.
+        foreach ($compiled->traversalAcls as $acl) {
+            $record($this->executor->applyAclToHead($path, $acl));
+        }
+
         // La restriction de suppression est un mode du DOSSIER : elle se pose (ou
         // se retire) à part, et seulement quand l'état voulu diffère du constaté.
         if ($compiled->restrictsDeletion) {
@@ -304,11 +331,18 @@ final class PosixFileBackend implements FileBackend
      * soit posée — ou, l'ayant posée, se serait vu la reposer à chaque passage :
      * dans les deux cas l'idempotence promise par le contrat aurait été fausse.
      *
+     * **Story 62.5 — les COULOIRS aussi, et pour exactement la même raison.** Ils
+     * sont dans l'état de tête relu ; les omettre de l'ensemble comparé aurait fait
+     * relire « dérivé » un nœud parfaitement conforme, donc reposer à chaque
+     * passage. Et la réciproque tient toute seule : un couloir devenu caduc — l'octroi
+     * profond a disparu — n'est plus attendu, l'ensemble diffère, et la purge qui
+     * ouvre la repose l'emporte.
+     *
      * @param  array{acls: list<string>, restricted: bool}  $effective
      */
     private function matches(array $effective, CompiledNodeAcl $compiled): bool
     {
-        return $effective['acls'] === AclFormat::normalizeSet($compiled->acls)
+        return $effective['acls'] === AclFormat::normalizeSet($compiled->headAcls())
             && $effective['restricted'] === $compiled->restrictsDeletion;
     }
 
@@ -518,6 +552,17 @@ final class PosixFileBackend implements FileBackend
         $unmapped = 0;
         $restricted = self::readsAsRestricted($read->output);
 
+        // Story 62.5 — les couloirs ATTENDUS ici, par le MÊME planificateur que la
+        // pose. Ils ne sont PAS des octrois observés : le plan n'attend rien de ces
+        // sujets sur ce nœud, et les compter en ferait des « entrées en trop » à
+        // chaque comparaison — un bruit de dérive perpétuel sur chaque instance.
+        /** @var array<string, PosixTraversal> $expectedTraversals */
+        $expectedTraversals = [];
+        foreach ($this->traversalPlanner->forNode($plan, $node) as $traversal) {
+            $expectedTraversals[$traversal->key()] = $traversal;
+        }
+        $seenTraversals = [];
+
         foreach (AclFormat::parseEntries($read->output) as $entry) {
             // Les miroirs d'héritage ne sont pas des octrois : ils décrivent ce
             // que le contenu à venir héritera, pas ce que quelqu'un a aujourd'hui.
@@ -536,6 +581,27 @@ final class PosixFileBackend implements FileBackend
                 continue;
             }
 
+            // Une entrée de traversée ATTENDUE est STRUCTURELLE au même titre que le
+            // jeu de base : elle appartient au contrat du répertoire, pas à son
+            // audience. Le filtre porte sur le SUJET ATTENDU **et** sur la forme
+            // exacte du couloir — une traversée étrangère, ou un couloir attendu
+            // écrit autrement, reste un écart. Sans cette précision, « tout ce qui
+            // ressemble à un couloir » deviendrait absous.
+            if (AclFormat::normalizeMode($entry['mode']) === self::TRAVERSAL_MODE) {
+                $subject = $this->subjectOf($type, $qualifier, $index);
+                $key = $subject instanceof PlanSubject ? $subject->sortKey() : null;
+
+                if ($key !== null && isset($expectedTraversals[$key])) {
+                    $seenTraversals[$key] = true;
+
+                    continue;
+                }
+
+                $unmapped++;
+
+                continue;
+            }
+
             $verbs = $this->verbsOf($entry['mode'], $restricted);
             if ($verbs === null) {
                 $unmapped++;
@@ -543,9 +609,7 @@ final class PosixFileBackend implements FileBackend
                 continue;
             }
 
-            $subject = $type === 'user'
-                ? $this->projector->subjectForLogin(AclFormat::unescape($qualifier), $index['logins'])
-                : ($index['groups'][strtolower(AclFormat::unescape($qualifier))] ?? null);
+            $subject = $this->subjectOf($type, $qualifier, $index);
 
             if (! $subject instanceof PlanSubject) {
                 $unmapped++;
@@ -556,18 +620,83 @@ final class PosixFileBackend implements FileBackend
             $grants[] = new ObservedGrant($subject, $verbs);
         }
 
+        $missing = array_values(array_filter(
+            $expectedTraversals,
+            static fn (PosixTraversal $t): bool => ! isset($seenTraversals[$t->key()]),
+        ));
+
+        $details = [];
+        if ($unmapped > 0) {
+            $details[] = sprintf(
+                '%d entrée(s) relue(s) ne correspondent à aucune identité connue de SE5 : elles sont '
+                . 'comptées comme écart, pas ignorées.',
+                $unmapped,
+            );
+        }
+        if ($missing !== []) {
+            $details[] = self::missingTraversalDetail($missing);
+        }
+
         return NodeObservation::observed(
             $node->path,
             $grants,
             null,
             false,
-            $unmapped > 0
-                ? sprintf(
-                    '%d entrée(s) relue(s) ne correspondent à aucune identité connue de SE5 : elles sont '
-                    . 'comptées comme écart, pas ignorées.',
-                    $unmapped,
-                )
-                : null,
+            $details === [] ? null : implode(' ', $details),
+        );
+    }
+
+    /**
+     * Le sujet de plan d'une entrée relue, ou `null` si rien de connu ne lui
+     * correspond.
+     *
+     * Extrait de la boucle de relecture par la story 62.5 : elle a désormais DEUX
+     * endroits qui doivent traduire un qualifier (l'octroi observé, le couloir
+     * attendu), et deux traductions qui divergeraient feraient qu'une même entrée
+     * serait reconnue d'un côté et comptée en écart de l'autre.
+     *
+     * @param  array{groups: array<string, PlanSubject>, logins: array<string, PlanSubject>}  $index
+     */
+    private function subjectOf(string $type, string $qualifier, array $index): ?PlanSubject
+    {
+        return $type === 'user'
+            ? $this->projector->subjectForLogin(AclFormat::unescape($qualifier), $index['logins'])
+            : ($index['groups'][strtolower(AclFormat::unescape($qualifier))] ?? null);
+    }
+
+    /**
+     * Story 62.5 — la phrase d'un COULOIR ATTENDU QUI MANQUE, en vocabulaire de
+     * plan.
+     *
+     * Elle ne dit ni mode, ni bit, ni commande : elle dit qu'un passage manque, vers
+     * combien de dossiers plus profonds, et pour quels rôles. C'est ce qui suffit à
+     * l'administrateur — et c'est ce `detail` non vide qui fait classer le nœud en
+     * ÉCART par le comparateur d'état, sans qu'une seule de ses lignes ait eu besoin
+     * de changer.
+     *
+     * @param  list<PosixTraversal>  $missing
+     */
+    private static function missingTraversalDetail(array $missing): string
+    {
+        $roles = [];
+        $paths = [];
+        foreach ($missing as $traversal) {
+            foreach ($traversal->roleKeys as $role) {
+                $roles[$role] = true;
+            }
+            foreach ($traversal->nodePaths as $path) {
+                $paths[$path] = true;
+            }
+        }
+        $roleNames = array_keys($roles);
+        sort($roleNames, SORT_STRING);
+
+        return sprintf(
+            'le couloir d\'accès dérivé vers %d dossier(s) plus profond(s) n\'est pas en place pour %d '
+            . 'rôle(s) (%s) : sans lui, ce qui leur est accordé plus bas reste hors d\'atteinte.',
+            count($paths),
+            count($missing),
+            implode(', ', array_map(static fn (string $r): string => '« ' . $r . ' »', $roleNames)),
         );
     }
 
@@ -597,6 +726,14 @@ final class PosixFileBackend implements FileBackend
      * se voit et se discute, une conformité de trop est une fuite silencieuse. La
      * relecture fine du contenu demanderait une descente récursive que ce backend
      * ne fait pas, par la même décision qu'en 60.4.
+     *
+     * **Story 62.5 — la table N'A PAS BOUGÉ, et c'est un choix.** Les couloirs
+     * d'accès dérivés produisent une forme d'entrée que cette table rend `null`,
+     * donc « écart ». La tentation était d'y ajouter une ligne ; elle est refusée :
+     * un couloir n'exprime AUCUN verbe, et le déclarer comme tel ferait remonter en
+     * observation quelque chose que le plan n'a jamais écrit. Les couloirs ATTENDUS
+     * sont donc écartés en amont, comme les entrées structurelles ; ceux qui ne sont
+     * pas attendus tombent ici, en écart — exactement comme avant.
      *
      * **Sur une instance en place, aucun bruit** : les recettes migrées ne portent
      * que « lire » seul et les quatre verbes, deux lignes de la table qui se

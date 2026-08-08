@@ -840,6 +840,8 @@ class DirectoryTemplate extends Model
         }
 
         $seenPaths = [];
+        /** @var array<string, array{nature: PlanNodeNature, edge_role: ?string, grants: array<int, mixed>}> $declared */
+        $declared = [];
         foreach ($nodes as $index => $node) {
             if (! is_array($node)) {
                 throw InvalidTreeSpecException::make(sprintf('le nœud #%d n\'est pas une structure.', (int) $index));
@@ -948,7 +950,215 @@ class DirectoryTemplate extends Model
                 throw InvalidTreeSpecException::make(sprintf('le chemin de nœud « %s » est déclaré deux fois.', $path));
             }
             $seenPaths[$path] = true;
+
+            $declared[$path] = [
+                'nature' => $nature,
+                'edge_role' => $nature === PlanNodeNature::ParMembre ? (string) $node['edge_role'] : null,
+                'grants' => is_array($node['grants'] ?? null) ? $node['grants'] : [],
+            ];
         }
+
+        // Story 62.5 — LES RÈGLES PARENT→ENFANT, APRÈS la boucle et jamais avant.
+        //
+        // Elles ne portent que sur des nœuds DÉJÀ individuellement valides. L'ordre
+        // n'est pas cosmétique : une recette qui écrit `depots/{member.login}` sur un
+        // nœud partagé doit s'entendre dire que le jeton du membre n'a rien à faire
+        // là — pas que son ancêtre « depots » n'est pas déclaré. Le second message
+        // est vrai, il est simplement moins utile, et il volerait la place du premier.
+        $this->assertReachableTree($declared);
+    }
+
+    /**
+     * Story 62.5 — **UN OCTROI QUE PERSONNE NE PEUT ATTEINDRE EST REFUSÉ À
+     * L'ÉCRITURE.**
+     *
+     * Le compilateur travaille nœud par nœud : il ne voit jamais l'arbre. Une
+     * recette peut donc être parfaitement « conforme » nœud à nœud et décrire un
+     * dossier auquel personne n'arrive — parce que la pose de son ancêtre le referme
+     * pour tout le monde, ou parce que cet ancêtre n'est gouverné par personne. Le
+     * couloir d'accès dérivé
+     * ({@see \App\Services\Filesystem\Backend\Posix\PosixTraversalPlanner}) répare
+     * le premier cas pour les AUDIENCES ; ces quatre règles ferment tout le reste,
+     * STATIQUEMENT, et nomment le chemin fautif.
+     *
+     * @param  array<string, array{nature: PlanNodeNature, edge_role: ?string, grants: array<int, mixed>}>  $declared
+     *
+     * @throws InvalidTreeSpecException
+     */
+    private function assertReachableTree(array $declared): void
+    {
+        foreach ($declared as $path => $node) {
+            // RÈGLE 1 — chaque préfixe strict doit être un nœud DÉCLARÉ.
+            //
+            // Un ancêtre non déclaré est un dossier HORS CONTRAT : aucune entrée ne
+            // peut y vivre, l'inspection ne le regarde pas, et la pose récursive de
+            // l'ancêtre déclaré le plus proche le referme pour tout le monde. Le
+            // nœud profond est alors soit inatteignable, soit gouverné par personne
+            // — les deux sont des mensonges de recette.
+            //
+            // **Le nœud racine n'est PAS exigé**, et c'est calibré sur l'existant :
+            // une recette peut n'avoir que des nœuds de premier niveau, sans jamais
+            // se prononcer sur la racine de son propre partage. C'est l'état livré
+            // par la story 60.5 — hors contrat, mais pas aggravé ici. La règle ne
+            // porte donc que sur les préfixes STRICTS, jamais sur la racine.
+            foreach (self::strictAncestorsOf($path) as $ancestor) {
+                if (! array_key_exists($ancestor, $declared)) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud « %s » est inatteignable : son ancêtre « %s » n\'est pas un nœud de la recette.',
+                        $path,
+                        $ancestor,
+                    ));
+                }
+            }
+
+            // Les ancêtres qui GOUVERNENT ce nœud. La racine, quand elle est
+            // déclarée, en fait partie : elle n'est pas un préfixe de chaîne, mais
+            // elle est bel et bien le dossier par lequel on passe pour atteindre
+            // n'importe quel nœud — et c'est elle qui porte, dans la recette de
+            // classe, l'audience par laquelle les élèves atteignent leur dossier
+            // personnel. L'oublier ici aurait rendu la règle 4 vide de sens sur la
+            // seule recette d'arbre livrée.
+            $governing = self::strictAncestorsOf($path);
+            if ($path !== GroupNameNormalizer::ROOT_NODE_PATH
+                && array_key_exists(GroupNameNormalizer::ROOT_NODE_PATH, $declared)) {
+                array_unshift($governing, GroupNameNormalizer::ROOT_NODE_PATH);
+            }
+
+            foreach ($governing as $ancestor) {
+                // RÈGLE 2 — rien ne se déclare sous un contenu libre.
+                if ($declared[$ancestor]['nature'] === PlanNodeNature::ContenuLibre) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud « %s » vit sous « %s », dont le contenu n\'est pas gouverné par le plan : '
+                        . 'y déclarer un nœud est une contradiction.',
+                        $path,
+                        $ancestor,
+                    ));
+                }
+
+                // RÈGLE 3 — deux énumérations de membres qui ne parlent pas des
+                // mêmes personnes ne s'imbriquent pas.
+                //
+                // Un nœud NON par membre sous un nœud par membre est déjà impossible
+                // par construction (son chemin porterait le jeton du membre, interdit
+                // hors d'un nœud par membre) — un test l'épingle plutôt que de le
+                // croire. Reste le cas qui, lui, est écrivable : deux nœuds par
+                // membre imbriqués visant des rôles d'arête DIFFÉRENTS. Le dossier
+                // d'un membre du second n'existe pas chez le premier.
+                if ($declared[$ancestor]['nature'] === PlanNodeNature::ParMembre
+                    && $node['nature'] === PlanNodeNature::ParMembre
+                    && $declared[$ancestor]['edge_role'] !== $node['edge_role']) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud par membre « %s » (rôle d\'arête « %s ») vit sous le nœud par membre « %s », '
+                        . 'qui énumère les membres portant « %s » : l\'ancêtre n\'existe pas pour ces '
+                        . 'personnes-là.',
+                        $path,
+                        (string) $node['edge_role'],
+                        $ancestor,
+                        (string) $declared[$ancestor]['edge_role'],
+                    ));
+                }
+
+                // RÈGLE 4 — LA CONTREPARTIE STATIQUE DU « LE NOMINATIF NE DÉRIVE
+                // PAS ».
+                //
+                // Un dossier par membre n'obtient AUCUN couloir dérivé : le dériver
+                // poserait une entrée nominative par personne sur chaque ancêtre
+                // partagé. L'atteignabilité de ces dossiers repose donc entièrement
+                // sur une AUDIENCE qui, par construction, contient les membres visés
+                // — le groupe lui-même, ou les porteurs du même rôle d'arête. Sans
+                // elle, chaque élève aurait un dossier personnel dont il ne
+                // franchirait jamais la porte d'entrée.
+                if ($node['nature'] === PlanNodeNature::ParMembre
+                    && ! $this->coversEdgeRole($declared[$ancestor]['grants'], (string) $node['edge_role'])) {
+                    throw InvalidTreeSpecException::make(sprintf(
+                        'le nœud par membre « %s » est inatteignable : son ancêtre « %s » n\'octroie rien à '
+                        . 'une audience qui contient les membres portant le rôle d\'arête « %s » (attendu : un '
+                        . 'octroi à un rôle résolu par « %s », ou par « %s » listant « %s »).',
+                        $path,
+                        $ancestor,
+                        (string) $node['edge_role'],
+                        RoleResolutionStrategy::Itself->value,
+                        RoleResolutionStrategy::EdgeRole->value,
+                        (string) $node['edge_role'],
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * Les préfixes STRICTS d'un chemin de nœud, du plus proche de la racine au plus
+     * proche du nœud, RACINE EXCLUE.
+     *
+     * Le jeton racine n'est pas un segment : il n'a pas d'ancêtre, et il n'apparaît
+     * jamais dans cette liste (voir le pourquoi à la règle 1). Les chemins sont ceux
+     * de la RECETTE — placeholders compris — ce qui est exactement la bonne maille :
+     * la substitution est déterministe, donc deux chemins de recette qui se
+     * préfixent se préfixent aussi une fois résolus.
+     *
+     * @return list<string>
+     */
+    private static function strictAncestorsOf(string $path): array
+    {
+        if ($path === GroupNameNormalizer::ROOT_NODE_PATH) {
+            return [];
+        }
+
+        $segments = explode('/', $path);
+        array_pop($segments);
+
+        $ancestors = [];
+        $current = '';
+        foreach ($segments as $segment) {
+            $current = $current === '' ? $segment : $current . '/' . $segment;
+            $ancestors[] = $current;
+        }
+
+        return $ancestors;
+    }
+
+    /**
+     * Les octrois de ce nœud contiennent-ils une audience qui, PAR CONSTRUCTION,
+     * couvre les membres portant ce rôle d'arête ?
+     *
+     * Deux règles de résolution seulement le garantissent : le groupe LUI-MÊME (tous
+     * ses membres, quel que soit leur rôle d'arête) et les PORTEURS DU MÊME rôle
+     * d'arête. Un groupe apparenté par motif ou une cible désignée à la
+     * matérialisation ne disent rien de qui en fait partie — les accepter reviendrait
+     * à valider une atteignabilité qu'on espère au lieu de la garantir. Le jeton du
+     * membre énuméré ne compte pas non plus : il n'est pas une audience, il est UNE
+     * personne, et il ne vit que sur le nœud par membre lui-même.
+     *
+     * @param  array<int, mixed>  $grants
+     */
+    private function coversEdgeRole(array $grants, string $edgeRole): bool
+    {
+        foreach ($grants as $grant) {
+            if (! is_array($grant)) {
+                continue;
+            }
+            $roleKey = $grant['role'] ?? null;
+            if (! is_string($roleKey) || $roleKey === self::TREE_ROLE_MEMBER) {
+                continue;
+            }
+
+            $role = $this->role($roleKey);
+            if ($role === null) {
+                continue;
+            }
+
+            $resolution = $this->resolutionOf($role);
+
+            if ($resolution['strategy'] === RoleResolutionStrategy::Itself) {
+                return true;
+            }
+            if ($resolution['strategy'] === RoleResolutionStrategy::EdgeRole
+                && in_array($edgeRole, $resolution['edge_roles'], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

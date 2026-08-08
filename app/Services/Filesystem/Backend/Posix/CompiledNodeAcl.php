@@ -25,6 +25,23 @@ namespace App\Services\Filesystem\Backend\Posix;
  *  - `restrictsDeletion` — la restriction de suppression au propriétaire, qui est
  *    un attribut du DOSSIER et non d'une entrée. Elle voyage donc ici, décidée une
  *    fois pour tout le nœud, et jamais recalculée par l'exécution.
+ *
+ * ---------------------------------------------------------------------------
+ * **Story 62.5 — une TROISIÈME liste, et elle ne ressemble à aucune des deux.**
+ *
+ * `traversalAcls` porte les COULOIRS D'ACCÈS dérivés
+ * ({@see PosixTraversalPlanner}) : ce que des sujets doivent avoir sur CE nœud
+ * pour atteindre un nœud plus profond qui, lui, leur accorde quelque chose. Elle
+ * voyage à part parce que tout la distingue des deux autres :
+ *
+ *  - elle se pose sur le répertoire de TÊTE SEUL, jamais récursivement — descendre
+ *    diffuserait la traversée dans tout le contenu de l'ancêtre ;
+ *  - elle n'a AUCUN miroir d'héritage — un miroir la donnerait à tout enfant futur ;
+ *  - elle n'a AUCUNE contrepartie fichier — la traversée d'un fichier n'existe pas.
+ *
+ * Elle est VIDE dans l'immense majorité des cas, et sa vacuité est la propriété
+ * mesurée sur les recettes livrées : aucun rôle n'y reçoit en profondeur ce que ses
+ * ancêtres ne lui donnent pas déjà.
  */
 final class CompiledNodeAcl
 {
@@ -33,13 +50,30 @@ final class CompiledNodeAcl
      * @param  list<CompiledRefusal>  $refusals
      * @param  list<string>  $fileAcls  la liste des FICHIERS, vide si elle est identique
      * @param  bool  $restrictsDeletion  le dossier doit-il restreindre la suppression au propriétaire ?
+     * @param  list<string>  $traversalAcls  les couloirs dérivés, entrées d'ACCÈS de tête seules
      */
     public function __construct(
         public readonly array $acls,
         public readonly array $refusals = [],
         public readonly array $fileAcls = [],
         public readonly bool $restrictsDeletion = false,
+        public readonly array $traversalAcls = [],
     ) {
+    }
+
+    /**
+     * L'ensemble COMPLET des entrées attendues sur le répertoire de tête : celles du
+     * nœud, plus ses couloirs.
+     *
+     * C'est cet ensemble-là, et pas `acls` seul, que la relecture de conformité doit
+     * comparer : un couloir posé est dans l'état de tête relu, et l'oublier ferait
+     * relire « dérivé » un nœud parfaitement conforme, à chaque passage.
+     *
+     * @return list<string>
+     */
+    public function headAcls(): array
+    {
+        return array_values([...$this->acls, ...$this->traversalAcls]);
     }
 
     /**

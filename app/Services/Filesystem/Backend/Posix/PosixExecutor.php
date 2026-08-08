@@ -50,6 +50,12 @@ use Illuminate\Support\Facades\Process;
  * BRUYAMMENT : le nœud rapportera l'échec avec sa cause, il ne posera pas un droit
  * approximatif. Le point est porté au runbook.
  *
+ * ---------------------------------------------------------------------------
+ * **Story 62.5 — AUCUNE addition.** Le couloir d'accès dérivé se pose avec la
+ * commande de pose déjà présente, simplement privée de sa descente
+ * ({@see applyAclToHead()}). Un geste de plus, zéro binaire de plus : la liste
+ * blanche d'élévation des instances n'a rien à apprendre de cette story.
+ *
  * **Triple garde conservée** : chaque chemin passe par {@see PosixPathGuard} chez
  * l'appelant, chaque argument par l'échappement d'argument ici, chaque commande
  * par la liste blanche côté système. Aucun chemin n'est construit par
@@ -181,6 +187,26 @@ final class PosixExecutor
     public function applyAcl(string $path, string $acl): PosixCommandOutcome
     {
         return $this->run(sprintf('sudo setfacl -R -P -m %s %s', escapeshellarg($acl), escapeshellarg($path)));
+    }
+
+    /**
+     * Story 62.5 — pose d'une entrée sur le répertoire de TÊTE SEUL, sans descente.
+     *
+     * **Aucun binaire nouveau, et c'est le point.** C'est la même commande que la
+     * pose récursive, PRIVÉE de son option de descente. Les deux autres poses
+     * ciblées du jeu passent par une sélection d'objets ; celle-ci n'en a pas besoin,
+     * puisqu'elle ne vise qu'UN objet — celui qu'on nomme.
+     *
+     * **Pourquoi il fallait une méthode de plus plutôt que réutiliser l'existante.**
+     * Le couloir d'accès dérivé est un attribut du répertoire de tête de l'ancêtre,
+     * et de lui seul. Posé récursivement, il descendrait dans tout le contenu libre
+     * de ce dossier — sous-dossiers non gouvernés rendus traversables, bit
+     * d'exécution semé sur des fichiers ordinaires. Ce serait plus que le couloir,
+     * et en silence : rien, dans la relecture de tête, ne le montrerait jamais.
+     */
+    public function applyAclToHead(string $path, string $acl): PosixCommandOutcome
+    {
+        return $this->run(sprintf('sudo setfacl -P -m %s %s', escapeshellarg($acl), escapeshellarg($path)));
     }
 
     /**

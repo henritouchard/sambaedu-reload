@@ -2265,9 +2265,164 @@ sudo find <chemin> -type d -exec chmod +t {} +
 - [ ] Suite automatisée verte sur l'hôte
 
 
+## Story 62.5 — La traversée dérivée, et la recette qui refuse un dossier inatteignable
+
+**Ce que cette story change sur le serveur, en une phrase :** rien — et c'est ce
+« rien » qu'il faut établir. Le mécanisme qui rend un dossier profond ATTEIGNABLE
+existe désormais, il se calcule à chaque passage, et **sur les recettes livrées il
+ne produit aucune entrée** : le planificateur rend l'ensemble vide sur chacun de
+leurs nœuds.
+
+**Le problème, dit sur le mécanisme.** Pour ouvrir `a/b/c`, il faut pouvoir
+traverser `a` et `a/b`. Jusqu'ici le compilateur travaillait nœud par nœud : un rôle
+octroyé sur `a/b/c` mais absent de `a` n'avait aucune entrée sur `a`, et la pose de
+`a` referme le dossier pour tout le monde. La recette était « conforme », le rapport
+vert, le dossier un mirage.
+
+**Ce que SE5 fait désormais, et surtout ce qu'il ne fait pas :**
+
+- il DÉRIVE un « couloir d'accès » sur chaque ancêtre déclaré, pour les rôles
+  d'audience servis en profondeur ;
+- ce couloir **n'accorde rien de plus** : on passe devant la porte, on n'entre pas.
+  Le rôle qui lit `a/b/c` **ne peut pas lister `a`**, ni y lire, ni y écrire ;
+- il ne dérive **jamais** pour un dossier PERSONNEL (un couloir par élève ferait
+  250 entrées nominatives sur la racine d'une classe). L'atteignabilité des dossiers
+  personnels est garantie autrement : la recette est **refusée à l'écriture** si un
+  ancêtre n'accorde rien à une audience qui contient ces membres ;
+- il ne perce **jamais** une suspension : quand l'espace d'échange est fermé, ce qui
+  est dessous l'est aussi.
+
+**La décision de conception, pour mémoire :** la traversée est calculée dans le
+backend, PAS dans le plan. Le plan continue de ne dire QUE ce que l'administrateur a
+écrit — c'est ce qui évitera, le jour de l'Epic 61, qu'un « octroi de traversée » se
+transforme en accès réel propagé à tout un sous-arbre sur un plan de fichiers
+distant.
+
+### Prérequis
+
+- **62.5-P1** — instance avec des partages **déjà provisionnés** par SE5 (arbre de
+  classe compris), sinon il n'y a rien à comparer.
+- **62.5-P2** — accès `root` au serveur de fichiers pour `getfacl -R`.
+- **62.5-P3** — pour la partie « première traversée réelle » (62.5-3), l'éditeur
+  d'arborescence de la **story 62.6** doit être livré : aucune recette d'aujourd'hui
+  ne produit de couloir, et c'est précisément le point.
+
+### 62.5-1 — L'INSTANTANÉ AVANT/APRÈS : aucune entrée ne bouge
+
+C'est LA vérification de cette story, et elle est identique dans sa forme à celle de
+la 62.4.
+
+```bash
+# AVANT déploiement, sur le serveur :
+find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -maxdepth 3 \
+  -type d -exec getfacl -p {} \; > ~/acl-avant-62-5.txt
+
+# Déployer, puis rejouer une réconciliation sur les mêmes partages
+# (au moins : un partage plat, un arbre de classe avec des dossiers élèves,
+#  un dossier d'échange ACTIF et un SUSPENDU).
+
+find /var/sambaedu/Partages /var/sambaedu/ClassesSE5 -maxdepth 3 \
+  -type d -exec getfacl -p {} \; > ~/acl-apres-62-5.txt
+
+diff ~/acl-avant-62-5.txt ~/acl-apres-62-5.txt
+```
+
+- [ ] **62.5-1a — le diff est VIDE.** Aucune entrée ajoutée, aucune retirée, aucun
+      mode changé. Si une entrée en `--x` apparaît quelque part, **arrêter et
+      remonter** : la dérivation sur-octroie sur une recette livrée, ce qui n'est pas
+      censé être possible.
+- [ ] **62.5-1b — aucune entrée `--x` nulle part** :
+      `grep -c ':--x' ~/acl-apres-62-5.txt` doit rendre `0`.
+- [ ] **62.5-1c — second passage : aucune écriture.** Relancer la réconciliation ;
+      les nœuds rendent tous `conforme` et le journal ne montre aucune commande de
+      pose. C'est l'idempotence, vérifiée AVEC le nouveau calcul dans la boucle.
+- [ ] **62.5-1d — aucun bruit de dérive.** Ouvrir l'encart de dérive de deux ou
+      trois partages : ils doivent être `conforme`, sans « entrée en trop » ni détail.
+
+### 62.5-2 — Le jeu de commandes n'a pas bougé
+
+- [ ] **62.5-2a** — aucune commande nouvelle : la story n'ajoute **aucun binaire**.
+      Le couloir se pose avec la commande de pose déjà en liste blanche, simplement
+      privée de son option de descente (`setfacl -P -m … <chemin>`, **sans `-R`**).
+      Rien à ajouter à la liste blanche d'élévation.
+- [ ] **62.5-2b** — vérifier dans le journal d'un passage qu'aucune commande de pose
+      de couloir n'est émise aujourd'hui (conséquence directe de 62.5-1b).
+
+### 62.5-3 — LA PREMIÈRE TRAVERSÉE RÉELLE (à jouer APRÈS la story 62.6)
+
+Ces vérifications demandent une recette qui produise un couloir, donc l'éditeur
+d'arborescence. **Elles sont la seule façon d'établir que le mécanisme fait ce que
+le code croit qu'il fait** — tout le reste est vérifié automatiquement sur l'hôte.
+
+Situation à construire : un arbre où un rôle reçoit un octroi sur un nœud PROFOND
+(par exemple `_travail/prive`) **sans aucun octroi sur `_travail` ni sur la racine**.
+
+- [ ] **62.5-3a — le couloir est posé, et seulement lui.**
+      `getfacl -p <racine>/_travail` montre une entrée `group:<rôle>:--x` — pas
+      `r-x`, pas `rwx` — et **aucune** entrée `default:group:<rôle>:…`.
+- [ ] **62.5-3b — le couloir ne descend pas.** `getfacl -p` sur un sous-dossier de
+      `_travail` créé à la main, et sur un fichier qui s'y trouve : **aucune** entrée
+      pour ce rôle. Une pose récursive se verrait ici.
+- [ ] **62.5-3c — la traversée n'accorde rien de plus, en session POSIX/SSH.** Avec
+      un compte membre du rôle :
+      - `ls <racine>/_travail` → **refusé** (on ne liste pas) ;
+      - `cd <racine>/_travail/prive && ls` → **autorisé** (on atteint le dossier
+        profond) ;
+      - `touch <racine>/_travail/x` → **refusé**.
+- [ ] **62.5-3d — LE POINT À OBSERVER EN VRAI : le même essai depuis SMB.** Monter
+      le partage depuis un poste Windows avec ce compte, puis :
+      - le dossier `_travail` doit être **inaccessible en listage** ;
+      - le chemin complet `\\serveur\<partage>\_travail\prive` doit s'ouvrir en
+        tapant l'adresse directement.
+      **Noter le comportement observé, quel qu'il soit.** Le mappage NT ACL de
+      « traverser sans lire » n'est pas garanti iso-POSIX : le serveur de fichiers
+      peut traduire la traversée-sans-lecture d'une façon qui la rend inutilisable
+      pour un client Windows (dossier invisible ET inatteignable), ou au contraire
+      trop permissive. C'est la seule inconnue de cette story, et elle ne se lève que
+      sur une vraie machine.
+- [ ] **62.5-3e — retrait.** Retirer l'octroi profond, réconcilier, vérifier que
+      l'entrée `--x` a **disparu** de `_travail` : un couloir devenu caduc ne survit
+      pas à un passage.
+- [ ] **62.5-3f — une suspension n'est pas percée.** Sur un espace d'échange
+      SUSPENDU portant un nœud profond accordé au même rôle : l'entrée du rôle sur
+      l'espace d'échange doit rester **`---`** (la suspension matérialisée), pas
+      `--x`.
+
+### 62.5-4 — La recette refuse ce qui serait inatteignable
+
+À jouer depuis l'éditeur (62.6) ou, d'ici là, en tinker sur une recette de test.
+
+- [ ] **62.5-4a** — déclarer `a/b/c` sans déclarer `a/b` : refus nommant le chemin
+      fautif **et** l'ancêtre manquant.
+- [ ] **62.5-4b** — déclarer un nœud sous un dossier « à contenu libre » : refus
+      disant que le contenu de cet ancêtre n'est pas gouverné par le plan.
+- [ ] **62.5-4c** — déclarer un dossier par membre dont un ancêtre n'accorde rien à
+      une audience contenant ces membres : refus nommant l'ancêtre ET le rôle
+      d'arête. Le message doit rester en français métier, sans un mot du mécanisme.
+- [ ] **62.5-4d** — les 5 recettes livrées restent valides sans modification
+      (`php artisan db:seed --class=DirectoryTemplateSeeder` passe, et une
+      réconciliation d'arbre de classe reste `conforme`).
+
+### Checklist rapide — Story 62.5
+
+- [ ] 62.5-P1/P2 : instance provisionnée, accès root, instantané pris AVANT
+- [ ] **62.5-1a : `getfacl` avant/après → diff VIDE** (la vérification pivot)
+- [ ] 62.5-1b : `grep -c ':--x'` rend 0
+- [ ] 62.5-1c : second passage → aucune écriture
+- [ ] 62.5-1d : encart de dérive propre, aucun bruit
+- [ ] 62.5-2a/b : aucun binaire nouveau, aucune pose de couloir aujourd'hui
+- [ ] 62.5-3a→3f (APRÈS 62.6) : couloir posé, non descendu, `ls` refusé / `cd` OK,
+      **comportement SMB NOTÉ**, retrait effectif, suspension non percée
+- [ ] 62.5-4a/b/c/d : les quatre refus parlent, les recettes livrées passent
+- [ ] Suite automatisée verte sur l'hôte
+
+
+
 ---
 
-*Dernière mise à jour : 2026-08-08 (Story 62.4 — les droits à quatre verbes : `PlanGrant` porte une LISTE de verbes `lire|editer|creer|supprimer` (contrat sémantique Q2 au docblock — éditer = contenu d'un fichier existant SEULEMENT, renommer = créer + supprimer, déplacer = supprimer à la source + créer à destination), `FilePlan::VERSION` → 2 avec refus NOMMÉ de l'ancienne clé `access`, migration de données Q3 (`ro` → `lire`, `rw` → les quatre — le seul mappage qui ne retire aucun accès), matrice de dégradation POSIX DÉRIVÉE de deux axes (fichier / dossier) + drapeau de nœud, `non_exprimable` désormais PRODUIT par le backend posix (supprimer sans créer ; créer sans supprimer sur un nœud mixte) sans jamais se confondre avec `non_implemente`, `find` entre au jeu fermé pour la pose différenciée et la restriction de suppression — **le référentiel figé n'a pas changé d'un caractère : sur une instance en place, aucune entrée ne bouge** ; assignations, `AclFormat::modeToAccess()` et `PosixSubjectProjector` INTOUCHÉS)*
+*Dernière mise à jour : 2026-08-08 (Story 62.5 — la traversée DÉRIVÉE et la validation parent→enfant : la traversée est calculée dans le BACKEND (`PosixTraversalPlanner`, décision docblockée et épinglée par test — le plan, sa clôture, sa sérialisation et `PlanStateComparator` restent à ZÉRO DIFF), un « couloir d'accès » dérivé des octrois profonds RENDUS des descendants déclarés, posé en TÊTE SEULE sans miroir d'héritage ni entrée fichier et sans aucun binaire nouveau, qui **n'accorde rien de plus** (le rôle qui lit `a/b/c` ne peut pas lister `a`) ; le NOMINATIF ne dérive jamais (sa contrepartie est une règle de couverture à la validation), une suspension n'est jamais percée, un octroi rendu vide n'ouvre aucun couloir ; l'inspection FILTRE les couloirs attendus comme des entrées structurelles (table de reprojection 62.4 INCHANGÉE, zéro bruit de dérive) et DIT ceux qui manquent ; quatre règles parent→enfant nouvelles sur `assertValidTreeSpec()` (ancêtre non déclaré, nœud sous contenu libre, dossiers par membre imbriqués de rôles d'arête différents, couverture des membres énumérés) — **impact sur les référentiels figés : ZÉRO littéral, la dérivation rend l'ensemble VIDE sur toutes les recettes livrées, épinglé par un test dédié** ; aucune UI, aucune migration, rien de persisté)*
+
+*Mise à jour précédente : 2026-08-08 (Story 62.4 — les droits à quatre verbes : `PlanGrant` porte une LISTE de verbes `lire|editer|creer|supprimer` (contrat sémantique Q2 au docblock — éditer = contenu d'un fichier existant SEULEMENT, renommer = créer + supprimer, déplacer = supprimer à la source + créer à destination), `FilePlan::VERSION` → 2 avec refus NOMMÉ de l'ancienne clé `access`, migration de données Q3 (`ro` → `lire`, `rw` → les quatre — le seul mappage qui ne retire aucun accès), matrice de dégradation POSIX DÉRIVÉE de deux axes (fichier / dossier) + drapeau de nœud, `non_exprimable` désormais PRODUIT par le backend posix (supprimer sans créer ; créer sans supprimer sur un nœud mixte) sans jamais se confondre avec `non_implemente`, `find` entre au jeu fermé pour la pose différenciée et la restriction de suppression — **le référentiel figé n'a pas changé d'un caractère : sur une instance en place, aucune entrée ne bouge** ; assignations, `AclFormat::modeToAccess()` et `PosixSubjectProjector` INTOUCHÉS)*
 
 *Mise à jour précédente : 2026-08-04 (Story 60.3 — le contrat `FileBackend` et le backend `preview` : interface à 5 méthodes de forme distante (name/provision/deprovision/inspect/quota, aucun `bool`), enums fermées `FileBackendName` (posix|preview) / `FileBackendOutcome` (7 états, dont `non_exprimable` PERMANENT ≠ `non_implemente` TEMPORAIRE ≠ `non_execute` PAR CONCEPTION) / `FileBackendObservation` (4 statuts), rapports à COMPLÉTUDE VALIDÉE À LA CONSTRUCTION (un rapport qui omet un nœud est inconstructible) et `detail` obligatoire au constructeur, racine `PlanNode::ROOT_PATH` devenue nœud de première classe, colonne `network_shares.backend` NOT NULL défaut `posix` (hors `$fillable`, non éditable), registre par nom fail-closed, `SharePlanProjector` (partage plat → plan neutre), squelette Nextcloud JETABLE vert contre l'instance réelle — PREMIER LIVRABLE VISIBLE DE L'EPIC : badge backend + aperçu du plan avant application ; services d'exécution et seeder INTOUCHÉS, aucun flux ne route par la colonne)*
 
