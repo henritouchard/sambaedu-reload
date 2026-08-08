@@ -58,10 +58,21 @@ use App\Services\Filesystem\Plan\PlanNode;
  *    ne donne rien, le dossier et les données restent. C'est la forme matérialisée
  *    de la suspension, et c'est ce qui permet à la comparaison désiré/observé de
  *    ne pas confondre « suspendu » avec « supprimé » ;
- *  - rôle en CLÔTURE → RIEN. Il n'y a pas de refus en POSIX : l'absence d'entrée
- *    EST la fermeture. Le nœud n'écrit donc aucun geste pour sa clôture, et la
- *    comparaison ne lui réclame rien. C'est un backend à propagation qui devra la
- *    matérialiser.
+ *  - rôle en CLÔTURE → **aucune entrée d'octroi**. Il n'y a pas de refus en POSIX :
+ *    l'absence d'entrée EST la fermeture du CONTENU — ni listage, ni lecture, ni
+ *    mutation. Le nœud n'écrit donc aucun geste pour sa clôture, et la comparaison
+ *    ne lui réclame rien. C'est un backend à propagation qui devra la matérialiser.
+ *
+ * **Story 62.5 — cette dernière phrase disait « → RIEN », et c'est devenu FAUX.**
+ * Un rôle en clôture d'un ancêtre PEUT y recevoir une entrée : le COULOIR dérivé,
+ * quand un nœud plus profond lui accorde quelque chose
+ * ({@see PosixTraversalPlanner}). Ce n'est pas une brèche dans la clôture, et il
+ * faut le dire précisément plutôt que de laisser l'ancienne phrase rassurer à tort :
+ * le couloir permet de PASSER DEVANT LA PORTE, il ne rouvre pas la pièce. Le rôle
+ * ne peut toujours ni lister l'ancêtre, ni y lire, ni y écrire — il peut seulement
+ * atteindre le dossier profond qui, lui, lui a été accordé noir sur blanc. Un rôle
+ * en clôture dont AUCUN descendant ne lui accorde rien continue, lui, de n'avoir
+ * strictement aucune entrée.
  *
  * **Le parc ne contribue rien**, et il n'a même pas à être exclu ici : le plan ne
  * porte aucun octroi pour lui (invariant du modèle à deux axes, tenu en amont par
@@ -137,11 +148,29 @@ final class PosixAclCompiler
     /** Niveau d'entrée d'un octroi SUSPENDU : présent, et vide. */
     private const MODE_SUSPENDED = '---';
 
+    /**
+     * Story 62.5 — niveau d'un COULOIR d'accès dérivé : la traversée SEULE.
+     *
+     * Ni lecture, ni écriture : pénétrer le dossier, jamais le lister ni en ouvrir
+     * le contenu. C'est la totalité de ce que la dérivation accorde, et le fait
+     * qu'aucune autre lettre n'apparaisse ici est la garantie « rien de plus ».
+     */
+    private const MODE_TRAVERSAL = '--x';
+
     public function __construct(private readonly PosixSubjectProjector $projector)
     {
     }
 
-    public function compile(PlanNode $node): CompiledNodeAcl
+    /**
+     * @param  list<PosixTraversal>  $traversals  couloirs dérivés à ouvrir sur ce nœud
+     *                                            ({@see PosixTraversalPlanner}). Le
+     *                                            paramètre est OPTIONNEL : un appelant
+     *                                            qui compile un nœud isolé — les
+     *                                            référentiels figés le font — n'a pas
+     *                                            de plan sous la main et ne doit pas
+     *                                            être forcé d'en inventer un.
+     */
+    public function compile(PlanNode $node, array $traversals = []): CompiledNodeAcl
     {
         $acls = self::BASE_ACLS;
         $fileAcls = self::baseFileAcls();
@@ -151,7 +180,7 @@ final class PosixAclCompiler
 
         // La restriction de suppression au propriétaire se décide UNE fois, pour
         // tout le nœud : c'est un attribut du dossier, jamais d'une entrée.
-        $restriction = $this->restrictsDeletion($node);
+        $restriction = self::restrictsDeletion($node);
 
         foreach ($node->grants as $grant) {
             $projection = $this->projector->project($grant->subject);
@@ -214,6 +243,49 @@ final class PosixAclCompiler
             $fileAcls[] = "{$projection->type}:{$projection->name}:{$rendering->fileMode}";
         }
 
+        // ---------------------------------------------------------------------
+        // Story 62.5 — LES COULOIRS DÉRIVÉS, et les trois choses qu'ils NE font pas.
+        //
+        //  1. Ils n'entrent pas dans `$acls` : leur pose est NON RÉCURSIVE, sur le
+        //     répertoire de tête seul. Les mélanger aux autres les ferait descendre
+        //     dans tout le contenu libre de l'ancêtre — plus que le couloir, en
+        //     silence.
+        //  2. Ils n'ont AUCUN miroir d'héritage. Tout le reste de cette méthode pose
+        //     accès et héritage par paire ; l'asymétrie est ici VOULUE — un miroir
+        //     donnerait la traversée à tout enfant FUTUR de l'ancêtre.
+        //  3. Ils n'ont AUCUNE entrée de fichier. La traversée d'un fichier n'existe
+        //     pas : l'écrire poserait le bit d'exécution sur des documents, un droit
+        //     que personne n'a demandé.
+        $traversalAcls = [];
+        foreach ($traversals as $traversal) {
+            $projection = $this->projector->project($traversal->subject);
+
+            if (! $projection->isResolved()) {
+                $refusal = new CompiledRefusal(
+                    $projection->refusal ?? FileBackendOutcome::Echec,
+                    $this->traversalDetail($traversal, (string) $projection->detail),
+                    blocking: $projection->blocking,
+                );
+
+                if ($refusal->blocking) {
+                    return new CompiledNodeAcl([], [$refusal]);
+                }
+
+                $refusals[] = $refusal;
+
+                continue;
+            }
+
+            // Une traversée nominative compte comme les autres : la limite dure du
+            // système porte sur le NOMBRE D'ENTRÉES d'un objet, et le répertoire de
+            // tête en est un.
+            if ($projection->type === PosixSubjectProjection::TYPE_USER) {
+                $nominative++;
+            }
+
+            $traversalAcls[] = "{$projection->type}:{$projection->name}:" . self::MODE_TRAVERSAL;
+        }
+
         if ($nominative > self::NOMINATIVE_ENTRIES_CEILING) {
             return new CompiledNodeAcl([], [new CompiledRefusal(
                 FileBackendOutcome::Echec,
@@ -240,6 +312,26 @@ final class PosixAclCompiler
             // dépôt pour n'y rien changer.
             $differentiated ? $fileAcls : [],
             $restriction,
+            $traversalAcls,
+        );
+    }
+
+    /**
+     * La phrase d'un couloir qui n'a pas pu être ouvert, en VOCABULAIRE DE PLAN.
+     *
+     * Elle nomme le rôle et le nœud PROFOND qu'on voulait rendre atteignable, puis
+     * recopie la cause telle que la traduction des sujets l'a formulée. Sans le nœud
+     * profond, l'administrateur lirait « quelque chose a échoué sur cet ancêtre »
+     * sans jamais savoir ce qui, plus bas, en dépendait.
+     */
+    private function traversalDetail(PosixTraversal $traversal, string $cause): string
+    {
+        return sprintf(
+            'le couloir d\'accès vers %s (rôle%s %s) n\'a pas pu être ouvert sur ce dossier : %s',
+            implode(', ', array_map(static fn (string $p): string => '« ' . $p . ' »', $traversal->nodePaths)),
+            count($traversal->roleKeys) > 1 ? 's' : '',
+            implode(', ', array_map(static fn (string $r): string => '« ' . $r . ' »', $traversal->roleKeys)),
+            $cause,
         );
     }
 
@@ -254,8 +346,16 @@ final class PosixAclCompiler
      * que la recette a écrit noir sur blanc. On ne la pose donc pas, et l'octroi
      * « déposer sans effacer » retombe sur son intersection exprimable, en le
      * disant.
+     *
+     * **Story 62.5 — PUBLIQUE et STATIQUE, pour ne pas en avoir deux.** Le
+     * planificateur de traversée doit savoir, d'un nœud PROFOND, si ses octrois y
+     * rendent quelque chose — donc rejouer exactement cette décision. La recopier
+     * chez lui aurait créé une seconde autorité sur une règle dont toute la
+     * subtilité tient à une condition qu'on oublie ; elle est donc appelée, jamais
+     * dupliquée. La méthode ne lit que son argument : la rendre statique n'ouvre
+     * rien.
      */
-    private function restrictsDeletion(PlanNode $node): bool
+    public static function restrictsDeletion(PlanNode $node): bool
     {
         $wanted = false;
 

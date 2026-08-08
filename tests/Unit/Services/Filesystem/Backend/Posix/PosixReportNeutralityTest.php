@@ -232,6 +232,65 @@ class PosixReportNeutralityTest extends TestCase
     }
 
     /**
+     * Story 62.5 — LA GARDE S'ÉTEND AUX DEUX TEXTES DU COULOIR DÉRIVÉ.
+     *
+     * Ils sont écrits à la main, ils traversent la ligne de coupe, et ils parlent
+     * d'un mécanisme dont le vocabulaire naturel est précisément celui qui est
+     * interdit ici (un mode, une lettre, un bit d'exécution). La phrase doit donc
+     * dire qu'un PASSAGE manque, vers quels dossiers et pour quels rôles — jamais
+     * comment ce passage s'écrit sur le disque.
+     */
+    #[Test]
+    public function the_derived_corridor_texts_carry_no_marker_of_the_layer_below(): void
+    {
+        // Un groupe que le système ne résout pas : le couloir ne peut pas s'ouvrir,
+        // et le nœud PORTEUR le dit. C'est le texte de la compilation.
+        Process::fake([
+            'getent group *' => Process::result(output: '', exitCode: 2),
+            'sudo getfacl *' => Process::result(output: implode("\n", self::BASE_ON_DISK), exitCode: 0),
+            '*' => Process::result(output: '', exitCode: 0),
+        ]);
+
+        $profs = UserGroup::create(['name' => 'Profs', 'type' => 'custom']);
+        $plan = new FilePlan('@arbre', 'proj', [], [
+            new PlanNode(PlanNode::ROOT_PATH, 'Racine', PlanNodeNature::Partagee),
+            new PlanNode('_profond', 'Dossier profond', PlanNodeNature::Partagee, [
+                new PlanGrant('profs', PlanSubject::group((int) $profs->id), PlanGrant::VERBS),
+            ]),
+        ]);
+
+        $backend = app(PosixFileBackend::class);
+
+        $provision = $this->plainTextOfArray($backend->provision($plan)->toArray());
+        self::assertSame([], $this->markersIn($provision), 'texte du couloir refusé : ' . $provision);
+        self::assertStringContainsString('couloir', $provision);
+        self::assertStringContainsString('_profond', $provision);
+
+        // Et le texte de la RELECTURE : le couloir attendu n'est pas sur le disque.
+        $inspection = $this->plainTextOfArray($backend->inspect($plan)->toArray());
+        self::assertSame([], $this->markersIn($inspection), 'texte du couloir manquant : ' . $inspection);
+        self::assertStringContainsString('couloir', $inspection);
+
+        // Le vocabulaire du mécanisme, nommément interdit dans les deux textes.
+        foreach ([$provision, $inspection] as $text) {
+            foreach (['traversée du système', 'exécution', 'bit', '--x', 'setfacl'] as $mechanism) {
+                self::assertStringNotContainsStringIgnoringCase($mechanism, $text, $mechanism);
+            }
+        }
+
+        @rmdir($this->tempRoot . '/proj/_profond');
+    }
+
+    /** L'état de disque MINIMAL d'un répertoire géré, pour une relecture crédible. */
+    private const BASE_ON_DISK = [
+        'user::rwx',
+        'group::---',
+        'group:domain\\040admins:rwx',
+        'mask::rwx',
+        'other::---',
+    ];
+
+    /**
      * MÉTA-TEST — la neutralisation VOIT chacune des formes qu'elle prétend
      * effacer, et laisse passer une phrase honnête.
      */

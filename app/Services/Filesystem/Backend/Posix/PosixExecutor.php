@@ -50,6 +50,12 @@ use Illuminate\Support\Facades\Process;
  * BRUYAMMENT : le nœud rapportera l'échec avec sa cause, il ne posera pas un droit
  * approximatif. Le point est porté au runbook.
  *
+ * ---------------------------------------------------------------------------
+ * **Story 62.5 — AUCUNE addition.** Le couloir d'accès dérivé se pose avec la
+ * commande de pose déjà présente, simplement privée de sa descente
+ * ({@see applyAclToHead()}). Un geste de plus, zéro binaire de plus : la liste
+ * blanche d'élévation des instances n'a rien à apprendre de cette story.
+ *
  * **Triple garde conservée** : chaque chemin passe par {@see PosixPathGuard} chez
  * l'appelant, chaque argument par l'échappement d'argument ici, chaque commande
  * par la liste blanche côté système. Aucun chemin n'est construit par
@@ -181,6 +187,42 @@ final class PosixExecutor
     public function applyAcl(string $path, string $acl): PosixCommandOutcome
     {
         return $this->run(sprintf('sudo setfacl -R -P -m %s %s', escapeshellarg($acl), escapeshellarg($path)));
+    }
+
+    /**
+     * Story 62.5 — pose d'une entrée sur le répertoire de TÊTE SEUL, sans descente.
+     *
+     * **Aucun binaire nouveau, et c'est le point.** C'est la même commande que la
+     * pose récursive, PRIVÉE de son option de descente. Les deux autres poses
+     * ciblées du jeu passent par une sélection d'objets ; celle-ci n'en a pas besoin,
+     * puisqu'elle ne vise qu'UN objet — celui qu'on nomme.
+     *
+     * **Pourquoi il fallait une méthode de plus plutôt que réutiliser l'existante.**
+     * Le couloir d'accès dérivé est un attribut du répertoire de tête de l'ancêtre,
+     * et de lui seul. Posé récursivement, il descendrait dans tout le contenu libre
+     * de ce dossier — sous-dossiers non gouvernés rendus traversables, bit
+     * d'exécution semé sur des fichiers ordinaires. Ce serait plus que le couloir,
+     * et en silence : rien, dans la relecture de tête, ne le montrerait jamais.
+     */
+    public function applyAclToHead(string $path, string $acl): PosixCommandOutcome
+    {
+        // Review 62.5 #3 — `-n` : ne PAS recalculer le masque de droits effectifs.
+        //
+        // Poser une entrée nommée déclenche par défaut ce recalcul, qui est l'union
+        // des classes de groupe : une entrée ajoutée peut donc REMONTER le masque et
+        // élargir les droits EFFECTIFS d'entrées déjà en place. Un couloir n'a le
+        // droit de rien élargir — c'est la promesse même de cette story.
+        //
+        // Cela ne cassait rien aujourd'hui, mais pour une raison EXTERNE à ce
+        // chemin : le socle pose toujours le groupe d'administration à `rwx`, ce qui
+        // plafonne déjà tout recalcul. La sûreté tenait donc à un fait qu'aucun
+        // docblock n'énonçait et qu'aucun test ne gardait — elle serait tombée en
+        // silence le jour où ce socle changerait. `-n` la rend STRUCTURELLE.
+        //
+        // Le sens de l'erreur résiduelle est le bon : si le masque était un jour trop
+        // étroit pour laisser passer un couloir, celui-ci n'aurait pas d'effet — un
+        // manque, jamais un excès — et l'inspection le rapporte en écart.
+        return $this->run(sprintf('sudo setfacl -P -n -m %s %s', escapeshellarg($acl), escapeshellarg($path)));
     }
 
     /**
