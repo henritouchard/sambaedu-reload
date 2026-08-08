@@ -221,10 +221,15 @@ class PosixTraversalBackendTest extends TestCase
         ));
 
         self::assertCount(1, $posted, 'un couloir, une commande');
+        // Review 62.5 #3 — l'oracle gagne `-n` (masque non recalculé). Ce n'est pas
+        // un assouplissement : la forme reste épinglée au caractère près, et les
+        // deux interdits qu'elle porte — descendre, sélectionner — sont vérifiés
+        // juste en dessous, inchangés. `-n` est ce qui empêche un couloir d'élargir
+        // les droits effectifs d'une entrée voisine en faisant remonter le masque.
         self::assertMatchesRegularExpression(
-            '/^sudo setfacl -P -m \'group:' . self::DEEP_GROUP . ':--x\' \S+$/',
+            '/^sudo setfacl -P -n -m \'group:' . self::DEEP_GROUP . ':--x\' \S+$/',
             $posted[0],
-            'la pose du couloir descend ou sélectionne : ' . $posted[0],
+            'la pose du couloir descend, sélectionne, ou recalcule le masque : ' . $posted[0],
         );
         self::assertStringNotContainsString(' -R ', $posted[0], 'pose récursive');
         self::assertStringNotContainsString('find ', $posted[0], 'sélection d\'objets');

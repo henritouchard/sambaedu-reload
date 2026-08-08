@@ -257,6 +257,59 @@ class DirectoryTemplateReachabilityTest extends TestCase
         );
     }
 
+    /**
+     * Review 62.5 #2 — une audience qui ne LIT pas ne couvre rien.
+     *
+     * La règle cherchait un rôle couvrant par sa STRATÉGIE, sans jamais regarder ce
+     * qu'il accorde. Un octroi `supprimer` seul — liste non vide, donc parfaitement
+     * valide depuis 62.4 — suffisait à déclarer l'ancêtre couvert : le dossier
+     * personnel en dessous était validé « atteignable », compilait « conforme », et
+     * restait un mirage. Le défaut que cette story existe pour éliminer, réintroduit
+     * par sa propre validation.
+     */
+    #[Test]
+    public function an_ancestor_audience_that_cannot_read_covers_nobody(): void
+    {
+        $this->assertRejected(
+            $this->template([
+                $this->node([
+                    'path' => '.',
+                    'label' => 'Racine',
+                    'grants' => [['role' => 'audience', 'verbs' => [PlanGrant::VERB_SUPPRIMER]]],
+                ]),
+                $this->node([
+                    'path' => '{member.login}',
+                    'label' => 'Dossier personnel',
+                    'nature' => 'par_membre',
+                    'edge_role' => 'member',
+                    'grants' => [['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS]],
+                ]),
+            ]),
+            'inatteignable',
+            '{member.login}',
+        );
+    }
+
+    /** La lecture SUFFIT : on n'exige pas davantage d'une audience couvrante. */
+    #[Test]
+    public function an_ancestor_audience_that_only_reads_is_enough(): void
+    {
+        $this->assertAccepted($this->template([
+            $this->node([
+                'path' => '.',
+                'label' => 'Racine',
+                'grants' => [['role' => 'audience', 'verbs' => [PlanGrant::VERB_LIRE]]],
+            ]),
+            $this->node([
+                'path' => '{member.login}',
+                'label' => 'Dossier personnel',
+                'nature' => 'par_membre',
+                'edge_role' => 'member',
+                'grants' => [['role' => DirectoryTemplate::TREE_ROLE_MEMBER, 'verbs' => PlanGrant::VERBS]],
+            ]),
+        ]));
+    }
+
     /** Le groupe LUI-MÊME couvre tous ses membres, quel que soit leur rôle d'arête. */
     #[Test]
     public function an_ancestor_granting_the_group_itself_covers_every_edge_role(): void

@@ -233,6 +233,65 @@ class PosixTraversalPlannerTest extends TestCase
     }
 
     /**
+     * Review 62.5 #1 — une personne DÉSIGNÉE, répétée sur chaque dossier personnel,
+     * n'est pas le membre énuméré et doit obtenir son couloir.
+     *
+     * Le critère de mécanisme seul (« sur un nœud par membre, tout sujet nominatif
+     * est le membre énuméré ») confondait deux individus que rien n'oblige à se
+     * ressembler : celui qui change à chaque nœud, et celui qui est le même partout
+     * — un CPE, un référent, résolus par la stratégie `designated`. Le second
+     * recevait un accès complet sur chaque dossier d'élève sans pouvoir en atteindre
+     * aucun depuis l'extérieur : un mirage, exactement ce que cette story élimine.
+     *
+     * On les sépare par la répétition, qui est une propriété du plan lui-même.
+     */
+    #[Test]
+    public function a_designated_individual_repeated_on_every_personal_folder_still_derives(): void
+    {
+        $cpe = PlanSubject::user(self::ELEVE + 900);
+
+        $plan = $this->plan(
+            $this->node(PlanNode::ROOT_PATH),
+            new PlanNode('bmartin', 'Dossier personnel', PlanNodeNature::ParMembre, [
+                new PlanGrant(DirectoryTemplate::TREE_ROLE_MEMBER, PlanSubject::user(self::ELEVE), PlanGrant::VERBS),
+                new PlanGrant('cpe', $cpe, PlanGrant::VERBS),
+            ]),
+            new PlanNode('cpetit', 'Dossier personnel', PlanNodeNature::ParMembre, [
+                new PlanGrant(DirectoryTemplate::TREE_ROLE_MEMBER, PlanSubject::user(self::ELEVE + 1), PlanGrant::VERBS),
+                new PlanGrant('cpe', $cpe, PlanGrant::VERBS),
+            ]),
+        );
+
+        $traversals = $this->planner()->forNode($plan, $plan->node(PlanNode::ROOT_PATH));
+
+        self::assertCount(1, $traversals, 'un individu désigné, UN couloir');
+        self::assertSame($cpe->sortKey(), $traversals[0]->subject->sortKey());
+        self::assertSame(['bmartin', 'cpetit'], $traversals[0]->nodePaths);
+    }
+
+    /**
+     * L'autre moitié : les membres énumérés, eux, ne dérivent toujours PAS —
+     * un par nœud, donc jamais répétés. C'est cette exclusion qui empêche N entrées
+     * nominatives de s'accumuler sur la racine.
+     */
+    #[Test]
+    public function enumerated_members_derive_no_corridor_however_many_there_are(): void
+    {
+        $nodes = [$this->node(PlanNode::ROOT_PATH)];
+        for ($i = 0; $i < 12; $i++) {
+            $nodes[] = new PlanNode('eleve' . $i, 'Dossier personnel', PlanNodeNature::ParMembre, [
+                // Clé de rôle QUELCONQUE : un plan assemblé contre le contrat n'est
+                // pas tenu d'employer le jeton de recette.
+                new PlanGrant('@nominatif', PlanSubject::user(self::ELEVE + $i), PlanGrant::VERBS),
+            ]);
+        }
+
+        $plan = $this->plan(...$nodes);
+
+        self::assertSame([], $this->planner()->forNode($plan, $plan->node(PlanNode::ROOT_PATH)));
+    }
+
+    /**
      * Un octroi que la matrice ne rend PAS DU TOUT n'écrit aucune entrée sur son
      * propre nœud : lui ouvrir un couloir mènerait à rien, et sèmerait une entrée
      * orpheline.

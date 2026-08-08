@@ -206,7 +206,23 @@ final class PosixExecutor
      */
     public function applyAclToHead(string $path, string $acl): PosixCommandOutcome
     {
-        return $this->run(sprintf('sudo setfacl -P -m %s %s', escapeshellarg($acl), escapeshellarg($path)));
+        // Review 62.5 #3 — `-n` : ne PAS recalculer le masque de droits effectifs.
+        //
+        // Poser une entrée nommée déclenche par défaut ce recalcul, qui est l'union
+        // des classes de groupe : une entrée ajoutée peut donc REMONTER le masque et
+        // élargir les droits EFFECTIFS d'entrées déjà en place. Un couloir n'a le
+        // droit de rien élargir — c'est la promesse même de cette story.
+        //
+        // Cela ne cassait rien aujourd'hui, mais pour une raison EXTERNE à ce
+        // chemin : le socle pose toujours le groupe d'administration à `rwx`, ce qui
+        // plafonne déjà tout recalcul. La sûreté tenait donc à un fait qu'aucun
+        // docblock n'énonçait et qu'aucun test ne gardait — elle serait tombée en
+        // silence le jour où ce socle changerait. `-n` la rend STRUCTURELLE.
+        //
+        // Le sens de l'erreur résiduelle est le bon : si le masque était un jour trop
+        // étroit pour laisser passer un couloir, celui-ci n'aurait pas d'effet — un
+        // manque, jamais un excès — et l'inspection le rapporte en écart.
+        return $this->run(sprintf('sudo setfacl -P -n -m %s %s', escapeshellarg($acl), escapeshellarg($path)));
     }
 
     /**

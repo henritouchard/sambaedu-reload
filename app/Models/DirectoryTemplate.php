@@ -1131,6 +1131,24 @@ class DirectoryTemplate extends Model
      *
      * @param  array<int, mixed>  $grants
      */
+    /**
+     * L'octroi accorde-t-il la lecture ? (Review 62.5 #2.)
+     *
+     * L'absence de `verbs` vaut « lire » — plancher historique d'un rôle qui ne se
+     * prononce pas, posé en 62.4 et conservé ici sans exception.
+     *
+     * @param  array<string, mixed>  $grant
+     */
+    private function grantCarriesRead(array $grant): bool
+    {
+        if (! array_key_exists('verbs', $grant)) {
+            return true;
+        }
+
+        return is_array($grant['verbs'])
+            && in_array(PlanGrant::VERB_LIRE, $grant['verbs'], true);
+    }
+
     private function coversEdgeRole(array $grants, string $edgeRole): bool
     {
         foreach ($grants as $grant) {
@@ -1144,6 +1162,23 @@ class DirectoryTemplate extends Model
 
             $role = $this->role($roleKey);
             if ($role === null) {
+                continue;
+            }
+
+            // Review 62.5 #2 — un octroi qui n'accorde pas la LECTURE ne couvre
+            // rien. La règle cherchait un rôle couvrant par sa STRATÉGIE, sans
+            // jamais regarder ce qu'il accorde : un octroi `supprimer` seul — liste
+            // non vide, donc parfaitement valide depuis 62.4 — suffisait à déclarer
+            // l'ancêtre couvert. Le dossier personnel en dessous était alors validé
+            // « atteignable » et compilait « conforme », en restant un mirage :
+            // exactement le défaut que cette story existe pour éliminer, réintroduit
+            // par sa propre validation.
+            //
+            // La règle est énoncée en termes MÉTIER, pas en termes de backend : une
+            // audience qui gouverne un ancêtre doit pouvoir l'ouvrir. Elle vaut donc
+            // pour tous les backends, et pas seulement parce que POSIX ne rend rien
+            // de ce cas précis.
+            if (! $this->grantCarriesRead($grant)) {
                 continue;
             }
 

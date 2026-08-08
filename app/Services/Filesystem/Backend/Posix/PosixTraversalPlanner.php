@@ -138,7 +138,7 @@ final class PosixTraversalPlanner
                 if (! $grant->isActive()) {
                     continue;
                 }
-                if (self::isEnumeratedMemberGrant($deep, $grant)) {
+                if (self::isEnumeratedMemberGrant($plan, $deep, $grant)) {
                     continue;
                 }
                 if (PosixVerbRendering::of($grant->verbs, $restriction)->isEmpty()) {
@@ -194,14 +194,66 @@ final class PosixTraversalPlanner
      * d'un élève), elle, dérive normalement : c'est UN sujet, donc UNE entrée par
      * ancêtre — jamais une entrée par personne.
      */
-    private static function isEnumeratedMemberGrant(PlanNode $node, PlanGrant $grant): bool
+    private static function isEnumeratedMemberGrant(FilePlan $plan, PlanNode $node, PlanGrant $grant): bool
     {
         if ($grant->roleKey === DirectoryTemplate::TREE_ROLE_MEMBER) {
             return true;
         }
 
-        return $node->nature === PlanNodeNature::ParMembre
-            && $grant->subject->type === PlanSubject::TYPE_USER;
+        if ($node->nature !== PlanNodeNature::ParMembre
+            || $grant->subject->type !== PlanSubject::TYPE_USER) {
+            return false;
+        }
+
+        // Review 62.5 #1 — le critère de mécanisme seul confondait DEUX individus
+        // que rien n'oblige à se ressembler : le membre énuméré (une personne
+        // DIFFÉRENTE par nœud) et une personne DÉSIGNÉE, fixe, répétée sur chaque
+        // dossier personnel — un CPE, un référent, résolus par la stratégie
+        // `designated`, qui existe et est légitime. Le second se voyait refuser
+        // tout couloir : il recevait un accès complet sur chaque dossier d'élève et
+        // ne pouvait structurellement en atteindre aucun depuis l'extérieur.
+        //
+        // On les sépare par CONSTRUCTION, sans rien demander au plan : le membre
+        // énuméré n'apparaît QUE sur son propre nœud, une personne désignée
+        // apparaît sur TOUS. Deux occurrences suffisent donc à trancher.
+        //
+        // Reste un cas indécidable : un plan qui ne compte qu'UN SEUL nœud par
+        // membre. Les deux s'y présentent à l'identique, et on choisit alors de ne
+        // pas dériver — le sens qui n'accorde rien de trop. Ce n'est pas silencieux
+        // pour autant : un couloir attendu et absent est rapporté en écart par
+        // l'inspection, avec son détail.
+        return self::countsAsEnumeratedByRepetition($plan, $grant);
+    }
+
+    /**
+     * Le sujet n'apparaît-il que sur UN nœud par membre ?
+     *
+     * `true` ⇒ on le tient pour le membre énuméré (pas de couloir).
+     * `false` ⇒ il est répété, donc désigné : il dérive comme n'importe quelle
+     * audience.
+     */
+    private static function countsAsEnumeratedByRepetition(FilePlan $plan, PlanGrant $grant): bool
+    {
+        $seen = 0;
+
+        foreach ($plan->nodes as $node) {
+            if ($node->nature !== PlanNodeNature::ParMembre) {
+                continue;
+            }
+            foreach ($node->grants as $other) {
+                if ($other->subject->sortKey() === $grant->subject->sortKey()) {
+                    $seen++;
+
+                    if ($seen > 1) {
+                        return false;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return true;
     }
 
     /**
