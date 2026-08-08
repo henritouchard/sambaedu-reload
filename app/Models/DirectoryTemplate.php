@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
 use App\Services\Filesystem\Plan\PlanGrant;
+use App\Support\GroupTypeCatalog;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -248,6 +249,20 @@ class DirectoryTemplate extends Model
      * par lequel toute écriture passe. Elle ne se déclenche QUE si un accrochage
      * est effectivement posé : les 4 recettes seedées, non accrochées, ne la
      * rencontrent jamais.
+     *
+     * **Story 62.2 — le type accroché est désormais du VOCABULAIRE.** La migration
+     * de 60.2 affirmait « Pas de clé étrangère : il n'existe pas de table des
+     * types » ; il en existe une depuis la story 62.2 ({@see \App\Models\GroupType}),
+     * et la référence reste faite PAR CLÉ IMMUABLE, sans clé étrangère — décision
+     * D2 de l'epic 62, par cohérence avec le catalogue de rôles de 62.1 : une
+     * valeur lisible en base plutôt qu'une jointure, et un refus NOMMÉ plutôt
+     * qu'un `RESTRICT` muet. Le docblock de la migration 60.2 n'est pas réécrit
+     * (l'histoire est append-only) ; celui-ci dit l'état d'aujourd'hui.
+     *
+     * Concrètement, un accrochage à un type qui n'existe pas au catalogue n'est
+     * plus un appariement silencieusement mort — le cas que le paragraphe suivant
+     * décrivait déjà pour la casse, « indiscernable d'une absence légitime ». Il
+     * est REFUSÉ, en nommant le type fautif.
      */
     protected static function booted(): void
     {
@@ -263,6 +278,7 @@ class DirectoryTemplate extends Model
             $attached = $template->attachedGroupType();
             if ($attached !== null) {
                 $template->attached_group_type = mb_strtolower($attached);
+                $template->assertAttachedTypeIsKnown();
                 $template->assertAttachable();
                 $template->assertSingleTreeAttachment();
             }
@@ -294,6 +310,46 @@ class DirectoryTemplate extends Model
         $raw = $this->root_anchor;
 
         return PlanAnchor::isKnown($raw) ? PlanAnchor::from((string) $raw) : PlanAnchor::default();
+    }
+
+    /**
+     * Story 62.2 — le type accroché doit EXISTER au catalogue.
+     *
+     * Sans cette garde, une recette pouvait s'accrocher à `classse` (faute de
+     * frappe), à un type supprimé, ou à un vocabulaire d'une autre instance :
+     * `attachedTo()` rendait alors `null`, qui est l'état parfaitement normal
+     * d'un type sans recette. L'erreur ne se voyait qu'au moment où l'on
+     * s'étonnait qu'un groupe ne matérialise rien — c'est-à-dire jamais.
+     *
+     * La comparaison est INSENSIBLE À LA CASSE, comme `attachedTo()` et comme la
+     * normalisation appliquée juste au-dessus : le catalogue peut contenir une
+     * valeur découverte en base à sa casse d'origine (`Classe`), et un accrochage
+     * à `classe` s'y apparie très bien.
+     *
+     * Le catalogue garantit un PLANCHER de neuf types quelle que soit l'état de la
+     * base ({@see \App\Support\GroupTypeCatalog}) : l'ordre migration/seeder n'est
+     * donc pas porteur, et la recette d'arbre de classe du seeder passe cette
+     * garde même sur une base qui n'a pas encore été seedée.
+     *
+     * @throws InvalidTreeSpecException
+     */
+    public function assertAttachedTypeIsKnown(): void
+    {
+        $type = $this->attachedGroupType();
+
+        if ($type === null || GroupTypeCatalog::isKnown($type)) {
+            return;
+        }
+
+        throw InvalidTreeSpecException::makeResolution(sprintf(
+            'type de groupe inconnu « %s » sur la recette « %s » : aucun type de ce nom au catalogue, donc '
+            . 'aucun groupe ne s\'y apparierait et la recette ne se matérialiserait jamais. Créez le type dans '
+            . '« Paramètres › Groupes & droits › Types de groupes », ou accrochez la recette à un type existant '
+            . '(%s).',
+            $type,
+            (string) $this->key,
+            implode(', ', GroupTypeCatalog::keys()),
+        ));
     }
 
     /**

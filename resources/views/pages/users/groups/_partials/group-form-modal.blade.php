@@ -17,6 +17,15 @@ use Illuminate\Support\Facades\Log;
  * Création seule : l'édition (membres, quota, capacités, PP, partage de classe)
  * reste une page dédiée, trop riche pour une modale.
  *
+ * **Story 62.2 — le choix de type vient du CATALOGUE, et c'est un changement de
+ * comportement ASSUMÉ.** La liste d'`<option>` était écrite en dur ici, et
+ * divergeait déjà de celle de l'édition SQL. Depuis la bascule, les types
+ * proposés sont ceux de `/admin/settings/groups` — donc `role` et `function`
+ * (que le balayage d'annuaire écrit depuis toujours) et les types créés à
+ * l'écran deviennent sélectionnables à la création. Les cacher referait un
+ * vocabulaire à deux vitesses : des types réels, portés par des groupes réels,
+ * qu'un formulaire ferait mine d'ignorer.
+ *
  * Sécurité : la page hôte /users est protégée par `can:user.read`, mais la
  * création exige `can:user.modify` (garde portée jusqu'ici par la middleware de
  * la route /users/groups/new). La modale n'étant plus derrière cette route, on
@@ -58,7 +67,11 @@ new class extends Component {
 
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9._@-]+$/'],
-            'type' => ['required', 'string', 'max:50'],
+            // Story 62.2 — le vocabulaire vient du CATALOGUE, plus d'une liste
+            // d'`<option>` recopiée. Le service refuse de toute façon une valeur
+            // hors catalogue ; la règle `in:` est là pour que le refus se lise
+            // sous le champ plutôt qu'en toast d'exception.
+            'type' => ['required', 'string', 'max:50', \Illuminate\Validation\Rule::in(\App\Support\GroupTypeCatalog::keys())],
         ]);
 
         try {
@@ -121,13 +134,9 @@ new class extends Component {
                 <span class="label-text font-medium">Type</span>
             </label>
             <select wire:model="type" class="select select-bordered w-full @error('type') select-error @enderror">
-                <option value="custom">Personnalisé</option>
-                <option value="classe">Classe</option>
-                <option value="cours">Cours</option>
-                <option value="matiere">Matière</option>
-                <option value="matiere_classe">Matière classe (Matiere_x@y)</option>
-                <option value="projet">Projet</option>
-                <option value="equipe">Équipe</option>
+                @foreach (\App\Support\GroupTypeCatalog::options() as $typeKey => $typeLabel)
+                    <option value="{{ $typeKey }}">{{ $typeLabel }}</option>
+                @endforeach
             </select>
             @error('type')
                 <label class="label py-1">

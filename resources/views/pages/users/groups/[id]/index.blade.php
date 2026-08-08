@@ -5,6 +5,7 @@ use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Services\UserGroupService;
+use App\Support\GroupTypeCatalog;
 use App\Support\RoleCatalog;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -416,21 +417,26 @@ new #[Title('Groupe utilisateur')] class extends Component {
         $this->editing = false;
     }
 
+    /**
+     * Story 62.2 — le libellé vient du CATALOGUE, plus d'un `match` local.
+     *
+     * Le `match` qui vivait ici ignorait `role` et `function` et rendait donc
+     * « Role »/« Function » là où la fiche utilisateur disait « Rôle »/« Fonction ».
+     * Les deux écrans lisent désormais la même ligne : c'est une divergence
+     * corrigée, la seule que la bascule change.
+     */
     public function typeLabel(): string
     {
-        return match ($this->type) {
-            'classe' => 'Classe',
-            'cours' => 'Cours',
-            'matiere' => 'Matière',
-            'matiere_classe' => 'Matière / Classe',
-            'projet' => 'Projet',
-            'equipe' => 'Équipe',
-            'custom' => 'Personnalisé',
-            'other_group' => 'Autre',
-            default => ucfirst($this->type),
-        };
+        return GroupTypeCatalog::label($this->type);
     }
 
+    /**
+     * La COULEUR reste un `match` local sur des clés immuables.
+     *
+     * Le catalogue porte un libellé et une icône, pas une charte : y ajouter une
+     * colonne de couleur serait administrer une décision que personne n'a demandé
+     * à prendre.
+     */
     public function typeBadgeClass(): string
     {
         return match ($this->type) {

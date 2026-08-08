@@ -1675,3 +1675,186 @@ comportement d'avant la story** (« Élève »/« Enseignant »/« Professeur pr
   `php artisan db:seed --class=DirectoryTemplateSeeder` ne doit lever aucune erreur de validation.
 - **Aucun onglet orphelin** : après la story 62.2, vérifier que l'onglet « Types de groupes »
   apparaît *avec* son contenu — jamais avant.
+
+---
+
+## Section 21 — Le catalogue de types de groupes (Story 62.2, 2026-08-08)
+
+**Le modèle en une phrase.** Le **type** porté par un groupe d'utilisateurs (`user_groups.type`)
+cesse d'être une chaîne libre sans référentiel : c'est une **table administrable**, `group_types`,
+où chaque ligne est **une clé immuable ⇔ un libellé modifiable + une icône**, plus un rang
+d'affichage. La clé est ce qui est stocké, ce que les arborescences visent
+(`directory_templates.attached_group_type`) et ce que le code métier compare en littéral ; le
+libellé est ce qui se lit à l'écran.
+
+> ⚠️ **Ce qui change dans la vie de tous les jours.** Les listes déroulantes « Type » de la création
+> d'un groupe et de l'édition SQL ne sont plus écrites en dur : elles affichent le catalogue. Trois
+> conséquences visibles et VOULUES : `Rôle` et `Fonction` (que le balayage d'annuaire écrit depuis
+> toujours) deviennent sélectionnables ; `Matière / Classe`, qui manquait à l'écran d'édition SQL,
+> y apparaît enfin ; et un type créé dans les paramètres est immédiatement proposé.
+
+> ⚠️ **L'invariant d'accrochage n'est PAS « une recette par type ».** L'index unique posé en 60.2 a
+> été délibérément relâché en 60.5. La règle vivante est plus étroite : **un type ne porte qu'une
+> recette d'ARBRE** ; les recettes **plates** peuvent être plusieurs. Le type `classe` en porte deux
+> dans le catalogue livré. L'écran des types le dit noir sur blanc sous la liste.
+
+**Ce qui doit rester vrai à chaque scénario** : aucun groupe ne change de type, aucune recette ne
+casse, et l'affichage des types est **identique au comportement d'avant la story** — à une
+correction près, nommée au scénario 21.4.
+
+**Code de référence** :
+- `database/migrations/2026_08_08_160000_create_group_types_table.php` — table + les 9 statiques + la **découverte dynamique**
+- `database/seeders/GroupTypeSeeder.php` — les 9 lignes statiques (idempotent, ne ressuscite jamais un type découvert)
+- `app/Models/GroupType.php` — clé immuable, décomptes d'usage, accrochages, refus de suppression nommés
+- `app/Support/GroupTypeCatalog.php` — le point de lecture unique (mémoïsé, plancher des 9)
+- `app/Services/UserGroupService.php` (`validateData`) et `app/Models/DirectoryTemplate.php` (garde `saving`) — les **deux** points d'écriture
+- `resources/views/pages/admin/settings/groups/_partials/types-tab.blade.php` — l'onglet
+
+### Pré-requis Section 21
+
+- Migrations appliquées : `php artisan migrate:status` → `2026_08_08_160000_create_group_types_table` en `Ran`.
+- **Seed recommandé** : `sudo -u www-admin php artisan db:seed --class=GroupTypeSeeder`
+  (idempotent — la migration a déjà posé les 9 lignes ; le seed les resynchronise sur la baseline
+  de code après une modification d'écran).
+- Un compte `server.admin`, un compte non-admin.
+- **Un relevé PRÉALABLE, à faire avant de migrer** (c'est le pivot du scénario 21.2) :
+  `SELECT type, COUNT(*) FROM user_groups GROUP BY type ORDER BY 2 DESC;` — garder la sortie.
+
+### Scénario 21.1 — L'onglet existe, et il n'annonce que ce qui existe
+
+1. `/admin/settings` → section **« Groupes & droits »** → la carte **« Rôles & groupes »** parle
+   désormais aussi des **types de groupes**. Aucune carte nouvelle, aucune section nouvelle.
+2. Ouvrir la page → deux onglets : **« Rôles »** et **« Types de groupes »**. Aucun onglet
+   « Arborescences » (story 62.6, pas encore livrée).
+3. `?tab=types` ouvre directement l'onglet ; `?tab=nimportequoi` retombe sur **« Rôles »**.
+4. **Attendu, compte non-admin** : la page est refusée (403 / redirection). Aucune permission
+   nouvelle n'a été créée — `server.admin` seul.
+
+### Scénario 21.2 — La reprise de la base réelle (LE scénario critique)
+
+1. Comparer le relevé pris en pré-requis à la liste affichée dans l'onglet.
+2. **Attendu** : **toute** valeur de `type` réellement présente en base a une ligne. Les 9 valeurs
+   recensées (`Personnalisé`, `Classe`, `Cours`, `Matière`, `Matière / Classe`, `Projet`, `Équipe`,
+   `Rôle`, `Fonction`) sont en tête, dans l'ordre historique des listes déroulantes.
+3. **Attendu, et c'est le point le plus important** : une valeur exotique du parc (`class`, `autre`,
+   une casse inattendue…) apparaît **à sa valeur EXACTE**, jamais corrigée ni fusionnée avec sa
+   voisine. Si la base contenait `classe` ET `Classe`, l'écran montre **deux lignes**, chacune avec
+   son propre décompte de groupes. C'est un signal honnête sur l'état de la donnée, pas un défaut.
+4. **Contre-épreuve d'écriture (bloquante si elle échoue)** : rejouer
+   `SELECT type, COUNT(*) FROM user_groups GROUP BY type;` — la sortie doit être **identique au
+   caractère près** à celle du pré-requis. La migration lit `user_groups`, elle n'y écrit jamais.
+5. Relancer `php artisan migrate` : rien ne se passe (migration déjà jouée). Le cas échéant,
+   rejouer le seed : aucun doublon, et **aucun type découvert n'est recréé s'il a été supprimé**.
+
+### Scénario 21.3 — Créer un type : la clé est dérivée, prévisualisée, puis figée
+
+1. **« Ajouter un type »** → saisir « Club de lecture ». La **clé dérivée** s'affiche en direct :
+   `club_de_lecture`. Saisir une icône Font Awesome (`fa-solid fa-guitar`) : l'aperçu suit.
+2. Laisser l'icône vide → l'aperçu montre l'icône générique `fa-solid fa-users`. C'est licite.
+3. Enregistrer → le type apparaît en fin de liste, avec **0 groupe** et **aucune arborescence**.
+4. Rouvrir en modification : le libellé et l'icône sont modifiables, **la clé n'est pas affichée
+   comme un champ** — un texte explique qu'elle est immuable.
+5. **Attendu** : saisir un libellé qui reproduit une clé existante (« Classe ») est **refusé sous le
+   champ**, avec un message métier — jamais une erreur SQL brute.
+6. Saisir un libellé qui ne produit aucune lettre (« 123 ») est refusé de même.
+
+### Scénario 21.4 — Le type neuf est immédiatement utilisable, et l'affichage n'a pas bougé
+
+1. `/users` → **« Nouveau groupe »** : la liste « Type » contient **« Club de lecture »**, ainsi que
+   **« Rôle »** et **« Fonction »**. Créer un groupe de ce type.
+2. Ouvrir la fiche du groupe : le badge affiche **« Club de lecture »**.
+3. **Parité d'affichage à vérifier sur des groupes EXISTANTS** — une classe, un projet, une équipe,
+   un `Matiere_x@y` : les libellés lus sur la fiche groupe, sur la fiche utilisateur et dans le
+   tiroir de sélection de groupes doivent être **ceux d'avant la story**.
+4. **La seule divergence corrigée, à constater** : un groupe de type `role` ou `function` affichait
+   « Role » / « Function » sur la **fiche groupe** (et « Rôle » / « Fonction » sur la fiche
+   utilisateur). Les deux écrans disent maintenant **« Rôle »** et **« Fonction »**.
+5. **Le tiroir de sélection de groupes** (bouton « Groupes » d'une fiche utilisateur) affichait la
+   **valeur technique brute** en description (`matiere_classe`). Il affiche désormais le libellé.
+6. **Édition SQL d'un groupe** (`/users/sql-groups/<id>`) : ouvrir un groupe `Matiere_x@y` et
+   enregistrer **sans rien changer** → son type reste `matiere_classe`. Avant la story, la liste
+   déroulante omettait cette valeur et l'enregistrement la **déclassait silencieusement**.
+
+### Scénario 21.5 — Renommer un libellé ou une icône ne touche AUCUNE donnée (le cœur)
+
+1. Renommer « Classe » en **« Division »**, et changer son icône.
+2. **Attendu** : le badge des fiches de groupes de classe se lit « Division » partout.
+3. **Attendu** : `SELECT DISTINCT type FROM user_groups;` est **inchangé** — la colonne porte
+   toujours `classe`.
+4. **Attendu** : `SELECT key, attached_group_type FROM directory_templates;` est **inchangé**.
+5. **Attendu, le plus important** : provisionner (ou re-provisionner) le partage d'une classe →
+   **les droits posés sont exactement les mêmes qu'avant le renommage**. Comparer un `getfacl -R`
+   avant/après : le diff doit être **vide**.
+6. Remettre « Classe » (ou rejouer `db:seed --class=GroupTypeSeeder`, qui resynchronise la baseline).
+
+### Scénario 21.6 — Supprimer : REFUS nommés, jamais de cascade (CRITIQUE)
+
+1. Tenter de supprimer **« Classe »** → **refus** immédiat, message « type structurel », **aucune
+   modale de confirmation**. Idem pour les huit autres types recensés, même s'ils ne portent aucun
+   groupe : le prochain balayage d'annuaire les réécrirait.
+2. Tenter de supprimer « Club de lecture » alors qu'un groupe le porte → **refus** nommant le
+   décompte (« Refusé : 1 groupe porte ce type »).
+3. **Contre-épreuve d'écriture** : après ce refus, vérifier que le type est toujours en base **ET**
+   que le groupe porte toujours son type. Une cascade silencieuse est un **incident bloquant**.
+4. Supprimer le groupe, revenir : la suppression propose alors une **confirmation**, et aboutit.
+5. **Arborescences** : accrocher une recette à un type (en base, ou via 62.6 quand elle existera),
+   puis tenter de supprimer ce type → refus mentionnant « 1 arborescence ». Vérifier que la recette
+   n'a pas été modifiée.
+
+### Scénario 21.7 — L'accrochage d'arborescence, lu et gardé
+
+1. Dans l'onglet, la colonne **« Arborescence »** montre, pour `classe`, la clé de la recette
+   d'**arbre** accrochée, **plus** un badge « + 1 plate ». Les autres types affichent « — ».
+2. **Attendu** : la note sous la liste énonce la règle (« Un type de groupe ne porte qu'une seule
+   recette d'arborescence… ; les recettes plates peuvent être plusieurs »).
+3. **Attendu** : aucun bouton n'attribue ni ne retire un accrochage — c'est la lecture seule
+   jusqu'à la story 62.6.
+4. **Garde du second point d'écriture**, à éprouver en tinker :
+   `DirectoryTemplate::create([... 'attached_group_type' => 'classse' ...])` → **refus nommé**
+   citant le type fautif et renvoyant à l'écran d'administration. Avant la story, cet accrochage
+   était accepté et ne s'appariait simplement… jamais.
+5. **Non-régression 60.5** : créer une **seconde** recette d'ARBRE accrochée à `classe` → refus,
+   message inchangé (« le type de groupe « classe » porte déjà la recette d'arbre … »). Créer une
+   seconde recette **plate** sur `classe` → **acceptée**.
+
+### Scénario 21.8 — Le balayage d'annuaire ne déclasse rien
+
+1. Lancer une synchronisation AD complète sur une base réelle.
+2. **Attendu** : aucun groupe ne bascule en `custom`. Les CN `Classe_`, `Equipe_`, `PP_`, `Cours_`,
+   `Projet_`, `Matiere_`, `Matiere_x@y`, ainsi que les groupes principaux et de fonction,
+   conservent le type qu'ils avaient.
+3. **Attendu** : le balayage n'est **pas** bridé par le catalogue — il écrit directement en base,
+   la garde de vocabulaire vit au service. Un type détecté et absent du catalogue serait donc écrit
+   quand même : c'est voulu, et un test automatisé vérifie qu'aucune détection ne peut produire une
+   valeur hors catalogue.
+
+### Scénario 21.9 — Réordonner l'affichage
+
+1. Sur « Classe », cliquer **« Monter »** : elle passe devant « Personnalisé ».
+2. **Attendu, ailleurs dans l'application** : les listes déroulantes « Type » de la création d'un
+   groupe et de l'édition SQL suivent **le même ordre**. C'est le seul effet visible.
+3. Remettre l'ordre d'origine (ou rejouer le seed).
+
+### Scénario 21.10 — Instance non seedée : le plancher tient
+
+1. Sur une instance de test, vider le catalogue : `DELETE FROM group_types;`.
+2. **Attendu** : l'application **continue de fonctionner** — créer un groupe de type `classe`,
+   ouvrir une fiche de groupe, provisionner un partage de classe. Le vocabulaire des neuf types
+   recensés ne disparaît **jamais**, quel que soit l'état de la table.
+3. **Attendu** : les libellés retombent sur ceux du code (« Classe », « Matière / Classe », …),
+   c'est-à-dire exactement l'affichage seedé.
+4. **Attendu** : un type créé plus tôt (« Club de lecture ») n'est **plus** proposé, et un groupe qui
+   le porterait se **lit** « Club_de_lecture » (repli `ucfirst`). Rejouer
+   `db:seed --class=GroupTypeSeeder` restaure les neuf lignes ; les types découverts ou créés, eux,
+   sont à recréer — ou à retrouver en rejouant la migration sur une base neuve.
+
+### Post-correctifs & non-régressions — Section 21
+
+- **Le partage de classe n'a pas bougé.** Provisionner un partage de classe et comparer les droits
+  posés avec ceux d'avant la story : 62.2 ne touche pas la compilation des permissions.
+- **Les recettes seedées restent valides**, leurs **deux** accrochages `classe` compris :
+  `php artisan db:seed --class=DirectoryTemplateSeeder` ne doit lever aucune erreur.
+- **Aucun onglet orphelin** : « Types de groupes » apparaît *avec* son contenu ; « Arborescences »
+  n'apparaîtra qu'avec la story 62.6.
+- **Déploiement** : `php artisan migrate` **puis**, si l'écran a déjà été utilisé,
+  `php artisan db:seed --class=GroupTypeSeeder`.
