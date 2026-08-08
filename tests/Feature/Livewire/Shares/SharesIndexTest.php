@@ -119,6 +119,58 @@ class SharesIndexTest extends TestCase
         Queue::assertPushed(ReconcileNetworkShareJob::class);
     }
 
+    /**
+     * **STORY 61.3 — LE CHOIX DE L'AUTORITÉ D'ÉCRITURE, GATÉ ET HONNÊTE.**
+     *
+     * Capacité active : la case du cloud est proposée, avec sa description de chemin
+     * d'accès (web + client de synchronisation, PAS de lecteur SMB), et le partage
+     * créé la porte. Le geste de création est le SEUL écrivain de cette colonne.
+     */
+    #[Test]
+    public function the_cloud_backend_can_be_chosen_at_creation_when_the_capability_is_on(): void
+    {
+        \App\Services\FilePolicyService::setGlobal(true, true, true, 'https://nuage.exemple.fr', 'admin', 'se4fs', true);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::PAGE)
+            ->assertSee('Nextcloud (dossier d\'équipe)')
+            ->set('name', 'Projet cloud')
+            ->set('directoryName', 'projet_cloud')
+            ->set('createBackend', 'nextcloud')
+            ->call('createShare')
+            ->assertHasNoErrors();
+
+        self::assertSame(
+            \App\Enums\FileBackendName::Nextcloud,
+            NetworkShare::where('directory_name', 'projet_cloud')->firstOrFail()->backendName(),
+        );
+    }
+
+    /**
+     * **CAPACITÉ ÉTEINTE ⇒ LA CASE EST ABSENTE, AVEC SON MOTIF DIT.**
+     *
+     * Pas une case grisée mystère : l'administrateur doit savoir quoi activer. Et la
+     * garde est REJOUÉE côté serveur — une garde qui ne vit que dans la liste
+     * affichée protège l'étourderie, pas la requête forgée.
+     */
+    #[Test]
+    public function a_disabled_capability_hides_the_cloud_case_and_refuses_a_forged_choice(): void
+    {
+        \App\Services\FilePolicyService::setGlobal(true, true, false);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::PAGE)
+            ->assertDontSee('Nextcloud (dossier d\'équipe)')
+            ->assertSee('La capacité « Accès Nextcloud » est désactivée', false)
+            ->set('name', 'Projet cloud')
+            ->set('directoryName', 'projet_cloud')
+            ->set('createBackend', 'nextcloud')
+            ->call('createShare')
+            ->assertDispatched('toastMagic');
+
+        $this->assertDatabaseCount('network_shares', 0);
+    }
+
     #[Test]
     public function rejects_malformed_directory_name(): void
     {

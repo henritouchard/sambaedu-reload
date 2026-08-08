@@ -34,6 +34,13 @@ final class NextcloudProvisioningReport
     /** @var list<array{name: string, action: string, label: string, detail: string}> */
     private array $mounts = [];
 
+    /**
+     * Au-delà, l'échantillon nominatif des profils indéterminables n'apprend plus
+     * rien : si l'annuaire est muet, ce sont TOUS les comptes qui y figurent, et le
+     * compteur porte l'information.
+     */
+    public const MAX_SAMPLED_QUOTA_LOGINS = 10;
+
     /** @var array<string, int> */
     private array $userCounters = [
         'crees' => 0,
@@ -41,7 +48,11 @@ final class NextcloudProvisioningReport
         'introuvables' => 0,
         'echecs' => 0,
         'exclus' => 0,
+        'quotas_indetermines' => 0,
     ];
+
+    /** @var list<string> */
+    private array $quotaUnresolved = [];
 
     /** @var list<array{login: string, issue: string, detail: string, candidates: list<string>}> */
     private array $userIssues = [];
@@ -150,6 +161,39 @@ final class NextcloudProvisioningReport
         $this->addIssue($login, 'echec', $detail);
     }
 
+    /**
+     * Correction de revue 61.3 #1 — LE PLAFOND QU'ON N'A PAS ÉCRIT, ET POURQUOI.
+     *
+     * Le profil de quota d'un compte se résout par l'ANNUAIRE. Quand l'annuaire ne
+     * répond pas — ou ne connaît pas ce compte — le profil est INDÉTERMINABLE, et
+     * SE5 n'écrit alors AUCUN plafond : appliquer le profil de repli reviendrait à
+     * poser un plafond d'élève à un enseignant, sans erreur ni journal.
+     *
+     * **Ce n'est ni un échec ni une panne** (le compte est adopté, son montage
+     * fonctionne, le code de sortie ne change pas) : c'est un CONSTAT, du même genre
+     * que les comptes introuvables — un état que l'exploitant doit connaître parce
+     * qu'un plafond qu'il croit posé ne l'est pas.
+     *
+     * L'échantillon nominatif vit à part de {@see userIssues()} À DESSEIN : une
+     * panne d'annuaire concerne TOUS les comptes, et laisser ce cas consommer le
+     * budget de la liste ferait disparaître les « introuvables », qui eux demandent
+     * un geste par personne.
+     */
+    public function countQuotaProfileUnresolved(string $login): void
+    {
+        $this->userCounters['quotas_indetermines']++;
+
+        if (count($this->quotaUnresolved) < self::MAX_SAMPLED_QUOTA_LOGINS) {
+            $this->quotaUnresolved[] = $login;
+        }
+    }
+
+    /** @return list<string> échantillon borné, jamais la population entière */
+    public function quotaUnresolvedLogins(): array
+    {
+        return $this->quotaUnresolved;
+    }
+
     /** Comptes hors périmètre (identité fédérée). */
     public function countUserExcluded(): void
     {
@@ -226,6 +270,7 @@ final class NextcloudProvisioningReport
             'mounts' => $this->mounts,
             'users' => $this->userCounters,
             'user_issues' => $this->userIssues,
+            'quota_unresolved' => $this->quotaUnresolved,
             'exit_code' => $this->exitCode(),
         ];
     }

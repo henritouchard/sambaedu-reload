@@ -69,11 +69,38 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * montrer, et un vocabulaire d'observation à deux valeurs l'aurait rendue
  * invisible.
  *
- * **La clôture ne produit aucun écart, et ce n'est pas un oubli.** Il n'existe pas
- * de refus en POSIX : l'absence d'octroi EST la fermeture. Le backend n'écrit rien
- * pour elle, donc il n'y a rien à comparer. C'est un backend à PROPAGATION qui
- * devra la matérialiser — et c'est là seulement que la clôture deviendra
- * comparable.
+ * **La clôture ne produit aucun écart TANT QUE PERSONNE NE L'OBSERVE, et ce n'est
+ * pas un oubli.** Il n'existe pas de refus en POSIX : l'absence d'octroi EST la
+ * fermeture. Le backend n'écrit rien pour elle, donc il n'y a rien à comparer.
+ * C'est un backend à PROPAGATION qui devra la matérialiser — et c'est là seulement
+ * que la clôture deviendra comparable.
+ *
+ * ---------------------------------------------------------------------------
+ * **STORY 61.3 — CE MOMENT EST ARRIVÉ, ET LA COMPARAISON EST GATÉE SUR LA DONNÉE.**
+ *
+ * Un backend à propagation matérialise la clôture en règles de masque, donc il sait
+ * la RELIRE : {@see NodeObservation::$closure} la porte. La comparaison ne se
+ * prononce QUE lorsque l'observation porte cette donnée :
+ *
+ *  | observation      | comportement                                            |
+ *  |------------------|---------------------------------------------------------|
+ *  | `closure = null` | aucune comparaison — POSIX et l'aperçu, inchangés        |
+ *  | `closure = [...]`| égalité d'ensembles avec la clôture ATTENDUE du nœud     |
+ *
+ * L'attendu est DÉRIVÉ, comme la clôture elle-même : les sujets des rôles clos du
+ * nœud, moins ceux qui y ont reçu un octroi (un sujet octroyé par un rôle et clos
+ * par un autre reste octroyé — union au plus permissif, doctrine de l'epic).
+ *
+ * **Ce que cette comparaison attrape, et qu'aucune autre n'attrapait** : une règle
+ * de masque retirée à la main sur le dossier privé des enseignants. L'octroi de la
+ * classe, lui, reste parfaitement conforme — c'est la CLÔTURE qui a sauté, et sans
+ * cette table, la fuite serait invisible sur un écran tout vert. C'est exactement
+ * le mode de rupture que le sondage d'ouverture d'epic avait mesuré.
+ *
+ * Le résultat vit dans une clé `closure` ADDITIVE de chaque nœud : les
+ * consommateurs existants lisent `differences` et `status`, et ne voient pas la
+ * différence — sauf sur le statut, qui devient `ecart` quand la clôture diverge, ce
+ * qui est précisément le but.
  *
  * **Un nœud qu'on n'a pas lu n'est jamais déclaré conforme.** Une ignorance n'est
  * pas une observation : elle remonte en `error` agrégé, comme une relecture en
@@ -122,6 +149,11 @@ final class PlanStateComparator
      *       expected: list<string>|null,
      *       observed: list<string>|null,
      *     }>,
+     *     closure?: list<array{
+     *       subject: array{type:string,id:int,edge_role:string|null},
+     *       expected_closed: bool,
+     *       observed_closed: bool,
+     *     }>,
      *   }>,
      * }
      */
@@ -144,7 +176,7 @@ final class PlanStateComparator
                     'detail' => 'aucune observation ne couvre ce nœud : rien ne peut en être conclu.',
                     'differences' => [],
                 ]
-                : $this->compareNode($node, $observation);
+                : $this->compareNode($plan, $node, $observation);
         }
 
         return ['status' => $this->aggregate($nodes), 'nodes' => $nodes];
@@ -153,7 +185,7 @@ final class PlanStateComparator
     /**
      * @return array{path:string,status:string,detail:string|null,differences:list<array{subject:array{type:string,id:int,edge_role:string|null},expected:list<string>|null,observed:list<string>|null}>}
      */
-    private function compareNode(PlanNode $node, NodeObservation $observation): array
+    private function compareNode(FilePlan $plan, PlanNode $node, NodeObservation $observation): array
     {
         if ($observation->status !== FileBackendObservation::Observe) {
             return [
@@ -217,12 +249,89 @@ final class PlanStateComparator
         // déclarer le nœud conforme.
         $hasUnnamed = $observation->detail !== null && $observation->detail !== '';
 
-        return [
+        // Story 61.3 — la CLÔTURE, quand et seulement quand le backend l'observe.
+        $closure = $this->compareClosure($plan, $node, $observation, $expected);
+
+        $result = [
             'path' => $node->path,
-            'status' => ($differences === [] && ! $hasUnnamed) ? self::NODE_CONFORME : self::NODE_ECART,
+            'status' => ($differences === [] && $closure === [] && ! $hasUnnamed) ? self::NODE_CONFORME : self::NODE_ECART,
             'detail' => $observation->detail,
             'differences' => $differences,
         ];
+
+        if ($observation->closure !== null) {
+            $result['closure'] = $closure;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Les DIVERGENCES de clôture d'un nœud — rien d'autre.
+     *
+     * Liste vide quand le backend n'observe pas la clôture (`null`) : ne rien
+     * pouvoir dire n'est pas la même chose que ne rien avoir à dire, mais dans les
+     * deux cas la comparaison ne produit aucun écart. La distinction est portée par
+     * la présence même de la clé dans le résultat.
+     *
+     * @param  array<string, list<string>>  $expectedGrants  clés de tri des sujets octroyés ici
+     * @return list<array{subject:array{type:string,id:int,edge_role:string|null},expected_closed:bool,observed_closed:bool}>
+     */
+    private function compareClosure(FilePlan $plan, PlanNode $node, NodeObservation $observation, array $expectedGrants): array
+    {
+        if ($observation->closure === null) {
+            return [];
+        }
+
+        /** @var array<string, PlanSubject> $subjects */
+        $subjects = [];
+
+        // ATTENDU : les sujets des rôles clos ici, MOINS ceux qui y ont reçu un
+        // octroi. Un sujet octroyé par un rôle et clos par un autre reste octroyé —
+        // la clôture n'a jamais été une interdiction.
+        $wanted = [];
+        foreach ($node->closure as $role) {
+            foreach ($plan->roles[$role] ?? [] as $subject) {
+                $key = $subject->sortKey();
+                if (array_key_exists($key, $expectedGrants)) {
+                    continue;
+                }
+                $wanted[$key] = true;
+                $subjects[$key] ??= $subject;
+            }
+        }
+
+        $seen = [];
+        foreach ($observation->closure as $subject) {
+            $key = $subject->sortKey();
+            $seen[$key] = true;
+            $subjects[$key] ??= $subject;
+        }
+
+        $divergences = [];
+        foreach ($subjects as $key => $subject) {
+            $expected = isset($wanted[$key]);
+            $observed = isset($seen[$key]);
+            if ($expected === $observed) {
+                continue;
+            }
+
+            $divergences[] = [
+                'subject' => $subject->toArray(),
+                'expected_closed' => $expected,
+                'observed_closed' => $observed,
+            ];
+        }
+
+        usort(
+            $divergences,
+            static fn (array $a, array $b): int => strcmp(
+                $a['subject']['type'] . $a['subject']['id'] . ($a['subject']['edge_role'] ?? ''),
+                $b['subject']['type'] . $b['subject']['id'] . ($b['subject']['edge_role'] ?? ''),
+            ),
+        );
+
+        return $divergences;
     }
 
     /**

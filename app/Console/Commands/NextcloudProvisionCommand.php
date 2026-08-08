@@ -132,6 +132,23 @@ class NextcloudProvisionCommand extends Command
             ]],
         );
 
+        // Correction de revue 61.3 #1 — le plafond qu'on n'a PAS écrit se dit. Un
+        // profil indéterminable n'est pas un échec (le compte est adopté), mais le
+        // taire ferait croire à un plafond posé.
+        $unresolved = (int) ($counters['quotas_indetermines'] ?? 0);
+        if ($unresolved > 0) {
+            $sample = $report->quotaUnresolvedLogins();
+            $this->line('');
+            $this->warn(sprintf(
+                'Plafonds NON écrits — profil de quota indéterminable pour %d compte(s) : l\'annuaire n\'a pas '
+                . 'répondu pour eux. SE5 ne devine PAS un profil (un plafond faux s\'applique, un plafond absent '
+                . 'se voit).%s',
+                $unresolved,
+                $sample === [] ? '' : ' Exemples : ' . implode(', ', $sample)
+                    . ($unresolved > count($sample) ? ', …' : '') . '.',
+            ));
+        }
+
         $issues = $report->userIssues();
         if ($issues !== []) {
             $this->line('');

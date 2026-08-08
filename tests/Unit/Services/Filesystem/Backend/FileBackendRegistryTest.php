@@ -79,10 +79,21 @@ class FileBackendRegistryTest extends TestCase
         $this->assertSame(FileBackendName::Posix, $backend->name());
     }
 
+    /**
+     * Story 61.3 — la liste s'allonge d'un nom, et la propriété se RENFORCE : depuis
+     * qu'un second backend réel existe, TOUTE case du vocabulaire résout. Un nom
+     * annoncé sans implémentation était l'état daté de la story 60.3 ; ce n'est plus
+     * un état acceptable.
+     */
     #[Test]
     public function only_the_implemented_names_are_advertised_as_available(): void
     {
-        $this->assertSame([FileBackendName::Posix, FileBackendName::Preview], $this->registry()->availableNames());
+        $this->assertSame(
+            [FileBackendName::Posix, FileBackendName::Preview, FileBackendName::Nextcloud],
+            $this->registry()->availableNames(),
+        );
+
+        $this->assertSame(FileBackendName::cases(), $this->registry()->availableNames());
     }
 
     #[Test]

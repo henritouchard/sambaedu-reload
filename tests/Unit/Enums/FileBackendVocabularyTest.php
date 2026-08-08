@@ -24,20 +24,45 @@ class FileBackendVocabularyTest extends TestCase
     // =========================================================================
 
     /**
-     * L'ANCRAGE STRUCTUREL du squelette jetable : aucun backend distant n'a de
-     * valeur de colonne. Le squelette écrit contre l'instance réelle vit sous
-     * `tests/Integration/`, il n'est ni enregistré au conteneur, ni sélectionnable
-     * par la colonne, ni atteignable depuis l'interface — et il ne PEUT pas
-     * l'être, faute d'un nom dans ce vocabulaire.
+     * **STORY 61.3 — LA GARDE A CHANGÉ D'OBJET, ET CE N'EST PAS UN AFFAIBLISSEMENT.**
+     *
+     * Elle s'appelait « aucun backend distant n'a de valeur de colonne » et elle
+     * protégeait le squelette jetable de la story 60.3 : rien, hors de l'arbre, ne
+     * pouvait se faire choisir faute d'un nom. Cette phrase décrivait un ÉTAT DATÉ —
+     * l'epic 61 avait pour objet de l'annuler, et elle est annulée : un backend
+     * distant réel existe, il est enregistré, il est sélectionnable.
+     *
+     * Ce que l'ancienne garde protégeait RÉELLEMENT, c'est autre chose, et c'est
+     * permanent : **aucune case ne doit exister sans implémentation.** Une position
+     * déclarée que le système ne sait pas tenir est le défaut que tout cet epic
+     * combat — un signal accepté qui n'atteint pas son destinataire. La garde porte
+     * désormais là-dessus, et elle est plus forte : elle vaudra encore quand un
+     * quatrième nom arrivera.
+     *
+     * L'absence de toute case « déléguée » reste épinglée, elle : le mode
+     * « instance non administrée » a été SUPPRIMÉ du produit le 2026-08-08 (mesuré :
+     * un compte ordinaire ne peut créer ni dossier d'équipe, ni groupe — donc pas de
+     * cloisonnement), et il n'y a rien à rouvrir pour lui, ni maintenant ni plus
+     * tard.
      */
     #[Test]
-    public function the_column_vocabulary_carries_no_remote_backend_case(): void
+    public function the_column_vocabulary_is_exact_and_every_case_resolves(): void
     {
-        $this->assertSame(['posix', 'preview'], FileBackendName::values());
+        $this->assertSame(['posix', 'preview', 'nextcloud'], FileBackendName::values());
 
         foreach (FileBackendName::values() as $value) {
-            $this->assertStringNotContainsStringIgnoringCase('cloud', $value);
             $this->assertStringNotContainsStringIgnoringCase('delegue', $value);
+        }
+
+        // L'INVARIANT PERMANENT : chaque case résout au registre.
+        $registry = app(\App\Services\Filesystem\Backend\FileBackendRegistry::class);
+
+        foreach (FileBackendName::cases() as $case) {
+            $this->assertTrue(
+                $registry->has($case),
+                sprintf('la case « %s » est déclarée sans implémentation : le système ne peut pas la tenir', $case->value),
+            );
+            $this->assertSame($case, $registry->get($case)->name());
         }
     }
 
@@ -54,9 +79,13 @@ class FileBackendVocabularyTest extends TestCase
     #[Test]
     public function an_unknown_column_value_is_never_part_of_the_vocabulary(): void
     {
-        $this->assertFalse(FileBackendName::isKnown('nextcloud'));
+        // Story 61.3 — `nextcloud` a rejoint le vocabulaire ; la case DÉLÉGUÉE, elle,
+        // n'y entrera jamais (elle a été supprimée du produit, pas reportée).
+        $this->assertFalse(FileBackendName::isKnown('nextcloud_delegue'));
+        $this->assertFalse(FileBackendName::isKnown('opencloud'));
         $this->assertFalse(FileBackendName::isKnown(null));
         $this->assertTrue(FileBackendName::isKnown('posix'));
+        $this->assertTrue(FileBackendName::isKnown('nextcloud'));
     }
 
     // =========================================================================

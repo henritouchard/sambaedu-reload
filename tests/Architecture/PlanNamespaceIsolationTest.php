@@ -91,15 +91,26 @@ class PlanNamespaceIsolationTest extends TestCase
     private const CONTRACT_PURE_EXCLUDED = 'FileBackendRegistry.php';
 
     /**
-     * Story 60.4 — le sous-dossier des IMPLÉMENTATIONS, qui vit SOUS la ligne.
+     * Story 60.4 → 61.3 — les sous-dossiers des IMPLÉMENTATIONS, qui vivent SOUS la
+     * ligne.
      *
-     * Le backend du serveur de fichiers historique exécute : c'est sa fonction. Il
-     * a donc tout le vocabulaire concret sous la main, et le scanner avec les
-     * règles pures reviendrait à interdire au seul composant qui doit écrire de
-     * savoir écrire. On l'exclut par son DOSSIER, pas en relâchant les règles pour
-     * tout le contrat — ce qui aurait affaibli la garde là où elle compte.
+     * Un backend exécute : c'est sa fonction. Il a donc tout le vocabulaire concret
+     * sous la main, et le scanner avec les règles pures reviendrait à interdire au
+     * seul composant qui doit écrire de savoir écrire. On les exclut par leur
+     * DOSSIER, pas en relâchant les règles pour tout le contrat — ce qui aurait
+     * affaibli la garde là où elle compte.
+     *
+     * **La liste s'allonge d'une entrée à chaque backend réel, et c'est la seule
+     * retouche que l'arrivée d'un backend impose ici.** Le second (story 61.3) parle
+     * à une instance distante : il interroge la base pour ses identités et sort en
+     * HTTP, deux choses que le contrat pur s'interdit et qu'aucun backend ne peut
+     * s'interdire. Ses PROPRES gardes vivent dans le test de son namespace (aucun
+     * shell-out, aucun partage, aucun claim de fédération, frontière des deux
+     * plafonds).
+     *
+     * @var list<string>
      */
-    private const CONTRACT_IMPLEMENTATION_DIR = 'Posix';
+    private const CONTRACT_IMPLEMENTATION_DIR = ['Posix', 'Nextcloud'];
 
     /**
      * Story 60.3 — l'ASSEMBLEUR de plan de partage plat et le REGISTRE.

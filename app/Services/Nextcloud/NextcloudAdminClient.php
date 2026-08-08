@@ -53,11 +53,17 @@ use Illuminate\Support\Facades\Http;
  * jamais en exception : rejouer le provisionnement est une opération normale.
  *
  * **Ce que ce client N'A PAS, et c'est un invariant testé (AC4).** Aucune méthode
- * de partage OCS, aucune méthode de groupe Nextcloud, aucune méthode de quota.
- * SE5 n'écrit AUCUN droit côté Nextcloud : la seule instance qui tranche un accès
- * est Samba/POSIX, avec les identifiants de l'utilisateur de session. Ajouter une
- * de ces méthodes ne serait pas une extension, ce serait un second plan de
- * permissions sur une zone qui en a déjà un.
+ * de partage OCS, aucune méthode de groupe Nextcloud, aucune méthode de dossier
+ * d'équipe. La zone que ce client sert est montée depuis le serveur de fichiers, et
+ * la seule instance qui y tranche un accès est Samba/POSIX, avec les identifiants
+ * de l'utilisateur de session. Ajouter une de ces méthodes ne serait pas une
+ * extension, ce serait un second plan de permissions sur une zone qui en a déjà un.
+ *
+ * **Story 61.3 — UNE méthode s'ajoute, et une seule : le plafond d'un COMPTE.**
+ * Elle n'est pas un droit — c'est un budget de personne, et c'est ici que vit
+ * l'état par-utilisateur (compte, mot de passe). Le plafond d'une ZONE, lui, est
+ * l'affaire du backend de fichiers, qui n'a aucun chemin vers les comptes : c'est
+ * la frontière D8, et elle est tenue des deux côtés par un test d'architecture.
  *
  * **Le secret ne sort jamais.** Il n'entre dans aucun message, aucun journal,
  * aucune exception : les messages sont construits à partir de l'OPÉRATION et de la
@@ -340,6 +346,33 @@ final class NextcloudAdminClient
             'ocs/v2.php/cloud/users/' . rawurlencode($nextcloudUserId),
             sprintf('mise à jour du mot de passe du compte Nextcloud « %s »', $nextcloudUserId),
             ['key' => 'password', 'value' => $newPassword],
+        );
+    }
+
+    /**
+     * Story 61.3 — LE PLAFOND D'UNE PERSONNE (frontière D8, côté personnes).
+     *
+     * **Pourquoi cette méthode vit ICI et pas dans le backend de fichiers.** Il y a
+     * DEUX plafonds dans ce produit, et ils ne portent pas sur le même objet : une
+     * recette de partage plafonne une ZONE, une règle de quota budgète une PERSONNE
+     * sur l'instance. Rattacher le second au backend ferait écrire un quota
+     * d'utilisateur par une recette de partage — la violation exacte que D8 nomme.
+     * Le balayage de provisionnement est déjà le lieu où l'on converge l'état
+     * PAR-UTILISATEUR (compte, mot de passe) ; le plafond s'y range, et un test
+     * d'architecture tient la frontière des deux côtés.
+     *
+     * Même forme que la mise à jour du mot de passe : une mise à jour clé/valeur en
+     * `PUT` (patron legacy `cloud.inc.php:894/938`). La valeur `none` dit
+     * « illimité » — c'est la convention de l'instance, pas une invention : un
+     * plafond de zéro dans nos règles signifie déjà « sans limite ».
+     */
+    public function setUserQuota(string $nextcloudUserId, string $quota): NextcloudResult
+    {
+        return $this->ocsCall(
+            'PUT',
+            'ocs/v2.php/cloud/users/' . rawurlencode($nextcloudUserId),
+            sprintf('mise à jour du plafond du compte Nextcloud « %s »', $nextcloudUserId),
+            ['key' => 'quota', 'value' => $quota],
         );
     }
 

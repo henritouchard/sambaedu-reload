@@ -2992,7 +2992,229 @@ reconfigurer. Mais l'écran ne laisse plus croire que la connexion est vérifié
 
 ---
 
-*Dernière mise à jour : 2026-08-08 (Recadrage post-livraison de la story 61.2 — le
+## Story 61.3 — Le backend `nextcloud` : quand l'autorité bascule
+
+*Ajouté le 2026-08-08 (append-only).*
+
+**Ce qui change pour l'exploitant.** Jusqu'ici, Nextcloud était un CHEMIN D'ACCÈS :
+il montait des zones dont le serveur de fichiers restait l'autorité. Depuis 61.3, un
+répertoire peut être **servi par Nextcloud** — le plan y devient un **dossier
+d'équipe**, les octrois des permissions de groupe, et le cloisonnement des **règles
+de permissions avancées**. Conséquence directe et **définitive** : un tel répertoire
+**n'a AUCUN lecteur réseau**. Il se consulte au web et se synchronise avec le client
+de bureau. Ce n'est pas une fonctionnalité manquante, c'est une impossibilité
+vérifiée (D7).
+
+### 61.3-0 — Les prérequis, à vérifier AVANT tout le reste
+
+- [ ] **61.3-0a** — la capacité « Accès Nextcloud » est **active** et la connexion
+  **vérifiée** (`/admin/settings/files`, bouton « Tester la connexion »). Capacité
+  éteinte ⇒ la case « Nextcloud (dossier d'équipe) » **n'apparaît pas** à la
+  création, et le motif est écrit sous le champ.
+- [ ] **61.3-0b** — l'app **`groupfolders`** est activée sur l'instance (mesurée en
+  version 22.0.6 sur Nextcloud 34.0.2). Sans elle, aucune route de dossier d'équipe
+  ne répond, et la réconciliation échoue en le disant.
+- [ ] **61.3-0c** — le compte configuré est **administrateur de l'instance**. SE5
+  l'exige : un compte ordinaire ne peut créer ni dossier d'équipe, ni groupe. Le
+  piège à connaître : un refus d'administration rend **HTTP 200 avec un 403 dans le
+  corps** — le code de transport ment, SE5 lit le corps.
+- [ ] **61.3-0d** — ⚠️ **PRÉREQUIS LE PLUS COÛTEUX À DÉCOUVRIR : l'ACL AVANCÉE EST
+  UN INTERRUPTEUR PAR DOSSIER D'ÉQUIPE.** SE5 l'active lui-même à la
+  réconciliation (`POST /index.php/apps/groupfolders/folders/{id}/acl` avec
+  `acl=1`). **Tant qu'il est éteint, les règles de cloisonnement sont acceptées et
+  n'ont AUCUN EFFET.** Si un cloisonnement paraît ne rien faire, c'est la première
+  chose à vérifier : Administration › Dossiers d'équipe › le dossier › colonne
+  « Permissions avancées ».
+
+### 61.3-1 — Le parcours réel : créer un répertoire servi par le cloud
+
+- [ ] **61.3-1a** — `/admin/shares` › « Nouveau répertoire réseau » : le champ
+  **« Autorité d'écriture des droits »** propose « Serveur de fichiers (POSIX/SMB) »
+  et « Nextcloud (dossier d'équipe) ». La description du choix courant s'affiche
+  sous le champ, et celle du cloud dit en toutes lettres qu'il n'y a **pas** de
+  lecteur SMB.
+- [ ] **61.3-1b** — créer un répertoire avec le backend cloud. Le message dit
+  « mise en place des droits **engagée** », jamais « accomplie » : la réconciliation
+  est enfilée.
+- [ ] **61.3-1c** — sur l'instance : un dossier d'équipe porte le nom du répertoire,
+  ses groupes `se5_…` apparaissent dans sa carte, et **« Permissions avancées » est
+  activé**.
+- [ ] **61.3-1d** — la page du répertoire affiche le badge « Nextcloud (dossier
+  d'équipe) » et le tableau « Dernier passage sur les droits », **un nœud par
+  ligne**. Un déclin permanent (`Non supporté par ce backend`) s'y voit avec son
+  détail — il ne disparaît jamais dans un agrégat vert.
+- [ ] **61.3-1e** — **AUCUNE LETTRE DE LECTEUR** n'est émise pour ce répertoire :
+  vérifier l'état désiré d'un poste (`drives`) — la lettre du répertoire cloud n'y
+  est pas, celles des répertoires POSIX y sont.
+
+### 61.3-2 — La preuve qui compte : l'élève ne voit pas l'espace des enseignants
+
+C'est le scénario pour lequel toute la clôture calculée existe. À jouer avec **deux
+comptes réels** (un élève de la classe, un enseignant) :
+
+- [ ] **61.3-2a** — se connecter au web avec le **compte élève** : le dossier
+  d'équipe est visible, `_travail` est visible, **`_profs` N'APPARAÎT PAS dans le
+  listing**. Ce n'est pas « visible mais interdit » : il a disparu.
+- [ ] **61.3-2b** — forcer l'URL du dossier `_profs` avec le compte élève : refus.
+- [ ] **61.3-2c** — se connecter avec le **compte enseignant** : `_profs` est
+  visible et **inscriptible**.
+- [ ] **61.3-2d** — **le contre-test qui compte** : sur l'instance, retirer à la
+  main la règle de `_profs` pour le groupe `se5_…_member`, puis relancer l'audit de
+  conformité depuis la page du répertoire. → **le répertoire passe en ÉCART**, en
+  nommant le sujet qui n'est plus refermé. Sans cette comparaison, l'écran serait
+  resté tout vert pendant que la classe lit le dossier privé des enseignants.
+- [ ] **61.3-2e** — désactiver l'espace d'échange (nœud activable) : l'octroi de la
+  classe devient **explicitement vide** côté instance (règle présente, permissions
+  nulles) — jamais une absence de règle. Le dossier et son contenu **restent**.
+
+### 61.3-3 — Vérifier une clôture à la main (protocole)
+
+Sur un poste ayant `curl`, avec le compte admin de l'instance :
+
+```
+curl -u '<admin>:<motdepasse>' -X PROPFIND \
+  -H 'Depth: 0' -H 'Content-Type: application/xml' \
+  --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">
+          <d:prop><nc:acl-list/><nc:inherited-acl-list/><nc:acl-enabled/></d:prop></d:propfind>' \
+  '<url>/remote.php/dav/files/<admin>/<DossierEquipe>/_profs'
+```
+
+Comment lire la réponse — **et c'est là que se cachent trois pièges** :
+
+- la réponse est un **`207`**, et **ce code ne conclut rien**. Le verdict est le
+  `<d:status>` porté **par chaque propriété** dans le corps ;
+- **`404 Not Found` sur `acl-list` veut dire « aucune règle posée »**, jamais une
+  erreur (même famille que le `405` d'une création de dossier rejouée) ;
+- la règle relue porte un champ **`acl-mapping-display-name` que le serveur AJOUTE**.
+  Personne ne l'a écrit, et SE5 l'ignore dans ses comparaisons — sinon il verrait une
+  dérive à chaque passage.
+
+`inherited-acl-list` répond à l'autre question : cette règle est-elle posée **ici**
+ou **descend-elle d'un dossier parent** ? C'est exactement la distinction que le
+cloisonnement doit trancher.
+
+### 61.3-4 — Les deux plafonds, et ils ne se recouvrent jamais
+
+- [ ] **61.3-4a** — un plafond porté par la **racine** du plan devient le **quota du
+  dossier d'équipe**, relu pour être confirmé.
+- [ ] **61.3-4b** — un plafond porté par un **sous-dossier** rend « **Non supporté
+  par ce backend** » : le quota d'un dossier d'équipe porte sur le dossier ENTIER.
+  C'est une limite **permanente** du modèle, pas une dette de SE5 — l'écran la
+  masque au lieu de la griser.
+- [ ] **61.3-4c** — le **quota d'un compte** (règle de quota SE5) est appliqué par
+  le **balayage de provisionnement** (`php artisan nextcloud:provision`), pas par la
+  recette de partage. Il n'est écrit **que si une règle de quota SE5 existe** pour ce
+  compte : sans règle, SE5 n'a pas d'opinion et **n'écrase pas** un plafond posé à la
+  main sur l'instance.
+
+### 61.3-5 — Ce qui n'est PAS observable, et qu'il ne faut pas croire observé
+
+- **La perception effective d'un utilisateur** ne se déduit PAS des règles relues.
+  Une règle relue prouve une règle, pas ce qu'un élève voit. Le seul moyen de le
+  savoir est de **se connecter avec un compte de test** (61.3-2) — c'est ce que fait
+  le test d'intégration, avec des comptes jetables.
+- **Le comportement d'une instance à synchro annuaire (LDAP) n'a PAS été observé.**
+  Les groupes que SE5 compile (`se5_…`) sont des groupes locaux de l'instance ; leur
+  cohabitation avec des groupes synchronisés, et le fait qu'un compte synchronisé
+  accepte d'y entrer, restent à mesurer.
+- **Un objet créé à la main reste intouché.** Un dossier d'équipe hors plan n'est ni
+  supprimé, ni modifié, ni rapporté. En revanche, une **règle** posée à la main **sur
+  un dossier DU plan** est un écart — et elle doit l'être.
+- **Le compte d'administration garde toujours accès.** SE5 le rattache à un groupe
+  structurel `se5_administration`, sans quoi il ne verrait pas le dossier d'équipe et
+  ne pourrait ni créer les sous-dossiers ni poser les règles. Ce groupe n'est PAS un
+  octroi du plan : il n'apparaît pas dans les états relus, exactement comme le groupe
+  d'administration d'annuaire côté serveur de fichiers.
+
+### 61.3-6 — Ce qui ne se fait PAS (et où c'est traité)
+
+- [ ] **61.3-6a** — **un répertoire ne change jamais d'autorité d'écriture.** Le
+  choix se fait à la création et nulle part ailleurs : il n'existe aucun écran, aucun
+  bouton, aucun champ pour le basculer. Migrer un répertoire existant (déplacer les
+  données, retraduire les droits) est un chantier dédié, avec aperçu — **il n'est pas
+  livré ici**.
+- [ ] **61.3-6b** — **monter un répertoire cloud comme un lecteur sur le poste** est
+  un chantier d'**agent** (montage, purge de profil sur poste partagé), pas de
+  backend. Rien ne le promet dans l'interface.
+- [ ] **61.3-6c** — **l'outil en ligne de commande de l'instance (`occ`) n'est jamais
+  un chemin d'exécution de SE5.** Il suppose un accès système au serveur Nextcloud,
+  qu'on n'a pas sur une instance distante ou tierce. Il reste utile **en diagnostic**
+  sur une instance qu'on héberge soi-même — jamais dans une procédure de
+  réconciliation.
+
+### 61.3-7 — Corrections de revue : deux comportements d'exploitation à connaître
+
+*(Ajouté après la revue de la story. Le reste de la section 61.3 est inchangé.)*
+
+#### Un plafond de compte peut désormais **ne pas être écrit**, et le rapport le dit
+
+Le profil de quota d'une personne — élève, enseignant, administrateur — est ce qui
+choisit la **politique par défaut** appliquée à son compte. Ce profil est résolu par
+l'**annuaire** (appartenance à `cn=admins` / `cn=profs`…), et par lui seul. Il l'était
+auparavant par la colonne `role` de la fiche utilisateur, qui ne gouverne rien dans
+SE5 : un enseignant dont le rôle n'était pas renseigné recevait **silencieusement le
+plafond d'un élève**.
+
+Conséquence directe pour l'exploitant :
+
+- [ ] **61.3-7a** — quand l'annuaire **ne répond pas** pour un compte (ou ne le
+  connaît pas), **aucun plafond n'est écrit** pour lui. Ce n'est pas une panne et ce
+  n'est pas un échec : le compte est **adopté**, son montage fonctionne, le code de
+  sortie de `nextcloud:provision` **ne change pas**. C'est un **constat** — SE5 ne
+  devine pas un profil, parce qu'un plafond faux s'applique tandis qu'un plafond
+  absent se voit.
+- [ ] **61.3-7b** — le constat est **compté et affiché** : `nextcloud:provision`
+  imprime un avertissement « Plafonds NON écrits — profil de quota indéterminable
+  pour N compte(s) » avec quelques logins en exemple, et l'écran
+  `/admin/settings/files` (onglet « Personnels et partagés ») affiche le badge
+  « Plafonds non écrits (profil indéterminable) ». **Si ce nombre est élevé,
+  regarder l'annuaire avant de regarder Nextcloud** : c'est le symptôme d'une lecture
+  d'annuaire cassée, pas d'un problème de cloud.
+- [ ] **61.3-7c** — une **règle de quota nominative** (visant un login précis) est
+  écrite **même si l'annuaire est muet** : elle n'a besoin d'aucun profil. De même,
+  une **règle de quota par groupe** s'applique désormais aux comptes Nextcloud —
+  elle ne le pouvait pas auparavant, les groupes n'étant jamais transmis au calcul.
+- [ ] **61.3-7d** — **coût** : tant qu'**aucune** règle de quota n'existe sur `/home`,
+  le balayage n'émet **aucune** lecture d'annuaire, quelle que soit la taille de
+  l'établissement. Dès qu'une règle existe, le coût est d'**au plus une lecture
+  d'annuaire par compte** (jamais une par valeur lue).
+
+#### Le compte d'administration ne peut plus être expulsé d'un groupe du plan
+
+- [ ] **61.3-7e** — si l'exploitant ajoute **à la main** le compte d'administration
+  configuré dans un groupe compilé par SE5 (`se5_…`), la réconciliation **ne l'en
+  retire plus**. C'est cohérent avec « hors du plan, hors du geste » : le retirer lui
+  ferait perdre l'accès qu'il s'est donné, et cette perte ne se serait manifestée
+  qu'au **passage suivant**, sous la forme d'un dossier d'équipe soudain
+  inatteignable. Les appartenances réellement périmées, elles, continuent d'être
+  retirées.
+- [ ] **61.3-7f** — ⚠️ **cela ne rend pas le geste souhaitable.** Le compte
+  d'administration accède au dossier par le groupe **structurel**
+  `se5_administration` (61.3-5), et il n'a besoin de rien d'autre. S'il est membre
+  d'un groupe du plan et qu'un sous-dossier **referme ce groupe** (l'espace des
+  enseignants pour la classe, par exemple), la clôture s'applique **aussi à lui** :
+  SE5 ne le retirera pas du groupe, mais il perdra l'accès à ce sous-dossier et la
+  réconciliation le rapportera en échec sur ce nœud. **Ne pas mettre le compte
+  d'administration dans un groupe du plan.**
+
+
+---
+
+*Dernière mise à jour : 2026-08-08 (Corrections de revue de la story 61.3 — section
+**61.3-7 ajoutée en append**. Deux effets d'exploitation : (1) le profil de quota
+d'un compte est désormais résolu par l'**annuaire** et jamais deviné — quand il est
+indéterminable, **aucun plafond n'est écrit** et le cas est compté au rapport et à
+l'écran ; les règles de quota par **groupe** atteignent enfin les comptes Nextcloud ;
+(2) la réconciliation **ne retire plus** le compte d'administration d'un groupe du
+plan — sans pour autant que l'y mettre soit une bonne idée.)*
+
+*Mise à jour précédente : 2026-08-08 (Story 61.3 — le backend `nextcloud` : l'autorité
+d'écriture peut désormais être Nextcloud. Section 61.3 ajoutée en append. Ce qui
+compte pour l'exploitant : un répertoire servi par le cloud n'a AUCUN lecteur réseau ;
+l'ACL avancée est un interrupteur PAR dossier d'équipe, et sans lui les règles de
+cloisonnement sont acceptées sans effet ; le choix de l'autorité est définitif.)*
+
+*Mise à jour antérieure : 2026-08-08 (Recadrage post-livraison de la story 61.2 — le
 mode « instance non administrée » (compte porteur délégué) est SUPPRIMÉ : mesuré,
 un compte ordinaire ne peut créer ni Team folder, ni groupe, ni partage de groupe,
 donc pas de clôture, donc pas de cloisonnement. SE5 EXIGE un compte administrateur.

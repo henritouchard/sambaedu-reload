@@ -45,6 +45,15 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     // --- Modale de création -------------------------------------------------
     public bool $isCreateOpen = false;
     public string $name = '';
+    /**
+     * Story 61.3 — L'AUTORITÉ D'ÉCRITURE, choisie À LA CRÉATION et jamais après.
+     *
+     * Elle n'est proposée que parmi les backends POSABLES ({@see FileBackendSelection}) :
+     * une case dont la capacité est éteinte est ABSENTE, avec son motif dit sous le
+     * champ — pas grisée sans explication. Le geste de création est le SEUL écrivain
+     * de cette colonne : un répertoire provisionné ne bascule jamais (D9).
+     */
+    public string $createBackend = 'posix';
     public string $directoryName = '';
     public string $label = '';
     public string $letter = '';
@@ -297,6 +306,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->directoryName = '';
         $this->label = '';
         $this->letter = '';
+        $this->createBackend = \App\Enums\FileBackendName::Posix->value;
         $this->resetErrorBag();
     }
 
@@ -343,6 +353,18 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
         $validated = $this->validate($this->createRules(), $this->createMessages());
 
+        // Story 61.3 — l'autorité d'écriture est refusée AVANT écriture si elle
+        // n'est pas posable. La garde est rejouée ici même si l'écran a déjà filtré
+        // la liste : une garde qui ne vit que dans la liste affichée protège
+        // l'étourderie, pas la requête forgée.
+        try {
+            $backend = app(\App\Services\Filesystem\Backend\FileBackendSelection::class)->resolve($this->createBackend);
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+
+            return;
+        }
+
         $share = new NetworkShare([
             'name' => $validated['name'],
             'directory_name' => $validated['directoryName'],
@@ -350,6 +372,11 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             'letter' => $this->normalizedLetter($validated['letter'] ?? null),
             'created_by_user_id' => $this->currentUserId(),
         ]);
+
+        // Hors `$fillable` à dessein : ce geste de création est le SEUL écrivain de
+        // la colonne, et c'est ce qui rend vraie la promesse « un répertoire
+        // provisionné ne bascule jamais ».
+        $share->backend = $backend;
 
         // Validation prédictive (defense-in-depth) — un répertoire neuf n'a pas
         // encore d'audience, donc pas de collision possible ici, mais on garde
@@ -376,6 +403,41 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->isCreateOpen = false;
         $this->resetCreateForm();
         $this->loadShares();
+    }
+
+    /**
+     * Story 61.3 — LES AUTORITÉS D'ÉCRITURE POSABLES, et le motif de celles qui ne
+     * le sont pas.
+     *
+     * **Une case non posable est ABSENTE de la liste**, jamais grisée sans mot :
+     * proposer puis refuser à l'application est le défaut du signal accepté sans
+     * destinataire, que tout cet epic combat. Le motif, lui, est DIT sous le champ —
+     * l'administrateur doit savoir quoi activer, pas seulement que c'est indisponible.
+     *
+     * @return array{options: list<array{value:string,label:string,description:string}>, refusals: list<string>}
+     */
+    public function backendChoice(): array
+    {
+        $selection = app(\App\Services\Filesystem\Backend\FileBackendSelection::class);
+
+        $options = [];
+        foreach ($selection->selectable() as $name) {
+            $options[] = [
+                'value' => $name->value,
+                'label' => $name->label(),
+                'description' => $name->description(),
+            ];
+        }
+
+        $refusals = [];
+        foreach ([\App\Enums\FileBackendName::Nextcloud] as $candidate) {
+            $refusal = $selection->refusalFor($candidate);
+            if ($refusal !== null) {
+                $refusals[] = $refusal;
+            }
+        }
+
+        return ['options' => $options, 'refusals' => $refusals];
     }
 
     // --- Matérialisation depuis un template (Story 34.3) --------------------
@@ -779,6 +841,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->templateLetter = '';
         $this->roleSelections = [];
         $this->materializationGroupId = null;
+        $this->createBackend = \App\Enums\FileBackendName::Posix->value;
         $this->resetErrorBag();
     }
 
@@ -857,6 +920,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 'letter' => $validated['templateLetter'] ?? null,
                 'roles' => $roles,
                 'group_id' => $this->materializationGroupId,
+                'backend' => $this->createBackend,
             ], deferProvisioning: true);
         } catch (NetworkShareLetterCollisionException $e) {
             // Collision de lettre : rollback transactionnel déjà effectué (aucune
@@ -1101,6 +1165,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     </div>
 
     {{-- Modale de création (réutilisable x-molecules.modal) --}}
+    @php($backendChoice = $this->backendChoice())
     <x-molecules.modal wire:model="isCreateOpen" size="max-w-2xl" height="h-auto"
         title="Nouveau répertoire réseau" icon="fa-network-wired text-primary">
         <x-molecules.modal.section title="Informations" icon="fa-circle-info text-primary" dense>
@@ -1135,6 +1200,31 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         Lettres réservées (indisponibles) : A-D, <strong>H</strong> (classes), I,
                         <strong>K</strong> (home), L. Laissez vide pour une attribution automatique (M..Z).
                     </span>
+                </div>
+
+                {{-- Story 61.3 — L'AUTORITÉ D'ÉCRITURE : choisie ICI, jamais après (D9). --}}
+                <div class="flex flex-col w-full md:col-span-2">
+                    <label class="label w-full justify-start" for="create-backend">
+                        <span class="label-text font-medium">
+                            Autorité d'écriture des droits <span class="text-error">*</span>
+                            <span class="tooltip align-middle" data-tip="Ce choix est définitif : un répertoire déjà créé ne change pas d'autorité.">
+                                <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                            </span>
+                        </span>
+                    </label>
+                    <select id="create-backend" wire:model.live="createBackend" class="select select-bordered w-full">
+                        @foreach ($backendChoice['options'] as $option)
+                            <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                    @foreach ($backendChoice['options'] as $option)
+                        @if ($option['value'] === $createBackend)
+                            <span class="text-xs text-base-content/60 mt-1">{{ $option['description'] }}</span>
+                        @endif
+                    @endforeach
+                    @foreach ($backendChoice['refusals'] as $refusal)
+                        <span class="text-xs text-warning mt-1"><i class="fa-solid fa-triangle-exclamation"></i> {{ $refusal }}</span>
+                    @endforeach
                 </div>
             </div>
         </x-molecules.modal.section>
@@ -1207,6 +1297,31 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         </label>
                         <input type="text" wire:model="templateLetter" class="input input-bordered" maxlength="8" placeholder="P:" />
                         @error('templateLetter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                    </div>
+
+                    {{-- Story 61.3 — même choix, même garde, même finalité (D9). --}}
+                    <div class="flex flex-col w-full md:col-span-2">
+                        <label class="label w-full justify-start" for="template-backend">
+                            <span class="label-text font-medium">
+                                Autorité d'écriture des droits <span class="text-error">*</span>
+                                <span class="tooltip align-middle" data-tip="Ce choix est définitif : un répertoire déjà créé ne change pas d'autorité.">
+                                    <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                                </span>
+                            </span>
+                        </label>
+                        <select id="template-backend" wire:model.live="createBackend" class="select select-bordered w-full">
+                            @foreach ($backendChoice['options'] as $option)
+                                <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                            @endforeach
+                        </select>
+                        @foreach ($backendChoice['options'] as $option)
+                            @if ($option['value'] === $createBackend)
+                                <span class="text-xs text-base-content/60 mt-1">{{ $option['description'] }}</span>
+                            @endif
+                        @endforeach
+                        @foreach ($backendChoice['refusals'] as $refusal)
+                            <span class="text-xs text-warning mt-1"><i class="fa-solid fa-triangle-exclamation"></i> {{ $refusal }}</span>
+                        @endforeach
                     </div>
                 </div>
             </x-molecules.modal.section>

@@ -796,7 +796,28 @@ new class extends Component {
                                 <span class="badge badge-warning badge-outline">Introuvables : {{ $lastReport['users']['introuvables'] }}</span>
                                 <span class="badge badge-error badge-outline">Échecs : {{ $lastReport['users']['echecs'] }}</span>
                                 <span class="badge badge-ghost">Hors périmètre : {{ $lastReport['users']['exclus'] }}</span>
+                                {{-- Correction de revue 61.3 #1 — le plafond NON écrit se voit. Le
+                                     `?? 0` n'est pas de la coquetterie : un rapport mis en cache
+                                     AVANT cette correction ne porte pas la clé, et l'écran doit
+                                     continuer de s'afficher. --}}
+                                @if (($lastReport['users']['quotas_indetermines'] ?? 0) > 0)
+                                    <span class="badge badge-warning badge-outline">
+                                        Plafonds non écrits (profil indéterminable) :
+                                        {{ $lastReport['users']['quotas_indetermines'] }}
+                                    </span>
+                                @endif
                             </div>
+                            @if (($lastReport['users']['quotas_indetermines'] ?? 0) > 0)
+                                <p class="text-xs text-base-content/60">
+                                    Le profil de quota (élève / enseignant / administrateur) se résout par
+                                    l'annuaire. Pour ces comptes, l'annuaire n'a pas répondu : aucun plafond
+                                    n'a été écrit — SE5 ne devine pas un profil, un plafond faux s'appliquerait
+                                    sans que rien ne le signale.
+                                    @if (! empty($lastReport['quota_unresolved']))
+                                        Exemples : {{ implode(', ', array_slice($lastReport['quota_unresolved'], 0, 10)) }}.
+                                    @endif
+                                </p>
+                            @endif
                         @endif
 
                         @if (! empty($lastReport['user_issues']))

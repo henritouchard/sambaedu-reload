@@ -31,6 +31,15 @@ class XfsQuotaService
 {
     private ?array $config = null;
 
+    /**
+     * Mémoïsation d'UN SEUL utilisateur — le dernier résolu.
+     * Voir {@see resolveDirectoryIdentity()} pour le pourquoi de cette borne.
+     */
+    private ?string $identityMemoFor = null;
+
+    /** @var array{profile: string, groups: list<string>}|null */
+    private ?array $identityMemo = null;
+
     public function __construct()
     {
         $this->loadLegacyConfig();
@@ -598,59 +607,134 @@ class XfsQuotaService
     }
 
     /**
-     * Récupère les groupes d'un utilisateur
+     * Récupère les groupes d'un utilisateur.
+     *
+     * Chemin TOLÉRANT, conservé tel quel pour les appelants internes : un annuaire
+     * muet rend une liste vide, et le calcul se poursuit. Les appelants qui ne
+     * PEUVENT PAS se permettre cette tolérance passent par
+     * {@see resolveDirectoryIdentity()}, qui distingue « aucun groupe » de
+     * « on ne sait pas ».
      */
     private function getUserGroups(string $username): array
     {
-        try {
-            if (function_exists('search_user') && $this->config) {
-                $user = search_user($this->config, $username);
-                if (!empty($user['memberof'])) {
-                    return array_map(function ($dn) {
-                        // Extraire le CN du DN
-                        if (preg_match('/^CN=([^,]+)/i', $dn, $m)) {
-                            return $m[1];
-                        }
-                        return $dn;
-                    }, $user['memberof']);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('QuotaService: Erreur récupération groupes utilisateur', [
-                'username' => $username,
-                'error' => $e->getMessage(),
-            ]);
-        }
-        return [];
+        return $this->resolveDirectoryIdentity($username)['groups'] ?? [];
     }
 
     /**
-     * Détermine le profil d'un utilisateur (élève, prof, admin)
+     * Détermine le profil d'un utilisateur (élève, prof, admin).
+     *
+     * Même remarque que {@see getUserGroups()} : `eleve` est ici un REPLI, pas une
+     * détermination. Un appelant qui écrit un plafond sur la foi de ce repli
+     * appliquerait un quota d'élève à un enseignant sans que rien ne le signale ;
+     * celui-là doit interroger {@see resolveDirectoryIdentity()}.
      */
     private function getUserProfile(string $username): string
     {
-        try {
-            if (function_exists('search_user') && $this->config) {
-                $user = search_user($this->config, $username);
-                $memberOf = $user['memberof'] ?? [];
+        return $this->resolveDirectoryIdentity($username)['profile'] ?? 'eleve';
+    }
 
-                foreach ($memberOf as $dn) {
-                    $dnLower = strtolower($dn);
-                    if (str_contains($dnLower, 'cn=admins') || str_contains($dnLower, 'cn=domain admins')) {
-                        return 'admin';
-                    }
-                    if (str_contains($dnLower, 'cn=profs') || str_contains($dnLower, 'cn=professeurs')) {
-                        return 'prof';
-                    }
-                }
+    /**
+     * Correction de revue 61.3 #1 — **LA SEULE RÉSOLUTION DE PROFIL DU DÉPÔT**,
+     * et elle sait dire « je ne sais pas ».
+     *
+     * ---------------------------------------------------------------------------
+     * **POURQUOI ELLE EST PUBLIQUE.** Le profil d'un utilisateur (élève / prof /
+     * admin) commandait deux décisions dans deux services différents, par deux
+     * chemins CONTRADICTOIRES : ici l'appartenance d'annuaire, et ailleurs la
+     * colonne `users.role` — une donnée qui ne garde rien dans ce produit (la
+     * valeur `autre` est un leurre, les vraies décisions passent par les
+     * permissions ou l'annuaire). Deux sources de vérité pour la MÊME décision,
+     * c'est une des deux qui ment. Une troisième copie aurait été pire que le mal :
+     * la résolution s'expose donc, elle ne se recopie pas.
+     * ---------------------------------------------------------------------------
+     *
+     * **`null` N'EST PAS `eleve`.** Annuaire indisponible, compte introuvable,
+     * entrée sans `memberof` : ce sont des états où le profil est INDÉTERMINABLE, et
+     * les confondre avec « élève » fait appliquer silencieusement un plafond
+     * d'élève à un enseignant. Les appelants tolérants se replient (le calcul de
+     * quota interne), les appelants qui ÉCRIVENT doivent s'abstenir et le rapporter.
+     *
+     * **UN SEUL ALLER-RETOUR par utilisateur, et il se mémoïse.** L'appel
+     * d'annuaire est le coût dominant de cette classe ; le profil et les groupes
+     * viennent de la MÊME entrée, les lire séparément doublait la facture. La
+     * mémoïsation porte sur le dernier utilisateur résolu seulement — les appels
+     * pour un même compte sont adjacents (profil puis groupes), et une carte
+     * complète ferait grossir la mémoire à proportion d'un balayage
+     * d'établissement sans rien économiser de plus.
+     *
+     * @return array{profile: string, groups: list<string>}|null `null` = indéterminable
+     */
+    public function resolveDirectoryIdentity(string $username): ?array
+    {
+        if ($this->identityMemoFor === $username) {
+            return $this->identityMemo;
+        }
+
+        $identity = $this->readDirectoryIdentity($username);
+
+        $this->identityMemoFor = $username;
+        $this->identityMemo = $identity;
+
+        return $identity;
+    }
+
+    /**
+     * L'aller-retour d'annuaire lui-même. **Protégé** : c'est la couture par
+     * laquelle un test substitue un annuaire, sans quoi aucune assertion ne peut
+     * porter sur un profil RÉSOLU (les fonctions legacy ne sont pas chargées hors
+     * du runtime SE4).
+     *
+     * @return array{profile: string, groups: list<string>}|null
+     */
+    protected function readDirectoryIdentity(string $username): ?array
+    {
+        try {
+            if (!function_exists('search_user') || !$this->config) {
+                return null;
             }
+
+            $entry = search_user($this->config, $username);
+
+            if (!is_array($entry) || $entry === []) {
+                // L'annuaire a répondu qu'il ne connaît pas ce compte : on ne sait
+                // rien de son profil, ce qui n'est pas la même chose que « élève ».
+                return null;
+            }
+
+            if (!array_key_exists('memberof', $entry) || !is_array($entry['memberof'])) {
+                // L'attribut n'est pas là. Il peut être absent parce que le compte
+                // n'appartient à rien, ou parce que la lecture ne l'a pas ramené —
+                // on ne sait pas lequel, donc on ne tranche pas.
+                return null;
+            }
+
+            $profile = 'eleve';
+            $groups = [];
+
+            foreach ($entry['memberof'] as $dn) {
+                $dn = (string) $dn;
+                $dnLower = strtolower($dn);
+
+                if (str_contains($dnLower, 'cn=admins') || str_contains($dnLower, 'cn=domain admins')) {
+                    $profile = 'admin';
+                } elseif ($profile !== 'admin'
+                    && (str_contains($dnLower, 'cn=profs') || str_contains($dnLower, 'cn=professeurs'))) {
+                    $profile = 'prof';
+                }
+
+                // Extraire le CN du DN
+                $groups[] = preg_match('/^CN=([^,]+)/i', $dn, $m) === 1 ? $m[1] : $dn;
+            }
+
+            return ['profile' => $profile, 'groups' => array_values($groups)];
         } catch (\Throwable $e) {
-            Log::warning('QuotaService: Erreur détermination profil', [
+            Log::warning('QuotaService: Erreur résolution identité annuaire', [
                 'username' => $username,
                 'error' => $e->getMessage(),
             ]);
+
+            return null;
         }
-        return 'eleve';
     }
 
     // =========================================================================

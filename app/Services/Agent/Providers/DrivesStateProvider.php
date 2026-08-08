@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Agent\Providers;
 
+use App\Enums\FileBackendName;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
@@ -213,6 +214,16 @@ final class DrivesStateProvider implements StateProvider
                         ->whereIn('nsa.assignable_id', $wgIds));
                 }
             })
+            // Story 61.3 (D7) — **AUCUNE LETTRE POUR UN RÉPERTOIRE SERVI PAR LE
+            // CLOUD.** Ce n'est pas une coupe de périmètre : il n'y a pas de chemin
+            // SMB au-dessus d'un dossier d'équipe, et c'est une impossibilité
+            // vérifiée. Émettre une lettre monterait un lecteur vers un partage qui
+            // n'existe pas côté serveur de fichiers : l'utilisateur verrait un
+            // lecteur en erreur, et l'écran, lui, dirait que tout est en place —
+            // la signature de défaut que cet epic traque. L'accès réel de ces
+            // répertoires est le web et le client de synchronisation ; le montage
+            // local du poste est un chantier d'agent, nommé et non promis ici.
+            ->where('ns.backend', '!=', FileBackendName::Nextcloud->value)
             ->orderBy('ns.id')
             ->orderBy('nsa.id')
             ->get([

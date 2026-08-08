@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
+use App\Models\QuotaRule;
 use App\Models\User;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -86,8 +88,28 @@ final class NextcloudUserProvisioner
 
     private ?string $batchCircuitReason = null;
 
-    public function __construct(private readonly NextcloudClientFactory $factory)
+    /**
+     * SE5 a-t-il seulement UNE opinion sur le plafond du répertoire personnel ?
+     * Mémoïsé pour le balayage entier : c'est une propriété de l'INSTANCE, pas de
+     * l'utilisateur, et la relire par compte ferait une requête par personne pour
+     * une réponse qui ne change pas.
+     */
+    private ?bool $governsHomeQuota = null;
+
+    public function __construct(
+        private readonly NextcloudClientFactory $factory,
+        private ?XfsQuotaService $quotas = null,
+    ) {
+    }
+
+    /**
+     * Le service de quotas, tenu POUR TOUT LE BALAYAGE — c'est lui qui porte la
+     * mémoïsation de la résolution d'annuaire ; en résoudre un neuf par utilisateur
+     * la rendrait inopérante.
+     */
+    private function quotas(): XfsQuotaService
     {
+        return $this->quotas ??= app(XfsQuotaService::class);
     }
 
     /**
@@ -163,8 +185,11 @@ final class NextcloudUserProvisioner
         $login = (string) $user->login;
 
         if ((string) ($user->nextcloud_user_id ?? '') !== '') {
-            // Déjà résolu : AUCUN appel. C'est l'invariant testé de l'AC6 — le
-            // cache n'aurait aucune valeur si on le rechargeait à chaque passage.
+            // Déjà résolu : AUCUN appel de RÉSOLUTION. C'est l'invariant testé de
+            // l'AC6 — le cache n'aurait aucune valeur si on le rechargeait à chaque
+            // passage. Le plafond, lui, est un état à CONVERGER, pas une identité à
+            // retrouver : il se relit et se corrige à chaque balayage.
+            $this->convergeQuota($user, (string) $user->nextcloud_user_id, $client, $report, $dryRun);
             $report->countUserAdopted();
 
             return;
@@ -220,7 +245,231 @@ final class NextcloudUserProvisioner
             }
         }
 
+        $this->convergeQuota($user, $resolved, $client, $report, $dryRun);
+
         $report->countUserAdopted();
+    }
+
+    /**
+     * Story 61.3 (AC5) — LE PLAFOND D'UNE PERSONNE, convergé au balayage.
+     *
+     * **La frontière D8, côté personnes.** Ce plafond budgète un COMPTE sur
+     * l'instance ; il n'a rien à voir avec le plafond d'une ZONE, que le backend de
+     * fichiers pose sur un dossier d'équipe. Les rattacher au même endroit ferait
+     * écrire un quota d'utilisateur par une recette de partage — la violation exacte
+     * que D8 nomme. Un test d'architecture tient la frontière des deux côtés.
+     *
+     * **On COMPARE SUR LE RELU** (piège transversal de l'epic) : la valeur envoyée
+     * ne prouve rien, l'instance peut la normaliser ou l'ignorer. On ne réécrit que
+     * si le relu diffère, ce qui rend le balayage idempotent — sans quoi chaque
+     * passage réécrirait le plafond de chaque compte.
+     *
+     * **Fail-soft et SILENCIEUX sur un refus légitime.** Une instance à synchro
+     * annuaire refuse la modification de ses comptes : c'est un état normal, pas une
+     * panne, et il se journalise en `debug` — jamais un avertissement par
+     * utilisateur (règle héritée de la revue 61.1, sans quoi une rentrée noierait le
+     * journal).
+     */
+    private function convergeQuota(
+        User $user,
+        string $nextcloudUserId,
+        NextcloudAdminClient $client,
+        NextcloudProvisioningReport $report,
+        bool $dryRun,
+    ): void {
+        $wanted = $this->effectiveQuotaValue($user, $report);
+        if ($wanted === null) {
+            return;
+        }
+
+        $read = $client->getUser($nextcloudUserId);
+        if ($read->isFailure()) {
+            Log::debug('nextcloud.user.quota.unreadable', ['login' => (string) $user->login]);
+
+            return;
+        }
+
+        $quota = $read->value('quota', []);
+        $current = is_array($quota) ? ($quota['quota'] ?? null) : null;
+
+        if (self::quotaMatches($current, $wanted)) {
+            return;
+        }
+
+        if ($dryRun) {
+            Log::info('nextcloud.user.quota.would_change', [
+                'login' => (string) $user->login,
+                'wanted' => $wanted,
+            ]);
+
+            return;
+        }
+
+        $result = $client->setUserQuota($nextcloudUserId, $wanted);
+
+        if ($result->isFailure()) {
+            Log::debug('nextcloud.user.quota.refused', [
+                'login' => (string) $user->login,
+                'failure' => $result->failure?->value,
+            ]);
+        }
+    }
+
+    /**
+     * Le plafond EFFECTIF d'un compte, dans la forme que l'instance attend, ou
+     * `null` si SE5 n'a rien à en dire — **ou s'il ne peut PAS savoir ce qu'il en
+     * dit** (voir {@see resolveEffectiveQuota()}).
+     */
+    private function effectiveQuotaValue(User $user, NextcloudProvisioningReport $report): ?string
+    {
+        $login = (string) $user->login;
+        if ($login === '') {
+            return null;
+        }
+
+        $effective = $this->resolveEffectiveQuota($login, $report);
+
+        // **AUCUNE RÈGLE ⇒ AUCUNE OPINION ⇒ AUCUN GESTE** (drift STRICT). SE5 ne
+        // gouverne le plafond d'un compte que s'il en a une règle : sans règle,
+        // écrire « sans limite » ÉCRASERAIT un plafond posé à la main sur
+        // l'instance. Ce que le produit ne décrit pas, il ne le réconcilie pas — et
+        // c'est aussi ce qui garde le balayage muet sur les instances qui ne
+        // configurent aucun quota (le cas courant aujourd'hui).
+        if ($effective === null || ($effective['source'] ?? 'none') === 'none') {
+            return null;
+        }
+
+        if (($effective['is_unlimited'] ?? true) === true) {
+            // « Sans limite » est une valeur, pas une absence : l'écrire est ce qui
+            // permet à un plafond RETIRÉ d'une règle SE5 de l'être aussi côté
+            // instance — là, SE5 a bien une opinion, et elle est « pas de limite ».
+            return 'none';
+        }
+
+        $hard = (int) ($effective['quota_hard_mb'] ?? 0);
+
+        return $hard > 0 ? (string) ($hard * 1024 * 1024) : 'none';
+    }
+
+    /**
+     * Correction de revue 61.3 #1 — **LE PROFIL NE SE DEVINE PAS, ET SON ABSENCE SE
+     * DIT.**
+     *
+     * ---------------------------------------------------------------------------
+     * **CE QUI ÉTAIT FAUX.** Le profil se déduisait de `users.role` — une colonne
+     * qui ne garde rien dans ce produit — avec un repli muet sur `eleve`. Un
+     * enseignant dont le rôle n'était pas renseigné recevait donc un plafond
+     * d'élève : pas d'erreur, pas de journal, rien. Et le MÊME service de quotas
+     * résolvait déjà le profil par l'annuaire, quelques dizaines de lignes plus
+     * bas : deux sources de vérité contradictoires pour une seule décision. Enfin,
+     * les groupes passés étaient TOUJOURS `[]`, ce qui rendait toute règle
+     * `QuotaRule::TYPE_GROUP` inatteignable pour un compte Nextcloud.
+     *
+     * **CE QUI EST VRAI MAINTENANT** — dans cet ordre, et l'ordre est celui du
+     * COÛT autant que celui de la sûreté :
+     *
+     *  0. **SE5 gouverne-t-il seulement ce plafond ?** Aucune règle active sur la
+     *     partition ⇒ aucune opinion possible, quel que soit le profil ⇒ on rend
+     *     `null` sans le moindre aller-retour d'annuaire. C'est le cas courant
+     *     aujourd'hui, et c'est ce qui garde un balayage d'établissement à ZÉRO
+     *     appel d'annuaire (une seule requête SQL, mémoïsée pour tout le balayage).
+     *  1. **Une règle NOMINATIVE prime sur tout** et ne demande pas l'annuaire :
+     *     ni le profil ni les groupes n'entrent dans son calcul. La résoudre sans
+     *     interroger l'annuaire évite de refuser un plafond parfaitement déterminé
+     *     parce que l'annuaire, lui, ne répondait pas.
+     *  2. Sinon, **l'annuaire**, une fois, pour le profil ET les groupes.
+     *
+     * **UN PROFIL INDÉTERMINABLE N'EST PAS UN ÉLÈVE.** On n'écrit rien, et on le
+     * COMPTE au rapport. Un plafond faux est pire qu'un plafond absent : absent, il
+     * se voit ; faux, il s'applique.
+     *
+     * @return array{source: string, source_name: string|null, quota_soft_mb: int, quota_hard_mb: int, is_unlimited: bool}|null
+     */
+    private function resolveEffectiveQuota(string $login, NextcloudProvisioningReport $report): ?array
+    {
+        if (! $this->governsHomeQuota()) {
+            return null;
+        }
+
+        $quotas = $this->quotas();
+
+        if ($this->hasNominativeRule($login)) {
+            // Le profil et les groupes ne sont pas consultés sur ce chemin : la
+            // règle nominative est le PREMIER étage de `getEffectiveQuota()`. On le
+            // VÉRIFIE plutôt que de le supposer — si la règle a disparu entre-temps,
+            // on repasse par l'annuaire au lieu d'hériter du profil de repli.
+            $effective = $quotas->getEffectiveQuota($login, QuotaRule::PARTITION_HOME, [], 'eleve');
+
+            if (($effective['source'] ?? null) === 'user') {
+                return $effective;
+            }
+        }
+
+        $identity = $quotas->resolveDirectoryIdentity($login);
+
+        if ($identity === null) {
+            $report->countQuotaProfileUnresolved($login);
+
+            return null;
+        }
+
+        return $quotas->getEffectiveQuota(
+            $login,
+            QuotaRule::PARTITION_HOME,
+            $identity['groups'],
+            $identity['profile'],
+        );
+    }
+
+    /**
+     * Existe-t-il la moindre règle de quota active sur la partition des répertoires
+     * personnels ? **UNE seule requête pour tout le balayage** — et quand la réponse
+     * est non, aucun compte ne coûte d'aller-retour d'annuaire.
+     */
+    private function governsHomeQuota(): bool
+    {
+        if ($this->governsHomeQuota !== null) {
+            return $this->governsHomeQuota;
+        }
+
+        try {
+            $this->governsHomeQuota = QuotaRule::active()
+                ->forPartition(QuotaRule::PARTITION_HOME)
+                ->exists();
+        } catch (\Throwable $e) {
+            // Base indisponible : on ne sait pas ce que SE5 veut, donc on n'écrit
+            // rien. Même direction que le profil indéterminable.
+            Log::debug('nextcloud.user.quota.policy_unreadable', ['error' => $e->getMessage()]);
+            $this->governsHomeQuota = false;
+        }
+
+        return $this->governsHomeQuota;
+    }
+
+    /** Une règle de quota NOMINATIVE sur ce login — celle qui prime sur tout. */
+    private function hasNominativeRule(string $login): bool
+    {
+        try {
+            return QuotaRule::active()
+                ->forPartition(QuotaRule::PARTITION_HOME)
+                ->where('type', QuotaRule::TYPE_USER)
+                ->where('target', $login)
+                ->exists();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** Le relu correspond-il au voulu ? « Illimité » a plusieurs écritures. */
+    private static function quotaMatches(mixed $current, string $wanted): bool
+    {
+        if ($wanted === 'none') {
+            return $current === null
+                || $current === 'none'
+                || (is_numeric($current) && (int) $current < 0);
+        }
+
+        return is_numeric($current) && (string) (int) $current === $wanted;
     }
 
     /**

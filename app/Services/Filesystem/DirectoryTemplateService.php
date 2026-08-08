@@ -10,6 +10,7 @@ use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Backend\FileBackendSelection;
 use App\Services\Filesystem\Plan\PlanGrant;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -64,7 +65,15 @@ class DirectoryTemplateService
      * cette classe » n'est pas un groupe mais un rôle porté sur l'arête — chose
      * qu'aucun sélecteur de groupe ne pourra jamais désigner.
      *
-     * @param  array{name?:string,directory_name?:string,label?:string|null,letter?:string|null,roles?:array<string,list<int>>,group_id?:int|null}  $params
+     * **Story 61.3 — L'AUTORITÉ D'ÉCRITURE SE CHOISIT ICI, ET NULLE PART AILLEURS.**
+     * Le paramètre `backend` est optionnel et vaut le serveur de fichiers historique
+     * par défaut — c'est ce que sont tous les répertoires existants. Il est refusé
+     * s'il n'est pas posable (capacité éteinte), AVANT toute écriture. Il n'existe
+     * AUCUN chemin pour changer cette valeur ensuite : un répertoire déjà
+     * provisionné ne bascule jamais (D9), la migration outillée est un chantier à
+     * part.
+     *
+     * @param  array{name?:string,directory_name?:string,label?:string|null,letter?:string|null,roles?:array<string,list<int>>,group_id?:int|null,backend?:string|null}  $params
      *
      * @throws InvalidArgumentException                            format / lettre réservée / rôles invalides (AVANT écriture)
      * @throws \App\Exceptions\Filesystem\NetworkShareLetterCollisionException  collision de lettre (rollback transactionnel)
@@ -95,6 +104,12 @@ class DirectoryTemplateService
         // Atteignable par restauration d'une sauvegarde antérieure à la migration
         // sans la rejouer, ou par écriture SQL directe.
         $template->assertValidResolutionSpec();
+
+        // Story 61.3 — l'autorité d'écriture, refusée AVANT écriture si elle n'est
+        // pas posable. Une valeur hors vocabulaire ou une capacité éteinte lèvent
+        // ici, en nommant ce qui manque, plutôt que de faire naître un répertoire
+        // dont aucune réconciliation ne pourra jamais aboutir.
+        $backend = app(FileBackendSelection::class)->resolve($params['backend'] ?? null);
 
         if ($name === '') {
             throw new InvalidArgumentException('Le nom du répertoire est requis.');
@@ -130,7 +145,7 @@ class DirectoryTemplateService
             : $this->buildAssignmentPlan($template, $params['roles'] ?? []);
 
         // --- Transaction : share + pivot + assertNoLetterCollision AVANT commit
-        $share = DB::transaction(function () use ($name, $directoryName, $label, $letter, $plan, $template, $group): NetworkShare {
+        $share = DB::transaction(function () use ($name, $directoryName, $label, $letter, $plan, $template, $group, $backend): NetworkShare {
             $share = NetworkShare::create([
                 'name' => $name,
                 'directory_name' => $directoryName,
@@ -138,6 +153,15 @@ class DirectoryTemplateService
                 'letter' => $letter,
                 'created_by_user_id' => $this->currentUserId(),
             ]);
+
+            // Story 61.3 — l'autorité d'écriture est posée HORS du remplissage de
+            // masse : la colonne reste absente de `$fillable`, et ce geste de
+            // création est son SEUL écrivain. C'est ce qui rend vraie la promesse
+            // « un répertoire provisionné ne bascule jamais » (D9).
+            if ($backend !== \App\Enums\FileBackendName::Posix) {
+                $share->backend = $backend;
+                $share->save();
+            }
 
             // L'ORIGINE (story 60.5) : ce partage se projettera par SA RECETTE, pas
             // par ses seules assignations. Écrite hors de `create()` parce que ces

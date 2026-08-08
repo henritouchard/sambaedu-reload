@@ -239,26 +239,143 @@ class NextcloudNamespaceTest extends TestCase
             'getUser',
             'listGlobalStorages',
             'probe',
+            // Story 61.3 — LA SEULE MÉTHODE QUI S'AJOUTE, et elle est énumérée ici
+            // pour que son ajout soit un GESTE, pas une dérive. Ce n'est pas un
+            // droit : c'est le budget d'une PERSONNE, et l'état par-utilisateur est
+            // exactement ce que ce client gouverne. Le plafond d'une ZONE reste hors
+            // d'ici (frontière D8).
             'setUserPassword',
+            'setUserQuota',
             'updateGlobalStorage',
-        ], $methods, 'la surface du client est FERMÉE : ni partage, ni groupe, ni quota');
+        ], $methods, 'la surface du client est FERMÉE : ni partage, ni groupe, ni dossier d\'équipe');
     }
 
     /**
-     * **AUCUNE CRÉATION D'ARBORESCENCE DISTANTE DANS LE CODE DE PRODUCTION.**
+     * Story 61.3 — le NAMESPACE DU BACKEND, seul écrivain légitime des deux canaux
+     * que les aiguilles ci-dessous interdisent partout ailleurs.
+     */
+    private const BACKEND_NAMESPACE_DIR = 'app/Services/Filesystem/Backend/Nextcloud';
+
+    /**
+     * **LA CRÉATION D'ARBORESCENCE DISTANTE A DÉSORMAIS UN PROPRIÉTAIRE — UN SEUL.**
      *
-     * Le scan de vocabulaire attrape déjà les routes de partage. Celui-ci ferme
-     * l'autre moitié : le verbe WebDAV qui crée un dossier. Créer l'arborescence
-     * sur l'instance appartient au backend de 61.3 — la poser ici produirait du
-     * code mort, et une méthode qui existe finit par être appelée.
+     * L'aiguille de la story 61.1 interdisait le verbe de création de collection
+     * dans TOUT le code de production, parce qu'aucun code de production n'avait de
+     * raison de le prononcer : le backend qui en a besoin n'existait pas. Il existe.
+     * L'aiguille n'est donc pas RETIRÉE — elle est RE-PÉRIMÉTRÉE : elle interdit ce
+     * verbe partout SAUF sous le namespace du backend.
+     *
+     * Une garde qu'on re-périmètre au moment où un besoin légitime apparaît, et qui
+     * nomme ce périmètre, reste une garde. Une garde qu'on supprime parce qu'elle
+     * gêne n'en est plus une.
+     *
+     * Le contrôle est en DEUX MOITIÉS, et la seconde n'est pas décorative : si le
+     * backend ne contenait AUCUNE création de collection, la première moitié serait
+     * verte pour la pire des raisons — l'arborescence ne serait créée par personne.
      */
     #[Test]
-    public function no_production_code_creates_a_remote_collection(): void
+    public function only_the_backend_namespace_creates_a_remote_collection(): void
+    {
+        $offenders = [];
+        $backendUses = false;
+
+        foreach ((new Finder())->files()->in(realpath(self::repoPath('app')))->name('*.php') as $file) {
+            if (preg_match('/[\'"]MKCOL[\'"]/', (string) $file->getContents()) !== 1) {
+                continue;
+            }
+
+            $relative = str_replace(self::repoPath(''), '', (string) $file->getRealPath());
+
+            if (str_starts_with($relative, self::BACKEND_NAMESPACE_DIR . '/')) {
+                $backendUses = true;
+
+                continue;
+            }
+
+            $offenders[] = $relative;
+        }
+
+        // NÉGATIF : personne d'autre.
+        self::assertSame(
+            [],
+            $offenders,
+            'la création d\'arborescence distante appartient au SEUL backend de fichiers Nextcloud '
+            . '(« ' . self::BACKEND_NAMESPACE_DIR . ' ») : fichiers fautifs : '
+            . json_encode($offenders, JSON_UNESCAPED_SLASHES),
+        );
+
+        // POSITIF : lui, oui.
+        self::assertTrue(
+            $backendUses,
+            'le backend de fichiers Nextcloud DOIT créer l\'arborescence : si plus personne ne le fait, '
+            . 'la garde ci-dessus est verte pour la mauvaise raison.',
+        );
+    }
+
+    /**
+     * **LES GROUPES DE L'INSTANCE : MÊME RE-PÉRIMÉTRAGE, MÊME MOTIF.**
+     *
+     * La story 61.1 interdisait ce canal parce que, à l'époque, un groupe distant
+     * n'existait que pour restreindre un montage ou porter un partage — c'est-à-dire
+     * pour déplacer l'arbitrage des droits hors de l'autorité de la zone. Depuis
+     * 61.3, un groupe distant est l'ARTEFACT COMPILÉ d'une audience du plan, dans une
+     * zone dont Nextcloud EST l'autorité. Le motif de l'interdiction a disparu là, et
+     * seulement là.
+     */
+    #[Test]
+    public function only_the_backend_namespace_writes_instance_groups(): void
+    {
+        $offenders = [];
+        $backendUses = false;
+
+        foreach ((new Finder())->files()->in(realpath(self::repoPath('app')))->name('*.php') as $file) {
+            if (preg_match('#cloud/groups#i', (string) $file->getContents()) !== 1) {
+                continue;
+            }
+
+            $relative = str_replace(self::repoPath(''), '', (string) $file->getRealPath());
+
+            if (str_starts_with($relative, self::BACKEND_NAMESPACE_DIR . '/')) {
+                $backendUses = true;
+
+                continue;
+            }
+
+            $offenders[] = $relative;
+        }
+
+        self::assertSame(
+            [],
+            $offenders,
+            'les groupes de l\'instance n\'appartiennent qu\'au backend de fichiers Nextcloud : fichiers '
+            . 'fautifs : ' . json_encode($offenders, JSON_UNESCAPED_SLASHES),
+        );
+
+        self::assertTrue($backendUses, 'le backend DOIT compiler les audiences du plan en groupes distants');
+    }
+
+    /**
+     * **LE PARTAGE OCS RESTE INTERDIT PARTOUT — Y COMPRIS AU BACKEND.**
+     *
+     * C'est la seule des trois aiguilles qui ne bouge pas, et c'est le point : le
+     * mécanisme de partage est celui dont le sondage d'ouverture d'epic a MESURÉ
+     * qu'il ment (une instruction de retrait acceptée en succès, sans effet, relue
+     * avec un accès). Le backend de 61.3 ne s'en sert pas — il emploie un dossier
+     * d'équipe et ses permissions avancées, qui savent, eux, refermer. Le jour où ce
+     * nom réapparaît dans le code de production, la clôture a cessé d'être effective
+     * sans que rien d'autre ne le dise.
+     *
+     * Elle s'est même RESSERRÉE le 2026-08-08 : elle portait sur le préfixe de route
+     * pour laisser la sonde du mode délégué lire une capacité de l'instance ; le
+     * mode délégué ayant disparu, elle est revenue à sa forme large.
+     */
+    #[Test]
+    public function no_production_code_anywhere_creates_an_ocs_share(): void
     {
         $offenders = [];
 
         foreach ((new Finder())->files()->in(realpath(self::repoPath('app')))->name('*.php') as $file) {
-            if (preg_match('/[\'"]MKCOL[\'"]/', (string) $file->getContents()) === 1) {
+            if (preg_match('#files_sharing#i', (string) $file->getContents()) === 1) {
                 $offenders[] = str_replace(self::repoPath(''), '', (string) $file->getRealPath());
             }
         }
@@ -266,8 +383,170 @@ class NextcloudNamespaceTest extends TestCase
         self::assertSame(
             [],
             $offenders,
-            'la création d\'arborescence distante appartient au backend de 61.3 : fichiers fautifs : '
+            'AUCUN code de production n\'a de motif de prononcer le mécanisme de partage : il propage depuis '
+            . 'l\'ancêtre et accepte le retrait SANS EFFET. Fichiers fautifs : '
             . json_encode($offenders, JSON_UNESCAPED_SLASHES),
+        );
+    }
+
+    /**
+     * Story 61.3 — **AUCUN OUTIL EN LIGNE DE COMMANDE DANS LE BACKEND.**
+     *
+     * L'outil d'administration de l'instance sait tout faire, et le sondage 60.0 s'en
+     * servait pour poser sa clôture. Il suppose un accès système AU SERVEUR
+     * NEXTCLOUD — qu'on n'a pas sur une instance distante, et qu'on n'aura jamais sur
+     * une instance tierce. S'y replier serait la simplification qui rend le backend
+     * inutilisable là où il doit servir, et elle ne se verrait qu'en production.
+     *
+     * Le backend est donc 100 % HTTP : falsifiable, testable sans réseau, à chaque
+     * exécution de la suite.
+     */
+    #[Test]
+    public function the_file_backend_shells_out_to_nothing(): void
+    {
+        $dir = realpath(self::repoPath(self::BACKEND_NAMESPACE_DIR));
+        self::assertNotFalse($dir, self::BACKEND_NAMESPACE_DIR . ' doit exister');
+
+        $inspected = 0;
+        $offenders = [];
+
+        foreach ((new Finder())->files()->in($dir)->name('*.php') as $file) {
+            $inspected++;
+            $content = (string) $file->getContents();
+
+            $found = [];
+            foreach ([
+                'exécution de processus (façade)' => self::FORBIDDEN_RULES['exécution de processus (façade)'],
+                'exécution système (fonctions)' => self::FORBIDDEN_RULES['exécution système (fonctions)'],
+                'client HTTP en curl nu' => self::FORBIDDEN_RULES['client HTTP en curl nu'],
+                'partage OCS' => self::FORBIDDEN_RULES['partage OCS'],
+                // L'outil d'administration de l'instance, nommé. Le citer dans un
+                // commentaire suffit à ce qu'il finisse appelé — c'est le constat
+                // qui a fait porter tous ces scans sur le texte, commentaires
+                // compris.
+                'outil d\'administration en ligne de commande' => '/\bocc\s+[a-z]+:/i',
+            ] as $label => $pattern) {
+                if (preg_match($pattern, $content) === 1) {
+                    $found[] = $label;
+                }
+            }
+
+            if ($found !== []) {
+                $offenders[$file->getRelativePathname()] = $found;
+            }
+        }
+
+        self::assertGreaterThanOrEqual(
+            7,
+            $inspected,
+            'la garde doit inspecter le namespace RÉEL du backend',
+        );
+
+        self::assertSame(
+            [],
+            $offenders,
+            'LE BACKEND EST 100 % HTTP. Un shell-out suppose un accès système au serveur Nextcloud, qu\'on '
+            . 'n\'a pas sur une instance distante ou tierce. Fichiers fautifs : '
+            . json_encode($offenders, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        );
+    }
+
+    /**
+     * Story 61.3 — **LE `sub` D'UN JETON N'EST PAS UNE CLÉ DE JOINTURE.**
+     *
+     * L'Epic 55 publie `sub = login`. C'est un choix de CLAIM, révocable, pas un
+     * contrat de jointure — et s'en servir pour retrouver un compte marcherait
+     * aujourd'hui, sur cette instance, avec ce réglage. La vérité de liaison est le
+     * cache d'identité : reconstructible, vérifié à distance, porteur d'une garde
+     * d'unicité. Le backend ne connaît donc RIEN du vocabulaire de la fédération.
+     */
+    #[Test]
+    public function the_file_backend_never_joins_on_a_federation_claim(): void
+    {
+        $offenders = [];
+
+        foreach ((new Finder())->files()->in(realpath(self::repoPath(self::BACKEND_NAMESPACE_DIR)))->name('*.php') as $file) {
+            $content = (string) $file->getContents();
+            $found = [];
+
+            foreach ([
+                'claim OIDC' => '/[\'"]sub[\'"]\s*=>|\bclaims?\[|\bgetClaim\b|\bidToken\b/i',
+                'vocabulaire de fédération' => '/\bExternalIdentity\b|\bOidc[A-Z]|\bKeycloak\b|\bJwt\b/',
+            ] as $label => $pattern) {
+                if (preg_match($pattern, $content) === 1) {
+                    $found[] = $label;
+                }
+            }
+
+            if ($found !== []) {
+                $offenders[$file->getRelativePathname()] = $found;
+            }
+        }
+
+        self::assertSame(
+            [],
+            $offenders,
+            'LE CACHE D\'IDENTITÉ EST LA SEULE CLÉ DE JOINTURE. Fichiers fautifs : '
+            . json_encode($offenders, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        );
+    }
+
+    /**
+     * Story 61.3 — **LA FRONTIÈRE D8, TENUE DES DEUX CÔTÉS.**
+     *
+     * Deux plafonds, deux objets, et ils ne se recouvrent jamais : la recette
+     * plafonne une ZONE (le dossier d'équipe), la règle de quota budgète une
+     * PERSONNE (son compte sur l'instance). Les confondre ferait écrire un quota
+     * d'utilisateur par une recette de partage — la violation exacte que D8 nomme.
+     *
+     * La garde est symétrique, parce qu'une frontière tenue d'un seul côté n'est
+     * pas une frontière : le backend n'a aucun chemin vers les comptes, et le
+     * provisionnement des comptes n'a aucun chemin vers les dossiers d'équipe.
+     */
+    #[Test]
+    public function the_zone_quota_and_the_person_quota_never_cross(): void
+    {
+        $backendCrossings = [];
+
+        foreach ((new Finder())->files()->in(realpath(self::repoPath(self::BACKEND_NAMESPACE_DIR)))->name('*.php') as $file) {
+            if (preg_match('#cloud/users#i', (string) $file->getContents()) === 1) {
+                $backendCrossings[] = $file->getRelativePathname();
+            }
+        }
+
+        // Le backend PARLE aux comptes — l'appartenance à un groupe passe par la
+        // même route. Ce qu'il ne fait JAMAIS, c'est écrire un quota de compte : la
+        // mise à jour clé/valeur d'un compte porte une clé, et cette clé-là lui est
+        // interdite.
+        foreach ((new Finder())->files()->in(realpath(self::repoPath(self::BACKEND_NAMESPACE_DIR)))->name('*.php') as $file) {
+            if (preg_match('/[\'"]key[\'"]\s*=>\s*[\'"]quota[\'"]/i', (string) $file->getContents()) === 1) {
+                self::fail('le backend écrit un quota de COMPTE : la frontière D8 est franchie par '
+                    . $file->getRelativePathname());
+            }
+        }
+
+        self::assertNotSame([], $backendCrossings, 'le backend converge bien l\'appartenance des comptes aux groupes');
+
+        $provisioningCrossings = [];
+
+        foreach ([
+            'app/Services/Nextcloud/NextcloudUserProvisioner.php',
+            'app/Services/Nextcloud/NextcloudProvisioningService.php',
+            'app/Services/Nextcloud/NextcloudAdminClient.php',
+        ] as $relative) {
+            $path = self::repoPath($relative);
+            self::assertFileExists($path, 'la garde doit trouver ' . $relative);
+
+            if (preg_match('#groupfolders#i', (string) file_get_contents($path)) === 1) {
+                $provisioningCrossings[] = $relative;
+            }
+        }
+
+        self::assertSame(
+            [],
+            $provisioningCrossings,
+            'LE PROVISIONNEMENT DES COMPTES NE PLAFONNE PAS UNE ZONE. Fichiers fautifs : '
+            . json_encode($provisioningCrossings, JSON_UNESCAPED_SLASHES),
         );
     }
 

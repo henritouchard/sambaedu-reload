@@ -219,6 +219,35 @@ class DrivesStateProviderTest extends TestCase
         self::assertSame(['H:', 'P:'], $letters);
     }
 
+    /**
+     * **STORY 61.3 (D7) — UN RÉPERTOIRE SERVI PAR LE CLOUD N'ÉMET AUCUNE LETTRE.**
+     *
+     * Ce n'est pas une coupe de périmètre : il n'y a PAS de chemin SMB au-dessus d'un
+     * dossier d'équipe, et c'est une impossibilité vérifiée. Émettre une lettre
+     * monterait un lecteur vers un partage qui n'existe pas côté serveur de fichiers —
+     * l'utilisateur verrait un lecteur en erreur pendant que l'écran affirmerait que
+     * tout est en place. L'accès réel de ces répertoires est le web et le client de
+     * synchronisation ; le montage local du poste est un chantier d'agent, nommé et
+     * non promis ici.
+     */
+    #[Test]
+    public function a_cloud_served_share_never_emits_a_drive_letter(): void
+    {
+        \App\Services\FilePolicyService::setGlobal(false, true, true);
+
+        $posix = NetworkShare::factory()->create(['directory_name' => 'gere_smb', 'letter' => 'P:']);
+        $this->assign($posix, User::class, $this->user->id);
+
+        $cloud = NetworkShare::factory()->create(['directory_name' => 'gere_cloud', 'letter' => 'Q:']);
+        \Illuminate\Support\Facades\DB::table('network_shares')->where('id', $cloud->id)->update(['backend' => 'nextcloud']);
+        $this->assign($cloud, User::class, $this->user->id);
+
+        $letters = $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
+
+        self::assertSame(['H:', 'P:'], $letters, 'la lettre du répertoire servi par le cloud ne doit pas être émise');
+    }
+
     // =========================================================================
     // Story 34.1 — répertoires réseau gérés (network_shares)
     // =========================================================================

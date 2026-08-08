@@ -7,6 +7,7 @@ namespace App\Services\Filesystem\Backend;
 use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\UnknownFileBackendException;
 use App\Models\NetworkShare;
+use App\Services\Filesystem\Backend\Nextcloud\NextcloudFileBackend;
 use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use Illuminate\Contracts\Container\Container;
 
@@ -43,6 +44,11 @@ final class FileBackendRegistry
     private const IMPLEMENTATIONS = [
         'posix' => PosixFileBackend::class,
         'preview' => PreviewBackend::class,
+        // Story 61.3 — le SECOND backend réel. Depuis qu'il existe, l'invariant
+        // épinglé n'est plus « aucun backend distant » (un état daté) mais
+        // « aucune case sans implémentation » (la propriété permanente) :
+        // {@see \Tests\Unit\Enums\FileBackendVocabularyTest}.
+        'nextcloud' => NextcloudFileBackend::class,
     ];
 
     public function __construct(private readonly Container $container) {}
