@@ -1519,3 +1519,159 @@ bloquant**.
 >
 > `setProfile()` reste le bon point d'entrée même en tinker : il pose le lien, re-projette les
 > membres et journalise le geste.
+
+---
+
+## Section 20 — Le catalogue de rôles d'appartenance (Story 62.1, 2026-08-08)
+
+**Le modèle en une phrase.** Le rôle porté par une **appartenance** (`user_group_user.role`) n'est
+plus un vocabulaire fermé écrit dans le code : c'est une **table administrable**, `group_roles`, où
+chaque ligne est **une clé immuable ⇔ un libellé modifiable**, plus un rang d'affichage. La clé est
+ce qui est stocké et ce que visent les arborescences ; le libellé est ce qui se lit à l'écran.
+
+> ⚠️ **À ne pas confondre avec la Section 19.** Un *rôle d'appartenance* (ici) qualifie « qui est
+> quoi dans ce groupe » ; un *profil de droits* (Spatie, Section 19) accorde des permissions dans
+> SE5. Rien de cette story ne touche `users.role`, les rôles Spatie, ni la table `roles`. C'est
+> précisément pour éviter la collision que la table s'appelle `group_roles`.
+
+**Ce qui doit rester vrai à chaque scénario** : aucune appartenance ne change de valeur, aucune
+recette de répertoire ne casse, et l'affichage des trois rôles historiques est **identique au
+comportement d'avant la story** (« Élève »/« Enseignant »/« Professeur principal » en classe,
+« Porteur » en projet, « Référent » en équipe, « Membre »/« Gestionnaire »/« Propriétaire » ailleurs).
+
+**Code de référence** :
+- `database/migrations/2026_08_08_120000_create_group_roles_table.php` — table + normalisation des arêtes hors vocabulaire
+- `database/seeders/GroupRoleSeeder.php` — les 3 lignes historiques (idempotent)
+- `app/Models/GroupRole.php` — clé immuable, décomptes d'usage, refus de suppression nommés
+- `app/Support/RoleCatalog.php` — le point de lecture unique (mémoïsé, plancher historique)
+- `app/Services/Filesystem/Plan/GroupNameNormalizer.php` + `app/Providers/AppServiceProvider.php` — la couture d'injection du vocabulaire dans le plan de fichiers
+- `resources/views/pages/admin/settings/groups/**` — la page « Groupes & droits » et son onglet « Rôles »
+
+### Pré-requis Section 20
+
+- Migrations appliquées : `php artisan migrate:status` → `2026_08_08_120000_create_group_roles_table` en `Ran`.
+- **Seed obligatoire** : `sudo -u www-admin php artisan db:seed --class=GroupRoleSeeder`
+  (idempotent — le rejouer ne crée pas de doublon).
+- Un compte `server.admin`, un compte non-admin, une classe `3A` avec un professeur principal
+  (`owner`), un enseignant (`manager`) et un élève (`member`).
+
+### Scénario 20.1 — La page existe, et elle n'annonce que ce qui existe
+
+1. `/admin/settings` → section **« Groupes & droits »** → carte **« Rôles & groupes »**.
+2. **Attendu** : `/admin/settings/groups`, titre « Groupes & droits », **un seul onglet** :
+   « Rôles ». Les onglets « Types de groupes » (62.2) et « Arborescences » (62.6) **ne doivent pas
+   apparaître**, même grisés — un onglet qui annonce une fonction inatteignable est un défaut.
+3. Forcer `?tab=nimportequoi` → la page retombe sur « Rôles » sans message d'erreur.
+4. **Accès** : se connecter avec le compte non-admin → l'URL est refusée. Aucune permission Spatie
+   nouvelle n'a été créée (`/app/rights-management` ne montre aucune permission `grouprole.*`).
+
+### Scénario 20.2 — Les trois lignes historiques, et leurs usages comptés
+
+1. Onglet « Rôles ».
+2. **Attendu** : trois lignes dans cet ordre — `member`/« Membre », `manager`/« Gestionnaire »,
+   `owner`/« Propriétaire », chacune marquée **« structurel »**, chacune avec sa clé rendue
+   discrètement en style code.
+3. **Attendu** : trois compteurs par ligne — appartenances, recettes, types de groupes. Sur une
+   instance vivante, `member` doit compter des **milliers** d'appartenances et au moins **une**
+   recette (le partage de classe seedé pose `edge_role: member` sur le dossier par élève).
+4. Contre-épreuve arithmétique :
+   `SELECT role, count(*) FROM user_group_user GROUP BY role;` doit rendre exactement les
+   compteurs « appartenances » affichés — **et ne rendre AUCUNE autre valeur que
+   `member`/`manager`/`owner`** (voir 20.7).
+
+### Scénario 20.3 — Créer un rôle : la clé est dérivée, prévisualisée, puis figée
+
+1. **« Ajouter un rôle »** → saisir le libellé `Tuteur de stage`.
+2. **Attendu** : la modale affiche **« Clé dérivée » `tuteur_de_stage`** *avant* validation, et
+   dit qu'elle est figée à la création.
+3. Valider → toast de succès, la ligne apparaît **en dernier** dans la liste.
+4. Rouvrir la ligne en **« Modifier »** → **Attendu** : seul le libellé est éditable, et un texte
+   explique que la clé est immuable. Aucun champ de clé.
+5. Cas limites à essayer :
+   - libellé très long (`Référent numérique de circonscription`) → clé **tronquée à 20
+     caractères**, jamais refusée (20 = la largeur de la colonne d'appartenance) ;
+   - libellé `Manager` → **refus** avec un message métier (« la clé `manager` est déjà prise ») ;
+   - libellé sans aucune lettre (`### 42`) → **refus** (« ce libellé ne produit aucune clé
+     utilisable »).
+
+### Scénario 20.4 — Le rôle neuf est immédiatement utilisable sur une appartenance
+
+1. Ouvrir la page de la classe `3A` → colonne « Rôle » d'un membre.
+2. **Attendu** : la liste de choix contient désormais **« Tuteur de stage »**, à la suite des
+   rôles historiques (qui, eux, s'affichent toujours « Élève »/« Enseignant »/« Professeur
+   principal » — c'est une classe).
+3. Poser `Tuteur de stage` sur un élève, recharger : la valeur tient.
+4. Revenir sur `/admin/settings/groups` → la ligne `tuteur_de_stage` compte **1 appartenance** et
+   **1 type de groupe**.
+
+### Scénario 20.5 — Renommer un libellé ne touche AUCUNE donnée (le cœur)
+
+1. Relever d'abord l'état : `SELECT role, count(*) FROM user_group_user GROUP BY role;` et
+   `SELECT key, roles_spec, nodes_spec FROM directory_templates ORDER BY key;`.
+2. Modifier le libellé de `manager` : « Gestionnaire » → **« Encadrant »**.
+3. **Attendu, sur les données** : les deux requêtes ci-dessus rendent **exactement** la même chose
+   qu'avant. Toute différence est un **incident bloquant**.
+4. **Attendu, à l'écran** : sur un groupe de type `projet`, le rôle continue de se lire
+   **« Porteur »** ; sur une `classe`, **« Enseignant »** ; sur un type non tranché (`cours`),
+   il se lit désormais **« Encadrant »**. C'est voulu : les libellés par type de groupe sont encore
+   du code et priment (ils deviennent une donnée en story 62.3).
+5. Remettre « Gestionnaire ».
+
+### Scénario 20.6 — Supprimer : REFUS nommé, jamais de cascade (CRITIQUE)
+
+1. Tenter de supprimer `manager` → **refus** immédiat, message « rôle structurel », **aucune
+   modale de confirmation**. Idem pour `member` et `owner`.
+2. Tenter de supprimer `tuteur_de_stage` alors qu'un élève le porte → **refus** nommant le
+   décompte (« Refusé : 1 appartenance porte ce rôle »).
+3. **Contre-épreuve d'écriture** : après ce refus, vérifier que le rôle est toujours en base ET
+   que l'appartenance de l'élève n'a **pas** été remise à `member`. Une cascade silencieuse est un
+   **incident bloquant**.
+4. Retirer le rôle de l'élève (le repasser à « Élève »), revenir : la suppression propose alors une
+   **confirmation**, et aboutit avec un toast.
+5. **Recettes** : créer un rôle `pilote`, l'utiliser dans une arborescence (story 62.6 — ou en
+   tinker sur `directory_templates.roles_spec[].resolution.edge_roles`), puis tenter de le
+   supprimer → refus mentionnant « 1 recette ». Vérifier que la recette n'a pas été modifiée.
+
+### Scénario 20.7 — Migration : plus aucune appartenance hors vocabulaire
+
+1. **Avant** de migrer, sur une base réelle :
+   `SELECT DISTINCT role FROM user_group_user;` — noter toute valeur hors
+   `member`/`manager`/`owner` (donnée héritée : la lecture les affichait déjà « Élève »/« Membre »
+   depuis la story 42.3, mais la colonne, elle, les gardait).
+2. Migrer. La migration **normalise** ces valeurs vers `member` et **journalise le nombre de lignes
+   touchées** (`[62.1] Arêtes normalisées vers « member »` dans `storage/logs/laravel.log`).
+3. **Attendu après** : `SELECT DISTINCT role FROM user_group_user;` ne rend plus que les clés du
+   catalogue. Le nombre de lignes normalisées doit correspondre à ce qui a été relevé en 1.
+4. **Attendu** : aucune ligne déjà à `member`/`manager`/`owner` n'a changé — les compteurs par rôle
+   des trois clés historiques ne bougent que du report des valeurs héritées.
+
+### Scénario 20.8 — Réordonner l'affichage
+
+1. Sur `owner`, cliquer **« Monter »** deux fois.
+2. **Attendu** : l'ordre de la liste devient `owner`, `member`, `manager` ; les flèches de bout de
+   liste sont désactivées.
+3. **Attendu, ailleurs dans l'application** : la liste de choix « Rôle » d'un membre de groupe suit
+   **le même ordre**. C'est le seul effet visible d'un réordonnancement.
+4. Remettre l'ordre d'origine.
+
+### Scénario 20.9 — Instance non seedée : le plancher tient
+
+1. Sur une instance de test, vider le catalogue : `DELETE FROM group_roles;`.
+2. **Attendu** : l'application **continue de fonctionner** — rattacher un utilisateur à un groupe,
+   ouvrir une page de groupe, éditer un rôle de membre. Le vocabulaire minimal
+   (`member`/`manager`/`owner`) ne disparaît **jamais**, quel que soit l'état de la table.
+3. **Attendu** : les libellés retombent sur « Membre »/« Gestionnaire »/« Propriétaire » (et les
+   libellés scolaires en classe), c'est-à-dire exactement l'affichage seedé.
+4. **Attendu** : un rôle créé plus tôt (`tuteur_de_stage`) n'est **plus** proposé et une
+   appartenance qui le porterait se **lit** « Élève »/« Membre ». Rejouer
+   `db:seed --class=GroupRoleSeeder` restaure les trois lignes historiques ; les rôles supprimés,
+   eux, sont à recréer.
+
+### Post-correctifs & non-régressions — Section 20
+
+- **Le partage de classe n'a pas bougé.** Provisionner un partage de classe et comparer les droits
+  posés avec ceux d'avant la story : 62.1 ne touche pas la compilation des permissions.
+- **Les cinq recettes seedées restent valides** :
+  `php artisan db:seed --class=DirectoryTemplateSeeder` ne doit lever aucune erreur de validation.
+- **Aucun onglet orphelin** : après la story 62.2, vérifier que l'onglet « Types de groupes »
+  apparaît *avec* son contenu — jamais avant.

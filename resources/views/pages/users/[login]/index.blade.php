@@ -15,7 +15,7 @@ use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
 use App\Models\Pivot\UserGroupUserPivot;
-use App\Support\EdgeRoleLabels;
+use App\Support\RoleCatalog;
 use App\Models\Wallpaper;
 use App\Models\Delegation;
 use Illuminate\Support\Facades\Gate;
@@ -225,7 +225,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             }
 
             $edgeRoleRaw = (string) ($group->pivot->role ?? '');
-            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::ROLES, true)
+            $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::roles(), true)
                 ? $edgeRoleRaw
                 : UserGroupUserPivot::ROLE_MEMBER;
 
@@ -245,7 +245,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                 // équipe), plus d'un `match` local écrit pour la seule classe.
                 'edge_role_label' => $edgeRole === UserGroupUserPivot::ROLE_MEMBER
                     ? null
-                    : EdgeRoleLabels::label(is_string($group->type) ? (string) $group->type : null, $edgeRole),
+                    : RoleCatalog::label(is_string($group->type) ? (string) $group->type : null, $edgeRole),
             ];
         }
 

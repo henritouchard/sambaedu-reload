@@ -216,6 +216,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Story 62.1 — LA COUTURE DE PURETÉ. Le namespace du plan de fichiers vit
+        // au-dessus de la ligne de contrat : il n'interroge rien, et un test
+        // d'architecture le vérifie sur le TEXTE des fichiers. Le vocabulaire de
+        // rôle d'arête, lui, est désormais une table administrable. La source
+        // ENTRE donc dans le plan par injection, une fois, ici — le plan ne va
+        // jamais la chercher. Sans cette ligne, le normalizer retomberait sur son
+        // repli littéral (`member|manager|owner`) et un rôle nouveau du catalogue
+        // serait refusé par la résolution.
+        \App\Services\Filesystem\Plan\GroupNameNormalizer::useEdgeRoles(
+            static fn (): array => \App\Support\RoleCatalog::keys(),
+        );
+
         // Enregistrer les observers pour la synchronisation AD
         WorkstationGroup::observe(WorkstationGroupObserver::class);
         UserGroup::observe(UserGroupObserver::class);

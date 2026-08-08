@@ -33,6 +33,11 @@ class DatabaseSeeder extends Seeder
             // d'échange préfabriquées). Idempotent/rejouable. ⚠️ Pré-déploiement
             // VM : `db:seed --class=DirectoryTemplateSeeder`.
             DirectoryTemplateSeeder::class,
+            // Story 62.1 — catalogue des rôles d'arête (`member`/`manager`/
+            // `owner`, les trois clés historiques). Idempotent/rejouable, ne
+            // touche aucune arête. ⚠️ Pré-déploiement VM :
+            // `db:seed --class=GroupRoleSeeder`.
+            GroupRoleSeeder::class,
             // Story 54.1 — registre d'extensions : source « embarquée » +
             // chargement des manifests du dépôt (`resources/extensions/*`),
             // dont la tuile Documentation (`/doc`). Idempotent/rejouable :

@@ -592,7 +592,7 @@ class DirectoryTemplate extends Model
                 'le rôle « %s » en stratégie « %s » doit lister au moins un rôle d\'arête (%s).',
                 $roleKey,
                 RoleResolutionStrategy::EdgeRole->value,
-                implode('|', GroupNameNormalizer::EDGE_ROLES),
+                implode('|', GroupNameNormalizer::edgeRoles()),
             ));
         }
 
@@ -603,7 +603,7 @@ class DirectoryTemplate extends Model
                     'rôle d\'arête inconnu « %s » sur le rôle « %s » (attendu : %s).',
                     is_scalar($edgeRole) ? (string) $edgeRole : gettype($edgeRole),
                     $roleKey,
-                    implode('|', GroupNameNormalizer::EDGE_ROLES),
+                    implode('|', GroupNameNormalizer::edgeRoles()),
                 ));
             }
             if (in_array($edgeRole, $normalized, true)) {
@@ -826,7 +826,7 @@ class DirectoryTemplate extends Model
                     throw InvalidTreeSpecException::make(sprintf(
                         'le nœud par membre « %s » doit déclarer un rôle d\'arête connu (%s).',
                         $path,
-                        implode('|', GroupNameNormalizer::EDGE_ROLES),
+                        implode('|', GroupNameNormalizer::edgeRoles()),
                     ));
                 }
             } elseif (array_key_exists('edge_role', $node) && $node['edge_role'] !== null) {
