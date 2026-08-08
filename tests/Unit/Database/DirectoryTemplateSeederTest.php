@@ -7,6 +7,7 @@ namespace Tests\Unit\Database;
 use App\Enums\PlanAnchor;
 use App\Enums\RoleResolutionStrategy;
 use App\Models\DirectoryTemplate;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Models\User;
 use App\Models\UserGroup;
 use Database\Seeders\DirectoryTemplateSeeder;
@@ -125,15 +126,18 @@ class DirectoryTemplateSeederTest extends TestCase
 
         $expected = [
             DirectoryTemplate::KEY_DIRECTION_TO_ALL => [
-                ['source', UserGroup::class, null, 'rw', 'one'],
-                ['destinataires', UserGroup::class, null, 'ro', 'many'],
+                // Story 62.4 — le référentiel FIGÉ dit désormais des verbes. Le
+                // mappage de migration est appliqué ici comme il l'a été en base :
+                // `rw` → les quatre, `ro` → « lire » seul. Rien d'autre n'a bougé.
+                ['source', UserGroup::class, null, PlanGrant::VERBS, 'one'],
+                ['destinataires', UserGroup::class, null, [PlanGrant::VERB_LIRE], 'many'],
             ],
             DirectoryTemplate::KEY_USER_TO_USER => [
-                ['user_a', User::class, null, 'rw', 'one'],
-                ['user_b', User::class, null, 'rw', 'one'],
+                ['user_a', User::class, null, PlanGrant::VERBS, 'one'],
+                ['user_b', User::class, null, PlanGrant::VERBS, 'one'],
             ],
             DirectoryTemplate::KEY_GROUP_SPACE => [
-                ['group', UserGroup::class, null, 'rw', 'one'],
+                ['group', UserGroup::class, null, PlanGrant::VERBS, 'one'],
             ],
         ];
 
@@ -147,7 +151,7 @@ class DirectoryTemplateSeederTest extends TestCase
 
             $actual = array_map(
                 static fn (array $r): array => [
-                    $r['key'], $r['maille'], $r['group_type'], $r['access'], $r['cardinality'],
+                    $r['key'], $r['maille'], $r['group_type'], $r['verbs'], $r['cardinality'],
                 ],
                 $template->roles(),
             );
@@ -217,7 +221,7 @@ class DirectoryTemplateSeederTest extends TestCase
         $roles = static fn (DirectoryTemplate $t): array => array_map(
             static fn (array $r): array => [
                 'key' => $r['key'],
-                'access' => $r['access'],
+                'verbs' => $r['verbs'],
                 'resolution' => $r['resolution'] ?? null,
             ],
             $t->roles(),
@@ -286,7 +290,8 @@ class DirectoryTemplateSeederTest extends TestCase
             }
             foreach ($node['grants'] as $grant) {
                 if ($grant['role'] === 'classe') {
-                    $this->assertSame('ro', $grant['access']);
+                    // Story 62.4 — « lire » SEUL : le mappage de migration de `ro`.
+                    $this->assertSame([PlanGrant::VERB_LIRE], $grant['verbs']);
                 }
             }
         }

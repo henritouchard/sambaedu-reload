@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Filesystem\Plan;
 
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanResolver;
 use App\Services\Filesystem\ShareService;
 use PHPUnit\Framework\Attributes\Test;
@@ -92,21 +93,33 @@ class PlanNeutralityGuardTest extends TestCase
         }
     }
 
+    /**
+     * Story 62.4 — L'ÉPINGLE RETOURNÉE : le vocabulaire du plan est celui des
+     * QUATRE VERBES, et rien d'autre n'y entre.
+     *
+     * Elle affirmait les deux niveaux binaires. Elle affirme désormais que tout ce
+     * qui sort d'une résolution appartient au vocabulaire fermé des verbes — ce qui
+     * est la garde la plus forte des deux, puisqu'elle interdit AUSSI les deux
+     * anciennes valeurs.
+     */
     #[Test]
-    public function the_access_vocabulary_of_the_plan_is_exactly_the_two_neutral_levels(): void
+    public function the_verb_vocabulary_of_the_plan_is_exactly_the_four_neutral_ones(): void
     {
         $plan = (new PlanResolver())->resolve($this->classTreeTemplate(), $this->classTreeContext());
 
-        $accesses = [];
+        $verbs = [];
         foreach ($plan->nodes as $node) {
             foreach ($node->grants as $grant) {
-                $accesses[] = $grant->access;
+                $this->assertNotSame([], $grant->verbs, 'un octroi porte toujours au moins un verbe');
+                foreach ($grant->verbs as $verb) {
+                    $verbs[$verb] = true;
+                }
             }
         }
-        $accesses = array_values(array_unique($accesses));
-        sort($accesses);
 
-        $this->assertSame(['ro', 'rw'], $accesses);
+        $this->assertSame([], array_diff(array_keys($verbs), PlanGrant::VERBS));
+        $this->assertSame([], array_intersect(array_keys($verbs), ['ro', 'rw', 'none']));
+        $this->assertContains(PlanGrant::VERB_SUPPRIMER, array_keys($verbs), 'la recette d\'épreuve doit exercer les quatre');
     }
 
     /**

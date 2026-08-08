@@ -206,12 +206,13 @@ final class TreePlanService
                 continue;
             }
 
-            $access = ($role['access'] ?? PlanGrant::ACCESS_RO) === PlanGrant::ACCESS_RW
-                ? PlanGrant::ACCESS_RW
-                : PlanGrant::ACCESS_RO;
+            // Story 62.4 — les verbes du rôle. L'absence de la clé vaut « lire »
+            // seul : c'est le plancher historique d'un rôle qui ne se prononce pas,
+            // et la validation de recette refuse déjà l'ancienne clé scalaire.
+            $verbs = is_array($role['verbs'] ?? null) ? array_values($role['verbs']) : [PlanGrant::VERB_LIRE];
 
             foreach ($context->targetsForRole($roleKey) as $subject) {
-                $grants[] = new PlanGrant($roleKey, $subject, $access);
+                $grants[] = new PlanGrant($roleKey, $subject, $verbs);
                 $granted[$roleKey] = true;
             }
         }

@@ -9,6 +9,7 @@ use App\Exceptions\Filesystem\InvalidTreeSpecException;
 use App\Models\DirectoryTemplate;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use Database\Seeders\DirectoryTemplateSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -46,7 +47,7 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
             'label' => 'Cible',
             'maille' => $maille,
             'group_type' => null,
-            'access' => 'rw',
+            'verbs' => PlanGrant::VERBS,
             'cardinality' => 'one',
         ];
 
@@ -229,7 +230,7 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
             'key' => 'cible',
             'label' => 'Cible',
             'maille' => UserGroup::class,
-            'access' => 'rw',
+            'verbs' => PlanGrant::VERBS,
             'cardinality' => 'one',
             'resolution' => 'self',
         ];

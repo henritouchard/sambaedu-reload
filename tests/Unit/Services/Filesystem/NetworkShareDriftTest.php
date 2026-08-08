@@ -16,6 +16,7 @@ use App\Services\Filesystem\Backend\ObservedGrant;
 use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 use App\Services\Filesystem\PlanStateComparator;
@@ -103,7 +104,7 @@ class NetworkShareDriftTest extends TestCase
         [$share, $user] = $this->shareWithUser('rw');
         $this->observing(static fn (FilePlan $plan): array => [
             NodeObservation::observed(PlanNode::ROOT_PATH, [
-                new ObservedGrant(PlanSubject::user((int) $user->id), 'rw'),
+                new ObservedGrant(PlanSubject::user((int) $user->id), PlanGrant::VERBS),
             ]),
         ]);
 
@@ -119,7 +120,7 @@ class NetworkShareDriftTest extends TestCase
         [$share, $user] = $this->shareWithUser('rw');
         $this->observing(static fn (FilePlan $plan): array => [
             NodeObservation::observed(PlanNode::ROOT_PATH, [
-                new ObservedGrant(PlanSubject::user((int) $user->id), 'ro'),
+                new ObservedGrant(PlanSubject::user((int) $user->id), [PlanGrant::VERB_LIRE]),
             ]),
         ]);
 
@@ -127,7 +128,7 @@ class NetworkShareDriftTest extends TestCase
 
         self::assertSame(PlanStateComparator::STATUS_DRIFTED, $drift['status']);
         self::assertSame(
-            [['subject' => ['type' => 'user', 'id' => (int) $user->id, 'edge_role' => null], 'expected' => 'rw', 'observed' => 'ro']],
+            [['subject' => ['type' => 'user', 'id' => (int) $user->id, 'edge_role' => null], 'expected' => PlanGrant::VERBS, 'observed' => [PlanGrant::VERB_LIRE]]],
             $drift['nodes'][0]['differences'],
         );
     }
@@ -166,7 +167,7 @@ class NetworkShareDriftTest extends TestCase
         [$share, $user] = $this->shareWithUser('rw');
         $this->observing(static fn (FilePlan $plan): array => [
             NodeObservation::observed(PlanNode::ROOT_PATH, [
-                new ObservedGrant(PlanSubject::user((int) $user->id), 'ro'),
+                new ObservedGrant(PlanSubject::user((int) $user->id), [PlanGrant::VERB_LIRE]),
             ]),
         ]);
 

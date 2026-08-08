@@ -113,8 +113,8 @@ class PosixReportNeutralityTest extends TestCase
         $groupe = UserGroup::create(['name' => 'Direction', 'type' => 'custom']);
 
         $plan = $this->plan([
-            new PlanGrant('@assignation', PlanSubject::user((int) $alice->id), PlanGrant::ACCESS_RW),
-            new PlanGrant('@assignation', PlanSubject::group((int) $groupe->id), PlanGrant::ACCESS_RO),
+            new PlanGrant('@assignation', PlanSubject::user((int) $alice->id), PlanGrant::VERBS),
+            new PlanGrant('@assignation', PlanSubject::group((int) $groupe->id), [PlanGrant::VERB_LIRE]),
         ]);
 
         $backend = app(PosixFileBackend::class);
@@ -176,6 +176,57 @@ class PosixReportNeutralityTest extends TestCase
         foreach ([$backend->provision($plan)->toArray(), $backend->inspect($plan)->toArray()] as $data) {
             foreach (explode("\n", $this->plainTextOfArray($data)) as $value) {
                 self::assertStringStartsNotWith('/', $value, 'chemin absolu dans un rapport : ' . $value);
+            }
+        }
+    }
+
+    /**
+     * Story 62.4 — LA GARDE S'ÉTEND AUX TEXTES NOUVEAUX : les phrases d'un déclin
+     * par limite de modèle.
+     *
+     * Ce sont du texte LIBRE, écrit à la main, et il traverse la ligne de coupe
+     * jusqu'à l'écran. La tentation d'y écrire le mécanisme (« il faudrait un
+     * drapeau sur le dossier », « le même bit sert aux deux ») est forte, parce
+     * qu'elle est plus précise. Elle ferait pourtant remonter le vocabulaire du
+     * serveur de fichiers à un administrateur qui ne le lira jamais dans une
+     * interface de plan — et qui, demain, verra le même écran alimenté par un
+     * backend distant où ce vocabulaire n'a aucun sens.
+     */
+    #[Test]
+    public function the_new_model_limit_details_carry_no_marker_of_the_layer_below(): void
+    {
+        Process::fake();
+        $classe = UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
+        $subject = PlanSubject::group((int) $classe->id);
+
+        // Les deux façons dont ce backend décline par limite de modèle.
+        $plans = [
+            'supprimer sans créer' => $this->plan([
+                new PlanGrant('classe', $subject, [PlanGrant::VERB_LIRE, PlanGrant::VERB_SUPPRIMER]),
+            ]),
+            'nœud mixte' => $this->plan([
+                new PlanGrant('classe', $subject, [PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER]),
+                new PlanGrant('equipe', PlanSubject::group(
+                    (int) UserGroup::create(['name' => 'equipe_3emeA', 'type' => 'equipe'])->id,
+                ), PlanGrant::VERBS),
+            ]),
+        ];
+
+        foreach ($plans as $case => $plan) {
+            $report = app(PosixFileBackend::class)->provision($plan);
+            $text = $this->plainTextOfArray($report->toArray());
+
+            self::assertSame([], $this->markersIn($text), "{$case} : la ligne de coupe a été franchie — " . $text);
+
+            // …et le texte reste EXPLOITABLE : il nomme le rôle et les verbes.
+            self::assertStringContainsString('classe', $text);
+            self::assertStringContainsString('suppression', $text);
+
+            // Le mot du mécanisme, nommément interdit : c'est le seul que la
+            // liste partagée de marqueurs ne connaît pas encore, parce qu'il
+            // n'existait pas avant cette story.
+            foreach (['sticky', 'drapeau', 'chmod', '+t'] as $mechanism) {
+                self::assertStringNotContainsStringIgnoringCase($mechanism, $text, $case . ' / ' . $mechanism);
             }
         }
     }

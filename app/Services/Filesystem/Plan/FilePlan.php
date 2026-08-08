@@ -45,8 +45,19 @@ final class FilePlan
      * 60.5 se relit donc sans perte et signifie exactement ce qu'il signifiait.
      * Bumper la version aurait rendu illisibles des rapports en cache qui sont
      * parfaitement valides, pour ne rien protéger.
+     *
+     * **Story 62.4 — elle passe à 2, et c'est une RUPTURE ASSUMÉE.** Les octrois
+     * ne portent plus un niveau d'accès scalaire (`access`) mais une LISTE DE
+     * VERBES (`verbs`). Contrairement à l'ancre de 60.5, l'absence de la nouvelle
+     * clé n'a aucun sens exact : un plan de version 1 décrit des accès dont la
+     * traduction en verbes est une DÉCISION (Q3), pas une lecture. La faire à la
+     * désérialisation la disséminerait dans le temps ; elle est jouée une fois, à
+     * la migration des recettes stockées. Un plan de version 1 est donc refusé, et
+     * la voie de sortie est de le re-résoudre depuis la source SQL — ce qui ne
+     * coûte rien : aucun plan n'est persisté, seuls des RAPPORTS le sont (et un
+     * rapport ne porte pas de vocabulaire d'accès, vérifié story 62.4).
      */
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     /** Clé stable de la recette d'origine. */
     public readonly string $templateKey;

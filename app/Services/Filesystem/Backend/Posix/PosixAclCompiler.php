@@ -14,15 +14,46 @@ use App\Services\Filesystem\Plan\PlanNode;
  *
  * C'est le cœur de la descente, et c'est aussi le code qui ne devait surtout pas
  * être réécrit : le jeu canonique de base, l'ordre des entrées d'accès et de leurs
- * miroirs d'héritage, l'échappement du groupe d'annuaire à espace, la
- * correspondance `ro → rx` / `rw → rwx` viennent tels quels du provisionnement
- * 34.1. Un référentiel figé en littéraux, capturé sur le comportement AVANT la
- * descente, verrouille l'ensemble chaîne par chaîne
+ * miroirs d'héritage, l'échappement du groupe d'annuaire à espace viennent tels
+ * quels du provisionnement 34.1. Un référentiel figé en littéraux, capturé sur le
+ * comportement AVANT la descente, verrouille l'ensemble chaîne par chaîne
  * ({@see \Tests\Unit\Services\Filesystem\Backend\Posix\PosixGoldenAclTest}).
+ *
+ * ---------------------------------------------------------------------------
+ * **Story 62.4 — LES OCTROIS SE DISENT EN QUATRE VERBES, ET LA TRADUCTION EST
+ * DÉRIVÉE, PAS ÉNUMÉRÉE.**
+ *
+ * La matrice complète — deux axes, un drapeau de nœud, une règle unique de
+ * dégradation — est écrite au docblock de {@see PosixVerbRendering}, et testée
+ * branche par branche sur les quinze combinaisons. Trois choses seulement
+ * appartiennent à CETTE classe :
+ *
+ *  1. **La décision de nœud.** La restriction de suppression au propriétaire est
+ *     un attribut du DOSSIER, pas d'une entrée : c'est ici, en regardant TOUS les
+ *     octrois actifs, qu'on décide de la poser ou non. Elle n'est posée que si un
+ *     octroi demande « déposer sans effacer » ET qu'aucun autre octroi actif ne
+ *     porte la suppression — sinon elle retirerait à celui-là l'effacement des
+ *     fichiers d'autrui, c'est-à-dire un droit écrit dans la recette.
+ *  2. **La déclaration.** Tout verbe non rendu produit un refus
+ *     {@see FileBackendOutcome::NonExprimable} NON BLOQUANT : les autres octrois
+ *     s'écrivent, l'octroi partiel s'écrit à son intersection exprimable, et le
+ *     nœud REMONTE ce qui manque, en français, sans un mot du mécanisme.
+ *  3. **La liste des fichiers, quand elle diffère.** Si dossiers et fichiers
+ *     exigent des niveaux différents, la compilation rend DEUX listes ; c'est
+ *     l'exécution qui les pose séparément. Un niveau unique approximé aurait donné
+ *     un verbe de trop d'un côté ou de l'autre, en silence.
+ *
+ * **L'iso-sortie est intacte, et c'est la preuve du mappage de migration.** Les
+ * deux seules combinaisons que portent les recettes en base après la migration —
+ * `lire` seul, et les quatre verbes — compilent vers exactement les deux entrées
+ * d'hier. Aucune des deux ne demande la restriction de suppression, aucune des deux
+ * ne différencie fichiers et dossiers : sur une instance en place, aucune entrée ne
+ * bouge, aucun mode ne bouge, et les référentiels figés le vérifient chaîne par
+ * chaîne sans qu'un seul de leurs littéraux ait changé.
  *
  * **Trois états d'octroi, trois traductions** — la distinction que la story 60.1
  * a passé un critère entier à établir, et qu'il aurait été facile d'écraser ici :
- *  - octroi ACTIF → une entrée au niveau demandé (`rx` ou `rwx`) ;
+ *  - octroi ACTIF → une (ou deux) entrées au niveau que les verbes dérivent ;
  *  - octroi SUSPENDU → une entrée EXPLICITEMENT VIDE (`---`). L'octroi existe, il
  *    ne donne rien, le dossier et les données restent. C'est la forme matérialisée
  *    de la suspension, et c'est ce qui permet à la comparaison désiré/observé de
@@ -83,11 +114,25 @@ final class PosixAclCompiler
         'default:other::---',
     ];
 
-    /** Niveau d'entrée d'un octroi ACTIF, par niveau d'accès du plan. */
-    private const MODES = [
-        PlanGrant::ACCESS_RO => 'rx',
-        PlanGrant::ACCESS_RW => 'rwx',
-    ];
+    /**
+     * Le jeu de base RESTREINT AUX ENTRÉES D'ACCÈS — les mêmes, sans les miroirs
+     * d'héritage.
+     *
+     * Il ne sert QUE dans le cas où fichiers et dossiers reçoivent des niveaux
+     * différents : les miroirs d'héritage n'existent que sur un dossier, et les
+     * poser sur un fichier est refusé par le mécanisme lui-même. Dérivé de
+     * {@see BASE_ACLS}, jamais recopié — deux listes qui divergeraient donneraient
+     * deux contrats structurels selon le type d'objet.
+     *
+     * @return list<string>
+     */
+    public static function baseFileAcls(): array
+    {
+        return array_values(array_filter(
+            self::BASE_ACLS,
+            static fn (string $acl): bool => ! str_starts_with($acl, 'default:'),
+        ));
+    }
 
     /** Niveau d'entrée d'un octroi SUSPENDU : présent, et vide. */
     private const MODE_SUSPENDED = '---';
@@ -99,8 +144,14 @@ final class PosixAclCompiler
     public function compile(PlanNode $node): CompiledNodeAcl
     {
         $acls = self::BASE_ACLS;
+        $fileAcls = self::baseFileAcls();
         $refusals = [];
         $nominative = 0;
+        $differentiated = false;
+
+        // La restriction de suppression au propriétaire se décide UNE fois, pour
+        // tout le nœud : c'est un attribut du dossier, jamais d'une entrée.
+        $restriction = $this->restrictsDeletion($node);
 
         foreach ($node->grants as $grant) {
             $projection = $this->projector->project($grant->subject);
@@ -124,16 +175,43 @@ final class PosixAclCompiler
                 continue;
             }
 
-            $mode = $grant->isActive()
-                ? (self::MODES[$grant->access] ?? self::MODES[PlanGrant::ACCESS_RO])
-                : self::MODE_SUSPENDED;
+            // Un octroi SUSPENDU se rend par une entrée explicitement vide, quels
+            // que soient ses verbes : la suspension est ORTHOGONALE au niveau.
+            if (! $grant->isActive()) {
+                if ($projection->type === PosixSubjectProjection::TYPE_USER) {
+                    $nominative++;
+                }
+                $acls[] = "{$projection->type}:{$projection->name}:" . self::MODE_SUSPENDED;
+                $acls[] = "default:{$projection->type}:{$projection->name}:" . self::MODE_SUSPENDED;
+                $fileAcls[] = "{$projection->type}:{$projection->name}:" . self::MODE_SUSPENDED;
+
+                continue;
+            }
+
+            $rendering = PosixVerbRendering::of($grant->verbs, $restriction);
+
+            if (! $rendering->isExact()) {
+                $refusals[] = new CompiledRefusal(
+                    FileBackendOutcome::NonExprimable,
+                    $this->declineDetail($grant, $rendering, $restriction),
+                );
+            }
+
+            // Rien de rendu : aucune entrée. Une entrée vide serait relue comme une
+            // suspension appliquée — le silence exact que cet epic supprime.
+            if ($rendering->isEmpty()) {
+                continue;
+            }
 
             if ($projection->type === PosixSubjectProjection::TYPE_USER) {
                 $nominative++;
             }
 
-            $acls[] = "{$projection->type}:{$projection->name}:{$mode}";
-            $acls[] = "default:{$projection->type}:{$projection->name}:{$mode}";
+            $differentiated = $differentiated || $rendering->isDifferentiated();
+
+            $acls[] = "{$projection->type}:{$projection->name}:{$rendering->directoryMode}";
+            $acls[] = "default:{$projection->type}:{$projection->name}:{$rendering->directoryMode}";
+            $fileAcls[] = "{$projection->type}:{$projection->name}:{$rendering->fileMode}";
         }
 
         if ($nominative > self::NOMINATIVE_ENTRIES_CEILING) {
@@ -154,6 +232,88 @@ final class PosixAclCompiler
             )]);
         }
 
-        return new CompiledNodeAcl($acls, $refusals);
+        return new CompiledNodeAcl(
+            $acls,
+            $refusals,
+            // La liste des fichiers ne voyage QUE si elle diffère : la rendre
+            // systématiquement doublerait les gestes de pose de tous les nœuds du
+            // dépôt pour n'y rien changer.
+            $differentiated ? $fileAcls : [],
+            $restriction,
+        );
+    }
+
+    /**
+     * Le nœud doit-il porter la restriction de suppression au propriétaire ?
+     *
+     * **Deux conditions, et la seconde est celle qu'on oublie.** Il faut qu'un
+     * octroi actif demande « déposer sans effacer » — sinon la restriction ne rend
+     * rien de plus — ET qu'AUCUN octroi actif du nœud ne porte la suppression. Sur
+     * un nœud MIXTE, la poser retirerait aux porteurs de la suppression
+     * l'effacement des fichiers d'autrui : une régression SILENCIEUSE, sur un droit
+     * que la recette a écrit noir sur blanc. On ne la pose donc pas, et l'octroi
+     * « déposer sans effacer » retombe sur son intersection exprimable, en le
+     * disant.
+     */
+    private function restrictsDeletion(PlanNode $node): bool
+    {
+        $wanted = false;
+
+        foreach ($node->grants as $grant) {
+            if (! $grant->isActive()) {
+                continue;
+            }
+            if ($grant->hasVerb(PlanGrant::VERB_SUPPRIMER)) {
+                return false;
+            }
+            if ($grant->hasVerb(PlanGrant::VERB_CREER)) {
+                $wanted = true;
+            }
+        }
+
+        return $wanted;
+    }
+
+    /**
+     * La phrase d'un déclin, en VOCABULAIRE DE PLAN.
+     *
+     * Elle nomme le rôle et les verbes, jamais le mécanisme : ni mode, ni bit, ni
+     * nom de la restriction. Le `detail` d'un rapport traverse la ligne de coupe et
+     * s'affiche à un administrateur — il doit lui dire ce qui ne sera pas rendu et
+     * pourquoi, pas comment le serveur de fichiers est fait.
+     */
+    private function declineDetail(PlanGrant $grant, PosixVerbRendering $rendering, bool $restriction): string
+    {
+        $missing = implode(', ', $rendering->missing);
+
+        if (in_array(PlanGrant::VERB_SUPPRIMER, $rendering->missing, true)
+            && ! $grant->hasVerb(PlanGrant::VERB_CREER)) {
+            return sprintf(
+                'la suppression sans la création ne peut pas être rendue par ce serveur de fichiers pour le '
+                . 'rôle « %s » : les deux verbes y passent par le même levier, et l\'accorder donnerait aussi '
+                . 'la création — un verbe que la recette n\'écrit pas. Le reste de l\'octroi (%s) est rendu.',
+                $grant->roleKey,
+                $rendering->rendered === [] ? 'rien' : implode(', ', $rendering->rendered),
+            );
+        }
+
+        if (in_array(PlanGrant::VERB_CREER, $rendering->missing, true) && ! $restriction) {
+            return sprintf(
+                'la création sans la suppression ne peut pas être rendue pour le rôle « %s » sur ce dossier : '
+                . 'un autre octroi actif y accorde la suppression, et la restriction qui approcherait la '
+                . 'nuance lui retirerait l\'effacement du travail des autres — un verbe que la recette lui '
+                . 'écrit. Le reste de l\'octroi (%s) est rendu.',
+                $grant->roleKey,
+                $rendering->rendered === [] ? 'rien' : implode(', ', $rendering->rendered),
+            );
+        }
+
+        return sprintf(
+            'le rôle « %s » demande %s, que ce serveur de fichiers ne sait pas rendre séparément du reste. '
+            . 'Le reste de l\'octroi (%s) est rendu.',
+            $grant->roleKey,
+            $missing,
+            $rendering->rendered === [] ? 'rien' : implode(', ', $rendering->rendered),
+        );
     }
 }

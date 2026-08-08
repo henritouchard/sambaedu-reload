@@ -100,15 +100,15 @@ class NextcloudSkeletonTest extends TestCase
                     'Racine',
                     PlanNodeNature::Partagee,
                     [
-                        new PlanGrant('classe', $classe, PlanGrant::ACCESS_RO),
-                        new PlanGrant('profs', $prof, PlanGrant::ACCESS_RW),
+                        new PlanGrant('classe', $classe, [PlanGrant::VERB_LIRE]),
+                        new PlanGrant('profs', $prof, PlanGrant::VERBS),
                     ],
                 ),
                 new PlanNode(
                     '_profs',
                     'Espace des enseignants',
                     PlanNodeNature::Partagee,
-                    [new PlanGrant('profs', $prof, PlanGrant::ACCESS_RW)],
+                    [new PlanGrant('profs', $prof, PlanGrant::VERBS)],
                     true,
                     2147483648,
                     ['classe'],

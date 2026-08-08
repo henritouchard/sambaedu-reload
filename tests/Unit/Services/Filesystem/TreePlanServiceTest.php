@@ -9,6 +9,7 @@ use App\Exceptions\Filesystem\PlanResolutionException;
 use App\Models\DirectoryTemplate;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Services\Filesystem\Plan\FilePlan;
@@ -318,8 +319,8 @@ class TreePlanServiceTest extends TestCase
             'key' => DirectoryTemplate::KEY_USER_TO_USER,
             'label' => 'Utilisateur ↔ utilisateur',
             'roles_spec' => [
-                ['key' => 'user_a', 'label' => 'A', 'maille' => User::class, 'group_type' => null, 'access' => 'rw', 'cardinality' => 'one'],
-                ['key' => 'user_b', 'label' => 'B', 'maille' => User::class, 'group_type' => null, 'access' => 'rw', 'cardinality' => 'one'],
+                ['key' => 'user_a', 'label' => 'A', 'maille' => User::class, 'group_type' => null, 'verbs' => PlanGrant::VERBS, 'cardinality' => 'one'],
+                ['key' => 'user_b', 'label' => 'B', 'maille' => User::class, 'group_type' => null, 'verbs' => PlanGrant::VERBS, 'cardinality' => 'one'],
             ],
             'path_pattern' => 'Echanges/{group.bare_name}',
             'nodes_spec' => [[
@@ -327,8 +328,8 @@ class TreePlanServiceTest extends TestCase
                 'label' => 'Espace commun',
                 'nature' => 'partagee',
                 'grants' => [
-                    ['role' => 'user_a', 'access' => 'rw'],
-                    ['role' => 'user_b', 'access' => 'rw'],
+                    ['role' => 'user_a', 'verbs' => PlanGrant::VERBS],
+                    ['role' => 'user_b', 'verbs' => PlanGrant::VERBS],
                 ],
             ]],
         ]);
@@ -355,12 +356,12 @@ class TreePlanServiceTest extends TestCase
             'key' => 'un_seul',
             'label' => 'Un seul',
             'roles_spec' => [
-                ['key' => 'cible', 'label' => 'Cible', 'maille' => User::class, 'group_type' => null, 'access' => 'rw', 'cardinality' => 'one'],
+                ['key' => 'cible', 'label' => 'Cible', 'maille' => User::class, 'group_type' => null, 'verbs' => PlanGrant::VERBS, 'cardinality' => 'one'],
             ],
             'path_pattern' => 'Echanges/{group.bare_name}',
             'nodes_spec' => [[
                 'path' => '_commun', 'label' => 'Commun', 'nature' => 'partagee',
-                'grants' => [['role' => 'cible', 'access' => 'rw']],
+                'grants' => [['role' => 'cible', 'verbs' => PlanGrant::VERBS]],
             ]],
         ]);
 
@@ -381,12 +382,12 @@ class TreePlanServiceTest extends TestCase
             'key' => 'un_seul',
             'label' => 'Un seul',
             'roles_spec' => [
-                ['key' => 'cible', 'label' => 'Cible', 'maille' => User::class, 'group_type' => null, 'access' => 'rw', 'cardinality' => 'many'],
+                ['key' => 'cible', 'label' => 'Cible', 'maille' => User::class, 'group_type' => null, 'verbs' => PlanGrant::VERBS, 'cardinality' => 'many'],
             ],
             'path_pattern' => 'Echanges/{group.bare_name}',
             'nodes_spec' => [[
                 'path' => '_commun', 'label' => 'Commun', 'nature' => 'partagee',
-                'grants' => [['role' => 'cible', 'access' => 'rw']],
+                'grants' => [['role' => 'cible', 'verbs' => PlanGrant::VERBS]],
             ]],
         ]);
 
@@ -476,7 +477,7 @@ class TreePlanServiceTest extends TestCase
                 'label' => 'Groupe apparenté',
                 'maille' => UserGroup::class,
                 'group_type' => null,
-                'access' => 'rw',
+                'verbs' => PlanGrant::VERBS,
                 'cardinality' => 'one',
                 'resolution' => ['strategy' => 'pattern', 'pattern' => $pattern],
             ]],
@@ -485,7 +486,7 @@ class TreePlanServiceTest extends TestCase
                 'path' => '_commun',
                 'label' => 'Espace commun',
                 'nature' => 'partagee',
-                'grants' => [['role' => 'apparente', 'access' => 'rw']],
+                'grants' => [['role' => 'apparente', 'verbs' => PlanGrant::VERBS]],
             ]],
         ]);
     }
@@ -610,7 +611,7 @@ class TreePlanServiceTest extends TestCase
                 'label' => 'Le groupe matière×classe',
                 'maille' => UserGroup::class,
                 'group_type' => 'matiere_classe',
-                'access' => 'rw',
+                'verbs' => PlanGrant::VERBS,
                 'cardinality' => 'one',
                 'resolution' => ['strategy' => 'self'],
             ]],
@@ -619,7 +620,7 @@ class TreePlanServiceTest extends TestCase
                 'path' => '_travail',
                 'label' => 'Documents de travail',
                 'nature' => 'partagee',
-                'grants' => [['role' => 'groupe', 'access' => 'rw']],
+                'grants' => [['role' => 'groupe', 'verbs' => PlanGrant::VERBS]],
             ]],
         ]);
         $template->save();

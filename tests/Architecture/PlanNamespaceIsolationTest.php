@@ -714,7 +714,12 @@ class PlanNamespaceIsolationTest extends TestCase
             '/** Le plan de fichiers est neutre : ni mode, ni nom de groupe système. */',
             "return ['status' => 'conforme', 'nodes' => []];",
             'use App\\Services\\Filesystem\\Plan\\PlanSubject;',
-            '$grant->access === PlanGrant::ACCESS_RW',
+            // Story 62.4 — AIGUILLE mise à jour, pas règle changée. Elle citait
+            // l'ancienne constante d'accès binaire, qui n'existe plus ; son rôle
+            // (un contrôle NÉGATIF : le vocabulaire honnête d'un orchestrateur ne
+            // déclenche rien) est inchangé, et son équivalent en verbes le tient
+            // aussi bien.
+            '$grant->hasVerb(PlanGrant::VERB_SUPPRIMER)',
         ] as $honest) {
             self::assertSame([], $this->posixViolations($honest), 'faux positif sur : ' . $honest);
         }

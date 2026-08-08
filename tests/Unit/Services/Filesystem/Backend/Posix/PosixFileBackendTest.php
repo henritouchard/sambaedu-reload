@@ -138,7 +138,7 @@ class PosixFileBackendTest extends TestCase
         $classe = UserGroup::factory()->create(['type' => 'classe', 'name' => 'PosixDoute']);
 
         $report = $this->backend()->provision($this->plan('existe', [
-            new PlanGrant('@member', PlanSubject::group((int) $classe->id), PlanGrant::ACCESS_RW),
+            new PlanGrant('@member', PlanSubject::group((int) $classe->id), PlanGrant::VERBS),
         ]));
 
         self::assertSame(FileBackendOutcome::Echec, $report->for(PlanNode::ROOT_PATH)->outcome);
@@ -172,10 +172,76 @@ class PosixFileBackendTest extends TestCase
         ]);
 
         $report = $this->backend()->provision($this->plan('existe', [
-            new PlanGrant('@assignation', PlanSubject::user((int) $alice->id), PlanGrant::ACCESS_RO),
+            new PlanGrant('@assignation', PlanSubject::user((int) $alice->id), [PlanGrant::VERB_LIRE]),
         ]));
 
         self::assertSame(FileBackendOutcome::Conforme, $report->for(PlanNode::ROOT_PATH)->outcome);
+    }
+
+    /**
+     * Story 62.4 — L'IDEMPOTENCE TIENT AVEC LA RESTRICTION DE SUPPRESSION.
+     *
+     * C'est le piège nommé de la story : l'option qui masquait l'en-tête de la
+     * relecture masquait aussi les drapeaux du dossier. La restriction serait alors
+     * REPOSÉE à chaque passage — « déjà conforme » n'aurait plus jamais été
+     * atteignable sur un nœud « déposer sans effacer ».
+     */
+    #[Test]
+    public function a_node_already_restricted_as_wanted_is_conform_and_writes_nothing(): void
+    {
+        @mkdir($this->tempRoot . '/existe', 0o755, true);
+        $classe = UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
+
+        $onDisk = array_merge(
+            ['# file: existe', '# flags: --t'],
+            PosixAclCompiler::BASE_ACLS,
+            ['group:classe_3emea:rwx', 'default:group:classe_3emea:rwx'],
+        );
+
+        Process::fake([
+            'sudo getfacl *' => Process::result(output: implode("\n", $onDisk), exitCode: 0),
+            '*' => Process::result(output: '', exitCode: 0),
+        ]);
+
+        $report = $this->backend()->provision($this->plan('existe', [
+            new PlanGrant('classe', PlanSubject::group((int) $classe->id), [
+                PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER,
+            ]),
+        ]));
+
+        self::assertSame(FileBackendOutcome::Conforme, $report->for(PlanNode::ROOT_PATH)->outcome);
+        Process::assertNotRan(fn ($p): bool => str_contains($p->command, 'setfacl'));
+        Process::assertNotRan(fn ($p): bool => str_contains($p->command, 'chmod'));
+    }
+
+    /**
+     * Story 62.4 — et la réciproque : une restriction posée que le plan ne demande
+     * PLUS est RETIRÉE. Sans cela, un nœud qui repasse en écriture pleine garderait
+     * indéfiniment une restriction que plus personne n'a écrite.
+     */
+    #[Test]
+    public function a_restriction_the_plan_no_longer_wants_is_released(): void
+    {
+        @mkdir($this->tempRoot . '/existe', 0o755, true);
+        $classe = UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
+
+        $onDisk = array_merge(
+            ['# file: existe', '# flags: --t'],
+            PosixAclCompiler::BASE_ACLS,
+            ['group:classe_3emea:rwx', 'default:group:classe_3emea:rwx'],
+        );
+
+        Process::fake([
+            'sudo getfacl *' => Process::result(output: implode("\n", $onDisk), exitCode: 0),
+            '*' => Process::result(output: '', exitCode: 0),
+        ]);
+
+        $report = $this->backend()->provision($this->plan('existe', [
+            new PlanGrant('classe', PlanSubject::group((int) $classe->id), PlanGrant::VERBS),
+        ]));
+
+        self::assertSame(FileBackendOutcome::Applique, $report->for(PlanNode::ROOT_PATH)->outcome);
+        Process::assertRan(fn ($p): bool => str_contains($p->command, 'chmod -t'));
     }
 
     #[Test]
@@ -225,7 +291,7 @@ class PosixFileBackendTest extends TestCase
         $group = UserGroup::create(['name' => 'ProjetX', 'type' => 'projet']);
 
         $entry = $this->backend()->provision($this->plan('compose', [
-            new PlanGrant('@role', PlanSubject::group((int) $group->id, 'manager'), PlanGrant::ACCESS_RW),
+            new PlanGrant('@role', PlanSubject::group((int) $group->id, 'manager'), PlanGrant::VERBS),
         ]))->for(PlanNode::ROOT_PATH);
 
         self::assertSame(FileBackendOutcome::NonImplemente, $entry->outcome);
@@ -249,7 +315,7 @@ class PosixFileBackendTest extends TestCase
         $group = UserGroup::create(['name' => '3SB', 'type' => 'classe']);
 
         $entry = $this->backend()->provision($this->plan('compose', [
-            new PlanGrant('@assignation', PlanSubject::group((int) $group->id), PlanGrant::ACCESS_RW),
+            new PlanGrant('@assignation', PlanSubject::group((int) $group->id), PlanGrant::VERBS),
         ]))->for(PlanNode::ROOT_PATH);
 
         self::assertSame(FileBackendOutcome::Echec, $entry->outcome);
@@ -273,7 +339,7 @@ class PosixFileBackendTest extends TestCase
         $bad = User::factory()->create(['login' => 'in valid']);
 
         $entry = $this->backend()->provision($this->plan('compose', [
-            new PlanGrant('@assignation', PlanSubject::user((int) $bad->id), PlanGrant::ACCESS_RW),
+            new PlanGrant('@assignation', PlanSubject::user((int) $bad->id), PlanGrant::VERBS),
         ]))->for(PlanNode::ROOT_PATH);
 
         self::assertSame(FileBackendOutcome::Echec, $entry->outcome);
@@ -293,7 +359,7 @@ class PosixFileBackendTest extends TestCase
         $grants = [];
         for ($i = 0; $i <= PosixAclCompiler::NOMINATIVE_ENTRIES_CEILING; $i++) {
             $user = User::factory()->create(['login' => 'eleve' . $i]);
-            $grants[] = new PlanGrant('@assignation', PlanSubject::user((int) $user->id), PlanGrant::ACCESS_RO);
+            $grants[] = new PlanGrant('@assignation', PlanSubject::user((int) $user->id), [PlanGrant::VERB_LIRE]);
         }
 
         $entry = $this->backend()->provision($this->plan('echelle', $grants))->for(PlanNode::ROOT_PATH);
@@ -318,7 +384,7 @@ class PosixFileBackendTest extends TestCase
         for ($i = 0; $i < PosixAclCompiler::NOMINATIVE_ENTRIES_CEILING + 5; $i++) {
             $user = User::factory()->create(['login' => 'membre' . $i]);
             $nodes[] = new PlanNode('membre' . $i, 'Membre', PlanNodeNature::ParMembre, [
-                new PlanGrant('@nominatif', PlanSubject::user((int) $user->id), PlanGrant::ACCESS_RW),
+                new PlanGrant('@nominatif', PlanSubject::user((int) $user->id), PlanGrant::VERBS),
             ]);
         }
 

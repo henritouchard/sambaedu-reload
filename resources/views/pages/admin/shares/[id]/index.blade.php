@@ -16,7 +16,6 @@ use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\NetworkShareValidator;
 use App\Services\Filesystem\PlanStateComparator;
 use App\Services\Filesystem\Plan\FilePlan;
-use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 use Illuminate\Support\Facades\DB;
@@ -393,7 +392,9 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
                 $grants[] = [
                     'label' => $label,
-                    'access_label' => $grant->access === PlanGrant::ACCESS_RW ? 'Modifier' : 'Lire',
+                    // Story 62.4 — l'octroi porte des VERBES : on rend la liste
+                    // telle quelle, avec le même libellé que l'encart de dérive.
+                    'access_label' => PlanStateComparator::accessLabel($grant->verbs),
                     'suspended' => ! $grant->isActive(),
                 ];
             }

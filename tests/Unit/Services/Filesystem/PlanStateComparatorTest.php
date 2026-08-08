@@ -54,14 +54,14 @@ class PlanStateComparatorTest extends TestCase
         ]);
     }
 
-    private function active(string $access = 'rw'): PlanGrant
+    private function active(array $verbs = PlanGrant::VERBS): PlanGrant
     {
-        return new PlanGrant('prof', $this->subject(), $access, true, false);
+        return new PlanGrant('prof', $this->subject(), $verbs, true, false);
     }
 
-    private function suspended(string $access = 'rw'): PlanGrant
+    private function suspended(array $verbs = PlanGrant::VERBS): PlanGrant
     {
-        return new PlanGrant('prof', $this->subject(), $access, true, true);
+        return new PlanGrant('prof', $this->subject(), $verbs, true, true);
     }
 
     /** @param list<ObservedGrant> $observed */
@@ -77,40 +77,40 @@ class PlanStateComparatorTest extends TestCase
     #[Test]
     public function an_active_grant_observed_at_the_same_access_is_conforme(): void
     {
-        $plan = $this->plan([$this->active('rw')]);
+        $plan = $this->plan([$this->active()]);
 
-        self::assertSame([], $this->differencesFor($plan, [new ObservedGrant($this->subject(), 'rw')]));
+        self::assertSame([], $this->differencesFor($plan, [new ObservedGrant($this->subject(), PlanGrant::VERBS)]));
     }
 
     #[Test]
     public function an_active_grant_observed_lower_is_a_difference(): void
     {
-        $plan = $this->plan([$this->active('rw')]);
+        $plan = $this->plan([$this->active()]);
 
         self::assertSame(
-            [['subject' => $this->subject()->toArray(), 'expected' => 'rw', 'observed' => 'ro']],
-            $this->differencesFor($plan, [new ObservedGrant($this->subject(), 'ro')]),
+            [['subject' => $this->subject()->toArray(), 'expected' => PlanGrant::VERBS, 'observed' => [PlanGrant::VERB_LIRE]]],
+            $this->differencesFor($plan, [new ObservedGrant($this->subject(), [PlanGrant::VERB_LIRE])]),
         );
     }
 
     #[Test]
     public function an_active_grant_observed_at_none_is_a_difference(): void
     {
-        $plan = $this->plan([$this->active('rw')]);
+        $plan = $this->plan([$this->active()]);
 
         self::assertSame(
-            [['subject' => $this->subject()->toArray(), 'expected' => 'rw', 'observed' => ObservedGrant::ACCESS_NONE]],
-            $this->differencesFor($plan, [new ObservedGrant($this->subject(), ObservedGrant::ACCESS_NONE)]),
+            [['subject' => $this->subject()->toArray(), 'expected' => PlanGrant::VERBS, 'observed' => []]],
+            $this->differencesFor($plan, [new ObservedGrant($this->subject(), [])]),
         );
     }
 
     #[Test]
     public function an_active_grant_observed_nowhere_is_a_difference(): void
     {
-        $plan = $this->plan([$this->active('rw')]);
+        $plan = $this->plan([$this->active()]);
 
         self::assertSame(
-            [['subject' => $this->subject()->toArray(), 'expected' => 'rw', 'observed' => null]],
+            [['subject' => $this->subject()->toArray(), 'expected' => PlanGrant::VERBS, 'observed' => null]],
             $this->differencesFor($plan, []),
         );
     }
@@ -127,10 +127,10 @@ class PlanStateComparatorTest extends TestCase
     #[Test]
     public function a_suspended_grant_observed_at_none_is_conforme(): void
     {
-        $plan = $this->plan([$this->suspended('rw')]);
+        $plan = $this->plan([$this->suspended()]);
 
         self::assertSame([], $this->differencesFor($plan, [
-            new ObservedGrant($this->subject(), ObservedGrant::ACCESS_NONE),
+            new ObservedGrant($this->subject(), []),
         ]));
     }
 
@@ -141,21 +141,21 @@ class PlanStateComparatorTest extends TestCase
     #[Test]
     public function a_suspended_grant_still_observed_with_an_access_is_a_difference(): void
     {
-        $plan = $this->plan([$this->suspended('rw')]);
+        $plan = $this->plan([$this->suspended()]);
 
         self::assertSame(
-            [['subject' => $this->subject()->toArray(), 'expected' => ObservedGrant::ACCESS_NONE, 'observed' => 'rw']],
-            $this->differencesFor($plan, [new ObservedGrant($this->subject(), 'rw')]),
+            [['subject' => $this->subject()->toArray(), 'expected' => [], 'observed' => PlanGrant::VERBS]],
+            $this->differencesFor($plan, [new ObservedGrant($this->subject(), PlanGrant::VERBS)]),
         );
     }
 
     #[Test]
     public function a_suspended_grant_observed_nowhere_is_a_difference_that_can_reconverge(): void
     {
-        $plan = $this->plan([$this->suspended('rw')]);
+        $plan = $this->plan([$this->suspended()]);
 
         self::assertSame(
-            [['subject' => $this->subject()->toArray(), 'expected' => ObservedGrant::ACCESS_NONE, 'observed' => null]],
+            [['subject' => $this->subject()->toArray(), 'expected' => [], 'observed' => null]],
             $this->differencesFor($plan, []),
         );
     }
@@ -171,8 +171,8 @@ class PlanStateComparatorTest extends TestCase
         $intruder = PlanSubject::user(999);
 
         self::assertSame(
-            [['subject' => $intruder->toArray(), 'expected' => null, 'observed' => 'rw']],
-            $this->differencesFor($plan, [new ObservedGrant($intruder, 'rw')]),
+            [['subject' => $intruder->toArray(), 'expected' => null, 'observed' => PlanGrant::VERBS]],
+            $this->differencesFor($plan, [new ObservedGrant($intruder, PlanGrant::VERBS)]),
         );
     }
 
@@ -205,14 +205,14 @@ class PlanStateComparatorTest extends TestCase
 
         $plan = new FilePlan('@partage', 'proj', ['prof' => [$actif], 'eleve' => [$suspendu]], [
             new PlanNode(PlanNode::ROOT_PATH, 'Racine', PlanNodeNature::Activable, [
-                new PlanGrant('prof', $actif, 'rw', true, false),
-                new PlanGrant('eleve', $suspendu, 'ro', true, true),
+                new PlanGrant('prof', $actif, PlanGrant::VERBS, true, false),
+                new PlanGrant('eleve', $suspendu, [PlanGrant::VERB_LIRE], true, true),
             ], true, null, ['invite']),
         ]);
 
         $result = $this->comparator()->compare($plan, $this->inspection($plan, [
-            new ObservedGrant($actif, 'rw'),
-            new ObservedGrant($suspendu, ObservedGrant::ACCESS_NONE),
+            new ObservedGrant($actif, PlanGrant::VERBS),
+            new ObservedGrant($suspendu, []),
         ]));
 
         self::assertSame([], $result['nodes'][0]['differences']);
@@ -229,7 +229,7 @@ class PlanStateComparatorTest extends TestCase
         $plan = new FilePlan('@arbre', 'proj', [], [
             new PlanNode(PlanNode::ROOT_PATH, 'Racine', PlanNodeNature::ContenuLibre),
             new PlanNode('a', 'A', PlanNodeNature::ContenuLibre),
-            new PlanNode('b', 'B', PlanNodeNature::ContenuLibre, [new PlanGrant('r', $this->subject(), 'rw')]),
+            new PlanNode('b', 'B', PlanNodeNature::ContenuLibre, [new PlanGrant('r', $this->subject(), PlanGrant::VERBS)]),
         ]);
 
         $withFailure = InspectionReport::covering(FileBackendName::Posix, $plan, [
@@ -292,9 +292,12 @@ class PlanStateComparatorTest extends TestCase
     #[Test]
     public function the_display_labels_distinguish_none_from_nothing(): void
     {
-        self::assertSame('Lire', PlanStateComparator::accessLabel('ro'));
-        self::assertSame('Modifier', PlanStateComparator::accessLabel('rw'));
-        self::assertSame('Aucun', PlanStateComparator::accessLabel(ObservedGrant::ACCESS_NONE));
+        // Story 62.4 — le libellé est celui d'une LISTE : un verbe, plusieurs verbes,
+        // la liste vide (l'entrée présente qui ne donne rien) et l'absence pure.
+        self::assertSame('Lire', PlanStateComparator::accessLabel([PlanGrant::VERB_LIRE]));
+        self::assertSame('Lire + Éditer + Créer + Supprimer', PlanStateComparator::accessLabel(PlanGrant::VERBS));
+        self::assertSame('Lire + Créer', PlanStateComparator::accessLabel([PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER]));
+        self::assertSame('Aucun', PlanStateComparator::accessLabel([]));
         self::assertSame('—', PlanStateComparator::accessLabel(null));
     }
 }

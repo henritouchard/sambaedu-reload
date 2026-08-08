@@ -308,7 +308,7 @@ class PosixSubjectProjectorTest extends TestCase
                 [new \App\Services\Filesystem\Plan\PlanGrant(
                     '@role',
                     PlanSubject::group((int) $classe->id, 'member'),
-                    'rw',
+                    \App\Services\Filesystem\Plan\PlanGrant::VERBS,
                 )],
             ),
         ]);

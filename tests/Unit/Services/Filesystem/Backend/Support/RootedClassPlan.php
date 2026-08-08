@@ -61,8 +61,8 @@ trait RootedClassPlan
     private function rootNodeFor(FilePlan $plan): PlanNode
     {
         $grants = [
-            new PlanGrant('equipe', $plan->roles['equipe'][0], PlanGrant::ACCESS_RW),
-            new PlanGrant('classe', $plan->roles['classe'][0], PlanGrant::ACCESS_RO),
+            new PlanGrant('equipe', $plan->roles['equipe'][0], PlanGrant::VERBS),
+            new PlanGrant('classe', $plan->roles['classe'][0], [PlanGrant::VERB_LIRE]),
         ];
 
         $granted = [];
