@@ -3224,3 +3224,301 @@ du comportement livré produisent un faux rapport de régression. Ce qui reste
 inchangé : tout 61.1, le rattachement explicite d'identité, la garde d'unicité de
 `users.nextcloud_user_id`, le fail-closed sur la configuration et l'état « non
 vérifié » persistant.)*
+
+---
+
+## Story 62.6 — L'éditeur d'arborescence par type de groupe
+
+**Ce que cette story change, en une phrase :** l'arborescence de fichiers d'un type
+de groupe se **saisit à l'écran** (`Paramètres › Groupes & droits › Arborescences`)
+au lieu de vivre dans un fichier de seed, et l'administrateur voit **l'arborescence
+résolue avant d'enregistrer**.
+
+**Ce qu'elle NE change pas, et c'est la première chose à établir :** aucune donnée,
+aucun droit, aucun fichier. L'écran ne matérialise rien, ne réconcilie rien,
+n'enfile aucun traitement. Ouvrir l'éditeur et demander un aperçu sont des gestes
+strictement **en lecture** — le premier point à vérifier ci-dessous.
+
+**Ce qu'elle rend possible pour la première fois — et pourquoi ça compte ici.**
+Jusqu'à cette story, aucune recette ne portait de combinaison de verbes
+« différenciée » : les droits livrés étaient maximalement permissifs (contrepartie
+assumée de la migration 62.4). L'éditeur rend ces combinaisons **saisissables**.
+Deux vérifications terrain reportées deviennent donc jouables — et deux prérequis
+d'exploitation deviennent bloquants.
+
+### Prérequis
+
+- [ ] **62.6-P1** — instance avec au moins **un groupe** du type édité (sans groupe,
+      l'aperçu est indisponible et le dit ; l'enregistrement, lui, reste possible).
+- [ ] **62.6-P2** — accès `root` au serveur de fichiers pour `getfacl`.
+- [ ] **62.6-P3 — BLOQUANT avant d'appliquer une combinaison différenciée.** La règle
+      d'élévation doit autoriser `find` (réf. **62.4-3b**). Sans elle, une recette
+      « lire + éditer » ou « lire + créer » échoue **bruyamment** à l'exécution en
+      nommant sa cause — elle ne pose jamais un droit approximatif. Vérifier :
+      ```bash
+      grep -rn "find" /etc/sudoers.d/ | head
+      ```
+- [ ] **62.6-P4** — pour la partie Nextcloud (62.6-6), une instance connectée et un
+      dossier d'équipe servi par le backend `nextcloud` (réf. section 61.3).
+
+### 62.6-1 — LA VÉRIFICATION PIVOT : ouvrir et prévisualiser n'écrivent RIEN
+
+C'est la contrepartie terrain du test automatisé « ouvrir ne modifie rien ». Elle
+porte sur les **deux** côtés : la base et le disque.
+
+```bash
+# AVANT d'ouvrir l'écran, sur le serveur :
+find /var/sambaedu/ClassesSE5 -maxdepth 3 -type d -exec getfacl -p {} \; > ~/acl-avant-62-6.txt
+psql -At -c "select md5(string_agg(key||label||coalesce(path_pattern,'')||roles_spec::text||coalesce(nodes_spec::text,'')||coalesce(attached_group_type,'')||coalesce(root_anchor,''),'|' order by id)) from directory_templates" sambaedu > ~/recettes-avant-62-6.txt
+```
+
+Puis, à l'écran : ouvrir `Paramètres › Groupes & droits › Arborescences`, cliquer
+« Modifier l'arborescence » sur **Classe**, parcourir tous les dossiers, changer de
+groupe d'essai, demander l'aperçu **deux fois** — et **fermer par « Annuler »**.
+
+```bash
+find /var/sambaedu/ClassesSE5 -maxdepth 3 -type d -exec getfacl -p {} \; > ~/acl-apres-62-6.txt
+diff ~/acl-avant-62-6.txt ~/acl-apres-62-6.txt
+psql -At -c "select md5(string_agg(key||label||coalesce(path_pattern,'')||roles_spec::text||coalesce(nodes_spec::text,'')||coalesce(attached_group_type,'')||coalesce(root_anchor,''),'|' order by id)) from directory_templates" sambaedu > ~/recettes-apres-62-6.txt
+diff ~/recettes-avant-62-6.txt ~/recettes-apres-62-6.txt
+```
+
+- [ ] **62.6-1a — les DEUX diffs sont VIDES.** Un diff de recettes non vide signifie
+      que l'écran a **normalisé** le contenu stocké à l'ouverture : c'est un défaut
+      bloquant, pas un détail cosmétique — une recette réécrite « à l'identique »
+      peut avoir perdu une clé facultative en chemin.
+- [ ] **62.6-1b — aucune écriture disque.** Le diff `getfacl` est vide, et aucun
+      dossier neuf n'apparaît sous la racine des arbres de classe.
+- [ ] **62.6-1c — aucun traitement enfilé.** Le journal ne montre aucune
+      réconciliation déclenchée par l'ouverture ou l'aperçu.
+
+### 62.6-2 — L'APERÇU dit la vérité sur ce qui n'est pas écrit
+
+Éditeur de **Classe** ouvert, groupe d'essai choisi, bouton « Prévisualiser ».
+
+- [ ] **62.6-2a** — chaque ligne de l'aperçu porte l'issue **« Aucune exécution
+      (aperçu) »** et le détail « Aucune écriture : aperçu du plan. ». Aucune ligne
+      ne dit « conforme », « appliqué » ni « absent » : un aperçu n'a rien vérifié.
+- [ ] **62.6-2b — la CLÔTURE est visible.** Sur le dossier des enseignants, le détail
+      ajoute « Rôles sans octroi ici (clôture reçue du plan) : … » en nommant
+      l'audience qui n'y a rien reçu. C'est la preuve, à l'écran, que la clôture
+      traverse la ligne de contrat intacte.
+- [ ] **62.6-2c — les chemins sont RÉSOLUS et RELATIFS.** Le nom du groupe d'essai
+      apparaît à la place du jeton, et le dossier personnel porte un **vrai
+      identifiant d'élève**. Aucun chemin absolu nulle part : un aperçu ne vise aucun
+      endroit réel.
+- [ ] **62.6-2d — les dossiers de membres sont REPLIÉS.** Sur une classe nombreuse,
+      un seul exemplaire est montré, suivi de « … et N autres dossiers de membres ».
+      Vérifier que **N + 1 = l'effectif** de la classe : l'aperçu replie, il ne
+      tronque pas.
+- [ ] **62.6-2e — un état invalide montre le REFUS, pas un aperçu partiel.** Déclarer
+      un dossier `a/b/c` sans déclarer `a/b`, puis prévisualiser : le message métier
+      nomme le chemin fautif **et** l'ancêtre manquant, et aucune ligne de plan ne
+      s'affiche.
+
+### 62.6-3 — CE QUE LE PARTAGE NE SAIT PAS RENDRE : grisé, expliqué, jamais corrigé
+
+L'écran interroge le backend d'exécution ; il ne redit pas ses règles. Les trois
+comportements ci-dessous se constatent **sans rien enregistrer**.
+
+- [ ] **62.6-3a — « Supprimer » sans « Créer » est GRISÉ.** Sur un dossier, cocher
+      « Lire » pour une audience puis tenter « Supprimer » : la case est
+      **désactivée**, marquée « non exprimable », et son info-bulle explique que le
+      même levier porte les deux verbes. Vérifier qu'aucun mot de mécanisme
+      n'apparaît (pas de `rwx`, pas de nom de commande, pas de « sticky »).
+- [ ] **62.6-3b — « Créer » sans « Supprimer » reste SAISISSABLE et porte sa note.**
+      Sur un dossier de dépôt dont **aucune** autre audience ne porte la suppression :
+      cocher « Lire + Créer ». La ligne affiche « Rendu approché : le déposant pourra
+      encore retirer ses propres fichiers. »
+- [ ] **62.6-3c — sur un dossier MIXTE, la note change.** Sur un dossier où une autre
+      audience porte déjà « Supprimer », la même combinaison affiche la note **du
+      nœud** : la restriction ne peut pas s'y poser, et l'octroi sera rendu à ce que
+      le partage sait exprimer. C'est la subtilité que 62.4 a nommée ; l'écran la dit
+      au lieu de la laisser découvrir.
+- [ ] **62.6-3d — RIEN N'EST DÉCOCHÉ D'OFFICE.** Si une recette stockée porte déjà
+      une combinaison inexprimable (possible : le vocabulaire du plan est neutre, et
+      un autre plan de fichiers la rendra), elle s'ouvre **cochée**, marquée « non
+      exprimable ». Modifier autre chose (le libellé) et enregistrer : rouvrir et
+      **vérifier que la combinaison est toujours là**. Une amputation silencieuse
+      serait le pire défaut possible de cet écran.
+
+### 62.6-4 — LA PREMIÈRE TRAVERSÉE RÉELLE (protocole 62.5-3, désormais jouable)
+
+C'est ici que la story débloque la vérification reportée par la 62.5. **Situation à
+construire depuis l'éditeur**, sur un type de test (pas sur `classe` en production) :
+
+1. créer l'arborescence d'un type nu, motif `Essai_{group.bare_name}` ;
+2. ajouter deux audiences : « tout le groupe », et « les membres portant <rôle
+   d'encadrement> » ;
+3. déclarer trois dossiers : `.` (racine, « Lire » pour tout le groupe),
+   `_travail` (« Lire » pour tout le groupe **et rien** pour l'encadrement),
+   `_travail/prive` (les quatre verbes pour l'**encadrement seul**) ;
+4. **avant d'enregistrer**, demander l'aperçu.
+
+- [ ] **62.6-4a — l'aperçu ANNONCE le passage.** Un encart d'information dit que
+      `_travail/prive` sera rendu **atteignable**, que le passage par les dossiers
+      parents est dérivé automatiquement, et qu'il n'accorde ni lecture ni dépôt sur
+      eux. L'info-bulle du mot « couloir » est présente et lisible.
+- [ ] **62.6-4b** — enregistrer, créer un groupe de ce type, laisser la
+      matérialisation se faire, puis dérouler **62.5-3a → 62.5-3f** à l'identique
+      (couloir posé et lui seul, non descendu, `ls` refusé / `cd` autorisé, retrait
+      effectif, suspension non percée).
+- [ ] **62.6-4c — LE POINT À OBSERVER EN VRAI (réf. 62.5-3d) : le même essai depuis
+      SMB.** Monter le partage depuis un poste Windows avec un compte de
+      l'encadrement : `_travail` doit être inaccessible en listage, et le chemin
+      complet `\\serveur\<partage>\_travail\prive` doit s'ouvrir en tapant l'adresse.
+      **Noter le comportement observé, quel qu'il soit** — le mappage NT de
+      « traverser sans lire » n'est pas garanti iso-POSIX, et c'est la seule inconnue
+      que seule une vraie machine lève.
+
+### 62.6-5 — LA RESTRICTION DE SUPPRESSION À TRAVERS SMB (réf. 62.4-2, désormais jouable)
+
+Depuis l'éditeur, poser sur un dossier de test un octroi « Lire + Créer » pour une
+audience d'élèves, **sans** aucune autre audience portant « Supprimer ». Enregistrer,
+matérialiser, puis :
+
+- [ ] **62.6-5a** — depuis une session Windows de l'**élève B**, la suppression d'un
+      fichier déposé par l'**élève A** est-elle refusée ? Noter le message exact.
+- [ ] **62.6-5b** — l'élève **A** peut-il supprimer SON fichier ? (Attendu : oui —
+      c'est précisément la dégradation que l'écran a déclarée en 62.6-3b.)
+- [ ] **62.6-5c** — depuis une session **membre du groupe d'administration** : la
+      suppression est-elle possible ? **Noter la réponse** : elle décide si le libellé
+      de l'écran doit un jour avertir que la restriction s'applique aussi aux
+      administrateurs.
+- [ ] **62.6-5d** — vérifier au journal qu'une commande de sélection par type d'objet
+      a bien été émise (c'est ce qui exige `find` en liste blanche, 62.6-P3), et
+      qu'elle n'a **pas** échoué.
+
+### 62.6-6 — L'ARBORESCENCE NEXTCLOUD : où l'écran doit dire « non exprimable »
+
+> ⚠️ **CETTE SECTION N'EST PAS ENCORE JOUABLE EN ENTIER, et il faut le savoir avant
+> de s'y mettre.** Aucun backend Nextcloud n'implémente le contrat `FileBackend` à ce
+> jour : **aucune arborescence n'est servie par Nextcloud**, donc la situation à
+> construire ci-dessous ne peut pas l'être. Les cases 62.6-6a à 62.6-6d sont écrites
+> pour le jour où ce sera le cas ; **62.6-6e**, lui, se joue déjà (il porte sur le
+> cloisonnement mesuré en 61.3, pas sur l'éditeur).
+>
+> **Et l'écran n'y répondrait pas encore correctement.** Le grisé des verbes interroge
+> aujourd'hui la déclaration du serveur de fichiers historique **par son nom de
+> classe** — le contrat `FileBackend` n'expose rien qui dise ce qu'un backend sait
+> rendre en verbes (il n'a que `quota()`, seul point réellement routé par le registre,
+> d'où le fait que 62.6-6a fonctionnera, lui, sans changement d'écran). Étendre le
+> contrat était hors du périmètre de 62.6 (zéro diff sous `app/`). Trois méthodes
+> devront alors passer par le registre : `verbAnalysis()`, `verbIsExpressible()` et
+> `nodeCarriesRestriction()`. **Tant que ce n'est pas fait, 62.6-6d ÉCHOUERA** — et
+> c'est un défaut connu et daté, pas une surprise à découvrir sur le terrain.
+
+**Pourquoi cette section existe.** La matrice de ce que l'on sait rendre est **par
+backend**, jamais globale. Mesuré contre une instance réelle (61.3), Nextcloud rend
+**nativement** les quatre verbes dans n'importe quelle combinaison : le grisé de
+62.6-3a y serait un mensonge. En revanche, il a une limite que le serveur de
+fichiers historique n'a pas — **le plafond porte sur le dossier d'équipe ENTIER**.
+
+Situation à construire : une arborescence dont le partage est servi par le backend
+`nextcloud` (section 61.3), avec un **plafond posé sur un SOUS-dossier**, pas sur la
+racine.
+
+- [ ] **62.6-6a — l'aperçu montre la déclaration du backend, mot pour mot.** À côté
+      du plafond du sous-dossier, l'écran affiche le libellé et le détail que le
+      backend produit. Sur un partage servi par le serveur de fichiers historique, il
+      dit « Non piloté par SE5 pour l'instant » (une **dette datée**, le mécanisme
+      existe côté système) ; sur un partage servi par Nextcloud, il doit dire
+      **« Non supporté par ce backend »** (une **limite permanente du modèle**) en
+      expliquant que le plafond d'un dossier d'équipe porte sur le dossier entier.
+      **Les deux ne se disent pas pareil, et c'est le point** : l'un s'attend à
+      changer, l'autre non.
+- [ ] **62.6-6b — le plafond de la RACINE, lui, ne porte aucune limite.** Sur le même
+      partage Nextcloud, déplacer le plafond sur le dossier racine : la mention
+      « Non supporté » disparaît.
+- [ ] **62.6-6c — vérification côté instance.** Après matérialisation, dans
+      l'administration Nextcloud : le quota du dossier d'équipe correspond au plafond
+      de la **racine**, et aucun quota n'a été inventé sur un sous-dossier.
+- [ ] **62.6-6d — les quatre verbes sont rendus tels quels.** Sur un dossier servi par
+      Nextcloud, poser « Lire + Supprimer » (la combinaison que le serveur de fichiers
+      historique refuse) et vérifier, dans les permissions avancées du dossier
+      d'équipe, que la valeur relue correspond exactement à ce qui a été demandé.
+      **Attendu AUJOURD'HUI : cette case ÉCHOUE** — l'écran grisera « Supprimer », parce
+      que le grisé interroge encore la déclaration du serveur de fichiers historique
+      (voir l'avertissement en tête de section). Elle reste écrite parce qu'elle est le
+      critère d'acceptation du jour où les trois méthodes passeront par le registre : la
+      règle du grisé doit venir du backend concerné, pas d'une classe câblée en dur.
+- [ ] **62.6-6e — le cloisonnement tient.** Depuis un compte élève, le dossier privé
+      des enseignants est **refusé** et **disparaît du listage** (comportement
+      mesuré en 61.3). L'aperçu l'avait annoncé par la phrase de clôture (62.6-2b).
+
+### 62.6-7 — Les refus parlent, et n'écrivent rien
+
+Chacun se provoque depuis l'éditeur, et se vérifie par **l'absence de modification**
+en base (rejouer le calcul d'empreinte de 62.6-1).
+
+- [ ] **62.6-7a** — un dossier `a/b/c` sans `a/b` : refus nommant le chemin fautif et
+      l'ancêtre manquant.
+- [ ] **62.6-7b** — un dossier sous un dossier « à contenu libre » : refus disant que
+      le contenu de cet ancêtre n'est pas gouverné par le plan.
+- [ ] **62.6-7c** — un dossier par membre dont aucun ancêtre n'ouvre l'accès à une
+      audience contenant ces membres : refus nommant l'ancêtre **et** le rôle.
+- [ ] **62.6-7d** — un second arbre sur un type qui en porte déjà un : refus nommant
+      la recette déjà accrochée.
+- [ ] **62.6-7e** — retirer une audience qui porte encore des droits : refus **avec le
+      décompte**, et l'audience reste.
+- [ ] **62.6-7f** — un plafond non numérique : refus disant qu'un plafond est un
+      nombre d'octets strictement positif.
+- [ ] **62.6-7g** — après chaque refus, l'empreinte des recettes est **inchangée**.
+
+### 62.6-8 — Ce que l'enregistrement arme, et ce qu'il n'arme pas
+
+- [ ] **62.6-8a** — l'écran annonce, au moment d'enregistrer, que les groupes de ce
+      type créés **ensuite** porteront cette arborescence, et que les groupes
+      existants ne sont pas touchés.
+- [ ] **62.6-8b** — enregistrer, puis vérifier qu'**aucun** partage n'a été créé et
+      qu'aucune réconciliation n'a été enfilée. La reprise du parc existant reste la
+      commande dédiée :
+      ```bash
+      php artisan shares:materialize-class-trees
+      ```
+- [ ] **62.6-8c** — créer un groupe du type **après** l'enregistrement : son
+      arborescence naît avec lui, conforme à ce que l'aperçu montrait.
+
+### 62.6-9 — Le vocabulaire de l'écran reste celui du métier
+
+- [ ] **62.6-9a** — parcourir l'onglet complet (matrice grisée et aperçu compris) :
+      aucun mode de permission, aucun nom de commande, aucun nom de groupe système,
+      aucun chemin absolu, aucun mot de mécanisme. Tout est dit en dossiers, en
+      audiences et en verbes.
+- [ ] **62.6-9b** — un rôle du catalogue absent de la liste des audiences est
+      **expliqué** : l'écran dit que ce type ne le déclare pas, et renvoie vers
+      l'onglet « Types de groupes ». Il ne le fait pas disparaître en silence.
+- [ ] **62.6-9c** — sur une instance **sans profil de rôles installé**, toutes les
+      audiences du catalogue sont proposées avec leurs libellés génériques, et
+      l'écran reste juste. (Le profil s'installe par
+      `php artisan college:seed:role-x-type` — il n'est jamais supposé.)
+
+### Checklist rapide — Story 62.6
+
+- [ ] 62.6-P1→P4 : groupe d'essai, accès root, **`find` en liste blanche**, instance NC
+- [ ] **62.6-1a : empreinte des recettes + `getfacl` avant/après → diffs VIDES** (pivot)
+- [ ] 62.6-2a→2e : aperçu honnête, clôture visible, chemins résolus, membres repliés
+- [ ] 62.6-3a→3d : grisé expliqué, dégradations déclarées, **rien décoché d'office**
+- [ ] 62.6-4a→4c (débloque 62.5-3) : couloir annoncé puis vérifié, **SMB NOTÉ**
+- [ ] 62.6-5a→5d (débloque 62.4-2) : restriction réelle × SMB, **réponse admin NOTÉE**
+- [ ] 62.6-6a→6e : **`non_exprimable` sur un plafond de sous-dossier Nextcloud**, les
+      quatre verbes rendus tels quels, cloisonnement tenu
+- [ ] 62.6-7a→7g : les refus parlent, et n'écrivent rien
+- [ ] 62.6-8a→8c : rien n'est matérialisé, les groupes futurs portent l'arbre
+- [ ] 62.6-9a→9c : vocabulaire métier, types fermés expliqués, base nue juste
+- [ ] Suite automatisée verte sur l'hôte
+
+---
+
+*Mise à jour : 2026-08-09 (Story 62.6 — l'éditeur d'arborescence par type de groupe :
+troisième onglet de `Paramètres › Groupes & droits`, saisie des dossiers (chemin avec
+substitutions PROPOSÉES, libellé, nature, plafond), matrice audiences × quatre verbes
+dont l'inexprimable est **grisé ET expliqué** et jamais décoché d'office, ajout
+d'audience sur le vocabulaire réellement attribuable du type, et **aperçu du plan
+résolu avant enregistrement** par le backend d'aperçu obtenu du registre — clôture
+visible, dossiers de membres repliés, note de passage vers les dossiers profonds. La
+règle du grisé et la déclaration des plafonds viennent du **backend**, jamais d'une
+constante d'écran : c'est ce qui permettra à un partage Nextcloud d'afficher son
+propre `non_exprimable` (plafond de sous-dossier) sans que l'écran change. **Zéro
+diff moteur** : aucune classe PHP nouvelle, `app/` et `database/` intouchés ;
+l'enregistrement n'exécute rien et ne matérialise rien.)*
