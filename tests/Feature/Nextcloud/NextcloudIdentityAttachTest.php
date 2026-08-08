@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Nextcloud;
 
-use App\Enums\NextcloudInstanceMode;
 use App\Models\User;
 use App\Services\FilePolicyService;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
-use App\Services\Nextcloud\NextcloudDelegateConfig;
 use App\Services\Nextcloud\NextcloudFailure;
 use App\Services\Nextcloud\NextcloudIdentityLinker;
 use App\Services\ServiceCredentials;
@@ -37,19 +35,14 @@ class NextcloudIdentityAttachTest extends TestCase
     {
         parent::setUp();
 
-        $credentials = app(ServiceCredentials::class);
-        $credentials->put(NextcloudConnectionConfig::CREDENTIAL_NAME, 'AppPasswordAdmin');
-        $credentials->put(NextcloudDelegateConfig::CREDENTIAL_NAME, 'AppPasswordPorteur');
+        app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, 'AppPasswordAdmin');
 
-        $this->configure(NextcloudInstanceMode::Admin);
+        $this->configure();
     }
 
-    private function configure(NextcloudInstanceMode $mode): void
+    private function configure(): void
     {
-        FilePolicyService::setGlobal(
-            true, true, true, 'https://cloud.etab.fr', 'admin', 'se4fs', true,
-            $mode, 'se5porteur',
-        );
+        FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
     }
 
     private function user(string $login, ?string $nextcloudId = null): User
@@ -76,7 +69,7 @@ class NextcloudIdentityAttachTest extends TestCase
     }
 
     // =====================================================================
-    // Mode administré — la sonde directe
+    // La sonde directe auprès de l'instance
     // =====================================================================
 
     #[Test]
@@ -137,52 +130,6 @@ class NextcloudIdentityAttachTest extends TestCase
         app(NextcloudIdentityLinker::class)->link('p.durand', 'p.durand');
 
         self::assertSame('P.Durand', User::query()->where('login', 'p.durand')->value('nextcloud_user_id'));
-    }
-
-    // =====================================================================
-    // Mode délégué — l'autocomplétion à correspondance exacte
-    // =====================================================================
-
-    #[Test]
-    public function the_delegated_mode_verifies_by_exact_autocomplete_match(): void
-    {
-        $this->configure(NextcloudInstanceMode::Delegue);
-        $this->user('p.durand');
-
-        Http::fake(['*/core/autocomplete/get*' => Http::response(self::ocs(200, [
-            ['id' => 'p.durand', 'source' => 'users'],
-        ]), 200)]);
-
-        $result = app(NextcloudIdentityLinker::class)->link('p.durand', 'p.durand');
-
-        self::assertTrue($result->successful);
-        self::assertSame('p.durand', User::query()->where('login', 'p.durand')->value('nextcloud_user_id'));
-
-        // …et l'appel a bien porté l'auth du PORTEUR, jamais celle de l'admin.
-        Http::assertSent(static fn (\Illuminate\Http\Client\Request $r): bool => $r->hasHeader(
-            'Authorization',
-            'Basic ' . base64_encode('se5porteur:AppPasswordPorteur'),
-        ));
-        Http::assertNotSent(static fn (\Illuminate\Http\Client\Request $r): bool => $r->hasHeader(
-            'Authorization',
-            'Basic ' . base64_encode('admin:AppPasswordAdmin'),
-        ));
-    }
-
-    #[Test]
-    public function the_delegated_mode_refuses_a_non_exact_candidate(): void
-    {
-        $this->configure(NextcloudInstanceMode::Delegue);
-        $this->user('p.durand');
-
-        Http::fake(['*/core/autocomplete/get*' => Http::response(self::ocs(200, [
-            ['id' => 'p.durand-martin', 'source' => 'users'],
-        ]), 200)]);
-
-        $result = app(NextcloudIdentityLinker::class)->link('p.durand', 'p.durand');
-
-        self::assertTrue($result->isFailure());
-        self::assertNull(User::query()->where('login', 'p.durand')->value('nextcloud_user_id'));
     }
 
     // =====================================================================

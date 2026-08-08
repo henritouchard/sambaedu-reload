@@ -50,9 +50,9 @@ class NextcloudNamespaceTest extends TestCase
         'app/Jobs/ProvisionNextcloudJob.php',
         'app/Exceptions/Nextcloud/NextcloudConfigurationException.php',
         // Story 61.2 — le code nouveau qui vit hors du namespace obéit aux mêmes
-        // règles : c'est par l'enum de mode et la commande de rattachement qu'un
-        // « juste un petit partage pour dépanner » arriverait.
-        'app/Enums/NextcloudInstanceMode.php',
+        // règles : c'est par la commande de rattachement qu'un « juste un petit
+        // partage pour dépanner » arriverait. (L'enum de mode figurait ici jusqu'au
+        // recadrage du 2026-08-08 ; il n'existe plus.)
         'app/Console/Commands/NextcloudIdentityCommand.php',
     ];
 
@@ -61,22 +61,19 @@ class NextcloudNamespaceTest extends TestCase
         // 1. Aucun droit écrit côté Nextcloud.
         //
         // ---------------------------------------------------------------------
-        // **Story 61.2 — LA RÈGLE VISE LA ROUTE, PAS LE NOM DE L'APPLICATION.**
-        // Elle portait sur `files_sharing` nu ; elle porte désormais sur
-        // `apps/files_sharing`, c'est-à-dire sur le PRÉFIXE DE ROUTE par lequel
-        // passe tout partage OCS — création, lecture, suppression. Ce qu'elle
-        // interdisait, elle l'interdit toujours : l'aiguille de vérification
-        // ci-dessous est inchangée et reste détectée.
+        // **LA RÈGLE S'EST RESSERRÉE (recadrage du 2026-08-08).** Elle portait sur
+        // `files_sharing` nu ; la story 61.2 l'avait ÉLARGIE à `apps/files_sharing`
+        // — c'est-à-dire au seul préfixe de route — pour laisser la sonde du mode
+        // délégué lire `files_sharing.api_enabled` dans l'inventaire des capacités
+        // de l'instance. Le mode délégué était la seule raison d'envisager ces
+        // routes ; il a disparu, et la garde revient donc à sa forme LARGE : plus
+        // aucun code de ce dépôt n'a de motif de prononcer `files_sharing`, sous
+        // quelque forme que ce soit.
         //
-        // Ce qu'elle autorise désormais : lire `files_sharing.api_enabled` dans
-        // l'INVENTAIRE DES CAPACITÉS de l'instance (`cloud/capabilities`), ce que
-        // la sonde du mode délégué doit faire pour savoir si le partage est
-        // seulement activé. Un nom d'application dans un inventaire lu n'est pas
-        // une route d'écriture, et refuser de le lire aurait obligé à masquer ce
-        // nom derrière une concaténation — c'est-à-dire à contourner la garde au
-        // lieu de la préciser. Un contrôle négatif épingle cette lecture.
+        // Une garde qu'on resserre parce que le besoin qui l'avait desserrée a
+        // disparu est le sens de marche attendu.
         // ---------------------------------------------------------------------
-        'partage OCS' => '#apps/files_sharing#i',
+        'partage OCS' => '#files_sharing#i',
         'groupe Nextcloud' => '#cloud/groups#i',
 
         // 2. Aucune exécution : 100 % HTTP + SQL.
@@ -147,11 +144,12 @@ class NextcloudNamespaceTest extends TestCase
 
         // Méta-test de PÉRIMÈTRE : client, configuration, fabrique, définition de
         // montage, provisionnement, provisionneur d'utilisateurs, rapport, sonde,
-        // résultat, échec, action de montage — plus, depuis 61.2, la configuration
-        // et le client du compte porteur, sa sonde, la garde de sélection de mode
-        // et le rattachement d'identité.
+        // résultat, échec, action de montage — plus, depuis 61.2, le rattachement
+        // d'identité et le vérificateur de connexion. (La configuration, le client
+        // et la sonde du compte porteur ont été retirés le 2026-08-08 : le seuil
+        // baisse de 14 à 13, il ne se relâche pas.)
         self::assertGreaterThanOrEqual(
-            14,
+            13,
             $inspected,
             'la garde doit inspecter le namespace RÉEL de la story',
         );
@@ -207,9 +205,6 @@ class NextcloudNamespaceTest extends TestCase
             "'index.php/apps/files_external/globalstorages'",
             "'password::sessioncredentials'",
             '/** Samba tranche seul : SE5 n\'écrit aucun droit ici. */',
-            // Story 61.2 — la LECTURE de la capacité de partage dans l'inventaire
-            // de l'instance : autorisée, et distincte d'une route de partage.
-            "\$capabilities['files_sharing']['api_enabled'] ?? false",
             "'remote.php/dav/files/' . rawurlencode(\$user)",
         ] as $honest) {
             self::assertSame([], $this->violations($honest), 'faux positif sur : ' . $honest);
@@ -250,48 +245,12 @@ class NextcloudNamespaceTest extends TestCase
     }
 
     /**
-     * **LA SURFACE DU CLIENT DÉLÉGUÉ EST FERMÉE, ET ELLE EST EN LECTURE SEULE**
-     * (story 61.2, AC8).
-     *
-     * Pourquoi cette liste-ci n'a pas fait bouger la précédente : le client
-     * d'administration n'a gagné AUCUNE méthode en 61.2. Le mode délégué parle à
-     * l'instance avec d'autres identifiants, donc avec un autre client — le
-     * croisement des deux credentials est ainsi impossible par typage, et non par
-     * discipline.
-     *
-     * Les deux méthodes sont des LECTURES : la sonde du mode (l'espace du porteur
-     * répond, le partage est activé) et la vérification d'une identité avant
-     * rattachement. Les écritures du délégué — créer l'arborescence, émettre un
-     * octroi — appartiennent au backend de 61.3 : les poser ici produirait du code
-     * mort, et une méthode qui existe finit par être appelée.
-     */
-    #[Test]
-    public function the_delegate_client_surface_is_closed_and_read_only(): void
-    {
-        $methods = array_map(
-            static fn (\ReflectionMethod $m): string => $m->getName(),
-            (new \ReflectionClass(\App\Services\Nextcloud\NextcloudDelegateClient::class))
-                ->getMethods(\ReflectionMethod::IS_PUBLIC),
-        );
-
-        sort($methods);
-
-        self::assertSame([
-            '__construct',
-            'findUserByExactId',
-            'probe',
-        ], $methods, 'le client délégué ne fait que LIRE : aucune création d\'arborescence, aucun octroi');
-    }
-
-    /**
-     * **AUCUNE ÉCRITURE DÉLÉGUÉE DANS LE CODE DE PRODUCTION** (story 61.2).
+     * **AUCUNE CRÉATION D'ARBORESCENCE DISTANTE DANS LE CODE DE PRODUCTION.**
      *
      * Le scan de vocabulaire attrape déjà les routes de partage. Celui-ci ferme
-     * l'autre moitié : le verbe WebDAV qui crée un dossier. Le mode délégué crée
-     * son arborescence par `MKCOL` — en 61.3, pas ici. Sa mesure contre l'instance
-     * réelle (AC9) se fait en HTTP NU côté test, jamais par une méthode de
-     * production : c'est la seule façon de mesurer sans que le dépôt gagne une
-     * capacité qu'aucune story n'a encore autorisée.
+     * l'autre moitié : le verbe WebDAV qui crée un dossier. Créer l'arborescence
+     * sur l'instance appartient au backend de 61.3 — la poser ici produirait du
+     * code mort, et une méthode qui existe finit par être appelée.
      */
     #[Test]
     public function no_production_code_creates_a_remote_collection(): void

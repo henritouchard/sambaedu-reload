@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Nextcloud;
 
-use App\Enums\NextcloudInstanceMode;
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -106,9 +105,7 @@ final class NextcloudUserProvisioner
     {
         try {
             $client = $this->factory->make();
-        } catch (NextcloudConfigurationException $e) {
-            $this->traceDelegatedSkip('nextcloud.user.create.delegated_mode', $login, $e);
-
+        } catch (NextcloudConfigurationException) {
             return;
         }
 
@@ -251,9 +248,7 @@ final class NextcloudUserProvisioner
 
         try {
             $client = $this->factory->make();
-        } catch (NextcloudConfigurationException $e) {
-            $this->traceDelegatedSkip('nextcloud.user.password.delegated_mode', $login, $e);
-
+        } catch (NextcloudConfigurationException) {
             return;
         }
 
@@ -441,52 +436,6 @@ final class NextcloudUserProvisioner
         ));
 
         return null;
-    }
-
-    /**
-     * Story 61.2 — LE MODE DÉLÉGUÉ COUPE CES CROCHETS, ET LE DIT EN `debug`.
-     *
-     * La fabrique rend `null` pour trois raisons : capacité éteinte, configuration
-     * incomplète, ou **mode délégué**. Les deux premières sont déjà couvertes par
-     * le silence de 61.1 (une instance qui n'utilise pas Nextcloud ne doit pas voir
-     * ses créations d'utilisateurs bavarder). La troisième mérite une trace, mais
-     * une trace SEULEMENT.
-     *
-     * **Pourquoi `debug` et pas `warning`.** Capacité active + mode délégué est un
-     * état CONFIGURÉ et LÉGITIME : la gestion des comptes est une opération
-     * d'administration, et le mode déclaré ne la porte pas. Un avertissement par
-     * création d'utilisateur — ou par élève lors d'une réinitialisation en masse à
-     * la rentrée — serait exactement la pollution que le finding #3 de la revue
-     * 61.1 a déjà fait corriger. Le refus CRIE là où l'administrateur agit
-     * (commande en code 2 nommant le mode, bouton désactivé avec son motif), pas
-     * dans le flux de vie des utilisateurs.
-     *
-     * ---------------------------------------------------------------------------
-     * **CORRECTION DE REVUE (61.2 #5) — LE MODE EST PORTÉ PAR LE REFUS, PLUS RELU.**
-     * Cette trace relisait `files.policy` — un `SELECT` de plus, sans cache, **par
-     * compte sauté**, alors que la configuration venait tout juste d'être lue par
-     * {@see NextcloudConnectionConfig::current()} quelques lignes plus haut. Sur un
-     * import de rentrée, c'était un doublement des requêtes pour produire une ligne
-     * de `debug`.
-     *
-     * Le refus lui-même transporte désormais le mode déclaré
-     * ({@see NextcloudConfigurationException::$declaredMode}) : la trace ne relit
-     * plus rien du tout, et le tri reste EXACT — seul un refus de MODE porte un mode
-     * (la capacité éteinte et la configuration incomplète n'en portent pas, et ne
-     * tracent donc rien, comme avant).
-     * ---------------------------------------------------------------------------
-     */
-    private function traceDelegatedSkip(string $event, string $login, NextcloudConfigurationException $refusal): void
-    {
-        if ($refusal->declaredMode !== NextcloudInstanceMode::Delegue) {
-            return;
-        }
-
-        Log::debug($event, [
-            'login' => $login,
-            'mode' => NextcloudInstanceMode::Delegue->value,
-            'reason' => 'la gestion des comptes est une opération d\'administration ; le mode délégué ne la porte pas',
-        ]);
     }
 
     /**

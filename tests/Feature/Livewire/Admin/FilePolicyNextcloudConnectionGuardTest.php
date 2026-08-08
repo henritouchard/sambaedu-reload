@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
-use App\Enums\NextcloudInstanceMode;
 use App\Jobs\ProvisionNextcloudJob;
 use App\Models\User;
 use App\Services\FilePolicyService;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
-use App\Services\Nextcloud\NextcloudDelegateConfig;
 use App\Services\Nextcloud\NextcloudProvisioningService;
 use App\Services\ServiceCredentials;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -23,24 +21,32 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.2 — AC2 / AC6 / AC10 : l'écran de déclaration du mode.
+ * Story 61.2 — AC2 / AC6 / AC10 : l'écran de configuration de la connexion.
+ *
+ * ---------------------------------------------------------------------------
+ * **RECADRAGE DU 2026-08-08.** Ce fichier s'appelait `FilePolicyNextcloudModeTest`
+ * et éprouvait le choix entre deux positions (instance administrée / compte porteur
+ * délégué). Le mode délégué a été supprimé : un compte ordinaire ne peut créer ni
+ * dossier d'équipe, ni groupe, ni partage de groupe — donc pas de clôture. Ce qui
+ * reste est ce qui avait de la valeur, et qui se formule maintenant d'une seule
+ * façon : **une configuration que le compte ne peut pas honorer est refusée avec son
+ * motif, jamais acceptée puis dégradée en silence**.
+ * ---------------------------------------------------------------------------
  *
  * Deux tests pivots :
- *  - {@see self::a_mode_the_account_cannot_honour_is_refused_and_nothing_is_persisted()} :
- *    fail-closed — une position refusée n'est pas enregistrée du tout ;
+ *  - {@see self::a_configuration_the_account_cannot_honour_is_refused_and_nothing_is_persisted()} :
+ *    fail-closed — une configuration refusée n'est pas enregistrée du tout ;
  *  - {@see self::saving_an_unrelated_setting_never_talks_to_the_instance()} : la
- *    sonde-garde ne s'exécute QUE sur le mode, sans quoi une instance en panne
- *    verrouillerait l'édition de réglages qui ne la concernent pas.
+ *    sonde-garde ne s'exécute QUE sur ce qui définit la connexion, sans quoi une
+ *    instance en panne verrouillerait l'édition de réglages qui ne la concernent pas.
  */
-class FilePolicyNextcloudModeTest extends TestCase
+class FilePolicyNextcloudConnectionGuardTest extends TestCase
 {
     use RefreshDatabase;
 
     private const COMPONENT = 'pages::admin.settings.files._partials.personnels-partages-tab';
 
     private const ADMIN_SECRET = 'AppPasswordAdminTresSecret';
-
-    private const DELEGATE_SECRET = 'AppPasswordPorteurTresSecret';
 
     protected function setUp(): void
     {
@@ -52,39 +58,17 @@ class FilePolicyNextcloudModeTest extends TestCase
         Gate::before(fn ($user, string $ability) => $ability === 'server.admin' ? true : null);
     }
 
-    private function ready(NextcloudInstanceMode $mode = NextcloudInstanceMode::Admin, string $delegateUser = 'se5porteur'): void
+    private function ready(): void
     {
-        $credentials = app(ServiceCredentials::class);
-        $credentials->put(NextcloudConnectionConfig::CREDENTIAL_NAME, self::ADMIN_SECRET);
-        $credentials->put(NextcloudDelegateConfig::CREDENTIAL_NAME, self::DELEGATE_SECRET);
+        app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, self::ADMIN_SECRET);
 
-        FilePolicyService::setGlobal(
-            true, true, true, 'https://cloud.etab.fr', 'admin', 'se4fs', true,
-            $mode, $delegateUser,
-        );
+        FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
     }
 
     /** @param array<string, mixed> $data */
     private static function ocs(int $code, array $data = []): array
     {
         return ['ocs' => ['meta' => ['status' => 'ok', 'statuscode' => $code, 'message' => 'OK'], 'data' => $data]];
-    }
-
-    private static function capabilities(bool $sharingEnabled): array
-    {
-        return self::ocs(100, [
-            'version' => ['string' => '34.0.2'],
-            'capabilities' => ['files_sharing' => ['api_enabled' => $sharingEnabled]],
-        ]);
-    }
-
-    /** Doubles d'une instance déléguée SAINE (codes mesurés : 207 puis 200). */
-    private static function healthyDelegate(): array
-    {
-        return [
-            '*/remote.php/dav/files/se5porteur/' => Http::response('<d:multistatus/>', 207),
-            '*/ocs/v1.php/cloud/capabilities*' => Http::response(self::capabilities(true), 200),
-        ];
     }
 
     /** Doubles d'une instance ADMINISTRÉE saine (sonde 61.1 : capacités puis montages globaux). */
@@ -106,112 +90,61 @@ class FilePolicyNextcloudModeTest extends TestCase
     }
 
     // =====================================================================
-    // AC2 — la sélection fail-closed
+    // AC2 — la configuration fail-closed
     // =====================================================================
 
+    /**
+     * **LE TEST PIVOT.** Le compte saisi n'est pas administrateur de l'instance :
+     * la configuration est refusée, RIEN n'est persisté, et le motif nomme le
+     * privilège — jamais « enregistré, on verra bien ».
+     */
     #[Test]
-    public function a_sound_delegated_account_is_accepted_and_persisted(): void
+    public function a_configuration_the_account_cannot_honour_is_refused_and_nothing_is_persisted(): void
     {
         $this->ready();
-        Http::fake(self::healthyDelegate());
-
-        Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Delegue->value)
-            ->assertSet('nextcloudMode', 'delegue');
-
-        self::assertSame(NextcloudInstanceMode::Delegue, FilePolicyService::nextcloudMode());
-    }
-
-    #[Test]
-    public function a_mode_the_account_cannot_honour_is_refused_and_nothing_is_persisted(): void
-    {
-        $this->ready();
-
-        // Identifiants porteurs refusés par l'instance.
-        Http::fake(['*/remote.php/dav/files/se5porteur/' => Http::response('', 401)]);
+        Http::fake(self::nonAdmin());
 
         $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Delegue->value);
+            ->set('nextcloudAdminUser', 'compte-ordinaire');
 
-        // Le mode courant reste en vigueur, à l'écran comme en base.
-        $component->assertSet('nextcloudMode', 'admin');
-        self::assertSame(NextcloudInstanceMode::Admin, FilePolicyService::nextcloudMode());
+        // L'identifiant précédent reste en vigueur, à l'écran comme en base.
+        $component->assertSet('nextcloudAdminUser', 'admin');
+        self::assertSame('admin', FilePolicyService::globalConfig()['nextcloud_admin_user']);
 
         // …et le motif EXACT est affiché, sans le secret.
         $message = (string) $component->get('probeResult')['message'];
-        self::assertStringContainsString('compte porteur', $message);
-        self::assertStringNotContainsString(self::DELEGATE_SECRET, $message);
+        self::assertStringContainsString('administrateur', $message);
+        self::assertStringNotContainsString(self::ADMIN_SECRET, $message);
         self::assertStringNotContainsString(self::ADMIN_SECRET, $component->html());
     }
 
-    /** Choisir « délégué » sans identifiants porteurs : refusé en NOMMANT le manque. */
-    #[Test]
-    public function selecting_the_delegated_mode_without_credentials_names_what_is_missing(): void
-    {
-        app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, self::ADMIN_SECRET);
-        FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
-        Http::fake();
-
-        $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Delegue->value);
-
-        $component->assertSet('nextcloudMode', 'admin');
-        self::assertStringContainsString(
-            'l\'identifiant du compte porteur',
-            (string) $component->get('probeResult')['message'],
-        );
-
-        // Aucun appel : une configuration incomplète se refuse sans réseau.
-        Http::assertNothingSent();
-    }
-
-    /** Repasser en « administré » avec un compte NON admin est refusé en nommant le privilège. */
-    #[Test]
-    public function selecting_the_administered_mode_with_a_non_admin_account_is_refused(): void
-    {
-        $this->ready(NextcloudInstanceMode::Delegue);
-
-        Http::fake([
-            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            '*/globalstorages*' => Http::response('nope', 403),
-        ]);
-
-        $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Admin->value);
-
-        $component->assertSet('nextcloudMode', 'delegue');
-        self::assertSame(NextcloudInstanceMode::Delegue, FilePolicyService::nextcloudMode());
-        self::assertStringContainsString('administrateur', (string) $component->get('probeResult')['message']);
-    }
-
     /**
-     * **Une instance injoignable refuse aussi la sélection** : on ne déclare pas
-     * une position qu'on n'a pas pu vérifier (l'AC2 range « injoignable » parmi les
-     * motifs de refus).
+     * **Une instance injoignable refuse aussi la configuration** : on ne déclare pas
+     * une cible qu'on n'a pas pu vérifier.
      */
     #[Test]
-    public function an_unreachable_instance_refuses_the_mode_change(): void
+    public function an_unreachable_instance_refuses_the_configuration_change(): void
     {
         $this->ready();
         Http::fake(['*' => static fn (): never => throw new ConnectionException('cURL error 7')]);
 
         Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Delegue->value)
-            ->assertSet('nextcloudMode', 'admin');
+            ->set('nextcloudServerUrl', 'https://nouvel-hebergeur.fr')
+            ->assertSet('nextcloudServerUrl', 'https://cloud.etab.fr');
 
-        self::assertSame(NextcloudInstanceMode::Admin, FilePolicyService::nextcloudMode());
+        self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
 
     // =====================================================================
-    // AC2 — la sonde-garde ne s'exécute QUE sur le mode
+    // AC2 — la sonde-garde ne s'exécute QUE sur ce qui définit la connexion
     // =====================================================================
 
     /**
      * **Retouché par la correction de revue #1** : `nextcloudVerifyTls` a QUITTÉ ce
      * test. Le drapeau TLS n'est pas un réglage orthogonal — il décide de ce qui est
      * joignable, donc il fait partie de ce qui définit la connexion et il déclenche
-     * désormais la sonde-garde ({@see self::changing_only_the_tls_flag_re_probes()}).
-     * Restent ici les réglages qui ne concernent VRAIMENT pas l'instance : les deux
+     * la sonde-garde ({@see self::changing_only_the_tls_flag_re_probes()}). Restent
+     * ici les réglages qui ne concernent VRAIMENT pas l'instance : les deux
      * capacités de montage et l'hôte SMB.
      */
     #[Test]
@@ -234,21 +167,19 @@ class FilePolicyNextcloudModeTest extends TestCase
     }
 
     // =====================================================================
-    // CORRECTION DE REVUE #1 — LE CHANGEMENT D'URL (ET DE TLS) RE-DÉCLENCHE
-    // LA SONDE-GARDE
+    // CORRECTION DE REVUE #1 — LE CHANGEMENT D'URL (ET DE TLS) DÉCLENCHE LA
+    // SONDE-GARDE
     //
-    // Le défaut fermé ici : `identityChanged` ne comparait que l'identifiant du
+    // Le défaut fermé ici : la comparaison ne portait que sur l'identifiant du
     // compte. Changer la SEULE URL — nouvel hébergeur, ou faute de frappe —
     // traversait la garde sans le moindre appel HTTP, et `setGlobal()` persistait
-    // une cible que le compte n'avait JAMAIS été vérifié capable d'honorer dans
-    // ce mode. `nextcloudServerUrl` n'apparaissait dans aucune assertion de ce
-    // fichier : c'est ce trou de couverture qui a laissé passer le défaut.
+    // une cible que le compte n'avait JAMAIS été vérifié capable d'administrer.
     // =====================================================================
 
     #[Test]
-    public function changing_only_the_url_re_probes_the_declared_mode(): void
+    public function changing_only_the_url_re_probes(): void
     {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
         Http::fake(self::healthyAdmin());
 
         Livewire::test(self::COMPONENT)
@@ -265,9 +196,9 @@ class FilePolicyNextcloudModeTest extends TestCase
     }
 
     #[Test]
-    public function a_url_the_declared_mode_cannot_honour_is_refused_and_the_url_is_restored(): void
+    public function a_url_the_account_cannot_honour_is_refused_and_the_url_is_restored(): void
     {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
 
         // Sur la nouvelle cible, le compte n'est pas administrateur.
         Http::fake(self::nonAdmin());
@@ -277,7 +208,6 @@ class FilePolicyNextcloudModeTest extends TestCase
 
         // Rien n'est persisté…
         self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
-        self::assertSame(NextcloudInstanceMode::Admin, FilePolicyService::nextcloudMode());
 
         // …et l'écran a RESTAURÉ l'URL : il ne doit pas afficher une configuration
         // que la base ne porte pas.
@@ -288,7 +218,7 @@ class FilePolicyNextcloudModeTest extends TestCase
     #[Test]
     public function changing_only_the_tls_flag_re_probes(): void
     {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
         Http::fake(self::healthyAdmin());
 
         Livewire::test(self::COMPONENT)->set('nextcloudVerifyTls', false);
@@ -300,7 +230,7 @@ class FilePolicyNextcloudModeTest extends TestCase
     #[Test]
     public function a_refused_tls_change_is_restored_and_nothing_is_persisted(): void
     {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
         Http::fake(self::nonAdmin());
 
         $component = Livewire::test(self::COMPONENT)->set('nextcloudVerifyTls', false);
@@ -311,11 +241,11 @@ class FilePolicyNextcloudModeTest extends TestCase
 
     /**
      * …mais la garde de SONDABILITÉ tient toujours : une configuration en cours de
-     * constitution (aucun secret pour ce mode) se saisit sans être refusée à chaque
+     * constitution (aucun secret enregistré) se saisit sans être refusée à chaque
      * frappe — sinon on ne pourrait jamais la constituer.
      */
     #[Test]
-    public function typing_a_url_on_an_unconfigured_mode_does_not_probe(): void
+    public function typing_a_url_on_an_unconfigured_connection_does_not_probe(): void
     {
         FilePolicyService::setGlobal(true, true, true, '', 'admin', 'se4fs', true);
         Http::fake();
@@ -326,50 +256,26 @@ class FilePolicyNextcloudModeTest extends TestCase
         self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
 
-    /** Re-sélectionner le même mode ne rejoue pas la sonde. */
+    /** Changer l'identifiant admin re-vérifie : la cible doit rester administrable. */
     #[Test]
-    public function re_selecting_the_same_mode_probes_nothing(): void
+    public function changing_the_admin_identifier_re_verifies(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Http::fake();
+        $this->ready();
+        Http::fake(self::healthyAdmin());
 
-        Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Delegue->value)
-            ->assertSet('nextcloudMode', 'delegue');
+        Livewire::test(self::COMPONENT)->set('nextcloudAdminUser', 'autre-admin');
 
-        Http::assertNothingSent();
-        self::assertSame(NextcloudInstanceMode::Delegue, FilePolicyService::nextcloudMode());
+        Http::assertSentCount(2);
+        self::assertSame('autre-admin', FilePolicyService::globalConfig()['nextcloud_admin_user']);
     }
 
     /**
-     * Changer l'identifiant du mode SÉLECTIONNÉ re-vérifie — la position déclarée
-     * doit rester honorable.
+     * …mais une configuration EN COURS DE CONSTITUTION (aucun secret enregistré) ne
+     * se fait pas refuser à chaque frappe : sans cela, on ne pourrait jamais la
+     * constituer.
      */
     #[Test]
-    public function changing_the_selected_mode_identifier_re_verifies(): void
-    {
-        $this->ready(NextcloudInstanceMode::Delegue);
-
-        Http::fake(['*/remote.php/dav/files/autre-porteur/' => Http::response('', 404)]);
-
-        $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudDelegueUser', 'autre-porteur');
-
-        $component->assertSet('nextcloudDelegueUser', 'se5porteur');
-        self::assertSame('se5porteur', FilePolicyService::globalConfig()['nextcloud_delegue_user']);
-        self::assertStringContainsString(
-            'aucun espace de fichiers',
-            (string) $component->get('probeResult')['message'],
-        );
-    }
-
-    /**
-     * …mais une configuration EN COURS DE CONSTITUTION (aucun secret enregistré
-     * pour ce mode) ne se fait pas refuser à chaque frappe : sans cela, on ne
-     * pourrait jamais constituer la configuration.
-     */
-    #[Test]
-    public function typing_an_identifier_on_an_unconfigured_mode_does_not_probe(): void
+    public function typing_an_identifier_on_an_unconfigured_connection_does_not_probe(): void
     {
         FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr');
         Http::fake();
@@ -380,103 +286,63 @@ class FilePolicyNextcloudModeTest extends TestCase
         self::assertSame('admin', FilePolicyService::globalConfig()['nextcloud_admin_user']);
     }
 
-    /** Capacité éteinte : aucune instance à qui imposer une position, aucun appel. */
+    /** Capacité éteinte : aucune instance à configurer, aucun appel. */
     #[Test]
-    public function a_disabled_capability_never_probes_on_a_mode_change(): void
+    public function a_disabled_capability_never_probes(): void
     {
-        FilePolicyService::setGlobal(false, false, false, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
+        app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, self::ADMIN_SECRET);
+        FilePolicyService::setGlobal(true, true, false, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
         Http::fake();
 
         Livewire::test(self::COMPONENT)
-            ->set('nextcloudMode', NextcloudInstanceMode::Delegue->value)
-            ->assertSet('nextcloudMode', 'delegue');
+            ->set('nextcloudAdminUser', 'compte-ordinaire')
+            ->assertSet('nextcloudAdminUser', 'compte-ordinaire');
 
         Http::assertNothingSent();
     }
 
     // =====================================================================
-    // AC4 / AC10 — les champs porteurs
+    // Le mode délégué N'EXISTE PLUS : l'écran n'en porte aucune trace
     // =====================================================================
 
+    /**
+     * Garde de non-régression du recadrage du 2026-08-08. Un écran qui offrirait de
+     * nouveau un choix d'administration proposerait une position que le produit ne
+     * sait pas tenir.
+     */
     #[Test]
-    public function the_delegate_fields_are_absent_from_the_dom_in_administered_mode(): void
+    public function the_screen_offers_no_administration_mode_selection(): void
     {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
 
         $html = Livewire::test(self::COMPONENT)->html();
 
+        self::assertStringNotContainsString('nextcloud-mode', $html);
         self::assertStringNotContainsString('nextcloud-delegue-user', $html);
         self::assertStringNotContainsString('nextcloud-delegue-password', $html);
-    }
 
-    #[Test]
-    public function the_delegate_fields_appear_in_delegated_mode(): void
-    {
-        $this->ready(NextcloudInstanceMode::Delegue);
-
-        $html = Livewire::test(self::COMPONENT)->html();
-
-        self::assertStringContainsString('nextcloud-delegue-user', $html);
-        self::assertStringContainsString('nextcloud-delegue-password', $html);
-    }
-
-    #[Test]
-    public function the_delegate_secret_is_stored_encrypted_and_never_rendered(): void
-    {
-        $this->ready(NextcloudInstanceMode::Delegue);
-
-        $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudDeleguePassword', 'NouveauSecretPorteur');
-
-        $component->assertSet('nextcloudDeleguePassword', '');
-        $component->assertSet('hasDelegueSecret', true);
-        self::assertStringNotContainsString('NouveauSecretPorteur', $component->html());
-
-        self::assertSame(
-            'NouveauSecretPorteur',
-            app(ServiceCredentials::class)->password(NextcloudDelegateConfig::CREDENTIAL_NAME),
-        );
-
-        $stored = (string) \Illuminate\Support\Facades\DB::table('service_credentials')
-            ->where('name', NextcloudDelegateConfig::CREDENTIAL_NAME)
-            ->value('secret');
-        self::assertStringNotContainsString('NouveauSecretPorteur', $stored);
-    }
-
-    #[Test]
-    public function forgetting_the_delegate_secret_leaves_the_admin_one_intact(): void
-    {
-        $this->ready(NextcloudInstanceMode::Delegue);
-
-        Livewire::test(self::COMPONENT)
-            ->call('forgetDeleguePassword')
-            ->assertSet('hasDelegueSecret', false);
-
-        $credentials = app(ServiceCredentials::class);
-        self::assertNull($credentials->password(NextcloudDelegateConfig::CREDENTIAL_NAME));
-        self::assertSame(self::ADMIN_SECRET, $credentials->password(NextcloudConnectionConfig::CREDENTIAL_NAME));
+        // …et l'exigence est DITE là où le compte se saisit.
+        self::assertStringContainsString('administrateur', $html);
     }
 
     // =====================================================================
-    // CORRECTION DE REVUE #3 — REMPLACER UN SECRET NE LAISSE PLUS UN MODE
-    // DÉCLARÉ « VÉRIFIÉ » QU'IL N'EST PLUS
+    // CORRECTION DE REVUE #3 — REMPLACER UN SECRET NE LAISSE PLUS UNE
+    // CONFIGURATION « VÉRIFIÉE » QU'ELLE N'EST PLUS
     //
     // La variante retenue est NON BLOQUANTE : l'enregistrement du secret n'est
     // jamais annulé par le résultat de la sonde (refuser de stocker un app
     // password que l'instance ne confirme pas rendrait une instance
     // momentanément injoignable impossible à reconfigurer — un deadlock réel).
-    // Ce qui change, c'est que l'écran ne peut plus laisser croire qu'un mode
-    // est vérifié quand il ne l'est pas.
     // =====================================================================
 
     #[Test]
     public function a_secret_confirmed_by_the_probe_is_stored_and_shown_as_verified(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Http::fake(self::healthyDelegate());
+        $this->ready();
+        Http::fake(self::healthyAdmin());
 
         $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudDeleguePassword', 'NouveauSecretPorteur');
+            ->set('nextcloudAdminPassword', 'NouveauSecretAdmin');
 
         $diagnostic = $component->get('probeResult');
         self::assertIsArray($diagnostic);
@@ -484,40 +350,39 @@ class FilePolicyNextcloudModeTest extends TestCase
         self::assertArrayNotHasKey('unverified_since_secret_change', $diagnostic);
 
         self::assertSame(
-            'NouveauSecretPorteur',
-            app(ServiceCredentials::class)->password(NextcloudDelegateConfig::CREDENTIAL_NAME),
+            'NouveauSecretAdmin',
+            app(ServiceCredentials::class)->password(NextcloudConnectionConfig::CREDENTIAL_NAME),
         );
     }
 
     /**
-     * **L'ASSERTION QUI COMPTE** : le secret est enregistré QUAND MÊME. Le
-     * deadlock (« instance injoignable ⇒ impossible d'enregistrer le secret qui la
-     * rendrait joignable ») est bien évité — et l'écran affiche l'état honnête.
+     * **L'ASSERTION QUI COMPTE** : le secret est enregistré QUAND MÊME. Le deadlock
+     * (« instance injoignable ⇒ impossible d'enregistrer le secret qui la rendrait
+     * joignable ») est bien évité — et l'écran affiche l'état honnête.
      */
     #[Test]
-    public function a_secret_the_instance_rejects_is_still_stored_and_the_mode_is_shown_unverified(): void
+    public function a_secret_the_instance_rejects_is_still_stored_and_the_connection_is_shown_unverified(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Http::fake(['*/remote.php/dav/files/se5porteur/' => Http::response('', 401)]);
+        $this->ready();
+        Http::fake(self::nonAdmin());
 
         $component = Livewire::test(self::COMPONENT)
-            ->set('nextcloudDeleguePassword', 'SecretQueLInstanceRefuse');
+            ->set('nextcloudAdminPassword', 'SecretQueLInstanceRefuse');
 
         // 1. Le secret EST enregistré (pas de deadlock).
-        $component->assertSet('hasDelegueSecret', true);
+        $component->assertSet('hasAdminSecret', true);
         self::assertSame(
             'SecretQueLInstanceRefuse',
-            app(ServiceCredentials::class)->password(NextcloudDelegateConfig::CREDENTIAL_NAME),
+            app(ServiceCredentials::class)->password(NextcloudConnectionConfig::CREDENTIAL_NAME),
         );
 
-        // 2. …et le mode déclaré est dit NON VÉRIFIÉ, avec son motif.
+        // 2. …et la connexion est dite NON VÉRIFIÉE, avec son motif.
         $diagnostic = $component->get('probeResult');
         self::assertTrue($diagnostic['unverified_since_secret_change']);
-        self::assertSame(NextcloudInstanceMode::Delegue->label(), $diagnostic['unverified_mode']);
-        self::assertStringContainsString('compte porteur', (string) $diagnostic['message']);
+        self::assertStringContainsString('administrateur', (string) $diagnostic['message']);
 
         $html = $component->html();
-        self::assertStringContainsString('non vérifié', $html);
+        self::assertStringContainsString('non vérifiée', $html);
         self::assertStringNotContainsString('SecretQueLInstanceRefuse', $html);
     }
 
@@ -525,23 +390,23 @@ class FilePolicyNextcloudModeTest extends TestCase
     #[Test]
     public function the_unverified_state_survives_a_page_reload(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Http::fake(['*/remote.php/dav/files/se5porteur/' => Http::response('', 401)]);
+        $this->ready();
+        Http::fake(self::nonAdmin());
 
-        Livewire::test(self::COMPONENT)->set('nextcloudDeleguePassword', 'SecretQueLInstanceRefuse');
+        Livewire::test(self::COMPONENT)->set('nextcloudAdminPassword', 'SecretQueLInstanceRefuse');
 
         // Un montage tout neuf — c'est ce que fait un F5.
         $reloaded = Livewire::test(self::COMPONENT);
 
         self::assertTrue($reloaded->get('probeResult')['unverified_since_secret_change']);
-        self::assertStringContainsString('non vérifié', $reloaded->html());
+        self::assertStringContainsString('non vérifiée', $reloaded->html());
     }
 
     /** Une instance injoignable ne bloque pas non plus : le secret passe, l'état est honnête. */
     #[Test]
     public function an_unreachable_instance_never_blocks_storing_a_secret(): void
     {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
         Http::fake(['*' => static fn (): never => throw new ConnectionException('cURL error 7')]);
 
         $component = Livewire::test(self::COMPONENT)
@@ -570,92 +435,34 @@ class FilePolicyNextcloudModeTest extends TestCase
     }
 
     // =====================================================================
-    // AC10 — « Tester la connexion » sonde LE MODE SÉLECTIONNÉ
+    // AC10 — « Tester la connexion »
     // =====================================================================
 
     #[Test]
-    public function testing_the_connection_probes_the_selected_mode(): void
+    public function testing_the_connection_probes_the_configured_account(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Http::fake(self::healthyDelegate());
+        $this->ready();
+        Http::fake(self::healthyAdmin());
 
         $component = Livewire::test(self::COMPONENT)->call('testConnection');
 
         self::assertTrue($component->get('probeResult')['ok']);
-        self::assertSame('delegue', $component->get('probeResult')['mode']);
-
-        // La sonde du mode délégué ne lit PAS les montages globaux : c'est une
-        // opération d'administration, et ce mode ne l'a pas.
-        Http::assertNotSent(static fn (\Illuminate\Http\Client\Request $r): bool => str_contains(
-            $r->url(),
-            'globalstorages',
-        ));
+        self::assertTrue($component->get('probeResult')['administrator']);
     }
 
     // =====================================================================
-    // AC5 / AC6 — l'écran DIT ce que le mode coupe et ce qu'il dégrade
+    // AC5 — le provisionnement
     // =====================================================================
 
     #[Test]
-    public function the_provision_button_is_disabled_with_its_reason_in_delegated_mode(): void
+    public function the_provision_button_queues_the_job(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Queue::fake();
-
-        $html = Livewire::test(self::COMPONENT)->html();
-
-        self::assertStringContainsString('Provisionnement indisponible dans ce mode', $html);
-        self::assertStringContainsString('opérations', $html);
-
-        // Le chemin est fermé pour de bon : un attribut `disabled` n'est pas une
-        // autorisation.
-        Livewire::test(self::COMPONENT)->call('provision');
-        Queue::assertNothingPushed();
-    }
-
-    #[Test]
-    public function the_provision_button_still_queues_in_administered_mode(): void
-    {
-        $this->ready(NextcloudInstanceMode::Admin);
+        $this->ready();
         Queue::fake();
 
         Livewire::test(self::COMPONENT)->call('provision');
 
         Queue::assertPushed(ProvisionNextcloudJob::class);
-    }
-
-    #[Test]
-    public function the_five_degradations_are_displayed_at_the_moment_of_the_choice(): void
-    {
-        $this->ready(NextcloudInstanceMode::Delegue);
-
-        $html = Livewire::test(self::COMPONENT)->html();
-
-        foreach (NextcloudInstanceMode::Delegue->degradations() as $degradation) {
-            // Le rendu échappe les apostrophes typographiques : on compare sur un
-            // fragment stable de chaque dégradation.
-            $fragment = mb_substr($degradation, 0, 30);
-            self::assertStringContainsString(e($fragment), $html, 'dégradation absente de l\'écran : ' . $fragment);
-        }
-
-        // …et l'honnêteté temporelle, dans les deux modes.
-        self::assertStringContainsString(e(mb_substr(NextcloudInstanceMode::temporalHonesty(), 0, 40)), $html);
-        self::assertStringContainsString(e(mb_substr(NextcloudInstanceMode::noImplicitRemoval(), 0, 40)), $html);
-    }
-
-    #[Test]
-    public function the_administered_mode_states_its_promise_and_the_temporal_honesty(): void
-    {
-        $this->ready(NextcloudInstanceMode::Admin);
-
-        $html = Livewire::test(self::COMPONENT)->html();
-
-        self::assertStringContainsString(
-            e(mb_substr(NextcloudInstanceMode::Admin->promises()[0], 0, 30)),
-            $html,
-        );
-        self::assertStringContainsString(e(mb_substr(NextcloudInstanceMode::temporalHonesty(), 0, 40)), $html);
-        self::assertStringNotContainsString('Provisionnement indisponible dans ce mode', $html);
     }
 
     // =====================================================================
@@ -760,9 +567,6 @@ class FilePolicyNextcloudModeTest extends TestCase
         // L'apostrophe et le guillemet sont ÉCHAPPÉS EN JAVASCRIPT, jamais rendus
         // nus dans l'expression : ni `openLinkModal('o'brien…`, ni un `"` qui
         // refermerait l'attribut.
-        // On isole l'EXPRESSION que Livewire évaluera : c'est là, et nulle part
-        // ailleurs, que l'échappement compte. (L'instantané Livewire porte aussi le
-        // rapport, mais c'est une valeur JSON d'attribut, jamais du code évalué.)
         self::assertSame(1, preg_match('/wire:click="openLinkModal\((.*?)\)"/', $html, $matches));
         $expression = $matches[1];
 
@@ -771,8 +575,6 @@ class FilePolicyNextcloudModeTest extends TestCase
         // d'échappement, c'est déjà supposer laquelle.
         self::assertStringContainsString((string) Js::from('o\'brien"x'), $expression);
 
-        // …et ni l'apostrophe ni le guillemet ne sortent nus dans l'expression — ni
-        // en entité, que le navigateur décoderait AVANT que Livewire ne l'évalue.
         self::assertStringNotContainsString('\'brien', $expression);
         self::assertStringNotContainsString('&#039;', $expression);
         self::assertStringNotContainsString('&quot;', $expression);
@@ -790,12 +592,11 @@ class FilePolicyNextcloudModeTest extends TestCase
     #[Test]
     public function no_secret_ever_appears_in_the_rendered_html(): void
     {
-        $this->ready(NextcloudInstanceMode::Delegue);
-        Http::fake(self::healthyDelegate());
+        $this->ready();
+        Http::fake(self::healthyAdmin());
 
         $html = Livewire::test(self::COMPONENT)->call('testConnection')->html();
 
         self::assertStringNotContainsString(self::ADMIN_SECRET, $html);
-        self::assertStringNotContainsString(self::DELEGATE_SECRET, $html);
     }
 }

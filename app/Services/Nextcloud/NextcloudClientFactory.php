@@ -4,16 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Nextcloud;
 
-use App\Enums\NextcloudInstanceMode;
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
-use App\Services\FilePolicyService;
 use App\Services\ServiceCredentials;
 
 /**
  * Story 61.1 — LA RÉSOLUTION DE CONFIGURATION, EN UN SEUL ENDROIT.
- * Story 61.2 — ET ELLE EST DÉSORMAIS **PAR MODE**.
  *
- * Trois appelants ont besoin d'un client, et **deux modes de défaut différents** :
+ * Trois appelants ont besoin d'un client, et **deux comportements de défaut** :
  *  - la commande et le traitement en file veulent un refus EXPLICITE quand la
  *    configuration est incomplète (fail-closed, code de sortie 2) ;
  *  - les crochets du cycle de vie utilisateur (création, changement de mot de
@@ -26,15 +23,11 @@ use App\Services\ServiceCredentials;
  * vérifier la capacité.
  *
  * ---------------------------------------------------------------------------
- * **DEUX FAMILLES DE CLIENTS, DEUX CREDENTIALS, AUCUN CROISEMENT POSSIBLE.**
- * `make()` rend le client d'ADMINISTRATION, construit sur le credential admin ;
- * `makeDelegate()` rend le client DÉLÉGUÉ, construit sur le credential du porteur.
- * Chacun refuse quand le mode déclaré n'est pas le sien
- * ({@see NextcloudConfigurationException::wrongMode()}), **avant tout appel HTTP**.
- *
- * Le croisement n'est donc pas seulement interdit : il n'a pas de chemin. Un client
- * d'administration ne peut pas obtenir le secret du porteur (sa configuration ne
- * lit pas ce nom de credential), et réciproquement.
+ * **UN SEUL CLIENT, UN SEUL CREDENTIAL** (recadrage du 2026-08-08). La story 61.2
+ * avait ajouté ici une seconde famille — le client « délégué » du compte porteur —
+ * et un aiguillage par mode. Le mode délégué a été supprimé : SE5 exige un compte
+ * administrateur de l'instance. Il ne reste donc plus rien à aiguiller, et
+ * `make()` est le seul chemin vers l'instance.
  * ---------------------------------------------------------------------------
  */
 final class NextcloudClientFactory
@@ -44,17 +37,7 @@ final class NextcloudClientFactory
     }
 
     /**
-     * Le mode d'administration déclaré. Lecture unique, tolérante à une valeur
-     * hors vocabulaire (repli journalisé).
-     */
-    public function mode(): NextcloudInstanceMode
-    {
-        return FilePolicyService::nextcloudMode();
-    }
-
-    /**
-     * Client d'ADMINISTRATION prêt, ou refus nommant ce qui manque — y compris
-     * « le mode déclaré ne porte pas cette opération » (61.2, AC5).
+     * Client d'ADMINISTRATION prêt, ou refus nommant ce qui manque.
      *
      * @throws NextcloudConfigurationException
      */
@@ -64,39 +47,15 @@ final class NextcloudClientFactory
     }
 
     /**
-     * Client d'administration prêt, ou `null` si la capacité est éteinte, la
-     * configuration incomplète, **ou le mode déclaré délégué**. Aucun appel HTTP
-     * n'est émis dans ces cas : c'est ce qui rend vrai « mode délégué ⇒ zéro
-     * requête de gestion de comptes ».
-     *
-     * L'appelant qui a besoin de DISTINGUER ces trois causes (pour tracer un état
-     * configuré légitime plutôt qu'une panne) lit {@see mode()} : `null` seul ne
-     * dit pas pourquoi.
+     * Client d'administration prêt, ou `null` si la capacité est éteinte ou la
+     * configuration incomplète. Aucun appel HTTP n'est émis dans ces cas : une
+     * instance qui n'utilise pas Nextcloud ne doit pas voir ses créations
+     * d'utilisateurs échouer.
      */
     public function makeOrNull(): ?NextcloudAdminClient
     {
         try {
             return $this->make();
-        } catch (NextcloudConfigurationException) {
-            return null;
-        }
-    }
-
-    /**
-     * Client DÉLÉGUÉ prêt, ou refus nommant ce qui manque.
-     *
-     * @throws NextcloudConfigurationException
-     */
-    public function makeDelegate(): NextcloudDelegateClient
-    {
-        return new NextcloudDelegateClient(NextcloudDelegateConfig::current($this->credentials));
-    }
-
-    /** Client délégué prêt, ou `null` — même contrat silencieux que `makeOrNull()`. */
-    public function makeDelegateOrNull(): ?NextcloudDelegateClient
-    {
-        try {
-            return $this->makeDelegate();
         } catch (NextcloudConfigurationException) {
             return null;
         }

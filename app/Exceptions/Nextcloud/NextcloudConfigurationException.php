@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Nextcloud;
 
-use App\Enums\NextcloudInstanceMode;
 use RuntimeException;
 
 /**
@@ -29,18 +28,10 @@ final class NextcloudConfigurationException extends RuntimeException
 {
     /**
      * @param  list<string>  $missing  Libellés des réglages manquants, dans l'ordre de l'écran.
-     * @param  ?NextcloudInstanceMode  $declaredMode  Mode déclaré, **renseigné uniquement quand
-     *                                                c'est LUI qui refuse** ({@see wrongMode()}).
-     *                                                Correction de revue 61.2 #5 : l'appelant qui
-     *                                                veut tracer « sauté parce que délégué » le lit
-     *                                                ici plutôt que de relire `files.policy` — un
-     *                                                `SELECT` de plus par compte sauté, sans cache,
-     *                                                pour produire une ligne de `debug`.
      */
     private function __construct(
         string $message,
         public readonly array $missing,
-        public readonly ?NextcloudInstanceMode $declaredMode = null,
     ) {
         parent::__construct($message);
     }
@@ -83,39 +74,6 @@ final class NextcloudConfigurationException extends RuntimeException
             'La capacité « Accès Nextcloud » est désactivée sur /admin/settings/files : '
             . 'aucun appel n\'est émis tant qu\'elle ne l\'est pas.',
             ['nextcloud'],
-        );
-    }
-
-    /**
-     * Story 61.2 — LE MODE DÉCLARÉ NE PORTE PAS L'OPÉRATION DEMANDÉE.
-     *
-     * C'est le refus qui coupe la machinerie d'administration de 61.1 quand
-     * l'instance est déclarée en compte porteur — **avant tout appel HTTP**, ce qui
-     * est la seule façon d'être certain qu'aucun montage global ni aucune gestion
-     * de compte n'est tentée avec un compte qui ne les a pas.
-     *
-     * Il NOMME le mode plutôt que de dire « refusé » : l'exploitant qui lit ce
-     * message doit comprendre qu'il n'a rien cassé — il a déclaré une position, et
-     * cette position exclut cette opération.
-     */
-    public static function wrongMode(NextcloudInstanceMode $current, NextcloudInstanceMode $required): self
-    {
-        if ($required === NextcloudInstanceMode::Admin) {
-            return new self(
-                'Le mode d\'administration déclaré est « ' . $current->label() . ' » : les montages de '
-                . 'stockage externe et la gestion des comptes sont des opérations d\'administration, et le '
-                . 'mode délégué ne les porte pas. Aucun appel n\'a été émis. Les montages déjà provisionnés '
-                . 'restent en place — SE5 cesse simplement de les gouverner.',
-                ['nextcloud_mode'],
-                $current,
-            );
-        }
-
-        return new self(
-            'Le mode d\'administration déclaré est « ' . $current->label() . ' » : cette opération '
-            . 'appartient au mode « ' . $required->label() . ' ». Aucun appel n\'a été émis.',
-            ['nextcloud_mode'],
-            $current,
         );
     }
 }

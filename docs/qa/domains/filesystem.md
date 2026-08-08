@@ -2708,129 +2708,136 @@ le poste d'exploitation ; les vérifier une fois.
 
 ---
 
-## Story 61.2 — Administrer l'instance : connecter (le MODE d'administration)
+## Story 61.2 — Administrer l'instance : connecter
 
-**Ce que cette story change, en une phrase :** l'instance connectée porte désormais
-un **mode d'administration** — *instance administrée (compte admin)* ou *compte
-porteur (délégué)* — et SE5 **vérifie que le compte configuré peut réellement
-honorer le mode déclaré avant de l'accepter**.
+> **⚠️ SECTION CORRIGÉE EN PLACE LE 2026-08-08 — ce runbook a été rédigé pour une
+> story qui offrait DEUX modes d'administration ; l'un d'eux a été supprimé.**
+>
+> Décision d'Henri du 2026-08-08 : **le mode « instance non administrée » (compte
+> porteur délégué) est SUPPRIMÉ. SE5 exige un compte administrateur sur l'instance
+> Nextcloud.** Motif mesuré : avec un compte ordinaire, Nextcloud refuse de créer un
+> Team folder (HTTP 200, mais **OCS 403** dans le corps, rien créé), refuse de créer
+> un groupe, et un partage visant un groupe échoue. **Sans Team folder, pas de
+> clôture** — donc pas de cloisonnement : un élève verrait `_profs`.
+>
+> **Pourquoi ces scénarios ont été RÉÉCRITS et non ajoutés en append** (écart assumé
+> au principe append-only du domaine) : les contrôles du mode délégué faisaient
+> constater **l'inverse** du comportement livré (un sélecteur qui n'existe plus, des
+> champs porteurs absents du DOM, un bouton « Provisionner » grisé qui ne l'est plus).
+> Les laisser aurait produit un **faux rapport de régression** à chaque passage —
+> c'est-à-dire exactement l'inverse de ce à quoi sert un runbook. L'historique de la
+> décision vit dans la story 61.2 (§ « Recadrage post-livraison ») et dans
+> `sprint-status.yaml` ; le runbook, lui, décrit ce qui est en service.
+
+**Ce que cette story change, en une phrase :** l'instance connectée est **vérifiée
+avant d'être enregistrée** — SE5 s'assure que le compte configuré peut réellement
+**administrer** l'instance, et refuse la configuration avec son motif sinon.
 
 **Ce qu'elle ne change PAS, et c'est essentiel au contrôle :** aucun partage ne
 bascule sur Nextcloud. La colonne de backend des partages ne connaît toujours que
-`posix`. **Déclarer un mode ne branche rien** — c'est 61.3 qui rendra ces positions
-sélectionnables partage par partage. Si un contrôle ci-dessous vous fait chercher
-un fichier « passé sous Nextcloud », il n'y en a pas et il ne doit pas y en avoir.
+`posix`. **Connecter une instance ne branche rien** — c'est 61.3 qui rendra le
+backend Nextcloud sélectionnable partage par partage. Si un contrôle ci-dessous vous
+fait chercher un fichier « passé sous Nextcloud », il n'y en a pas et il ne doit pas
+y en avoir.
 
-**Les deux positions, et ce qui les sépare :**
+**Le compte doit être ADMINISTRATEUR — ce n'est pas une préférence :**
 
-| | Instance administrée | Compte porteur (délégué) |
-|---|---|---|
-| Compte configuré | administrateur de l'instance | compte **ordinaire** |
-| Arborescence | (61.3) dossiers d'équipe | créée **dans l'espace du porteur** |
-| Octroi | par **groupe** (61.3) | par **utilisateur**, émis par le porteur |
-| Quotas de zone | oui (61.3) | **impossibles** |
-| Montages de stockage externe + comptes (61.1) | **actifs** | **coupés** |
-| Nœud privé (un sous-dossier invisible au reste) | oui (61.3) | **inexprimable** |
+| Ce qui l'exige | Pourquoi un compte ordinaire ne suffit pas |
+|---|---|
+| Dossiers d'équipe (61.3) | création refusée : HTTP 200 avec **OCS 403** dans le corps |
+| Groupes Nextcloud (61.3) | création refusée (403) |
+| Octroi par groupe (61.3) | « Please specify a valid group » |
+| Plafonds de zone / quotas (61.3) | opération d'administration |
+| Montages de stockage externe + comptes (61.1) | opération d'administration |
+| **Clôture d'un nœud privé** (`_profs` invisible aux élèves) | **impossible sans dossier d'équipe** — l'ancêtre propage |
 
 ### Prérequis 61.2
 
-- [ ] **61.2-P1** — les prérequis 61.1 (instance joignable, app « Stockage
-  externe » pour le mode administré, app password admin).
-- [ ] **61.2-P2** — pour éprouver le mode délégué : un **compte ordinaire** sur
-  l'instance (pas admin) et un **app password** généré pour lui. Vérifier qu'il
-  est bien ordinaire : depuis ce compte, `…/index.php/apps/files_external/globalstorages`
-  et `…/ocs/v2.php/cloud/users` doivent répondre **403**. S'ils répondent `200`,
-  le compte est admin et le mode délégué n'éprouve rien.
-- [ ] **61.2-P3** — le **partage doit être activé** sur l'instance (paramètres
-  d'administration › Partage). La sonde du mode délégué le vérifie et refuse
-  sinon : sans partage, un compte porteur n'a aucun moyen d'octroyer un accès.
+- [ ] **61.2-P1** — les prérequis 61.1 : instance joignable, app « Stockage
+  externe » activée, app password d'un compte **administrateur**.
+- [ ] **61.2-P2** — vérifier que le compte configuré est bien administrateur :
+  depuis ce compte, `…/index.php/apps/files_external/globalstorages` et
+  `…/ocs/v2.php/cloud/users` doivent répondre **200**. S'ils répondent **403**, le
+  compte est ordinaire : la configuration sera refusée (et c'est le comportement
+  attendu — voir 61.2-1b).
 
-### 61.2-1 — La déclaration de mode, et son refus
+### 61.2-1 — La configuration de connexion, et son refus
 
 - [ ] **61.2-1a** — `/admin/settings/files`, capacité « Accès Nextcloud » active :
-  le bloc de connexion porte un sélecteur **« Mode d'administration de
-  l'instance »**. Sur une instance configurée avant cette story, il vaut
-  **« Instance administrée (compte admin) »** — le comportement de 61.1 est
-  inchangé, rien n'a bougé sans qu'on le demande.
-- [ ] **61.2-1b — LE CONTRÔLE QUI VAUT LA STORY.** Sélectionner « Compte porteur
-  (délégué) » **sans avoir saisi d'app password porteur** → la sélection est
-  **refusée**, le sélecteur **revient** à « Instance administrée », un message
-  nomme ce qui manque (« l'app password du compte porteur »), et **rien n'est
-  enregistré**. Recharger la page : le mode est toujours « Instance administrée ».
-- [ ] **61.2-1c** — saisir un app password porteur **faux**, puis sélectionner le
-  mode délégué → refusé, avec « Le compte porteur « … » a été refusé par
-  l'instance ». Le message ne contient **jamais** le secret (vérifier aussi dans
-  le code source de la page).
-- [ ] **61.2-1d** — saisir un identifiant de porteur qui n'existe pas → refusé
-  avec « aucun espace de fichiers pour … » : c'est un diagnostic **différent** de
-  celui du mot de passe faux, et il envoie corriger le bon champ.
-- [ ] **61.2-1e** — avec un compte porteur valide → la sélection est **acceptée**,
-  et le message vert dit explicitement ce qu'il n'a **pas** pu vérifier : que ce
-  compte pourra réellement créer l'arborescence et émettre les octrois. Personne
-  ne l'a écrit sur l'instance pour le tester — c'est délibéré.
-- [ ] **61.2-1f** — en mode délégué, remettre « Instance administrée » avec un
-  compte **non admin** dans le champ admin → refusé en nommant le privilège
-  manquant. Le mode délégué reste en vigueur.
-- [ ] **61.2-1g** — instance **éteinte**, changer de mode → refusé (« instance
-  injoignable »). C'est voulu : on ne déclare pas une position qu'on n'a pas pu
-  vérifier. **L'échappatoire, s'il faut absolument sortir de là** : désactiver la
-  capacité « Accès Nextcloud » — sans instance, aucune position ne s'impose, et le
-  mode redevient librement modifiable.
+  le bloc de connexion porte l'URL, le **compte administrateur**, son app password,
+  le serveur de fichiers SMB et la case TLS. Sous le champ du compte, une phrase
+  explique **pourquoi** il doit être administrateur. Il n'y a **aucun sélecteur de
+  mode d'administration** : si vous en voyez un, l'écran n'est pas à jour.
+- [ ] **61.2-1b — LE CONTRÔLE QUI VAUT LA STORY.** Remplacer l'identifiant du
+  compte par un **compte ordinaire** de l'instance → la configuration est
+  **refusée**, le champ **revient** à la valeur précédente, un message nomme le
+  privilège manquant, et **rien n'est enregistré**. Recharger la page : l'ancien
+  compte est toujours en place. Contrôle en base :
+  `SELECT value FROM system_settings WHERE key = 'files.policy';` → inchangé.
+- [ ] **61.2-1c** — saisir un app password **faux** (voir 61.2-6c : il est
+  **enregistré quand même**, c'est voulu), puis lancer « Tester la connexion » →
+  diagnostic rouge nommant le refus de l'instance. Le message ne contient
+  **jamais** le secret (vérifier aussi dans le code source de la page).
+- [ ] **61.2-1d** — laisser l'URL vide et tester → refus nommant ce qui manque,
+  **sans aucun appel réseau**. Une configuration incomplète se refuse sans sortir.
+- [ ] **61.2-1e** — configuration saine → « Tester la connexion » est **vert**, et
+  le message dit explicitement ce qu'il n'a **pas** pu constater : la disponibilité
+  du backend SMB sur l'instance, qui ne se voit qu'au premier montage. Personne n'a
+  rien écrit sur l'instance pour le tester — c'est délibéré.
+- [ ] **61.2-1f** — instance **éteinte**, changer l'URL → refusé (« instance
+  injoignable »), et le champ revient à sa valeur en base. C'est voulu : on ne
+  déclare pas une cible qu'on n'a pas pu vérifier. **L'échappatoire, s'il faut
+  absolument sortir de là** : désactiver la capacité « Accès Nextcloud » — sans
+  instance, plus rien n'est sondé, et les champs redeviennent librement modifiables.
 
-### 61.2-2 — La sonde-garde ne bloque QUE le mode
+### 61.2-2 — La sonde-garde ne bloque QUE la connexion
 
 - [ ] **61.2-2a** — instance **éteinte**, capacité active : basculer « Répertoire
   personnel (K:) », « Partages réseau (H:) », changer le serveur de fichiers SMB
   → **tout s'enregistre normalement, sans attente**. Une panne d'instance ne doit
   pas verrouiller des réglages qui ne la concernent pas.
-  *(Amendé par la correction de review #1 — voir 61.2-6 : **l'URL de l'instance et
-  la case TLS ne sont PAS dans cette liste**, elles définissent la connexion et
-  re-déclenchent la sonde.)*
-- [ ] **61.2-2b** — re-sélectionner le mode **déjà en vigueur** → aucun appel,
-  aucun délai, aucun message. Rejouer un état n'est pas un changement.
+  *(**L'URL de l'instance, l'identifiant admin et la case TLS ne sont PAS dans
+  cette liste** : ils définissent la connexion et re-déclenchent la sonde — voir
+  61.2-6a.)*
+- [ ] **61.2-2b** — ré-enregistrer une valeur **identique** (même URL, même
+  compte) → aucun appel, aucun délai, aucun message. Rejouer un état n'est pas un
+  changement.
 
-### 61.2-3 — Ce que le mode délégué COUPE (et ce qu'il ne défait pas)
+### 61.2-3 — Le provisionnement, et ce qu'il ne défait jamais
 
-- [ ] **61.2-3a** — en mode délégué, le bouton **« Provisionner l'accès
-  Nextcloud » est grisé**, et un encart en dit le motif : les montages de stockage
-  externe et la gestion des comptes sont des opérations d'administration.
-- [ ] **61.2-3b** — en ligne de commande : `php artisan nextcloud:provision` →
-  **code de sortie 2**, message nommant le mode déclaré. `echo $?` pour le
-  vérifier. **Aucun appel n'est émis vers l'instance** (le refus est avant).
-- [ ] **61.2-3c — LE CONTRÔLE DE NON-DESTRUCTION (D9).** Avant de passer en
-  délégué, noter les montages présents dans l'administration Nextcloud
-  (« Stockage externe ») : « Partages » et « Documents ». Passer en délégué,
-  recharger cette page côté Nextcloud → **les deux montages sont toujours là,
-  inchangés**. SE5 cesse de les gouverner ; il ne les défait pas.
-- [ ] **61.2-3d** — revenir en « Instance administrée » **sans rien reconfigurer**
-  → « Provisionner » redevient actif, `nextcloud:provision` reconverge (les
-  montages sont reconnus « conformes », pas recréés), et l'identifiant admin comme
-  son app password sont toujours là. **Un aller-retour de mode ne perd aucune
-  configuration.**
-- [ ] **61.2-3e** — en mode délégué, créer un utilisateur SE5 et changer un mot de
+- [ ] **61.2-3a** — configuration saine : le bouton **« Provisionner l'accès
+  Nextcloud »** enfile le traitement, et le rapport apparaît sous le formulaire.
+- [ ] **61.2-3b** — capacité « Accès Nextcloud » **désactivée**, puis
+  `php artisan nextcloud:provision` → **code de sortie 2**, message nommant la
+  capacité éteinte. `echo $?` pour le vérifier. **Aucun appel n'est émis vers
+  l'instance** (le refus est avant).
+- [ ] **61.2-3c — LE CONTRÔLE DE NON-DESTRUCTION (D9).** Noter les montages
+  présents dans l'administration Nextcloud (« Stockage externe ») : « Partages » et
+  « Documents ». Désactiver la capacité côté SE5, recharger cette page côté
+  Nextcloud → **les deux montages sont toujours là, inchangés**. SE5 cesse de les
+  gouverner ; il ne les défait jamais.
+- [ ] **61.2-3d** — réactiver la capacité **sans rien reconfigurer** →
+  `nextcloud:provision` reconverge (les montages sont reconnus « conformes », pas
+  recréés), et l'identifiant admin comme son app password sont toujours là.
+  **Une bascule de capacité ne perd aucune configuration.**
+- [ ] **61.2-3e** — capacité éteinte, créer un utilisateur SE5 et changer un mot de
   passe : **aucun compte Nextcloud n'est créé, aucun mot de passe n'est propagé**,
-  et le journal ne contient **aucun avertissement** — seulement, en niveau `debug`,
-  `nextcloud.user.create.delegated_mode`. Un état configuré et légitime ne crie
-  pas. Contrôle : `grep -c 'nextcloud' storage/logs/laravel.log` après une
-  réinitialisation de mot de passe en masse — le compte d'avertissements ne doit
-  pas bouger.
+  et le journal ne contient **aucun avertissement**. Une instance qui n'utilise pas
+  Nextcloud ne doit pas faire crier le flux de vie des utilisateurs. Contrôle :
+  `grep -c 'nextcloud' storage/logs/laravel.log` après une réinitialisation de mot
+  de passe en masse — le compte d'avertissements ne doit pas bouger.
 
-### 61.2-4 — Les dégradations, dites au moment du CHOIX
+### 61.2-4 — Ce que l'écran DIT de l'exigence
 
-- [ ] **61.2-4a** — sélectionner « Compte porteur (délégué) » : l'écran affiche
-  **cinq** dégradations avant toute confirmation. Les lire, et vérifier qu'elles
-  disent bien : (1) l'arborescence pend du compte porteur — propriété, quota et
-  suppression s'attachent à **lui** ; (2) l'octroi est **par utilisateur**, avec
-  une resynchronisation à chaque changement d'appartenance **qui n'est pas
-  livrée** ; (3) **aucun plafond de zone** ; (4) un **nœud privé est
-  inexprimable** — l'ancêtre propage et le retrait est accepté *sans effet* ;
-  (5) ni montages de stockage externe, ni gestion des comptes.
-- [ ] **61.2-4b** — la dégradation (4) est la plus coûteuse à découvrir tard :
-  elle veut dire que le **partage de classe de SE4** (un dossier professeurs
-  invisible aux élèves) **ne peut pas être porté tel quel** en mode délégué. Si
-  c'est un besoin de l'établissement, le mode délégué n'est pas la bonne position.
-- [ ] **61.2-4c** — dans **les deux** modes, l'écran rappelle que déclarer un mode
-  **ne branche aucun partage aujourd'hui**. Si ce rappel a disparu, l'écran ment.
+- [ ] **61.2-4a** — sous le champ « Compte administrateur de l'instance », l'écran
+  explique que le compte doit l'être, **pourquoi** (dossiers d'équipe, groupes,
+  quotas — sans eux le cloisonnement n'est pas tenable) et qu'une configuration qui
+  ne le permet pas **sera refusée avec son motif**. Si cette phrase a disparu,
+  l'exigence n'est plus dite là où elle se joue.
+- [ ] **61.2-4b** — l'écran n'affiche **aucun** bloc « dégradations », **aucun**
+  champ « compte porteur », **aucun** bouton de provisionnement grisé « parce que le
+  mode ne le porte pas ». Ces éléments appartenaient au mode supprimé : leur retour
+  signalerait une régression.
 
 ### 61.2-5 — Le rattachement explicite d'identité
 
@@ -2838,10 +2845,11 @@ un fichier « passé sous Nextcloud », il n'y en a pas et il ne doit pas y en a
 qu'un **homonyme**. Sur une instance dont les identifiants ne sont pas les logins
 (mappage sur un GUID, par exemple), les comptes remontent en « introuvables » —
 avec, quand l'instance en a proposé, les **candidats écartés nommés**. Ce geste
-transforme ces candidats en rattachement, à la main et **vérifié**.
+transforme ces candidats en rattachement, à la main et **vérifié**. Il est
+**indépendant** de tout ce qui précède et n'a pas bougé au recadrage.
 
-- [ ] **61.2-5a** — lancer un provisionnement (mode administré). Dans « Comptes
-  demandant un geste », chaque ligne porte un bouton **« Rattacher »**.
+- [ ] **61.2-5a** — lancer un provisionnement. Dans « Comptes demandant un geste »,
+  chaque ligne porte un bouton **« Rattacher »**.
 - [ ] **61.2-5b** — cliquer : la modale s'ouvre, **pré-remplie** avec le candidat
   que le rapport avait nommé. Valider → l'identité est vérifiée auprès de
   l'instance, puis enregistrée, et la modale se ferme.
@@ -2865,36 +2873,33 @@ transforme ces candidats en rattachement, à la main et **vérifié**.
 
 ### Ce qui n'est PAS observable — à ne pas confondre avec un succès
 
-- **La capacité RÉELLE d'écriture du compte porteur.** La sonde ne crée aucun
-  dossier et n'émet aucun octroi : sonder ne doit pas modifier l'instance (leçon
-  de l'enregistrement DNS effacé par un test « inoffensif »). Un vert dit donc
-  « le compte s'authentifie et le partage est activé », pas « ce compte pourra
-  écrire ». Cela **se constatera à l'usage réel, en 61.3**, et le message vert le
-  dit. Ce qui est mesuré, l'est par le test d'intégration
-  `tests/Integration/Nextcloud/NextcloudDelegueCanalTest.php` — joué à la main,
-  contre une instance, jamais dans la suite par défaut.
-- **Le comportement d'une instance à synchro LDAP en mode délégué** : non observé.
+- **La disponibilité du backend SMB sur l'instance.** La sonde ne crée aucun
+  montage : sonder ne doit pas modifier l'instance (leçon de l'enregistrement DNS
+  effacé par un test « inoffensif »). Un vert dit donc « l'instance répond, le
+  compte est administrateur, l'app Stockage externe est là », pas « un montage
+  fonctionnera ». Cela se constate au **premier provisionnement**, et le message
+  vert le dit.
+- **Le comportement d'une instance à synchro LDAP** : non observé.
 - **Tout effet sur les fichiers.** Cette story n'écrit ni un droit, ni un fichier,
   ni une ligne de la colonne de backend. `getfacl` avant/après : diff vide, par
   construction (le protocole de 61.1-5 s'applique tel quel).
 
 ### Checklist rapide — Story 61.2
 
-- [ ] 61.2-P2 : le compte porteur est bien **ordinaire** (403 sur les deux
+- [ ] 61.2-P2 : le compte configuré est bien **administrateur** (200 sur les deux
       endpoints d'administration)
-- [ ] **61.2-1b : un mode que le compte ne peut pas tenir est REFUSÉ, et rien
-      n'est enregistré**
-- [ ] 61.2-1c/d : mot de passe faux et identifiant inconnu = **deux diagnostics
-      différents**
+- [ ] **61.2-1b : une configuration que le compte ne peut pas honorer est REFUSÉE,
+      et rien n'est enregistré**
+- [ ] 61.2-1d : configuration incomplète → refus **sans aucun appel réseau**
 - [ ] 61.2-1e : le message vert dit ce qu'il n'a **pas** pu vérifier
 - [ ] 61.2-2a : instance éteinte → les réglages K:/H:/SMB s'enregistrent quand
-      même (l'URL et le TLS, eux, sondent — 61.2-6a)
-- [ ] 61.2-3b : `nextcloud:provision` en délégué → **code 2**, zéro appel
-- [ ] **61.2-3c : les montages existants sont INTACTS après le passage en
-      délégué**
-- [ ] 61.2-3d : aller-retour de mode → **aucune configuration perdue**
-- [ ] 61.2-3e : aucun avertissement dans le journal en mode délégué
-- [ ] 61.2-4a : **les cinq dégradations sont affichées avant la confirmation**
+      même (l'URL, le compte et le TLS, eux, sondent — 61.2-6a)
+- [ ] 61.2-3b : capacité éteinte + `nextcloud:provision` → **code 2**, zéro appel
+- [ ] **61.2-3c : les montages existants sont INTACTS après extinction de la
+      capacité**
+- [ ] 61.2-4a : l'exigence « compte administrateur » est **dite à l'écran**
+- [ ] **61.2-4b : aucun vestige du mode supprimé (sélecteur, champs porteurs,
+      bloc dégradations)**
 - [ ] **61.2-5c : une identité non confirmée n'est JAMAIS écrite**
 - [ ] 61.2-5d : `nextcloud:identity` rejouée rend le même état
 
@@ -2902,36 +2907,37 @@ transforme ces candidats en rattachement, à la main et **vérifié**.
 
 ### 61.2-6 — Ce que les corrections de review ont changé pour l'exploitant
 
-*Ajouté après la review de la story 61.2. Ces trois points modifient ce que
-l'écran fait sous les doigts de l'administrateur : ils sont à connaître avant de
-conclure « c'est cassé ».*
+*Ajouté après la review de la story 61.2, **puis mis à jour le 2026-08-08** par le
+retrait du mode délégué. Ces trois points modifient ce que l'écran fait sous les
+doigts de l'administrateur : ils sont à connaître avant de conclure « c'est cassé ».*
 
-**61.2-6a — Changer l'URL de l'instance (ou la case TLS) re-déclenche la sonde.**
-Avant, seule une modification du **compte** re-vérifiait la position déclarée : on
-pouvait donc changer d'hébergeur — ou faire une faute de frappe dans l'URL — et la
-nouvelle cible était enregistrée avec le mode toujours déclaré, alors qu'aucun
-appel n'avait été émis vers elle. Désormais :
+**61.2-6a — Changer l'URL de l'instance (ou le compte, ou la case TLS) re-déclenche
+la sonde.** Avant, seule une modification du **compte** re-vérifiait : on pouvait
+donc changer d'hébergeur — ou faire une faute de frappe dans l'URL — et la nouvelle
+cible était enregistrée alors qu'aucun appel n'avait été émis vers elle. Désormais :
 
-- [ ] **61.2-6a** — mode déclaré et fonctionnel, ne changer **que** l'URL pour une
-  adresse où le compte n'a pas le privilège du mode (ou une adresse qui ne répond
-  pas) → **la sonde est jouée**, la sélection est refusée avec son motif, **rien
+- [ ] **61.2-6a** — configuration fonctionnelle, ne changer **que** l'URL pour une
+  adresse où le compte n'est pas administrateur (ou une adresse qui ne répond pas)
+  → **la sonde est jouée**, la configuration est refusée avec son motif, **rien
   n'est persisté**, et **le champ URL de l'écran revient à la valeur en base**.
   Contrôle : recharger la page — l'URL affichée est bien celle d'avant.
-  Même comportement pour la case « Vérifier le certificat TLS ».
+  Même comportement pour la case « Vérifier le certificat TLS » et pour
+  l'identifiant du compte.
 - [ ] **61.2-6a-bis** — la garde de « constitution » tient toujours : tant qu'aucun
-  app password n'est enregistré pour le mode visé, saisir l'URL ne sonde rien
-  (sinon on ne pourrait jamais constituer une configuration neuve).
+  app password n'est enregistré, saisir l'URL ou le compte ne sonde rien (sinon on
+  ne pourrait jamais constituer une configuration neuve).
 - [ ] **61.2-6a-ter** — les réglages qui ne concernent pas l'instance (K:, H:,
   serveur de fichiers SMB) continuent de s'enregistrer sans le moindre appel,
   instance éteinte comprise. C'est le point qui interdit qu'une panne verrouille
-  l'écran (voir 61.2-2a, amendé).
+  l'écran (voir 61.2-2a).
 
 **61.2-6b — Une identité Nextcloud ne peut être portée que par UN utilisateur SE5.**
 Rattacher `p.durand` à un compte Nextcloud déjà rattaché à `a.dupont` est
-désormais **refusé, en nommant `a.dupont`**, et rien n'est écrit. Motif : deux
-logins SE5 pointant la même identité feraient qu'un changement de mot de passe de
-l'un **écraserait le compte de l'autre** — le défaut que 61.1 avait fermé côté
-adoption automatique.
+**refusé, en nommant `a.dupont`**, et rien n'est écrit. Motif : deux logins SE5
+pointant la même identité feraient qu'un changement de mot de passe de l'un
+**écraserait le compte de l'autre** — le défaut que 61.1 avait fermé côté adoption
+automatique. **Cette garde n'a pas bougé au recadrage du 2026-08-08 et ne bougera
+pas : c'est une protection de sécurité.**
 
 - [ ] **61.2-6b** — depuis la modale « Rattacher », saisir un identifiant déjà
   attribué → refus nommant le détenteur, modale ouverte, `SELECT login,
@@ -2952,15 +2958,47 @@ adoption automatique.
 **61.2-6c — Remplacer un app password affiche un état « NON VÉRIFIÉ » explicite.**
 Enregistrer un secret **n'est jamais refusé**, même si l'instance est éteinte —
 sinon une instance momentanément injoignable deviendrait impossible à
-reconfigurer. Mais l'écran ne laisse plus croire que le mode est toujours vérifié :
+reconfigurer. Mais l'écran ne laisse plus croire que la connexion est vérifiée :
 
 - [ ] **61.2-6c** — instance saine, remplacer l'app password → **diagnostic vert**,
   comme après « Tester la connexion ».
 - [ ] **61.2-6c-bis** — instance éteinte (ou app password erroné), remplacer le
   secret → **le secret est bien enregistré** (le bandeau « Un app password est
-  enregistré (chiffré) » le confirme) **et** un encart orange dit « Mode « … »
-  déclaré, **non vérifié** depuis le dernier changement de secret », avec le motif.
-  Ce n'est **pas** un échec : c'est le seul état honnête.
+  enregistré (chiffré) » le confirme) **et** un encart orange dit « Connexion
+  déclarée, **non vérifiée** depuis le dernier changement de secret », avec le
+  motif. Ce n'est **pas** un échec : c'est le seul état honnête.
 - [ ] **61.2-6c-ter** — **recharger la page** : l'encart « non vérifié » est
   **toujours là**. L'état de vérification est persisté ; il ne s'efface qu'en
   relançant « Tester la connexion » avec succès, ou en retirant le secret.
+
+### 61.2-7 — Après le retrait du mode délégué : les contrôles de non-régression
+
+*Ajouté le 2026-08-08. À passer une fois après la mise à jour, puis à oublier.*
+
+- [ ] **61.2-7a** — `/admin/settings/files` : aucun sélecteur de mode, aucun champ
+  « compte porteur », aucun bloc « Ce que ce mode dégrade », aucun encart
+  « Provisionnement indisponible dans ce mode ».
+- [ ] **61.2-7b** — le credential du compte porteur a été **effacé de la base** par
+  la migration de retrait :
+  `SELECT name FROM service_credentials WHERE name = 'nextcloud_delegue';` → **0
+  ligne**. (Irréversible et assumé : un secret effacé ne se reconstitue pas, et le
+  mode qui le lisait n'existe plus.)
+- [ ] **61.2-7c** — le réglage ne porte plus les clés du mode :
+  `SELECT value FROM system_settings WHERE key = 'files.policy';` → ni
+  `nextcloud_mode`, ni `nextcloud_delegue_user`.
+- [ ] **61.2-7d** — la configuration existante est **intacte** : URL, compte admin,
+  app password admin, hôte SMB et case TLS n'ont pas bougé, et
+  `nextcloud:provision` reconverge sans rien recréer.
+
+---
+
+*Dernière mise à jour : 2026-08-08 (Recadrage post-livraison de la story 61.2 — le
+mode « instance non administrée » (compte porteur délégué) est SUPPRIMÉ : mesuré,
+un compte ordinaire ne peut créer ni Team folder, ni groupe, ni partage de groupe,
+donc pas de clôture, donc pas de cloisonnement. SE5 EXIGE un compte administrateur.
+La section 61.2 de ce runbook a été **corrigée en place** — écart assumé au principe
+append-only, motivé en tête de section : des scénarios qui font constater l'inverse
+du comportement livré produisent un faux rapport de régression. Ce qui reste
+inchangé : tout 61.1, le rattachement explicite d'identité, la garde d'unicité de
+`users.nextcloud_user_id`, le fail-closed sur la configuration et l'état « non
+vérifié » persistant.)*

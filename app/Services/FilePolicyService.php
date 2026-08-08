@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Enums\NextcloudInstanceMode;
 use App\Models\SystemSetting;
 
 /**
@@ -35,15 +34,14 @@ use App\Models\SystemSetting;
  * `files.policy` est stocké en clair ; y mettre un secret le rendrait lisible à
  * quiconque lit la table des réglages, et à tout export de configuration.
  *
- * **Story 61.2 — le MODE D'ADMINISTRATION de l'instance y vit aussi.**
- * `nextcloud_mode` ({@see NextcloudInstanceMode}) dit ce que SE5 a le droit de
- * faire SUR l'instance : compte admin ou compte porteur délégué. C'est une
- * propriété de la CONNEXION D'INSTANCE, pas d'un partage — d'où sa place ici et
- * non dans le vocabulaire de backend de l'Epic 60. `nextcloud_delegue_user` est
- * l'identifiant du compte porteur (non secret) ; son app password vit, lui aussi,
- * dans `service_credentials`, sous un nom DISTINCT de celui de l'admin, pour que
- * les deux comptes cohabitent sans qu'aucune opération ne puisse porter l'auth de
- * l'autre.
+ * **Recadrage du 2026-08-08 — IL N'Y A PLUS DE « MODE ».** La story 61.2 avait
+ * ajouté ici une clé `nextcloud_mode` (instance administrée / compte porteur
+ * délégué) et l'identifiant du compte porteur. La mesure contre une instance réelle
+ * a montré qu'un compte ordinaire ne peut créer ni Team folder, ni groupe, ni
+ * partage de groupe : le mode délégué ne pouvait pas tenir la clôture, qui est la
+ * raison d'être du plan de fichiers. SE5 EXIGE donc un compte administrateur, les
+ * deux clés ont été retirées, et le réglage ne décrit plus qu'UNE connexion — celle
+ * de 61.1. Un payload persisté qui les porte encore les voit simplement ignorées.
  * ---------------------------------------------------------------------------
  */
 final class FilePolicyService
@@ -60,11 +58,7 @@ final class FilePolicyService
      * ce qui rendait la faiblesse invisible à l'exploitant. Ici, l'assouplissement
      * est un choix visible, coché sur l'écran et persisté.
      *
-     * `nextcloud_mode` vaut **`admin`** : c'est ce que la story 61.1 a configuré, et
-     * une instance déjà connectée ne doit pas changer de comportement parce qu'une
-     * clé est apparue.
-     *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_mode: string, nextcloud_delegue_user: string}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool}
      */
     public static function defaults(): array
     {
@@ -74,8 +68,6 @@ final class FilePolicyService
             'nextcloud' => false,
             'nextcloud_server_url' => '',
             'nextcloud_admin_user' => '',
-            'nextcloud_mode' => NextcloudInstanceMode::DEFAULT->value,
-            'nextcloud_delegue_user' => '',
             // Vide = « le serveur de fichiers connu de l'instance ». Le défaut
             // effectif est DÉRIVÉ (`sambaedu.se4fs_name`) au moment du
             // provisionnement, jamais recopié ici : recopier figerait une valeur
@@ -90,7 +82,7 @@ final class FilePolicyService
      * ou un ancien payload `{mode:...}` : les clés inconnues sont ignorées, on
      * retombe proprement sur les défauts).
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_mode: string, nextcloud_delegue_user: string}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool}
      */
     public static function globalConfig(): array
     {
@@ -116,27 +108,7 @@ final class FilePolicyService
             'nextcloud_verify_tls' => array_key_exists('nextcloud_verify_tls', $stored)
                 ? (bool) $stored['nextcloud_verify_tls']
                 : $defaults['nextcloud_verify_tls'],
-            // Une valeur hors vocabulaire retombe sur le défaut **en le
-            // journalisant** : jamais un crash, jamais un mode inventé.
-            'nextcloud_mode' => array_key_exists('nextcloud_mode', $stored)
-                ? NextcloudInstanceMode::fromStored($stored['nextcloud_mode'])->value
-                : $defaults['nextcloud_mode'],
-            'nextcloud_delegue_user' => is_string($stored['nextcloud_delegue_user'] ?? null)
-                ? $stored['nextcloud_delegue_user']
-                : $defaults['nextcloud_delegue_user'],
         ];
-    }
-
-    /**
-     * Le mode d'administration EFFECTIF de l'instance connectée.
-     *
-     * Point de lecture unique : le gating de la machinerie d'administration
-     * (61.1) et la sélection fail-closed (61.2) doivent lire la MÊME valeur, et
-     * une lecture recopiée ailleurs finirait par diverger du repli journalisé.
-     */
-    public static function nextcloudMode(): NextcloudInstanceMode
-    {
-        return NextcloudInstanceMode::fromStored(self::globalConfig()['nextcloud_mode']);
     }
 
     /**
@@ -163,9 +135,7 @@ final class FilePolicyService
      * persistée.** Ce n'est pas une commodité : les appelants antérieurs aux stories
      * 61.1/61.2 ne les connaissent pas, et un défaut « chaîne vide » leur ferait
      * effacer la configuration de connexion à chaque bascule de capacité — une perte
-     * silencieuse dont personne ne verrait la cause. C'est aussi ce qui rend vrai
-     * l'aller-retour de mode SANS perte de configuration (61.2, AC4) : basculer en
-     * délégué ne touche ni l'identifiant admin ni son secret, et réciproquement.
+     * silencieuse dont personne ne verrait la cause.
      */
     public static function setGlobal(
         bool $home,
@@ -175,14 +145,8 @@ final class FilePolicyService
         ?string $nextcloudAdminUser = null,
         ?string $nextcloudSmbHost = null,
         ?bool $nextcloudVerifyTls = null,
-        NextcloudInstanceMode|string|null $nextcloudMode = null,
-        ?string $nextcloudDelegueUser = null,
     ): void {
         $current = self::globalConfig();
-
-        $mode = $nextcloudMode === null
-            ? NextcloudInstanceMode::fromStored($current['nextcloud_mode'])
-            : NextcloudInstanceMode::fromStored($nextcloudMode);
 
         SystemSetting::set(self::SETTING_KEY, [
             'home' => $home,
@@ -192,8 +156,6 @@ final class FilePolicyService
             'nextcloud_admin_user' => trim($nextcloudAdminUser ?? $current['nextcloud_admin_user']),
             'nextcloud_smb_host' => trim($nextcloudSmbHost ?? $current['nextcloud_smb_host']),
             'nextcloud_verify_tls' => $nextcloudVerifyTls ?? $current['nextcloud_verify_tls'],
-            'nextcloud_mode' => $mode->value,
-            'nextcloud_delegue_user' => trim($nextcloudDelegueUser ?? $current['nextcloud_delegue_user']),
         ]);
     }
 }

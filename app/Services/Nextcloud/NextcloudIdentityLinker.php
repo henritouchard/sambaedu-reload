@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Nextcloud;
 
-use App\Enums\NextcloudInstanceMode;
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -205,18 +204,12 @@ final class NextcloudIdentityLinker
     // =========================================================================
 
     /**
-     * Confirmation à distance, PAR MODE. Le refus nomme la cause — et l'absence de
+     * Confirmation à distance. Le refus nomme la cause — et l'absence de
      * confirmation n'écrit jamais.
      */
     private function verifyRemotely(string $nextcloudUserId): NextcloudResult
     {
-        $mode = $this->factory->mode();
-
         try {
-            if ($mode === NextcloudInstanceMode::Delegue) {
-                return $this->factory->makeDelegate()->findUserByExactId($nextcloudUserId);
-            }
-
             $direct = $this->factory->make()->getUser($nextcloudUserId);
         } catch (NextcloudConfigurationException $e) {
             return NextcloudResult::failed(
