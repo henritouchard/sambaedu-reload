@@ -66,12 +66,14 @@ class GroupShowMembersTabsTest extends TestCase
         }
         // Story 62.3 — les libellés de rôle par TYPE de groupe (« Élève »,
         // « Enseignant », « Professeur principal ») ÉTAIENT une constante de code ;
-        // ils sont désormais des DÉCLARATIONS en base, posées par la migration.
-        // Ce fichier travaille sur un schéma FABRIQUÉ À LA MAIN (patron des tests
-        // de groupes) : il doit donc porter cette table comme il porte déjà
-        // `quota_rules`, faute de quoi la résolution retombe — correctement — sur
-        // les libellés génériques, et les assertions de cette suite mesureraient le
-        // repli au lieu du vocabulaire scolaire qu'elles épinglent depuis 42.3.
+        // ils sont désormais des DÉCLARATIONS en base, installées à la demande par
+        // `php artisan college:seed:role-x-type` (la migration, elle, crée la table
+        // VIDE). Ce fichier travaille sur un schéma FABRIQUÉ À LA MAIN (patron des
+        // tests de groupes), sans migrations ni artisan : il pose donc lui-même la
+        // table et les trois lignes de `classe`, comme il pose déjà `quota_rules` —
+        // faute de quoi la résolution retombe, correctement, sur les libellés
+        // génériques, et les assertions de cette suite mesureraient le repli au lieu
+        // du vocabulaire scolaire qu'elles épinglent depuis 42.3.
         $this->createGroupTypeRoleDeclarations();
 
         $this->app->bind(ShareService::class, function () {
@@ -99,7 +101,7 @@ class GroupShowMembersTabsTest extends TestCase
 
     /**
      * La table des déclarations et les trois lignes de `classe`, telles que la
-     * migration 62.3 les pose.
+     * commande `college:seed:role-x-type` les pose.
      */
     private function createGroupTypeRoleDeclarations(): void
     {

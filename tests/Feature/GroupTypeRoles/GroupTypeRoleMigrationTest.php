@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\GroupTypeRoles;
 
+use App\Models\GroupRole;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
-use Database\Seeders\GroupTypeRoleSeeder;
+use App\Support\RoleCatalog;
+use Database\Seeders\GroupRoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -17,14 +19,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.3 — AC1 : la table d'arête et ses SEPT lignes de reprise.
+ * Story 62.3 — AC1 : la table d'arête, et le fait qu'elle NAÎT VIDE.
  *
- * Le test pivot de ce fichier n'est pas le schéma (il se lit) : c'est le
- * **contenu de la reprise**, et surtout ses DEUX écarts avec la constante qui
- * meurt. `projet`×`member` et `equipe`×`member` sont déclarés à `label = null` —
- * si quelqu'un « corrige » la migration en recopiant les cinq surcharges, ce
- * fichier tombe, et il tombe avant que `member` ne devienne inattribuable dans
- * tout projet.
+ * Ce fichier a changé d'objet. Il épinglait les sept déclarations de reprise que la
+ * migration posait ; elles sont parties dans une commande d'administration
+ * ({@see \App\Console\Commands\CollegeSeedRoleXTypeCommand}, éprouvée par
+ * {@see CollegeSeedRoleXTypeCommandTest}). Ce qu'il prouve désormais est l'inverse,
+ * et c'est le point : **la migration n'impose rien**.
+ *
+ * Pourquoi ça compte. Une déclaration RESTREINT — un type qui en porte n'accepte
+ * plus que les rôles déclarés. Poser sept lignes en migration fermait `classe`,
+ * `projet` et `equipe` sur toute instance, y compris celles qui n'ont jamais vu une
+ * école, et le premier rôle personnalisé créé par un administrateur y aurait été
+ * inattribuable. {@see self::a_migrated_database_closes_no_type()} est la preuve
+ * exécutable que ce n'est plus le cas.
  */
 class GroupTypeRoleMigrationTest extends TestCase
 {
@@ -74,51 +82,70 @@ class GroupTypeRoleMigrationTest extends TestCase
     }
 
     /**
-     * LES SEPT LIGNES, exhaustivement, avec leurs libellés — et leurs `null`.
+     * LA TABLE NAÎT VIDE — zéro ligne, aucune exception.
+     *
+     * C'est l'assertion qui remplace « les sept lignes de reprise ». Si quelqu'un
+     * remet un seed dans la migration, ce test tombe le premier, et il tombe avant
+     * que trois types ne se referment sur toutes les instances du produit.
      */
     #[Test]
-    public function the_migration_lays_the_seven_recovery_declarations(): void
+    public function the_migration_creates_an_empty_table(): void
     {
-        $rows = DB::table('group_type_roles')
-            ->orderBy('group_type_key')
-            ->orderBy('group_role_key')
-            ->get(['group_type_key', 'group_role_key', 'label'])
-            ->map(fn (object $row): array => [
-                (string) $row->group_type_key,
-                (string) $row->group_role_key,
-                $row->label === null ? null : (string) $row->label,
-            ])
-            ->all();
-
-        $this->assertSame([
-            ['classe', 'manager', 'Enseignant'],
-            ['classe', 'member', 'Élève'],
-            ['classe', 'owner', 'Professeur principal'],
-            // DÉCLARÉS SANS SURCHARGE — l'écart assumé avec la constante défunte.
-            ['equipe', 'manager', 'Référent'],
-            ['equipe', 'member', null],
-            ['projet', 'manager', 'Porteur'],
-            ['projet', 'member', null],
-        ], $rows);
+        $this->assertSame(0, DB::table('group_type_roles')->count());
     }
 
     /**
-     * `owner` n'est déclaré QUE sur `classe` : c'est la donnée qui dit ce que la
-     * garde D3 disait en littéral.
+     * LA PREUVE que la migration n'impose RIEN.
+     *
+     * Sur une base migrée mais sans profil installé, aucun type n'est fermé :
+     * `assignableKeys()` rend TOUT le catalogue, partout — et un rôle personnalisé
+     * créé après coup est attribuable dans `classe`, `projet` et `equipe` comme
+     * ailleurs. C'était exactement ce que les sept lignes de la migration
+     * interdisaient.
      */
     #[Test]
-    public function owner_is_declared_on_the_class_type_and_nowhere_else(): void
+    public function a_migrated_database_closes_no_type(): void
     {
-        $types = DB::table('group_type_roles')
-            ->where('group_role_key', 'owner')
-            ->pluck('group_type_key')
-            ->all();
+        $this->seed(GroupRoleSeeder::class);
+        GroupRole::create(['key' => 'tuteur', 'label' => 'Tuteur', 'sort_order' => 9]);
 
-        $this->assertSame(['classe'], $types);
+        $whole = ['member', 'manager', 'owner', 'tuteur'];
+        $this->assertSame($whole, RoleCatalog::keys());
+
+        foreach ([null, 'classe', 'projet', 'equipe', 'cours', 'custom', 'inconnu'] as $type) {
+            $this->assertSame(
+                $whole,
+                RoleCatalog::assignableKeys($type),
+                'le type « ' . var_export($type, true) . ' » ne doit être fermé par aucune migration',
+            );
+            $this->assertSame([], RoleCatalog::declarationsFor((string) $type));
+
+            // Et le rôle personnalisé y est bel et bien ATTRIBUABLE, pas seulement
+            // listé : c'est la garde qui le dit.
+            RoleCatalog::assertAssignable($type, 'tuteur');
+        }
+
+        $this->addToAssertionCount(7);
+    }
+
+    /**
+     * Les libellés scolaires ne sont posés par PERSONNE tant que la commande n'a
+     * pas été lancée — corollaire multi-vertical de la story.
+     */
+    #[Test]
+    public function a_migrated_database_speaks_no_school_vocabulary(): void
+    {
+        $this->seed(GroupRoleSeeder::class);
+
+        $this->assertSame('Membre', RoleCatalog::label('classe', 'member'));
+        $this->assertSame('Gestionnaire', RoleCatalog::label('classe', 'manager'));
+        $this->assertSame('Propriétaire', RoleCatalog::label('classe', 'owner'));
+        $this->assertSame('Gestionnaire', RoleCatalog::label('projet', 'manager'));
+        $this->assertSame('Gestionnaire', RoleCatalog::label('equipe', 'manager'));
     }
 
     #[Test]
-    public function the_migration_writes_nothing_outside_its_own_table(): void
+    public function the_migration_writes_nothing_anywhere(): void
     {
         $group = UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
         $user = User::create(['login' => 'alecoz', 'role' => 'prof', 'is_active' => true]);
@@ -138,7 +165,7 @@ class GroupTypeRoleMigrationTest extends TestCase
         // On rejoue la migration : idempotence ET innocuité, d'un seul geste.
         $this->artisan('migrate', ['--force' => true])->assertSuccessful();
 
-        $this->assertSame(7, DB::table('group_type_roles')->count(), 'la migration rejouée a créé un doublon');
+        $this->assertSame(0, DB::table('group_type_roles')->count(), 'la migration rejouée a semé des lignes');
 
         foreach ($snapshots as $table => $before) {
             $after = DB::table($table)
@@ -148,32 +175,5 @@ class GroupTypeRoleMigrationTest extends TestCase
 
             $this->assertSame($before, $after, 'la migration a écrit dans « ' . $table . ' »');
         }
-    }
-
-    /**
-     * Le seeder ne fait pas de doublon non plus, et il ne réécrit pas un libellé
-     * local qu'un administrateur aurait changé… si — et seulement si — il n'est
-     * pas rejoué. Le seeder REsynchronise sur la baseline : c'est son contrat, et
-     * il est différent de celui de la migration. Ce test épingle la différence.
-     */
-    #[Test]
-    public function the_seeder_is_idempotent_and_resynchronises_the_baseline(): void
-    {
-        DB::table('group_type_roles')
-            ->where('group_type_key', 'classe')
-            ->where('group_role_key', 'manager')
-            ->update(['label' => 'Professeur']);
-
-        $stats = (new GroupTypeRoleSeeder())->run();
-
-        $this->assertSame(['created' => 0, 'updated' => 7], $stats);
-        $this->assertSame(7, DB::table('group_type_roles')->count());
-        $this->assertSame(
-            'Enseignant',
-            DB::table('group_type_roles')
-                ->where('group_type_key', 'classe')
-                ->where('group_role_key', 'manager')
-                ->value('label'),
-        );
     }
 }

@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.3 — AC2/AC5/AC9 : les gardes du modèle, les refus NOMMÉS, et ce que
@@ -27,12 +28,18 @@ use Tests\TestCase;
  */
 class GroupTypeRoleGuardsTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->seed(GroupRoleSeeder::class);
+        // Story 62.3 — les gardes éprouvées ici (refus de retrait chiffré,
+        // immuabilité de la paire, `owner` sur `classe`) portent sur des
+        // déclarations EXISTANTES. La migration n'en pose plus : on installe le
+        // profil scolaire, qui en fournit sept.
+        $this->installCollegeRoleProfile();
 
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();

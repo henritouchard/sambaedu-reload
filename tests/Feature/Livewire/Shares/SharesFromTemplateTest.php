@@ -20,6 +20,7 @@ use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 34.3 — Tests Feature Livewire de la modale « Créer depuis un template »
@@ -27,6 +28,7 @@ use Tests\TestCase;
  */
 class SharesFromTemplateTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     private string $tempRoot;
@@ -110,6 +112,12 @@ class SharesFromTemplateTest extends TestCase
     #[Test]
     public function an_auto_resolvable_recipe_asks_for_a_single_group_and_previews_resolved_audiences(): void
     {
+        // Story 62.3 — l'aperçu lit le vocabulaire DÉCLARÉ du type. « Enseignant »
+        // n'est plus posé par la migration : c'est un profil qu'on installe. Ce
+        // test l'installe donc, faute de quoi il mesurerait le régime de repli
+        // (« Gestionnaire ») au lieu de ce qu'il prétend vérifier.
+        $this->installCollegeRoleProfile();
+
         $classe = UserGroup::create(['name' => '6eB', 'type' => 'classe']);
         $this->actingAs($this->manager());
 

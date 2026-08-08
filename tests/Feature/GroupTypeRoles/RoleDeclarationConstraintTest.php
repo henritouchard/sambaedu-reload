@@ -23,6 +23,7 @@ use Livewire\Livewire;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.3 — AC4 : LA CONTRAINTE MORD AUX TROIS POINTS HUMAINS, ET NULLE PART
@@ -43,6 +44,7 @@ use Tests\TestCase;
  */
 class RoleDeclarationConstraintTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -52,6 +54,11 @@ class RoleDeclarationConstraintTest extends TestCase
 
         $this->seed(PermissionSeeder::class);
         $this->seed(GroupRoleSeeder::class);
+        // Story 62.3 — la CONTRAINTE d'attribution n'existe que là où des rôles
+        // sont déclarés, et la migration n'en déclare plus aucun. Ce fichier
+        // éprouve précisément le contraste « type déclaré / type de repli » : il
+        // installe donc le profil scolaire, qui fournit les trois types déclarés.
+        $this->installCollegeRoleProfile();
 
         $this->app->bind(ShareService::class, function () {
             $mock = Mockery::mock(ShareService::class);
@@ -458,8 +465,9 @@ class RoleDeclarationConstraintTest extends TestCase
      *
      * La cohérence de l'ensemble ne tient pas par la garde mais par la
      * COMPOSITION : les chemins libres n'écrivent que des constantes du plancher,
-     * et les déclarations de reprise les couvrent sur les types que ces chemins
-     * produisent. Amputer le seed casse ce test — et c'est bien le but.
+     * et les déclarations du profil scolaire les couvrent sur les types que ces
+     * chemins produisent. Amputer le profil installé par
+     * `college:seed:role-x-type` casse ce test — et c'est bien le but.
      */
     #[Test]
     public function everything_the_import_paths_write_is_covered_by_the_seeded_declarations(): void

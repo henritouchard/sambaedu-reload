@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.3 — AC3/AC4 : la RÉSOLUTION lit la donnée, et le vocabulaire
@@ -24,15 +25,19 @@ use Tests\TestCase;
  */
 class RoleDeclarationResolutionTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
         // Le catalogue de RÔLES vient du seeder (62.1) ; les DÉCLARATIONS, elles,
-        // viennent de la migration (62.3). L'asymétrie est voulue et docblockée
-        // là-bas : c'est elle qui laisse la parité tenir sans seeder.
+        // viennent de la COMMANDE (62.3) — plus de la migration, qui laisse
+        // désormais la table vide. Ce fichier éprouve la résolution d'un type
+        // DÉCLARÉ face à un type de repli : il lui faut donc des déclarations, et
+        // il les installe comme un administrateur le ferait.
         $this->seed(GroupRoleSeeder::class);
+        $this->installCollegeRoleProfile();
     }
 
     // =========================================================================

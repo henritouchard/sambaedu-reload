@@ -45,13 +45,15 @@ class DatabaseSeeder extends Seeder
             // migration. ⚠️ Pré-déploiement VM :
             // `db:seed --class=GroupTypeSeeder`.
             GroupTypeSeeder::class,
-            // Story 62.3 — les DÉCLARATIONS (type × rôle → libellé local) :
-            // quels rôles ont un sens dans une classe, un projet, une équipe.
-            // APRÈS les deux catalogues, dont elle référence les clés — la garde
-            // du modèle exige que le type existe. Idempotent/rejouable, ne touche
-            // aucune appartenance. ⚠️ Pré-déploiement VM :
-            // `db:seed --class=GroupTypeRoleSeeder`.
-            GroupTypeRoleSeeder::class,
+            // Story 62.3 — les DÉCLARATIONS (type × rôle → libellé local) n'ont
+            // PAS de seeder, et c'est délibéré. Déclarer des rôles sur un type le
+            // FERME (seuls les rôles déclarés y restent attribuables), et les
+            // libellés « Élève »/« Professeur principal » sont du vocabulaire
+            // SCOLAIRE : ni l'une ni l'autre de ces décisions n'a sa place dans un
+            // `db:seed` joué sans y penser sur une instance multi-vertical. Le
+            // profil scolaire s'installe à la demande :
+            // `php artisan college:seed:role-x-type`
+            // ({@see \App\Console\Commands\CollegeSeedRoleXTypeCommand}).
             // Story 54.1 — registre d'extensions : source « embarquée » +
             // chargement des manifests du dépôt (`resources/extensions/*`),
             // dont la tuile Documentation (`/doc`). Idempotent/rejouable :

@@ -1875,11 +1875,14 @@ donnée décide désormais **quels rôles sont attribuables** dans un type.
 
 ```
 php artisan migrate
-php artisan db:seed --class=GroupTypeRoleSeeder   # seulement si l'écran a déjà servi
+php artisan college:seed:role-x-type              # installe le profil scolaire
 ```
 
-> La migration pose elle-même les **sept** déclarations de reprise. Le seeder ne sert qu'à
-> resynchroniser une instance en place sur la baseline du code.
+> ⚠️ **Corrigé le 2026-08-08 — voir la section 23.** La migration posait elle-même les
+> **sept** déclarations, et un `GroupTypeRoleSeeder` les resynchronisait ; les deux ont été
+> retirés. La migration crée désormais la table **vide**, et le vocabulaire scolaire
+> s'installe par la commande ci-dessus. Les scénarios 22.1 à 22.8 supposent donc **le profil
+> installé** : jouez la commande avant de les dérouler.
 
 ### Scénario 22.1 — La parité : rien n'a bougé à l'écran
 
@@ -1988,3 +1991,121 @@ php artisan db:seed --class=GroupTypeRoleSeeder   # seulement si l'écran a déj
   retombent sur ceux du catalogue, et **tous** les rôles restent attribuables. La dégradation
   est journalisée (`[RoleCatalog] Déclarations de rôles par type de groupe illisibles`) — si
   cette ligne apparaît en production, c'est une panne de base, pas une base neuve.
+
+---
+
+## Section 23 — Le profil scolaire s'INSTALLE, il ne s'impose plus (Story 62.3, correctif, 2026-08-08)
+
+**Ce que le correctif change, en une phrase** : la migration `create_group_type_roles_table`
+posait sept déclarations (« Élève », « Enseignant », « Professeur principal », « Porteur »,
+« Référent ») ; elle crée désormais la table **vide**, et ce vocabulaire s'installe par une
+**commande** que l'administrateur lance volontairement.
+
+**Pourquoi**, et ce sont deux raisons distinctes :
+
+1. **une déclaration RESTREINT.** Un type qui porte des déclarations n'accepte plus que les
+   rôles déclarés ; un type qui n'en porte aucune garde **tout** le catalogue. Poser ces sept
+   lignes fermait `classe`, `projet` et `equipe` sur **toutes** les instances. C'était iso au
+   jour de la story (trois rôles au catalogue, et la règle D3 bloque déjà « Professeur
+   principal » hors classe) — mais au **premier rôle personnalisé** créé par un administrateur,
+   celui-ci aurait été attribuable partout **sauf** dans les trois types les plus utilisés ;
+2. **SE5 est multi-vertical.** Une instance sans rapport avec une école n'a aucune raison de
+   recevoir « Élève » et « Professeur principal ». Même geste que la décision du 2026-08-03 sur
+   le seed `Profs`→`prof` (scénario 19.12).
+
+**Ce qui a été retiré** : le seed de la migration, **et** `GroupTypeRoleSeeder` (supprimé, avec
+sa ligne dans `DatabaseSeeder`). Il n'y a plus qu'un point d'entrée. Cela clôt au passage la
+contradiction relevée en review 62.3 #2 — la migration promettait de ne jamais réécrire un
+libellé local pendant que le seeder de la même story le réécrivait sans confirmation.
+
+**Pré-requis Section 23**
+
+- Instance à jour, `php artisan migrate` joué.
+- `sudo -u www-admin php artisan db:seed --class=GroupRoleSeeder` (catalogue des rôles) et
+  `--class=GroupTypeSeeder` (catalogue des types) : la commande s'accroche à leurs clés.
+- Deux ou trois groupes réels de types différents : une `classe`, un `projet`, un `cours`.
+
+### Scénario 23.1 — Instance migrée SANS profil : tout est ouvert (le cœur)
+
+1. Sur une instance fraîchement migrée, **ne pas** lancer la commande.
+2. En base : `SELECT count(*) FROM group_type_roles;` → **0**.
+3. `/admin/settings/groups?tab=types` → « Modifier » sur **Classe**.
+4. **Attendu** : la section « Rôles disponibles » n'affiche **aucune** coche, et l'encart
+   « tous les rôles du catalogue sont disponibles » est visible. Idem pour **Projet** et
+   **Équipe**.
+5. Ouvrir la page d'un groupe de type `classe`.
+6. **Attendu** : la colonne « Rôle » lit « Membre », « Gestionnaire », « Propriétaire » — les
+   libellés du **catalogue**, pas le vocabulaire scolaire. Ce n'est pas une régression : c'est
+   une instance qui n'a pas demandé le profil scolaire.
+7. Onglet **Rôles** → créer un rôle « Tuteur ».
+8. **Attendu, et c'est le point à vérifier vraiment** : « Tuteur » est proposé dans le select de
+   rôle de **tous** les groupes — `classe` comprise. Avant le correctif, il l'était partout
+   **sauf** dans `classe`, `projet` et `equipe`, sans qu'aucun écran ne dise pourquoi.
+
+### Scénario 23.2 — La commande : le vocabulaire scolaire, et les types qui se ferment
+
+1. `sudo -u www-admin php artisan college:seed:role-x-type`
+2. **Attendu** : un tableau de sept lignes, toutes en « créée », listant `classe`/`projet`/
+   `equipe` avec leurs libellés — et `— (libellé du catalogue)` sur `projet`×`member` et
+   `equipe`×`member`, qui sont **déclarés sans surcharge**.
+3. **Attendu** : un bilan « 7 créée(s), 0 laissée(s) en place, 0 réalignée(s) », puis un
+   **avertissement** disant que déclarer des rôles sur un type le **FERME**, et renvoyant à
+   l'onglet « Types de groupes » pour y ajouter un rôle.
+4. Rouvrir la page d'un groupe `classe`.
+5. **Attendu** : « Élève », « Enseignant », « Professeur principal ». Sur un `projet` :
+   « Membre » / « Porteur ». Sur une `equipe` : « Membre » / « Référent ».
+6. **Attendu** : le rôle « Tuteur » du scénario 23.1 n'est **plus** proposé sur une `classe`,
+   un `projet` ni une `equipe` — ces types sont désormais **fermés**. Il l'est toujours sur un
+   `cours` (aucune déclaration ⇒ tout le catalogue).
+7. **Attendu** : c'est exactement ce que l'avertissement annonçait. Pour le rendre attribuable
+   sur les projets, le déclarer depuis « Types de groupes » → **Projet** (scénario 22.2).
+8. Dérouler la **section 22** dans son intégralité : à partir d'ici, tous ses scénarios
+   s'appliquent tels quels.
+
+### Scénario 23.3 — Rejeu : idempotent, et le libellé local fait FOI
+
+1. `tab=types` → « Modifier » sur **Classe** → remplacer « Enseignant » par « Professeur » →
+   Enregistrer. Vérifier que la page d'une classe dit bien « Professeur ».
+2. Relancer `php artisan college:seed:role-x-type`.
+3. **Attendu** : aucune ligne créée — « 0 créée(s), 7 laissée(s) en place, 0 réalignée(s) » —
+   et la ligne `classe`×`manager` porte l'action **« laissée en place (« Professeur ») »**.
+4. **Attendu, et c'est le contrat** : la page de la classe dit **toujours** « Professeur ». Une
+   commande d'installation ne défait pas un geste d'administration au prochain déploiement.
+5. `SELECT count(*) FROM group_type_roles;` → **7**, aucun doublon.
+6. Contre-épreuve : déclarer « Tuteur » sur **Projet** depuis l'écran, puis relancer la
+   commande. **Attendu** : la déclaration ajoutée à la main est intacte (8 lignes au total) ;
+   la commande n'installe que son profil, elle ne fait jamais le ménage.
+
+### Scénario 23.4 — `--resync` : le seul chemin qui écrase, et il est explicite
+
+1. `sudo -u www-admin php artisan college:seed:role-x-type --resync`
+2. **Attendu** : la ligne `classe`×`manager` porte l'action
+   **« réalignée (« Professeur » → « Enseignant ») »**, et le bilan compte 1 réalignée.
+3. **Attendu** : la page de la classe dit de nouveau « Enseignant ». C'est le **seul** chemin
+   qui écrase un libellé local, et il faut le taper.
+4. **Attendu** : la déclaration « Tuteur » posée à la main au scénario 23.3 est **toujours là**
+   — `--resync` réaligne les libellés du profil, il ne supprime rien.
+5. Vider le champ « Libellé dans ce type » de `projet`×`member` (le remplir puis le vider), puis
+   relancer avec `--resync` : **attendu**, la référence est un `null`, donc le libellé du
+   catalogue (« Membre ») est restauré. « Déclaré sans surcharge » est une valeur de référence à
+   part entière, pas une absence de consigne.
+
+### Scénario 23.5 — Refus propre : migration non jouée
+
+1. Sur une instance où la table n'existe pas encore (avant `migrate`), lancer la commande.
+2. **Attendu** : un message métier — « Refusé : la table des déclarations « group_type_roles »
+   n'existe pas. Jouez d'abord « php artisan migrate », puis relancez cette commande. » — et un
+   **code de sortie non nul** (`echo $?` → 1).
+3. **Attendu** : la commande ne crée pas la table elle-même. Ce n'est pas son travail.
+
+### Post-correctifs & non-régressions — Section 23
+
+- **`db:seed` complet ne pose plus aucune déclaration.** Lancer `php artisan db:seed` sur une
+  base neuve, puis `SELECT count(*) FROM group_type_roles;` → **0**. C'est le comportement
+  attendu : le profil scolaire ne s'installe que par sa commande.
+- **`db:seed --class=GroupTypeRoleSeeder` n'existe plus** et échoue avec « seeder not found ».
+  Toute procédure qui le mentionnait est caduque — utiliser `college:seed:role-x-type`.
+- **La commande n'écrit rien hors de `group_type_roles`** : ni appartenance, ni groupe, ni
+  catalogue de rôles ou de types. Comparer un dump avant/après sur une instance de lab.
+- **Rien ne change pour une instance déjà déployée avec les sept lignes** : elles sont déjà en
+  base, la migration ne les retire pas, et la commande les reconnaît comme « laissées en place ».

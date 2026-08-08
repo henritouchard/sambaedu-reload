@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
@@ -36,6 +37,7 @@ use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 class RoleLabelRenameHasNoDerivedEffectTest extends TestCase
 {
     use ClassTreeRecipe;
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -43,6 +45,10 @@ class RoleLabelRenameHasNoDerivedEffectTest extends TestCase
         parent::setUp();
         $this->seed(GroupTypeSeeder::class);
         $this->seed(GroupRoleSeeder::class);
+        // Story 62.3 — on ne peut RENOMMER un libellé local que s'il en existe un.
+        // La migration n'en pose plus aucun : le profil scolaire s'installe ici,
+        // et c'est lui qu'on renomme ensuite.
+        $this->installCollegeRoleProfile();
 
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();

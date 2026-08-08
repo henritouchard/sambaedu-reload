@@ -18,6 +18,7 @@ use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.1 — /admin/settings/groups et son onglet « Rôles ».
@@ -28,6 +29,7 @@ use Tests\TestCase;
  */
 class GroupRolesCatalogPageTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     private const PAGE = 'pages::admin.settings.groups.index';
@@ -161,6 +163,13 @@ class GroupRolesCatalogPageTest extends TestCase
     {
         $this->grant(['server.admin']);
 
+        // La colonne « types » compte les types qui DÉCLARENT le rôle. Sur une base
+        // seulement migrée il n'y en a aucun : la migration crée la table vide, et
+        // le vocabulaire scolaire s'installe à la demande. Ce test mesure un
+        // décompte de déclarations — il installe donc le profil qui les fournit,
+        // plutôt que de rabattre son épingle sur zéro.
+        $this->installCollegeRoleProfile();
+
         $group = UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
         $user = User::create(['login' => 'alecoz', 'role' => 'prof', 'is_active' => true]);
         DB::table('user_group_user')->insert([
@@ -178,8 +187,8 @@ class GroupRolesCatalogPageTest extends TestCase
         // Story 62.3 — MISE À JOUR D'INVENTAIRE : la colonne « types » comptait les
         // types OBSERVÉS sur les arêtes (1 : la classe fabriquée juste au-dessus) ;
         // elle compte désormais les types qui DÉCLARENT le rôle. `manager` est
-        // déclaré par `classe`, `projet` et `equipe` — les trois lignes de reprise
-        // posées par la migration 62.3 — d'où 3, indépendamment des arêtes.
+        // déclaré par `classe`, `projet` et `equipe` — trois des sept lignes du
+        // profil scolaire installé ci-dessus — d'où 3, indépendamment des arêtes.
         $this->assertSame(3, $rows[1]['usage']['group_types']);
         $this->assertSame(0, $rows[1]['usage']['templates']);
 

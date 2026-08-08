@@ -11,6 +11,7 @@ use Database\Seeders\GroupRoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.1 — LA PARITÉ D'AFFICHAGE, FIGÉE EN LITTÉRAUX.
@@ -26,12 +27,20 @@ use Tests\TestCase;
  */
 class RoleCatalogParityTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->seed(GroupRoleSeeder::class);
+        // Story 62.3 — « Élève », « Enseignant », « Porteur »… étaient posés par la
+        // MIGRATION : cette suite les recevait sans les demander. Ce sont désormais
+        // un PROFIL qu'un administrateur installe — déclarer des rôles FERME un
+        // type, et le vocabulaire scolaire n'est pas un défaut universel. La parité
+        // porte sur ce profil : on l'installe donc explicitement, plutôt que de
+        // rabattre les épingles sur le régime de repli.
+        $this->installCollegeRoleProfile();
     }
 
     #[Test]

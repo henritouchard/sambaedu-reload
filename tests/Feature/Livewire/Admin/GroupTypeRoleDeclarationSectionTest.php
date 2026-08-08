@@ -23,6 +23,7 @@ use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.3 — AC8 : la section « Rôles disponibles » de la modale d'édition d'un
@@ -35,6 +36,7 @@ use Tests\TestCase;
  */
 class GroupTypeRoleDeclarationSectionTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     private const TAB = 'pages::admin.settings.groups._partials.types-tab';
@@ -45,6 +47,11 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
         $this->withoutVite();
         $this->seed(GroupRoleSeeder::class);
         $this->seed(GroupTypeSeeder::class);
+        // Story 62.3 — l'écran édite des déclarations ; la migration n'en pose
+        // plus. On installe le profil scolaire pour disposer d'un état de départ
+        // réaliste (classe déclarée avec surcharges, projet déclaré partiellement,
+        // cours sans aucune déclaration).
+        $this->installCollegeRoleProfile();
 
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();

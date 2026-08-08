@@ -18,6 +18,7 @@ use Livewire\Livewire;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
+use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
  * Story 62.1 — LA PARITÉ SUR CE QUI EST RENDU, pas seulement sur la fonction.
@@ -36,6 +37,7 @@ use Tests\TestCase;
  */
 class RenderedRoleLabelsParityTest extends TestCase
 {
+    use InstallsCollegeRoleProfile;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -45,6 +47,10 @@ class RenderedRoleLabelsParityTest extends TestCase
 
         $this->seed(PermissionSeeder::class);
         $this->seed(GroupRoleSeeder::class);
+        // Story 62.3 — les libellés scolaires que ces écrans rendent ne sont plus
+        // posés par la migration : ils sont un PROFIL qu'on installe. La parité de
+        // RENDU vaut pour une instance qui l'a installé, on l'installe donc ici.
+        $this->installCollegeRoleProfile();
 
         // Le full-render de la page groupe passe par le partage de classe : le
         // système de fichiers est absent de l'hôte de test.
