@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Support\GroupTypeCatalog;
 use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
@@ -51,6 +52,10 @@ abstract class TestCase extends BaseTestCase
         // dispatche AUCUN événement Eloquent : sans ce vidage, un test qui crée
         // « tuteur » empoisonnerait le suivant (dont la base ne le contient plus).
         RoleCatalog::flush();
+        // Story 62.2 — même mécanisme, même piège : le catalogue de TYPES de
+        // groupes est mémoïsé dans une propriété statique que seul un événement
+        // Eloquent vide.
+        GroupTypeCatalog::flush();
     }
 
     /**

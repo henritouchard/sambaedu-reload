@@ -1,11 +1,23 @@
 <?php
 
 use App\Services\UserGroupService;
+use App\Support\GroupTypeCatalog;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
+/**
+ * Édition SQL d'un groupe d'utilisateurs.
+ *
+ * **Story 62.2 — le choix de type vient du CATALOGUE.** La liste d'`<option>`
+ * écrite en dur ici OMETTAIT `matiere_classe` — un type que le balayage
+ * d'annuaire produit pourtant tout seul : rouvrir cette page sur un groupe
+ * `Matiere_x@y` et enregistrer sans y toucher le déclassait silencieusement.
+ * Depuis la bascule, les types proposés sont ceux de `/admin/settings/groups`,
+ * `role` et `function` compris — changement de comportement ASSUMÉ, le même que
+ * sur la modale de création.
+ */
 new #[Title('Modification groupe utilisateur')] class extends Component {
     private UserGroupService $userGroupService;
 
@@ -58,7 +70,7 @@ new #[Title('Modification groupe utilisateur')] class extends Component {
         $this->validate([
             'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9._-]+$/'],
             'displayName' => ['nullable', 'string', 'max:255'],
-            'type' => ['required', 'string', 'max:50'],
+            'type' => ['required', 'string', 'max:50', \Illuminate\Validation\Rule::in(GroupTypeCatalog::keys())],
             'selectedUserIds' => ['array'],
             'selectedUserIds.*' => ['integer', 'exists:users,id'],
         ]);
@@ -108,12 +120,9 @@ new #[Title('Modification groupe utilisateur')] class extends Component {
                 <div class="form-control max-w-xs">
                     <label class="label"><span class="label-text">Type</span></label>
                     <select class="select select-bordered" wire:model="type">
-                        <option value="custom">Personnalisé</option>
-                        <option value="classe">Classe</option>
-                        <option value="cours">Cours</option>
-                        <option value="matiere">Matière</option>
-                        <option value="projet">Projet</option>
-                        <option value="equipe">Équipe</option>
+                        @foreach (\App\Support\GroupTypeCatalog::options() as $typeKey => $typeLabel)
+                            <option value="{{ $typeKey }}">{{ $typeLabel }}</option>
+                        @endforeach
                     </select>
                     @error('type')
                         <span class="text-error text-xs mt-1">{{ $message }}</span>

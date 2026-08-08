@@ -93,22 +93,22 @@ new #[Title('Réglages')] class extends Component {
 
              Le vocabulaire du modèle groupes/rôles/droits : ce qui se DÉCLARE
              une fois et se réutilise partout ailleurs. Story 62.1 y installe le
-             catalogue de rôles ; 62.2 (types de groupes) et 62.6 (arborescences)
-             rejoindront la même page, en onglets.
+             catalogue de rôles, 62.2 celui des types de groupes ; 62.6
+             (arborescences) rejoindra la même page, en onglet.
              ============================================================ --}}
         <x-molecules.settings-section
             title="Groupes & droits"
             icon="fa-solid fa-user-tag"
             color="secondary"
-            description="Le vocabulaire commun des groupes : rôles d'appartenance, et bientôt types de groupes et arborescences de fichiers.">
+            description="Le vocabulaire commun des groupes : rôles d'appartenance, types de groupes, et bientôt arborescences de fichiers.">
 
             <x-molecules.settings-card
                 href="{{ route('admin.settings.groups') }}"
                 icon="fa-solid fa-user-tag"
                 iconColor="secondary"
                 title="Rôles & groupes"
-                description="Catalogue des rôles d'appartenance (Membre, Gestionnaire, Propriétaire…) : libellé, ordre d'affichage et usages."
-                badge="Rôles"
+                description="Catalogue des rôles d'appartenance (Membre, Gestionnaire…) et des types de groupes (Classe, Projet, Équipe…) : libellé, icône, ordre d'affichage et usages."
+                badge="Vocabulaire"
                 badgeColor="secondary"
                 testid="card-settings-groups" />
         </x-molecules.settings-section>

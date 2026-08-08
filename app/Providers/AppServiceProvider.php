@@ -245,6 +245,11 @@ class AppServiceProvider extends ServiceProvider
         // pour `queue_task_runs`.
         Queue::before(static function (): void {
             \App\Support\RoleCatalog::flush();
+            // Story 62.2 — le catalogue de TYPES de groupes a exactement la même
+            // mémo statique et le même worker au long cours. Le job de
+            // synchronisation d'annuaire valide des groupes : un type créé à
+            // l'écran lui resterait invisible jusqu'à une heure.
+            \App\Support\GroupTypeCatalog::flush();
         });
 
         // Enregistrer les observers pour la synchronisation AD

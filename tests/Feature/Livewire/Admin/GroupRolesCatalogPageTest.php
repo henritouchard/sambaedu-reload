@@ -132,12 +132,18 @@ class GroupRolesCatalogPageTest extends TestCase
             ->assertOk()
             ->assertSet('tab', 'roles');
 
-        Livewire::test(self::PAGE)->call('setTab', 'types')->assertSet('tab', 'roles');
+        // Story 62.2 — l'onglet `types` EXISTE désormais : ce qui doit retomber
+        // sur `roles`, c'est un jeton qui n'est dans aucune des deux listes.
+        Livewire::test(self::PAGE)->call('setTab', 'arborescences')->assertSet('tab', 'roles');
     }
 
     /**
-     * PIÈGE NOMMÉ : pas d'onglet fantôme. « Types de groupes » (62.2) et
-     * « Arborescences » (62.6) ne s'annoncent pas avant d'exister.
+     * PIÈGE NOMMÉ : pas d'onglet fantôme.
+     *
+     * Story 62.2 — « Types de groupes » a cessé d'être une story future : son
+     * onglet est RENDU, donc il s'annonce. « Arborescences » (62.6), elle, ne
+     * s'annonce toujours pas. La règle n'a pas changé, seul l'inventaire de ce
+     * qui existe a changé.
      */
     #[Test]
     public function no_ghost_tab_is_rendered_for_future_stories(): void
@@ -146,7 +152,7 @@ class GroupRolesCatalogPageTest extends TestCase
 
         Livewire::test(self::PAGE)
             ->assertOk()
-            ->assertDontSeeHtml('data-testid="tab-types"')
+            ->assertSeeHtml('data-testid="tab-types"')
             ->assertDontSeeHtml('data-testid="tab-arborescences"');
     }
 

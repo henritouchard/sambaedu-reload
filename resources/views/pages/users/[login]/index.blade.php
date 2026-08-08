@@ -15,6 +15,7 @@ use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
 use App\Models\Pivot\UserGroupUserPivot;
+use App\Support\GroupTypeCatalog;
 use App\Support\RoleCatalog;
 use App\Models\Wallpaper;
 use App\Models\Delegation;
@@ -259,25 +260,19 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         $this->groupDetails = $details;
     }
 
-    /** Libellé FR du type de groupe — aligné sur la fiche groupe. */
+    /**
+     * Libellé FR du type de groupe — story 62.2 : lu au CATALOGUE.
+     *
+     * Ce `match`-ci était la forme la plus riche des trois qui coexistaient (seul
+     * à connaître « Rôle » et « Fonction ») : ce sont ses libellés que la
+     * migration a posés en base, mot pour mot, pour que l'écran ne bouge pas.
+     */
     private static function groupTypeLabel(string $type): string
     {
-        return match ($type) {
-            'classe' => 'Classe',
-            'cours' => 'Cours',
-            'matiere' => 'Matière',
-            'matiere_classe' => 'Matière / Classe',
-            'projet' => 'Projet',
-            'equipe' => 'Équipe',
-            'role' => 'Rôle',
-            'function' => 'Fonction',
-            'custom' => 'Personnalisé',
-            'other_group' => 'Autre',
-            default => $type === '' ? 'Autre' : ucfirst($type),
-        };
+        return GroupTypeCatalog::label($type);
     }
 
-    /** Couleur de badge du type de groupe — aligné sur la fiche groupe. */
+    /** Couleur de badge du type de groupe — reste un `match` local (le catalogue ne porte pas de charte). */
     private static function groupTypeBadgeClass(string $type): string
     {
         return match ($type) {
