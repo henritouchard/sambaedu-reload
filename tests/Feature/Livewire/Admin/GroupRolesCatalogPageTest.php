@@ -175,7 +175,12 @@ class GroupRolesCatalogPageTest extends TestCase
         $this->assertSame(['member', 'manager', 'owner'], array_column($rows, 'key'));
         $this->assertSame(['Membre', 'Gestionnaire', 'Propriétaire'], array_column($rows, 'label'));
         $this->assertSame(1, $rows[1]['usage']['edges']);
-        $this->assertSame(1, $rows[1]['usage']['group_types']);
+        // Story 62.3 — MISE À JOUR D'INVENTAIRE : la colonne « types » comptait les
+        // types OBSERVÉS sur les arêtes (1 : la classe fabriquée juste au-dessus) ;
+        // elle compte désormais les types qui DÉCLARENT le rôle. `manager` est
+        // déclaré par `classe`, `projet` et `equipe` — les trois lignes de reprise
+        // posées par la migration 62.3 — d'où 3, indépendamment des arêtes.
+        $this->assertSame(3, $rows[1]['usage']['group_types']);
         $this->assertSame(0, $rows[1]['usage']['templates']);
 
         // La clé est rendue, discrètement, mais elle est là : c'est ce que porte

@@ -123,7 +123,13 @@ class SharesFromTemplateTest extends TestCase
 
         $this->assertCount(2, $preview);
         $labels = array_column($preview, 'label');
-        $this->assertContains('6eB — encadrants', $labels, 'l\'audience enseignante est un RÔLE D\'ARÊTE, dit comme tel');
+        // Story 62.3 — DIVERGENCE NOMMÉE ET ASSUMÉE (AC6). L'aperçu disait
+        // « encadrants » : un `match` local, écrit dans cette vue seule, qui
+        // ignorait le type du groupe et fondait tout rôle inconnu dans
+        // « membres ». Il lit désormais le vocabulaire DÉCLARÉ du type — sur une
+        // classe, `manager` se dit « Enseignant », comme partout ailleurs dans
+        // l'application, et comme l'administrateur peut le renommer.
+        $this->assertContains('6eB — Enseignant', $labels, 'l\'audience enseignante est un RÔLE D\'ARÊTE, dit comme le type le déclare');
         $this->assertContains('6eB', $labels);
     }
 

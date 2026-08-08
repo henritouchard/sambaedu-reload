@@ -11,6 +11,7 @@ use App\Services\Filesystem\DirectoryTemplateService;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\NetworkShareValidator;
 use App\Services\Filesystem\Plan\PlanGrant;
+use App\Support\RoleCatalog;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Title;
@@ -688,12 +689,24 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 RoleResolutionStrategy::EdgeRole => sprintf(
                     '%s — %s',
                     $groupLabel,
+                    // Story 62.3 — l'aperçu d'audience lit le VOCABULAIRE DÉCLARÉ
+                    // du type de groupe, plus un `match` local.
+                    //
+                    // Ce `match` était le dernier survivant du dépôt, et il
+                    // mentait deux fois : « membres » était son `default`, donc un
+                    // rôle personnalisé (`tuteur`, créé au catalogue de 62.1) y
+                    // était rendu « membres » comme n'importe quoi d'autre ; et il
+                    // ignorait le type du groupe alors que `$group` est juste
+                    // au-dessus. Une recette accrochée à une classe annonçait
+                    // « encadrants » là où tous les autres écrans disaient
+                    // « Enseignant ».
+                    //
+                    // DIVERGENCE NOMMÉE ET ASSUMÉE : l'aperçu affiche désormais
+                    // « 3A — Enseignant » au lieu de « 3A — encadrants ». C'est le
+                    // libellé que l'administrateur voit partout ailleurs, et celui
+                    // qu'il peut renommer.
                     implode(', ', array_map(
-                        static fn (string $edgeRole): string => match ($edgeRole) {
-                            'manager' => 'encadrants',
-                            'owner' => 'responsables',
-                            default => 'membres',
-                        },
+                        fn (string $edgeRole): string => RoleCatalog::label($group->type, $edgeRole),
                         $resolution['edge_roles'],
                     )),
                 ),

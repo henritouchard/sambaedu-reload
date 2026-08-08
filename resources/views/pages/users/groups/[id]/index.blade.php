@@ -162,6 +162,19 @@ new #[Title('Groupe utilisateur')] class extends Component {
             return;
         }
 
+        // Story 62.3 — LA CONTRAINTE DE DÉCLARATION, premier des trois points
+        // d'étranglement HUMAINS. Elle est APRÈS D3, délibérément : sur une
+        // classe, `owner` est déclaré et D3 laisse passer ; sur un `projet`, D3
+        // parle en premier avec son message spécifique, qui reste celui que les
+        // tests de non-régression épinglent. Même lecture du type que D3 — le
+        // `$group->type` DB, jamais la propriété Livewire (review 42.3 #3).
+        try {
+            RoleCatalog::assertAssignable($group->type, $role);
+        } catch (InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+            return;
+        }
+
         $group->users()->updateExistingPivot($userId, ['role' => $role]);
 
         unset($this->members, $this->students, $this->teachers);
@@ -303,6 +316,25 @@ new #[Title('Groupe utilisateur')] class extends Component {
             return;
         }
 
+        // Story 62.3 — deuxième point humain, et LE point qui PARLE : c'est ici
+        // que l'administrateur choisit un rôle pour un rattachement. Le type est
+        // relu en BASE et jamais pris sur `$this->type` — propriété Livewire
+        // publique, donc ré-hydratée du client et forgeable (review 42.3 #3) ;
+        // sans cette relecture, un payload annonçant `type = cours` désarmerait
+        // la contrainte sur une classe.
+        $group = $this->userGroupService->getById($this->groupId);
+        if ($group === null) {
+            $this->toastError('Groupe introuvable — rechargez la page.');
+            return;
+        }
+
+        try {
+            RoleCatalog::assertAssignable($group->type, $role);
+        } catch (InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+            return;
+        }
+
         $this->pendingRoles[$userId] = $role;
     }
 
@@ -383,6 +415,17 @@ new #[Title('Groupe utilisateur')] class extends Component {
                     continue;
                 }
                 if ($chosen === UserGroupUserPivot::ROLE_OWNER) {
+                    continue;
+                }
+                // Story 62.3 — troisième point humain. Il refuse en SILENCE
+                // (`continue`), exactement comme les deux refus juste au-dessus :
+                // ce chemin traite un état CLIENT déjà validé par
+                // `setPendingRole()`, et tout ce qui y arrive de non conforme est
+                // un payload forgé ou un état périmé — pas un choix à commenter.
+                // C'est `setPendingRole()` qui parle à l'humain.
+                try {
+                    RoleCatalog::assertAssignable($updatedGroup->type, $chosen);
+                } catch (InvalidArgumentException) {
                     continue;
                 }
 
