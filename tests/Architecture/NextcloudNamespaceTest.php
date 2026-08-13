@@ -257,6 +257,29 @@ class NextcloudNamespaceTest extends TestCase
     private const BACKEND_NAMESPACE_DIR = 'app/Services/Filesystem/Backend/Nextcloud';
 
     /**
+     * **LE SECOND PROPRIÉTAIRE LÉGITIME DE LA CRÉATION D'ARBORESCENCE DISTANTE.**
+     *
+     * La garde ci-dessous a été écrite quand un seul backend distant existait, et
+     * elle nommait ce backend comme son unique écrivain. Un troisième backend est
+     * arrivé (OpenCloud), et il a le MÊME besoin pour la MÊME raison structurelle :
+     * mesuré le 2026-08-13, son API d'administration **ne sait pas créer un
+     * dossier** (`POST …/children` avec `{"folder":{}}` rend `405`, et `404` sur
+     * l'autre version d'API) — le protocole d'édition distante est le seul chemin,
+     * exactement comme chez son voisin.
+     *
+     * La garde n'est donc pas RETIRÉE, elle est RE-PÉRIMÉTRÉE une seconde fois, et
+     * son périmètre reste NOMMÉ : deux dossiers, tous deux sous la ligne de
+     * contrat, tous deux propriétaires d'une zone dont ils sont l'autorité. Partout
+     * ailleurs, l'interdit est intact.
+     *
+     * @var list<string>
+     */
+    private const REMOTE_TREE_OWNERS = [
+        'app/Services/Filesystem/Backend/Nextcloud',
+        'app/Services/Filesystem/Backend/OpenCloud',
+    ];
+
+    /**
      * **LA CRÉATION D'ARBORESCENCE DISTANTE A DÉSORMAIS UN PROPRIÉTAIRE — UN SEUL.**
      *
      * L'aiguille de la story 61.1 interdisait le verbe de création de collection
@@ -277,7 +300,7 @@ class NextcloudNamespaceTest extends TestCase
     public function only_the_backend_namespace_creates_a_remote_collection(): void
     {
         $offenders = [];
-        $backendUses = false;
+        $owners = [];
 
         foreach ((new Finder())->files()->in(realpath(self::repoPath('app')))->name('*.php') as $file) {
             if (preg_match('/[\'"]MKCOL[\'"]/', (string) $file->getContents()) !== 1) {
@@ -286,29 +309,46 @@ class NextcloudNamespaceTest extends TestCase
 
             $relative = str_replace(self::repoPath(''), '', (string) $file->getRealPath());
 
-            if (str_starts_with($relative, self::BACKEND_NAMESPACE_DIR . '/')) {
-                $backendUses = true;
-
-                continue;
+            $owned = false;
+            foreach (self::REMOTE_TREE_OWNERS as $owner) {
+                if (str_starts_with($relative, $owner . '/')) {
+                    $owners[$owner] = true;
+                    $owned = true;
+                    break;
+                }
             }
 
-            $offenders[] = $relative;
+            if (! $owned) {
+                $offenders[] = $relative;
+            }
         }
 
         // NÉGATIF : personne d'autre.
         self::assertSame(
             [],
             $offenders,
-            'la création d\'arborescence distante appartient au SEUL backend de fichiers Nextcloud '
-            . '(« ' . self::BACKEND_NAMESPACE_DIR . ' ») : fichiers fautifs : '
+            'la création d\'arborescence distante appartient aux SEULS backends de fichiers distants ('
+            . implode(', ', self::REMOTE_TREE_OWNERS) . ') : fichiers fautifs : '
             . json_encode($offenders, JSON_UNESCAPED_SLASHES),
         );
 
-        // POSITIF : lui, oui.
-        self::assertTrue(
-            $backendUses,
-            'le backend de fichiers Nextcloud DOIT créer l\'arborescence : si plus personne ne le fait, '
-            . 'la garde ci-dessus est verte pour la mauvaise raison.',
+        // POSITIF : eux, oui — et CHACUN d'eux. Sans cette moitié, la garde serait
+        // verte pour la pire des raisons : l'arborescence ne serait créée par
+        // personne, et les octrois se poseraient sur des dossiers inexistants.
+        //
+        // Les clés sont TRIÉES avant comparaison : elles arrivent dans l'ordre où
+        // le parcours du système de fichiers rend les fichiers, et cet ordre n'est
+        // garanti par rien. Comparer sans trier rendrait ce vert accidentel.
+        $found = array_keys($owners);
+        sort($found, SORT_STRING);
+        $expected = self::REMOTE_TREE_OWNERS;
+        sort($expected, SORT_STRING);
+
+        self::assertSame(
+            $expected,
+            $found,
+            'chaque backend distant DOIT créer son arborescence : celui qui ne le fait pas rend la garde '
+            . 'ci-dessus verte sans rien protéger.',
         );
     }
 

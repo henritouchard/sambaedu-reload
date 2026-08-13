@@ -414,6 +414,22 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
      * destinataire, que tout cet epic combat. Le motif, lui, est DIT sous le champ —
      * l'administrateur doit savoir quoi activer, pas seulement que c'est indisponible.
      *
+     * ---------------------------------------------------------------------------
+     * **CE BLOC ÉNUMÉRAIT UNE CASE ; IL ITÈRE DÉSORMAIS, et c'est un CONSTAT.**
+     *
+     * La liste des motifs de refus nommait `Nextcloud` en dur — la seule autorité
+     * refusable au moment où elle a été écrite. Le contrat de backend, lui, a tenu
+     * sans bouger à l'arrivée d'un troisième produit ; **cet écran, non** : sa case
+     * serait restée absente avec son motif TU, c'est-à-dire exactement le défaut
+     * que le paragraphe ci-dessus décrit.
+     *
+     * La liste est donc dérivée du VOCABULAIRE, comme la liste des options l'était
+     * déjà. Aucune case n'est nommée ici, et la prochaine n'aura rien à y ajouter.
+     * Le backend d'aperçu est écarté : son refus (« il n'écrit aucun droit ») n'est
+     * pas un réglage à activer, c'est sa nature — l'afficher enverrait
+     * l'administrateur chercher un interrupteur qui n'existe pas.
+     * ---------------------------------------------------------------------------
+     *
      * @return array{options: list<array{value:string,label:string,description:string}>, refusals: list<string>}
      */
     public function backendChoice(): array
@@ -430,7 +446,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         }
 
         $refusals = [];
-        foreach ([\App\Enums\FileBackendName::Nextcloud] as $candidate) {
+        foreach (\App\Enums\FileBackendName::cases() as $candidate) {
+            if ($candidate === \App\Enums\FileBackendName::Preview) {
+                continue;
+            }
             $refusal = $selection->refusalFor($candidate);
             if ($refusal !== null) {
                 $refusals[] = $refusal;

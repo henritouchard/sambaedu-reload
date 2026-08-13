@@ -3522,3 +3522,331 @@ constante d'écran : c'est ce qui permettra à un partage Nextcloud d'afficher s
 propre `non_exprimable` (plafond de sous-dossier) sans que l'écran change. **Zéro
 diff moteur** : aucune classe PHP nouvelle, `app/` et `database/` intouchés ;
 l'enregistrement n'exécute rien et ne matérialise rien.)*
+
+---
+
+## OpenCloud — déploiement Docker et backend
+
+**Ce que ce chapitre couvre.** Monter une instance OpenCloud en conteneur sur le
+serveur SambaEdu, la connecter, servir un répertoire par elle, et **vérifier de
+ses yeux** que le cloisonnement annoncé existe vraiment.
+
+**Ce qu'il faut avoir sous la main** : un accès `root` au serveur, un accès
+administrateur à l'interface SE5, deux comptes d'essai (un « élève », un
+« enseignant ») membres d'un même groupe, et un navigateur en session privée pour
+se connecter avec eux sans perdre sa session d'admin.
+
+**Un mot sur la nature de ce backend.** Un répertoire servi par OpenCloud **n'a
+aucune lettre de lecteur réseau**. Il n'apparaît ni dans le poste de travail, ni
+dans un `net use` : il se consulte au navigateur et se synchronise par le client
+de bureau. Ce n'est pas une limite de SE5, c'est le produit — les droits n'y sont
+pas posés sur le disque. Chercher un lecteur `H:` après ce scénario est une perte
+de temps.
+
+### 1. Le déploiement
+
+- [ ] **OC-1a** — sur le serveur, `php artisan opencloud:deploy status` sur une
+      machine où rien n'a été déployé répond « Aucune instance OpenCloud sur cette
+      machine » et rend le code `0`. Il n'échoue pas : ne rien avoir n'est pas une
+      erreur.
+- [ ] **OC-1b** — `php artisan opencloud:deploy --url=https://<adresse publique> --dry-run`
+      **n'exécute rien** et liste ce qui serait fait. Deux lignes doivent y
+      figurer telles quelles : « NE PAS activer la capacité » et « NE supprimer
+      aucun conteneur, aucun volume, aucune donnée ». Vérifier ensuite qu'aucun
+      conteneur n'est apparu.
+- [ ] **OC-1c** — **l'URL doit être en `https://`**, même quand la terminaison TLS
+      est assurée par le frontal du serveur. Lancer volontairement la commande avec
+      une adresse en `http://` : elle refuse **avant** de toucher au système, et son
+      message explique pourquoi (le service d'identité de l'instance ne démarre pas
+      sinon). Vérifier qu'aucun conteneur n'a été créé.
+- [ ] **OC-1d** — le déploiement réel rend « Instance déployée et joignable », un
+      tableau d'état (conteneur, port, sonde de santé `200`, volumes) et le code
+      `0`. Il dit aussi, noir sur blanc, que la capacité **reste éteinte**.
+- [ ] **OC-1e** — **le mot de passe d'administration n'est visible nulle part** :
+      ni à l'écran, ni dans un fichier lisible, ni dans le journal du serveur.
+      Vérifier : `sudo cat /etc/sambaedu/opencloud/opencloud.env` ne le contient
+      pas, et le fichier est en `0600 root:root`.
+- [ ] **OC-1f** — **rejouer la commande à l'identique CONVERGE** : elle rend
+      « Instance déjà conforme : aucun conteneur recréé, aucune donnée touchée ».
+      Vérifier que l'identifiant du conteneur n'a pas changé.
+- [ ] **OC-1g** — déposer un fichier dans l'instance par le navigateur, rejouer le
+      déploiement, et vérifier que **le fichier est toujours là**. C'est la
+      vérification qui compte : les données survivent à l'outil.
+- [ ] **OC-1h** — `php artisan opencloud:deploy stop` arrête l'instance et dit que
+      les volumes et les données restent. Redéployer la remet en marche **avec ses
+      données**.
+- [ ] **OC-1i** — il n'existe **aucune** commande de suppression : `--help` n'en
+      propose pas, et une action inventée est refusée en nommant les quatre actions
+      possibles. Retirer une instance est un geste d'exploitation manuel, assumé.
+- [ ] **OC-1j** — si le port est déjà pris par un autre service, le déploiement
+      **refuse en le nommant** et n'écrase rien. (Pour l'éprouver : occuper le port
+      avec `nc -l` avant de lancer la commande.)
+
+### 2. La connexion
+
+- [ ] **OC-2a** — `Administration › Fichiers` porte un onglet **OpenCloud**. Tant
+      que la capacité est éteinte, aucun réglage de connexion n'est demandé.
+- [ ] **OC-2b** — activer « Accès OpenCloud » révèle le bloc de connexion :
+      adresse, compte d'administration, mot de passe, vérification TLS. **La
+      vérification TLS est cochée par défaut** ; la décocher est un geste visible et
+      persisté.
+- [ ] **OC-2c** — renseigner l'adresse et le compte, puis le mot de passe. Le champ
+      se **vide** aussitôt et l'écran affiche « Un mot de passe est enregistré
+      (chiffré) » — jamais la valeur. Vérifier dans le code source de la page
+      (Ctrl+U) que le mot de passe **n'y figure pas**.
+- [ ] **OC-2d** — « Tester la connexion » avec un compte **ordinaire** de
+      l'instance : le diagnostic dit que le compte est authentifié mais **n'est pas
+      administrateur**, et pourquoi c'est bloquant. Il ne dit pas « erreur ».
+- [ ] **OC-2e** — « Tester la connexion » avec une **adresse injoignable** : le
+      diagnostic dit « instance injoignable ». Distinguer les deux messages compte :
+      ils se corrigent à deux endroits différents.
+- [ ] **OC-2f** — « Tester la connexion » avec le bon compte : diagnostic vert. Il
+      précise honnêtement que la réussite d'une **création** d'espace ne se constate
+      qu'à l'écriture.
+- [ ] **OC-2g** — **la sonde n'écrit rien**. Après plusieurs tests de connexion,
+      vérifier dans l'interface de l'instance qu'aucun espace, aucun groupe et aucun
+      compte n'est apparu.
+- [ ] **OC-2h** — changer le mot de passe alors qu'un diagnostic vert est affiché :
+      l'écran indique que ce diagnostic est **antérieur au changement** et invite à
+      re-tester. Un vert qui ne dit plus rien est pire qu'un silence.
+- [ ] **OC-2i** — éteindre la capacité, recharger la page, la rallumer : **les
+      réglages de connexion sont toujours là**. Une bascule de capacité n'efface
+      jamais une configuration.
+- [ ] **OC-2j** — vérifier que les réglages de l'autre solution cloud (adresse,
+      compte, hôte SMB) **n'ont pas bougé d'un caractère**. Les capacités sont
+      indépendantes.
+
+### 3. Servir un répertoire par l'instance
+
+- [ ] **OC-3a** — **capacité éteinte ⇒ le choix est ABSENT** de l'écran de création
+      d'un répertoire. Il n'est pas grisé : il n'y est pas.
+- [ ] **OC-3b** — capacité allumée, le choix apparaît. Son infobulle dit le **chemin
+      d'accès de l'utilisateur** : web et client de synchronisation, **pas de lecteur
+      réseau**.
+- [ ] **OC-3c** — créer un répertoire servi par OpenCloud à partir d'une recette de
+      classe. Sur l'instance, vérifier : un **espace de projet** au nom du
+      répertoire, un dossier par nœud de la recette, et des groupes préfixés `se5_`
+      dont l'appartenance correspond au groupe SE5.
+- [ ] **OC-3d** — **le choix ne se change pas après coup.** Sur la fiche du
+      répertoire, l'autorité d'écriture est un badge, jamais un menu. Migrer un
+      répertoire d'une autorité à une autre n'existe pas encore : c'est un chantier
+      à part entière (déplacer les données ET retraduire les droits).
+- [ ] **OC-3e** — relancer la réconciliation du même répertoire : le rapport est
+      **conforme partout**, et rien n'a bougé sur l'instance. Si un nœud repasse en
+      « appliqué » sans qu'on ait rien changé, **le noter** : c'est une dérive de
+      comparaison, et elle se traduirait en réécritures perpétuelles.
+- [ ] **OC-3f** — créer **à la main**, dans l'instance, un espace de projet portant
+      un nom quelconque, puis réconcilier le répertoire SE5. Vérifier que cet espace
+      **n'a pas été touché**. Hors du plan, hors du geste.
+- [ ] **OC-3g** — ajouter **à la main**, sur un dossier du répertoire SE5, un partage
+      vers un compte tiers, puis réconcilier. Le partage **n'est pas retiré**, et le
+      rapport du nœud le **compte** comme écart. On voit l'écart, on ne détruit pas.
+
+### 4. Le protocole de vérification du cloisonnement
+
+C'est la partie qui ne se déduit d'aucun écran. Un rapport vert prouve qu'une
+règle a été posée ; il ne prouve pas ce qu'un élève voit.
+
+- [ ] **OC-4a** — se connecter à l'instance, en session privée, avec le compte
+      **élève**. Il voit le dossier de travail qui lui est partagé.
+- [ ] **OC-4b** — il **ne voit pas** le dossier réservé aux enseignants. Sur ce
+      produit, ce qui ne lui est pas partagé n'est pas « interdit » : il est
+      **invisible**. Ne pas le trouver dans la liste est le résultat attendu.
+- [ ] **OC-4c** — tenter d'y accéder directement par son adresse (la copier depuis
+      la session de l'enseignant) : l'accès est refusé.
+- [ ] **OC-4d** — se connecter avec le compte **enseignant** : il voit le dossier
+      réservé, et il peut y déposer un fichier.
+- [ ] **OC-4e** — l'élève peut déposer un fichier dans le dossier d'échange quand il
+      est ouvert ; il ne le peut plus quand la recette le ferme.
+- [ ] **OC-4f** — **le cas qui décide de tout** : si la recette accorde un droit à
+      la **racine** du répertoire ET referme un rôle sur un sous-dossier, le rapport
+      de ce sous-dossier doit afficher un déclin **permanent** (« cloisonnement non
+      obtenu ») en nommant le groupe concerné. Vérifier alors que l'élève **accède
+      bel et bien** au dossier réservé — le rapport ne ment pas. Un rapport vert sur
+      un dossier réellement accessible serait un défaut **grave** : le noter
+      immédiatement.
+- [ ] **OC-4g** — **le même cas, un étage plus bas.** Si la recette accorde un
+      droit sur un **sous-dossier** (par exemple le dossier de travail) ET referme
+      un rôle sur un dossier **contenu dedans**, le rapport de ce dernier doit
+      afficher le même déclin permanent, en nommant le groupe **et le dossier
+      d'où l'accès vient**. Vérifier avec le compte élève qu'il y accède bel et
+      bien. La racine n'est pas le seul étage qui propage : n'importe quel dossier
+      au-dessus le fait.
+
+### 5. Le plafond
+
+- [ ] **OC-5a** — une recette avec un plafond sur la **racine** : le plafond se
+      retrouve sur l'espace côté instance, à l'octet près.
+- [ ] **OC-5b** — une recette avec un plafond sur un **sous-dossier** : le rapport
+      rend un déclin **permanent**, et l'écran le distingue d'une fonction « pas
+      encore développée ». Ce modèle ne sait pas plafonner un sous-dossier, et il ne
+      le saura pas.
+- [ ] **OC-5c** — une recette **sans** plafond : le rapport de plafond est **vide**
+      et valide. Ce n'est ni un échec, ni un oubli.
+
+### 6. Révoquer
+
+- [ ] **OC-6a** — retirer le répertoire côté SE5 : les partages disparaissent chez
+      les utilisateurs.
+- [ ] **OC-6b** — **l'espace et ses fichiers sont toujours là** côté instance.
+      Révoquer n'est pas détruire, et aucune commande de SE5 ne détruit un espace.
+- [ ] **OC-6c** — le compte d'administration y garde son accès : c'est par lui qu'on
+      récupère les données si besoin.
+
+### Ce qui n'est PAS observable — et qu'il faut donc vérifier à la main
+
+- **La perception d'un utilisateur.** Aucun rapport ne peut dire ce qu'un élève
+  voit : un rapport relit des octrois, pas une session. C'est tout l'objet du §4,
+  et il ne peut pas être remplacé par une capture d'écran d'un rapport vert.
+- **L'héritage venu de N'IMPORTE QUEL dossier au-dessus — pas seulement de la
+  racine.** Quand un droit est accordé sur un dossier, tout ce qui est en dessous
+  **n'en dit rien** à la relecture : la liste de partages d'un sous-dossier est
+  vide alors que l'accès existe. La racine n'est que le cas le plus large de cette
+  règle : un droit accordé sur `_travail` ouvre `_travail/devoirs` exactement de
+  la même façon. C'est pour cela que **OC-4f** et **OC-4g** se vérifient avec un
+  vrai compte, et pas en lisant un écran.
+- **Un dossier créé par un enseignant** dans un dossier à contenu libre n'est pas
+  un écart, et n'apparaît nulle part. C'est voulu.
+- **Un espace créé à la main** dans l'instance est invisible pour SE5, et le
+  restera. Il n'est ni géré, ni supervisé, ni sauvegardé par SE5.
+- **La sauvegarde de l'instance.** Le déploiement monte l'instance ; il ne la
+  sauvegarde pas, ne la supervise pas et ne la met pas à jour. Les volumes vivent
+  sous `/var/lib/sambaedu/opencloud` : les inclure dans la sauvegarde du serveur
+  est une décision d'exploitation, à prendre explicitement.
+
+### Relire le relevé de mesure
+
+Les sémantiques de cette instance ont été **mesurées**, pas supposées, et les
+tests les rejouent telles quelles. En cas de comportement inattendu après une
+mise à jour du produit, la première chose à faire est de rejouer le test
+d'intégration : il confronte le catalogue de rôles épinglé par SE5 à celui que
+l'instance publie, et il dira si une version a déplacé quelque chose.
+
+```
+OC_TEST_URL=https://<instance> OC_TEST_ADMIN=<compte> OC_TEST_PASSWORD=<secret> \
+  vendor/bin/phpunit -c phpunit.integration.xml --filter OpenCloudFileBackendConvergence
+```
+
+Il crée sa propre zone jetable, imprime son relevé brut, ne touche à rien d'autre,
+et échoue en le disant si le cloisonnement n'est pas effectif.
+
+### Checklist rapide — OpenCloud
+
+- [ ] OC-1a→1j : déploiement idempotent, secret invisible, **aucun verbe destructeur**
+- [ ] OC-2a→2j : connexion symétrique, secret en écriture seule, **sonde sans écriture**
+- [ ] OC-3a→3g : case absente si capacité éteinte, adoption, **zone étrangère intacte**
+- [ ] **OC-4a→4g : le cloisonnement vérifié AVEC DE VRAIS COMPTES** (pivot)
+- [ ] OC-5a→5c : plafond de zone posé, plafond de sous-dossier **déclaré impossible**
+- [ ] OC-6a→6c : révoquer sans détruire
+- [ ] OC-7a→7j : les non-régressions post-correctifs ci-dessous
+- [ ] Suite automatisée verte sur l'hôte
+
+### Post-correctifs & non-régressions — OpenCloud
+
+*Append seul. Un incident par ligne ; les deux qui ouvrent un angle de test
+nouveau ont leur scénario dédié dessous.*
+
+- [ ] **OC-7a** — **les volumes de l'instance n'appartiennent plus à un compte
+      humain.** `ls -ldn /var/lib/sambaedu/opencloud/*` doit montrer le compte
+      **système** `sambaedu-opencloud`, jamais l'uid `1000` (le premier compte
+      humain d'une Debian). Vérifier aussi que ce compte n'a **pas de shell de
+      connexion** (`getent passwd sambaedu-opencloud` finit par `nologin`) et que
+      `sudo -u <un compte ordinaire> cat /var/lib/sambaedu/opencloud/config/opencloud.yaml`
+      est **refusé** — ce fichier porte les secrets internes de l'instance.
+- [ ] **OC-7b** — **la reprise de propriété d'un serveur déjà installé se dit.**
+      Sur une machine déployée avant ce durcissement, le redéploiement reprend la
+      propriété et son message l'**annonce** (« propriété a été REPRISE »).
+      Vérifier ensuite que l'instance **fonctionne toujours** et que **les
+      fichiers déposés avant sont toujours là**.
+- [ ] **OC-7c** — **le mot de passe d'administration n'apparaît dans aucune ligne
+      de commande.** Pendant l'initialisation d'une instance neuve, un
+      `ps -ef | grep -i opencloud` lancé depuis un compte **ordinaire** ne doit
+      montrer aucune valeur de mot de passe (au plus un nom de variable).
+- [ ] **OC-7d** — **un secret perdu sur une instance déjà initialisée est un refus
+      nommé.** Effacer le mot de passe enregistré côté SE5 puis relancer le
+      déploiement : la commande **refuse** et explique qu'il faut ressaisir le mot
+      de passe existant. Vérifier qu'**aucun** nouveau secret n'a été rangé — un
+      secret qui n'ouvre rien est pire qu'aucun, puisqu'il n'existe pas de verbe
+      de changement de mot de passe côté instance.
+- [ ] **OC-7e** — **la case n'est posable qu'avec une connexion complète.**
+      Activer la capacité **sans** renseigner l'adresse ni le compte : la case
+      OpenCloud reste **absente** de l'écran de création d'un répertoire, et son
+      motif nomme ce qui manque. (Un répertoire créé dans cet état ne pourrait
+      jamais se réconcilier, et son autorité d'écriture ne se change plus.)
+- [ ] **OC-7f** — **un octroi posé à la main sur la racine d'un espace adopté est
+      NOMMÉ dans le déclin de clôture.** Créer à la main un espace au nom du
+      répertoire, y partager la racine avec un groupe quelconque, puis provisionner
+      le répertoire : le dossier réservé aux enseignants doit rendre un déclin
+      permanent qui **nomme ce groupe étranger**. Vérifier que ce partage n'a
+      **pas** été retiré — on le dit, on ne le détruit pas.
+- [ ] **OC-7g** — le pendant : sur un espace créé par SE5, l'accès d'administration
+      que l'instance donne d'office au compte créateur **ne déclenche aucun
+      déclin**. Une alerte qui sonne sur 100 % des répertoires ne se lit plus.
+- [ ] **OC-7h** — **une réconciliation dont une lecture échoue ne rend jamais
+      vert.** Voir le scénario ② ci-dessous.
+- [ ] **OC-7i** — **un dossier qu'on n'a pas pu regarder n'est pas « absent ».**
+      Après une coupure réseau pendant une inspection, les nœuds concernés doivent
+      apparaître comme **non observés**, pas comme absents. « Absent » invite à
+      recréer ; le dossier est peut-être là avec tous ses droits.
+- [ ] **OC-7j** — **le retrait d'un droit de racine fait disparaître le déclin.**
+      Corriger une recette qui accordait à la racine, relancer : le déclin
+      « cloisonnement non obtenu » doit **disparaître**, et le partage résiduel
+      avec lui côté instance. Un déclin qu'on ne sait plus faire disparaître finit
+      par être ignoré.
+
+#### Scénario ① — le cloisonnement à deux étages (angle de test nouveau)
+
+Jusqu'ici, tous les parcours de ce chapitre tenaient sur des dossiers d'un seul
+niveau, et c'est précisément là que l'héritage se cachait.
+
+1. Construire une recette à **deux étages** : un dossier `travail`, et dedans un
+   dossier `devoirs`.
+2. Accorder la lecture à la classe sur **`travail`** — et **rien** à la racine du
+   répertoire.
+3. Refermer la classe sur **`devoirs`**.
+4. Provisionner.
+
+**Attendu** : le rapport de `devoirs` affiche un déclin **permanent** qui nomme le
+groupe de la classe **et le dossier `travail`** comme origine de l'accès.
+
+**Le contrôle qui donne son sens au test** : se connecter en session privée avec
+un compte élève. Il **accède** à `devoirs`. Si le rapport avait dit « conforme »,
+l'écran aurait annoncé un cloisonnement inexistant — le seul résultat que ce
+chantier déclare inacceptable.
+
+**Le pendant, à jouer aussi** : retirer le droit accordé sur `travail`, relancer.
+Le déclin disparaît, et l'élève n'accède plus à `devoirs`.
+
+#### Scénario ② — révoquer en régime dégradé (angle de test nouveau)
+
+Le cas qu'aucune manipulation normale ne produit, et qui pourtant décide de tout :
+que se passe-t-il quand l'instance répond **mal** au milieu d'une révocation ?
+
+1. Provisionner un répertoire complet et vérifier que les partages sont en place.
+2. Rendre l'instance **inaccessible en cours de route** — le plus simple est
+   d'arrêter le conteneur (`php artisan opencloud:deploy stop`) juste après avoir
+   lancé la révocation, ou de couper le frontal.
+3. Retirer le répertoire côté SE5.
+
+**Attendu** : le rapport rend un **échec nommé** par nœud — « l'arborescence n'a
+pas pu être relue : RIEN n'a été révoqué ici ». Il ne doit **jamais** rendre
+« conforme » ni « rien à révoquer ».
+
+**Le contrôle qui compte** : redémarrer l'instance et vérifier que **les partages
+sont toujours là**. Un rapport vert sur des accès intacts est un mensonge qui se
+propage : l'exploitant croit avoir révoqué, et personne ne revient vérifier.
+
+Rejouer ensuite la révocation instance debout : elle doit aboutir normalement.
+
+---
+
+*Mise à jour : 2026-08-13 (OpenCloud — l'instance se déploie en conteneur par une
+commande d'administration à quatre actions, derrière le frontal existant, sans
+qu'aucun chemin de code ne puisse supprimer un conteneur, un volume ou une donnée ;
+la connexion se déclare dans un onglet dédié de `Administration › Fichiers`, avec
+un secret en écriture seule et une sonde en lecture seule ; un répertoire peut être
+servi par l'instance, le plan y devenant un espace de projet, des groupes compilés
+et des octrois posés **par dossier**. Le cloisonnement y est obtenu **par
+construction** — ce qui n'a rien reçu est invisible, pas seulement interdit — et
+là où une recette accorde à la racine, il est **constaté impossible** et nommé
+plutôt qu'affiché à tort.)*

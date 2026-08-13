@@ -6,6 +6,7 @@ namespace Tests\Feature\Livewire\Admin;
 
 use App\Models\User;
 use App\Services\FilePolicyService;
+use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
@@ -66,7 +67,10 @@ class FilePolicySettingsTest extends TestCase
             ->assertHasNoErrors();
 
         self::assertSame(
-            ['home' => false, 'shares' => true, 'nextcloud' => true],
+            // La capacité OpenCloud reste ÉTEINTE : elle est INDÉPENDANTE, et
+            // basculer les autres ne l'allume pas — c'est la propriété que ce
+            // test existe pour tenir, énoncée sur un axe de plus.
+            ['home' => false, 'shares' => true, 'nextcloud' => true, 'opencloud' => false],
             FilePolicyService::capabilities(),
         );
         self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
@@ -99,6 +103,53 @@ class FilePolicySettingsTest extends TestCase
         self::assertSame('https://cloud.autosave.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
 
+    /**
+     * Le raccourci-portail : une bascule qui persiste ET qui met l'icône à
+     * disposition, sans quoi le `.lnk` porterait l'icône de `rundll32.exe` sur
+     * tous les bureaux de l'établissement.
+     */
+    #[Test]
+    public function toggling_the_portal_shortcut_persists_and_publishes_its_icon(): void
+    {
+        $served = sys_get_temp_dir().'/se5-portal-icon-'.uniqid();
+        config(['shortcut_icons.served_path' => $served]);
+
+        Livewire::test(self::COMPONENT)
+            ->set('nextcloud', true)
+            ->set('nextcloudServerUrl', 'https://cloud.etab.fr')
+            ->set('nextcloudDesktopShortcut', true)
+            ->assertHasNoErrors();
+
+        self::assertTrue(FilePolicyService::globalConfig()['nextcloud_desktop_shortcut']);
+
+        $published = app(PortalShortcutIcon::class)->current();
+        self::assertNotNull($published, 'la publication a lieu au geste d\'administration');
+        self::assertFileExists($served.'/'.$published['asset']);
+    }
+
+    /**
+     * Le réglage est INDÉPENDANT des capacités : basculer `home` ou `shares` ne
+     * doit jamais faire disparaître un raccourci déjà posé sur les bureaux.
+     */
+    #[Test]
+    public function toggling_another_capability_never_drops_the_portal_shortcut(): void
+    {
+        FilePolicyService::setGlobal(
+            true,
+            true,
+            true,
+            'https://cloud.etab.fr',
+            nextcloudDesktopShortcut: true,
+        );
+
+        Livewire::test(self::COMPONENT)
+            ->assertSet('nextcloudDesktopShortcut', true)
+            ->set('shares', false)
+            ->assertHasNoErrors();
+
+        self::assertTrue(FilePolicyService::globalConfig()['nextcloud_desktop_shortcut']);
+    }
+
     #[Test]
     public function saving_everything_off_is_web_only(): void
     {
@@ -110,7 +161,7 @@ class FilePolicySettingsTest extends TestCase
             ->assertHasNoErrors();
 
         self::assertSame(
-            ['home' => false, 'shares' => false, 'nextcloud' => false],
+            ['home' => false, 'shares' => false, 'nextcloud' => false, 'opencloud' => false],
             FilePolicyService::capabilities(),
         );
     }

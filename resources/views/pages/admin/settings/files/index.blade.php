@@ -41,7 +41,7 @@ new #[Title('Gestion des fichiers')] class extends Component {
     #[Url(keep: true)]
     public string $tab = 'personnels-partages';
 
-    private const TABS = ['personnels-partages', 'lecteurs-reseaux', 'roaming'];
+    private const TABS = ['personnels-partages', 'lecteurs-reseaux', 'opencloud', 'roaming'];
 
     public function mount(): void
     {
@@ -83,6 +83,7 @@ new #[Title('Gestion des fichiers')] class extends Component {
             $filesTabs = [
                 'personnels-partages' => ['label' => 'Personnels et partagés', 'icon' => 'fa-solid fa-sliders'],
                 'lecteurs-reseaux' => ['label' => 'Lecteurs réseaux', 'icon' => 'fa-solid fa-network-wired'],
+                'opencloud' => ['label' => 'OpenCloud', 'icon' => 'fa-solid fa-cloud-arrow-up'],
                 'roaming' => ['label' => 'Profils itinérants', 'icon' => 'fa-solid fa-users-gear'],
             ];
         @endphp
@@ -100,6 +101,12 @@ new #[Title('Gestion des fichiers')] class extends Component {
                         <span>Vous n'avez pas la permission de gérer les partages réseau.</span>
                     </div>
                 @endcan
+            @elseif ($tab === 'opencloud')
+                {{-- OpenCloud est une AUTORITÉ D'ÉCRITURE alternative, pas un
+                     réglage de montage : sa capacité est indépendante des trois
+                     autres, et son bloc de connexion a son propre onglet plutôt
+                     qu'une carte de plus dans un écran qui parle de lecteurs. --}}
+                <livewire:pages::admin.settings.files._partials.opencloud-tab />
             @elseif ($tab === 'roaming')
                 {{-- `flex-1 min-h-0` : le partial gère son propre conteneur de
                      scroll interne — sans ça il déborde. --}}

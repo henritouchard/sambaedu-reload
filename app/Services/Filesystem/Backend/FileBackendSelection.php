@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend;
 
 use App\Enums\FileBackendName;
+use App\Exceptions\OpenCloud\OpenCloudConfigurationException;
 use App\Services\FilePolicyService;
+use App\Services\OpenCloud\OpenCloudConnectionConfig;
 use InvalidArgumentException;
 
 /**
@@ -50,7 +52,7 @@ final class FileBackendSelection
     public function selectable(): array
     {
         return array_values(array_filter(
-            [FileBackendName::Posix, FileBackendName::Nextcloud],
+            [FileBackendName::Posix, FileBackendName::Nextcloud, FileBackendName::OpenCloud],
             fn (FileBackendName $name): bool => $this->refusalFor($name) === null,
         ));
     }
@@ -71,9 +73,49 @@ final class FileBackendSelection
                 : 'La capacité « Accès Nextcloud » est désactivée : activez-la et renseignez la connexion '
                     . 'dans Administration › Fichiers avant de servir un répertoire par Nextcloud.',
 
+            // Capacité INDÉPENDANTE — les deux produits s'activent séparément, et
+            // l'un éteint ne dit rien de l'autre — mais la garde va plus loin :
+            // elle exige la capacité active **ET** une connexion complète.
+            //
+            // Une capacité allumée sur une connexion vide fait naître un partage
+            // dont AUCUNE réconciliation ne peut aboutir : le backend refusera
+            // fail-closed à chaque passage, sur un objet qu'il est désormais
+            // interdit de migrer (D9). Le rattrapage tardif au provisionnement est
+            // correct, mais il arrive après la seule décision irréversible.
+            FileBackendName::OpenCloud => $this->openCloudRefusal(),
+
             FileBackendName::Preview => 'Le backend d\'aperçu n\'écrit aucun droit : il ne peut pas servir '
                 . 'un répertoire réel.',
         };
+    }
+
+    /**
+     * « Capacité active ET connexion configurée » — les deux, ou le motif.
+     *
+     * La complétude n'est pas re-vérifiée ici champ par champ : l'objet de
+     * configuration du produit la porte déjà, en un seul endroit, et il NOMME ce
+     * qui manque. La dupliquer serait s'exposer à ce que les deux divergent.
+     */
+    private function openCloudRefusal(): ?string
+    {
+        if (! FilePolicyService::capabilities()['opencloud']) {
+            return 'La capacité « Accès OpenCloud » est désactivée : activez-la et renseignez la connexion '
+                . 'dans Administration › Fichiers avant de servir un répertoire par OpenCloud.';
+        }
+
+        try {
+            OpenCloudConnectionConfig::current();
+        } catch (OpenCloudConfigurationException $e) {
+            return sprintf(
+                'La connexion à l\'instance OpenCloud est incomplète : %s Complétez-la dans '
+                . 'Administration › Fichiers avant de servir un répertoire par OpenCloud — un répertoire '
+                . 'créé maintenant ne pourrait jamais se réconcilier, et le choix de son autorité '
+                . 'd\'écriture ne se change pas après coup.',
+                $e->getMessage(),
+            );
+        }
+
+        return null;
     }
 
     /**

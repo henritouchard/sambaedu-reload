@@ -15,9 +15,9 @@ namespace App\Enums;
  * l'administrateur croit hébergé ailleurs — la pire forme du défaut que cet epic
  * combat : le signal qui n'atteint pas son destinataire.
  *
- * **TROIS cases, et il n'y en aura pas de quatrième pour Nextcloud** (story 61.3,
- * recadrage du 2026-08-08). La story 60.3 annonçait ici `nextcloud` ET
- * `nextcloud_delegue` — le second devait servir une instance sur laquelle SE5
+ * **IL N'Y A PAS DE CASE « NEXTCLOUD DÉLÉGUÉ », ET IL N'Y EN AURA JAMAIS**
+ * (story 61.3, recadrage du 2026-08-08). La story 60.3 annonçait ici `nextcloud`
+ * ET `nextcloud_delegue` — le second devait servir une instance sur laquelle SE5
  * n'aurait qu'un compte ordinaire. Il n'existera pas : mesuré contre une instance
  * réelle, un compte ordinaire ne peut créer ni Team folder (HTTP 200 avec un 403
  * dans le corps OCS, rien créé), ni groupe, et un partage visant un groupe échoue.
@@ -25,6 +25,28 @@ namespace App\Enums;
  * problème que tout le plan de fichiers existe pour résoudre. Une case déclarée
  * que le produit ne sait pas tenir est exactement le défaut que cet epic combat ;
  * on ne l'ouvre donc pas, ni maintenant ni plus tard.
+ *
+ * ---------------------------------------------------------------------------
+ * **LA LISTE PASSE DE TROIS À QUATRE CASES, ET ON LE DIT.**
+ *
+ * Ce docblock affirmait « TROIS cases, et il n'y en aura pas de quatrième pour
+ * Nextcloud ». Cette phrase visait le **mode délégué de Nextcloud**, et elle
+ * reste vraie mot pour mot : elle interdisait une case que le PRODUIT NEXTCLOUD
+ * ne sait pas tenir. Elle n'a jamais interdit qu'un AUTRE produit entre dans le
+ * vocabulaire — ce serait interdire au contrat de servir à ce pour quoi il a été
+ * dessiné.
+ *
+ * `opencloud` arrive donc comme quatrième case, et elle arrive avec ce qui la
+ * rend légitime là où la case déléguée ne l'était pas : mesuré contre une
+ * instance réelle le 2026-08-13, le produit crée un espace de projet, pose des
+ * octrois par sous-dossier à un principal groupe, et — décisif — **refuse par
+ * construction ce qui n'a rien reçu** (un compte sans octroi obtient `404`, pas
+ * un accès). Le cloisonnement, qui manquait au mode délégué, est ici obtenu.
+ *
+ * L'invariant permanent, lui, ne bouge pas d'un pouce : **chaque case du
+ * vocabulaire résout dans le registre**, et c'est ce que le test épingle — pas le
+ * nombre de cases, qui n'est qu'un état daté.
+ * ---------------------------------------------------------------------------
  *
  * Les cases arrivent PAR CODE (D6 : l'adaptateur est natif, par produit ; le
  * runtime, lui, est une extension) — jamais par configuration.
@@ -72,6 +94,26 @@ enum FileBackendName: string
      */
     case Nextcloud = 'nextcloud';
 
+    /**
+     * L'AUTORITÉ EST UNE INSTANCE OPENCLOUD : le plan devient un espace de
+     * projet, les octrois des invitations par nœud, et la clôture est obtenue
+     * **par construction** — on n'octroie rien à la racine, et ce qui n'a rien
+     * reçu n'est même pas visible.
+     *
+     * **Ce que ce choix change POUR L'UTILISATEUR** — et c'est ce que dit la
+     * description : un répertoire servi par ce backend n'a AUCUN chemin SMB
+     * (D7 : impossibilité vérifiée, pas une coupe de périmètre — les droits ne
+     * sont pas sur le disque, et le mode de stockage à noms réels ne supporte pas
+     * ce protocole). Il se consulte au web et se synchronise par le client de
+     * bureau. Aucune lettre de lecteur n'est émise pour lui.
+     *
+     * **SE5 exige un compte ADMINISTRATEUR de l'instance** (mesuré : un compte
+     * ordinaire rend `403 « insufficient permissions to create a space »`), et la
+     * capacité « Accès OpenCloud » doit être active pour que cette case soit
+     * seulement posable.
+     */
+    case OpenCloud = 'opencloud';
+
     /** Libellé FR — aucune valeur technique brute à l'écran (iso 42.3 D1). */
     public function label(): string
     {
@@ -79,6 +121,7 @@ enum FileBackendName: string
             self::Posix => 'Serveur de fichiers (POSIX/SMB)',
             self::Preview => 'Aperçu (aucune exécution)',
             self::Nextcloud => 'Nextcloud (dossier d\'équipe)',
+            self::OpenCloud => 'OpenCloud (espace de projet)',
         };
     }
 
@@ -94,6 +137,10 @@ enum FileBackendName: string
             self::Nextcloud => 'Les droits sont posés dans un dossier d\'équipe Nextcloud. L\'accès se fait '
                 . 'par le web et par le client de synchronisation — il n\'y a PAS de lecteur réseau SMB '
                 . 'pour ce répertoire.',
+            self::OpenCloud => 'Les droits sont posés dans un espace de projet OpenCloud. L\'accès se fait '
+                . 'par le web et par le client de synchronisation — il n\'y a PAS de lecteur réseau SMB '
+                . 'pour ce répertoire. Chaque dossier partagé apparaît chez son destinataire ; ce qui ne '
+                . 'lui est pas partagé lui reste invisible.',
         };
     }
 

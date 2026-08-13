@@ -669,6 +669,90 @@ SUDOERS
 }
 
 # ============================================================================
+# Seam privilégié du déploiement OpenCloud
+#
+# Calque EXACT de ensure_extension_engine — et volontairement SÉPARÉ de lui.
+# Élargir le helper des extensions reconstituerait le couplage que la
+# séparation du 2026-08-08 a défait : administrer une instance et installer une
+# instance ne sont pas le même livrable. Deux helpers, deux fichiers sudoers,
+# deux jeux de verbes fermés.
+#
+# Docker n'est PAS une dépendance nouvelle : check_docker / check_docker_compose
+# l'installent déjà, et la base de SE5 tourne en conteneur.
+# ============================================================================
+
+ensure_opencloud_engine() {
+  log "Seam de déploiement OpenCloud..."
+
+  local src="$APP_DIR/scripts/system/sambaedu-opencloud-helper.sh"
+  local dst_dir="/usr/share/sambaedu/sbin"
+  local dst="$dst_dir/sambaedu-opencloud-helper.sh"
+  local sudoers="/etc/sudoers.d/sambaedu-opencloud"
+
+  if [[ ! -f "$src" ]]; then
+    log_warning "sambaedu-opencloud-helper.sh absent — étape ignorée"
+    return 0
+  fi
+
+  mkdir -p "$dst_dir"
+
+  if [[ -f "$dst" ]] && [[ -x "$dst" ]] && cmp -s "$src" "$dst"; then
+    log "  → helper OpenCloud déjà à jour"
+  else
+    install -m 755 -o root -g root "$src" "$dst"
+    log_success "  → helper OpenCloud déployé vers $dst"
+  fi
+
+  local tmp_sudoers
+  tmp_sudoers="$(mktemp)"
+  cat > "$tmp_sudoers" <<SUDOERS
+# Géré par SambaEdu — déploiement de l'instance OpenCloud.
+# UNE seule entrée : toutes les validations vivent DANS le helper, côté root
+# (verbes fermés, chemins dérivés, image épinglée, composition générée).
+www-admin ALL=(root) NOPASSWD: $dst
+SUDOERS
+
+  # VALIDÉ AVANT POSE : un fragment invalide casserait sudo pour toute la
+  # machine, y compris les chemins qui n'ont rien à voir avec OpenCloud.
+  if visudo -cf "$tmp_sudoers" >/dev/null 2>&1; then
+    if [[ -f "$sudoers" ]] && cmp -s "$tmp_sudoers" "$sudoers"; then
+      log "  → sudoers OpenCloud déjà en place"
+      rm -f "$tmp_sudoers"
+    else
+      install -m 0440 -o root -g root "$tmp_sudoers" "$sudoers"
+      rm -f "$tmp_sudoers"
+      log_success "  → $sudoers posé (0440)"
+    fi
+  else
+    rm -f "$tmp_sudoers"
+    log_error "Fragment sudoers OpenCloud invalide — NON installé (sudo reste intact)"
+    return 1
+  fi
+
+  install -d -m 0750 -o root -g root /etc/sambaedu/opencloud
+
+  # LE COMPTE SYSTÈME PROPRIÉTAIRE DES VOLUMES. Le fichier de configuration de
+  # l'instance porte ses secrets internes (jeton de signature, clés d'API de
+  # service, mot de passe de l'annuaire) : le laisser à l'uid 1000 — le premier
+  # compte HUMAIN d'une Debian — donnerait à un utilisateur sans privilège de
+  # quoi forger un jeton pour n'importe quel compte de l'instance. Le helper sait
+  # créer ce compte lui-même en cas de besoin ; le poser ici évite qu'un
+  # déploiement soit le premier à le faire.
+  if ! id -u sambaedu-opencloud >/dev/null 2>&1; then
+    if useradd --system --no-create-home --home-dir /var/lib/sambaedu/opencloud \
+      --shell /usr/sbin/nologin --comment "SambaEdu OpenCloud" sambaedu-opencloud >/dev/null 2>&1; then
+      log_success "  → compte système sambaedu-opencloud créé (sans shell, sans connexion)"
+    else
+      log_warning "  → compte système sambaedu-opencloud non créé — le déploiement le tentera à son tour"
+    fi
+  else
+    log "  → compte système sambaedu-opencloud déjà présent"
+  fi
+
+  log_success "Seam OpenCloud prêt (helper + sudoers + compte système + répertoire de configuration)"
+}
+
+# ============================================================================
 # Configuration Apache
 # ============================================================================
 
@@ -1192,6 +1276,7 @@ main() {
   seed_bundled_extensions
   init_oidc_provider_keys
   ensure_extension_engine
+  ensure_opencloud_engine
 
   # Phase 6: Apache
   echo ""

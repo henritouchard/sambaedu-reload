@@ -8,16 +8,34 @@ use App\Models\SystemSetting;
 
 /**
  * Politique de gestion des fichiers — réglage GLOBAL d'instance UNIQUEMENT
- * (décision Henri 2026-07-17). TROIS CAPACITÉS INDÉPENDANTES (pas un mode
+ * (décision Henri 2026-07-17). QUATRE CAPACITÉS INDÉPENDANTES (pas un mode
  * exclusif, PAS d'override par parc) :
  *  - `home`      : monter le home perso (K:).
  *  - `shares`    : monter les partages serveur (classes H: + répertoires gérés).
  *  - `nextcloud` : « Accès Nextcloud » — l'instance monte les partages SMB
  *                  existants en stockage externe et SE5 provisionne ce montage et
  *                  les comptes (story 61.1).
+ *  - `opencloud` : « Accès OpenCloud » — une instance OpenCloud devient une
+ *                  AUTORITÉ D'ÉCRITURE possible pour un répertoire géré (le plan
+ *                  y devient un espace de projet et des octrois par nœud).
+ *
+ * **La quatrième est un INTERRUPTEUR INDÉPENDANT, et rien de plus.** Elle ne
+ * remplace ni ne renomme la troisième : OpenCloud est une ALTERNATIVE à
+ * Nextcloud et au serveur de fichiers historique, pas leur successeur déclaré.
+ * Aucun réglage `nextcloud_*` n'est réutilisé — `nextcloud_smb_host` n'aurait
+ * d'ailleurs aucun sens ici, ce produit ne montant aucun partage SMB. Elle naît
+ * ÉTEINTE : une instance déployée ne devient pas une autorité parce qu'elle
+ * existe.
  *
  * « Web uniquement » n'est PAS une option : c'est l'état nul (tout à `false`) —
  * l'utilisateur passe par le navigateur, rien n'est monté ni provisionné.
+ *
+ * **`nextcloud_desktop_shortcut` n'est PAS une cinquième capacité** : rien n'est
+ * monté ni provisionné, un raccourci vers le portail web est simplement posé sur
+ * le Bureau. Il vit ici parce qu'il n'a de sens qu'adossé à la capacité Nextcloud
+ * et à son URL, et parce que le réglage est GLOBAL comme les quatre autres. Il est
+ * lu par le {@see \App\Services\Agent\Providers\ShortcutsStateProvider}, jamais par
+ * {@see self::capabilities()} — un consommateur de capacités n'a rien à en faire.
  *
  * Persisté dans `SystemSetting` clé `files.policy` (JSON), édité sur
  * `/admin/settings/files`. Défaut `home✓ shares✓ nextcloud✗` (comportement
@@ -58,7 +76,7 @@ final class FilePolicyService
      * ce qui rendait la faiblesse invisible à l'exploitant. Ici, l'assouplissement
      * est un choix visible, coché sur l'écran et persisté.
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool}
      */
     public static function defaults(): array
     {
@@ -74,6 +92,28 @@ final class FilePolicyService
             // qui doit suivre la configuration de l'instance.
             'nextcloud_smb_host' => '',
             'nextcloud_verify_tls' => true,
+
+            // Poser sur le Bureau un raccourci vers le PORTAIL WEB de l'instance.
+            // Ce n'est PAS une capacité (rien n'est monté, rien n'est provisionné)
+            // mais une PRÉSENTATION : le seul chemin d'accès d'un répertoire servi
+            // par Nextcloud est le web, et un chemin d'accès que l'utilisateur ne
+            // voit pas n'existe pas pour lui. Naît ÉTEINT — activer « Accès
+            // Nextcloud » ne décide pas à la place de l'exploitant de ce qui
+            // apparaît sur les bureaux de l'établissement.
+            'nextcloud_desktop_shortcut' => false,
+
+            // --- Accès OpenCloud : STRICTEMENT ADDITIF ------------------------
+            // Aucune clé ci-dessus n'est réutilisée, renommée ni supprimée : un
+            // payload persisté avant l'arrivée de ces clés se relit à
+            // l'identique et signifie exactement ce qu'il signifiait
+            // (capacité éteinte, connexion vide).
+            'opencloud' => false,
+            'opencloud_server_url' => '',
+            'opencloud_admin_user' => '',
+            // Même doctrine que pour l'autre produit : la vérification du
+            // certificat est VRAIE par défaut, et son assouplissement est un
+            // choix visible à l'écran, jamais un défaut caché dans le code.
+            'opencloud_verify_tls' => true,
         ];
     }
 
@@ -82,7 +122,7 @@ final class FilePolicyService
      * ou un ancien payload `{mode:...}` : les clés inconnues sont ignorées, on
      * retombe proprement sur les défauts).
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool}
      */
     public static function globalConfig(): array
     {
@@ -108,14 +148,30 @@ final class FilePolicyService
             'nextcloud_verify_tls' => array_key_exists('nextcloud_verify_tls', $stored)
                 ? (bool) $stored['nextcloud_verify_tls']
                 : $defaults['nextcloud_verify_tls'],
+            'nextcloud_desktop_shortcut' => array_key_exists('nextcloud_desktop_shortcut', $stored)
+                ? (bool) $stored['nextcloud_desktop_shortcut']
+                : $defaults['nextcloud_desktop_shortcut'],
+
+            'opencloud' => array_key_exists('opencloud', $stored)
+                ? (bool) $stored['opencloud']
+                : $defaults['opencloud'],
+            'opencloud_server_url' => is_string($stored['opencloud_server_url'] ?? null)
+                ? $stored['opencloud_server_url']
+                : $defaults['opencloud_server_url'],
+            'opencloud_admin_user' => is_string($stored['opencloud_admin_user'] ?? null)
+                ? $stored['opencloud_admin_user']
+                : $defaults['opencloud_admin_user'],
+            'opencloud_verify_tls' => array_key_exists('opencloud_verify_tls', $stored)
+                ? (bool) $stored['opencloud_verify_tls']
+                : $defaults['opencloud_verify_tls'],
         ];
     }
 
     /**
-     * Les trois capacités effectives (sans l'URL) — consommées par le gating des
-     * lecteurs.
+     * Les quatre capacités effectives (sans les URL) — consommées par le gating
+     * des lecteurs et par la posabilité d'une autorité d'écriture.
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool}
+     * @return array{home: bool, shares: bool, nextcloud: bool, opencloud: bool}
      */
     public static function capabilities(): array
     {
@@ -125,6 +181,7 @@ final class FilePolicyService
             'home' => $config['home'],
             'shares' => $config['shares'],
             'nextcloud' => $config['nextcloud'],
+            'opencloud' => $config['opencloud'],
         ];
     }
 
@@ -136,6 +193,12 @@ final class FilePolicyService
      * 61.1/61.2 ne les connaissent pas, et un défaut « chaîne vide » leur ferait
      * effacer la configuration de connexion à chaque bascule de capacité — une perte
      * silencieuse dont personne ne verrait la cause.
+     *
+     * **Les quatre paramètres OpenCloud sont AJOUTÉS EN QUEUE, tous nullables**, et
+     * pour exactement la même raison : les deux appelants existants les ignorent, et
+     * un appel qui ne les nomme pas ne doit rien effacer. `nextcloudDesktopShortcut`
+     * suit la même règle et la même place — en queue, nullable : un appelant qui ne
+     * le nomme pas ne fait pas disparaître un raccourci déjà posé sur les bureaux.
      */
     public static function setGlobal(
         bool $home,
@@ -145,6 +208,11 @@ final class FilePolicyService
         ?string $nextcloudAdminUser = null,
         ?string $nextcloudSmbHost = null,
         ?bool $nextcloudVerifyTls = null,
+        ?bool $opencloud = null,
+        ?string $opencloudServerUrl = null,
+        ?string $opencloudAdminUser = null,
+        ?bool $opencloudVerifyTls = null,
+        ?bool $nextcloudDesktopShortcut = null,
     ): void {
         $current = self::globalConfig();
 
@@ -156,6 +224,12 @@ final class FilePolicyService
             'nextcloud_admin_user' => trim($nextcloudAdminUser ?? $current['nextcloud_admin_user']),
             'nextcloud_smb_host' => trim($nextcloudSmbHost ?? $current['nextcloud_smb_host']),
             'nextcloud_verify_tls' => $nextcloudVerifyTls ?? $current['nextcloud_verify_tls'],
+            'nextcloud_desktop_shortcut' => $nextcloudDesktopShortcut ?? $current['nextcloud_desktop_shortcut'],
+
+            'opencloud' => $opencloud ?? $current['opencloud'],
+            'opencloud_server_url' => trim($opencloudServerUrl ?? $current['opencloud_server_url']),
+            'opencloud_admin_user' => trim($opencloudAdminUser ?? $current['opencloud_admin_user']),
+            'opencloud_verify_tls' => $opencloudVerifyTls ?? $current['opencloud_verify_tls'],
         ]);
     }
 }

@@ -44,11 +44,27 @@ class FileBackendVocabularyTest extends TestCase
      * un compte ordinaire ne peut créer ni dossier d'équipe, ni groupe — donc pas de
      * cloisonnement), et il n'y a rien à rouvrir pour lui, ni maintenant ni plus
      * tard.
+     *
+     * ---------------------------------------------------------------------------
+     * **LA LISTE PASSE À QUATRE : `opencloud` ENTRE AU VOCABULAIRE.** La liste
+     * exacte est retouchée, et c'est la SEULE chose qui bouge dans ce test.
+     * L'invariant permanent — *chaque case résout dans le registre* — est repris
+     * mot pour mot en dessous, et c'est lui qui portait déjà tout le poids : la
+     * garde annoncée en 61.3 disait qu'elle « vaudrait encore quand un quatrième
+     * nom arriverait ». Il est arrivé, et elle vaut.
+     *
+     * Pourquoi cette case-là est légitime quand la case déléguée ne l'était pas :
+     * la case déléguée déclarait une position que le PRODUIT ne savait pas tenir
+     * (pas de cloisonnement possible). Celle-ci arrive avec sa mesure — contre une
+     * instance réelle, le 2026-08-13 : espace de projet créé, octroi posé par
+     * sous-dossier à un principal groupe, et un compte sans octroi qui obtient
+     * `404` plutôt qu'un accès. Le cloisonnement, lui, est bien là.
+     * ---------------------------------------------------------------------------
      */
     #[Test]
     public function the_column_vocabulary_is_exact_and_every_case_resolves(): void
     {
-        $this->assertSame(['posix', 'preview', 'nextcloud'], FileBackendName::values());
+        $this->assertSame(['posix', 'preview', 'nextcloud', 'opencloud'], FileBackendName::values());
 
         foreach (FileBackendName::values() as $value) {
             $this->assertStringNotContainsStringIgnoringCase('delegue', $value);
@@ -81,11 +97,17 @@ class FileBackendVocabularyTest extends TestCase
     {
         // Story 61.3 — `nextcloud` a rejoint le vocabulaire ; la case DÉLÉGUÉE, elle,
         // n'y entrera jamais (elle a été supprimée du produit, pas reportée).
+        //
+        // `opencloud` figurait ici comme exemple d'inconnu — c'était l'état daté
+        // d'un backend annoncé et non écrit. Il est écrit, mesuré et enregistré :
+        // il PASSE donc du côté des valeurs connues, et le témoin d'inconnu devient
+        // une valeur qui n'a jamais été annoncée nulle part.
         $this->assertFalse(FileBackendName::isKnown('nextcloud_delegue'));
-        $this->assertFalse(FileBackendName::isKnown('opencloud'));
+        $this->assertFalse(FileBackendName::isKnown('dropbox'));
         $this->assertFalse(FileBackendName::isKnown(null));
         $this->assertTrue(FileBackendName::isKnown('posix'));
         $this->assertTrue(FileBackendName::isKnown('nextcloud'));
+        $this->assertTrue(FileBackendName::isKnown('opencloud'));
     }
 
     // =========================================================================

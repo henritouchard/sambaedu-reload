@@ -48,6 +48,10 @@ use Livewire\Wireable;
  *                                           est nullable et reconstructible par `nextcloud:provision`.
  *                                           Volontairement HORS `$fillable` : elle s'écrit nominativement
  *                                           depuis le provisionnement, jamais par assignation de masse.
+ * @property string|null $opencloud_user_id  CACHE de résolution de l'identité OpenCloud — mêmes propriétés,
+ *                                           annuaire DIFFÉRENT : le même utilisateur y porte un identifiant
+ *                                           qui n'a aucune raison de coïncider avec celui de l'autre produit.
+ *                                           Nullable, reconstructible, index unique, hors `$fillable`.
  * @property string $role
  * @property string|null $school_code
  * @property string|null $school_name

@@ -84,12 +84,24 @@ class FileBackendRegistryTest extends TestCase
      * qu'un second backend réel existe, TOUTE case du vocabulaire résout. Un nom
      * annoncé sans implémentation était l'état daté de la story 60.3 ; ce n'est plus
      * un état acceptable.
+     *
+     * **LA LISTE S'ALLONGE D'UN NOM DE PLUS — `opencloud` — ET C'EST TOUT CE QUI
+     * CHANGE.** La retouche est ÉNUMÉRATIVE : elle nomme le troisième backend réel,
+     * elle ne touche à aucune propriété. La seconde assertion, elle, ne bouge pas
+     * d'un caractère et c'est celle qui compte : *les noms disponibles sont
+     * EXACTEMENT les cases du vocabulaire*. C'est cette égalité, et non la longueur
+     * de la liste, qui interdit une case déclarée sans implémentation.
      */
     #[Test]
     public function only_the_implemented_names_are_advertised_as_available(): void
     {
         $this->assertSame(
-            [FileBackendName::Posix, FileBackendName::Preview, FileBackendName::Nextcloud],
+            [
+                FileBackendName::Posix,
+                FileBackendName::Preview,
+                FileBackendName::Nextcloud,
+                FileBackendName::OpenCloud,
+            ],
             $this->registry()->availableNames(),
         );
 
@@ -121,18 +133,26 @@ class FileBackendRegistryTest extends TestCase
      * jamais un repli silencieux sur un défaut. Provisionner au hasard un partage
      * dont l'autorité d'écriture est illisible est exactement ce qu'il faut
      * empêcher.
+     *
+     * **LA VALEUR TÉMOIN A CHANGÉ, ET LA PROPRIÉTÉ N'A PAS BOUGÉ.** Ce test
+     * employait `opencloud` comme exemple d'inconnu — un choix qui n'était pas
+     * gratuit : c'était le nom que le cadrage annonçait pour un backend à venir. Ce
+     * backend existe désormais, la valeur est devenue LÉGITIME, et la garder ici
+     * ferait passer le test au vert pour la mauvaise raison (il vérifierait qu'un
+     * nom connu est refusé). Le témoin devient donc une valeur qui n'a jamais été
+     * annoncée nulle part et n'a aucune raison de le devenir.
      */
     #[Test]
     public function an_unknown_column_value_fails_explicitly_and_never_falls_back(): void
     {
         $share = NetworkShare::factory()->create();
-        DB::table('network_shares')->where('id', $share->id)->update(['backend' => 'opencloud']);
+        DB::table('network_shares')->where('id', $share->id)->update(['backend' => 'dropbox']);
 
         try {
             $this->registry()->forShare($share->fresh());
             $this->fail('une valeur hors vocabulaire aurait dû échouer');
         } catch (UnknownFileBackendException $e) {
-            $this->assertStringContainsString('opencloud', $e->getMessage());
+            $this->assertStringContainsString('dropbox', $e->getMessage());
             $this->assertStringContainsString('posix|preview', $e->getMessage());
         }
     }

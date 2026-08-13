@@ -108,9 +108,15 @@ class PlanNamespaceIsolationTest extends TestCase
      * shell-out, aucun partage, aucun claim de fédération, frontière des deux
      * plafonds).
      *
+     * Le TROISIÈME (OpenCloud) l'allonge d'une entrée de plus, et c'est exactement
+     * ce que la phrase ci-dessus annonçait. La démonstration vaut d'être notée : un
+     * produit entier s'ajoute sous la ligne en ne coûtant à cette garde qu'un nom
+     * de dossier — le reste de ses interdits vit chez lui, dans le test de son
+     * propre namespace.
+     *
      * @var list<string>
      */
-    private const CONTRACT_IMPLEMENTATION_DIR = ['Posix', 'Nextcloud'];
+    private const CONTRACT_IMPLEMENTATION_DIR = ['Posix', 'Nextcloud', 'OpenCloud'];
 
     /**
      * Story 60.3 — l'ASSEMBLEUR de plan de partage plat et le REGISTRE.

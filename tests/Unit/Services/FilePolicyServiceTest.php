@@ -23,7 +23,10 @@ class FilePolicyServiceTest extends TestCase
     public function defaults_to_home_and_shares_when_nothing_persisted(): void
     {
         self::assertSame(
-            ['home' => true, 'shares' => true, 'nextcloud' => false],
+            // La QUATRIÈME capacité naît ÉTEINTE, et c'est la seule chose que son
+            // arrivée change ici : les trois autres défauts sont intacts, et un
+            // payload persisté avant elle se relit exactement comme avant.
+            ['home' => true, 'shares' => true, 'nextcloud' => false, 'opencloud' => false],
             FilePolicyService::capabilities(),
         );
     }
@@ -49,7 +52,10 @@ class FilePolicyServiceTest extends TestCase
         SystemSetting::set(FilePolicyService::SETTING_KEY, ['mode' => 'autre_web']);
 
         self::assertSame(
-            ['home' => true, 'shares' => true, 'nextcloud' => false],
+            // La QUATRIÈME capacité naît ÉTEINTE, et c'est la seule chose que son
+            // arrivée change ici : les trois autres défauts sont intacts, et un
+            // payload persisté avant elle se relit exactement comme avant.
+            ['home' => true, 'shares' => true, 'nextcloud' => false, 'opencloud' => false],
             FilePolicyService::capabilities(),
         );
         self::assertSame('', FilePolicyService::globalConfig()['nextcloud_server_url']);

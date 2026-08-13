@@ -134,6 +134,17 @@ class AppServiceProvider extends ServiceProvider
             \App\Services\Extensions\SudoExtensionHelperRunner::class,
         );
 
+        // LE seam privilégié du déploiement OpenCloud — DÉLIBÉRÉMENT SÉPARÉ du
+        // précédent. Élargir le helper des extensions pour ce chantier
+        // reconstituerait le couplage défait le 2026-08-08 : administrer une
+        // instance et installer une extension ne sont pas le même livrable. Les
+        // tests remplacent cette interface et observent la séquence exacte des
+        // appels sans jamais exécuter de conteneur.
+        $this->app->bind(
+            \App\Services\OpenCloud\Deployment\OpenCloudHelperRunner::class,
+            \App\Services\OpenCloud\Deployment\SudoOpenCloudHelperRunner::class,
+        );
+
         // Alias pour faciliter l'utilisation via app('sambaedu.config') qui fournit l'instance singleton de SambaeduConfig
         $this->app->alias(AdDataTransformer::class, 'sambaedu.transformer');
         $this->app->alias(AuthenticationService::class, 'sambaedu.auth');

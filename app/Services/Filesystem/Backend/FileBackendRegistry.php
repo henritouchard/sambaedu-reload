@@ -8,6 +8,7 @@ use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\UnknownFileBackendException;
 use App\Models\NetworkShare;
 use App\Services\Filesystem\Backend\Nextcloud\NextcloudFileBackend;
+use App\Services\Filesystem\Backend\OpenCloud\OpenCloudFileBackend;
 use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use Illuminate\Contracts\Container\Container;
 
@@ -49,6 +50,11 @@ final class FileBackendRegistry
         // « aucune case sans implémentation » (la propriété permanente) :
         // {@see \Tests\Unit\Enums\FileBackendVocabularyTest}.
         'nextcloud' => NextcloudFileBackend::class,
+        // Le TROISIÈME backend réel — et la seule ligne que son arrivée ajoute
+        // ici. C'est la mesure que cette table existe pour rendre possible : un
+        // produit de plus s'enregistre en une entrée, sans que le contrat ni les
+        // rapports ne bougent.
+        'opencloud' => OpenCloudFileBackend::class,
     ];
 
     public function __construct(private readonly Container $container) {}
