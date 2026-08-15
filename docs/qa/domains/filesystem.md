@@ -3850,3 +3850,177 @@ et des octrois posés **par dossier**. Le cloisonnement y est obtenu **par
 construction** — ce qui n'a rien reçu est invisible, pas seulement interdit — et
 là où une recette accorde à la racine, il est **constaté impossible** et nommé
 plutôt qu'affiché à tort.)*
+
+---
+
+## Story 63.1 — Les deux emplacements en base, et le cloud unique
+
+**Ce que cette story change, en une phrase :** un nouveau modèle — espace perso /
+espace partagé / cloud actif — est **posé à côté** de `files.policy`, avec ses
+gardes et sa commande de reprise. **Aucun octet ne bouge, et rien ne change pour
+personne** : `/admin/settings/files` garde ses quatre interrupteurs historiques,
+et aucun écran ne lit encore le nouveau modèle (63.3 le fera).
+
+**Ce qu'il y a à vérifier ici, et pourquoi ce n'est pas cosmétique.** La seule
+surface neuve observable est une commande d'exploitation,
+`php artisan files:adopt-locations`, dont le rôle est de dériver la décision
+équivalente depuis les quatre booléens historiques — et de **refuser de deviner**
+quand elle ne le peut pas. Les deux refus nommés (AC7) sont le cœur du contrat :
+une commande de reprise qui choisirait à la place de l'administrateur, ou qui
+inventerait un emplacement, romprait la garantie « aucune migration implicite »
+que tout l'Epic 64 présuppose.
+
+### Prérequis
+
+- [ ] **63.1-P1** — accès `root` (ou sudo) sur `/vm`, dépôt à jour, migrations
+      jouées (`php artisan migrate`).
+- [ ] **63.1-P2** — connaître l'état courant de `/admin/settings/files` sur
+      l'instance testée (les quatre interrupteurs) avant de commencer, pour
+      pouvoir le restaurer après les manipulations.
+- [ ] **63.1-P3** — pour les scénarios avec cloud configuré : une URL, un
+      identifiant admin et un secret de test pour Nextcloud et/ou OpenCloud
+      (une valeur bidon suffit — la commande ne fait AUCUN appel réseau, elle ne
+      vérifie que la présence des trois réglages).
+
+### 63.1-1 — Reprise nominale, cloud unique configuré
+
+1. Sur `/admin/settings/files`, laisser `home` et `shares` actifs, activer
+   « Accès Nextcloud » avec une URL/identifiant/secret renseignés (laisser
+   OpenCloud éteint).
+2. Jouer :
+   ```bash
+   php artisan files:adopt-locations
+   ```
+
+- [ ] **63.1-1a** — la commande rend le code **0** et affiche un tableau à trois
+      lignes : `espace perso = posix`, `espace partagé = posix`,
+      `cloud actif = nextcloud`.
+- [ ] **63.1-1b** — vérifier en base que la ligne a été posée, et qu'elle seule :
+      ```sql
+      select value from system_settings where key = 'files.locations';
+      ```
+      rend exactement `{"espace_perso.autorite":"posix","espace_partage.autorite":"posix","cloud.actif":"nextcloud"}`.
+- [ ] **63.1-1c** — `select value from system_settings where key = 'files.policy';`
+      est **identique** à avant : la reprise ne touche jamais ce réglage.
+
+### 63.1-2 — Refus nommé n°1 : les deux clouds configurés
+
+1. Sur la même instance, activer **également** « Accès OpenCloud » avec une
+   URL/identifiant/secret renseignés — les deux capacités cloud sont maintenant
+   actives, avec une connexion complète chacune.
+2. Jouer `php artisan files:adopt-locations`.
+
+- [ ] **63.1-2a** — la commande **refuse** : code de sortie **≠ 0**.
+- [ ] **63.1-2b** — le message nomme **les deux produits** et **leurs URL**, et
+      dit explicitement que la reprise **ne choisit pas** à la place de
+      l'administrateur, avec un renvoi vers `Administration › Fichiers`.
+- [ ] **63.1-2c** — la ligne posée en 63.1-1 est **inchangée** : comparer
+      `select value from system_settings where key = 'files.locations';` avant et
+      après le refus. Un refus n'écrit ni n'efface jamais — et à ce stade la
+      ligne existe forcément, puisque 63.1-1 vient de la poser.
+- [ ] **63.1-2d** — désactiver OpenCloud pour revenir à l'état du scénario
+      63.1-1 avant de continuer.
+
+### 63.1-3 — Refus nommé n°2 : emplacement web-uniquement sans cloud
+
+1. Sur une instance **sans aucun cloud configuré** (les deux capacités
+   éteintes, ou allumées avec une connexion incomplète), couper `home` (case
+   « Accès au home » décochée) sur `/admin/settings/files`.
+2. Jouer `php artisan files:adopt-locations`.
+
+- [ ] **63.1-3a** — la commande **refuse** : code de sortie **≠ 0**.
+- [ ] **63.1-3b** — le message nomme **le cas** (l'espace perso devrait désigner
+      un cloud, mais aucun n'est configuré) et dit explicitement qu'**aucun
+      emplacement n'est inventé**.
+- [ ] **63.1-3c** — le message **distingue** « capacité désactivée » de
+      « capacité active mais connexion incomplète » pour Nextcloud **et** pour
+      OpenCloud séparément — rejouer ce scénario une fois capacité éteinte, une
+      fois capacité active sans URL, et vérifier que le libellé change en
+      conséquence.
+- [ ] **63.1-3d** — `system_settings` ne porte **aucune** ligne `files.locations`
+      après ce refus (ou une ligne inchangée si une précédente existait).
+- [ ] **63.1-3e** — recocher `home` pour revenir à l'état antérieur.
+
+### 63.1-4 — `--dry-run` : voir sans écrire
+
+1. Repartir d'une instance dont la décision **n'a pas encore été reprise** —
+   supprimer la ligne posée par les scénarios précédents :
+   ```sql
+   delete from system_settings where key = 'files.locations';
+   ```
+2. Jouer, en relevant le code de sortie :
+   ```bash
+   php artisan files:adopt-locations --dry-run ; echo "code = $?"
+   ```
+
+- [ ] **63.1-4a** — la sortie affiche « Simulation — rien ne sera écrit. », le
+      tableau de la décision calculée, **puis un bloc « Motifs : »** qui dit
+      pourquoi chaque valeur a été retenue (l'état de l'accès au home et aux
+      partages, et le statut de chacun des deux produits cloud).
+- [ ] **63.1-4b** — `select count(*) from system_settings where key = 'files.locations';`
+      rend **0** après la commande : rien n'a été écrit.
+- [ ] **63.1-4c** — le code de sortie est **≠ 0** : il reste à écrire. Une
+      simulation ne rend **0** que lorsqu'il n'y a plus rien à faire — sans quoi
+      un enchaînement `files:adopt-locations --dry-run && <geste réel>` prendrait
+      la simulation pour un feu vert sur une instance non reprise.
+- [ ] **63.1-4d** — jouer ensuite la commande **sans** `--dry-run` : la ligne
+      apparaît cette fois, avec les mêmes valeurs que celles annoncées par la
+      simulation. Rejouer alors `--dry-run` : la sortie annonce « Déjà
+      conforme », et le code de sortie est cette fois **0**.
+
+### 63.1-5 — Idempotence : rejouer ne réécrit rien
+
+1. Sur une instance dont la décision a **déjà été reprise** (scénario 63.1-1 ou
+   63.1-4d ci-dessus), relever l'horodatage de la ligne :
+   ```sql
+   select updated_at from system_settings where key = 'files.locations';
+   ```
+2. Rejouer `php artisan files:adopt-locations` **sans rien changer** à
+   `/admin/settings/files` entre-temps.
+
+- [ ] **63.1-5a** — la commande rend le code **0** et annonce « Déjà conforme :
+      rien à écrire. ».
+- [ ] **63.1-5b** — l'horodatage `updated_at` relevé en base **n'a pas bougé**
+      d'un dixième de seconde : aucune écriture n'a eu lieu, même une écriture
+      « à l'identique ».
+- [ ] **63.1-5c** — **en gardant Nextcloud configuré** (état du scénario
+      63.1-1), décocher `home` sur `/admin/settings/files` : la décision
+      calculée devient `espace perso = nextcloud`, différente de celle
+      enregistrée. Rejouer la commande **sans** `--force` : elle **refuse**
+      d'écraser la ligne existante, code de sortie **≠ 0**, et affiche côte à
+      côte la valeur **enregistrée** et la valeur **calculée**.
+      ⚠️ Le cloud doit rester configuré pendant cette manipulation : sans cloud,
+      `home` décoché sort par le refus du scénario 63.1-3 (« aucun cloud
+      configuré ») **avant** toute comparaison, et le tableau côte à côte
+      n'apparaît jamais.
+- [ ] **63.1-5d** — rejouer la même commande avec `--force` : la nouvelle valeur
+      (`espace perso = nextcloud`) remplace l'ancienne, code de sortie **0**.
+      Recocher ensuite `home` et rejouer avec `--force` pour revenir à l'état de
+      63.1-1.
+
+### Nettoyage
+
+- [ ] **63.1-6** — remettre `/admin/settings/files` dans l'état relevé en
+      63.1-P2, et supprimer la ligne de test si elle ne correspond à aucun état
+      réel de l'instance :
+      ```sql
+      delete from system_settings where key = 'files.locations';
+      ```
+
+---
+
+*Mise à jour : 2026-08-15 (Story 63.1 — les deux emplacements de fichiers (espace
+perso / espace partagé) et le cloud actif de l'instance existent désormais comme
+trois réglages `SystemSetting('files.locations')`, à côté de `files.policy` qui
+reste seul gouvernant : vocabulaire fermé `ActiveCloud` (aucun/nextcloud/opencloud,
+jamais les deux à la fois), objet de valeur `FileLocations` à constructeur privé
+dont la fabrique `make()` refuse l'aperçu comme emplacement et toute autorité cloud
+qui ne serait pas le cloud actif — garde REJOUÉE À LA LECTURE, pas seulement à
+l'écriture —, et commande de reprise `files:adopt-locations` qui dérive la
+décision depuis les quatre booléens historiques SANS AUCUN APPEL RÉSEAU
+(« cloud configuré » = capacité active ET connexion complète, jamais une
+vérification sondée), refuse en nommant quand deux clouds sont configurés ou
+quand un emplacement devrait désigner un cloud absent, et converge en idempotence
+stricte. **Zéro octet déplacé, zéro écran modifié** : `/admin/settings/files`,
+`DrivesStateProvider`, `ShortcutsStateProvider` et le contrat agent figé restent
+strictement inchangés — cette story pose le modèle, 63.2/63.3 le brancheront.)*
