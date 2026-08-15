@@ -4721,3 +4721,389 @@ livrée avec la phrase qui dit qu'elle n'a pas encore d'effet sur le poste.
 Redirection `admin.quotas` repointée sur `?tab=emplacements`. Aucune migration
 de schéma, aucun octet de donnée utilisateur lu, écrit ni déplacé, golden agent
 et `FROZEN_STATE_HASH` inchangés.)*
+
+---
+
+## Story 63.4 — Le plafond par défaut d'instance, la corbeille rebranchée, et la mort des quatre profils
+
+**Date livraison** : 2026-08-15
+**Migration à appliquer** : `2026_08_15_100000_collapse_quota_profile_defaults`
+
+> ⚠️ **Ce runbook n'a pas été déroulé au moment de sa rédaction.** Il décrit la
+> procédure ; ses résultats ne sont pas connus. Cible : `/vm`
+> (`ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`), projet
+> `/var/www/sambaedu-reload`.
+
+### Ce que la story change, en une phrase
+
+Les quatre « quotas par défaut par profil » (élève / professeur / administrateur /
+itinérant) n'existent plus. Il reste **un plafond par défaut d'instance et par
+partition**, saisi dans la carte « Quotas des espaces personnels » du bloc
+« Réglages » de `/admin/settings/files?tab=emplacements`, et **lu par la
+résolution** — ce que l'ancienne grille ne faisait pas. La corbeille des
+répertoires personnels retrouve son écran, dans une carte distincte.
+
+**Deux propriétés à ne pas perdre de vue en déroulant ce runbook :**
+
+1. **La migration ne rétrécit JAMAIS un plafond** : elle retient la valeur la plus
+   large des règles par profil. Rétrécir bloquerait des gens en écriture, sur le
+   système de fichiers **et** sur le cloud, sans que personne n'ait cliqué ; élargir
+   ne bloque personne et n'alloue aucun disque.
+2. **Enregistrer n'est pas appliquer** : la carte écrit la règle sans rien mettre en
+   file. Porter le plafond à tous les comptes couverts est un **second geste**, qui
+   annonce d'abord combien de comptes il concerne et combien basculeraient en
+   dépassement.
+
+### ⚠️ Prérequis matériel — la fin observable exige un volume XFS
+
+`/vm` et `/lab1` sont **ext4 sur toutes leurs partitions**. La commande d'état
+échoue donc sur `/home`, ce qui est **exactement le cas de l'AC4** — vérifiable tel
+quel (scénarios 63.4-5 et 63.4-6). En revanche, **la fin observable — « un plafond
+saisi arrive sur le système de fichiers » — n'est PAS vérifiable sans XFS**, et
+aucun test automatisé ne peut la prouver : un test qui simulerait `xfs_quota` ne
+prouverait que la cohérence du simulateur avec lui-même.
+
+Pour la vérifier, monter un volume XFS **avec les quotas UTILISATEUR** (`uquota` —
+et non `prjquota`, qui sert aux plafonds de zone de l'Epic 60) :
+
+```bash
+truncate -s 5G /srv/xfs-user-test.img
+mkfs.xfs /srv/xfs-user-test.img
+mkdir -p /srv/xfstest
+mount -o loop,uquota /srv/xfs-user-test.img /srv/xfstest
+xfs_quota -x -c 'state -u' /srv/xfstest      # attendu : Enforcement: ON
+```
+
+⚠️ Non persistant au reboot (aucune entrée `fstab`), réversible par
+`umount /srv/xfstest` + suppression du fichier image.
+
+⚠️ **SE5 ne pose son plafond que sur `/home` et `/var/sambaedu`** : un volume monté
+ailleurs ne sera jamais la cible. Pour dérouler les scénarios 63.4-3 et 63.4-4, il
+faut donc que **`/home` lui-même soit ce volume XFS**. Sur une VM de test
+uniquement, et après avoir relevé l'état de départ :
+
+```bash
+cp -a /home /root/home.sauvegarde        # AVANT toute chose
+mount -o loop,uquota /srv/xfs-user-test.img /home
+cp -a /root/home.sauvegarde/. /home/     # repeupler le volume
+```
+
+Restauration : `umount /home` (le contenu ext4 d'origine réapparaît). **Ne jamais
+faire cela sur une instance qui sert des utilisateurs.**
+
+### Pré-requis d'état
+
+- [ ] **63.4-P1** — relever l'état de départ, à restaurer en fin de runbook :
+      `php artisan tinker --execute="dump(\App\Models\QuotaRule::all()->toArray());"`
+      et
+      `php artisan tinker --execute="dump(\App\Models\SystemSetting::get('quota.trash'));"`
+- [ ] **63.4-P2** — relever la grille historique, si l'instance en portait une :
+      `php artisan tinker --execute="dump(\App\Models\SystemSetting::get('quota.defaults'));"`
+
+### Scénario 63.4-0 — La migration de bascule, et ce qu'elle dit
+
+1. Jouer `php artisan migrate`.
+
+- [ ] **63.4-0a** — le journal (`storage/logs/laravel.log`) porte **une** entrée
+      `[63.4] Défauts de quota par profil → défaut d'instance.` qui résume, partition
+      par partition, **ce qui a été retenu et ce qui a été abandonné**.
+- [ ] **63.4-0b** — sur une instance **seedée** (8 règles) : il ne reste que **deux**
+      règles de type `default`, portant **la valeur LA PLUS LARGE** des quatre profils
+      (2000/2400 Mo avec les valeurs d'origine), et les trois autres défauts ont
+      disparu.
+      ⚠️ **Personne ne perd de place, et c'est la règle première de cette migration** :
+      un plafond qui rétrécit bloque des gens en écriture — sur le système de fichiers
+      **et** sur le cloud — sans que personne n'ait cliqué ; un plafond qui s'élargit
+      ne bloque personne et **n'alloue aucun disque** (un quota plafonne). Si le
+      budget doit être resserré, le faire **explicitement** depuis la carte
+      « Quotas », qui annonce combien de comptes basculent.
+- [ ] **63.4-0c** — chaque règle abandonnée a laissé une ligne d'audit :
+      `php artisan tinker --execute="dump(\App\Models\QuotaAuditLog::where('performed_by','migration:63.4')->get()->toArray());"`
+      ⇒ le type, la partition, les valeurs perdues **et son état actif/désactivé** y
+      figurent.
+- [ ] **63.4-0c-bis** — une règle `default_*` **désactivée** n'est jamais reprise
+      comme défaut (elle n'avait aucun effet) ; elle est tout de même retirée et
+      tracée.
+- [ ] **63.4-0d** — sur une instance qui n'avait **que** la grille saisie (jamais
+      seedée) : la **cellule la plus large** de la grille est **reprise**, et la ligne
+      d'audit du défaut porte
+      `origine = « valeur reprise d'un réglage qui n'était appliqué à personne »`.
+- [ ] **63.4-0e** — **aucun travail n'a été mis en file** : `jobs` (ou la file
+      configurée) est vide. Une migration qui appliquerait en masse un plafond qui
+      n'avait jamais rien appliqué mettrait des comptes en dépassement sans clic.
+- [ ] **63.4-0f** — rejouer la migration à la main (tinker ou `migrate:refresh` sur
+      base jetable) ne duplique rien et n'écrase pas un défaut réglé depuis.
+- [ ] **63.4-0g** — la clé `quota.defaults` **est toujours en base** : elle devient
+      inerte, elle n'est pas effacée.
+- [ ] **63.4-0h** — ⚠️ **LE PLAN CLOUD.** Sur une instance qui ne portait **aucune**
+      règle de quota avant la migration, le résumé au journal porte une ligne
+      `PLAN CLOUD : SE5 prend désormais la gouvernance des plafonds cloud …` avec le
+      nombre de comptes concernés, **et** la ligne d'audit du défaut `/home` porte la
+      clé `plan_cloud`. Concrètement : le prochain `nextcloud:provision` **réécrira**
+      le plafond de chaque compte, y compris ceux réglés à la main dans l'instance.
+      Le vérifier d'abord en simulation (voir 63.4-8e).
+      Sur une instance qui portait déjà des règles, cette ligne est **absente** : la
+      gouvernance était déjà prise.
+- [ ] **63.4-0i** — la clé `quota.profils_regroupes` existe et porte les valeurs
+      littérales regroupées :
+      `php artisan tinker --execute="dump(\App\Models\SystemSetting::get('quota.profils_regroupes'));"`
+      ⇒ la carte « Quotas » l'affiche en avertissement permanent (voir 63.4-1f).
+
+### Si la bascule doit être DÉFAITE — restauration manuelle
+
+> ⚠️ **`down()` est volontairement vide** : il ne recrée aucun défaut par profil, et
+> `up()` en a **supprimé** de vraies. Le filet n'est pas dans le code, il est dans le
+> journal d'audit. Voici le chemin, écrit — s'il n'est pas écrit, il n'existe pas.
+
+1. **Relever ce qui a été supprimé** (chaque ligne porte, dans `old_values`, le type,
+   les deux plafonds et l'état actif d'origine) :
+
+   ```bash
+   php artisan tinker --execute="
+     dump(\App\Models\QuotaAuditLog::where('performed_by','migration:63.4')
+        ->where('action','delete')->get(['target_type','partition','old_values'])->toArray());"
+   ```
+
+2. **Recréer les lignes voulues** à partir de ce relevé — en règle de **groupe** si
+   le budget doit couvrir une population, ou en réinsérant le type d'origine si l'on
+   redescend vraiment de version :
+
+   ```bash
+   php artisan tinker --execute="
+     foreach (\App\Models\QuotaAuditLog::where('performed_by','migration:63.4')
+         ->where('action','delete')->get() as \$l) {
+       \$v = \$l->old_values;
+       \App\Models\QuotaRule::create([
+         'type' => \$v['type'], 'target' => null, 'partition' => \$l->partition,
+         'quota_soft_mb' => \$v['quota_soft_mb'], 'quota_hard_mb' => \$v['quota_hard_mb'],
+         'is_active' => \$v['is_active'],
+       ]);
+     }"
+   ```
+
+3. **Retirer le défaut d'instance créé par la migration**, sinon les deux coexistent :
+
+   ```bash
+   php artisan tinker --execute="\App\Models\QuotaRule::where('type','default')->delete();"
+   ```
+
+4. **Retirer l'avertissement de regroupement** :
+   `php artisan tinker --execute="\App\Models\SystemSetting::where('key','quota.profils_regroupes')->delete();"`
+
+⚠️ Le code de la version courante **ne lit plus** les types `default_*` : cette
+restauration n'a de sens qu'accompagnée d'un retour au code antérieur.
+
+### Scénario 63.4-1 — L'écran : deux cartes, dans le bloc « Réglages »
+
+1. Se connecter en `server.admin`, ouvrir `/admin/settings/files?tab=emplacements`.
+
+- [ ] **63.4-1a** — le bloc « Réglages » est visible **même sans cloud actif** : il
+      porte désormais des réglages de serveur de fichiers.
+- [ ] **63.4-1b** — la carte « Quotas des espaces personnels » y est, avec **deux**
+      blocs (`/home`, `/var/sambaedu`), chacun portant : plafond (Mo), dépassement
+      toléré (%), **blocage de l'écriture en lecture seule** (calculé) et **période de
+      grâce**.
+- [ ] **63.4-1c** — **aucun libellé ne nomme un public** : ni « élève », ni
+      « professeur », ni « administrateur », ni « itinérant ».
+- [ ] **63.4-1d** — la carte « Corbeille des répertoires personnels » est une carte
+      **distincte**, et porte le texte exact :
+      *« Les répertoires personnels archivés lors de la désactivation d'un compte.
+      Passé ce délai, ils sont supprimés définitivement et la réactivation du compte
+      ne les retrouve plus. »*
+- [ ] **63.4-1e** — l'ancienne URL `/admin/quotas` redirige toujours vers
+      `/admin/settings/files?tab=emplacements`, et l'onglet cible existe.
+- [ ] **63.4-1f** — tant qu'aucune valeur n'a été enregistrée à la main, la carte
+      porte l'avertissement de regroupement : le **nombre** de plafonds fondus et
+      leurs **valeurs littérales** (« 500/600 Mo ; 1000/1200 Mo ; … »), et dit que
+      c'est la plus large qui a été retenue. Il **disparaît** dès le premier
+      enregistrement.
+- [ ] **63.4-1g** — ⚠️ **les deux cartes sont présentes MÊME QUAND LA REPRISE DES
+      EMPLACEMENTS N'A PAS ÉTÉ JOUÉE** (bandeau `files:adopt-locations` affiché,
+      blocs 1 et 2 absents). C'est exactement le cas des instances que la migration
+      vient de modifier : sans cela, le plafond serait injoignable là où il vient
+      d'être écrit. Pour le provoquer :
+      `php artisan tinker --execute="\App\Services\FilePolicyService::setGlobal(false,true,false,'');"`
+      puis recharger — la vérification faite, restaurer l'état relevé en 63.4-P1.
+
+### Scénario 63.4-2 — Le compte témoin
+
+1. Choisir un compte **sans règle propre ni règle de groupe**, et le vérifier :
+   `php artisan tinker --execute="dump(\App\Models\QuotaRule::where('target','<login>')->get()->toArray());"`
+2. Vérifier qu'aucune règle de groupe ne couvre ses groupes.
+
+- [ ] **63.4-2a** — sur sa fiche `/app/users/<login>`, la source de quota affichée
+      est **« Défaut »** (jamais « Défaut élèves »), ou « Aucune règle » si l'instance
+      n'a pas de défaut.
+
+### Scénario 63.4-3 — La fin observable : un plafond saisi arrive sur le disque
+
+> Exige `/home` en XFS avec `uquota` (voir prérequis matériel).
+
+1. Dans la carte « Quotas des espaces personnels », bloc « Espace personnel » :
+   plafond **300**, dépassement **20 %**, période de grâce **7**. Enregistrer.
+2. Vider la file : `php artisan queue:work --stop-when-empty`.
+
+- [ ] **63.4-3a** — l'écran confirme, et la règle existe :
+      `php artisan tinker --execute="dump(\App\Models\QuotaRule::where('type','default')->get()->toArray());"`
+      ⇒ **une** ligne `/home`, `target = null`, `300 / 360`.
+- [ ] **63.4-3b** — une ligne d'audit a été écrite (`target_type = 'default'`).
+- [ ] **63.4-3c** — la résolution rend la valeur saisie :
+      `php artisan tinker --execute="dump(app(\App\Services\Filesystem\XfsQuotaService::class)->getEffectiveQuota('<login>','/home'));"`
+      ⇒ `source = 'default'`, `source_name = 'Défaut'`, `quota_soft_mb = 300`.
+
+### Scénario 63.4-4 — Le plafond sur le système de fichiers
+
+> ⚠️ **Enregistrer n'applique rien, et c'est voulu.** La carte écrit la règle sans
+> mettre le moindre travail en file : appliquer un plafond à toute une population au
+> moment où on le saisit mettrait d'un coup des comptes en dépassement sans que
+> personne ne l'ait demandé. Le geste qui applique est **séparé et explicite**.
+>
+> ⚠️ **Ne PAS chercher à provoquer le recalcul en posant puis retirant une règle
+> nominative** : le retrait d'une règle ne recalcule que pour les règles de
+> **groupe**. Ce contournement ne produit rien, et il a longtemps figuré ici à tort.
+
+1. Dans la carte, sous les champs de la partition, lire l'annonce :
+   *« N compte(s) sont couverts par ce plafond. M passerait(ent) immédiatement en
+   dépassement. »* — ou, si le relevé d'occupation n'a pas répondu, la mention
+   explicite que **le nombre n'a pas pu être mesuré** (jamais un zéro affiché comme
+   un constat).
+2. Cliquer **« Appliquer à tous les comptes couverts »**, confirmer, puis vider la
+   file : `php artisan queue:work --stop-when-empty`.
+
+- [ ] **63.4-4a** — `xfs_quota -x -c 'report -u -N /home' | grep '<login>'`
+      ⇒ **`bsoft` ≈ 300 Mo, `bhard` ≈ 360 Mo**. **C'est LA fin observable de la
+      story.**
+- [ ] **63.4-4b** — `xfs_quota -x -c 'state -u' /home` ⇒ *Blocks grace time* égal à
+      la valeur saisie.
+- [ ] **63.4-4c** — un compte portant sa **propre** règle n'est pas touché par ce
+      geste ; un compte couvert par une **règle de groupe** plus large reçoit la
+      valeur du **groupe**, jamais le défaut (le geste met en file le quota
+      *effectif*, pas le défaut appliqué à l'aveugle).
+- [ ] **63.4-4d** — le bouton d'application est **absent** tant qu'aucun plafond
+      n'est enregistré pour cette partition, et tant qu'aucun compte n'est couvert.
+
+### Scénario 63.4-5 — Un plafond non posable : champ fermé avec son motif
+
+> Se vérifie **tel quel** sur `/vm`, dont les partitions sont ext4.
+
+1. Constater l'état de départ : `xfs_quota -x -c 'state -u' /home` ; noter si la
+   commande répond, et si l'application est `ON` ou `OFF`.
+
+- [ ] **63.4-5a** — quand la commande d'état **échoue** : l'écran affiche
+      *« Impossible de déterminer si cette partition porte un quota : … Vérifiez
+      l'outil et l'élévation sur le serveur. »*, les champs de cette partition sont
+      **désactivés**, et **son bouton d'enregistrement est absent**.
+      ⚠️ **Ce motif dit « je ne sais pas », jamais « il n'y a pas de quota »** : un
+      code de retour non nul recouvre deux réalités disjointes — la partition ne
+      porte réellement pas de quota, ou bien l'élévation / l'outil manquent. Comme
+      cette issue **ferme l'écriture**, affirmer la première verrouillerait le
+      réglage sur une contre-vérité.
+- [ ] **63.4-5b** — le motif affiché **ne contient ni chemin absolu, ni nom de
+      commande, ni élévation de privilège** (la sortie système est neutralisée).
+- [ ] **63.4-5c** — sur un volume XFS dont l'application est **éteinte**
+      (`xfs_quota -x -c 'disable -u' /srv/xfstest`) : le motif devient *« Les quotas
+      ne sont pas appliqués sur cette partition. Activez-les sur le serveur avant d'y
+      poser un plafond. »* — **un motif différent du précédent**, parce que le geste à
+      faire n'est pas le même.
+- [ ] **63.4-5d** — l'autre partition, si elle porte un quota, reste **utilisable**.
+- [ ] **63.4-5e** — ⚠️ **la garde ne vaut PAS sur un espace qui n'est plus servi par
+      le serveur de fichiers.** Basculer l'espace personnel sur le cloud (bloc 2) :
+      la carte **rouvre** les champs de `/home`, affiche *« Cet espace ne vit plus sur
+      le serveur de fichiers : ce plafond gouverne le plafond du compte sur l'instance
+      cloud … »*, et l'enregistrement **passe** — même si la commande d'état échoue.
+      Sans cela, un système de fichiers local hors sujet fermerait le seul écran où se
+      règle le plafond **du cloud**. Le bouton d'application, lui, est **absent** : il
+      n'y a pas de plafond système à poser.
+
+### Scénario 63.4-6 — La garde est rejouée côté service
+
+1. Forger la soumission depuis la console, sur une partition indisponible :
+   `php artisan tinker --execute="app(\App\Services\Filesystem\XfsQuotaService::class)->setQuotaRule('default', null, '/home', 300, 360, 'forge', false);"`
+
+- [ ] **63.4-6a** — la commande **lève** avec un motif nommé.
+- [ ] **63.4-6b** — **rien n'a été écrit** : ni ligne dans `quota_rules`, ni ligne
+      dans `quota_audit_logs` (rejouer les deux `dump` du prérequis).
+- [ ] **63.4-6c** — la même écriture pour une règle **nominative** ou de **groupe**
+      passe toujours : la garde ne porte que sur le défaut d'instance.
+
+### Scénario 63.4-7 — La corbeille, rebranchée
+
+1. Sur la carte « Corbeille des répertoires personnels » : durée **30**, purge
+   automatique **cochée**. Enregistrer.
+
+- [ ] **63.4-7a** — `php artisan tinker --execute="dump(\App\Models\SystemSetting::get('quota.trash'));"`
+      ⇒ `ttl_days = 30`, `purge_auto = true`.
+- [ ] **63.4-7b** — `php artisan trash:purge --dry-run` liste les candidats **sans
+      rien supprimer**.
+- [ ] **63.4-7c** — le bouton « Purger maintenant » demande **confirmation** (elle est
+      portée par le bouton, pas par une modale) et produit la **même** liste ; une
+      ligne d'audit `performed_by = 'ui:<login>'` est écrite.
+- [ ] **63.4-7d** — décocher la purge automatique et enregistrer : le planificateur
+      la relit **à chaque tour**, sans redéploiement
+      (`php artisan schedule:list` puis `php artisan schedule:run` hors 02 h 00 ⇒
+      la tâche est simplement ignorée).
+- [ ] **63.4-7e** — sans durée enregistrée, « Purger maintenant » **refuse** et le dit
+      — jamais un message vert pour une purge qui n'a pas eu lieu.
+- [ ] **63.4-7f** — basculer l'espace personnel sur le cloud (bloc 2 de l'onglet) :
+      la carte ajoute *« La corbeille de l'instance cloud est réglée dans l'instance
+      elle-même. »* et **rien d'autre** — aucun réglage supplémentaire, aucun appel
+      réseau.
+
+### Scénario 63.4-8 — Les quatre profils ont disparu partout
+
+- [ ] **63.4-8a** — la fiche d'un compte et la liste des utilisateurs n'affichent
+      plus aucun libellé « Défaut élèves / professeurs / administrateurs /
+      itinérants » : seulement **« Défaut »**.
+- [ ] **63.4-8b** — `php artisan quota:seed-from-legacy --dry-run` : le rapport parle
+      d'un **plafond par défaut de l'instance**, jamais de profils, et annonce **2**
+      règles (pas 8).
+- [ ] **63.4-8c** — `php artisan help quota:seed-from-legacy` : ni la description, ni
+      l'aide, ni le libellé de `--force` ne citent un profil.
+- [ ] **63.4-8d** — un balayage de provisionnement cloud
+      (`php artisan nextcloud:provision --dry-run`) : le rapport parle de plafonds non
+      écrits pour **appartenances indéterminables**, jamais de profil.
+- [ ] **63.4-8e** — ⚠️ **L'ÉCRASEMENT DES PLAFONDS CLOUD SE VOIT.** Après la migration
+      sur une instance qui ne portait aucune règle, `php artisan nextcloud:provision
+      --dry-run` annonce un compteur **« Plafonds modifiés »** non nul : c'est le
+      nombre de comptes dont le balayage réel réécrirait le plafond, y compris ceux
+      réglés à la main dans l'instance. Le vérifier **avant** de lancer le vrai
+      balayage ; le compteur est visible dans le rapport de l'écran de connexion et
+      dans `report()->userCounters()['quotas_modifies']`.
+      ⚠️ **Écart connu** : le message de la commande console (`NextcloudProvisionCommand`)
+      dit encore « profil de quota indéterminable ». Ce fichier portait des
+      modifications non committées étrangères à la story et n'a pas été touché ; le
+      libellé est à corriger dans le geste qui livrera ces modifications.
+
+### Nettoyage
+
+- [ ] **63.4-9** — restaurer les règles et réglages relevés en 63.4-P1, démonter le
+      volume XFS de test (`umount /srv/xfstest`, ou `umount /home` puis vérifier que
+      le contenu d'origine est de retour) et supprimer l'image.
+
+---
+
+*Mise à jour : 2026-08-15 (Story 63.4 — les quatre défauts de quota par profil sont
+remplacés par UN défaut d'instance par partition, `QuotaRule::TYPE_DEFAULT`, écrit
+par l'écran là où la résolution le lit ; la résolution tient en trois étages
+— règle nominative, plus grande règle de groupe, défaut d'instance — et
+`getEffectiveQuota()` ne porte plus de paramètre de profil. Les deux heuristiques
+divergentes de détermination de profil sont retirées ; la résolution d'annuaire
+survit AMPUTÉE de cette moitié, sa moitié « groupes » restant portante pour le
+provisionnement cloud, doctrine « `null` n'est pas une liste vide » comprise. La
+disponibilité du quota d'une partition se lit à **trois issues** distinctes
+(appliqué / éteint / absent) par le code de retour de la commande d'état, sans
+aucune détection nouvelle de type de système de fichiers ; une partition
+indisponible ferme ses champs avec son motif — **motif reformulé en constat de NON
+MESURE**, parce qu'un code de retour non nul ne prouve pas l'absence de quota — et la
+garde est rejouée côté service, **sauf sur un espace qui n'est plus servi par le
+serveur de fichiers**, où le plafond gouverne le cloud. La corbeille des répertoires
+personnels et la période de grâce sont rebranchées en cartes du bloc « Réglages » de
+l'onglet des emplacements, **rendues sans condition** ; le partial orphelin
+`admin/settings/_partials/quotas-fs-tab` est supprimé. Migration de bascule
+transactionnelle et idempotente, **qui ne rétrécit jamais un plafond** (valeur la plus
+large retenue, règles désactivées jamais reprises), sans aucune application en masse —
+le geste qui porte le plafond à tous les comptes couverts est explicite et annonce son
+coût. Le passage de la gouvernance des plafonds **cloud** est nommé au résumé, porté par
+la ligne d'audit, et le rapport de provisionnement compte désormais les plafonds qu'il
+modifie. Aucun octet de donnée utilisateur lu, écrit ni déplacé ; golden agent et
+`FROZEN_STATE_HASH` inchangés.)*

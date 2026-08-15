@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Exceptions\Filesystem\QuotaPartitionUnavailableException;
 use App\Models\QuotaAuditLog;
 use App\Models\QuotaRule;
 use App\Models\UserGroup;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -25,8 +27,8 @@ use Illuminate\Support\Facades\Log;
  *    - conversion KB → MB (`round($x / 1024)`) ;
  *    - `firstOrCreate` (sans `--force`) ou `updateOrCreate` (avec `--force`) ;
  *    - audit `QuotaAuditLog` avec `performed_by='quota:seed-from-legacy'`.
- *  - Init des defaults profils (D4) si absents (élève/prof/admin/itinérant ×
- *    /home + /var/sambaedu) — `firstOrCreate` (skip si déjà présent sauf force).
+ *  - Init du plafond par défaut de l'instance si absent (une ligne par
+ *    partition) — skip si déjà présent, sauf `--force`.
  *  - `--dry-run` : preview sans I/O ;
  *  - `--force` : `updateOrCreate` au lieu de `firstOrCreate` (réécrit) ;
  *  - Si la connexion `legacy_mysql` n'est pas configurée OU PDO échoue
@@ -38,21 +40,22 @@ class QuotaSeedFromLegacyCommand extends Command
 {
     protected $signature = 'quota:seed-from-legacy
         {--dry-run : Aperçu sans modification BDD}
-        {--force : Écrase les règles existantes (defaults profils + per user/group)}';
+        {--force : Écrase les règles existantes (plafond par défaut + règles par utilisateur et par groupe)}';
 
-    protected $description = 'Importe les règles de quotas du legacy MySQL vers quota_rules et les défauts par profil.';
+    protected $description = 'Importe les règles de quotas du serveur SE4 et initialise le plafond par défaut de l\'instance.';
 
     protected $help = <<<'HELP'
     Importe les règles de quotas du serveur SE4 : les quotas par utilisateur et par
-    groupe, ainsi que les valeurs par défaut de chaque profil.
+    groupe, ainsi que le plafond par défaut de l'instance — celui qui s'applique à
+    tout compte qu'aucune de ces deux règles ne couvre.
 
       <info>php artisan quota:seed-from-legacy --dry-run</info>   aperçu, sans écrire
       <info>php artisan quota:seed-from-legacy</info>
       <info>php artisan quota:seed-from-legacy --force</info>     écrase les règles existantes
 
     Sans <comment>--force</comment>, une règle déjà présente en base est CONSERVÉE : l'import ne
-    défait pas ce que vous avez réglé depuis. Avec, il l'écrase — y compris les
-    valeurs par défaut des profils.
+    défait pas ce que vous avez réglé depuis. Avec, il l'écrase — y compris le
+    plafond par défaut.
 
     Chaque écriture est tracée au journal d'audit des quotas.
 
@@ -61,19 +64,34 @@ class QuotaSeedFromLegacyCommand extends Command
     HELP;
 
     /**
-     * Defaults profils (Mo) — D4 validée par Henri 2026-04-27 :
-     * élève 500/600 — prof 1000/1200 — admin 2000/2400 — itinérant 200/240.
-     * Mêmes valeurs sur /home et /var/sambaedu (les partages classes/docs
-     * sont gros, pas de raison de les diviser).
+     * LE PLAFOND PAR DÉFAUT DE L'INSTANCE (Mo), une ligne par partition.
      *
-     * @var array<string, array{soft_mb:int, hard_mb:int, type:string}>
+     * ---------------------------------------------------------------------------
+     * **Il y en avait QUATRE** — un par « profil » (élève 500/600, enseignant
+     * 1000/1200, administrateur 2000/2400, itinérant 200/240) — et le profil retenu
+     * pour un compte se DEVINAIT par comparaison de sous-chaîne sur des noms de
+     * groupes. La story 63.4 les a remplacés par un défaut unique, d'instance ; un
+     * budget plus large pour une population donnée se pose en RÈGLE DE GROUPE, qui
+     * est explicite et se voit.
+     *
+     * **La valeur retenue est celle de l'ex-défaut le plus courant** : c'est la seule
+     * qui ait jamais couvert la majorité des comptes.
+     *
+     * ⚠️ **Ce n'est pas la même règle que celle de la migration de bascule**, et
+     * c'est voulu : la migration reprend une instance QUI PORTE DÉJÀ des plafonds, et
+     * s'interdit d'en rétrécir un — elle retient donc la valeur la plus large. Cette
+     * commande, elle, POSE un premier plafond sur une instance qui n'en avait pas :
+     * il n'y a rien à rétrécir, et une valeur de départ raisonnable vaut mieux qu'une
+     * valeur maximale que personne n'a demandée. Dans les deux cas, l'écran la change
+     * en un geste.
+     * ---------------------------------------------------------------------------
+     *
+     * Mêmes valeurs sur les deux partitions (les partages classes/docs sont gros,
+     * pas de raison de les diviser).
+     *
+     * @var array{soft_mb:int, hard_mb:int}
      */
-    private const PROFILE_DEFAULTS = [
-        'eleve' => ['soft_mb' => 500, 'hard_mb' => 600, 'type' => QuotaRule::TYPE_DEFAULT_ELEVE],
-        'prof' => ['soft_mb' => 1000, 'hard_mb' => 1200, 'type' => QuotaRule::TYPE_DEFAULT_PROF],
-        'admin' => ['soft_mb' => 2000, 'hard_mb' => 2400, 'type' => QuotaRule::TYPE_DEFAULT_ADMIN],
-        'itinerant' => ['soft_mb' => 200, 'hard_mb' => 240, 'type' => QuotaRule::TYPE_DEFAULT_ITINERANT],
-    ];
+    private const INSTANCE_DEFAULT = ['soft_mb' => 500, 'hard_mb' => 600];
 
     /**
      * Partitions valides côté legacy. Une row dont la `partition` n'est pas
@@ -115,7 +133,7 @@ class QuotaSeedFromLegacyCommand extends Command
         // 3. Importation rules user/group.
         $stats = $this->importRules($rows, $dryRun, $force);
 
-        // 4. Init defaults profils (AC 15).
+        // 4. Init du plafond par défaut de l'instance.
         $stats = array_merge($stats, $this->seedDefaults($dryRun, $force));
 
         $duration = round(microtime(true) - $start, 2);
@@ -346,9 +364,25 @@ class QuotaSeedFromLegacyCommand extends Command
     }
 
     /**
-     * Init des defaults profils (D4 + AC 15) : 4 profils × 2 partitions = 8 rows.
+     * Init du plafond par défaut de l'instance : UNE règle par partition.
      *
-     * @return array{defaults_created:int, defaults_skipped:int, defaults_updated:int}
+     * Elles étaient huit (4 « profils » × 2 partitions) jusqu'à la story 63.4 —
+     * voir {@see self::INSTANCE_DEFAULT}.
+     *
+     * ---------------------------------------------------------------------------
+     * **L'ÉCRITURE PASSE PAR LE SERVICE** (correction de revue 63.4). Elle se faisait
+     * ici en direct sur le modèle : le défaut d'instance avait donc DEUX chemins
+     * d'écriture, dont un qui échappait à la garde de disponibilité de la partition —
+     * et l'audit y était réécrit à la main, à côté de celui du service. Deux chemins
+     * pour une même décision, c'est la classe de défaut que cette story ferme.
+     *
+     * ⚠️ `applyImmediately: false`, et ce n'est pas un détail : cette commande est un
+     * import de bascule. Appliquer d'un coup un plafond à tout un établissement au
+     * moment d'une migration mettrait des comptes en dépassement sans que personne
+     * n'ait cliqué. Le geste qui applique est celui de l'écran, et il s'annonce.
+     * ---------------------------------------------------------------------------
+     *
+     * @return array{defaults_created:int, defaults_skipped:int, defaults_updated:int, defaults_refused:int}
      */
     private function seedDefaults(bool $dryRun, bool $force): array
     {
@@ -356,79 +390,64 @@ class QuotaSeedFromLegacyCommand extends Command
             'defaults_created' => 0,
             'defaults_skipped' => 0,
             'defaults_updated' => 0,
+            'defaults_refused' => 0,
         ];
 
         $partitions = [QuotaRule::PARTITION_HOME, QuotaRule::PARTITION_SAMBAEDU];
+        $quotas = app(XfsQuotaService::class);
 
-        foreach (self::PROFILE_DEFAULTS as $profile => $cfg) {
-            foreach ($partitions as $partition) {
-                $existing = QuotaRule::query()
-                    ->where('type', $cfg['type'])
-                    ->whereNull('target')
-                    ->where('partition', $partition)
-                    ->first();
+        foreach ($partitions as $partition) {
+            $existing = QuotaRule::query()
+                ->where('type', QuotaRule::TYPE_DEFAULT)
+                ->whereNull('target')
+                ->where('partition', $partition)
+                ->first();
 
-                if ($existing && !$force) {
-                    $stats['defaults_skipped']++;
-                    continue;
+            if ($existing && !$force) {
+                $stats['defaults_skipped']++;
+                continue;
+            }
+
+            if ($dryRun) {
+                if ($existing) {
+                    $stats['defaults_updated']++;
+                } else {
+                    $stats['defaults_created']++;
                 }
+                continue;
+            }
 
-                if ($dryRun) {
-                    if ($existing) {
-                        $stats['defaults_updated']++;
-                    } else {
-                        $stats['defaults_created']++;
-                    }
-                    continue;
-                }
+            try {
+                $quotas->setQuotaRule(
+                    QuotaRule::TYPE_DEFAULT,
+                    null,
+                    $partition,
+                    self::INSTANCE_DEFAULT['soft_mb'],
+                    self::INSTANCE_DEFAULT['hard_mb'],
+                    'quota:seed-from-legacy',
+                    applyImmediately: false,
+                );
 
-                try {
-                    if ($existing) {
-                        $oldValues = $existing->toArray();
-                        $existing->update([
-                            'quota_soft_mb' => $cfg['soft_mb'],
-                            'quota_hard_mb' => $cfg['hard_mb'],
-                            'is_active' => true,
-                        ]);
-                        $stats['defaults_updated']++;
-                        QuotaAuditLog::log(
-                            action: QuotaAuditLog::ACTION_UPDATE,
-                            performedBy: 'quota:seed-from-legacy',
-                            targetType: $cfg['type'],
-                            targetName: null,
-                            partition: $partition,
-                            oldValues: $oldValues,
-                            newValues: $existing->fresh()->toArray(),
-                            quotaRuleId: $existing->id,
-                        );
-                    } else {
-                        $rule = QuotaRule::create([
-                            'type' => $cfg['type'],
-                            'target' => null,
-                            'partition' => $partition,
-                            'quota_soft_mb' => $cfg['soft_mb'],
-                            'quota_hard_mb' => $cfg['hard_mb'],
-                            'is_active' => true,
-                        ]);
-                        $stats['defaults_created']++;
-                        QuotaAuditLog::log(
-                            action: QuotaAuditLog::ACTION_CREATE,
-                            performedBy: 'quota:seed-from-legacy',
-                            targetType: $cfg['type'],
-                            targetName: null,
-                            partition: $partition,
-                            oldValues: null,
-                            newValues: $rule->toArray(),
-                            quotaRuleId: $rule->id,
-                        );
-                    }
-                } catch (\Throwable $e) {
-                    Log::error('QuotaService: seed default échoué', [
-                        'profile' => $profile,
-                        'partition' => $partition,
-                        'error' => $e->getMessage(),
-                    ]);
+                if ($existing) {
+                    $stats['defaults_updated']++;
+                } else {
+                    $stats['defaults_created']++;
                 }
+            } catch (QuotaPartitionUnavailableException $e) {
+                // La partition ne porte pas de plafond exploitable : le service refuse
+                // en nommant, et il a raison. On le DIT plutôt que de l'avaler — un
+                // import silencieusement incomplet est pire qu'un import qui refuse.
+                $stats['defaults_refused']++;
+                $this->warn(sprintf('Plafond par défaut non posé sur %s — %s', $partition, $e->getMessage()));
+                Log::warning('QuotaService: plafond par défaut refusé au seed', [
+                    'partition' => $partition,
+                    'reason' => $e->getMessage(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('QuotaService: seed du plafond par défaut échoué', [
+                    'partition' => $partition,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -455,10 +474,11 @@ class QuotaSeedFromLegacyCommand extends Command
         $this->info(sprintf('Skipped (déjà présentes) : %d', $stats['skipped']));
         $this->info(sprintf('Erreurs (rows malformées) : %d', $stats['errors']));
         $this->info(sprintf(
-            'Defaults profils : %d créés / %d mis à jour / %d skipped',
+            'Plafond par défaut de l\'instance : %d créé(s) / %d mis à jour / %d conservé(s) / %d refusé(s)',
             $stats['defaults_created'],
             $stats['defaults_updated'],
             $stats['defaults_skipped'],
+            $stats['defaults_refused'] ?? 0,
         ));
         $this->info('─────────────────────────────────────');
         $this->info(sprintf('Durée : %ss', $duration));

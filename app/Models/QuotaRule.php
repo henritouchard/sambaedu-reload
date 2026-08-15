@@ -10,7 +10,7 @@ use Livewire\Wireable;
  * Modèle Eloquent pour les règles de quotas
  * 
  * @property int $id
- * @property string $type user, group, default_eleve, default_prof, default_admin, default_itinerant
+ * @property string $type user, group, default
  * @property string|null $target Nom utilisateur ou groupe AD
  * @property string $partition /home ou /var/sambaedu
  * @property int $quota_soft_mb Quota soft en Mo (0 = illimité)
@@ -41,21 +41,29 @@ class QuotaRule extends Model implements Wireable
     // Types de règles
     public const TYPE_USER = 'user';
     public const TYPE_GROUP = 'group';
-    public const TYPE_DEFAULT_ELEVE = 'default_eleve';
-    public const TYPE_DEFAULT_PROF = 'default_prof';
-    public const TYPE_DEFAULT_ADMIN = 'default_admin';
 
     /**
-     * Defaults pour utilisateurs itinérants (User::isExternal).
+     * LE DÉFAUT D'INSTANCE — une ligne par partition, `target` à `null`.
      *
-     * Introduit en 5.1c (D12=A) comme constante persistée par l'UI
-     * `/admin/settings` (onglet Quotas & FS), ACTIF en lecture depuis la
-     * story 5.1d (livrée 2026-04-27) : `XfsQuotaService::getEffectiveQuota()`
-     * applique cet override quand `User::isExternal()` retourne `true` ET
-     * qu'aucune règle USER/GROUP ne s'applique. La règle itinérante prime
-     * sur le default profil (élève/prof/admin) — D9 confirmée Henri.
+     * ---------------------------------------------------------------------------
+     * **IL A REMPLACÉ QUATRE TYPES** (`…_eleve`, `…_prof`, `…_admin`,
+     * `…_itinerant`), et ce n'est pas une simplification cosmétique : ces quatre-là
+     * n'étaient attachés à RIEN. Le type retenu pour un compte se devinait par deux
+     * heuristiques divergentes sur des noms de groupes — l'une côté fiche
+     * utilisateur, l'autre côté service — si bien qu'un groupe `profs-techno`
+     * donnait un plafond d'enseignant d'un côté et rien de l'autre, et qu'un groupe
+     * `administration` basculait en administrateur par accident.
+     *
+     * Le plafond par défaut est désormais un réglage d'INSTANCE : il s'applique à
+     * tout compte qu'aucune règle nominative ni règle de groupe ne couvre. Un
+     * budget plus large pour une population donnée se pose en RÈGLE DE GROUPE —
+     * qui, elle, est explicite et se voit.
+     *
+     * La bascule des lignes existantes est faite UNE FOIS par la migration
+     * `2026_08_15_100000_collapse_quota_profile_defaults`.
+     * ---------------------------------------------------------------------------
      */
-    public const TYPE_DEFAULT_ITINERANT = 'default_itinerant';
+    public const TYPE_DEFAULT = 'default';
 
     // Partitions supportées
     public const PARTITION_HOME = '/home';
@@ -102,36 +110,19 @@ class QuotaRule extends Model implements Wireable
     }
 
     /**
-     * Scope pour les politiques par défaut
-     *
-     * TYPE_DEFAULT_ITINERANT inclus depuis 5.1c (D12=A) et ACTIF en lecture
-     * depuis 5.1d (2026-04-27) : `XfsQuotaService::getEffectiveQuota()`
-     * applique l'override itinérant quand `User::isExternal()` retourne `true`.
+     * Scope pour le défaut d'instance (une ligne par partition).
      */
     public function scopeDefaults($query)
     {
-        return $query->whereIn('type', [
-            self::TYPE_DEFAULT_ELEVE,
-            self::TYPE_DEFAULT_PROF,
-            self::TYPE_DEFAULT_ADMIN,
-            self::TYPE_DEFAULT_ITINERANT,
-        ]);
+        return $query->where('type', self::TYPE_DEFAULT);
     }
 
     /**
-     * Vérifie si c'est une politique par défaut
-     *
-     * TYPE_DEFAULT_ITINERANT inclus dès 5.1c (D12=A), actif en lecture
-     * depuis 5.1d (2026-04-27).
+     * Vérifie si c'est le défaut d'instance.
      */
     public function isDefault(): bool
     {
-        return in_array($this->type, [
-            self::TYPE_DEFAULT_ELEVE,
-            self::TYPE_DEFAULT_PROF,
-            self::TYPE_DEFAULT_ADMIN,
-            self::TYPE_DEFAULT_ITINERANT,
-        ]);
+        return $this->type === self::TYPE_DEFAULT;
     }
 
     /**
@@ -161,10 +152,7 @@ class QuotaRule extends Model implements Wireable
         return match ($this->type) {
             self::TYPE_USER => 'Utilisateur',
             self::TYPE_GROUP => 'Groupe',
-            self::TYPE_DEFAULT_ELEVE => 'Défaut élèves',
-            self::TYPE_DEFAULT_PROF => 'Défaut professeurs',
-            self::TYPE_DEFAULT_ADMIN => 'Défaut administrateurs',
-            self::TYPE_DEFAULT_ITINERANT => 'Défaut itinérants',
+            self::TYPE_DEFAULT => 'Défaut',
             default => $this->type,
         };
     }

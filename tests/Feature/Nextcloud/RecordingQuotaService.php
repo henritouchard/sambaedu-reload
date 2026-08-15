@@ -11,7 +11,7 @@ use App\Services\Filesystem\XfsQuotaService;
  *
  * Deux choses à prouver, et aucune ne se prouve sans cette couture :
  *
- *  1. **qu'un profil RÉSOLU donne le bon plafond** — les fonctions d'annuaire
+ *  1. **que des GROUPES résolus donnent le bon plafond** — les fonctions d'annuaire
  *     legacy ne sont pas chargées hors du runtime SE4, donc sans double, tous les
  *     comptes seraient indéterminables et la moitié des branches ne serait jamais
  *     exercée ;
@@ -25,11 +25,11 @@ final class RecordingQuotaService extends XfsQuotaService
     /** Nombre d'ALLERS-RETOURS d'annuaire réellement émis. */
     public int $lookups = 0;
 
-    /** @var array<string, array{profile: string, groups: list<string>}> */
+    /** @var array<string, array{groups: list<string>}> */
     public array $directory = [];
 
     /**
-     * @param  array<string, array{profile: string, groups: list<string>}>  $directory
+     * @param  array<string, array{groups: list<string>}>  $directory
      */
     public function __construct(array $directory = [])
     {

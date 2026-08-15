@@ -349,13 +349,25 @@ class FileLocationsScreenTest extends TestCase
     // AC8 — le bloc « Réglages » et sa phrase d'honnêteté
     // =====================================================================
 
+    /**
+     * ⚠️ **Ce test a changé de sujet avec la story 63.4, et pas de propriété.** Le
+     * bloc « Réglages » ne portait que le chemin d'accès au cloud : sans cloud, il
+     * était vide, donc absent. Il porte désormais aussi le plafond des espaces
+     * personnels et la corbeille des répertoires personnels — deux réglages du
+     * SERVEUR DE FICHIERS, qui sont précisément les plus utiles quand aucun cloud
+     * n'est actif. Ce qui reste caché sans cloud, c'est le seul réglage qui ne
+     * gouvernerait rien : le chemin d'accès.
+     */
     #[Test]
-    public function the_settings_block_is_absent_without_an_active_cloud(): void
+    public function the_cloud_access_path_is_absent_without_an_active_cloud(): void
     {
         $html = Livewire::test(self::COMPONENT)->html();
 
-        self::assertStringNotContainsString('bloc-reglages', $html);
         self::assertStringNotContainsString('Chemin d\'accès au cloud', self::readable($html));
+        self::assertStringNotContainsString('cloud-access-path', $html);
+
+        // Le bloc, lui, est bien là : il porte les réglages du serveur de fichiers.
+        self::assertStringContainsString('bloc-reglages', $html);
     }
 
     #[Test]
@@ -385,16 +397,95 @@ class FileLocationsScreenTest extends TestCase
         self::assertSame('client_natif', FilePolicyService::globalConfig()['cloud_access_path']);
     }
 
-    /** Leur contenu appartient à la 63.4 : une carte vide serait de l'UI orpheline. */
+    /**
+     * Story 63.4 — les deux cartes sont MONTÉES dans le bloc « Réglages ». Ce sont
+     * des composants ENFANTS : `Livewire::test()` n'en rend qu'un jalon `wire:name`,
+     * et c'est ce jalon qu'on interroge — leur contenu a sa propre suite.
+     */
     #[Test]
-    public function no_quota_or_trash_card_is_rendered(): void
+    public function the_settings_block_hosts_the_quota_and_trash_cards(): void
     {
         $this->nextcloudInstance();
 
-        $texte = self::readable(Livewire::test(self::COMPONENT)->html());
+        $html = Livewire::test(self::COMPONENT)->html();
 
-        self::assertStringNotContainsString('Quota', $texte);
-        self::assertStringNotContainsString('Corbeille', $texte);
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.quotas-card"',
+            $html,
+        );
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.corbeille-card"',
+            $html,
+        );
+    }
+
+    /** Sans cloud actif, les deux cartes sont là quand même : elles n'en dépendent pas. */
+    #[Test]
+    public function the_quota_and_trash_cards_do_not_depend_on_an_active_cloud(): void
+    {
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.quotas-card"',
+            $html,
+        );
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.corbeille-card"',
+            $html,
+        );
+    }
+
+    /**
+     * ⚠️ **CORRECTION DE REVUE — LES DEUX CARTES NE DÉPENDENT D'AUCUNE DÉCISION
+     * D'EMPLACEMENT.**
+     *
+     * ---------------------------------------------------------------------------
+     * Elles étaient montées à l'intérieur de la condition qui masque les contrôles
+     * d'emplacement. Or cette condition est fausse dès qu'un bandeau de reprise est
+     * affiché — c'est-à-dire sur TOUTE instance dont la reprise n'a pas été jouée,
+     * soit exactement celles que la migration de bascule vient de modifier.
+     * L'administrateur n'aurait alors pu ni voir ni corriger le plafond qu'on venait
+     * d'écrire pour lui, ni régler la grâce, ni la corbeille : l'orphelinat que cette
+     * story solde, reconduit sous une autre forme.
+     * ---------------------------------------------------------------------------
+     */
+    #[Test]
+    public function the_quota_and_trash_cards_survive_a_pending_adoption_banner(): void
+    {
+        // « accès au home coupé » : la reprise ne peut pas être devinée, le bandeau
+        // s'affiche et les contrôles d'emplacement disparaissent.
+        FilePolicyService::setGlobal(false, true, false, '');
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('locations-adoption-notice', $html);
+        self::assertStringNotContainsString('bloc-emplacements', $html);
+
+        // …et les deux cartes, elles, sont bien là.
+        self::assertStringContainsString('bloc-reglages', $html);
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.quotas-card"',
+            $html,
+        );
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.corbeille-card"',
+            $html,
+        );
+    }
+
+    /** Même sur une ligne d'emplacements ILLISIBLE : le quota n'en dépend pas. */
+    #[Test]
+    public function the_quota_and_trash_cards_survive_an_unreadable_locations_row(): void
+    {
+        SystemSetting::set(FileLocationService::SETTING_KEY, ['espace_perso.autorite' => 'posix']);
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('locations-read-error', $html);
+        self::assertStringContainsString(
+            'wire:name="pages::admin.settings.files._partials.quotas-card"',
+            $html,
+        );
     }
 
     // =====================================================================

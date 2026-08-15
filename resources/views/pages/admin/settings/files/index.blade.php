@@ -31,15 +31,12 @@ use Livewire\Component;
  * La redirection nommée reste stable, elle pointe enfin sur du réel.
  *
  * ⚠️ **Pas d'onglet « Quotas & FS »** (décision Henri 2026-08-05). Sa grille de
- * « quotas par défaut par profil » n'appliquait rien à personne : elle écrivait
- * `SystemSetting('quota.defaults')`, clé que la résolution ne lit pas — voir story
- * 5.1e. Conséquence temporaire assumée : la période de grâce et la corbeille
- * `/home/trash`, elles bien fonctionnelles, n'ont plus d'UI jusqu'à ce que 5.1e les
- * réinstalle en cartes dans le bloc « Réglages » de l'onglet des emplacements
- * (63.4). Leurs valeurs persistées
- * restent en vigueur (le cron 02h00 continue de tourner) et restent pilotables par
- * `php artisan trash:purge` et en tinker. `admin/settings/_partials/quotas-fs-tab`
- * n'a plus d'hôte : il attend d'être découpé par 5.1e.
+ * « quotas par défaut par profil » n'appliquait rien à personne : elle écrivait une
+ * clé de réglage que la résolution ne lisait pas. La story 63.4 a soldé le partial
+ * orphelin : le plafond par défaut est devenu un réglage d'INSTANCE (une ligne par
+ * partition, écrite là où la résolution lit), et il vit — avec la période de grâce
+ * et la corbeille des répertoires personnels — en deux cartes du bloc « Réglages »
+ * de l'onglet des emplacements.
  *
  * Sécurité : `can:server.admin` sur la route + garde mount(). L'onglet lecteurs
  * exige EN PLUS `view-networkshare` (garde d'affichage + mount du composant embarqué).

@@ -49,6 +49,7 @@ final class NextcloudProvisioningReport
         'echecs' => 0,
         'exclus' => 0,
         'quotas_indetermines' => 0,
+        'quotas_modifies' => 0,
     ];
 
     /** @var list<string> */
@@ -162,12 +163,19 @@ final class NextcloudProvisioningReport
     }
 
     /**
-     * Correction de revue 61.3 #1 — LE PLAFOND QU'ON N'A PAS ÉCRIT, ET POURQUOI.
+     * Correction de revue 61.3 #1, **renommée par la story 63.4** — LE PLAFOND
+     * QU'ON N'A PAS ÉCRIT, ET POURQUOI.
      *
-     * Le profil de quota d'un compte se résout par l'ANNUAIRE. Quand l'annuaire ne
-     * répond pas — ou ne connaît pas ce compte — le profil est INDÉTERMINABLE, et
-     * SE5 n'écrit alors AUCUN plafond : appliquer le profil de repli reviendrait à
-     * poser un plafond d'élève à un enseignant, sans erreur ni journal.
+     * Les appartenances d'un compte se résolvent par l'ANNUAIRE. Quand l'annuaire ne
+     * répond pas — ou ne connaît pas ce compte — elles sont INDÉTERMINABLES, et SE5
+     * n'écrit alors AUCUN plafond : retomber sur le défaut d'instance rétrécirait
+     * le plafond d'un compte couvert par une règle de groupe plus large, sans erreur
+     * ni journal.
+     *
+     * ⚠️ **Elle s'appelait `countQuotaProfileUnresolved`** : le profil de quota
+     * n'existe plus (63.4), et un nom qui le cite encore ferait chercher une notion
+     * que le dépôt ne porte plus. Le compteur sérialisé, lui, ne l'a jamais cité —
+     * il est à zéro diff.
      *
      * **Ce n'est ni un échec ni une panne** (le compte est adopté, son montage
      * fonctionne, le code de sortie ne change pas) : c'est un CONSTAT, du même genre
@@ -179,7 +187,7 @@ final class NextcloudProvisioningReport
      * budget de la liste ferait disparaître les « introuvables », qui eux demandent
      * un geste par personne.
      */
-    public function countQuotaProfileUnresolved(string $login): void
+    public function countQuotaIdentityUnresolved(string $login): void
     {
         $this->userCounters['quotas_indetermines']++;
 
@@ -192,6 +200,33 @@ final class NextcloudProvisioningReport
     public function quotaUnresolvedLogins(): array
     {
         return $this->quotaUnresolved;
+    }
+
+    /**
+     * Story 63.4, correction de revue — **LE PLAFOND QUE LE BALAYAGE A CHANGÉ.**
+     *
+     * ---------------------------------------------------------------------------
+     * **POURQUOI CE COMPTEUR EXISTE.** SE5 ne gouverne le plafond cloud d'un compte
+     * que s'il porte au moins une règle de quota. Passer de « aucune règle » à « une
+     * règle » — ce que fait la migration de bascule — fait donc basculer cette
+     * gouvernance d'un coup : le balayage suivant RÉÉCRIT le plafond de chaque
+     * compte, **y compris ceux réglés à la main dans l'instance**. C'est un effet
+     * réel et voulu du produit, mais il était jusqu'ici seulement DÉDUCTIBLE : rien
+     * dans le rapport ne le montrait.
+     *
+     * Un compteur d'écrasements le rend constatable. Zéro veut dire « le balayage
+     * n'a rien changé » ; un grand nombre au premier passage après la bascule veut
+     * dire « SE5 vient de reprendre la main sur les plafonds de l'instance », et
+     * c'est exactement ce que l'exploitant doit pouvoir voir sans lire un journal.
+     *
+     * Il compte les plafonds que le balayage **change ou changerait** : en
+     * simulation, il annonce donc ce qu'un vrai passage ferait — la seule lecture
+     * utile avant de lancer le vrai.
+     * ---------------------------------------------------------------------------
+     */
+    public function countQuotaChanged(): void
+    {
+        $this->userCounters['quotas_modifies']++;
     }
 
     /** Comptes hors périmètre (identité fédérée). */

@@ -828,17 +828,35 @@ new class extends Component {
                                      continuer de s'afficher. --}}
                                 @if (($lastReport['users']['quotas_indetermines'] ?? 0) > 0)
                                     <span class="badge badge-warning badge-outline">
-                                        Plafonds non écrits (profil indéterminable) :
+                                        Plafonds non écrits (appartenances indéterminables) :
                                         {{ $lastReport['users']['quotas_indetermines'] }}
                                     </span>
                                 @endif
+                                {{-- Story 63.4 — L'ÉCRASEMENT SE VOIT. Le balayage réécrit le
+                                     plafond de tout compte que SE5 gouverne, y compris s'il
+                                     avait été réglé à la main dans l'instance. Le `?? 0` couvre
+                                     les rapports mis en cache avant ce compteur. --}}
+                                @if (($lastReport['users']['quotas_modifies'] ?? 0) > 0)
+                                    <span class="badge badge-info badge-outline" data-testid="quotas-modifies">
+                                        Plafonds modifiés : {{ $lastReport['users']['quotas_modifies'] }}
+                                    </span>
+                                @endif
                             </div>
+
+                            @if (($lastReport['users']['quotas_modifies'] ?? 0) > 0)
+                                <p class="text-xs text-base-content/60">
+                                    Ces plafonds ont été réécrits d'après les règles de quota de SE5 —
+                                    y compris ceux qui avaient été réglés à la main dans l'instance.
+                                    Dès qu'une règle de quota existe, SE5 gouverne le plafond des comptes
+                                    du périmètre.
+                                </p>
+                            @endif
                             @if (($lastReport['users']['quotas_indetermines'] ?? 0) > 0)
                                 <p class="text-xs text-base-content/60">
-                                    Le profil de quota (élève / enseignant / administrateur) se résout par
-                                    l'annuaire. Pour ces comptes, l'annuaire n'a pas répondu : aucun plafond
-                                    n'a été écrit — SE5 ne devine pas un profil, un plafond faux s'appliquerait
-                                    sans que rien ne le signale.
+                                    Les appartenances qui décident du plafond se résolvent par l'annuaire.
+                                    Pour ces comptes, l'annuaire n'a pas répondu : aucun plafond n'a été
+                                    écrit — retomber sur le plafond par défaut rétrécirait celui d'un compte
+                                    couvert par une règle de groupe plus large, sans que rien ne le signale.
                                     @if (! empty($lastReport['quota_unresolved']))
                                         Exemples : {{ implode(', ', array_slice($lastReport['quota_unresolved'], 0, 10)) }}.
                                     @endif

@@ -21,17 +21,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * CORRECTION DE REVUE 61.3 #1 — **LE PROFIL DE QUOTA NE SE DEVINE PAS.**
+ * CORRECTION DE REVUE 61.3 #1, **RECADRÉE PAR LA STORY 63.4** — CE QUI NE SE
+ * RÉSOUT PAS NE SE DEVINE PAS.
  *
  * ---------------------------------------------------------------------------
- * **CE QUI ÉTAIT FAUX.** Le plafond d'un compte Nextcloud se choisissait d'après
- * `users.role` — une colonne qui ne garde rien dans ce produit — avec un repli MUET
- * sur « élève ». Un enseignant dont le rôle n'était pas renseigné recevait donc un
- * plafond d'élève : aucune erreur, aucun journal, aucun signal. Et le même service
- * de quotas résolvait déjà le profil par l'ANNUAIRE quelques dizaines de lignes plus
- * bas — deux sources de vérité contradictoires pour une seule décision. Enfin, les
- * groupes passés étaient toujours vides, ce qui rendait toute règle de quota par
- * GROUPE inatteignable pour un compte Nextcloud.
+ * **CE QUI ÉTAIT FAUX.** Le plafond d'un compte de l'instance se choisissait d'après
+ * un « profil » déduit de `users.role` — une colonne qui ne garde rien dans ce
+ * produit — avec un repli MUET vers le plus bas. Et les groupes passés au calcul
+ * étaient toujours vides, ce qui rendait toute règle de quota par GROUPE
+ * inatteignable pour un compte de l'instance.
+ *
+ * **LE PROFIL LUI-MÊME A DISPARU** (63.4) : le plafond par défaut est d'INSTANCE, et
+ * ce qu'on demande encore à l'annuaire, ce sont les GROUPES. La doctrine, elle,
+ * survit transposée : un annuaire MUET n'est pas un compte sans groupe, et ne fait
+ * jamais retomber personne sur le défaut.
  *
  * **Un plafond faux est pire qu'un plafond absent** : absent, il se voit ; faux, il
  * s'applique. Ces tests épinglent les deux directions — ce qui ne s'écrit pas, et ce
@@ -139,23 +142,25 @@ class NextcloudQuotaProfileTest extends TestCase
 
     /**
      * **LE TEST CENTRAL DE LA CORRECTION.** L'annuaire ne répond pas pour ce compte :
-     * son profil est INDÉTERMINABLE. Aucun plafond n'est écrit, et le cas est COMPTÉ.
+     * ses appartenances sont INDÉTERMINABLES. Aucun plafond n'est écrit, et le cas
+     * est COMPTÉ.
      *
-     * Avant la correction, ce même compte recevait silencieusement le plafond d'un
-     * élève — parce que sa colonne `role` ne disait rien d'exploitable et que le
-     * `default` la traduisait en « élève ».
+     * ⚠️ La doctrine a survécu à la story 63.4, transposée : un annuaire muet ne
+     * fait **JAMAIS** retomber un compte sur le défaut d'instance. Il pourrait être
+     * couvert par une règle de groupe plus large — écrire le défaut rétrécirait son
+     * plafond sans que rien ne le signale.
      */
     #[Test]
-    public function an_indeterminable_profile_writes_no_quota_and_is_counted(): void
+    public function an_indeterminable_identity_writes_no_quota_and_is_counted(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
         $this->directory([]); // l'annuaire ne connaît personne
         $this->fakeInstance();
 
         $report = new NextcloudProvisioningReport();
         $this->provisioner()->adopt($this->user('m.dupont'), $this->client(), $report, dryRun: false);
 
-        self::assertSame([], self::quotaWrites(), 'aucun plafond ne doit être écrit sur un profil indéterminable');
+        self::assertSame([], self::quotaWrites(), 'un annuaire muet n\'écrit aucun plafond, et ne retombe jamais sur le défaut');
         self::assertSame(1, $report->userCounters()['quotas_indetermines']);
         self::assertSame(['m.dupont'], $report->quotaUnresolvedLogins());
 
@@ -168,9 +173,9 @@ class NextcloudQuotaProfileTest extends TestCase
 
     /** Le constat voyage jusqu'au rapport sérialisé — sinon il n'atteint personne. */
     #[Test]
-    public function the_unresolved_profile_notice_survives_serialisation(): void
+    public function the_unresolved_identity_notice_survives_serialisation(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
         $this->directory([]);
         $this->fakeInstance();
 
@@ -185,9 +190,9 @@ class NextcloudQuotaProfileTest extends TestCase
 
     /** L'échantillon nominatif est BORNÉ : une panne d'annuaire concerne tout le monde. */
     #[Test]
-    public function the_nominal_sample_of_unresolved_profiles_is_bounded(): void
+    public function the_nominal_sample_of_unresolved_identities_is_bounded(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
         $this->directory([]);
         $this->fakeInstance();
 
@@ -210,22 +215,41 @@ class NextcloudQuotaProfileTest extends TestCase
     // (b) UNE SEULE SOURCE DE VÉRITÉ — L'ANNUAIRE
     // =====================================================================
 
-    /** Un profil RÉSOLU applique la politique par défaut de CE profil, pas celle d'un élève. */
+    /**
+     * ⚠️ **CE SCÉNARIO A CHANGÉ DE SENS, ET C'EST LE POINT DE LA STORY 63.4.**
+     *
+     * Il épinglait qu'un enseignant et un élève, sans règle nominative ni règle de
+     * groupe, recevaient des plafonds DIFFÉRENTS — chacun celui de son « profil ».
+     * Ce profil se devinait par comparaison de sous-chaîne sur des noms de groupes,
+     * et de deux façons contradictoires selon l'écran qui posait la question.
+     *
+     * Le voici épinglé **positivement dans l'autre sens** : deux comptes que rien ne
+     * couvre reçoivent désormais **exactement le même plafond**, celui de
+     * l'instance. C'est le comportement voulu ; le supprimer en silence aurait laissé
+     * l'inversion invisible.
+     */
     #[Test]
-    public function a_resolved_teacher_profile_applies_the_teacher_policy(): void
+    public function two_accounts_without_any_rule_now_receive_the_very_same_ceiling(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
-        $this->rule(QuotaRule::TYPE_DEFAULT_PROF, 4096);
-        $this->directory(['m.dupont' => ['profile' => 'prof', 'groups' => ['CN=profs']]]);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
+        $this->directory([
+            'm.dupont' => ['groups' => ['profs', 'professeurs']],
+            'j.martin' => ['groups' => ['3A']],
+        ]);
         $this->fakeInstance();
 
         $report = new NextcloudProvisioningReport();
-        $this->provisioner()->adopt($this->user('m.dupont'), $this->client(), $report, dryRun: false);
+        $provisioner = $this->provisioner();
+
+        $provisioner->adopt($this->user('m.dupont'), $this->client(), $report, dryRun: false);
+        $provisioner->adopt($this->user('j.martin'), $this->client(), $report, dryRun: false);
+
+        $attendu = (string) (1024 * 1024 * 1024);
 
         self::assertSame(
-            [['key' => 'quota', 'value' => (string) (4096 * 1024 * 1024)]],
+            [['key' => 'quota', 'value' => $attendu], ['key' => 'quota', 'value' => $attendu]],
             self::quotaWrites(),
-            'le plafond écrit est celui de l\'ENSEIGNANT — la colonne `role` disait « autre »',
+            'le plafond par défaut est d\'INSTANCE : les groupes ne le font plus varier',
         );
         self::assertSame(0, $report->userCounters()['quotas_indetermines']);
     }
@@ -238,9 +262,9 @@ class NextcloudQuotaProfileTest extends TestCase
     #[Test]
     public function a_group_quota_rule_finally_reaches_a_nextcloud_account(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
         $this->rule(QuotaRule::TYPE_GROUP, 8192, 'documentalistes');
-        $this->directory(['m.dupont' => ['profile' => 'eleve', 'groups' => ['documentalistes', '3A']]]);
+        $this->directory(['m.dupont' => ['groups' => ['documentalistes', '3A']]]);
         $this->fakeInstance();
 
         $report = new NextcloudProvisioningReport();
@@ -260,7 +284,7 @@ class NextcloudQuotaProfileTest extends TestCase
     #[Test]
     public function a_nominative_rule_is_written_without_consulting_the_directory(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
         $this->rule(QuotaRule::TYPE_USER, 512, 'm.dupont');
         $directory = $this->directory([]); // annuaire muet
         $this->fakeInstance();
@@ -280,7 +304,7 @@ class NextcloudQuotaProfileTest extends TestCase
     #[Test]
     public function without_any_rule_nothing_is_written_and_nothing_is_counted(): void
     {
-        $this->directory(['m.dupont' => ['profile' => 'prof', 'groups' => []]]);
+        $this->directory(['m.dupont' => ['groups' => []]]);
         $this->fakeInstance();
 
         $report = new NextcloudProvisioningReport();
@@ -305,9 +329,9 @@ class NextcloudQuotaProfileTest extends TestCase
     public function a_sweep_without_any_quota_rule_never_touches_the_directory(): void
     {
         $directory = $this->directory([
-            'a' => ['profile' => 'eleve', 'groups' => []],
-            'b' => ['profile' => 'eleve', 'groups' => []],
-            'c' => ['profile' => 'eleve', 'groups' => []],
+            'a' => ['groups' => []],
+            'b' => ['groups' => []],
+            'c' => ['groups' => []],
         ]);
         $this->fakeInstance();
 
@@ -324,18 +348,17 @@ class NextcloudQuotaProfileTest extends TestCase
 
     /**
      * **LE COÛT EST BORNÉ PAR LA POPULATION, PAS PAR LE NOMBRE DE LECTURES.** Le
-     * profil et les groupes viennent de la MÊME entrée d'annuaire : les lire
-     * séparément doublait la facture. Et un compte revisité dans la foulée ne
-     * recoûte rien.
+     * coût est celui de l'entrée d'annuaire, lue une fois par compte. Et un compte
+     * revisité dans la foulée ne recoûte rien.
      */
     #[Test]
     public function a_sweep_costs_at_most_one_directory_lookup_per_account(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_ELEVE, 1024);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 1024);
         $directory = $this->directory([
-            'a' => ['profile' => 'eleve', 'groups' => ['3A']],
-            'b' => ['profile' => 'prof', 'groups' => ['profs']],
-            'c' => ['profile' => 'admin', 'groups' => ['admins']],
+            'a' => ['groups' => ['3A']],
+            'b' => ['groups' => ['profs']],
+            'c' => ['groups' => ['admins']],
         ]);
         $this->fakeInstance();
 
@@ -357,8 +380,8 @@ class NextcloudQuotaProfileTest extends TestCase
     #[Test]
     public function a_dry_run_never_writes_a_quota(): void
     {
-        $this->rule(QuotaRule::TYPE_DEFAULT_PROF, 4096);
-        $this->directory(['m.dupont' => ['profile' => 'prof', 'groups' => []]]);
+        $this->rule(QuotaRule::TYPE_DEFAULT, 4096);
+        $this->directory(['m.dupont' => ['groups' => []]]);
         $this->fakeInstance();
 
         $report = new NextcloudProvisioningReport(dryRun: true);

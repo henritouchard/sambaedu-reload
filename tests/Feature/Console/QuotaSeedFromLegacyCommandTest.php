@@ -10,6 +10,7 @@ use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Config;
@@ -31,7 +32,8 @@ use Tests\TestCase;
  *  - it_discriminates_user_vs_group_via_eloquent_lookup (AC 12)
  *  - it_supports_dry_run_without_modifying_db (AC 13)
  *  - it_returns_failure_when_legacy_connection_missing (AC 14)
- *  - it_initializes_default_profiles_when_absent (AC 15)
+ *  - it_initializes_one_instance_default_per_partition_when_absent (63.4 : il y en
+ *    avait huit, une par « profil » × partition ; il y en a deux)
  *  - it_skips_existing_rules_without_force_flag (idempotence)
  *  - it_overwrites_existing_rules_with_force_flag (force)
  */
@@ -54,6 +56,27 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
 
         $this->ensureMainTables();
         $this->setupLegacyConnection();
+        $this->fakeQuotaService();
+    }
+
+    /**
+     * Story 63.4, correction de revue — **LE PLAFOND PAR DÉFAUT PASSE MAINTENANT PAR
+     * LE SERVICE**, donc par sa garde de disponibilité de partition, qui exécute une
+     * commande système. Sur l'hôte, cette commande n'existe pas : la couture est donc
+     * substituée, et elle répond « la partition porte un quota appliqué ».
+     *
+     * ⚠️ Sans cette substitution, la suite prouverait seulement que l'hôte n'a pas
+     * l'outil — pas que la commande fait son travail.
+     */
+    private function fakeQuotaService(): void
+    {
+        $this->app->instance(XfsQuotaService::class, new class extends XfsQuotaService
+        {
+            protected function probePartitionQuotaState(string $partition): array
+            {
+                return ['output' => ['  Enforcement: ON'], 'exit_code' => 0];
+            }
+        });
     }
 
     protected function tearDown(): void
@@ -264,40 +287,93 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
     }
 
     // =========================================================================
-    // AC 15 — Init defaults profils
+    // Init du plafond par défaut de l'instance
     // =========================================================================
 
+    /**
+     * ⚠️ **Elles étaient HUIT** (quatre « profils » × deux partitions), et le profil
+     * retenu pour un compte se DEVINAIT. Depuis la story 63.4, il y en a **DEUX** :
+     * une par partition, la même pour tout le monde.
+     */
     #[Test]
-    public function it_initializes_default_profiles_when_absent(): void
+    public function it_initializes_one_instance_default_per_partition_when_absent(): void
     {
-        // Aucune row legacy → mais on attend les 8 defaults (4 profils × 2 partitions).
+        // Aucune row legacy → on attend 2 règles (une par partition).
         $exit = $this->artisan('quota:seed-from-legacy')->run();
         $this->assertSame(0, $exit);
 
-        $defaults = QuotaRule::query()
-            ->whereIn('type', [
-                QuotaRule::TYPE_DEFAULT_ELEVE,
-                QuotaRule::TYPE_DEFAULT_PROF,
-                QuotaRule::TYPE_DEFAULT_ADMIN,
-                QuotaRule::TYPE_DEFAULT_ITINERANT,
-            ])
+        $defaults = QuotaRule::query()->where('type', QuotaRule::TYPE_DEFAULT)->get();
+
+        $this->assertSame(2, $defaults->count(), 'Exactement 2 règles par défaut (une par partition).');
+        $this->assertSame([null, null], $defaults->pluck('target')->all(), 'un défaut ne vise personne');
+
+        // La valeur retenue est celle de l'ex-défaut le plus large en population :
+        // celui qui couvrait la majorité des comptes.
+        foreach ([QuotaRule::PARTITION_HOME, QuotaRule::PARTITION_SAMBAEDU] as $partition) {
+            $rule = $defaults->firstWhere('partition', $partition);
+            $this->assertNotNull($rule, 'chaque partition porte son défaut : '.$partition);
+            $this->assertSame(500, $rule->quota_soft_mb);
+            $this->assertSame(600, $rule->quota_hard_mb);
+        }
+    }
+
+    /**
+     * Story 63.4, correction de revue — **UN SEUL CHEMIN D'ÉCRITURE DU DÉFAUT.**
+     *
+     * L'écriture se faisait ici en direct sur le modèle, avec son propre journal
+     * d'audit à côté de celui du service : deux chemins pour une même décision, dont
+     * un qui échappait à la garde de disponibilité. Elle passe désormais par le
+     * service — le même que l'écran — donc par la même garde et le même audit.
+     */
+    #[Test]
+    public function the_instance_default_is_written_through_the_service_and_audited(): void
+    {
+        $this->artisan('quota:seed-from-legacy')->run();
+
+        $audits = QuotaAuditLog::query()
+            ->where('target_type', QuotaRule::TYPE_DEFAULT)
+            ->where('performed_by', 'quota:seed-from-legacy')
             ->get();
 
-        $this->assertSame(8, $defaults->count(), 'Exactement 8 defaults (4 profils × 2 partitions).');
+        $this->assertSame(2, $audits->count(), 'une ligne d\'audit par partition, écrite par le service');
+    }
 
-        // Vérification valeurs spécifiques (D4=A) :
-        $itinerantHome = $defaults->where('type', QuotaRule::TYPE_DEFAULT_ITINERANT)
-            ->where('partition', '/home')
-            ->first();
-        $this->assertNotNull($itinerantHome);
-        $this->assertSame(200, $itinerantHome->quota_soft_mb);
-        $this->assertSame(240, $itinerantHome->quota_hard_mb);
+    /**
+     * ⚠️ **ET IL N'APPLIQUE RIEN EN MASSE.** Cette commande est un import de bascule :
+     * appliquer d'un coup un plafond à tout un établissement au moment d'une migration
+     * mettrait des comptes en dépassement sans que personne n'ait cliqué.
+     */
+    #[Test]
+    public function seeding_the_instance_default_queues_nothing(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
 
-        $eleveHome = $defaults->where('type', QuotaRule::TYPE_DEFAULT_ELEVE)
-            ->where('partition', '/home')
-            ->first();
-        $this->assertSame(500, $eleveHome->quota_soft_mb);
-        $this->assertSame(600, $eleveHome->quota_hard_mb);
+        $this->artisan('quota:seed-from-legacy')->run();
+
+        \Illuminate\Support\Facades\Bus::assertNothingDispatched();
+    }
+
+    /**
+     * **UNE PARTITION QUI NE PORTE PAS DE PLAFOND EXPLOITABLE FAIT REFUSER LE SERVICE,
+     * ET LA COMMANDE LE DIT.** Un import silencieusement incomplet est pire qu'un
+     * import qui refuse en nommant.
+     */
+    #[Test]
+    public function a_refused_partition_is_reported_not_swallowed(): void
+    {
+        $this->app->instance(XfsQuotaService::class, new class extends XfsQuotaService
+        {
+            protected function probePartitionQuotaState(string $partition): array
+            {
+                return ['output' => ['XFS_GETQUOTA: Invalid argument'], 'exit_code' => 1];
+            }
+        });
+
+        $this->artisan('quota:seed-from-legacy')
+            ->expectsOutputToContain('Plafond par défaut non posé')
+            ->run();
+
+        $this->assertSame(0, QuotaRule::query()->where('type', QuotaRule::TYPE_DEFAULT)->count());
     }
 
     // =========================================================================

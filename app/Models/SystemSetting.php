@@ -9,13 +9,18 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * Story 5.1c — Réglages système clé/valeur (JSON).
  *
- * Stocke des paramètres applicatifs globaux en pattern K/V JSON. Première
- * utilisation : onglet "Quotas & FS" de /admin/settings (defaults profils,
- * TTL trash, toggle purge auto). Conçu pour être extensible (futurs onglets
- * DHCP/CUPS/...).
+ * Stocke des paramètres applicatifs globaux en pattern K/V JSON : réglages de
+ * corbeille, emplacements des fichiers, politique de fichiers… Conçu pour être
+ * extensible.
+ *
+ * ⚠️ **Un réglage stocké ici n'est PAS un réglage appliqué.** Cette table a porté
+ * une grille de plafonds par défaut que personne ne lisait, pendant que l'écran
+ * répondait « Réglages enregistrés » ; la story 63.4 l'a supprimée et a déplacé le
+ * plafond là où la résolution le lit ({@see \App\Models\QuotaRule}). Avant d'ajouter
+ * une clé ici, vérifier qu'elle a un LECTEUR.
  *
  * Helpers statiques :
- *   - SystemSetting::get('quota.defaults', $default = null)
+ *   - SystemSetting::get('quota.trash', $default = null)
  *   - SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false])
  *
  * Le cast `value => 'array'` normalise pgsql/sqlite (cf. migration).

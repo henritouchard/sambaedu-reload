@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $quota_rule_id
  * @property string $action create, update, delete, apply
  * @property string $performed_by Utilisateur ayant effectué l'action
- * @property string $target_type user, group, default_eleve, default_prof, default_admin
+ * @property string $target_type user, group, default
  * @property string|null $target_name Nom utilisateur ou groupe
  * @property string $partition /home ou /var/sambaedu
  * @property array|null $old_values Valeurs avant modification

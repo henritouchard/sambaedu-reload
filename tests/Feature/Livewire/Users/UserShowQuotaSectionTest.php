@@ -420,7 +420,7 @@ class UserShowQuotaSectionTest extends TestCase
                 ];
             }
 
-            public function getEffectiveQuota(string $username, string $partition, array $userGroups = [], string $userProfile = 'eleve'): array
+            public function getEffectiveQuota(string $username, string $partition, array $userGroups = []): array
             {
                 return [
                     'source' => 'none',

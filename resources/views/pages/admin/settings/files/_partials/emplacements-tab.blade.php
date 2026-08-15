@@ -36,7 +36,12 @@ use Livewire\Component;
  *     page de connexion et elle seule ;
  *  2. où vit l'espace personnel, où vit l'espace partagé — deux réglages
  *     d'instance, chacun avec l'effet qu'il produit sur le poste ;
- *  3. les réglages, dont le chemin d'accès au cloud ({@see CloudAccessPath}).
+ *  3. les réglages : le chemin d'accès au cloud ({@see CloudAccessPath}), le
+ *     plafond par défaut des espaces personnels et la corbeille des répertoires
+ *     personnels (story 63.4, deux composants enfants). ⚠️ Ce bloc est rendu
+ *     SANS CONDITION : les deux cartes ne dépendent d'aucune décision
+ *     d'emplacement, et les conditionner les rendait injoignables précisément
+ *     sur les instances dont la reprise n'a pas été jouée.
  *
  * **Aucun public, aucune ligne, aucun rang, aucune précédence** : ce sont deux
  * réglages d'instance, et rien d'autre. Et il n'existe **aucune troisième
@@ -705,51 +710,72 @@ new class extends Component {
                     d'autorité » livrera. Tranchez-le avant le premier import d'annuaire.
                 </p>
             </section>
-
-            {{-- ═══════════════════════════════════════════════════════════════
-                 BLOC 3 — RÉGLAGES. Il ne gouverne rien tant qu'aucun cloud n'est
-                 actif : il n'apparaît donc pas.
-            ═══════════════════════════════════════════════════════════════ --}}
-            @if ($cloudActif !== 'aucun')
-                <section class="flex flex-col gap-4" data-testid="bloc-reglages">
-                    <div>
-                        <h3 class="text-sm font-semibold uppercase tracking-wider text-base-content/60">
-                            <i class="fa-solid fa-sliders mr-1"></i>
-                            Réglages
-                        </h3>
-                    </div>
-
-                    <div class="card bg-base-100 border border-base-300 w-full lg:max-w-xl">
-                        <div class="card-body p-5 gap-3">
-                            <div class="flex flex-col w-full">
-                                <label class="label w-full" for="cloud-access-path">
-                                    <span class="label-text font-medium">
-                                        Chemin d'accès au cloud <span class="text-error">*</span>
-                                    </span>
-                                </label>
-                                <select id="cloud-access-path" class="select select-bordered w-full"
-                                    wire:model.live="cloudAccessPath" data-testid="cloud-access-path">
-                                    @foreach (\App\Enums\CloudAccessPath::cases() as $path)
-                                        <option value="{{ $path->value }}">{{ $path->label() }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            <p class="text-xs text-warning" data-testid="access-path-honesty">
-                                <i class="fa-solid fa-triangle-exclamation"></i>
-                                La pose du client de synchronisation sur les postes est livrée par un chantier
-                                séparé. D'ici là, cette position est enregistrée mais seul l'accès par le
-                                navigateur est effectivement posé.
-                            </p>
-                        </div>
-                    </div>
-
-                    {{-- ICI se logeront les cartes « Quotas » et « Corbeille »
-                         (story 63.4). Aucune carte vide n'est rendue d'ici là :
-                         une carte sans contenu est de l'UI orpheline, exactement
-                         ce que le retrait de l'onglet « Quotas & FS » a fermé. --}}
-                </section>
-            @endif
         @endif
     @endif
+
+    {{-- ═══════════════════════════════════════════════════════════════════════
+         BLOC 3 — RÉGLAGES.
+
+         ⚠️ **Il n'est conditionné à RIEN** (story 63.4, correction de revue).
+
+         Il ne portait que le chemin d'accès au cloud, qui ne gouverne rien sans
+         cloud ; il porte désormais AUSSI le plafond des espaces personnels et la
+         corbeille des répertoires personnels — deux réglages du SERVEUR DE
+         FICHIERS, qui sont précisément les plus utiles quand aucun cloud n'est
+         actif.
+
+         ⚠️ Et ils ne dépendent d'AUCUNE décision d'emplacement. Les laisser
+         dedans les rendait injoignables exactement là où ils sont le plus
+         nécessaires : sur toute instance dont la reprise d'emplacements n'a pas
+         été jouée — c'est-à-dire précisément celles que la migration de bascule
+         vient de modifier. L'administrateur n'aurait alors pu ni voir ni
+         corriger le plafond qu'on venait d'écrire pour lui. C'est l'orphelinat
+         que cette story solde, reconduit sous une autre forme.
+
+         Seul le chemin d'accès au cloud reste conditionné — c'est le seul de ces
+         réglages qui ne gouvernerait rien sans cloud, et il appartient bien à la
+         décision d'emplacement.
+    ═══════════════════════════════════════════════════════════════════════ --}}
+    <section class="flex flex-col gap-4" data-testid="bloc-reglages">
+        <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-base-content/60">
+                <i class="fa-solid fa-sliders mr-1"></i>
+                Réglages
+            </h3>
+        </div>
+
+        @if ($this->canDecide() && $cloudActif !== 'aucun')
+            <div class="card bg-base-100 border border-base-300 w-full lg:max-w-xl">
+                <div class="card-body p-5 gap-3">
+                    <div class="flex flex-col w-full">
+                        <label class="label w-full" for="cloud-access-path">
+                            <span class="label-text font-medium">
+                                Chemin d'accès au cloud <span class="text-error">*</span>
+                            </span>
+                        </label>
+                        <select id="cloud-access-path" class="select select-bordered w-full"
+                            wire:model.live="cloudAccessPath" data-testid="cloud-access-path">
+                            @foreach (\App\Enums\CloudAccessPath::cases() as $path)
+                                <option value="{{ $path->value }}">{{ $path->label() }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <p class="text-xs text-warning" data-testid="access-path-honesty">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        La pose du client de synchronisation sur les postes est livrée par un chantier
+                        séparé. D'ici là, cette position est enregistrée mais seul l'accès par le
+                        navigateur est effectivement posé.
+                    </p>
+                </div>
+            </div>
+        @endif
+
+        {{-- Les deux cartes de la story 63.4. Composants ENFANTS : chacune
+             porte sa propre double garde, ses propres notifications et son
+             propre geste d'enregistrement — les noyer dans ce composant
+             aurait fait d'un écran de trois questions un écran de six. --}}
+        <livewire:pages::admin.settings.files._partials.quotas-card :key="'carte-quotas'" />
+        <livewire:pages::admin.settings.files._partials.corbeille-card :key="'carte-corbeille'" />
+    </section>
 </div>

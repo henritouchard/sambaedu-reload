@@ -421,11 +421,11 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
 
     // /admin/quotas — l'onglet « Quotas & FS » a été RETIRÉ (décision Henri
     // 2026-08-05) : sa grille de quotas par défaut par profil n'appliquait rien à
-    // personne (elle écrivait `SystemSetting('quota.defaults')`, clé que la
-    // résolution ne lit pas — cf. story 5.1e, qui réinstallera un défaut GLOBAL en
-    // carte dans le bloc « Réglages » de l'onglet des emplacements). La route
-    // redirige vers la page hôte ; le nom `admin.quotas` reste stable pour les
-    // liens et bookmarks existants.
+    // personne — elle écrivait une clé de réglage que la résolution ne lisait pas.
+    // La story 63.4 a soldé la grille et posé un plafond d'INSTANCE en carte dans le
+    // bloc « Réglages » de l'onglet des emplacements, écrit là où la résolution le
+    // lit. La route redirige vers la page hôte ; le nom `admin.quotas` reste stable
+    // pour les liens et bookmarks existants.
     //
     // ⚠️ La cible SUIT la clé d'onglet : `personnels-partages` a disparu avec la
     // story 63.3, et une redirection qui viserait encore cette clé retomberait

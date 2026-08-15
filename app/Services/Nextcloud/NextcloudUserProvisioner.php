@@ -296,6 +296,12 @@ final class NextcloudUserProvisioner
             return;
         }
 
+        // Story 63.4, correction de revue — **L'ÉCRASEMENT SE COMPTE.** Le relu
+        // diffère : ce balayage change ce plafond, y compris s'il avait été réglé à
+        // la main dans l'instance. C'est ici, et pas plus loin, parce que la
+        // simulation doit annoncer ce que le vrai passage ferait.
+        $report->countQuotaChanged();
+
         if ($dryRun) {
             Log::info('nextcloud.user.quota.would_change', [
                 'login' => (string) $user->login,
@@ -352,36 +358,41 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * Correction de revue 61.3 #1 — **LE PROFIL NE SE DEVINE PAS, ET SON ABSENCE SE
-     * DIT.**
+     * Correction de revue 61.3 #1, **transposée aux GROUPES par la story 63.4** —
+     * ce qui ne se résout pas ne se devine pas, et son absence se dit.
      *
      * ---------------------------------------------------------------------------
-     * **CE QUI ÉTAIT FAUX.** Le profil se déduisait de `users.role` — une colonne
-     * qui ne garde rien dans ce produit — avec un repli muet sur `eleve`. Un
-     * enseignant dont le rôle n'était pas renseigné recevait donc un plafond
-     * d'élève : pas d'erreur, pas de journal, rien. Et le MÊME service de quotas
-     * résolvait déjà le profil par l'annuaire, quelques dizaines de lignes plus
-     * bas : deux sources de vérité contradictoires pour une seule décision. Enfin,
-     * les groupes passés étaient TOUJOURS `[]`, ce qui rendait toute règle
-     * `QuotaRule::TYPE_GROUP` inatteignable pour un compte Nextcloud.
+     * **CE QUI ÉTAIT FAUX.** Le plafond se choisissait d'après un profil déduit de
+     * `users.role` — une colonne qui ne garde rien dans ce produit — avec un repli
+     * muet. Un enseignant dont le rôle n'était pas renseigné recevait donc le
+     * plafond le plus bas : pas d'erreur, pas de journal, rien. Et les groupes
+     * passés étaient TOUJOURS `[]`, ce qui rendait toute règle
+     * `QuotaRule::TYPE_GROUP` inatteignable pour un compte de l'instance.
+     *
+     * **LE PROFIL LUI-MÊME A DISPARU** (story 63.4) : le plafond par défaut est un
+     * réglage d'INSTANCE, identique pour tout compte qu'aucune règle nominative ni
+     * règle de groupe ne couvre. Ce qu'on demande encore à l'annuaire, ce sont donc
+     * les GROUPES, et rien d'autre.
      *
      * **CE QUI EST VRAI MAINTENANT** — dans cet ordre, et l'ordre est celui du
      * COÛT autant que celui de la sûreté :
      *
      *  0. **SE5 gouverne-t-il seulement ce plafond ?** Aucune règle active sur la
-     *     partition ⇒ aucune opinion possible, quel que soit le profil ⇒ on rend
-     *     `null` sans le moindre aller-retour d'annuaire. C'est le cas courant
-     *     aujourd'hui, et c'est ce qui garde un balayage d'établissement à ZÉRO
-     *     appel d'annuaire (une seule requête SQL, mémoïsée pour tout le balayage).
+     *     partition ⇒ aucune opinion possible ⇒ on rend `null` sans le moindre
+     *     aller-retour d'annuaire. C'est le cas courant aujourd'hui, et c'est ce qui
+     *     garde un balayage d'établissement à ZÉRO appel d'annuaire (une seule
+     *     requête SQL, mémoïsée pour tout le balayage).
      *  1. **Une règle NOMINATIVE prime sur tout** et ne demande pas l'annuaire :
-     *     ni le profil ni les groupes n'entrent dans son calcul. La résoudre sans
-     *     interroger l'annuaire évite de refuser un plafond parfaitement déterminé
-     *     parce que l'annuaire, lui, ne répondait pas.
-     *  2. Sinon, **l'annuaire**, une fois, pour le profil ET les groupes.
+     *     les groupes n'entrent pas dans son calcul. La résoudre sans interroger
+     *     l'annuaire évite de refuser un plafond parfaitement déterminé parce que
+     *     l'annuaire, lui, ne répondait pas.
+     *  2. Sinon, **l'annuaire**, une fois, pour les groupes.
      *
-     * **UN PROFIL INDÉTERMINABLE N'EST PAS UN ÉLÈVE.** On n'écrit rien, et on le
-     * COMPTE au rapport. Un plafond faux est pire qu'un plafond absent : absent, il
-     * se voit ; faux, il s'applique.
+     * **UN ANNUAIRE MUET N'EST PAS UN COMPTE SANS GROUPE.** On n'écrit rien, et on
+     * le COMPTE au rapport. Retomber sur le défaut d'instance rétrécirait
+     * silencieusement le plafond d'un compte couvert par une règle de groupe plus
+     * large : un plafond faux est pire qu'un plafond absent — absent, il se voit ;
+     * faux, il s'applique.
      *
      * @return array{source: string, source_name: string|null, quota_soft_mb: int, quota_hard_mb: int, is_unlimited: bool}|null
      */
@@ -394,11 +405,11 @@ final class NextcloudUserProvisioner
         $quotas = $this->quotas();
 
         if ($this->hasNominativeRule($login)) {
-            // Le profil et les groupes ne sont pas consultés sur ce chemin : la
-            // règle nominative est le PREMIER étage de `getEffectiveQuota()`. On le
-            // VÉRIFIE plutôt que de le supposer — si la règle a disparu entre-temps,
-            // on repasse par l'annuaire au lieu d'hériter du profil de repli.
-            $effective = $quotas->getEffectiveQuota($login, QuotaRule::PARTITION_HOME, [], 'eleve');
+            // Les groupes ne sont pas consultés sur ce chemin : la règle nominative
+            // est le PREMIER étage de `getEffectiveQuota()`. On le VÉRIFIE plutôt
+            // que de le supposer — si la règle a disparu entre-temps, on repasse par
+            // l'annuaire au lieu d'écrire un plafond qu'aucune règle ne porte plus.
+            $effective = $quotas->getEffectiveQuota($login, QuotaRule::PARTITION_HOME, []);
 
             if (($effective['source'] ?? null) === 'user') {
                 return $effective;
@@ -408,7 +419,7 @@ final class NextcloudUserProvisioner
         $identity = $quotas->resolveDirectoryIdentity($login);
 
         if ($identity === null) {
-            $report->countQuotaProfileUnresolved($login);
+            $report->countQuotaIdentityUnresolved($login);
 
             return null;
         }
@@ -417,7 +428,6 @@ final class NextcloudUserProvisioner
             $login,
             QuotaRule::PARTITION_HOME,
             $identity['groups'],
-            $identity['profile'],
         );
     }
 

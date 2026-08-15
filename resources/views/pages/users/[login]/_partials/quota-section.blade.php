@@ -104,24 +104,30 @@ new class extends Component {
 
     /**
      * Calcule l'héritage effectif pour les 2 partitions. Ne touche pas XFS.
+     *
+     * ⚠️ **La devinette de profil a été retirée** (story 63.4). Cette section
+     * portait sa PROPRE `resolveUserProfile()` — des comparaisons de sous-chaîne
+     * sur les noms de groupes SQL (`admin`, `prof`, `enseignant`) — qui ne
+     * ressemblait à celle du service que de loin : un groupe `profs-techno`
+     * donnait « enseignant » ici et rien ailleurs, un groupe `administration`
+     * basculait en « administrateur » par accident. Les deux chemins mentaient, et
+     * pas de la même façon. Le plafond par défaut est désormais un réglage
+     * d'INSTANCE : il n'y a plus rien à deviner.
      */
     private function loadEffectiveQuotas(?SqlUserModel $user): void
     {
         $userGroups = $this->resolveUserGroups($user);
-        $userProfile = $this->resolveUserProfile($userGroups);
 
         $this->effectiveHome = $this->quotaService->getEffectiveQuota(
             $this->login,
             QuotaRule::PARTITION_HOME,
             $userGroups,
-            $userProfile,
         );
 
         $this->effectiveSambaedu = $this->quotaService->getEffectiveQuota(
             $this->login,
             QuotaRule::PARTITION_SAMBAEDU,
             $userGroups,
-            $userProfile,
         );
     }
 
@@ -140,24 +146,6 @@ new class extends Component {
             ->filter()
             ->values()
             ->all();
-    }
-
-    /**
-     * @param  list<string>  $userGroups
-     */
-    private function resolveUserProfile(array $userGroups): string
-    {
-        foreach ($userGroups as $group) {
-            $lower = mb_strtolower($group);
-            if (str_contains($lower, 'admin') || str_contains($lower, 'domain admins')) {
-                return 'admin';
-            }
-            if (str_contains($lower, 'prof') || str_contains($lower, 'enseignant')) {
-                return 'prof';
-            }
-        }
-
-        return 'eleve';
     }
 
     // =========================================================================
