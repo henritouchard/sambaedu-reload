@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Agent\Providers;
 
+use App\Enums\ActiveCloud;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
@@ -18,6 +19,8 @@ use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
 use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocationService;
+use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Support\Collection;
 
 /**
@@ -33,10 +36,10 @@ use Illuminate\Support\Collection;
  * bête : il pose le `.lnk` au `desktop_path` reçu (tokens `<se4fs>`/`<user>`
  * substitués localement).
  *
- * **Story 27.21** : le bureau RÉSEAU exige EN PLUS que le home soit accessible
- * ({@see FilePolicyService::capabilities()} clé `home`) — un
- * bureau réseau posé alors que K: est coupé n'est jamais vu par l'utilisateur.
- * Voir {@see self::desktopPathFor()}.
+ * **Story 63.2** : ce chemin ne dépend PLUS que du parc. Le bureau réseau vit
+ * dans le home SMB, et ce partage-là est toujours là pour l'agent même quand
+ * l'espace perso de l'utilisateur a déménagé au cloud — le provider ne lit donc
+ * aucun réglage pour résoudre le Bureau ({@see DesktopPathResolver::pathFor()}).
  *
  * **Story 27.21 (arbitrage option A)** : le serveur émet EN PLUS la liste des
  * emplacements Bureau à BALAYER ({@see self::desktopSweepPathsFor()}, champ
@@ -70,9 +73,31 @@ use Illuminate\Support\Collection;
  * Story 27.7 (AC2) : payload étendu de `{icon_asset, icon_checksum}` quand
  * l'icône est un NOM NU uploadé content-addressed (champs ajoutés,
  * forward-compatible — l'agent dérive l'URL statique).
+ *
+ * **UN candidat n'a PAS de ligne source : le raccourci vers le portail web**
+ * ({@see self::portalCandidate()}). Il naît du PLAN DE FICHIERS
+ * ({@see \App\Services\Filesystem\FileLocationService::current()}) — un cloud
+ * actif ET au moins un des deux espaces servi par lui —, pas d'une
+ * assignation, parce que ce qu'il rend visible n'est pas une règle
+ * d'établissement mais une conséquence technique : un espace servi par un cloud
+ * n'a AUCUN chemin SMB, donc aucune lettre de lecteur ({@see DrivesStateProvider}
+ * ne lui en donne pas), et son seul chemin d'accès est le navigateur. C'est le
+ * SEUL écart au « projection en lecture seule de `shortcuts` » énoncé ci-dessus,
+ * et il ne change rien pour l'agent : un `.lnk` de plus dans le même payload,
+ * aucune version d'agent à publier.
  */
 final class ShortcutsStateProvider implements StateProvider
 {
+    /**
+     * Nom affiché du raccourci-portail sur le Bureau.
+     *
+     * Il nomme la DESTINATION, pas le produit : l'utilisateur cherche ses
+     * fichiers, il ne cherche pas « Nextcloud ». Le même libellé servira si
+     * l'instance est servie par un autre produit, sans que les bureaux de
+     * l'établissement changent de vocabulaire.
+     */
+    public const PORTAL_SHORTCUT_NAME = 'Mes fichiers en ligne';
+
     public function __construct(
         private readonly WorkstationEnvironmentResolver $environmentResolver,
         // Story 58.1 — le mapping environnement→chemin du Bureau a QUITTÉ ce
@@ -82,6 +107,11 @@ final class ShortcutsStateProvider implements StateProvider
         // la garantie que l'agent pose les `.lnk` dans un dossier que le shell
         // ne regarde pas. Déplacement PUR : valeurs et payload inchangés.
         private readonly DesktopPathResolver $desktopPaths,
+        // Le couple `{asset, checksum}` de l'icône du raccourci-portail, publié
+        // par l'écran de réglages des fichiers. Injecté plutôt qu'appelé
+        // statiquement : le provider doit rester testable sans système de
+        // fichiers, et c'est la seule dépendance de ce genre qu'il porte.
+        private readonly PortalShortcutIcon $portalIcon,
     ) {}
 
     public function type(): string
@@ -117,9 +147,8 @@ final class ShortcutsStateProvider implements StateProvider
         // résolution (contrainte de réutilisation 27.21 : ne jamais interroger
         // le WorkstationEnvironmentResolver deux fois pour le même contexte).
         $environment = $this->environmentResolver->resolveForGroupIds($wgIds);
-        $homeEnabled = FilePolicyService::capabilities()['home'];
 
-        $desktopPath = $this->desktopPaths->pathFor($environment, $homeEnabled);
+        $desktopPath = $this->desktopPaths->pathFor($environment);
         $desktopSweepPaths = $this->desktopPaths->sweepPathsFor($environment);
 
         $rows = Shortcut::query()
@@ -163,12 +192,144 @@ final class ShortcutsStateProvider implements StateProvider
                 'shortcut_assignables.assignable_id',
             ]);
 
-        return $rows->map(fn (Shortcut $row): StateCandidate => new StateCandidate(
+        $candidates = $rows->map(fn (Shortcut $row): StateCandidate => new StateCandidate(
             maille: $this->mailleFor($row, $ctx),
             payload: $this->payloadFor($row, $desktopPath, $desktopSweepPaths),
             updatedAt: $row->updated_at,
             sourceId: (int) $row->id,
         ));
+
+        $portal = $this->portalCandidate($desktopPath, $desktopSweepPaths);
+
+        return $portal === null ? $candidates : $candidates->prepend($portal);
+    }
+
+    /**
+     * LE RACCOURCI SYNTHÉTIQUE VERS LE PORTAIL WEB — le seul candidat de ce
+     * provider qui ne vienne pas d'une ligne de `shortcuts`.
+     *
+     * **Pourquoi il existe.** Un espace servi par un cloud n'a AUCUN chemin SMB :
+     * le {@see DrivesStateProvider} ne lui donne aucune lettre de lecteur. Son
+     * seul chemin d'accès est le web — et un chemin d'accès que l'utilisateur ne
+     * voit nulle part n'existe pas pour lui. Ce raccourci est ce que le poste
+     * montre à la place de la lettre de lecteur qui ne viendra pas.
+     *
+     * **Pourquoi il n'est PAS une ligne de `shortcuts`.** Une ligne semée
+     * apparaîtrait dans le catalogue, éditable et supprimable, alors que sa
+     * cible (l'URL de l'instance) est gouvernée ailleurs : l'admin pourrait la
+     * modifier et voir le réglage la réécrire, ou la supprimer et la voir
+     * revenir. Le cloud actif de l'instance est la seule autorité, et il n'y a
+     * donc rien à éditer.
+     *
+     * **Maille `Broadcast`** : c'est un réglage d'INSTANCE, sans assignation. Il
+     * est donc le moins spécifique du local (sous toutes les mailles de
+     * ciblage) — mais la sémantique du type étant `aggregate`, la précédence ne
+     * joue pas : l'item s'AJOUTE aux raccourcis du poste, il n'en évince aucun.
+     *
+     * **`sourceId: 0`** — libre par construction (les identifiants Postgres
+     * commencent à 1) et donc sans collision avec une ligne réelle. Il place le
+     * portail en tête de l'ordre stable des items aggregate
+     * ({@see \App\Services\Agent\StateCompiler::selectAggregate()}, tri par
+     * `sourceId` asc), ce qui rend le hash d'état déterministe.
+     *
+     * **`updatedAt: null`** : il n'y a pas de ligne, donc pas de date de
+     * modification. Le champ ne sert qu'au conflit intra-maille des sémantiques
+     * `single`, jamais ici.
+     *
+     * **Story 63.2 — la SOURCE change, le reste ne bouge pas d'un octet.** Le
+     * raccourci naissait de trois conditions du réglage global `files.policy`
+     * (capacité Nextcloud, case « poser le raccourci », URL). Il naît désormais
+     * du **plan de fichiers** : un cloud actif, ET au moins un des deux espaces
+     * servi par ce cloud. La case n'a pas été remplacée par une autre case —
+     * elle a disparu, parce qu'elle demandait à l'exploitant de redire une chose
+     * qu'il avait déjà dite en disant où vivent ses fichiers.
+     *
+     * **Pourquoi l'espace au cloud est une condition, et pas seulement le cloud
+     * actif** : le raccourci mène là où vivent les fichiers — un cloud seulement
+     * *configuré*, dont aucun espace ne dépend, ne justifie pas de faire
+     * apparaître une icône sur TOUS les bureaux de l'établissement.
+     *
+     * **L'URL est celle du cloud ACTIF**, lue dans `files.policy` — jamais via
+     * `NextcloudConnectionConfig::current()` / `OpenCloudConnectionConfig::current()`,
+     * qui LÈVENT quand la connexion est incomplète : la compilation de l'état
+     * d'un poste n'a pas à dépendre de la complétude d'une configuration
+     * d'administration.
+     *
+     * Rend `null` — donc n'émet RIEN — quand il n'y a pas de cloud actif, quand
+     * les deux espaces sont sur le serveur de fichiers, ou quand l'URL du cloud
+     * actif est vide : un raccourci qui n'ouvre rien est pire que pas de
+     * raccourci.
+     *
+     * @param  list<string>  $desktopSweepPaths
+     */
+    private function portalCandidate(string $desktopPath, array $desktopSweepPaths): ?StateCandidate
+    {
+        // AUCUN try/catch : une ligne `files.locations` forgée LÈVE, et
+        // l'exception se propage. Se replier sur « aucun cloud » inventerait une
+        // décision que personne n'a prise et ferait disparaître en silence, de
+        // tous les bureaux de l'établissement, le seul chemin d'accès aux
+        // fichiers en ligne.
+        $locations = FileLocationService::current();
+
+        // Les DEUX conditions d'emplacement, avant toute autre lecture : un
+        // cloud actif, et au moins un espace qu'il sert.
+        $unEspaceAuCloud = ! $locations->espacePersoSurSmb() || ! $locations->espacePartageSurSmb();
+
+        if ($locations->cloudActif === ActiveCloud::Aucun || ! $unEspaceAuCloud) {
+            return null;
+        }
+
+        // `globalConfig()` n'est lu QUE dans les branches qui en ont besoin :
+        // c'est une requête, non cachée, sur le chemin chaud de la compilation
+        // d'état (un couple poste × utilisateur, à chaque cycle).
+        $url = match ($locations->cloudActif) {
+            ActiveCloud::Nextcloud => trim((string) FilePolicyService::globalConfig()['nextcloud_server_url']),
+            ActiveCloud::OpenCloud => trim((string) FilePolicyService::globalConfig()['opencloud_server_url']),
+            // Déjà écarté ci-dessus — laissé explicite pour qu'un troisième
+            // produit casse ici plutôt que de retomber en silence.
+            ActiveCloud::Aucun => '',
+        };
+
+        if ($url === '') {
+            return null;
+        }
+
+        // La traduction (URL, navigateur) → (cible, arguments) est celle du
+        // modèle, PAS une seconde recette : une URL posée en CIBLE de `.lnk`
+        // produit « l'élément auquel ce raccourci renvoie a été modifié ou
+        // déplacé » sur le poste ({@see Shortcut::webTargetAttributes()}).
+        $web = Shortcut::webTargetAttributes($url);
+
+        $payload = [
+            'name' => self::PORTAL_SHORTCUT_NAME,
+            'target' => (string) $web['windows_link'],
+            'args' => (string) $web['windows_args'],
+            'icon' => '',
+            'place' => Shortcut::PLACE_DESKTOP,
+        ];
+
+        // Icône publiée à l'enregistrement de l'écran de réglages (lecture PURE
+        // d'une ligne de réglage ici — aucun hash, aucune I/O). Absente ⇒
+        // raccourci sans icône plutôt que pas de raccourci du tout.
+        //
+        // `icon` reste VIDE, et ce n'est pas un oubli : quand `icon_asset` est
+        // renseigné, l'agent ne regarde JAMAIS `icon` (`effectiveIcon()`). Y
+        // écrire un nom nu laisserait croire à un repli qui n'existe pas.
+        $icon = $this->portalIcon->current();
+        if ($icon !== null) {
+            $payload['icon_asset'] = $icon['asset'];
+            $payload['icon_checksum'] = $icon['checksum'];
+        }
+
+        $payload['desktop_path'] = $desktopPath;
+        $payload['desktop_sweep_paths'] = $desktopSweepPaths;
+
+        return new StateCandidate(
+            maille: StateMaille::Broadcast,
+            payload: $payload,
+            updatedAt: null,
+            sourceId: 0,
+        );
     }
 
     // Story 58.1 — `desktopPathFor()` et `desktopSweepPathsFor()` ont été

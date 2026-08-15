@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\Agent\Reporting;
 
+use App\Enums\ActiveCloud;
 use App\Enums\StateMaille;
 use App\Models\Application;
 use App\Models\Shortcut;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\TargetContext;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
+use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocationService;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 
 /**
@@ -67,6 +71,7 @@ class DesiredStateOriginService
         'physical_group' => 3,      // salle physique
         'dependency' => 4,          // dépendance WPKG
         'parc_default' => 5,        // socle commun (is_parc_default, Broadcast)
+        'file_policy' => 5,         // raccourci-portail du réglage global (Broadcast)
         'upstream' => 6,            // ordre d'install amont (aggregate, présence)
         'upstream_permissive' => 7, // raccourci amont permissif (UpstreamPermissive, rang 6)
     ];
@@ -146,6 +151,14 @@ class DesiredStateOriginService
                 place: (string) $shortcut->place,
                 origins: $this->decorateGroups($entry['origins'], $groups),
             );
+        }
+
+        // Raccourci vers le PORTAIL WEB — il n'a pas de ligne dans `shortcuts`
+        // (il naît du cloud actif de l'instance), et sans cette ligne l'écran
+        // laisserait l'exploitant devant un `.lnk` posé sur tous les postes sans
+        // lui dire d'où il sort.
+        if (($portal = $this->portalShortcutRow()) !== null) {
+            $result[] = $portal;
         }
 
         // Raccourcis AMONT (items contrat) — via UpstreamContractSource
@@ -487,6 +500,58 @@ class DesiredStateOriginService
         }
 
         return $rows;
+    }
+
+    /**
+     * Ligne du raccourci-portail, ou `null` quand l'instance ne le pose pas.
+     *
+     * Les conditions sont les MÊMES que celles du provider
+     * ({@see \App\Services\Agent\Providers\ShortcutsStateProvider::portalCandidate()}) :
+     * un cloud actif, au moins un des deux espaces servi par ce cloud, et une
+     * URL non vide POUR CE CLOUD. Une condition qui divergerait ferait mentir
+     * l'écran dans un sens ou dans l'autre — un raccourci annoncé et jamais
+     * posé, ou posé et jamais annoncé. Le motif de la condition d'emplacement
+     * est écrit une seule fois, dans le provider : le raccourci mène là où
+     * vivent les fichiers.
+     *
+     * L'origine reste `file_policy` : ni une assignation, ni un contrat amont,
+     * mais un réglage d'instance. La clé du badge ne change pas — c'est toujours
+     * « ça vient des réglages de fichiers », seul le réglage a changé de nom.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function portalShortcutRow(): ?array
+    {
+        $locations = FileLocationService::current();
+
+        $unEspaceAuCloud = ! $locations->espacePersoSurSmb() || ! $locations->espacePartageSurSmb();
+
+        if ($locations->cloudActif === ActiveCloud::Aucun || ! $unEspaceAuCloud) {
+            return null;
+        }
+
+        $config = FilePolicyService::globalConfig();
+
+        $url = match ($locations->cloudActif) {
+            ActiveCloud::Nextcloud => trim((string) $config['nextcloud_server_url']),
+            ActiveCloud::OpenCloud => trim((string) $config['opencloud_server_url']),
+            // Déjà écarté ci-dessus — laissé explicite, comme dans le provider.
+            ActiveCloud::Aucun => '',
+        };
+
+        if ($url === '') {
+            return null;
+        }
+
+        return $this->shortcutRow(
+            key: 'sc-portal',
+            label: ShortcutsStateProvider::PORTAL_SHORTCUT_NAME,
+            // L'écran montre la DESTINATION (l'URL), pas `rundll32.exe` : c'est
+            // ce que l'exploitant reconnaît, et ce qu'il vient vérifier.
+            target: $url,
+            place: Shortcut::PLACE_DESKTOP,
+            origins: [['kind' => 'file_policy']],
+        );
     }
 
     /**

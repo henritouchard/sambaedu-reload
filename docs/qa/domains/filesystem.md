@@ -4024,3 +4024,302 @@ quand un emplacement devrait désigner un cloud absent, et converge en idempoten
 stricte. **Zéro octet déplacé, zéro écran modifié** : `/admin/settings/files`,
 `DrivesStateProvider`, `ShortcutsStateProvider` et le contrat agent figé restent
 strictement inchangés — cette story pose le modèle, 63.2/63.3 le brancheront.)*
+
+---
+
+## Story 63.2 — L'agent lit les emplacements
+
+**Ce que cette story change, en une phrase :** les lecteurs réseau et le
+raccourci de portail cessent de lire les quatre interrupteurs de
+`/admin/settings/files` et lisent le **plan de fichiers** posé en 63.1
+(`files.locations`) — et le **Bureau**, lui, cesse de dépendre de quoi que ce
+soit d'autre que l'environnement du parc.
+
+**Pourquoi ce n'est pas cosmétique, et ce qu'il faut absolument vérifier sur une
+instance réelle.** Cinq comportements visibles changent d'un coup : deux sont des
+**retours en arrière assumés** — quelque chose que les utilisateurs voyaient
+disparaître revient —, et un est un **retrait assumé** — quelque chose qu'ils
+voyaient disparaît. Les scénarios ci-dessous sont écrits pour les constater
+volontairement plutôt que de les découvrir en production :
+
+| ce qui change | qui le voit |
+|---|---|
+| **le Bureau d'un poste partagé redevient RÉSEAU** | instances aujourd'hui en `home = false` |
+| **« Mes fichiers en ligne » apparaît sur tous les bureaux** | instances dont **au moins un espace** est servi par le cloud actif (la case qui le retenait a disparu) |
+| **« Mes fichiers en ligne » DISPARAÎT des bureaux** | instances qui avaient coché la case **sans** avoir d'espace au cloud |
+| **les répertoires réseau gérés retrouvent leur lettre** | instances en `shares = false` |
+| **un répertoire de backend `opencloud` perd sa lettre** | instances 61.4 ayant posé un tel répertoire |
+
+> ⚠️ **PRÉREQUIS DE MISE EN SERVICE, ET PAS UN NETTOYAGE ULTÉRIEUR.** Sans ligne
+> `files.locations`, le plan rend ses défauts (`posix`/`posix`/`aucun`). Une
+> instance en `home = false` **retrouve donc `K:`** à la seconde où cette version
+> est déployée si `php artisan files:adopt-locations` (63.1) n'a pas été jouée
+> **avant**. Jouer la commande fait partie du déploiement.
+
+### Prérequis
+
+- [ ] **63.2-P1** — accès `root` (ou sudo) sur `/vm` ou sur le serveur d'essai,
+      dépôt à jour, migrations jouées, **`php artisan files:adopt-locations`
+      jouée** (cf. l'encadré ci-dessus) et son résultat relevé.
+- [ ] **63.2-P2** — un poste Windows enrôlé, rattaché à un parc `shared_local`
+      (poste partagé), avec l'agent en service et une session utilisateur de
+      test dont le profil itinérant est **neuf** (un profil ancien fige la
+      redirection du Bureau et masquerait le scénario 63.2-2).
+- [ ] **63.2-P3** — un second poste rattaché à un parc `personal_local`
+      (perdir / portable), même utilisateur de test si possible : c'est le seul
+      moyen de constater que l'exception « portables » tient toujours.
+- [ ] **63.2-P4** — au moins un répertoire réseau géré (`/app/shares`) de backend
+      `posix`, assigné à l'utilisateur de test, avec une lettre visible.
+- [ ] **63.2-P5** — relever l'état de départ, pour pouvoir y revenir :
+      ```sql
+      select value from system_settings where key = 'files.locations';
+      select value from system_settings where key = 'files.policy';
+      ```
+
+### 63.2-1 — Le point de départ : rien ne bouge tant que tout est sur POSIX
+
+1. Vérifier que la décision enregistrée est bien `espace perso = posix`,
+   `espace partagé = posix`.
+2. Ouvrir une session sur le poste **partagé** (63.2-P2), laisser l'agent
+   converger.
+
+- [ ] **63.2-1a** — les lecteurs `K:` (« Mes documents ») et `H:` (« Classes »)
+      sont montés, et pointent respectivement `\\<serveur>\users\<login>` et
+      `\\<serveur>\classes`.
+- [ ] **63.2-1b** — le répertoire géré de 63.2-P4 est monté sur sa lettre.
+- [ ] **63.2-1c** — le Bureau de la session est le Bureau **réseau** : un fichier
+      déposé sur le Bureau apparaît dans `\\<serveur>\users\<login>\Bureau`.
+- [ ] **63.2-1d** — sur la fiche du poste, onglet « État cible », les items
+      `drives`, `shortcuts` et `folders` sont ceux attendus, et **aucune** ligne
+      « Mes fichiers en ligne » n'apparaît tant qu'aucun cloud n'est actif.
+
+### 63.2-2 — ⚠️ LE BUREAU REDEVIENT RÉSEAU (la conséquence visible n° 1)
+
+C'est le scénario à dérouler **sur une instance qui avait `home = false`**, ou à
+simuler en décochant « Espace personnel » sur `/admin/settings/files` avant de
+déployer. Avant cette story, un tel poste affichait un Bureau **local**.
+
+1. Sur `/admin/settings/files`, laisser `home` **décoché** (l'ancien écran est
+   toujours là et continue de persister ce booléen — il ne gouverne simplement
+   plus rien pour les lecteurs ni pour le Bureau ; 63.3 le retirera).
+2. Vérifier que la ligne `files.locations` dit bien `espace perso = posix`
+   (c'est-à-dire : l'espace perso est resté sur le serveur de fichiers).
+3. Ouvrir une session **neuve** sur le poste partagé, laisser converger, puis
+   fermer et rouvrir la session.
+
+- [ ] **63.2-2a** — le Bureau de la session est le Bureau **RÉSEAU** : la valeur
+      `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell
+      Folders\Desktop` pointe `\\<serveur>\users\<login>\Bureau`.
+- [ ] **63.2-2b** — les raccourcis `place=desktop` assignés au poste sont
+      **visibles** sur ce Bureau (pose et redirection désignent le même dossier —
+      l'invariant 58.1 ; s'ils sont posés mais invisibles, c'est la panne de
+      juillet 2026 qui revient, à signaler immédiatement).
+- [ ] **63.2-2c** — décocher puis recocher `home` sur `/admin/settings/files` ne
+      change **plus rien** au Bureau ni aux lecteurs. C'est voulu et
+      **transitoire** : l'écran ment pendant une story, 63.3 le remplace.
+
+### 63.2-3 — Le poste perdir garde son Bureau LOCAL (l'exception « portables »)
+
+1. Ouvrir une session sur le poste **`personal_local`** (63.2-P3), quel que soit
+   l'état des emplacements.
+
+- [ ] **63.2-3a** — le Bureau de la session est le Bureau **LOCAL**
+      (`%USERPROFILE%\Desktop`), et la valeur de registre y pointe
+      explicitement — elle n'est pas simplement « laissée en place ».
+- [ ] **63.2-3b** — aucun chemin `\\<serveur>\users\…` n'apparaît dans l'état
+      cible de ce poste : ni en pose, ni en balayage, ni dans le raccourci de
+      portail s'il est actif. Un poste perdir ne touche JAMAIS au Bureau réseau,
+      qui est partagé entre tous les postes de l'utilisateur.
+- [ ] **63.2-3c** — un fichier déposé sur le Bureau de ce poste n'apparaît PAS
+      dans `\\<serveur>\users\<login>\Bureau`, et réciproquement.
+
+### 63.2-4 — L'espace perso au cloud retire `K:` — et RIEN d'autre
+
+1. Poser la décision (63.3 fournira l'écran ; en attendant, en base) :
+   ```sql
+   update system_settings
+      set value = '{"espace_perso.autorite":"nextcloud","espace_partage.autorite":"posix","cloud.actif":"nextcloud"}'
+    where key = 'files.locations';
+   ```
+   ⚠️ L'autorité cloud doit désigner le cloud **actif** : `espace_perso =
+   nextcloud` avec `cloud.actif = aucun` est refusé à la lecture (63.1).
+2. Rouvrir une session sur le poste partagé, laisser converger.
+
+- [ ] **63.2-4a** — le lecteur `K:` **n'est plus monté**.
+- [ ] **63.2-4b** — `H:` **est toujours monté** (l'espace partagé, lui, n'a pas
+      bougé).
+- [ ] **63.2-4c** — le répertoire réseau géré de 63.2-P4 **est toujours monté**.
+- [ ] **63.2-4d** — ⚠️ **LE POINT DE LA STORY** : le Bureau de la session est
+      **TOUJOURS le Bureau RÉSEAU**, et les raccourcis `place=desktop` y sont
+      toujours visibles. Le partage SMB du home n'a pas disparu — il n'est
+      simplement plus monté comme lecteur pour l'utilisateur ; l'agent, lui,
+      continue d'y écrire.
+- [ ] **63.2-4e** — le contenu de `\\<serveur>\users\<login>` est **intact** :
+      aucun octet n'a été déplacé (propriété qui définit l'Epic 63 — la bascule
+      de données est l'Epic 64).
+
+### 63.2-5 — L'espace partagé au cloud retire `H:` — et RIEN d'autre
+
+1. Poser :
+   ```sql
+   update system_settings
+      set value = '{"espace_perso.autorite":"posix","espace_partage.autorite":"nextcloud","cloud.actif":"nextcloud"}'
+    where key = 'files.locations';
+   ```
+2. Rouvrir une session sur le poste partagé.
+
+- [ ] **63.2-5a** — le lecteur `H:` **n'est plus monté**.
+- [ ] **63.2-5b** — `K:` **est toujours monté**.
+- [ ] **63.2-5c** — ⚠️ **CHANGEMENT DE COMPORTEMENT À CONSTATER** : le répertoire
+      réseau géré de 63.2-P4 **est toujours monté**. Avant cette story, couper
+      « Espaces partagés » faisait disparaître les répertoires gérés en même
+      temps que `H:` — c'était une conflation. Leur autorité est la leur, choisie
+      à leur création, et le plan de fichiers ne la gouverne pas.
+- [ ] **63.2-5d** — le Bureau reste le Bureau **réseau** (l'espace partagé n'a
+      jamais eu de rapport avec lui).
+
+### 63.2-6 — Les deux au cloud : il reste les répertoires gérés
+
+1. Poser `espace_perso.autorite` **et** `espace_partage.autorite` sur le cloud
+   actif, puis rouvrir une session.
+
+- [ ] **63.2-6a** — ni `K:` ni `H:` ne sont montés.
+- [ ] **63.2-6b** — le répertoire géré de 63.2-P4 **l'est toujours** : la sortie
+      n'est pas vide.
+- [ ] **63.2-6c** — le Bureau est **toujours réseau** sur le poste partagé, et
+      toujours local sur le poste perdir.
+
+### 63.2-7 — Aucune lettre ne désigne un espace que le serveur ne sert pas
+
+1. Créer (ou repérer) un répertoire réseau de backend **`opencloud`** assigné à
+   l'utilisateur de test, à côté d'un répertoire `posix` assigné lui aussi.
+2. Rouvrir une session.
+
+- [ ] **63.2-7a** — le répertoire `posix` a une lettre, le répertoire
+      `opencloud` **n'en a AUCUNE**. C'est une régression réelle que cette story
+      ferme : le filtre excluait nommément `nextcloud` et laissait passer tous
+      les autres backends cloud.
+- [ ] **63.2-7b** — le pool de lettres n'a pas dérivé : les lettres des
+      répertoires `posix` sont les mêmes qu'en 63.2-1b, et le retrait de `H:`
+      (scénario 63.2-5) n'a **pas** libéré `H` pour une auto-assignation.
+
+### 63.2-8 — « Mes fichiers en ligne » suit les emplacements, pas la case
+
+⚠️ **Conséquence visible n° 2, dans les DEUX sens** : la case « Poser un
+raccourci vers le portail web sur le Bureau » a **disparu** de l'onglet
+« Personnels et partagés ». Le raccourci est désormais posé sous **trois**
+conditions, toutes nécessaires : un `cloud.actif` ≠ `aucun`, **au moins un des
+deux espaces servi par ce cloud**, et l'URL de ce cloud renseignée.
+
+- une instance dont un espace est au cloud et qui avait laissé la case décochée
+  (c'était le défaut) **verra le raccourci apparaître** ;
+- une instance qui avait **coché** la case **sans** avoir d'espace au cloud
+  (cloud seulement configuré) **perdra le raccourci**. C'est assumé : le
+  raccourci mène là où vivent les fichiers, et une icône sur tous les bureaux
+  d'un établissement dont aucun fichier n'est au cloud n'a rien à y faire. Ce
+  sous-ensemble est strictement plus petit que le précédent, mais il faut le
+  constater volontairement — voir 63.2-8h.
+
+1. Poser `cloud.actif = nextcloud` (ou `opencloud`) **et** l'espace perso (ou
+   partagé) sur ce même cloud, avec l'URL du produit correspondant renseignée
+   dans `/admin/settings/files`.
+2. Rouvrir une session sur le poste partagé.
+
+- [ ] **63.2-8a** — un raccourci **« Mes fichiers en ligne »** est posé sur le
+      Bureau, avec l'icône de nuage (et non l'icône de `rundll32.exe`).
+- [ ] **63.2-8b** — le double-clic ouvre l'URL du cloud **ACTIF** dans le
+      navigateur par défaut. Si les deux produits ont une URL renseignée,
+      vérifier explicitement que c'est celle du cloud actif qui s'ouvre.
+- [ ] **63.2-8c** — sur la fiche du poste, onglet « État cible », la ligne
+      « Mes fichiers en ligne » est présente, porte le badge « Politique de
+      fichiers », et son infobulle renvoie vers « Réglages → Fichiers » **sans
+      nommer de produit**.
+- [ ] **63.2-8d** — l'onglet « Personnels et partagés » de `/admin/settings/files`
+      ne contient **plus** de case « Poser un raccourci vers le portail web »,
+      ni de ligne de récapitulatif à son sujet — et son encadré « Effet sur le
+      poste » n'annonce plus `K:` ni `H:` : il renvoie aux emplacements de
+      fichiers.
+- [ ] **63.2-8e** — l'icône est publiée par **deux canaux, et il faut vérifier
+      les deux** :
+      ```sql
+      select value from system_settings where key = 'shortcuts.portal_icon';
+      ```
+      1. **`php artisan files:adopt-locations`** sur une instance qui n'a jamais
+         eu la ligne : après la reprise (y compris sur le message « Déjà
+         conforme »), la ligne existe et le `.ico` qu'elle nomme est servi.
+         C'est le canal qui compte pour une mise à jour : sans lui, tous les
+         bureaux reçoivent l'icône de `rundll32.exe`.
+      2. enregistrer l'onglet **OpenCloud** (basculer un champ) la publie
+         également, même si l'onglet voisin n'a jamais été enregistré.
+- [ ] **63.2-8e-bis** — `php artisan files:adopt-locations --dry-run` sur une
+      instance dont la ligne `shortcuts.portal_icon` a été supprimée **ne la
+      recrée pas** : une simulation n'écrit rien, pas même de l'état dérivé.
+- [ ] **63.2-8f** — poser `cloud.actif = aucun` : le raccourci **disparaît** du
+      Bureau au passage suivant de l'agent (balayage par marqueur), et la ligne
+      disparaît de l'onglet « État cible ».
+- [ ] **63.2-8g** — cloud actif **mais URL vide** : **aucun** raccourci n'est
+      posé. Un raccourci qui n'ouvre rien est pire que pas de raccourci.
+- [ ] **63.2-8h** — ⚠️ **le retrait assumé** : remettre les **deux** espaces sur
+      `posix` en gardant le cloud actif et son URL (le cas le plus courant :
+      `home ✓ shares ✓ nextcloud ✓`). Le raccourci **n'est plus posé**, et la
+      ligne disparaît de l'onglet « État cible ». Sur une instance qui avait
+      coché l'ancienne case, il **disparaît des bureaux** au passage suivant.
+
+### 63.2-9 — Un réglage corrompu REFUSE, il ne se replie pas
+
+1. Forger une ligne hors vocabulaire :
+   ```sql
+   update system_settings
+      set value = '{"espace_perso.autorite":"ceph","espace_partage.autorite":"posix","cloud.actif":"aucun"}'
+    where key = 'files.locations';
+   ```
+2. Demander l'état cible du poste (onglet « État cible », ou laisser l'agent
+   faire son passage).
+
+- [ ] **63.2-9a** — la compilation **échoue en nommant** la valeur fautive dans
+      les journaux (`storage/logs/`), et **ne se replie pas** sur
+      `posix`/`posix`. Un repli inventerait une décision que personne n'a prise
+      et déplacerait en silence les lecteurs de tout l'établissement.
+- [ ] **63.2-9b** — **aucun** lecteur n'a été démonté ni monté à tort sur le
+      poste pendant cet essai : l'agent ne reçoit pas d'état, il ne converge donc
+      vers rien.
+- [ ] **63.2-9c** — réparer la ligne (ou la supprimer) rétablit immédiatement un
+      état cible valide, sans redémarrage.
+
+### 63.2-10 — Le contrat de l'agent n'a pas bougé
+
+- [ ] **63.2-10a** — la version de l'agent déployée sur les postes est
+      **inchangée** : aucune publication de binaire n'accompagne cette story.
+- [ ] **63.2-10b** — sur un poste dont les deux emplacements valent `posix` et
+      dont le parc est `shared_local`, l'ETag de l'état cible est **identique** à
+      celui d'avant le déploiement (aucune clé de payload n'a été ajoutée,
+      retirée ni renommée : seule la PRÉSENCE de certains items peut changer).
+
+### Nettoyage
+
+- [ ] **63.2-11** — remettre `files.locations` et `files.policy` dans l'état
+      relevé en 63.2-P5, supprimer le répertoire réseau `opencloud` de test s'il
+      a été créé pour l'occasion, et rouvrir une session sur chaque poste pour
+      vérifier le retour à l'état de départ (63.2-1).
+
+---
+
+*Mise à jour : 2026-08-15 (Story 63.2 — l'agent lit les emplacements : `K:` si et
+seulement si l'espace perso est servi par le serveur de fichiers, `H:` si et
+seulement si l'espace partagé l'est, filtre de backend des répertoires gérés
+passé en LISTE BLANCHE `posix` (une lettre pointant vers un espace `opencloud`
+n'est plus émise), répertoires gérés SORTIS de la garde de l'espace partagé (leur
+autorité est `network_shares.backend`, pas le plan de fichiers), raccourci
+« Mes fichiers en ligne » branché sur le PLAN DE FICHIERS — cloud actif ET au
+moins un espace servi par lui ET son URL — au lieu de la case globale, qui
+disparaît de l'écran, et surtout **DÉCOUPLAGE DU BUREAU** :
+`DesktopPathResolver::pathFor()` perd son paramètre `$homeEnabled`, un poste
+partagé a un Bureau RÉSEAU sans condition et les postes perdir/nomades gardent
+leur Bureau local. Trois conséquences visibles assumées — le Bureau réseau
+retrouvé sur les instances en `home = false`, le raccourci de portail apparu sur
+les instances dont un espace est au cloud, et le même raccourci RETIRÉ des
+instances qui avaient coché la case sans avoir d'espace au cloud — et un
+**prérequis de mise en service** : `php artisan files:adopt-locations` AVANT le
+déploiement, qui publie au passage l'icône du raccourci. Golden
+`state.v1.json`, `FROZEN_STATE_HASH` et contrat agent **inchangés**, aucun
+binaire publié, `FilePolicyService` INTOUCHÉ.)*

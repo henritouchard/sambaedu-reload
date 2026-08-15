@@ -24,6 +24,7 @@
             'physical_group' => ['class' => 'badge-warning', 'icon' => 'fa-door-open', 'text' => $o['group_name'] ?? 'Salle', 'group_id' => $o['group_id'] ?? null],
             'dependency' => ['class' => 'badge-info badge-outline', 'icon' => 'fa-diagram-project', 'text' => $o['via'] ? ('Dépendance de ' . $o['via']) : 'Dépendance'],
             'parc_default' => ['class' => 'badge-ghost', 'icon' => 'fa-globe', 'text' => 'Socle commun', 'tip' => 'Défaut appliqué à tous les postes — configurable dans Réglages → Configuration par défaut du parc.'],
+            'file_policy' => ['class' => 'badge-ghost', 'icon' => 'fa-cloud', 'text' => 'Politique de fichiers', 'tip' => 'Posé sur tous les postes par le réglage global — Réglages → Fichiers.'],
             'upstream_locked' => ['class' => 'badge-neutral', 'icon' => 'fa-lock', 'text' => 'Contrat amont', 'tip' => 'Verrouillé par le contrat amont.'],
             'upstream_permissive' => ['class' => 'badge-info', 'icon' => 'fa-lock-open', 'text' => 'Contrat amont', 'tip' => 'Proposé par le contrat amont (permissif).'],
             'upstream' => ['class' => 'badge-neutral', 'icon' => 'fa-lock', 'text' => 'Contrat amont', 'tip' => 'Ordre d\'installation du contrat amont.'],

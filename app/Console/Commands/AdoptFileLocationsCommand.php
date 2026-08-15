@@ -14,6 +14,7 @@ use App\Services\Filesystem\FileLocations;
 use App\Services\Filesystem\FileLocationService;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
 use App\Services\OpenCloud\OpenCloudConnectionConfig;
+use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use LogicException;
@@ -67,9 +68,14 @@ final class AdoptFileLocationsCommand extends Command
       <info>php artisan files:adopt-locations</info>              appliquer la reprise
 
     <comment>Ce qu'elle ne fait jamais.</comment> Elle ne déplace, ne lit ni n'écrit aucun octet de
-    donnée utilisateur : elle ne touche que la table des réglages d'instance. Elle
-    n'émet AUCUN appel réseau — « cloud configuré » veut dire capacité active et
-    connexion complète, jamais une connexion sondée en direct.
+    donnée utilisateur. Elle n'émet AUCUN appel réseau — « cloud configuré » veut dire
+    capacité active et connexion complète, jamais une connexion sondée en direct.
+
+    <comment>L'icône du raccourci de portail.</comment> Quand la décision retenue comporte un cloud
+    actif, la commande publie aussi l'icône du raccourci « Mes fichiers en ligne » —
+    sans quoi le raccourci, qui suit désormais le cloud actif, arriverait sur les
+    bureaux avec l'icône de <comment>rundll32.exe</comment>. C'est idempotent, non bloquant (un échec
+    laisse le raccourci sans icône), et <comment>--dry-run</comment> ne publie rien.
 
     <comment>Les deux refus.</comment> Elle REFUSE et n'écrit rien si les DEUX clouds sont
     configurés à la fois (elle ne choisit pas à la place de l'administrateur), ou si
@@ -184,6 +190,11 @@ final class AdoptFileLocationsCommand extends Command
 
         if ($existing !== null && $existing->toArray() === $computed->toArray()) {
             $this->info('Déjà conforme : rien à écrire.');
+            // « Rien à écrire » parle des EMPLACEMENTS. L'icône, elle, est de
+            // l'état dérivé : une instance déjà conforme mais jamais passée par
+            // l'écran des fichiers n'en a aucune, et son raccourci-portail
+            // partirait sans icône. La publication est donc rejouée ici aussi.
+            $this->publishPortalIcon($computed, $dryRun);
             $this->renderDecision($computed);
             $this->renderMotifs($capabilities, $nextcloud, $opencloud);
 
@@ -222,11 +233,54 @@ final class AdoptFileLocationsCommand extends Command
             ...$computed->toArray(),
         ]);
 
+        $this->publishPortalIcon($computed, $dryRun);
+
         $this->info('Décision enregistrée.');
         $this->renderDecision($computed);
         $this->renderMotifs($capabilities, $nextcloud, $opencloud);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * L'ICÔNE DU RACCOURCI-PORTAIL, PUBLIÉE PAR LA REPRISE ELLE-MÊME.
+     *
+     * `shortcuts.portal_icon` ({@see PortalShortcutIcon::SETTING_KEY}) est une
+     * clé NEUVE : elle est absente de toute instance déjà déployée. Or le
+     * raccourci « Mes fichiers en ligne » ne dépend plus d'un geste d'écran mais
+     * du cloud actif, écrit ICI. Sans cette publication, le parcours de mise en
+     * service documenté — jouer cette commande, puis déployer — poserait sur
+     * tous les bureaux un `.lnk` dont la cible est `rundll32.exe`, affichant
+     * donc l'icône de `rundll32.exe` : exactement la panne que
+     * {@see PortalShortcutIcon} existe pour empêcher.
+     *
+     * **Idempotente** (republier une icône inchangée ne réécrit rien) et
+     * **FAIL-SOFT** : une publication qui échoue ne fait pas échouer la reprise.
+     * Ce que la commande doit garantir, c'est la décision d'emplacement ; un
+     * raccourci sans icône reste un chemin d'accès, une reprise avortée n'en est
+     * pas un. L'échec est déjà journalisé par le service — la commande n'en
+     * rend visible qu'une ligne pour le terminal qui la joue.
+     *
+     * **`--dry-run` ne publie RIEN** : une simulation n'écrit pas, pas même de
+     * l'état dérivé — y compris sur le chemin « déjà conforme », qui rend 0 sans
+     * passer par l'écriture des emplacements.
+     */
+    private function publishPortalIcon(FileLocations $decision, bool $dryRun): void
+    {
+        if ($dryRun || $decision->cloudActif === ActiveCloud::Aucun) {
+            return;
+        }
+
+        try {
+            if (app(PortalShortcutIcon::class)->publish() === null) {
+                $this->warn('L\'icône du raccourci-portail n\'a pas pu être publiée — le raccourci sera posé sans icône.');
+            }
+        } catch (Throwable $e) {
+            $this->warn(sprintf(
+                'L\'icône du raccourci-portail n\'a pas pu être publiée (%s) — le raccourci sera posé sans icône.',
+                $e->getMessage(),
+            ));
+        }
     }
 
     /**

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\ActiveCloud;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
+use App\Enums\FileBackendName;
 use App\Models\AppProfile;
 use App\Models\Application;
 use App\Models\ControlHubContractItem;
@@ -21,6 +23,9 @@ use App\Services\Agent\Reporting\DesiredStateOriginService;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
+use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocations;
+use App\Services\Filesystem\FileLocationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
@@ -342,7 +347,11 @@ class DesiredStateOriginServiceTest extends TestCase
         // Ids UI (raccourcis locaux — clés 'sc-<id>').
         $uiIds = collect($this->service->shortcutsFor($ws))
             ->pluck('key')
-            ->filter(fn ($k) => str_starts_with($k, 'sc-') && ! str_starts_with($k, 'sc-upstream-'))
+            // Raccourcis LOCAUX seulement : ni amont, ni le portail (qui naît du
+            // réglage global et n'a pas d'id de ligne).
+            ->filter(fn ($k) => str_starts_with($k, 'sc-')
+                && ! str_starts_with($k, 'sc-upstream-')
+                && $k !== 'sc-portal')
             ->map(fn ($k) => (int) substr($k, 3))
             ->sort()->values()->all();
 
@@ -354,6 +363,78 @@ class DesiredStateOriginServiceTest extends TestCase
 
         self::assertSame($providerIds, $uiIds);
         self::assertEqualsCanonicalizing([$scWs->id, $scParc->id], $uiIds);
+    }
+
+    /**
+     * Story 63.2 — la ligne d'explication suit le PLAN DE FICHIERS, exactement
+     * comme le provider : un cloud actif ET un espace servi par lui. Une
+     * condition qui divergerait ferait mentir l'écran : un raccourci annoncé et
+     * jamais posé, ou posé et jamais annoncé.
+     */
+    #[Test]
+    public function portal_shortcut_is_explained_when_the_active_cloud_serves_a_space(): void
+    {
+        $ws = Workstation::create(['name' => 'PCPORTAL', 'status' => 'active']);
+
+        // Une URL renseignée, mais AUCUN cloud actif : rien à expliquer.
+        FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr');
+        self::assertSame(
+            [],
+            collect($this->service->shortcutsFor($ws))->where('key', 'sc-portal')->all(),
+        );
+
+        // Un cloud actif et joignable, mais dont AUCUN espace ne dépend :
+        // toujours rien à expliquer — le provider ne pose rien non plus.
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
+        self::assertSame(
+            [],
+            collect($this->service->shortcutsFor($ws))->where('key', 'sc-portal')->all(),
+        );
+
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
+
+        $row = collect($this->service->shortcutsFor($ws))->firstWhere('key', 'sc-portal');
+
+        self::assertNotNull($row, 'un `.lnk` posé sur tous les postes doit être explicable');
+        self::assertSame(ShortcutsStateProvider::PORTAL_SHORTCUT_NAME, $row['label']);
+        self::assertSame('file_policy', $row['primary']['kind']);
+        // La DESTINATION, pas `rundll32.exe` : c'est ce que l'exploitant vient
+        // vérifier sur cet écran.
+        self::assertSame('https://cloud.etab.fr', $row['detail']);
+    }
+
+    /** Sous OpenCloud, l'écran montre l'URL OpenCloud — jamais celle du voisin. */
+    #[Test]
+    public function portal_shortcut_row_shows_the_active_cloud_url(): void
+    {
+        $ws = Workstation::create(['name' => 'PCPORTALOC', 'status' => 'active']);
+
+        FilePolicyService::setGlobal(
+            true,
+            true,
+            true,
+            'https://nextcloud.etab.fr',
+            opencloud: true,
+            opencloudServerUrl: 'https://opencloud.etab.fr',
+        );
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            FileBackendName::OpenCloud,
+            ActiveCloud::OpenCloud,
+        ));
+
+        $row = collect($this->service->shortcutsFor($ws))->firstWhere('key', 'sc-portal');
+
+        self::assertNotNull($row);
+        self::assertSame('https://opencloud.etab.fr', $row['detail']);
     }
 
     // ── AC2/D4 — page parc ────────────────────────────────────────────────────

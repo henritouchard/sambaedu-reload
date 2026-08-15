@@ -15,7 +15,7 @@ use App\Models\WorkstationGroup;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
-use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -66,11 +66,22 @@ use Illuminate\Support\Facades\Log;
  * Machine-only (`user` null) → aucun lecteur : un montage dépend du login de
  * session (les shares assignés à un WG ne s'affichent donc qu'EN session user).
  *
- * **Politique de gestion des fichiers** (décision Henri 2026-07-17) : trois
- * capacités GLOBALES indépendantes ({@see \App\Services\FilePolicyService::capabilities()}).
- * `home` gouverne l'émission du home K: ; `shares` gouverne les classes H: ET les
- * répertoires réseau gérés. Ni home ni partages (état « web uniquement ») ⇒ aucun
- * lecteur. Défaut `home✓ shares✓` ⇒ sortie inchangée (golden préservé).
+ * **Story 63.2 — UNE LETTRE NE DÉSIGNE QUE DU SMB.** Le provider ne lit plus des
+ * capacités mais les EMPLACEMENTS ({@see FileLocationService::current()}) : `K:`
+ * si et seulement si l'espace perso est servi par le serveur de fichiers, `H:` si
+ * et seulement si l'espace partagé l'est. Un espace qui a déménagé au cloud n'a
+ * aucun chemin SMB — lui donner une lettre monterait un lecteur vers un partage
+ * qui n'existe pas, et l'écran affirmerait que tout est en place.
+ *
+ * **Les répertoires réseau gérés ne sont gouvernés par AUCUN des deux
+ * emplacements** : leur autorité est la leur, choisie à leur création
+ * (`network_shares.backend`, D9). Le plan de fichiers ne la lit pas, ne la dérive
+ * pas, ne l'écrase pas — il refuse seulement une lettre à ce qui n'est pas
+ * `posix`. Ils sont donc émis dès qu'ils sont applicables, y compris quand
+ * l'espace partagé est au cloud.
+ *
+ * Défaut (aucune décision enregistrée) ⇒ `posix`/`posix` ⇒ sortie inchangée
+ * (golden `state.v1.json` / `FROZEN_STATE_HASH` préservés).
  *
  * **Scope `session`** : monté DANS la session user (lettre par-user, UNC du home
  * dépendant du login), appliqué par le compagnon de session.
@@ -132,17 +143,21 @@ final class DrivesStateProvider implements StateProvider
             return collect();
         }
 
-        // Politique de gestion des fichiers (décision Henri 2026-07-17) : trois
-        // capacités GLOBALES indépendantes. `home` gouverne le home K: ; `shares`
-        // gouverne les classes H: ET les répertoires réseau gérés. Ni home ni
-        // partages (« web uniquement ») ⇒ aucun lecteur. Défaut `home✓ shares✓` ⇒
-        // émission historique inchangée (golden `state.v1.json` /
-        // `FROZEN_STATE_HASH` préservés). Réglage GLOBAL d'instance uniquement.
-        $policy = FilePolicyService::capabilities();
+        // Les DEUX emplacements de l'instance (Story 63.2). Réglage GLOBAL, une
+        // ligne de `system_settings` relue à chaque compilation — aucune
+        // mémoïsation, aucun cache (patron du dépôt pour les réglages globaux).
+        //
+        // AUCUN try/catch, et c'est le point : une ligne `files.locations`
+        // forgée LÈVE, et l'exception se propage. Un repli sur `posix/posix`
+        // inventerait une décision que personne n'a prise et déplacerait en
+        // silence les lecteurs de tout un établissement ; une émission vide les
+        // retirerait tous, tout aussi silencieusement. L'ABSENCE de ligne, elle,
+        // n'est pas une corruption : elle rend les défauts et ne lève jamais.
+        $locations = FileLocationService::current();
 
         $candidates = [];
 
-        if ($policy['home']) {
+        if ($locations->espacePersoSurSmb()) {
             // K: — home de l'utilisateur (partage `users`, sous-dossier = login).
             $candidates[] = new StateCandidate(
                 maille: StateMaille::User,
@@ -156,7 +171,7 @@ final class DrivesStateProvider implements StateProvider
             );
         }
 
-        if ($policy['shares']) {
+        if ($locations->espacePartageSurSmb()) {
             // H: — racine du partage `classes` (navigation vers la/les classe(s)).
             $candidates[] = new StateCandidate(
                 maille: StateMaille::Broadcast,
@@ -168,12 +183,15 @@ final class DrivesStateProvider implements StateProvider
                 updatedAt: null,
                 sourceId: 2,
             );
+        }
 
-            // Répertoires réseau gérés (Story 34.1) — gouvernés par la même
-            // capacité `shares` que les classes.
-            foreach ($this->networkShareCandidates($ctx) as $candidate) {
-                $candidates[] = $candidate;
-            }
+        // Répertoires réseau gérés (Story 34.1) — HORS des deux gardes
+        // ci-dessus : leur autorité est la leur (`network_shares.backend`), pas
+        // celle de l'espace partagé. Déplacer l'espace partagé au cloud retire
+        // `H:` ET RIEN D'AUTRE. Leur `sourceId` reste `2 + pivot_id`, donc leur
+        // rang dans l'ordre stable des candidats aggregate ne bouge pas.
+        foreach ($this->networkShareCandidates($ctx) as $candidate) {
+            $candidates[] = $candidate;
         }
 
         return collect($candidates);
@@ -214,16 +232,23 @@ final class DrivesStateProvider implements StateProvider
                         ->whereIn('nsa.assignable_id', $wgIds));
                 }
             })
-            // Story 61.3 (D7) — **AUCUNE LETTRE POUR UN RÉPERTOIRE SERVI PAR LE
-            // CLOUD.** Ce n'est pas une coupe de périmètre : il n'y a pas de chemin
-            // SMB au-dessus d'un dossier d'équipe, et c'est une impossibilité
-            // vérifiée. Émettre une lettre monterait un lecteur vers un partage qui
-            // n'existe pas côté serveur de fichiers : l'utilisateur verrait un
-            // lecteur en erreur, et l'écran, lui, dirait que tout est en place —
-            // la signature de défaut que cet epic traque. L'accès réel de ces
-            // répertoires est le web et le client de synchronisation ; le montage
-            // local du poste est un chantier d'agent, nommé et non promis ici.
-            ->where('ns.backend', '!=', FileBackendName::Nextcloud->value)
+            // Story 61.3 (D7), généralisée en 63.2 — **AUCUNE LETTRE POUR UN
+            // RÉPERTOIRE QUE LE SERVEUR DE FICHIERS NE SERT PAS.** Ce n'est pas une
+            // coupe de périmètre : il n'y a pas de chemin SMB au-dessus d'un dossier
+            // d'équipe hébergé par un cloud, et c'est une impossibilité vérifiée.
+            // Émettre une lettre monterait un lecteur vers un partage qui n'existe
+            // pas côté serveur de fichiers : l'utilisateur verrait un lecteur en
+            // erreur, et l'écran, lui, dirait que tout est en place — la signature
+            // de défaut que cet epic traque. L'accès réel de ces répertoires est le
+            // web et le client de synchronisation ; le montage local du poste est un
+            // chantier d'agent, nommé et non promis ici.
+            //
+            // Le filtre est une LISTE BLANCHE, et pas l'exclusion nominative d'un
+            // produit : `!= nextcloud` laissait déjà passer `opencloud` (vocabulaire
+            // ouvert en 61.4) et laisserait passer tout backend futur. Ce qui est
+            // vrai ici est « seul POSIX a un chemin SMB », pas « ce produit-là n'en
+            // a pas ».
+            ->where('ns.backend', FileBackendName::Posix->value)
             ->orderBy('ns.id')
             ->orderBy('nsa.id')
             ->get([

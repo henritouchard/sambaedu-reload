@@ -8,6 +8,7 @@ use App\Services\Nextcloud\NextcloudConnectionVerifier;
 use App\Services\Nextcloud\NextcloudIdentityLinker;
 use App\Services\Nextcloud\NextcloudProvisioningService;
 use App\Services\ServiceCredentials;
+use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
@@ -199,11 +200,49 @@ new class extends Component {
                 $this->nextcloudAdminUser,
                 $this->nextcloudSmbHost,
                 $this->nextcloudVerifyTls,
+                // `nextcloudDesktopShortcut` n'est PLUS passé : la clé reste
+                // persistée (paramètre nullable ⇒ valeur conservée), elle n'a
+                // simplement plus de lecteur depuis la Story 63.2. La retirer de
+                // `FilePolicyService` casserait le payload — c'est le travail de
+                // la 63.3, qui éteint `files.policy` en entier.
             );
         } catch (\Throwable $e) {
             Log::error('FilePolicySettings: échec save', ['error' => $e->getMessage()]);
             $this->toastError('Impossible d\'enregistrer la politique. Consultez les logs.');
+
+            return;
         }
+
+        $this->publishPortalIcon();
+    }
+
+    /**
+     * Publie l'icône du raccourci-portail — **ici et pas dans le provider**.
+     *
+     * Le provider d'état est compilé pour chaque couple (poste, utilisateur) : il
+     * ne fait QUE des lectures de colonnes, jamais un hash de fichier. La mise à
+     * disposition de l'icône content-addressed est donc rattachée au geste
+     * d'administration, qui a lieu une fois.
+     *
+     * Republier à CHAQUE enregistrement (et pas seulement à la première
+     * activation) est délibéré : une icône source mise à jour par une nouvelle
+     * version de SE5 serait sinon publiée une fois pour toutes et jamais
+     * rafraîchie. L'opération est idempotente et ne coûte qu'une empreinte.
+     *
+     * **Story 63.2 — plus AUCUNE condition.** La publication était gardée par la
+     * capacité Nextcloud et par la case « poser le raccourci » ; la case a
+     * disparu (le raccourci suit le cloud actif) et le produit ne décide plus de
+     * rien ici. Publier une icône n'active rien et ne se voit nulle part tant
+     * qu'aucun raccourci ne la réclame : la garder derrière une condition
+     * ferait seulement rater le cas où le cloud est déclaré depuis l'autre
+     * onglet.
+     *
+     * NON BLOQUANT : un échec de publication laisse le raccourci sans icône, il
+     * ne l'empêche jamais d'être posé.
+     */
+    private function publishPortalIcon(): void
+    {
+        app(PortalShortcutIcon::class)->publish();
     }
 
     /**
@@ -871,62 +910,35 @@ new class extends Component {
                 Effet sur le poste
             </h3>
 
-            @if (! $home && ! $shares && ! $nextcloud)
-                <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 flex gap-3">
-                    <i class="fa-solid fa-globe text-warning mt-0.5"></i>
-                    <div class="text-xs">
-                        <p class="font-medium">Web uniquement</p>
-                        <p class="text-base-content/60">Aucun lecteur monté, aucun client provisionné.</p>
-                    </div>
+            {{-- Story 63.2 — LA PROJECTION DES LETTRES A ÉTÉ RETIRÉE D'ICI.
+                 `$home` et `$shares` ne gouvernent plus aucun lecteur : `K:` et
+                 `H:` suivent les emplacements de fichiers (`files.locations`),
+                 lus par le DrivesStateProvider. Continuer à afficher « K: » sous
+                 la garde de l'accès au home ferait promettre à l'écran ce qu'il
+                 ne tient plus — la doctrine même qui a fait retirer d'ici la
+                 case du raccourci de portail. L'onglet entier disparaît avec le
+                 nouvel écran du plan de fichiers : rien de plus n'est bâti ici. --}}
+            <div class="rounded-lg border border-base-300 bg-base-200 p-3 flex gap-3">
+                <i class="fa-solid fa-circle-info text-base-content/40 mt-0.5"></i>
+                <p class="text-xs text-base-content/70">
+                    Les lecteurs réseau montés sur le poste ne dépendent plus des réglages de cette page :
+                    ils suivent désormais les <strong>emplacements de fichiers</strong> — où vit l'espace
+                    personnel, où vit l'espace partagé. L'écran qui les règle arrive.
+                </p>
+            </div>
+
+            @if ($nextcloud)
+                <div class="flex items-start gap-3 rounded-lg bg-base-200 px-3 py-2">
+                    <i class="fa-solid fa-cloud text-base-content/40 mt-0.5 shrink-0"></i>
+                    <span class="text-xs">
+                        « Partages » et « Documents » dans Nextcloud
+                        @if (trim($nextcloudServerUrl) === '')
+                            <span class="block text-warning mt-0.5">URL du serveur non renseignée</span>
+                        @else
+                            <span class="block text-base-content/50 mt-0.5 break-all">{{ $nextcloudServerUrl }}</span>
+                        @endif
+                    </span>
                 </div>
-            @else
-                <p class="text-xs text-base-content/60">Au prochain logon, <strong>tout utilisateur</strong> voit :</p>
-
-                {{-- En pleine largeur, on reprend la grille à 3 colonnes des cartes
-                     ci-dessus : chaque effet se lit sous la capacité qui le produit. --}}
-                <ul class="grid grid-cols-1 md:grid-cols-3 gap-2 items-start">
-                    @if ($home)
-                        <li class="flex items-center gap-3 rounded-lg bg-base-200 px-3 py-2">
-                            <span class="badge badge-primary badge-sm font-mono shrink-0">K:</span>
-                            <span class="text-xs">Répertoire personnel</span>
-                        </li>
-                    @endif
-
-                    @if ($shares)
-                        <li class="flex items-center gap-3 rounded-lg bg-base-200 px-3 py-2">
-                            <span class="badge badge-primary badge-sm font-mono shrink-0">H:</span>
-                            <span class="text-xs">Classes</span>
-                        </li>
-                        {{-- Volontairement PAS d'énumération des répertoires réseau
-                             gérés : ils dépendent des assignations de chaque
-                             utilisateur, alors que ce panneau décrit un réglage
-                             GLOBAL. Seule la structure intrinsèque SE5 (K: home,
-                             H: classes) est universelle. --}}
-                    @endif
-
-                    @if ($nextcloud)
-                        <li class="flex items-start gap-3 rounded-lg bg-base-200 px-3 py-2">
-                            <i class="fa-solid fa-cloud text-base-content/40 mt-0.5 shrink-0"></i>
-                            <span class="text-xs">
-                                « Partages » et « Documents » dans Nextcloud
-                                @if (trim($nextcloudServerUrl) === '')
-                                    <span class="block text-warning mt-0.5">URL du serveur non renseignée</span>
-                                @else
-                                    <span class="block text-base-content/50 mt-0.5 break-all">{{ $nextcloudServerUrl }}</span>
-                                @endif
-                            </span>
-                        </li>
-                    @endif
-                </ul>
-
-                @if ($nextcloud && ! $home)
-                    {{-- Le cas qui surprend, dit avant qu'il ne surprenne. --}}
-                    <p class="text-xs text-base-content/60">
-                        <i class="fa-solid fa-circle-info"></i>
-                        Le lecteur K: est désactivé, mais le dossier « Documents » reste accessible dans
-                        Nextcloud : l'accès web ne dépend pas du montage sur le poste.
-                    </p>
-                @endif
             @endif
         </div>
     </aside>

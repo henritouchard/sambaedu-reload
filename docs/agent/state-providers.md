@@ -218,19 +218,24 @@ mailles, dédoublonnée par contenu au compilateur :
   `TargetContext`). Le ciblage AD-CN legacy (`ad_users`/`ad_user_groups`, cache
   APCu) n'est **JAMAIS** lu (condition Keycloak). Raccourci `is_active = false`
   = exclu.
-- **`desktop_path` résolu côté serveur** par croisement de DEUX facteurs :
-  l'environnement du parc (`WorkstationEnvironmentResolver::resolveForGroupIds()`)
-  **et** la politique de gestion des fichiers
-  (`FilePolicyService::capabilities()['home']`). Bureau **réseau**
-  (`\\<se4fs>\users\<user>\Bureau\`) **seulement si** le parc est `shared_local`
-  **ET** que l'accès au home (K:) est activé ; bureau **local**
-  (`%USERPROFILE%\Desktop\`) dans tous les autres cas — `personal_local`/`nomade`,
-  ou home coupé. Rationnel : le bureau réseau VIT dans le home ; avec K: coupé, la
-  session affiche le bureau local et des `.lnk` posés en réseau seraient
-  invisibles. On ne pousse jamais une donnée vers un emplacement inatteignable
-  (symétrie assumée avec `app_profile`, DÉCORRÉLÉ de K: en 36.7 : dans les deux
-  cas la donnée va là où l'utilisateur peut l'atteindre). C'est la donnée du
-  domaine qui dicte le chemin. Les tokens `<se4fs>` / `<user>` (et les `%VAR%`
+- **`desktop_path` résolu côté serveur** par UN SEUL facteur :
+  l'environnement du parc (`WorkstationEnvironmentResolver::resolveForGroupIds()`).
+  Bureau **réseau** (`\\<se4fs>\users\<user>\Bureau\`) si le parc est
+  `shared_local` ; bureau **local** (`%USERPROFILE%\Desktop\`) si le parc est
+  `personal_local`/`nomade`. C'est tout — `DesktopPathResolver::pathFor()` ne
+  prend plus que l'environnement, et ne lit **aucun réglage**.
+  Le bureau réseau vit dans le **home SMB**, et ce partage-là porte deux choses
+  qu'il ne faut pas confondre : les **fichiers personnels** de l'utilisateur
+  (qui peuvent déménager vers un cloud) et l'**infrastructure de l'agent**
+  (bureau redirigé, `.lnk` gérés, profils applicatifs), qui ne déménage jamais.
+  Le bureau suit la seconde, donc il ne bouge pas quand la première change.
+  L'ancien croisement avec `FilePolicyService::capabilities()['home']` faisait
+  basculer un poste partagé en bureau LOCAL dès que le lecteur `K:` était coupé :
+  c'était un effet de bord, pas une intention — couper `K:` ne rend pas le home
+  inaccessible, il le rend seulement non monté POUR L'UTILISATEUR. Le facteur a
+  été retiré, et **une instance qui avait `home = false` voit ses postes partagés
+  retrouver un bureau RÉSEAU**.
+  Les tokens `<se4fs>` / `<user>` (et les `%VAR%`
   Windows) restent dans le payload : l'agent les substitue **localement** (login
   courant, nom serveur) — aucune fuite de secret, aucune dépendance réseau au
   calcul. `desktop_path` n'est présent **que** pour `place=desktop`
@@ -238,11 +243,11 @@ mailles, dédoublonnée par contenu au compilateur :
 - **Nettoyage du DOUBLE bureau — le SERVEUR pilote le balayage** (≥ 2.15.0,
   Story 27.21 option A) : **POSE ≠ BALAYAGE**, deux notions distinctes.
   `desktop_path` (string) désigne le seul emplacement où l'agent **pose**
-  (policy-aware, cf. ci-dessus) ; **`desktop_sweep_paths`** (liste de strings,
+  (cf. ci-dessus) ; **`desktop_sweep_paths`** (liste de strings,
   champ **additif** §9, présent sur TOUS les items `shortcuts`) désigne les
   emplacements que l'agent **balaie** pour y supprimer les `.lnk` **gérés**
-  (marqueur) restés sur un emplacement devenu inactif après une bascule de la
-  politique home. C'est le **serveur** qui nomme cette liste, selon
+  (marqueur) restés sur un emplacement devenu inactif après une bascule
+  d'environnement de parc. C'est le **serveur** qui nomme cette liste, selon
   l'environnement du parc : `SharedLocal` ⇒ `[réseau, local]` ;
   `PersonalLocal`/`Nomade` ⇒ `[local]` **seul**.
 
@@ -255,11 +260,11 @@ mailles, dédoublonnée par contenu au compilateur :
   > **JAMAIS** le Bureau réseau lui-même — il n'existe **plus** de constante
   > d'agent pour ce chemin (l'ancienne `NetworkDesktopPathTemplate` a été
   > **supprimée**) ; le chemin voyage dans le payload et est résolu par la même
-  > substitution de tokens `<se4fs>`/`<user>`. Le balayage est **indépendant de
-  > la politique home** : couper K: ne déplace que la POSE, la liste de balayage
-  > d'un parc partagé reste `[réseau, local]` dans les deux états (sinon
-  > l'emplacement abandonné ne serait plus jamais nettoyé — le scénario cible de
-  > l'AC3). Un agent antérieur qui ignore `desktop_sweep_paths` retombe sur son
+  > substitution de tokens `<se4fs>`/`<user>`. Le balayage **ne dépend que de
+  > l'environnement** : il ne suivait pas la politique home hier, il ne suit pas
+  > les emplacements de fichiers aujourd'hui — la liste d'un parc partagé reste
+  > `[réseau, local]` quoi qu'il arrive (sinon l'emplacement abandonné ne serait
+  > plus jamais nettoyé — le scénario cible de l'AC3). Un agent antérieur qui ignore `desktop_sweep_paths` retombe sur son
   > balayage d'origine — d'où la version cible 2.15.0 (la 2.14.0, à balayage
   > réseau inconditionnel, est **répudiée, jamais publiée**).
 - **`scope=machine_user`** : le set dépend du user, le chemin du poste — le
@@ -271,6 +276,46 @@ mailles, dédoublonnée par contenu au compilateur :
   (cf. [`handlers-wallpaper-overlay.md`](handlers-wallpaper-overlay.md)).
 - `place` ∈ `desktop|startup|taskbar` (iso `Shortcut::PLACE_*`). Tous les champs
   sont des strings (jamais de float, §4.1).
+- **UN candidat SYNTHÉTIQUE, sans ligne de `shortcuts` : « Mes fichiers en
+  ligne »**, le raccourci vers le portail web. Il naît du **plan de fichiers**,
+  jamais d'une assignation, parce que ce qu'il rend visible n'est pas une règle
+  d'établissement mais une conséquence technique : un espace servi par un cloud
+  n'a aucune lettre de lecteur, et le navigateur est son seul chemin d'accès.
+  **Trois conditions, toutes nécessaires** :
+  1. `cloud.actif` ≠ `aucun` ;
+  2. **au moins un des deux espaces est servi par ce cloud**
+     (`espace_perso.autorite` ou `espace_partage.autorite` ≠ `posix`) ;
+  3. l'URL de CE cloud est non vide après `trim()` (`files.policy`,
+     `nextcloud_server_url` ou `opencloud_server_url`).
+
+  Sinon, **rien n'est émis**. La deuxième condition est celle qui surprend, et
+  c'est la plus importante : le raccourci mène **là où vivent les fichiers**. Un
+  cloud seulement *configuré*, dont aucun espace ne dépend — le cas le plus
+  courant —, ne justifie pas de faire apparaître une icône sur **tous** les
+  bureaux de l'établissement. La troisième dit la même chose côté joignabilité :
+  un raccourci qui n'ouvre rien est pire que pas de raccourci.
+
+  Maille `Broadcast`, `sourceId: 0` (libre par construction, place l'item en tête
+  de l'ordre stable), payload identique à celui d'un raccourci ordinaire — donc
+  **aucune version d'agent à publier**. Le libellé nomme la DESTINATION, pas le
+  produit : le même bureau survit à un changement de cloud.
+
+  L'écran parc (« État cible ») rejoue **exactement** ces trois conditions
+  (`DesiredStateOriginService::portalShortcutRow()`) : une divergence ferait
+  mentir l'écran dans un sens ou dans l'autre — un raccourci annoncé et jamais
+  posé, ou posé et jamais annoncé.
+- **L'icône du portail** (un nuage NEUTRE, sans marque) est publiée en
+  content-addressed sous la clé `shortcuts.portal_icon`, par **deux canaux, et
+  ce sont les seuls** : l'enregistrement d'un des onglets de
+  `/admin/settings/files` (idempotent, à chaque enregistrement), et
+  **`php artisan files:adopt-locations`** dès que la décision retenue comporte un
+  cloud actif. Ce second canal n'est pas un confort : la clé est NEUVE, absente
+  de toute instance déjà déployée, alors que le raccourci ne dépend plus d'un
+  geste d'écran mais du plan de fichiers — sans lui, une instance reprise puis
+  déployée poserait un `.lnk` visant `rundll32.exe`, donc affichant **l'icône de
+  `rundll32.exe`**. `--dry-run` ne publie rien. La publication est fail-soft des
+  deux côtés : le raccourci part sans icône plutôt que pas du tout, et un échec
+  ne fait pas échouer la reprise.
 
 **Icône uploadée → asset statique content-addressed.** Le champ `icon` peut
 porter soit un **chemin réel** (`firefox.exe,0`, `%APPDATA%\x.ico` — géré par
@@ -336,21 +381,21 @@ conforme, sans trace serveur.
 
 - **Un seul chemin de vérité** : `path` est le `desktop_path` de `shortcuts`,
   littéralement — même appel à `App\Services\Agent\DesktopPathResolver::pathFor()`,
-  donc même croisement {environnement du parc} × {politique `home`}. Ce résolveur
+  donc même unique facteur : l'environnement du parc. Ce résolveur
   a été extrait de `ShortcutsStateProvider` **pour cette raison** : deux mappings
   jumeaux qui dérivent, c'est la panne reproduite à l'identique. Un test croisé
   (`ShellFoldersStateProviderTest::redirection_target_equals_the_path_where_shortcuts_are_dropped`)
-  verrouille l'égalité sur les six configurations.
+  verrouille l'égalité sur toute la matrice des environnements.
 - **Le Bureau local s'ÉCRIT** : un parc `personal_local`/`nomade` émet
   explicitement `%USERPROFILE%\Desktop\`, il ne se tait pas. Le profil itinérant
   est partagé entre tous les postes de l'utilisateur — sans écriture explicite,
   un portable perdir hériterait du Bureau réseau laissé par le poste de classe.
   « Ne pas gérer » (§8) laisserait la mauvaise valeur en place (règle des maps
   symétriques).
-- **Lecture PURE** : aucune table d'authoring, aucun AD. Tout vient du
-  `TargetContext` déjà résolu et de la capacité globale
-  `FilePolicyService::capabilities()['home']`. Maille `Broadcast` — la valeur
-  dérive du parc et d'un réglage global, jamais d'une assignation.
+- **Lecture PURE** : aucune table d'authoring, aucune ligne de réglage, aucun
+  AD. La seule lecture est celle de l'environnement du parc, sur les ids déjà
+  résolus du `TargetContext`. Maille `Broadcast` — la valeur dérive du parc
+  SEUL, jamais d'une assignation.
 - **`scope=machine_user`** (iso `shortcuts`) : la valeur s'écrit dans la ruche de
   l'UTILISATEUR (compagnon, HKCU) mais se calcule à partir du POSTE. Contexte
   machine seul ⇒ **aucun item** (pas de ruche à écrire).
@@ -468,6 +513,32 @@ l'agent (et non plus par l'attribut AD `homeDrive`/`homeDirectory` ni la GPO
   un mapping retiré des règles est **démonté** ; un lecteur monté par
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
   périmètre = serveur SambaEdu).
+- ⚠️ **UNE LETTRE NE DÉSIGNE QUE DU SMB — le gating vient des EMPLACEMENTS**
+  (`App\Services\Filesystem\FileLocationService::current()`, plan de fichiers) :
+  - **`K:` si et seulement si l'espace perso est servi par le serveur de
+    fichiers** (`espace_perso.autorite = posix`). Espace perso au cloud ⇒ pas de
+    `K:` — **et rien d'autre ne change** : le partage SMB du home survit pour le
+    système (bureau redirigé, `.lnk` gérés, profils applicatifs), il n'est
+    simplement plus monté comme lecteur utilisateur.
+  - **`H:` si et seulement si l'espace partagé est servi par le serveur de
+    fichiers** (`espace_partage.autorite = posix`). Espace partagé au cloud ⇒ pas
+    de `H:`, **et rien d'autre**.
+  - **Les répertoires réseau gérés ne sont gouvernés par AUCUN des deux.** Leur
+    autorité est la leur, choisie à leur création (`network_shares.backend`) : le
+    plan de fichiers ne la lit pas, ne la dérive pas, ne l'écrase pas. Ils sont
+    émis dès qu'ils sont applicables, y compris quand l'espace partagé est au
+    cloud.
+  - **Aucune décision enregistrée ⇒ défauts `posix`/`posix`** ⇒ sortie
+    byte-identique à l'historique (golden `state.v1.json` / `FROZEN_STATE_HASH`
+    inchangés).
+  - **Une ligne `files.locations` corrompue REFUSE** : l'exception se propage,
+    aucun repli sur `posix/posix`. Un repli inventerait une décision que personne
+    n'a prise et déplacerait en silence les lecteurs de tout un établissement.
+  - Ce gating remplace les capacités `home`/`shares` de `files.policy`, que plus
+    aucun provider ne lit. ⚠️ **Prérequis de mise en service** : jouer
+    `php artisan files:adopt-locations` AVANT le déploiement, sans quoi une
+    instance en `home = false` retrouve `K:` (l'absence de ligne rend les
+    défauts).
 
 #### Répertoires réseau gérés CONFIGURABLES (Story 34.1)
 
@@ -506,6 +577,13 @@ n'existe, la sortie est byte-identique au jeu fixe ; un test l'asserte) :
   **collision de lettre entre deux répertoires DIFFÉRENTS** n'est pas gérée ici
   (volontaire — pas de surface de création en 34.1 ; sera bloquée par la
   validation prédictive d'une story UI ultérieure).
+- **Filtre de backend en LISTE BLANCHE** : seul un répertoire déclaré `posix`
+  émet une lettre. Il n'y a pas de chemin SMB au-dessus d'un dossier hébergé par
+  un cloud — une lettre monterait un lecteur vers un partage qui n'existe pas
+  côté serveur de fichiers, et l'écran, lui, affirmerait que tout est en place.
+  La liste blanche remplace l'exclusion nominative `!= nextcloud` de la 61.3, qui
+  laissait passer `opencloud` (vocabulaire ouvert en 61.4) et tout backend futur.
+  L'accès réel de ces répertoires est le web et le client de synchronisation.
 - **Export SMB** : un seul partage Samba `[partages]` → `/var/sambaedu/Partages`
   (provisionné en git — voir §ci-dessous), chaque répertoire = un sous-dossier.
   L'agent Go monte n'importe quelle lettre→UNC **sans modification**

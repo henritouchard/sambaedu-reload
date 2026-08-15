@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\ActiveCloud;
+use App\Enums\FileBackendName;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
 use App\Enums\WorkstationEnvironment;
+use App\Exceptions\Filesystem\FileLocationException;
 use App\Models\Shortcut;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Workstation;
@@ -22,6 +26,10 @@ use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
 use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocations;
+use App\Services\Filesystem\FileLocationService;
+use App\Services\Shortcuts\PortalShortcutIcon;
+use App\Services\Shortcuts\ShortcutIconAssetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -60,7 +68,11 @@ class ShortcutsStateProviderTest extends TestCase
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
 
-        $this->provider = new ShortcutsStateProvider(new WorkstationEnvironmentResolver(), new DesktopPathResolver());
+        $this->provider = new ShortcutsStateProvider(
+            new WorkstationEnvironmentResolver(),
+            new DesktopPathResolver(),
+            new PortalShortcutIcon(new ShortcutIconAssetService()),
+        );
         $this->ws = Workstation::factory()->create();
         $this->room = WorkstationGroup::factory()->create();
         $this->parc = WorkstationGroup::factory()->logical()->create();
@@ -185,41 +197,36 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertSame('%USERPROFILE%\\Desktop\\', $payload['desktop_path']);
     }
 
-    // --- Story 27.21 : le bureau RÉSEAU suit la politique home (K:) -----------
+    // --- Story 63.2 : le bureau ne dépend QUE de l'environnement du parc ------
 
     /**
-     * Matrice complète {SharedLocal, PersonalLocal, Nomade} × {home on, home off}
-     * (AC1, 6 cas). Le SEUL basculement introduit par la story est
-     * `SharedLocal` + `home=false` → bureau LOCAL : un bureau réseau posé alors
-     * que le home est coupé serait invisible pour l'utilisateur (constat terrain
-     * 2026-07-22). Les cinq autres cas sont inchangés.
+     * Matrice {SharedLocal, PersonalLocal, Nomade} — **et rien d'autre**.
      *
-     * @return iterable<string, array{WorkstationEnvironment, bool, string}>
+     * L'axe « politique home » a DISPARU en 63.2 : le bureau réseau vit dans le
+     * home SMB, et ce partage-là est toujours là pour l'agent même quand
+     * l'espace perso de l'utilisateur a déménagé au cloud. Le seul facteur
+     * restant est l'exception « portables » (perdir / nomade), et elle est
+     * juste.
+     *
+     * @return iterable<string, array{WorkstationEnvironment, string}>
      */
     public static function desktopPathMatrix(): iterable
     {
         $network = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
         $local = '%USERPROFILE%\\Desktop\\';
 
-        yield 'shared_local + home on → réseau' => [WorkstationEnvironment::SharedLocal, true, $network];
-        yield 'shared_local + home off → local (LE basculement)' => [WorkstationEnvironment::SharedLocal, false, $local];
-        yield 'personal_local + home on → local' => [WorkstationEnvironment::PersonalLocal, true, $local];
-        yield 'personal_local + home off → local' => [WorkstationEnvironment::PersonalLocal, false, $local];
-        yield 'nomade + home on → local' => [WorkstationEnvironment::Nomade, true, $local];
-        yield 'nomade + home off → local' => [WorkstationEnvironment::Nomade, false, $local];
+        yield 'shared_local → réseau' => [WorkstationEnvironment::SharedLocal, $network];
+        yield 'personal_local → local' => [WorkstationEnvironment::PersonalLocal, $local];
+        yield 'nomade → local' => [WorkstationEnvironment::Nomade, $local];
     }
 
     #[Test]
     #[DataProvider('desktopPathMatrix')]
-    public function desktop_path_crosses_environment_and_home_policy(
+    public function desktop_path_follows_the_park_environment_alone(
         WorkstationEnvironment $environment,
-        bool $home,
         string $expected,
     ): void {
         $this->parc->update(['environment' => $environment]);
-        // `shares`/`nextcloud` sont hors sujet ici : seule la capacité `home`
-        // gouverne le bureau (capacités INDÉPENDANTES, pas un mode exclusif).
-        FilePolicyService::setGlobal($home, true, false);
 
         $sc = $this->shortcut('intranet', [
             'place' => Shortcut::PLACE_DESKTOP,
@@ -232,35 +239,61 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertSame($expected, $payload['desktop_path']);
     }
 
+    /**
+     * LE point de la story, énoncé sur l'axe qui a disparu : poser l'espace
+     * perso au cloud ne déplace PLUS le Bureau d'un poste partagé.
+     */
+    #[Test]
+    #[DataProvider('desktopPathMatrix')]
+    public function the_personal_space_in_the_cloud_never_moves_the_desktop(
+        WorkstationEnvironment $environment,
+        string $expected,
+    ): void {
+        $this->parc->update(['environment' => $environment]);
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
+
+        $sc = $this->shortcut('intranet', [
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'https://intranet.edu',
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())
+            ->firstWhere(fn (StateCandidate $c): bool => $c->payload['name'] === 'intranet')->payload;
+
+        self::assertSame($expected, $payload['desktop_path']);
+    }
+
     // --- Story 27.21 (option A) : le SERVEUR nomme les Bureaux à BALAYER ------
 
     /**
-     * Matrice complète {SharedLocal, PersonalLocal, Nomade} × {home on, home off}
-     * des emplacements de BALAYAGE (finding 🔴 #1 de la review 27.21).
+     * Matrice {SharedLocal, PersonalLocal, Nomade} des emplacements de BALAYAGE
+     * (finding 🔴 #1 de la review 27.21).
      *
      * Le Bureau réseau est PARTAGÉ entre tous les postes d'un utilisateur : seul
      * un parc `shared_local` a autorité pour y supprimer des `.lnk` gérés. Un
      * poste perdir/nomade ne doit JAMAIS le balayer, sous peine d'effacer les
      * raccourcis que le poste de classe du même utilisateur vient de poser.
      *
-     * La liste ne dépend PAS de la politique home (délibéré) : couper K: ne
-     * change que l'emplacement de POSE — les deux emplacements d'un parc partagé
-     * restent balayés dans les deux états, sinon celui qu'on vient d'abandonner
-     * ne serait plus jamais nettoyé (AC3).
+     * La liste n'a jamais dépendu d'un réglage de fichiers, et ne dépend
+     * toujours que de l'environnement : les deux emplacements d'un parc partagé
+     * restent balayés quoi qu'il arrive, sinon celui qu'on vient d'abandonner ne
+     * serait plus jamais nettoyé (AC3 de la 27.21).
      *
-     * @return iterable<string, array{WorkstationEnvironment, bool, list<string>}>
+     * @return iterable<string, array{WorkstationEnvironment, list<string>}>
      */
     public static function desktopSweepPathsMatrix(): iterable
     {
         $network = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
         $local = '%USERPROFILE%\\Desktop\\';
 
-        yield 'shared_local + home on → [réseau, local]' => [WorkstationEnvironment::SharedLocal, true, [$network, $local]];
-        yield 'shared_local + home off → [réseau, local]' => [WorkstationEnvironment::SharedLocal, false, [$network, $local]];
-        yield 'personal_local + home on → [local] SEUL' => [WorkstationEnvironment::PersonalLocal, true, [$local]];
-        yield 'personal_local + home off → [local] SEUL' => [WorkstationEnvironment::PersonalLocal, false, [$local]];
-        yield 'nomade + home on → [local] SEUL' => [WorkstationEnvironment::Nomade, true, [$local]];
-        yield 'nomade + home off → [local] SEUL' => [WorkstationEnvironment::Nomade, false, [$local]];
+        yield 'shared_local → [réseau, local]' => [WorkstationEnvironment::SharedLocal, [$network, $local]];
+        yield 'personal_local → [local] SEUL' => [WorkstationEnvironment::PersonalLocal, [$local]];
+        yield 'nomade → [local] SEUL' => [WorkstationEnvironment::Nomade, [$local]];
     }
 
     /**
@@ -270,11 +303,9 @@ class ShortcutsStateProviderTest extends TestCase
     #[DataProvider('desktopSweepPathsMatrix')]
     public function desktop_sweep_paths_follow_the_park_environment(
         WorkstationEnvironment $environment,
-        bool $home,
         array $expected,
     ): void {
         $this->parc->update(['environment' => $environment]);
-        FilePolicyService::setGlobal($home, true, false);
 
         $sc = $this->shortcut('intranet', [
             'place' => Shortcut::PLACE_DESKTOP,
@@ -309,35 +340,39 @@ class ShortcutsStateProviderTest extends TestCase
     #[Test]
     public function perdir_park_never_names_the_shared_network_desktop(): void
     {
-        // LE garde-fou du finding #1 : quelle que soit la politique home, un
-        // parc perdir ne nomme JAMAIS le Bureau réseau — ni en pose, ni en
-        // balayage.
+        // LE garde-fou du finding #1 : un parc perdir ne nomme JAMAIS le Bureau
+        // réseau — ni en pose, ni en balayage, ni dans le payload du portail.
+        // Y compris quand l'espace perso a déménagé au cloud (63.2 : le Bureau
+        // ne suit plus les emplacements, mais l'exception portables tient).
         $this->parc->update(['environment' => WorkstationEnvironment::PersonalLocal]);
+        $this->enablePortalShortcut();
 
-        foreach ([true, false] as $home) {
-            FilePolicyService::setGlobal($home, true, false);
-            $sc = $this->shortcut('intranet'.($home ? '1' : '0'), [
-                'place' => Shortcut::PLACE_DESKTOP,
-                'windows_link' => 'https://intranet.edu',
-            ]);
-            $this->assign($sc, Workstation::class, $this->ws->id);
+        $sc = $this->shortcut('intranet', [
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'https://intranet.edu',
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
 
-            foreach ($this->provider->itemsFor($this->ctx()) as $candidate) {
-                self::assertStringNotContainsString('<se4fs>', json_encode($candidate->payload, JSON_THROW_ON_ERROR));
-            }
+        foreach ($this->provider->itemsFor($this->ctx()) as $candidate) {
+            self::assertStringNotContainsString('<se4fs>', json_encode($candidate->payload, JSON_THROW_ON_ERROR));
         }
     }
 
     #[Test]
-    public function home_policy_never_creates_a_desktop_path_on_non_desktop_places(): void
+    public function file_locations_never_create_a_desktop_path_on_non_desktop_places(): void
     {
-        // Garde-fou : couper le home ne doit RIEN changer aux emplacements
-        // startup/taskbar (toujours locaux, jamais de `desktop_path`).
-        FilePolicyService::setGlobal(false, true, false);
+        // Garde-fou : déplacer l'espace perso au cloud ne doit RIEN changer aux
+        // emplacements startup/taskbar (toujours locaux, jamais de `desktop_path`).
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
         $sc = $this->shortcut('boot', ['place' => Shortcut::PLACE_STARTUP, 'windows_link' => 'C:\\b.exe']);
         $this->assign($sc, Workstation::class, $this->ws->id);
 
-        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+        $payload = $this->provider->itemsFor($this->ctx())
+            ->firstWhere(fn (StateCandidate $c): bool => $c->payload['name'] === 'boot')->payload;
 
         self::assertArrayNotHasKey('desktop_path', $payload);
     }
@@ -466,6 +501,302 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertSame('vivaldi', $payload['icon']);
         self::assertArrayNotHasKey('icon_asset', $payload);
         self::assertArrayNotHasKey('icon_checksum', $payload);
+    }
+
+    // --- Le raccourci SYNTHÉTIQUE vers le portail web -------------------------
+    //
+    // Il ne vient d'aucune ligne de `shortcuts` : il naît du PLAN DE FICHIERS
+    // (Story 63.2) — un cloud actif ET au moins un des deux espaces servi par
+    // lui —, parce qu'un espace servi par un cloud n'a aucune lettre de lecteur
+    // et que le navigateur est son seul chemin d'accès. Un cloud seulement
+    // CONFIGURÉ, dont aucun espace ne dépend, ne pose rien : le raccourci mène
+    // là où vivent les fichiers.
+
+    #[Test]
+    public function portal_shortcut_is_emitted_when_the_active_cloud_serves_a_space(): void
+    {
+        $this->enablePortalShortcut();
+
+        $candidates = $this->provider->itemsFor($this->ctx());
+
+        self::assertCount(1, $candidates, 'aucune ligne de shortcuts : le seul candidat est le portail');
+
+        $portal = $candidates->first();
+        self::assertSame(StateMaille::Broadcast, $portal->maille, 'réglage d\'instance = maille diffusée');
+        self::assertSame(0, $portal->sourceId, 'id libre par construction (les id Postgres commencent à 1)');
+        self::assertNull($portal->updatedAt);
+
+        $payload = $portal->payload;
+        self::assertSame(ShortcutsStateProvider::PORTAL_SHORTCUT_NAME, $payload['name']);
+        self::assertSame(Shortcut::PLACE_DESKTOP, $payload['place']);
+        // L'URL est en ARGUMENTS, jamais en cible : une URL posée en cible d'un
+        // `.lnk` produit « l'élément auquel ce raccourci renvoie a été modifié ou
+        // déplacé » sur le poste.
+        self::assertSame('C:\\Windows\\System32\\rundll32.exe', $payload['target']);
+        self::assertSame('url.dll,FileProtocolHandler https://cloud.etab.fr', $payload['args']);
+        self::assertArrayHasKey('desktop_path', $payload);
+        self::assertArrayHasKey('desktop_sweep_paths', $payload);
+    }
+
+    #[Test]
+    public function portal_shortcut_is_added_to_the_assigned_ones_never_replacing_them(): void
+    {
+        $this->enablePortalShortcut();
+        $this->assign($this->shortcut('pronote'), Workstation::class, $this->ws->id);
+
+        $names = $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): string => $c->payload['name']);
+
+        self::assertEqualsCanonicalizing(
+            [ShortcutsStateProvider::PORTAL_SHORTCUT_NAME, 'pronote'],
+            $names->all(),
+            'sémantique aggregate : le portail s\'AJOUTE, il n\'évince rien',
+        );
+    }
+
+    /**
+     * TROIS conditions, et chacune refuse à elle seule : un cloud actif, au
+     * moins un espace servi par ce cloud, une URL non vide pour lui. Un
+     * raccourci qui n'ouvre rien est pire que pas de raccourci ; un raccourci
+     * qui ne mène nulle part où vivent des fichiers l'est tout autant.
+     *
+     * @return array<string, array{FileBackendName, FileBackendName, ActiveCloud, string}>
+     */
+    public static function portalRefusals(): array
+    {
+        return [
+            'aucun cloud actif' => [
+                FileBackendName::Posix, FileBackendName::Posix, ActiveCloud::Aucun, 'https://cloud.etab.fr',
+            ],
+            'cloud actif mais URL non renseignée' => [
+                FileBackendName::Nextcloud, FileBackendName::Posix, ActiveCloud::Nextcloud, '',
+            ],
+            'cloud actif mais URL réduite à des espaces' => [
+                FileBackendName::Nextcloud, FileBackendName::Posix, ActiveCloud::Nextcloud, '   ',
+            ],
+            // LE CAS LE PLUS COURANT, et le motif de la condition resserrée : un
+            // cloud configuré et joignable, mais dont AUCUN espace ne dépend. Y
+            // poser une icône sur tous les bureaux de l'établissement serait un
+            // changement visible que personne n'a demandé.
+            'cloud actif et joignable, mais les deux espaces sont sur le serveur de fichiers' => [
+                FileBackendName::Posix, FileBackendName::Posix, ActiveCloud::Nextcloud, 'https://cloud.etab.fr',
+            ],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('portalRefusals')]
+    public function portal_shortcut_is_silent_unless_a_reachable_cloud_serves_a_space(
+        FileBackendName $espacePerso,
+        FileBackendName $espacePartage,
+        ActiveCloud $cloud,
+        string $url,
+    ): void {
+        // L'URL est posée dans TOUS les cas : le refus « aucun cloud actif »
+        // doit tenir même quand une URL traîne dans les réglages du produit
+        // (une instance qui a configuré Nextcloud puis y a renoncé).
+        FilePolicyService::setGlobal(true, true, true, $url);
+        FileLocationService::set(FileLocations::make($espacePerso, $espacePartage, $cloud));
+
+        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+    }
+
+    /**
+     * **AC6 — la capacité du produit n'est PLUS une condition.** L'accès
+     * Nextcloud est ÉTEINT dans `files.policy` pendant que le plan de fichiers
+     * désigne Nextcloud comme cloud actif et lui confie l'espace perso : le
+     * raccourci est posé quand même. C'est le plan de fichiers qui décide où
+     * vivent les fichiers, et l'ancienne capacité ne gouverne plus rien ici.
+     */
+    #[Test]
+    public function portal_shortcut_ignores_the_product_capability(): void
+    {
+        FilePolicyService::setGlobal(true, true, false, 'https://cloud.etab.fr');
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
+
+        $candidates = $this->provider->itemsFor($this->ctx());
+
+        self::assertCount(1, $candidates, 'la capacité éteinte ne retient plus le raccourci');
+        self::assertSame(
+            ShortcutsStateProvider::PORTAL_SHORTCUT_NAME,
+            $candidates->first()->payload['name'],
+        );
+        self::assertSame(
+            'url.dll,FileProtocolHandler https://cloud.etab.fr',
+            $candidates->first()->payload['args'],
+        );
+    }
+
+    /**
+     * Le raccourci suit le cloud ACTIF, pas un produit : sous OpenCloud, il
+     * ouvre l'URL OpenCloud — et jamais celle de l'autre produit, même si elle
+     * est renseignée.
+     */
+    #[Test]
+    public function portal_shortcut_opens_the_active_cloud_url(): void
+    {
+        FilePolicyService::setGlobal(
+            true,
+            true,
+            true,
+            'https://nextcloud.etab.fr',
+            opencloud: true,
+            opencloudServerUrl: 'https://opencloud.etab.fr',
+        );
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            FileBackendName::OpenCloud,
+            ActiveCloud::OpenCloud,
+        ));
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame(ShortcutsStateProvider::PORTAL_SHORTCUT_NAME, $payload['name']);
+        self::assertSame('url.dll,FileProtocolHandler https://opencloud.etab.fr', $payload['args']);
+    }
+
+    /**
+     * L'URL du cloud actif est VIDE alors que l'autre produit en a une : rien
+     * n'est posé. Le repli sur l'URL du voisin ouvrirait le mauvais portail.
+     */
+    #[Test]
+    public function portal_shortcut_never_falls_back_to_the_other_products_url(): void
+    {
+        FilePolicyService::setGlobal(
+            true,
+            true,
+            true,
+            'https://nextcloud.etab.fr',
+            opencloud: true,
+            opencloudServerUrl: '',
+        );
+        // L'espace perso EST au cloud actif : la condition d'emplacement est
+        // remplie, et seule l'URL manquante décide du refus.
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::OpenCloud,
+            FileBackendName::Posix,
+            ActiveCloud::OpenCloud,
+        ));
+
+        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+    }
+
+    /**
+     * **UN RÉGLAGE CORROMPU REFUSE, IL NE SE REPLIE PAS.** Un repli sur « aucun
+     * cloud » ferait disparaître en silence, de tous les bureaux de
+     * l'établissement, le seul chemin d'accès aux fichiers en ligne.
+     */
+    #[Test]
+    public function a_forged_locations_row_makes_the_compilation_refuse(): void
+    {
+        SystemSetting::set(FileLocationService::SETTING_KEY, [
+            'espace_perso.autorite' => 'posix',
+            'espace_partage.autorite' => 'posix',
+            'cloud.actif' => 'owncloud',
+        ]);
+
+        $this->expectException(FileLocationException::class);
+
+        $this->provider->itemsFor($this->ctx());
+    }
+
+    /**
+     * **LE GOLDEN NE BOUGE PAS.** Sans décision enregistrée, `desktop_path` vaut
+     * le chemin RÉSEAU de la ligne `shortcuts` de
+     * `tests/Fixtures/Agent/state.v1.json`, et AUCUN candidat de portail n'est
+     * émis (pas de cloud actif par défaut).
+     */
+    #[Test]
+    public function the_default_decision_carries_the_golden_network_desktop_and_no_portal(): void
+    {
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
+
+        $sc = $this->shortcut('Calculatrice', [
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'C:\\Windows\\System32\\calc.exe',
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $candidates = $this->provider->itemsFor($this->ctx());
+
+        self::assertCount(1, $candidates, 'aucun cloud actif ⇒ aucun raccourci de portail');
+        $payload = $candidates->first()->payload;
+        self::assertSame('\\\\<se4fs>\\users\\<user>\\Bureau\\', $payload['desktop_path']);
+        self::assertSame([
+            '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+            '%USERPROFILE%\\Desktop\\',
+        ], $payload['desktop_sweep_paths']);
+    }
+
+    #[Test]
+    public function portal_shortcut_carries_the_published_icon_when_there_is_one(): void
+    {
+        $this->enablePortalShortcut();
+
+        // Le dossier servi est redirigé : un test n'écrit pas dans le storage de
+        // l'application. L'icône SOURCE, elle, est bien celle livrée avec le code.
+        $served = sys_get_temp_dir() . '/se5-portal-icon-' . uniqid();
+        config(['shortcut_icons.served_path' => $served]);
+
+        $published = app(PortalShortcutIcon::class)->publish();
+
+        self::assertNotNull($published, 'l\'icône source est livrée avec l\'application');
+        self::assertFileExists($served . '/' . $published['asset']);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame($published['asset'], $payload['icon_asset']);
+        self::assertSame($published['checksum'], $payload['icon_checksum']);
+        // `icon` reste vide : quand `icon_asset` est là, l'agent ne regarde
+        // JAMAIS `icon`. Y écrire quelque chose laisserait croire à un repli.
+        self::assertSame('', $payload['icon']);
+    }
+
+    #[Test]
+    public function portal_shortcut_is_still_posted_without_a_published_icon(): void
+    {
+        // Aucune publication : le raccourci part SANS icône plutôt que pas du
+        // tout — un chemin d'accès sans icône reste un chemin d'accès.
+        $this->enablePortalShortcut();
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame('', $payload['icon']);
+        self::assertArrayNotHasKey('icon_asset', $payload);
+        self::assertArrayNotHasKey('icon_checksum', $payload);
+    }
+
+    #[Test]
+    public function portal_shortcut_follows_the_desktop_path_of_the_park(): void
+    {
+        // Le portail n'est pas un cas à part : il est posé au MÊME Bureau que les
+        // autres raccourcis, celui que le parc impose. Un parc perdir ne nomme
+        // jamais le Bureau réseau, partagé entre tous les postes de l'utilisateur.
+        $this->parc->update(['environment' => WorkstationEnvironment::PersonalLocal]);
+        $this->enablePortalShortcut();
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame('%USERPROFILE%\\Desktop\\', $payload['desktop_path']);
+        self::assertStringNotContainsString('<se4fs>', json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Les TROIS conditions réunies : un cloud actif, au moins un espace servi
+     * par lui (ici l'espace perso), et une URL pour ce cloud.
+     */
+    private function enablePortalShortcut(string $url = 'https://cloud.etab.fr'): void
+    {
+        FilePolicyService::setGlobal(true, true, true, $url);
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\ActiveCloud;
+use App\Enums\FileBackendName;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
@@ -20,7 +22,10 @@ use App\Services\Agent\Providers\ShellFoldersStateProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
-use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocations;
+use App\Services\Filesystem\FileLocationService;
+use App\Services\Shortcuts\PortalShortcutIcon;
+use App\Services\Shortcuts\ShortcutIconAssetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -127,38 +132,55 @@ class ShellFoldersStateProviderTest extends TestCase
     // --- Le chemin : même matrice que `shortcuts` ----------------------------
 
     /**
-     * Matrice complète {SharedLocal, PersonalLocal, Nomade} × {home on, home off}.
+     * Matrice {SharedLocal, PersonalLocal, Nomade} — l'axe « politique home » a
+     * disparu en 63.2, le Bureau ne dépend plus que du parc.
      *
      * Elle est VOLONTAIREMENT identique à `ShortcutsStateProviderTest::desktopPathMatrix()`
      * — c'est la même décision serveur, prise une seule fois
      * ({@see DesktopPathResolver::pathFor()}).
      *
-     * @return iterable<string, array{WorkstationEnvironment, bool, string}>
+     * @return iterable<string, array{WorkstationEnvironment, string}>
      */
     public static function desktopPathMatrix(): iterable
     {
         $network = '\\\\<se4fs>\\users\\<user>\\Bureau\\';
         $local = '%USERPROFILE%\\Desktop\\';
 
-        yield 'shared_local + home on → réseau' => [WorkstationEnvironment::SharedLocal, true, $network];
-        yield 'shared_local + home off → local (LE basculement)' => [WorkstationEnvironment::SharedLocal, false, $local];
-        yield 'personal_local + home on → local' => [WorkstationEnvironment::PersonalLocal, true, $local];
-        yield 'personal_local + home off → local' => [WorkstationEnvironment::PersonalLocal, false, $local];
-        yield 'nomade + home on → local' => [WorkstationEnvironment::Nomade, true, $local];
-        yield 'nomade + home off → local' => [WorkstationEnvironment::Nomade, false, $local];
+        yield 'shared_local → réseau' => [WorkstationEnvironment::SharedLocal, $network];
+        yield 'personal_local → local' => [WorkstationEnvironment::PersonalLocal, $local];
+        yield 'nomade → local' => [WorkstationEnvironment::Nomade, $local];
     }
 
     #[Test]
     #[DataProvider('desktopPathMatrix')]
-    public function redirection_path_crosses_environment_and_home_policy(
+    public function redirection_path_follows_the_park_environment_alone(
         WorkstationEnvironment $environment,
-        bool $home,
         string $expected,
     ): void {
         $this->parc->update(['environment' => $environment]);
-        // `shares`/`nextcloud` sont hors sujet : seule la capacité `home`
-        // gouverne le Bureau (capacités INDÉPENDANTES, pas un mode exclusif).
-        FilePolicyService::setGlobal($home, true, false);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame($expected, $payload['path']);
+    }
+
+    /**
+     * Le Bureau ne suit PLUS l'emplacement de l'espace perso : le home SMB qui
+     * l'héberge reste là pour l'agent, même quand les fichiers de l'utilisateur
+     * ont déménagé au cloud.
+     */
+    #[Test]
+    #[DataProvider('desktopPathMatrix')]
+    public function the_personal_space_in_the_cloud_never_moves_the_redirection(
+        WorkstationEnvironment $environment,
+        string $expected,
+    ): void {
+        $this->parc->update(['environment' => $environment]);
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Nextcloud,
+            ActiveCloud::Nextcloud,
+        ));
 
         $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
 
@@ -169,11 +191,9 @@ class ShellFoldersStateProviderTest extends TestCase
     #[DataProvider('desktopPathMatrix')]
     public function a_local_environment_still_emits_an_explicit_redirection(
         WorkstationEnvironment $environment,
-        bool $home,
         string $expected,
     ): void {
         $this->parc->update(['environment' => $environment]);
-        FilePolicyService::setGlobal($home, true, false);
 
         // Règle des maps symétriques : « bureau local » s'ÉCRIT, il ne se tait
         // pas. Le profil itinérant est partagé entre tous les postes de
@@ -189,8 +209,8 @@ class ShellFoldersStateProviderTest extends TestCase
     // --- L'invariant de la story ---------------------------------------------
 
     /**
-     * LE test de la story : la redirection et le placement des `.lnk` désignent
-     * le MÊME dossier, dans les six configurations.
+     * LE test de la story 58.1 : la redirection et le placement des `.lnk`
+     * désignent le MÊME dossier, dans toute la matrice.
      *
      * Sans cet invariant, `shortcuts` dépose des raccourcis dans un dossier que
      * le shell ne regarde pas — sans erreur, sans item non conforme, sans la
@@ -202,10 +222,8 @@ class ShellFoldersStateProviderTest extends TestCase
     #[DataProvider('desktopPathMatrix')]
     public function redirection_target_equals_the_path_where_shortcuts_are_dropped(
         WorkstationEnvironment $environment,
-        bool $home,
     ): void {
         $this->parc->update(['environment' => $environment]);
-        FilePolicyService::setGlobal($home, true, false);
 
         $shortcut = Shortcut::create([
             'key' => 'intranet-' . uniqid(),
@@ -225,6 +243,7 @@ class ShellFoldersStateProviderTest extends TestCase
         $shortcuts = new ShortcutsStateProvider(
             new WorkstationEnvironmentResolver(),
             new DesktopPathResolver(),
+            new PortalShortcutIcon(new ShortcutIconAssetService()),
         );
 
         $redirection = $this->provider->itemsFor($this->ctx())->first()->payload['path'];
@@ -241,13 +260,15 @@ class ShellFoldersStateProviderTest extends TestCase
     // --- Pureté (NFR7) --------------------------------------------------------
 
     #[Test]
-    public function it_reads_no_authoring_table_and_never_touches_ad(): void
+    public function it_reads_no_authoring_table_no_setting_and_never_touches_ad(): void
     {
-        // Aucune table d'authoring derrière ce type : la valeur dérive de
-        // l'environnement du parc et de la politique globale de fichiers. Les
-        // seules lectures admises sont donc celles-là — jamais `shortcuts`,
-        // jamais `network_shares`, et surtout jamais les colonnes de ciblage
-        // AD-CN legacy (`ad_users`/`ad_user_groups`, NFR7 / critère Keycloak).
+        // Aucune table d'authoring derrière ce type, et depuis la Story 63.2
+        // plus la moindre ligne de RÉGLAGE : la valeur dérive du seul
+        // environnement du parc. La seule lecture admise est donc celle du
+        // resolver d'environnement (`workstation_groups`) — jamais `shortcuts`,
+        // jamais `network_shares`, jamais `system_settings`, et surtout jamais
+        // les colonnes de ciblage AD-CN legacy (`ad_users`/`ad_user_groups`,
+        // NFR7 / critère Keycloak).
         $ctx = $this->ctx();
 
         $statements = [];
@@ -257,7 +278,7 @@ class ShellFoldersStateProviderTest extends TestCase
 
         $this->provider->itemsFor($ctx);
 
-        $forbidden = ['shortcuts', 'network_shares', 'ad_users', 'ad_user_groups'];
+        $forbidden = ['shortcuts', 'network_shares', 'system_settings', 'ad_users', 'ad_user_groups'];
         foreach ($statements as $sql) {
             foreach ($forbidden as $table) {
                 self::assertStringNotContainsString(
@@ -267,5 +288,22 @@ class ShellFoldersStateProviderTest extends TestCase
                 );
             }
         }
+    }
+
+    /**
+     * **LE GOLDEN NE BOUGE PAS.** Sans décision enregistrée, la redirection vaut
+     * le chemin RÉSEAU de la ligne `folders` de
+     * `tests/Fixtures/Agent/state.v1.json`, littéralement.
+     */
+    #[Test]
+    public function the_default_decision_emits_the_golden_payload(): void
+    {
+        $this->parc->update(['environment' => WorkstationEnvironment::SharedLocal]);
+
+        self::assertSame([
+            'folder' => 'desktop',
+            'path' => '\\\\<se4fs>\\users\\<user>\\Bureau\\',
+            'quick_access' => 'pinned',
+        ], $this->provider->itemsFor($this->ctx())->first()->payload);
     }
 }

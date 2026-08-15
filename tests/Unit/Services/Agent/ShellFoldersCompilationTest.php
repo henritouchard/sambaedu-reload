@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\ActiveCloud;
+use App\Enums\FileBackendName;
 use App\Enums\WorkstationEnvironment;
 use App\Models\User;
 use App\Models\Workstation;
@@ -19,7 +21,8 @@ use App\Services\Agent\StateContract;
 use App\Services\Agent\StateHasher;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
-use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocations;
+use App\Services\Filesystem\FileLocationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -88,7 +91,6 @@ class ShellFoldersCompilationTest extends TestCase
     public function a_shared_local_park_compiles_the_network_desktop_redirection(): void
     {
         $this->parc->update(['environment' => WorkstationEnvironment::SharedLocal]);
-        FilePolicyService::setGlobal(true, true, false);
 
         $items = $this->compileFolders($this->user);
 
@@ -111,7 +113,6 @@ class ShellFoldersCompilationTest extends TestCase
     public function a_perdir_park_compiles_the_local_desktop_redirection(): void
     {
         $this->parc->update(['environment' => WorkstationEnvironment::PersonalLocal]);
-        FilePolicyService::setGlobal(true, true, false);
 
         $items = $this->compileFolders($this->user);
 
@@ -122,18 +123,30 @@ class ShellFoldersCompilationTest extends TestCase
         self::assertNotSame(self::GOLDEN_ITEM_HASH, $items[0]['hash']);
     }
 
+    /**
+     * **Story 63.2 — le test est RETOURNÉ, pas supprimé.**
+     *
+     * Il épinglait que couper le home déplaçait la redirection sur le Bureau
+     * local. C'était la conflation : le home SMB porte à la fois les fichiers de
+     * l'utilisateur (qui peuvent déménager) et l'infrastructure de l'agent
+     * (Bureau redirigé, `.lnk`, profils applicatifs), qui reste. Déplacer
+     * l'espace perso au cloud NE DÉPLACE PLUS la redirection — et le hash de
+     * l'item est celui du golden, inchangé.
+     */
     #[Test]
-    public function cutting_the_home_capability_moves_the_redirection_to_the_local_desktop(): void
+    public function putting_the_personal_space_in_the_cloud_leaves_the_redirection_on_the_network_desktop(): void
     {
         $this->parc->update(['environment' => WorkstationEnvironment::SharedLocal]);
-        // Home coupé : le Bureau réseau vit DANS le home — le laisser pointer
-        // là serait rediriger vers un dossier que l'utilisateur ne peut plus
-        // atteindre.
-        FilePolicyService::setGlobal(false, true, false);
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Nextcloud,
+            FileBackendName::Nextcloud,
+            ActiveCloud::Nextcloud,
+        ));
 
         $items = $this->compileFolders($this->user);
 
-        self::assertSame('%USERPROFILE%\\Desktop\\', $items[0]['payload']['path']);
+        self::assertSame('\\\\<se4fs>\\users\\<user>\\Bureau\\', $items[0]['payload']['path']);
+        self::assertSame(self::GOLDEN_ITEM_HASH, $items[0]['hash']);
     }
 
     #[Test]

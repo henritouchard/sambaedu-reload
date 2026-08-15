@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Agent;
 
 use App\Enums\WorkstationEnvironment;
-use App\Services\FilePolicyService;
 
 /**
  * Source unique du **chemin du Bureau** de l'utilisateur, côté serveur.
@@ -50,34 +49,39 @@ final class DesktopPathResolver
      * l'agent) — l'agent reste bête. **SEULE porte** de résolution du bureau :
      * aucune autre branche réseau/local n'existe côté serveur (Story 27.21).
      *
-     * **Story 27.21 — UN facteur ajouté : la politique home (K:).** Le bureau
-     * RÉSEAU vit dans le home de l'utilisateur (`\\<se4fs>\users\<user>\`) :
-     * quand l'admin coupe l'accès au home (`/admin/settings/files`,
-     * {@see FilePolicyService::capabilities()} clé `home`), la session affiche
-     * le bureau LOCAL et des `.lnk` posés en réseau seraient INVISIBLES (constat
-     * terrain 2026-07-22). On ne pousse jamais une donnée vers un emplacement
-     * que l'utilisateur ne peut pas atteindre : `home=false` ⇒ bureau LOCAL,
-     * quel que soit l'environnement du parc.
+     * **UN SEUL facteur : l'environnement du parc** (Story 63.2 — le
+     * découplage). Le bureau RÉSEAU vit dans le home SMB
+     * (`\\<se4fs>\users\<user>\`), et ce partage-là **est toujours là** : il
+     * porte deux choses distinctes que la 27.21 avait confondues —
      *
-     * Symétrie assumée avec `app_profile` (36.7) : là la redirection de profil a
-     * été DÉCORRÉLÉE de K: (le profil suit toujours, l'UNC reste joignable sans
-     * montage) ; ici le bureau SUIT K: — dans les deux cas on place la donnée là
-     * où l'utilisateur peut effectivement la voir.
+     *  - les **fichiers personnels** de l'utilisateur, qui peuvent déménager
+     *    (l'espace perso peut être servi par un cloud) ;
+     *  - l'**infrastructure de l'agent** (bureau redirigé, `.lnk` gérés,
+     *    profils applicatifs), qui ne déménage jamais et n'est pas un réglage.
+     *
+     * L'ancien paramètre `bool $homeEnabled` faisait basculer le bureau d'un
+     * poste partagé en LOCAL dès que le lecteur `K:` était coupé. C'était un
+     * effet de bord : couper `K:` ne rend pas le home inaccessible, il le rend
+     * seulement non monté POUR L'UTILISATEUR — l'agent, lui, continue d'y lire
+     * et d'y écrire (précision Henri du 2026-08-15). Le bureau ne suit donc
+     * plus aucun réglage de fichiers, et ce résolveur ne lit plus rien.
+     *
+     * **La seule exception est l'exception « portables »**, et elle est juste :
+     * un poste personnel ou nomade n'a pas d'autorité sur le Bureau réseau,
+     * partagé entre tous les postes de l'utilisateur — son bureau est LOCAL.
      *
      * ⚠️ POSE ≠ BALAYAGE : cette méthode résout le seul emplacement où l'agent
      * POSE les `.lnk` (et, depuis 58.1, celui vers lequel il REDIRIGE le shell —
      * les deux sont volontairement le MÊME). Les emplacements qu'il BALAIE sont
      * une autre décision, prise par {@see self::sweepPathsFor()}.
      */
-    public function pathFor(WorkstationEnvironment $environment, bool $homeEnabled): string
+    public function pathFor(WorkstationEnvironment $environment): string
     {
         return match ($environment) {
             // Poste partagé : bureau redirigé RÉSEAU (le défaut du pansement Bug
-            // C, mais désormais PARAMÉTRABLE par parc et non figé) — SEULEMENT
-            // si le home est accessible, sinon le bureau réseau est invisible.
-            WorkstationEnvironment::SharedLocal => $homeEnabled
-                ? self::NETWORK
-                : self::LOCAL,
+            // C, mais désormais PARAMÉTRABLE par parc et non figé). Plus aucune
+            // condition : le home SMB qui l'héberge est toujours là pour l'agent.
+            WorkstationEnvironment::SharedLocal => self::NETWORK,
             // Perdir / nomade : bureau LOCAL du profil — le `.lnk` est posé
             // dans le profil de l'utilisateur, pas sur le partage réseau.
             WorkstationEnvironment::PersonalLocal,
@@ -101,16 +105,20 @@ final class DesktopPathResolver
      * l'autorité :
      *
      *  - `SharedLocal`             ⇒ `[réseau, local]` — le double-balayage
-     *    anti-orphelins de l'AC2/AC3 : une bascule de la politique home ne laisse
-     *    jamais de `.lnk` géré à l'emplacement devenu inactif.
+     *    anti-orphelins de l'AC2/AC3 : un poste partagé nettoie les DEUX
+     *    emplacements, donc jamais un `.lnk` géré ne reste sur celui qu'on
+     *    vient de quitter.
      *  - `PersonalLocal` / `Nomade` ⇒ `[local]` SEULEMENT — ces postes n'ont
      *    aucune autorité sur le Bureau réseau et ne doivent JAMAIS y toucher.
      *
-     * **Indépendant de la politique home** — délibérément : basculer K: ne change
-     * QUE l'emplacement de POSE. Les deux emplacements d'un parc partagé restent
-     * balayés dans les deux états, sinon celui qui vient d'être abandonné ne
-     * serait plus jamais nettoyé (c'est exactement le scénario cible de l'AC3).
-     * Effet de bord utile : couper K: ne fait bouger qu'un champ du payload.
+     * **La liste ne dépend QUE de l'environnement** — délibérément, et ça n'a
+     * jamais changé : elle ne suivait pas la politique home hier, elle ne suit
+     * pas les emplacements de fichiers aujourd'hui ({@see self::pathFor()} est
+     * le seul point où une décision se prend). Les deux emplacements d'un parc
+     * partagé restent balayés quoi qu'il arrive, sinon celui qui vient d'être
+     * abandonné ne serait plus jamais nettoyé (le scénario cible de l'AC3 de la
+     * 27.21). Effet de bord utile : déplacer la POSE ne fait bouger qu'un seul
+     * champ du payload.
      *
      * L'ORDRE est fixe (réseau puis local) : la liste est hachée telle quelle
      * (les listes ne sont pas triées par {@see StateHasher}), un ordre stable

@@ -10,6 +10,7 @@ use App\Services\Filesystem\FileLocationService;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
 use App\Services\OpenCloud\OpenCloudConnectionConfig;
 use App\Services\ServiceCredentials;
+use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
@@ -417,5 +418,153 @@ class AdoptFileLocationsCommandTest extends TestCase
             ->assertExitCode(0);
 
         self::assertSame(self::DECISION_NEXTCLOUD_POSIX, $this->ligneEnregistree());
+    }
+
+    // =========================================================================
+    // Story 63.2 — l'icône du raccourci-portail
+    //
+    // `shortcuts.portal_icon` est une clé NEUVE, absente de toute instance
+    // déployée, et le raccourci « Mes fichiers en ligne » ne dépend plus d'un
+    // geste d'écran mais du cloud actif — écrit par CETTE commande. Sans
+    // publication ici, le parcours de mise en service documenté (jouer la
+    // reprise, puis déployer) poserait sur tous les bureaux un `.lnk` affichant
+    // l'icône de `rundll32.exe`.
+    // =========================================================================
+
+    /**
+     * Redirige le dossier servi : un test n'écrit pas dans le storage de
+     * l'application. L'icône SOURCE, elle, reste celle livrée avec le code.
+     */
+    private function redirigerLeDossierServi(): string
+    {
+        $served = sys_get_temp_dir().'/se5-adopt-portal-icon-'.uniqid();
+        config(['shortcut_icons.served_path' => $served]);
+
+        return $served;
+    }
+
+    /** @return array{asset:string, checksum:string}|null */
+    private function iconePubliee(): ?array
+    {
+        $stored = SystemSetting::get(PortalShortcutIcon::SETTING_KEY);
+
+        return is_array($stored) ? $stored : null;
+    }
+
+    #[Test]
+    public function elle_publie_l_icone_du_portail_quand_la_decision_comporte_un_cloud_actif(): void
+    {
+        $served = $this->redirigerLeDossierServi();
+        $this->configureNextcloud(true, true);
+
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+
+        $icone = $this->iconePubliee();
+        self::assertNotNull($icone, 'la reprise publie l\'icône, sans quoi le raccourci arrive avec celle de rundll32.exe');
+        self::assertFileExists($served.'/'.$icone['asset']);
+    }
+
+    #[Test]
+    public function aucun_cloud_actif_ne_publie_aucune_icone(): void
+    {
+        $this->redirigerLeDossierServi();
+        // Ni Nextcloud ni OpenCloud : la décision est posix/posix/aucun, et
+        // aucun raccourci de portail ne sera posé — il n'y a donc rien à
+        // publier.
+        FilePolicyService::setGlobal(true, true, false);
+
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+
+        self::assertSame('aucun', FileLocationService::current()->cloudActif->value);
+        self::assertNull($this->iconePubliee());
+    }
+
+    /**
+     * Le chemin « déjà conforme » publie AUSSI — c'est même le cas qui compte le
+     * plus : une instance dont les emplacements ont été repris par une version
+     * antérieure de la commande n'a jamais eu de ligne `shortcuts.portal_icon`,
+     * et rejouer la reprise doit la lui donner.
+     */
+    #[Test]
+    public function le_chemin_deja_conforme_republie_l_icone(): void
+    {
+        $served = $this->redirigerLeDossierServi();
+        $this->configureNextcloud(true, true);
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+
+        // On efface la trace de publication : l'état d'une instance reprise
+        // avant que la commande ne publie quoi que ce soit.
+        SystemSetting::query()->where('key', PortalShortcutIcon::SETTING_KEY)->delete();
+        self::assertNull($this->iconePubliee());
+
+        $this->artisan('files:adopt-locations')
+            ->expectsOutputToContain('conforme')
+            ->assertExitCode(0);
+
+        $icone = $this->iconePubliee();
+        self::assertNotNull($icone);
+        self::assertFileExists($served.'/'.$icone['asset']);
+    }
+
+    /**
+     * **`--dry-run` ne publie RIEN**, dans les DEUX sens : ni sur le chemin
+     * « il reste à écrire », ni sur le chemin « déjà conforme » — le seul qui
+     * rende 0 en simulation, et donc le seul où l'oubli d'une garde passerait
+     * inaperçu. Une simulation n'écrit pas, pas même de l'état dérivé.
+     */
+    #[Test]
+    public function dry_run_ne_publie_aucune_icone(): void
+    {
+        $served = $this->redirigerLeDossierServi();
+        $this->configureNextcloud(true, true);
+
+        // Sens 1 — rien n'est encore enregistré : la simulation ne publie pas.
+        $this->artisan('files:adopt-locations', ['--dry-run' => true])->assertExitCode(1);
+        self::assertNull($this->iconePubliee());
+
+        // Sens 2 — la décision est enregistrée puis la trace d'icône effacée :
+        // la simulation passe par « déjà conforme », rend 0… et ne publie
+        // toujours rien.
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+        SystemSetting::query()->where('key', PortalShortcutIcon::SETTING_KEY)->delete();
+
+        $this->artisan('files:adopt-locations', ['--dry-run' => true])
+            ->expectsOutputToContain('conforme')
+            ->assertExitCode(0);
+        self::assertNull($this->iconePubliee(), 'une simulation n\'écrit pas, pas même de l\'état dérivé');
+
+        // Et l'exécution réelle, elle, la repose : la garde du dry-run n'a pas
+        // désactivé la publication au passage.
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+        $icone = $this->iconePubliee();
+        self::assertNotNull($icone);
+        self::assertFileExists($served.'/'.$icone['asset']);
+    }
+
+    /**
+     * FAIL-SOFT : une publication impossible (dossier servi non créable) ne fait
+     * pas échouer la reprise. Ce que la commande doit garantir, c'est la
+     * décision d'emplacement — un raccourci sans icône reste un chemin d'accès,
+     * une reprise avortée n'en est pas un.
+     */
+    #[Test]
+    public function une_publication_impossible_ne_fait_pas_echouer_la_reprise(): void
+    {
+        // Un FICHIER là où le service attend un dossier : ni `is_dir()` ni
+        // `mkdir()` ne peuvent aboutir.
+        $obstacle = sys_get_temp_dir().'/se5-adopt-portal-icon-obstacle-'.uniqid();
+        file_put_contents($obstacle, 'pas un dossier');
+        config(['shortcut_icons.served_path' => $obstacle.'/servi']);
+
+        $this->configureNextcloud(true, true);
+
+        $this->artisan('files:adopt-locations')
+            ->expectsOutputToContain('sans icône')
+            ->assertExitCode(0);
+
+        self::assertSame(self::DECISION_NEXTCLOUD_POSIX, $this->ligneEnregistree());
+        self::assertNull($this->iconePubliee());
+
+        @unlink($obstacle);
     }
 }

@@ -12,7 +12,6 @@ use App\Services\Agent\DesktopPathResolver;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\Agent\WorkstationEnvironmentResolver;
-use App\Services\FilePolicyService;
 use Illuminate\Support\Collection;
 
 /**
@@ -75,11 +74,16 @@ use Illuminate\Support\Collection;
  * **Semantics `exclusive`** — un dossier shell a UNE valeur. L'identité est le
  * `folder` ; aucune union n'aurait de sens. Le provider émet un unique candidat
  * en maille `Broadcast` : la valeur n'est pas assignable par maille (elle dérive
- * du parc et de la politique de fichiers, pas d'une table d'authoring).
+ * du parc SEUL, pas d'une table d'authoring).
  *
- * **Lecture PURE** — aucune requête : ni Postgres, ni AD (NFR7, critère
- * Keycloak). Tout vient du {@see TargetContext} déjà résolu et de la capacité
- * globale {@see FilePolicyService::capabilities()}.
+ * **Lecture PURE** — aucune table d'authoring, aucune ligne de réglage, aucun AD
+ * (NFR7, critère Keycloak). La seule lecture est celle de l'environnement du
+ * parc, faite par le {@see WorkstationEnvironmentResolver} sur les ids déjà
+ * résolus du {@see TargetContext}. **Story 63.2** : ce provider lisait EN PLUS
+ * `files.policy` pour savoir si le home était monté ; il ne le lit plus. Le
+ * Bureau ne dépend plus de l'emplacement de l'espace perso — le home SMB qui
+ * l'héberge est toujours là pour l'agent, quel que soit le cloud
+ * (cf. {@see DesktopPathResolver::pathFor()}).
  *
  * Payload v1 : `{folder, path, quick_access}` — exactement 3 clés, toujours des
  * strings (§4.1). Tokens `<se4fs>` / `<user>` substitués LOCALEMENT par l'agent,
@@ -162,16 +166,13 @@ final class ShellFoldersStateProvider implements StateProvider
         // l'endroit où l'agent POSE les raccourcis et l'endroit vers lequel il
         // REDIRIGE le shell sont un seul et même chemin.
         $environment = $this->environmentResolver->resolveForGroupIds($ctx->workstationGroupIds());
-        $path = $this->desktopPaths->pathFor(
-            $environment,
-            FilePolicyService::capabilities()['home'],
-        );
+        $path = $this->desktopPaths->pathFor($environment);
 
         return collect([
             new StateCandidate(
-                // Broadcast : la valeur dérive du parc + de la politique globale
-                // de fichiers, pas d'une assignation par maille. Aucun arbitrage
-                // de précédence à faire — un seul candidat, toujours.
+                // Broadcast : la valeur dérive du parc SEUL, pas d'une
+                // assignation par maille. Aucun arbitrage de précédence à
+                // faire — un seul candidat, toujours.
                 maille: StateMaille::Broadcast,
                 payload: [
                     'folder' => self::FOLDER_DESKTOP,

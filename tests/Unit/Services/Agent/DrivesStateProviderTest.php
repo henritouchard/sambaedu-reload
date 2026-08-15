@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\ActiveCloud;
+use App\Enums\FileBackendName;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
 use App\Enums\WorkstationEnvironment;
+use App\Exceptions\Filesystem\FileLocationException;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
 use App\Models\SystemSetting;
@@ -21,7 +24,11 @@ use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
+use App\Services\Filesystem\FileLocations;
+use App\Services\Filesystem\FileLocationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -163,89 +170,174 @@ class DrivesStateProviderTest extends TestCase
     }
 
     // =========================================================================
-    // Politique de gestion des fichiers (FilePolicyService) — gating des lecteurs
+    // Story 63.2 — LES EMPLACEMENTS gouvernent les lecteurs, pas les capacités
+    //
+    // Une lettre ne désigne QUE du SMB : `K:` si et seulement si l'espace perso
+    // y vit, `H:` si et seulement si l'espace partagé y vit. Les répertoires
+    // réseau gérés, eux, ne sont gouvernés par AUCUN des deux : leur autorité
+    // est la leur, choisie à leur création.
     // =========================================================================
 
-    #[Test]
-    public function default_policy_emits_home_and_classes(): void
+    /** Pose une décision d'emplacements — l'arrangement de toute cette section. */
+    private function locations(
+        FileBackendName $perso,
+        FileBackendName $partage,
+        ActiveCloud $cloud,
+    ): void {
+        FileLocationService::set(FileLocations::make($perso, $partage, $cloud));
+    }
+
+    /** @return list<string> les lettres émises, dans l'ordre. */
+    private function letters(): array
     {
-        // Aucune politique persistée ⇒ défaut `home✓ shares✓` ⇒ jeu fixe émis
-        // (garde-fou golden : sortie identique à l'historique).
-        self::assertNull(SystemSetting::get(\App\Services\FilePolicyService::SETTING_KEY));
-        self::assertCount(2, $this->provider->itemsFor($this->ctx()));
+        return $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
     }
 
     #[Test]
-    public function all_capabilities_off_is_web_only_and_suppresses_all_drives(): void
+    public function no_recorded_decision_emits_home_and_classes(): void
     {
-        \App\Services\FilePolicyService::setGlobal(false, false, false);
-
-        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
+        // Aucune ligne persistée ⇒ défauts 63.1 (`posix`/`posix`/`aucun`) ⇒ jeu
+        // fixe émis (garde-fou golden : sortie identique à l'historique).
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
+        self::assertSame(['K:', 'H:'], $this->letters());
     }
 
     #[Test]
-    public function nextcloud_only_mounts_no_drive(): void
+    public function the_personal_space_in_the_cloud_removes_K_and_nothing_else(): void
     {
-        // Nextcloud natif seul (home & partages coupés) : l'agent ne monte aucun
-        // lecteur — le provisioning du client Desktop est un autre canal.
-        \App\Services\FilePolicyService::setGlobal(false, false, true);
-
-        self::assertCount(0, $this->provider->itemsFor($this->ctx()));
-    }
-
-    #[Test]
-    public function home_only_emits_just_the_home_drive(): void
-    {
-        // `home✓ shares✗` : K: seul, jamais H: ni répertoires gérés.
-        \App\Services\FilePolicyService::setGlobal(true, false, false);
         $share = NetworkShare::factory()->create(['directory_name' => 'gere', 'letter' => 'P:']);
         $this->assign($share, User::class, $this->user->id);
 
-        $letters = $this->provider->itemsFor($this->ctx())
-            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
-        self::assertSame(['K:'], $letters);
+        $this->locations(FileBackendName::Nextcloud, FileBackendName::Posix, ActiveCloud::Nextcloud);
+
+        self::assertSame(['H:', 'P:'], $this->letters());
     }
 
     #[Test]
-    public function shares_only_emits_classes_and_managed_directories_without_home(): void
+    public function the_shared_space_in_the_cloud_removes_H_and_nothing_else(): void
     {
-        // `home✗ shares✓` : H: et les répertoires gérés, mais pas le home K:.
-        \App\Services\FilePolicyService::setGlobal(false, true, false);
+        // ⚠️ LE changement de comportement de la story : les répertoires réseau
+        // gérés SORTENT de la garde de l'espace partagé. Leur autorité est
+        // `network_shares.backend`, pas le plan de fichiers — celui-ci ne les
+        // gouverne pas, il refuse seulement une lettre à ce qui n'est pas POSIX.
         $share = NetworkShare::factory()->create(['directory_name' => 'gere', 'letter' => 'P:']);
         $this->assign($share, User::class, $this->user->id);
 
-        $letters = $this->provider->itemsFor($this->ctx())
-            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
-        self::assertSame(['H:', 'P:'], $letters);
+        $this->locations(FileBackendName::Posix, FileBackendName::Nextcloud, ActiveCloud::Nextcloud);
+
+        self::assertSame(['K:', 'P:'], $this->letters());
+    }
+
+    #[Test]
+    public function both_spaces_in_the_cloud_still_leave_the_managed_directories(): void
+    {
+        // Et NON PAS `[]` : un répertoire déclaré `posix` reste servi par le
+        // serveur de fichiers, quoi que décident les deux emplacements.
+        $share = NetworkShare::factory()->create(['directory_name' => 'gere', 'letter' => 'P:']);
+        $this->assign($share, User::class, $this->user->id);
+
+        $this->locations(FileBackendName::OpenCloud, FileBackendName::OpenCloud, ActiveCloud::OpenCloud);
+
+        self::assertSame(['P:'], $this->letters());
+    }
+
+    #[Test]
+    public function both_spaces_in_the_cloud_without_managed_directory_emit_nothing(): void
+    {
+        $this->locations(FileBackendName::Nextcloud, FileBackendName::Nextcloud, ActiveCloud::Nextcloud);
+
+        self::assertSame([], $this->letters());
     }
 
     /**
-     * **STORY 61.3 (D7) — UN RÉPERTOIRE SERVI PAR LE CLOUD N'ÉMET AUCUNE LETTRE.**
+     * **AUCUNE LETTRE POUR UN RÉPERTOIRE QUE LE SERVEUR DE FICHIERS NE SERT PAS.**
      *
      * Ce n'est pas une coupe de périmètre : il n'y a PAS de chemin SMB au-dessus d'un
-     * dossier d'équipe, et c'est une impossibilité vérifiée. Émettre une lettre
-     * monterait un lecteur vers un partage qui n'existe pas côté serveur de fichiers —
-     * l'utilisateur verrait un lecteur en erreur pendant que l'écran affirmerait que
-     * tout est en place. L'accès réel de ces répertoires est le web et le client de
-     * synchronisation ; le montage local du poste est un chantier d'agent, nommé et
-     * non promis ici.
+     * dossier d'équipe hébergé par un cloud, et c'est une impossibilité vérifiée.
+     * Émettre une lettre monterait un lecteur vers un partage qui n'existe pas côté
+     * serveur de fichiers — l'utilisateur verrait un lecteur en erreur pendant que
+     * l'écran affirmerait que tout est en place. L'accès réel de ces répertoires est
+     * le web et le client de synchronisation.
+     *
+     * Le filtre est une LISTE BLANCHE depuis la 63.2 : `opencloud` (vocabulaire
+     * ouvert en 61.4) passait au travers de l'exclusion nominative `!= nextcloud`.
+     *
+     * @return array<string, array{string}>
      */
-    #[Test]
-    public function a_cloud_served_share_never_emits_a_drive_letter(): void
+    public static function nonPosixBackends(): array
     {
-        \App\Services\FilePolicyService::setGlobal(false, true, true);
+        return [
+            'nextcloud' => [FileBackendName::Nextcloud->value],
+            'opencloud (la régression que la liste blanche ferme)' => [FileBackendName::OpenCloud->value],
+            'aperçu (n\'écrit aucun droit, ne sert aucun fichier)' => [FileBackendName::Preview->value],
+        ];
+    }
 
+    #[Test]
+    #[DataProvider('nonPosixBackends')]
+    public function a_directory_not_served_by_the_file_server_never_emits_a_drive_letter(string $backend): void
+    {
         $posix = NetworkShare::factory()->create(['directory_name' => 'gere_smb', 'letter' => 'P:']);
         $this->assign($posix, User::class, $this->user->id);
 
         $cloud = NetworkShare::factory()->create(['directory_name' => 'gere_cloud', 'letter' => 'Q:']);
-        \Illuminate\Support\Facades\DB::table('network_shares')->where('id', $cloud->id)->update(['backend' => 'nextcloud']);
+        DB::table('network_shares')->where('id', $cloud->id)->update(['backend' => $backend]);
         $this->assign($cloud, User::class, $this->user->id);
 
-        $letters = $this->provider->itemsFor($this->ctx())
-            ->map(fn (StateCandidate $c): string => $c->payload['letter'])->all();
+        self::assertSame(
+            ['K:', 'H:', 'P:'],
+            $this->letters(),
+            "la lettre d'un répertoire de backend `{$backend}` ne doit pas être émise",
+        );
+    }
 
-        self::assertSame(['H:', 'P:'], $letters, 'la lettre du répertoire servi par le cloud ne doit pas être émise');
+    /**
+     * **UN RÉGLAGE CORROMPU REFUSE, IL NE SE REPLIE PAS.**
+     *
+     * Un repli sur `posix/posix` inventerait une décision que personne n'a
+     * prise et déplacerait en silence les lecteurs de tout un établissement.
+     */
+    #[Test]
+    public function a_forged_locations_row_makes_the_compilation_refuse(): void
+    {
+        SystemSetting::set(FileLocationService::SETTING_KEY, [
+            'espace_perso.autorite' => 'posix',
+            // Hors vocabulaire : ni un backend, ni rien de connu.
+            'espace_partage.autorite' => 'ceph',
+            'cloud.actif' => 'aucun',
+        ]);
+
+        $this->expectException(FileLocationException::class);
+
+        $this->provider->itemsFor($this->ctx());
+    }
+
+    /**
+     * **LE GOLDEN NE BOUGE PAS, ET C'EST PROUVÉ ICI.**
+     *
+     * Les deux payloads sont recopiés LITTÉRALEMENT des lignes `drives` de
+     * `tests/Fixtures/Agent/state.v1.json`. C'est ce test — pas le fichier de
+     * fixture, qui est statique — qui attrape une régression de contrat.
+     */
+    #[Test]
+    public function the_default_decision_emits_exactly_the_golden_payloads(): void
+    {
+        $payloads = $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): array => $c->payload)->all();
+
+        self::assertSame([
+            [
+                'letter' => 'K:',
+                'unc' => '\\\\<se4fs>\\users\\<user>\\',
+                'label' => 'Mes documents',
+            ],
+            [
+                'letter' => 'H:',
+                'unc' => '\\\\<se4fs>\\classes\\',
+                'label' => 'Classes',
+            ],
+        ], $payloads);
     }
 
     // =========================================================================

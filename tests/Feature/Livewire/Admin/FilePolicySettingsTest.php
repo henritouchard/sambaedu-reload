@@ -104,23 +104,23 @@ class FilePolicySettingsTest extends TestCase
     }
 
     /**
-     * Le raccourci-portail : une bascule qui persiste ET qui met l'icône à
-     * disposition, sans quoi le `.lnk` porterait l'icône de `rundll32.exe` sur
-     * tous les bureaux de l'établissement.
+     * L'icône du raccourci-portail est publiée à l'ENREGISTREMENT, sans aucune
+     * case ni aucune condition (Story 63.2 : le raccourci suit le cloud actif,
+     * la case a disparu). Sans cette publication, le `.lnk` porterait l'icône de
+     * `rundll32.exe` sur tous les bureaux de l'établissement.
      */
     #[Test]
-    public function toggling_the_portal_shortcut_persists_and_publishes_its_icon(): void
+    public function saving_the_tab_publishes_the_portal_icon(): void
     {
         $served = sys_get_temp_dir().'/se5-portal-icon-'.uniqid();
         config(['shortcut_icons.served_path' => $served]);
 
+        // Aucune capacité cloud activée : la publication n'est plus conditionnée
+        // à quoi que ce soit — publier une icône n'active rien et ne se voit
+        // nulle part tant qu'aucun raccourci ne la réclame.
         Livewire::test(self::COMPONENT)
-            ->set('nextcloud', true)
-            ->set('nextcloudServerUrl', 'https://cloud.etab.fr')
-            ->set('nextcloudDesktopShortcut', true)
+            ->set('home', false)
             ->assertHasNoErrors();
-
-        self::assertTrue(FilePolicyService::globalConfig()['nextcloud_desktop_shortcut']);
 
         $published = app(PortalShortcutIcon::class)->current();
         self::assertNotNull($published, 'la publication a lieu au geste d\'administration');
@@ -128,11 +128,13 @@ class FilePolicySettingsTest extends TestCase
     }
 
     /**
-     * Le réglage est INDÉPENDANT des capacités : basculer `home` ou `shares` ne
-     * doit jamais faire disparaître un raccourci déjà posé sur les bureaux.
+     * `nextcloud_desktop_shortcut` n'a plus de lecteur (Story 63.2) mais reste
+     * PERSISTÉE : la retirer casserait le payload de `files.policy`, et c'est la
+     * 63.3 qui éteindra le réglage en entier. Un enregistrement depuis cet
+     * écran, qui ne la nomme plus, ne doit donc pas l'effacer.
      */
     #[Test]
-    public function toggling_another_capability_never_drops_the_portal_shortcut(): void
+    public function saving_the_tab_never_wipes_the_orphaned_portal_shortcut_key(): void
     {
         FilePolicyService::setGlobal(
             true,
@@ -143,7 +145,6 @@ class FilePolicySettingsTest extends TestCase
         );
 
         Livewire::test(self::COMPONENT)
-            ->assertSet('nextcloudDesktopShortcut', true)
             ->set('shares', false)
             ->assertHasNoErrors();
 

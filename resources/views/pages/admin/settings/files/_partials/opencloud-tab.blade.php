@@ -5,6 +5,7 @@ use App\Services\FilePolicyService;
 use App\Services\OpenCloud\OpenCloudConnectionConfig;
 use App\Services\OpenCloud\OpenCloudConnectionVerifier;
 use App\Services\ServiceCredentials;
+use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
@@ -115,7 +116,29 @@ new class extends Component {
             $this->verifyTls,
         );
 
+        $this->publishPortalIcon();
+
         $this->toastSuccess('Réglages OpenCloud enregistrés.');
+    }
+
+    /**
+     * Publie l'icône du raccourci vers le portail web — **le même appel que dans
+     * l'onglet voisin, et pour la même raison** (Story 63.2).
+     *
+     * Le raccourci « Mes fichiers en ligne » suit le CLOUD ACTIF de l'instance :
+     * il est donc posé aussi quand ce cloud est OpenCloud. Sans cet appel ici,
+     * une instance qui n'aurait jamais enregistré l'onglet voisin poserait un
+     * `.lnk` portant l'icône de `rundll32.exe` sur tous les bureaux.
+     *
+     * L'icône source est NEUTRE, sans marque : c'est la même pour les deux
+     * produits, il n'y a rien à choisir ici.
+     *
+     * Idempotent, et NON BLOQUANT : un échec de publication laisse le raccourci
+     * sans icône, jamais sans raccourci.
+     */
+    private function publishPortalIcon(): void
+    {
+        app(PortalShortcutIcon::class)->publish();
     }
 
     /**
