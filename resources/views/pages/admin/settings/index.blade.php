@@ -212,7 +212,7 @@ new #[Title('Réglages')] class extends Component {
                     icon="fa-solid fa-folder-tree"
                     iconColor="info"
                     title="Gestion des fichiers"
-                    description="Politique d'accès aux fichiers (partages réseau / Nextcloud), quotas &amp; FS, lecteurs réseau gérés et profils itinérants."
+                    description="Où vivent les fichiers de l'établissement — espace personnel, espace partagé, cloud actif — lecteurs réseau gérés et profils itinérants."
                     badge="Fichiers"
                     testid="card-files" />
 

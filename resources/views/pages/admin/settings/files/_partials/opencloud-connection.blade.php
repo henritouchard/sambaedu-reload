@@ -10,18 +10,24 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
 /**
- * Onglet « OpenCloud » de /admin/settings/files.
+ * LA PAGE DE CONNEXION À L'INSTANCE OPENCLOUD — bloc 1 de l'onglet
+ * « Emplacements et cloud » de /admin/settings/files.
  *
  * ---------------------------------------------------------------------------
- * **UN ONGLET DÉDIÉ, ET PAS UNE CARTE DE PLUS DANS L'ONGLET VOISIN.**
+ * **STORY 63.3 — CE BLOC A DÉMÉNAGÉ, IL N'A PAS ÉTÉ RÉÉCRIT.** Il était
+ * l'onglet « OpenCloud » ; il est maintenant révélé par la position « OpenCloud »
+ * du choix de cloud, et par elle seule. Le comportement, les libellés, les
+ * gardes et les tests sont conservés à l'identique.
  *
- * OpenCloud est une AUTORITÉ D'ÉCRITURE alternative — au même titre que le
- * serveur de fichiers historique et que l'autre produit — et sa capacité est
- * INDÉPENDANTE des trois autres. La loger dans l'onglet des lecteurs personnels
- * et partagés aurait suggéré une dépendance qui n'existe pas, et allongé un
- * écran déjà dense d'un bloc qui ne parle pas de montage.
+ * **L'INTERRUPTEUR DE CAPACITÉ A DISPARU D'ICI, ET C'EST LE POINT.** « OpenCloud
+ * est-il actif ? » n'est plus une case indépendante : c'est une des trois
+ * positions du CLOUD ACTIF de l'instance, décidée au-dessus, et le miroir
+ * ({@see \App\Services\Filesystem\FileLocationPolicyMirror}) écrit la capacité
+ * `opencloud` de `files.policy` à partir d'elle. Ce composant lit donc la
+ * capacité persistée et la REPASSE inchangée à chaque enregistrement — il
+ * n'écrit que des réglages de connexion.
  *
- * Le bloc de connexion est en revanche SYMÉTRIQUE de celui de l'autre produit,
+ * Le bloc de connexion est SYMÉTRIQUE de celui de l'autre produit,
  * volontairement : adresse, compte d'administration, secret en écriture seule,
  * vérification TLS cochée par défaut, sonde qui n'écrit rien et diagnostic
  * persisté. Un exploitant qui connaît l'un sait lire l'autre.
@@ -48,8 +54,20 @@ use Livewire\Component;
 new class extends Component {
     use WithToasts;
 
-    public bool $opencloud = false;
-
+    /**
+     * ⚠️ **LA CAPACITÉ N'EST PAS UNE PROPRIÉTÉ DE CE COMPOSANT** (correction de
+     * revue). Elle l'a été, avec un docblock affirmant que « les gardes de ce
+     * composant la consultent » — or il n'y en a aucune ici, et
+     * {@see self::save()} repasse de toute façon la valeur persistée. Une
+     * propriété que personne ne lit, documentée comme portante, est un piège
+     * pour la prochaine lecture.
+     *
+     * Le principe vaut au-delà de l'inutilité : cette capacité est DÉRIVÉE du
+     * cloud actif, décidé au-dessus, et ce composant est monté au clic sur la
+     * position « OpenCloud » — donc AVANT que le miroir ne l'allume. La mettre
+     * en cache au montage figerait un `false` pour toute la session de page.
+     * Si une garde naît ici, elle relira la valeur persistée à ce moment-là.
+     */
     public string $serverUrl = '';
 
     public string $adminUser = '';
@@ -73,7 +91,6 @@ new class extends Component {
 
         $config = FilePolicyService::globalConfig();
 
-        $this->opencloud = (bool) $config['opencloud'];
         $this->serverUrl = (string) $config['opencloud_server_url'];
         $this->adminUser = (string) $config['opencloud_admin_user'];
         $this->verifyTls = (bool) $config['opencloud_verify_tls'];
@@ -100,23 +117,22 @@ new class extends Component {
             abort(403);
         }
 
-        $policy = FilePolicyService::globalConfig();
-
-        FilePolicyService::setGlobal(
-            $policy['home'],
-            $policy['shares'],
-            $policy['nextcloud'],
-            $policy['nextcloud_server_url'],
-            $policy['nextcloud_admin_user'],
-            $policy['nextcloud_smb_host'],
-            $policy['nextcloud_verify_tls'],
-            $this->opencloud,
-            trim($this->serverUrl),
-            trim($this->adminUser),
-            $this->verifyTls,
-        );
+        // CE COMPOSANT N'ÉCRIT QUE SA CONNEXION. Il ne NOMME que ses trois
+        // réglages ; les quatre booléens de capacité — dérivés des emplacements
+        // par le miroir — et tous les réglages de l'autre produit sont relus et
+        // repassés par `patchGlobal()`, seul endroit du dépôt qui connaisse
+        // l'ordre des paramètres de `setGlobal()`.
+        FilePolicyService::patchGlobal([
+            'opencloud_server_url' => trim($this->serverUrl),
+            'opencloud_admin_user' => trim($this->adminUser),
+            'opencloud_verify_tls' => $this->verifyTls,
+        ]);
 
         $this->publishPortalIcon();
+
+        // L'écran parent recalcule les positions qu'il propose : une connexion
+        // qu'on vient de compléter doit devenir posable sans recharger la page.
+        $this->dispatch('cloud-connexion-enregistree');
 
         $this->toastSuccess('Réglages OpenCloud enregistrés.');
     }
@@ -171,6 +187,9 @@ new class extends Component {
             $this->rememberDiagnostic($diagnostic);
         }
 
+        // Un secret rangé peut COMPLÉTER la connexion : le parent recalcule.
+        $this->dispatch('cloud-connexion-enregistree');
+
         $this->toastSuccess('Mot de passe d\'administration enregistré (chiffré). Testez la connexion pour le vérifier.');
     }
 
@@ -183,6 +202,10 @@ new class extends Component {
         app(ServiceCredentials::class)->forget(OpenCloudConnectionConfig::CREDENTIAL_NAME);
         $this->refreshSecretState();
         $this->rememberDiagnostic(null);
+
+        // Retirer un secret DÉGRADE la connexion — c'est le geste par lequel on
+        // départage deux clouds configurés. Le parent en tient compte.
+        $this->dispatch('cloud-connexion-enregistree');
 
         $this->toastSuccess('Mot de passe d\'administration retiré.');
     }
@@ -242,27 +265,10 @@ new class extends Component {
         </div>
     </div>
 
-    {{-- La capacité, libellé au SUJET neutre : l'état est porté par la valeur. --}}
-    <label class="card bg-base-100 border cursor-pointer transition-all hover:shadow-md w-full md:max-w-md
-        {{ $opencloud ? 'border-primary/50 shadow-sm' : 'border-base-300' }}">
-        <div class="card-body p-5 gap-2">
-            <div class="flex items-start justify-between gap-3">
-                <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0
-                    {{ $opencloud ? 'bg-primary/10 text-primary' : 'bg-base-200 text-base-content/40' }}">
-                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
-                </div>
-                <input type="checkbox" wire:model.live="opencloud" class="toggle toggle-primary"
-                    aria-label="Accès OpenCloud" />
-            </div>
-            <span class="font-medium">Accès OpenCloud</span>
-            <p class="text-xs text-base-content/60">
-                Autorise un répertoire géré à être servi par une instance OpenCloud.
-                Tant que cette capacité est éteinte, OpenCloud n'est pas proposé à la création.
-            </p>
-        </div>
-    </label>
-
-    @if ($opencloud)
+    {{-- La capacité n'a PLUS d'interrupteur ici : « OpenCloud est-il actif ? »
+         est une position du choix de cloud, au-dessus. Ce bloc ne fait que
+         déclarer la connexion à l'instance. --}}
+    <div>
         <div class="rounded-xl border border-primary/30 bg-primary/5 p-5 flex flex-col gap-4">
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-cloud-arrow-up text-primary"></i>
@@ -359,7 +365,7 @@ new class extends Component {
                 </div>
             @endif
         </div>
-    @endif
+    </div>
 
     <div class="text-xs text-base-content/60">
         <p class="font-medium mb-1">Monter l'instance sur ce serveur</p>
@@ -370,7 +376,8 @@ new class extends Component {
         <pre class="mt-2 overflow-x-auto rounded-lg bg-base-200 p-3">php artisan opencloud:deploy --url=https://fichiers.etablissement.fr</pre>
         <p class="mt-1">
             La commande ne supprime jamais de conteneur, de volume ni de donnée, et elle
-            <strong>n'active pas</strong> la capacité ci-dessus : c'est un geste explicite qui vous revient.
+            <strong>ne rend pas</strong> OpenCloud cloud actif de l'instance : c'est un geste explicite qui
+            vous revient, au-dessus.
         </p>
     </div>
 

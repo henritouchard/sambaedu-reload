@@ -14,19 +14,28 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 /**
- * Onglet « Personnels et partagés » de /admin/settings/files.
+ * LA PAGE DE CONNEXION À L'INSTANCE NEXTCLOUD — bloc 1 de l'onglet
+ * « Emplacements et cloud » de /admin/settings/files.
  *
- * Déclare le réglage GLOBAL d'instance de la politique de gestion des fichiers
- * (décision Henri 2026-07-17) : TROIS CAPACITÉS INDÉPENDANTES —
- *  - `home`      : montage du home perso K: ;
- *  - `shares`    : montage des partages serveur (classes H: + répertoires gérés) ;
- *  - `nextcloud` : « Accès Nextcloud » — l'instance monte les partages SMB en
- *                  stockage externe et SE5 provisionne montages et comptes (61.1).
+ * ---------------------------------------------------------------------------
+ * **STORY 63.3 — CE BLOC A DÉMÉNAGÉ, IL N'A PAS ÉTÉ RÉÉCRIT.** Il était
+ * l'onglet « Personnels et partagés » ; il est maintenant révélé par la position
+ * « Nextcloud » du choix de cloud, et par elle seule. La sonde-garde
+ * fail-closed, le diagnostic persisté, la re-sonde après changement de secret,
+ * le rapport de provisionnement et la modale de rattachement d'identité sont
+ * conservés à l'identique.
  *
- * On peut activer/désactiver chacune séparément. Tout désactivé = « web
- * uniquement » (rien monté). Gouverne le
- * {@see \App\Services\Agent\Providers\DrivesStateProvider}. Pas d'override par
- * parc. Composant enfant (nested) — double garde `server.admin`.
+ * **LES TROIS INTERRUPTEURS ONT DISPARU D'ICI, ET C'EST LE POINT.** `home`,
+ * `shares` et « Accès Nextcloud » ne sont plus des cases : les deux premiers
+ * sont dérivés des EMPLACEMENTS (où vit l'espace personnel, où vit l'espace
+ * partagé) et le troisième du CLOUD ACTIF, tous trois décidés au-dessus et
+ * projetés sur `files.policy` par
+ * {@see \App\Services\Filesystem\FileLocationPolicyMirror}. Ce composant lit
+ * donc les quatre booléens persistés et les REPASSE inchangés à chaque
+ * enregistrement — il n'écrit que des réglages de connexion.
+ * ---------------------------------------------------------------------------
+ *
+ * Composant enfant (nested) — double garde `server.admin`, et **racine stable**.
  *
  * **Enregistrement automatique** : chaque bascule persiste immédiatement (pas de
  * bouton « Enregistrer »). Les champs texte persistent à la sortie du champ
@@ -41,12 +50,6 @@ use Livewire\Component;
  * page. L'écran ne montre que le FAIT qu'un secret est enregistré, jamais sa
  * valeur. Un test l'épingle sur le HTML rendu.
  * ---------------------------------------------------------------------------
- *
- * **La capacité « Accès Nextcloud » ne dépend PAS de `home`.** Le montage
- * « Documents » (le home de l'utilisateur, vu par le web) est créé même quand le
- * lecteur K: est désactivé : `home` gouverne ce que l'AGENT monte sur le poste,
- * pas le chemin d'accès web. Les conditionner l'un à l'autre réintroduirait le
- * mode exclusif explicitement refusé le 2026-07-17.
  *
  * ---------------------------------------------------------------------------
  * **STORY 61.2 (recadrée le 2026-08-08) — LA CONNEXION EST FAIL-CLOSED.**
@@ -84,9 +87,29 @@ use Livewire\Component;
 new class extends Component {
     use WithToasts;
 
-    public bool $home = true;
-    public bool $shares = true;
-    public bool $nextcloud = false;
+    /**
+     * ⚠️ **LA CAPACITÉ N'EST PLUS UNE PROPRIÉTÉ, ET C'EST UNE CORRECTION DE
+     * SÉCURITÉ** (revue 63.3).
+     *
+     * Elle l'était, lue au seul `mount()`. Or ce composant est monté au CLIC sur
+     * la position « Nextcloud » du choix de cloud, c'est-à-dire **avant** que le
+     * miroir n'allume la capacité — et il gardait cet instantané `false` pour
+     * toute la session de page. Conséquences, invisibles en test parce que
+     * `Livewire::test()` re-monte les enfants à chaque rendu du parent alors
+     * qu'un navigateur ne le fait pas :
+     *  - {@see self::guardConnectionChange()} rendait `true` **sans jamais
+     *    sonder** — URL et compte administrateur persistés sans la moindre
+     *    vérification, c'est-à-dire le fail-closed de la story 61.2
+     *    court-circuité sur le parcours de PREMIÈRE configuration, le seul qui
+     *    compte ;
+     *  - {@see self::reprobeAfterSecretChange()} effaçait le diagnostic au lieu
+     *    d'en produire un.
+     *
+     * Elle est donc **relue à chaque écriture** dans `files.policy`, comme ce
+     * composant le fait déjà pour tous les autres réglages qu'il repasse. Une
+     * capacité dérivée d'une décision prise ailleurs ne se met pas en cache dans
+     * l'écran qui la subit.
+     */
     public string $nextcloudServerUrl = '';
     public string $nextcloudAdminUser = '';
     public string $nextcloudSmbHost = '';
@@ -147,9 +170,6 @@ new class extends Component {
         }
 
         $config = FilePolicyService::globalConfig();
-        $this->home = $config['home'];
-        $this->shares = $config['shares'];
-        $this->nextcloud = $config['nextcloud'];
         $this->nextcloudServerUrl = $config['nextcloud_server_url'];
         $this->nextcloudAdminUser = $config['nextcloud_admin_user'];
         $this->nextcloudSmbHost = $config['nextcloud_smb_host'];
@@ -191,21 +211,20 @@ new class extends Component {
             return;
         }
 
+        // CE COMPOSANT N'ÉCRIT QUE DES RÉGLAGES DE CONNEXION. Il ne NOMME que
+        // les quatre siens : les quatre booléens de capacité — dérivés des
+        // emplacements et du cloud actif par le miroir — et tout le reste sont
+        // relus et repassés par `patchGlobal()`. Une page de connexion qui
+        // écrirait une capacité ouvrirait un second chemin de décision, celui-là
+        // même que cette story ferme ; ici, elle n'en a structurellement plus le
+        // moyen.
         try {
-            FilePolicyService::setGlobal(
-                $this->home,
-                $this->shares,
-                $this->nextcloud,
-                $this->nextcloudServerUrl,
-                $this->nextcloudAdminUser,
-                $this->nextcloudSmbHost,
-                $this->nextcloudVerifyTls,
-                // `nextcloudDesktopShortcut` n'est PLUS passé : la clé reste
-                // persistée (paramètre nullable ⇒ valeur conservée), elle n'a
-                // simplement plus de lecteur depuis la Story 63.2. La retirer de
-                // `FilePolicyService` casserait le payload — c'est le travail de
-                // la 63.3, qui éteint `files.policy` en entier.
-            );
+            FilePolicyService::patchGlobal([
+                'nextcloud_server_url' => $this->nextcloudServerUrl,
+                'nextcloud_admin_user' => $this->nextcloudAdminUser,
+                'nextcloud_smb_host' => $this->nextcloudSmbHost,
+                'nextcloud_verify_tls' => $this->nextcloudVerifyTls,
+            ]);
         } catch (\Throwable $e) {
             Log::error('FilePolicySettings: échec save', ['error' => $e->getMessage()]);
             $this->toastError('Impossible d\'enregistrer la politique. Consultez les logs.');
@@ -214,6 +233,12 @@ new class extends Component {
         }
 
         $this->publishPortalIcon();
+
+        // L'ÉCRAN PARENT RECALCULE CE QU'IL PROPOSE. Sans cet événement, une
+        // connexion qu'on vient de compléter n'apparaissait jamais comme
+        // posable dans le bloc des emplacements, dont le motif continuait
+        // d'annoncer « la connexion est incomplète : complétez-la ci-dessus ».
+        $this->dispatch('cloud-connexion-enregistree');
     }
 
     /**
@@ -272,17 +297,22 @@ new class extends Component {
      * y répond déjà.
      * ---------------------------------------------------------------------------
      *
-     * Une sauvegarde qui ne touche que `home`, `shares` ou l'hôte SMB ne parle donc
-     * JAMAIS à l'instance ; capacité éteinte, aucun appel non plus — il n'y a alors
-     * aucune instance à configurer.
+     * Une sauvegarde qui ne touche que l'hôte SMB ne parle donc JAMAIS à
+     * l'instance ; capacité éteinte, aucun appel non plus — il n'y a alors aucune
+     * instance à configurer.
      */
     private function guardConnectionChange(): bool
     {
-        if (! $this->nextcloud) {
+        // ⚠️ LA CAPACITÉ EST RELUE ICI, JAMAIS MISE EN CACHE AU MONTAGE : ce
+        // composant est monté AVANT que le cloud actif ne l'allume, et un
+        // instantané `false` ferait rendre `true` à cette garde sans le moindre
+        // appel — le fail-closed annulé sur le parcours de première
+        // configuration.
+        $persisted = FilePolicyService::globalConfig();
+
+        if (! $persisted['nextcloud']) {
             return true;
         }
-
-        $persisted = FilePolicyService::globalConfig();
 
         // Tout ce qui définit LA CONNEXION : la cible, le compte, et ce qui décide
         // de la joignabilité.
@@ -371,7 +401,10 @@ new class extends Component {
      */
     private function reprobeAfterSecretChange(string $stored): void
     {
-        if (! $this->nextcloud) {
+        // Même règle qu'à la garde : la capacité est RELUE, jamais celle du
+        // montage — sinon un secret rangé juste après le choix du cloud
+        // n'aboutirait qu'à effacer le diagnostic, sans jamais en produire un.
+        if (! FilePolicyService::capabilities()['nextcloud']) {
             // Aucune instance à qui une position s'impose : le diagnostic précédent
             // ne vaut plus rien, et il n'y a rien à vérifier.
             $this->rememberDiagnostic(null);
@@ -432,6 +465,10 @@ new class extends Component {
             // contente pas de l'effacer — on RE-SONDE, sans jamais annuler
             // l'enregistrement.
             $this->reprobeAfterSecretChange('App password admin enregistré (chiffré)');
+
+            // Un secret rangé peut COMPLÉTER la connexion : l'écran parent doit
+            // recalculer les positions qu'il propose.
+            $this->dispatch('cloud-connexion-enregistree');
         } catch (\Throwable $e) {
             // Le message d'erreur ne cite JAMAIS le secret, ni sa longueur.
             Log::error('FilePolicySettings: échec enregistrement du secret Nextcloud', ['error' => $e->getMessage()]);
@@ -449,6 +486,11 @@ new class extends Component {
         app(ServiceCredentials::class)->forget(NextcloudConnectionConfig::CREDENTIAL_NAME);
         $this->hasAdminSecret = false;
         $this->rememberDiagnostic(null);
+
+        // Retirer un secret DÉGRADE la connexion — c'est le geste par lequel on
+        // départage deux clouds configurés. Le parent en tient compte.
+        $this->dispatch('cloud-connexion-enregistree');
+
         $this->toastSuccess('App password admin retiré.');
     }
 
@@ -563,7 +605,6 @@ new class extends Component {
         }
 
         if (in_array($property, [
-            'home', 'shares', 'nextcloud',
             'nextcloudServerUrl', 'nextcloudAdminUser', 'nextcloudSmbHost', 'nextcloudVerifyTls',
         ], true)) {
             $this->save();
@@ -574,86 +615,32 @@ new class extends Component {
 
 <div class="flex flex-col gap-6">
 
-    {{-- Les trois capacités, côte à côte (réglages indépendants et symétriques
-         ⇒ lecture horizontale), puis le récapitulatif en pleine largeur. --}}
+    {{-- Le bloc de connexion, et lui seul : les trois interrupteurs de capacité
+         ont quitté cet écran — ils sont dérivés des emplacements et du cloud
+         actif, décidés au-dessus. --}}
     <div class="flex flex-col gap-5">
 
         <div class="flex items-start justify-between gap-4">
             <p class="text-sm text-base-content/70">
-                Choisissez, indépendamment, ce que l'agent met à disposition sur les postes. Tout
-                désactivé = accès <strong>web uniquement</strong> (aucun lecteur monté).
+                Déclarez ici l'instance Nextcloud de l'établissement. La capacité « Accès Nextcloud »
+                suit le <strong>cloud actif</strong> choisi ci-dessus : elle ne se règle plus ici.
                 Chaque modification est enregistrée immédiatement.
             </p>
             <span class="text-xs text-base-content/50 flex items-center gap-2 shrink-0 pt-0.5"
                 wire:loading.class.remove="text-base-content/50" wire:loading.class="text-primary"
-                wire:target="home,shares,nextcloud,nextcloudServerUrl">
-                <span wire:loading wire:target="home,shares,nextcloud,nextcloudServerUrl"
+                wire:target="nextcloudServerUrl,nextcloudAdminUser,nextcloudSmbHost,nextcloudVerifyTls">
+                <span wire:loading wire:target="nextcloudServerUrl,nextcloudAdminUser,nextcloudSmbHost,nextcloudVerifyTls"
                     class="loading loading-spinner loading-xs"></span>
-                <i wire:loading.remove wire:target="home,shares,nextcloud,nextcloudServerUrl"
+                <i wire:loading.remove wire:target="nextcloudServerUrl,nextcloudAdminUser,nextcloudSmbHost,nextcloudVerifyTls"
                     class="fa-solid fa-check text-success"></i>
-                <span wire:loading.remove wire:target="home,shares,nextcloud,nextcloudServerUrl">Enregistré</span>
-                <span wire:loading wire:target="home,shares,nextcloud,nextcloudServerUrl">Enregistrement…</span>
+                <span wire:loading.remove wire:target="nextcloudServerUrl,nextcloudAdminUser,nextcloudSmbHost,nextcloudVerifyTls">Enregistré</span>
+                <span wire:loading wire:target="nextcloudServerUrl,nextcloudAdminUser,nextcloudSmbHost,nextcloudVerifyTls">Enregistrement…</span>
             </span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {{-- Home perso K: --}}
-            <label class="card bg-base-100 border cursor-pointer transition-all hover:shadow-md
-                {{ $home ? 'border-primary/50 shadow-sm' : 'border-base-300' }}">
-                <div class="card-body p-5 gap-2">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0
-                            {{ $home ? 'bg-primary/10 text-primary' : 'bg-base-200 text-base-content/40' }}">
-                            <i class="fa-solid fa-house text-lg"></i>
-                        </div>
-                        <input type="checkbox" wire:model.live="home" class="toggle toggle-primary"
-                            aria-label="Activer le répertoire personnel" />
-                    </div>
-                    <span class="font-medium">Répertoire personnel (K:)</span>
-                    <p class="text-xs text-base-content/60">Monte le home de l'utilisateur (« Mes documents »).</p>
-                </div>
-            </label>
-
-            {{-- Partages serveur H: --}}
-            <label class="card bg-base-100 border cursor-pointer transition-all hover:shadow-md
-                {{ $shares ? 'border-primary/50 shadow-sm' : 'border-base-300' }}">
-                <div class="card-body p-5 gap-2">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0
-                            {{ $shares ? 'bg-primary/10 text-primary' : 'bg-base-200 text-base-content/40' }}">
-                            <i class="fa-solid fa-network-wired text-lg"></i>
-                        </div>
-                        <input type="checkbox" wire:model.live="shares" class="toggle toggle-primary"
-                            aria-label="Activer les partages réseau" />
-                    </div>
-                    <span class="font-medium">Partages réseau (H:)</span>
-                    <p class="text-xs text-base-content/60">Monte les classes (H:) et les répertoires réseau gérés.</p>
-                </div>
-            </label>
-
-            {{-- Accès Nextcloud — libellé au SUJET neutre, l'état est porté par la
-                 valeur du réglage (convention des capacités). --}}
-            <label class="card bg-base-100 border cursor-pointer transition-all hover:shadow-md
-                {{ $nextcloud ? 'border-primary/50 shadow-sm' : 'border-base-300' }}">
-                <div class="card-body p-5 gap-2">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0
-                            {{ $nextcloud ? 'bg-primary/10 text-primary' : 'bg-base-200 text-base-content/40' }}">
-                            <i class="fa-solid fa-cloud text-lg"></i>
-                        </div>
-                        <input type="checkbox" wire:model.live="nextcloud" class="toggle toggle-primary"
-                            aria-label="Accès Nextcloud" />
-                    </div>
-                    <span class="font-medium">Accès Nextcloud</span>
-                    <p class="text-xs text-base-content/60">
-                        Monte les partages du serveur de fichiers dans Nextcloud et provisionne les comptes.
-                    </p>
-                </div>
-            </label>
-        </div>
-
-        {{-- Config Nextcloud — révélée UNIQUEMENT quand la capacité est active. --}}
-        @if ($nextcloud)
+        {{-- Config Nextcloud — le bloc est monté par la position « Nextcloud » du
+             choix de cloud ; il n'y a donc plus rien à conditionner ici. --}}
+        <div>
             <div class="rounded-xl border border-primary/30 bg-primary/5 p-5 flex flex-col gap-4">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-cloud text-primary"></i>
@@ -898,50 +885,23 @@ new class extends Component {
                     </div>
                 @endif
             </div>
-        @endif
+        </div>
     </div>
 
-    {{-- Récapitulatif : traduction de la config en ce que l'utilisateur verra
-         réellement sur son poste. Réactif (toggles en wire:model.live). --}}
-    <aside class="card bg-base-100 border border-base-300">
-        <div class="card-body p-5 gap-3">
-            <h3 class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-base-content/60">
-                <i class="fa-solid fa-desktop"></i>
-                Effet sur le poste
-            </h3>
-
-            {{-- Story 63.2 — LA PROJECTION DES LETTRES A ÉTÉ RETIRÉE D'ICI.
-                 `$home` et `$shares` ne gouvernent plus aucun lecteur : `K:` et
-                 `H:` suivent les emplacements de fichiers (`files.locations`),
-                 lus par le DrivesStateProvider. Continuer à afficher « K: » sous
-                 la garde de l'accès au home ferait promettre à l'écran ce qu'il
-                 ne tient plus — la doctrine même qui a fait retirer d'ici la
-                 case du raccourci de portail. L'onglet entier disparaît avec le
-                 nouvel écran du plan de fichiers : rien de plus n'est bâti ici. --}}
-            <div class="rounded-lg border border-base-300 bg-base-200 p-3 flex gap-3">
-                <i class="fa-solid fa-circle-info text-base-content/40 mt-0.5"></i>
-                <p class="text-xs text-base-content/70">
-                    Les lecteurs réseau montés sur le poste ne dépendent plus des réglages de cette page :
-                    ils suivent désormais les <strong>emplacements de fichiers</strong> — où vit l'espace
-                    personnel, où vit l'espace partagé. L'écran qui les règle arrive.
-                </p>
-            </div>
-
-            @if ($nextcloud)
-                <div class="flex items-start gap-3 rounded-lg bg-base-200 px-3 py-2">
-                    <i class="fa-solid fa-cloud text-base-content/40 mt-0.5 shrink-0"></i>
-                    <span class="text-xs">
-                        « Partages » et « Documents » dans Nextcloud
-                        @if (trim($nextcloudServerUrl) === '')
-                            <span class="block text-warning mt-0.5">URL du serveur non renseignée</span>
-                        @else
-                            <span class="block text-base-content/50 mt-0.5 break-all">{{ $nextcloudServerUrl }}</span>
-                        @endif
-                    </span>
-                </div>
+    {{-- « Effet sur le poste » a QUITTÉ ce bloc (Story 63.3) : il est porté par
+         les deux cartes d'emplacement, seul endroit où il est vrai. Ce qui reste
+         ici est ce que cet écran-là ne dit pas — ce que l'instance publie. --}}
+    <div class="flex items-start gap-3 rounded-lg bg-base-200 px-3 py-2">
+        <i class="fa-solid fa-cloud text-base-content/40 mt-0.5 shrink-0"></i>
+        <span class="text-xs">
+            « Partages » et « Documents » dans Nextcloud
+            @if (trim($nextcloudServerUrl) === '')
+                <span class="block text-warning mt-0.5">URL du serveur non renseignée</span>
+            @else
+                <span class="block text-base-content/50 mt-0.5 break-all">{{ $nextcloudServerUrl }}</span>
             @endif
-        </div>
-    </aside>
+        </span>
+    </div>
 
     {{-- ─────────────────────────────────────────────────────────────────────
          AC7 — LE RATTACHEMENT EXPLICITE D'IDENTITÉ.

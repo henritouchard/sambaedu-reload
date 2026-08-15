@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\CloudAccessPath;
 use App\Models\SystemSetting;
 
 /**
@@ -76,7 +77,7 @@ final class FilePolicyService
      * ce qui rendait la faiblesse invisible à l'exploitant. Ici, l'assouplissement
      * est un choix visible, coché sur l'écran et persisté.
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool, cloud_access_path: string}
      */
     public static function defaults(): array
     {
@@ -114,6 +115,18 @@ final class FilePolicyService
             // certificat est VRAIE par défaut, et son assouplissement est un
             // choix visible à l'écran, jamais un défaut caché dans le code.
             'opencloud_verify_tls' => true,
+
+            // --- Story 63.3 : le chemin d'accès au cloud, STRICTEMENT ADDITIF --
+            // Une clé de plus, en queue, avec un défaut qui reproduit exactement
+            // le comportement d'avant son arrivée : un payload persisté qui ne la
+            // porte pas se relit à l'identique et signifie ce qu'il signifiait.
+            //
+            // Ce n'est PAS une capacité : rien n'est monté, rien n'est
+            // provisionné. C'est la réponse à « par où l'utilisateur atteint ses
+            // fichiers quand ils vivent au cloud », et elle n'a de sens
+            // qu'adossée à un cloud actif. Elle n'a pas encore de lecteur sur le
+            // poste — l'écran le DIT, plutôt que de laisser croire à un effet.
+            'cloud_access_path' => CloudAccessPath::Web->value,
         ];
     }
 
@@ -122,7 +135,7 @@ final class FilePolicyService
      * ou un ancien payload `{mode:...}` : les clés inconnues sont ignorées, on
      * retombe proprement sur les défauts).
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool, cloud_access_path: string}
      */
     public static function globalConfig(): array
     {
@@ -164,6 +177,14 @@ final class FilePolicyService
             'opencloud_verify_tls' => array_key_exists('opencloud_verify_tls', $stored)
                 ? (bool) $stored['opencloud_verify_tls']
                 : $defaults['opencloud_verify_tls'],
+
+            // Vocabulaire FERMÉ : une valeur hors vocabulaire retombe sur le
+            // défaut plutôt que d'être rendue telle quelle — c'est un réglage de
+            // présentation, pas une décision d'emplacement, et rien ici ne se
+            // prête à un refus qui bloquerait l'écran entier.
+            'cloud_access_path' => CloudAccessPath::isKnown($stored['cloud_access_path'] ?? null)
+                ? (string) $stored['cloud_access_path']
+                : $defaults['cloud_access_path'],
         ];
     }
 
@@ -213,6 +234,7 @@ final class FilePolicyService
         ?string $opencloudAdminUser = null,
         ?bool $opencloudVerifyTls = null,
         ?bool $nextcloudDesktopShortcut = null,
+        ?string $cloudAccessPath = null,
     ): void {
         $current = self::globalConfig();
 
@@ -230,6 +252,57 @@ final class FilePolicyService
             'opencloud_server_url' => trim($opencloudServerUrl ?? $current['opencloud_server_url']),
             'opencloud_admin_user' => trim($opencloudAdminUser ?? $current['opencloud_admin_user']),
             'opencloud_verify_tls' => $opencloudVerifyTls ?? $current['opencloud_verify_tls'],
+
+            // Story 63.3 — même règle, même place : EN QUEUE et NULLABLE. Un
+            // appelant qui ne le nomme pas ne fait pas retomber le chemin
+            // d'accès sur le navigateur à l'insu de l'exploitant. Une valeur
+            // hors vocabulaire est ramenée au persisté plutôt qu'écrite.
+            'cloud_access_path' => CloudAccessPath::isKnown($cloudAccessPath)
+                ? (string) $cloudAccessPath
+                : $current['cloud_access_path'],
         ]);
+    }
+
+    /**
+     * Story 63.3 (correction de revue) — **LE SEUL ENDROIT DU DÉPÔT QUI CONNAÎT
+     * L'ORDRE DES PARAMÈTRES DE {@see self::setGlobal()}.**
+     *
+     * Écrit la config globale en ne nommant QUE ce qui change, tout le reste
+     * étant relu et repassé explicitement. Les appelants énuméraient chacun les
+     * treize paramètres positionnels dans le bon ordre — un écran, un miroir, une
+     * page de connexion — si bien que le jour où la signature bouge, l'un des
+     * sites serait oublié : exactement la classe de défaut que cette story ferme.
+     *
+     * **Rien n'est conservé par omission.** `setGlobal()` a dix paramètres
+     * nullables qui conservent le persisté, mais son quatrième
+     * (`$nextcloudServerUrl`) est un `string` de défaut `''` TOUJOURS écrit : un
+     * appelant qui l'oublie efface l'adresse de l'instance et éteint la chaîne
+     * cloud entière. En repassant les treize valeurs relues, cette méthode rend ce
+     * piège inatteignable — et c'est la raison pour laquelle elle est le passage
+     * obligé plutôt qu'une commodité.
+     *
+     * Une clé inconnue est ignorée ; une clé absente n'est jamais effacée.
+     *
+     * @param  array<string, mixed>  $changes  les clés de {@see self::defaults()} à modifier
+     */
+    public static function patchGlobal(array $changes): void
+    {
+        $config = array_replace(self::globalConfig(), array_intersect_key($changes, self::defaults()));
+
+        self::setGlobal(
+            (bool) $config['home'],
+            (bool) $config['shares'],
+            (bool) $config['nextcloud'],
+            (string) $config['nextcloud_server_url'],
+            (string) $config['nextcloud_admin_user'],
+            (string) $config['nextcloud_smb_host'],
+            (bool) $config['nextcloud_verify_tls'],
+            (bool) $config['opencloud'],
+            (string) $config['opencloud_server_url'],
+            (string) $config['opencloud_admin_user'],
+            (bool) $config['opencloud_verify_tls'],
+            (bool) $config['nextcloud_desktop_shortcut'],
+            (string) $config['cloud_access_path'],
+        );
     }
 }

@@ -12,10 +12,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Page hôte /admin/settings/files — trois onglets « Personnels et partagés »
- * (politique), « Lecteurs réseaux » (gestion des partages embarquée) et « Profils
- * itinérants ». Couvre la logique d'onglets et le rendu du composant partages
- * embarqué selon la permission.
+ * Page hôte /admin/settings/files — trois onglets « Emplacements et cloud » (où
+ * vivent les fichiers), « Lecteurs réseaux » (gestion des partages embarquée) et
+ * « Profils itinérants ». Couvre la logique d'onglets et le rendu du composant
+ * partages embarqué selon la permission.
  *
  * « Profils itinérants » est couvert ICI en tant qu'ONGLET ATTEIGNABLE :
  * `AdminSettingsProfilsItinerantsTabTest` monte le composant en direct et restait
@@ -44,13 +44,35 @@ class FilePolicyPageTest extends TestCase
     }
 
     #[Test]
-    public function it_opens_on_the_personnels_partages_tab(): void
+    public function it_opens_on_the_emplacements_tab(): void
     {
         $this->grant(['server.admin']);
 
         Livewire::test(self::HOST)
-            ->assertSet('tab', 'personnels-partages')
-            ->assertSee('Personnels et partagés');
+            ->assertSet('tab', 'emplacements')
+            ->assertSee('Emplacements et cloud');
+    }
+
+    /**
+     * Les deux onglets de connexion ONT DISPARU (story 63.3) : leurs clés
+     * retombent sur le défaut comme n'importe quelle clé inconnue, et AUCUN
+     * onglet fantôme n'est rendu. Ce test empêche de les ré-ajouter par
+     * inadvertance — les deux blocs qu'ils portaient sont désormais révélés par
+     * le choix de cloud du premier onglet.
+     */
+    #[Test]
+    public function the_removed_connection_tabs_are_not_reachable(): void
+    {
+        $this->grant(['server.admin']);
+
+        foreach (['personnels-partages', 'opencloud'] as $deadKey) {
+            Livewire::test(self::HOST, ['tab' => $deadKey])
+                ->assertSet('tab', 'emplacements');
+        }
+
+        $html = Livewire::test(self::HOST)->html();
+        self::assertStringNotContainsString('tab-personnels-partages', $html);
+        self::assertStringNotContainsString('tab-opencloud', $html);
     }
 
     #[Test]
@@ -81,7 +103,7 @@ class FilePolicyPageTest extends TestCase
         $this->grant(['server.admin']);
 
         Livewire::test(self::HOST, ['tab' => 'bogus'])
-            ->assertSet('tab', 'personnels-partages');
+            ->assertSet('tab', 'emplacements');
     }
 
     /**
@@ -96,7 +118,7 @@ class FilePolicyPageTest extends TestCase
         $this->grant(['server.admin']);
 
         Livewire::test(self::HOST, ['tab' => 'quotas-fs'])
-            ->assertSet('tab', 'personnels-partages')
+            ->assertSet('tab', 'emplacements')
             ->assertDontSee('Quotas par défaut (par profil)');
     }
 
@@ -121,7 +143,7 @@ class FilePolicyPageTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        foreach (['admin.quotas' => 'personnels-partages', 'admin.settings.profils-itinerants' => 'roaming'] as $routeName => $tab) {
+        foreach (['admin.quotas' => 'emplacements', 'admin.settings.profils-itinerants' => 'roaming'] as $routeName => $tab) {
             // `Route::redirect()` stocke la cible dans les defaults de la route :
             // on lit la destination réelle plutôt que de rejouer la requête HTTP
             // (le middleware `sambaedu.auth` exige une session LDAP absente en test).

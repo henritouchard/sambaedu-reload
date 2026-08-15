@@ -4323,3 +4323,401 @@ instances qui avaient coché la case sans avoir d'espace au cloud — et un
 déploiement, qui publie au passage l'icône du raccourci. Golden
 `state.v1.json`, `FROZEN_STATE_HASH` et contrat agent **inchangés**, aucun
 binaire publié, `FilePolicyService` INTOUCHÉ.)*
+
+---
+
+## Story 63.3 — L'écran des emplacements et du cloud
+
+**Ce que cette story change, en une phrase :** `/admin/settings/files` cesse
+d'être un empilement de quatre interrupteurs qui ne disaient pas où vivent les
+fichiers, et devient **un seul écran** qui pose trois questions dans l'ordre —
+quel cloud est configuré (choix exclusif, avec sa page de connexion), où vit
+l'espace personnel, où vit l'espace partagé — plus un bloc de réglages.
+
+**Pourquoi ce n'est pas cosmétique, et ce qu'il faut vérifier sur une instance
+réelle.** Trois choses peuvent casser en silence, et aucune n'est visible à
+l'œil :
+
+| ce qui change | ce qui casserait si c'était raté |
+|---|---|
+| **deux onglets disparaissent** (« Personnels et partagés », « OpenCloud ») | la redirection `/admin/quotas` viserait une clé morte et l'UI serait injoignable **sans erreur** |
+| **`files.policy` devient un MIROIR DÉRIVÉ** de `files.locations` | un miroir qui oublie l'URL Nextcloud **efface l'adresse de l'instance** et éteint toute la chaîne cloud |
+| **les deux blocs de connexion ont DÉMÉNAGÉ** sans être réécrits | secret en écriture seule, sonde fail-closed, diagnostic persisté, rapport, modale de rattachement : toute perte est une régression |
+
+> ⚠️ **AUCUN OCTET NE BOUGE.** Changer un emplacement alors que l'espace concerné
+> porte des données est **REFUSÉ** : le déménagement des données appartient au
+> chantier « Epic 64 — la bascule d'autorité ». Le constat « des données
+> existent » est volontairement **conservateur** : une instance qui porte au
+> moins un compte d'annuaire actif est réputée porter des fichiers.
+
+### Prérequis
+
+- [ ] **63.3-P1** — accès à `/admin/settings/files` avec `server.admin`, dépôt à
+      jour, migrations jouées (**aucune migration de schéma n'accompagne cette
+      story** : si `php artisan migrate` a quelque chose à faire, ce n'est pas
+      elle).
+- [ ] **63.3-P2** — relever l'état courant AVANT toute manipulation, pour
+      pouvoir le restaurer :
+      ```sql
+      select key, value from system_settings where key in ('files.policy', 'files.locations');
+      select name from service_credentials;
+      ```
+- [ ] **63.3-P3** — pour les scénarios cloud : une URL, un identifiant
+      d'administration et un secret de test pour Nextcloud et/ou OpenCloud.
+- [ ] **63.3-P4** — savoir si l'instance testée porte des comptes d'annuaire
+      actifs, des groupes ou des répertoires gérés : la garde de données en
+      dépend, et le scénario 63.3-6 ne se joue que sur une instance **neuve**.
+
+### 63.3-1 — L'écran existe, et les deux onglets morts ne sont plus joignables
+
+1. Ouvrir `/admin/settings/files`.
+
+- [ ] **63.3-1a** — la page ouvre sur l'onglet **« Emplacements et cloud »**, et
+      la barre d'onglets n'en porte plus que **trois** : « Emplacements et
+      cloud », « Lecteurs réseaux », « Profils itinérants ».
+- [ ] **63.3-1b** — ouvrir `/admin/settings/files?tab=personnels-partages` puis
+      `?tab=opencloud` : les deux retombent sur « Emplacements et cloud », et
+      **aucun onglet fantôme** n'apparaît.
+- [ ] **63.3-1c** — ⚠️ **la redirection héritée reste joignable** : ouvrir
+      `/admin/quotas` mène bien à l'onglet des emplacements (et non au premier
+      onglet par repli silencieux).
+- [ ] **63.3-1d** — `/admin/settings/profils-itinerants` mène toujours à
+      l'onglet « Profils itinérants », dont le contenu est **inchangé**.
+- [ ] **63.3-1e** — sur `/admin/settings`, la carte « Gestion des fichiers »
+      décrit désormais l'emplacement des fichiers ; son lien, son icône et son
+      badge sont inchangés.
+
+### 63.3-2 — Le cloud est un CHOIX, pas deux interrupteurs
+
+1. Sur l'onglet des emplacements, observer le premier bloc.
+
+- [ ] **63.3-2a** — trois positions **mutuellement exclusives** : « Aucun
+      cloud », « Nextcloud », « OpenCloud ». Il est **impossible** d'en
+      sélectionner deux.
+- [ ] **63.3-2b** — position « Aucun cloud » : **aucune** page de connexion n'est
+      affichée, et le bloc « Réglages » est **absent**.
+- [ ] **63.3-2c** — sélectionner « Nextcloud » : la page de connexion Nextcloud
+      apparaît, **et elle seule** (aucun champ OpenCloud à l'écran).
+- [ ] **63.3-2d** — sélectionner « OpenCloud » : symétriquement, seule la page
+      OpenCloud apparaît, avec son bandeau d'information et le rappel
+      `php artisan opencloud:deploy`.
+- [ ] **63.3-2e** — **aucun bouton de déploiement OpenCloud** n'existe sur
+      l'écran : le déploiement reste une commande.
+
+### 63.3-3 — La configuration Nextcloud a DÉMÉNAGÉ, elle n'a pas été réécrite
+
+**Pré-requis** : position « Nextcloud » sélectionnée.
+
+1. Renseigner l'URL, le compte administrateur, l'app password et l'hôte SMB.
+
+- [ ] **63.3-3a** — le champ mot de passe est **vidé** dès qu'il est enregistré,
+      et l'écran n'affiche que le FAIT qu'un secret existe. Recharger la page
+      (F5) : le secret n'est jamais pré-rempli.
+- [ ] **63.3-3b** — « Afficher le code source » de la page : le secret n'y
+      apparaît **nulle part**.
+- [ ] **63.3-3c** — **sonde-garde fail-closed** : changer l'URL pour une cible
+      injoignable. La configuration est **REFUSÉE**, le champ **reprend sa valeur
+      précédente**, et
+      `select value from system_settings where key = 'files.policy';` est
+      inchangé.
+- [ ] **63.3-3d** — même refus en changeant seulement l'identifiant du compte
+      pour un compte non administrateur : le motif nomme le privilège.
+- [ ] **63.3-3e** — changer l'hôte SMB seul : **aucun** appel n'est émis vers
+      l'instance, et le réglage est enregistré.
+- [ ] **63.3-3f** — remplacer le secret alors que l'instance est injoignable : le
+      secret **est enregistré quand même**, et l'écran affiche « connexion NON
+      VÉRIFIÉE depuis le dernier changement de secret ». Recharger la page : cet
+      état **survit**.
+- [ ] **63.3-3g** — « Tester la connexion », « Provisionner l'accès Nextcloud »
+      et « Rafraîchir le rapport » sont trois boutons **à l'air libre** (aucune
+      modale). Le rapport du dernier provisionnement s'affiche, et le bouton
+      « Rattacher » d'un compte introuvable ouvre bien la modale de rattachement
+      d'identité, pré-remplie du candidat proposé.
+
+### 63.3-4 — La configuration OpenCloud, symétriquement
+
+**Pré-requis** : position « OpenCloud » sélectionnée.
+
+- [ ] **63.3-4a** — URL, compte d'administration, mot de passe **en écriture
+      seule**, vérification TLS : mêmes propriétés qu'en 63.3-3a et 63.3-3b.
+- [ ] **63.3-4b** — « Tester la connexion » est un bouton à l'air libre ; son
+      diagnostic est **persisté** (il survit à un F5).
+- [ ] **63.3-4c** — changer le secret marque le diagnostic précédent
+      « antérieur au dernier changement de mot de passe ».
+- [ ] **63.3-4d** — retirer le secret efface le diagnostic périmé avec lui.
+
+### 63.3-5 — Une autorité non posable est ABSENTE, avec son motif
+
+- [ ] **63.3-5a** — **aucun cloud actif** : les deux cartes d'emplacement
+      n'offrent que « Serveur de fichiers (SMB) », et le motif affiché est
+      exactement *« Aucun cloud n'est configuré : choisissez-en un ci-dessus
+      avant d'y placer un espace. »*
+- [ ] **63.3-5b** — **cloud actif, connexion INCOMPLÈTE** (effacer l'URL, ou
+      retirer le secret) : la position cloud est **ABSENTE** de la liste — pas
+      grisée, pas proposée puis refusée — et le motif dit *« La connexion à
+      l'instance <produit> est incomplète : … Complétez-la ci-dessus avant d'y
+      placer un espace. »* en **nommant ce qui manque**.
+- [ ] **63.3-5c** — la page de connexion, elle, **reste éditable** dans ce cas :
+      c'est par elle qu'on répare.
+- [ ] **63.3-5d** — compléter la connexion, recharger : la position cloud
+      **apparaît**, et le motif disparaît.
+- [ ] **63.3-5e** — la garde est **rejouée côté serveur**. Depuis la console du
+      navigateur, forcer la propriété d'un emplacement sur une valeur que l'écran
+      n'a jamais offerte (`espacePerso = 'nextcloud'` sur une connexion
+      incomplète), puis cliquer « Enregistrer les emplacements » : l'écriture est
+      **REFUSÉE** avec le motif, et **les deux clés** `files.locations` et
+      `files.policy` sont **inchangées** en base.
+
+### 63.3-6 — Les deux emplacements, et l'effet sur le poste
+
+**Pré-requis** : un cloud actif **configuré**, et une **instance neuve** (aucun
+compte d'annuaire actif, aucun groupe, aucun répertoire géré) — sans quoi le
+scénario 63.3-7 s'applique et l'enregistrement sera refusé.
+
+- [ ] **63.3-6a** — deux cartes, **« Espace personnel »** et **« Espace
+      partagé »**, chacune à deux positions au plus.
+- [ ] **63.3-6b** — les effets annoncés sont, mot pour mot : *« Lecteur K: monté
+      sur le poste »* / *« Lecteur H: monté sur le poste »* pour le serveur de
+      fichiers, et *« Pas de lettre de lecteur : accès par le client »* pour le
+      cloud.
+- [ ] **63.3-6c** — sous la carte « Espace personnel », l'écran dit *« Le partage
+      personnel du serveur de fichiers reste en service pour l'agent (Bureau,
+      raccourcis, profils applicatifs) : seuls les fichiers de l'utilisateur
+      changent d'endroit. »*
+- [ ] **63.3-6d** — **aucun public, aucune ligne, aucun rang, aucune
+      précédence** n'apparaît sur l'écran, et **aucune position « aucun »** n'est
+      offerte pour un emplacement.
+- [ ] **63.3-6e** — placer l'espace personnel sur le cloud, cliquer
+      « Enregistrer les emplacements » : succès, puis vérifier en base que
+      `files.locations` porte la décision et que `files.policy` porte son miroir
+      (`home = false`, la capacité du cloud actif à `true`, l'autre à `false`).
+- [ ] **63.3-6f** — **le raccourci de portail suit la règle de 63.2** : il n'est
+      posé que si un cloud est actif **ET** qu'au moins un des deux espaces est
+      servi par ce cloud. Rouvrir une session sur un poste pour le constater.
+- [ ] **63.3-6g** — l'icône du raccourci est publiée par l'enregistrement :
+      `select value from system_settings where key = 'shortcuts.portal_icon';`
+      rend une valeur, et le `.lnk` posé sur le Bureau **ne porte pas** l'icône
+      de `rundll32.exe`.
+
+### 63.3-7 — La garde de données : le refus qui nomme son chantier
+
+**Pré-requis** : une instance **peuplée** (au moins un compte d'annuaire actif,
+et au moins un groupe).
+
+1. Relever `files.locations` et `files.policy` AVANT.
+2. Changer l'emplacement de l'espace personnel, puis cliquer « Enregistrer les
+   emplacements ».
+
+- [ ] **63.3-7a** — l'enregistrement est **REFUSÉ**, et le toast d'erreur dit
+      exactement : *« Refusé : l'espace personnel porte déjà des données. Le
+      déplacer suppose de les déménager, ce que le chantier « Epic 64 — la
+      bascule d'autorité » livrera ; d'ici là, l'emplacement d'un espace qui
+      porte des données ne se change pas. »*
+- [ ] **63.3-7b** — la carte **reprend sa valeur persistée** : l'écran n'affiche
+      pas une décision que la base ne porte pas.
+- [ ] **63.3-7c** — **ZÉRO écriture** : `files.locations` **et** `files.policy`
+      sont **identiques** à ce qui a été relevé en 1.
+- [ ] **63.3-7d** — même refus, jumelle mot pour mot avec « l'espace partagé »,
+      en déplaçant l'autre carte.
+- [ ] **63.3-7e** — ⚠️ **le ricochet** : les deux espaces sur le serveur de
+      fichiers, basculer le cloud actif de l'un à l'autre **PASSE**. Placer
+      ensuite un espace au cloud (sur une instance neuve), puis rebasculer le
+      cloud actif : la soumission est **refusée avec le même motif**, parce que
+      changer de cloud oblige à déplacer cet espace.
+- [ ] **63.3-7f** — ce que la garde **ne refuse jamais** : changer une URL, un
+      identifiant, un secret, la vérification TLS, ou le chemin d'accès du bloc
+      « Réglages ». Chacun s'enregistre normalement sur une instance peuplée.
+- [ ] **63.3-7g** — ré-enregistrer une décision **inchangée** sur une instance
+      peuplée **passe** : la garde ne porte que sur ce qui bouge.
+
+### 63.3-8 — Le bloc « Réglages », et la phrase qui ne ment pas
+
+- [ ] **63.3-8a** — le bloc **n'apparaît pas** tant qu'aucun cloud n'est actif.
+- [ ] **63.3-8b** — cloud actif : le bloc porte « Chemin d'accès au cloud » à
+      deux positions, **« Par le navigateur »** et **« Par le client de
+      synchronisation »**.
+- [ ] **63.3-8c** — l'écran DIT : *« La pose du client de synchronisation sur les
+      postes est livrée par un chantier séparé. D'ici là, cette position est
+      enregistrée mais seul l'accès par le navigateur est effectivement posé. »*
+- [ ] **63.3-8d** — basculer la position l'enregistre **immédiatement** (pas de
+      bouton) :
+      `select value from system_settings where key = 'files.policy';` porte
+      `"cloud_access_path":"client_natif"`.
+- [ ] **63.3-8e** — **aucune carte « Quotas » ni « Corbeille »** n'est rendue :
+      leur contenu appartient à la story 63.4, et une carte vide serait de l'UI
+      orpheline.
+
+### 63.3-9 — Aucun réglage persisté n'est perdu (LE TEST DE REPRISE)
+
+**Pré-requis** : une instance **en place** — les huit réglages de connexion
+renseignés (URL, compte, hôte SMB, TLS pour Nextcloud ; URL, compte, TLS pour
+OpenCloud), un secret enregistré, et une décision d'emplacement cohérente.
+
+1. Relever `select value from system_settings where key = 'files.policy';`.
+2. Ouvrir l'onglet des emplacements et cliquer « Enregistrer les emplacements »
+   **sans rien changer**.
+
+- [ ] **63.3-9a** — le payload de `files.policy` est **identique clé par clé** —
+      en particulier `nextcloud_server_url`, qui est la clé que le miroir
+      pourrait effacer.
+- [ ] **63.3-9b** — le secret est intact : la connexion se teste toujours au vert
+      depuis la page de connexion.
+- [ ] **63.3-9c** — les deux clés sans contrôle à l'écran survivent aussi :
+      `nextcloud_desktop_shortcut` et `cloud_access_path` gardent leur valeur.
+- [ ] **63.3-9d** — enregistrer un réglage de connexion (l'hôte SMB, par exemple)
+      **ne déplace aucun emplacement** :
+      `select value from system_settings where key = 'files.locations';` est
+      inchangé. Le miroir est **mono-directionnel**.
+- [ ] **63.3-9e** — l'état « les deux clouds » est irreprésentable **dans
+      `files.policy` aussi** : quelle que soit la position choisie, au plus **un**
+      des deux booléens `nextcloud` / `opencloud` vaut `true`.
+
+### 63.3-10 — La reprise non jouée : l'écran ne devine pas
+
+1. Sur une instance dont les quatre booléens **diffèrent** des défauts
+   historiques (par exemple `home = false`), supprimer la ligne des
+   emplacements :
+   ```sql
+   delete from system_settings where key = 'files.locations';
+   ```
+2. Recharger l'onglet.
+
+- [ ] **63.3-10a** — un bandeau dit : *« Les emplacements n'ont pas encore été
+      repris depuis les réglages historiques. Jouez `php artisan
+      files:adopt-locations` sur le serveur, puis rechargez cette page. »*
+- [ ] **63.3-10b** — l'état hérité est montré **en lecture seule**, et les
+      contrôles des blocs 1 et 2 sont **ABSENTS** — pas grisés. Il n'existe aucun
+      bouton d'enregistrement des emplacements.
+- [ ] **63.3-10c** — les **blocs de connexion restent éditables** : c'est par eux
+      qu'on répare une connexion incomplète, et la reprise en a besoin.
+- [ ] **63.3-10d** — jouer `php artisan files:adopt-locations`, recharger : le
+      bandeau disparaît et les contrôles reviennent.
+- [ ] **63.3-10e** — sur une instance **neuve** (quatre booléens aux défauts
+      historiques, aucune ligne d'emplacements), il n'y a **aucun bandeau** :
+      l'écran pose littéralement les défauts et peut enregistrer.
+
+### 63.3-11 — Une ligne illisible n'est jamais remplacée par un défaut
+
+1. Corrompre volontairement la ligne :
+   ```sql
+   update system_settings set value = '{"espace_perso.autorite":"posix"}' where key = 'files.locations';
+   ```
+2. Recharger l'onglet.
+
+- [ ] **63.3-11a** — l'écran affiche le **message de l'exception tel quel** (il
+      nomme la valeur manquante), et **aucun contrôle** n'est rendu.
+- [ ] **63.3-11b** — il ne retombe **jamais** sur les défauts : rien à l'écran ne
+      laisse croire que l'espace personnel serait sur le serveur de fichiers.
+- [ ] **63.3-11c** — la ligne en base est **inchangée** après le chargement.
+- [ ] **63.3-11d** — `php artisan files:adopt-locations --force` répare, et
+      l'écran redevient normal après rechargement.
+
+### 63.3-12 — Les gardes qui ne bougent pas
+
+- [ ] **63.3-12a** — un compte **sans** `server.admin` reçoit **403** sur
+      `/admin/settings/files`.
+- [ ] **63.3-12b** — l'onglet « Lecteurs réseaux » et l'onglet « Profils
+      itinérants » sont **inchangés** : liste des répertoires gérés, création,
+      assignation d'un côté ; exclusions et purge des orphelins de l'autre.
+- [ ] **63.3-12c** — la version de l'agent déployée sur les postes est
+      **inchangée** : aucune publication de binaire n'accompagne cette story, et
+      le contrat d'état cible n'a pas bougé.
+
+### 63.3-14 — L'héritage sans issue, et la sortie par `--cloud=`
+
+**Ce qui se passait sans cette sortie.** Sur une instance héritée où l'accès au
+home (ou aux partages) est coupé **et où aucune des deux capacités cloud n'est
+allumée**, l'écran affiche le bandeau de reprise et n'offre **aucun contrôle de
+décision** (63.3-10) ; les blocs de connexion, eux, restent éditables. Or la
+reprise ne retenait un cloud que si sa **capacité** était active — et cette
+capacité n'a plus qu'un seul écrivain : le miroir, écrit par une décision que le
+bandeau interdit de prendre. L'instance n'avait **aucune sortie hors SQL**.
+
+**Prérequis** : une instance de test dans cet état — `files.policy` avec
+`home = false`, `nextcloud = false`, `opencloud = false`, et **aucune** ligne
+`files.locations` :
+
+```sql
+select value from system_settings where key = 'files.policy';
+select count(*) from system_settings where key = 'files.locations';   -- attendu : 0
+```
+
+1. Ouvrir `/admin/settings/files`.
+
+- [ ] **63.3-14a** — le bandeau de reprise est là, **aucun bouton
+      d'enregistrement des emplacements** n'apparaît, et les **deux** blocs de
+      connexion sont affichés.
+- [ ] **63.3-14b** — `php artisan files:adopt-locations` **REFUSE** (code `1`)
+      en nommant l'emplacement qui doit désigner un cloud, et sa dernière ligne
+      **renvoie vers `--cloud=nextcloud` ou `--cloud=opencloud`**.
+
+2. Renseigner, dans le bloc de connexion Nextcloud, l'URL, le compte
+   administrateur et l'app password d'une instance de test.
+
+- [ ] **63.3-14c** — la connexion est enregistrée, et la capacité « Accès
+      Nextcloud » reste **éteinte** : un bloc de connexion ne décide de rien.
+- [ ] **63.3-14d** — `php artisan files:adopt-locations` **refuse toujours** :
+      la dérivation n'a pas changé d'avis.
+
+3. Jouer `php artisan files:adopt-locations --cloud=nextcloud --dry-run`.
+
+- [ ] **63.3-14e** — la décision simulée est `espace perso = nextcloud`,
+      `espace partagé = posix`, `cloud actif = nextcloud`, les motifs disent
+      **« désigné par --cloud, non dérivé »**, le code de retour est `1` (il
+      reste à écrire) et **rien n'a bougé en base** (rejouer les deux `select`
+      du prérequis).
+
+4. Jouer `php artisan files:adopt-locations --cloud=nextcloud`.
+
+- [ ] **63.3-14f** — code `0`, `files.locations` porte les trois valeurs
+      ci-dessus, **et** `files.policy` a la capacité `nextcloud` à `true` : la
+      décision et son miroir sont écrits ensemble. Sans cet allumage, la
+      connexion déclarée resterait inerte.
+- [ ] **63.3-14g** — recharger `/admin/settings/files` : le bandeau a disparu,
+      les contrôles de décision sont là, et l'espace personnel est positionné sur
+      Nextcloud.
+- [ ] **63.3-14h** — l'icône du raccourci de portail est publiée (ligne
+      `shortcuts.portal_icon` dans `system_settings`), comme sur le chemin
+      dérivé.
+
+5. Les refus de l'option, sur la même instance :
+
+- [ ] **63.3-14i** — `--cloud=owncloud` (ou toute valeur hors vocabulaire) :
+      refus nommé rappelant `aucun, nextcloud, opencloud`, **rien écrit**.
+- [ ] **63.3-14j** — retirer l'identifiant du compte admin Nextcloud, puis
+      `--cloud=nextcloud` : refus nommant **ce qui manque**, et
+      « désigner un cloud ne le rend pas joignable ». La ligne
+      `files.locations` **n'a pas bougé** : désigner ne dispense jamais de la
+      connexion.
+- [ ] **63.3-14k** — `--cloud=aucun` alors que l'accès au home est
+      toujours coupé : refus — « un emplacement ne peut pas désigner un cloud
+      absent ».
+- [ ] **63.3-14l** — sur une instance où les **DEUX** clouds sont configurés (la
+      seconde impasse), `files:adopt-locations` refuse en renvoyant vers
+      l'option, et `--cloud=opencloud` tranche : `files.policy` ne porte plus
+      qu'**une** capacité cloud à `true`.
+
+### Nettoyage
+
+- [ ] **63.3-13** — restaurer `files.policy` et `files.locations` dans l'état
+      relevé en 63.3-P2, retirer les secrets de test des produits non utilisés,
+      et rouvrir une session sur un poste pour vérifier le retour à l'état de
+      départ (63.3-1).
+
+---
+
+*Mise à jour : 2026-08-15 (Story 63.3 — `/admin/settings/files` passe de quatre
+onglets à trois : « Emplacements et cloud » remplace « Personnels et partagés »
+et « OpenCloud », dont les deux blocs de connexion ont été DÉMÉNAGÉS sans être
+réécrits et sont désormais révélés par le choix de cloud. Les quatre
+interrupteurs disparaissent de l'écran : `files.locations` devient la SOURCE et
+`files.policy` son MIROIR DÉRIVÉ, écrit dans le même geste et conservant clé par
+clé les huit réglages de connexion. Une autorité non posable est ABSENTE avec
+son motif — règle SYMÉTRIQUE entre les deux produits, portée par
+`FileLocationOptions` — et changer l'emplacement d'un espace qui porte des
+données est REFUSÉ par `FileLocationChangeGuard`, qui nomme « Epic 64 — la
+bascule d'autorité ». Clé additive `cloud_access_path` dans `files.policy`,
+livrée avec la phrase qui dit qu'elle n'a pas encore d'effet sur le poste.
+Redirection `admin.quotas` repointée sur `?tab=emplacements`. Aucune migration
+de schéma, aucun octet de donnée utilisateur lu, écrit ni déplacé, golden agent
+et `FROZEN_STATE_HASH` inchangés.)*

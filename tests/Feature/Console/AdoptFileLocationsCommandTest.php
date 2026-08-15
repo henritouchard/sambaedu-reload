@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Console;
 
 use App\Models\SystemSetting;
+use App\Models\User;
 use App\Services\FilePolicyService;
 use App\Services\Filesystem\FileLocationService;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
@@ -12,7 +13,10 @@ use App\Services\OpenCloud\OpenCloudConnectionConfig;
 use App\Services\ServiceCredentials;
 use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -124,6 +128,91 @@ class AdoptFileLocationsCommandTest extends TestCase
 
         Http::assertNothingSent();
         self::assertSame('opencloud', FileLocationService::current()->cloudActif->value);
+    }
+
+    // =========================================================================
+    // CORRECTION DE REVUE 63.3 — LA COMMANDE EST UN ÉCRIVAIN **COMPLET** :
+    // ELLE ÉCRIT LA DÉCISION **ET SON MIROIR**
+    //
+    // Elle n'écrivait que `files.locations`. La divergence produite était
+    // silencieuse, transitoire (le premier enregistrement d'écran la réparait) —
+    // et pourtant suffisante pour qu'un répertoire géré soit créé sur une
+    // instance que la décision ne reconnaît plus comme cloud actif.
+    // =========================================================================
+
+    #[Test]
+    public function la_decision_ecrite_est_immediatement_reflechie_dans_les_quatre_booleens(): void
+    {
+        Http::fake();
+        $this->configureNextcloud(false, true);
+
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+
+        self::assertSame('nextcloud', FileLocationService::current()->espacePerso->value);
+        self::assertSame(
+            ['home' => false, 'shares' => true, 'nextcloud' => true, 'opencloud' => false],
+            FilePolicyService::capabilities(),
+        );
+    }
+
+    /**
+     * **LE CAS DE DIVERGENCE, ET IL EST DANGEREUX** : capacité Nextcloud
+     * ALLUMÉE mais connexion incomplète ⇒ la reprise écrit « aucun cloud actif ».
+     * Sans le miroir, `files.policy` continuait d'annoncer la capacité active, et
+     * la posabilité d'une autorité d'écriture — qui ne regarde QUE la capacité
+     * côté Nextcloud — autorisait alors un répertoire géré servi par une instance
+     * injoignable, que rien ne saurait migrer.
+     */
+    #[Test]
+    public function une_capacite_orpheline_ne_survit_pas_a_la_reprise(): void
+    {
+        Http::fake();
+
+        // Capacité allumée, connexion vide : le produit n'est PAS configuré.
+        FilePolicyService::setGlobal(true, true, true, '');
+
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+
+        self::assertSame('aucun', FileLocationService::current()->cloudActif->value);
+        self::assertFalse(
+            FilePolicyService::capabilities()['nextcloud'],
+            'la capacité ne doit pas survivre à une décision qui ne porte aucun cloud actif',
+        );
+
+        // …et les réglages de connexion, eux, sont INTACTS : le miroir ne dérive
+        // que les quatre booléens.
+        self::assertSame('', FilePolicyService::globalConfig()['nextcloud_server_url']);
+    }
+
+    /** `--force` écrit lui aussi le miroir : les deux clés restent d'accord. */
+    #[Test]
+    public function force_ecrit_la_decision_et_son_miroir_ensemble(): void
+    {
+        Http::fake();
+        $this->configureNextcloud(true, true);
+        $this->artisan('files:adopt-locations')->assertExitCode(0);
+
+        $this->configureNextcloud(false, false);
+        $this->artisan('files:adopt-locations', ['--force' => true])->assertExitCode(0);
+
+        self::assertSame(
+            ['home' => false, 'shares' => false, 'nextcloud' => true, 'opencloud' => false],
+            FilePolicyService::capabilities(),
+        );
+    }
+
+    /** `--dry-run` n'écrit RIEN — pas davantage le miroir. */
+    #[Test]
+    public function dry_run_n_ecrit_pas_le_miroir(): void
+    {
+        Http::fake();
+        FilePolicyService::setGlobal(true, true, true, '');
+        $avant = FilePolicyService::globalConfig();
+
+        $this->artisan('files:adopt-locations', ['--dry-run' => true])->assertExitCode(1);
+
+        self::assertSame($avant, FilePolicyService::globalConfig());
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
     }
 
     // =========================================================================
@@ -539,6 +628,240 @@ class AdoptFileLocationsCommandTest extends TestCase
         $icone = $this->iconePubliee();
         self::assertNotNull($icone);
         self::assertFileExists($served.'/'.$icone['asset']);
+    }
+
+    // =========================================================================
+    // CORRECTION DE REVUE 63.3 (résidu B1) — `--cloud=` : LE CHOIX DEVIENT UNE
+    // ENTRÉE, PLUS UNE DÉRIVATION
+    //
+    // Deux héritages n'avaient AUCUNE sortie hors SQL, et le second est celui
+    // qui motive la correction : `home = false` avec les DEUX capacités cloud
+    // éteintes. L'administrateur peut y déclarer une connexion complète (l'écran
+    // monte les deux blocs de connexion), mais l'écran affiche le bandeau de
+    // reprise et n'offre AUCUN contrôle de décision ; or la capacité, seul
+    // critère que la dérivation regardait, n'a plus qu'un écrivain : le miroir,
+    // écrit par une décision que le bandeau interdit de prendre.
+    // =========================================================================
+
+    /** Pose une connexion Nextcloud COMPLÈTE sans toucher aux capacités. */
+    private function poserLaConnexionNextcloud(): void
+    {
+        FilePolicyService::patchGlobal([
+            'nextcloud_server_url' => 'https://nuage.exemple.fr',
+            'nextcloud_admin_user' => 'admin',
+        ]);
+        app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, 'secret-nc');
+    }
+
+    /**
+     * **LE CAS SANS ISSUE, DE BOUT EN BOUT.** L'héritage coupe l'accès au home
+     * et n'allume aucune capacité cloud. L'administrateur déclare sa connexion
+     * Nextcloud depuis l'écran — le seul geste que le bandeau lui laisse — puis
+     * DÉSIGNE le produit. La reprise passe, écrit la décision, ALLUME la
+     * capacité par le miroir, et l'écran redevient décidable.
+     *
+     * Sans l'allumage par le miroir, la connexion déclarée resterait inerte
+     * (`NextcloudConnectionConfig::current()` lève tant que la capacité est
+     * éteinte) : on n'aurait rien débloqué.
+     */
+    #[Test]
+    public function le_choix_explicite_est_la_sortie_de_l_instance_sans_issue(): void
+    {
+        Http::fake();
+
+        // ① L'héritage : accès au home coupé, AUCUNE capacité cloud.
+        FilePolicyService::setGlobal(false, true, false, '');
+
+        // ② L'écran est bloqué sur le bandeau de reprise — aucun contrôle de
+        //    décision — et la reprise dérivée refuse.
+        $ecran = $this->ecranDesEmplacements();
+        self::assertNotNull($ecran->get('adoptionNotice'));
+        self::assertStringNotContainsString('save-locations', $ecran->html());
+
+        $this->artisan('files:adopt-locations')
+            ->expectsOutputToContain('aucun cloud')
+            ->expectsOutputToContain('désignez-le')
+            ->assertExitCode(1);
+
+        // ③ Le seul geste que l'écran laisse : déclarer la connexion, depuis le
+        //    bloc que le bandeau continue de monter.
+        Livewire::test('pages::admin.settings.files._partials.nextcloud-connection')
+            ->set('nextcloudServerUrl', 'https://nuage.exemple.fr')
+            ->set('nextcloudAdminUser', 'admin')
+            ->set('nextcloudAdminPassword', 'app-password');
+
+        self::assertFalse(
+            FilePolicyService::capabilities()['nextcloud'],
+            'le bloc de connexion n\'écrit AUCUNE capacité — c\'est tout le problème',
+        );
+
+        // ④ …et la reprise DÉSIGNÉE passe.
+        $this->artisan('files:adopt-locations', ['--cloud' => 'nextcloud'])
+            ->expectsOutputToContain('Décision enregistrée.')
+            ->expectsOutputToContain('désigné par --cloud')
+            ->assertExitCode(0);
+
+        self::assertSame(
+            [
+                'espace_perso.autorite' => 'nextcloud',
+                'espace_partage.autorite' => 'posix',
+                'cloud.actif' => 'nextcloud',
+            ],
+            $this->ligneEnregistree(),
+        );
+
+        // ⑤ La capacité est ALLUMÉE par le miroir — sans quoi la connexion
+        //    déclarée resterait inerte.
+        self::assertTrue(FilePolicyService::capabilities()['nextcloud']);
+        self::assertSame(
+            'https://nuage.exemple.fr',
+            NextcloudConnectionConfig::current()->baseUrl,
+            'la connexion doit être résoluble : c\'est la définition de « débloqué »',
+        );
+
+        // ⑥ L'écran redevient DÉCIDABLE : bandeau parti, contrôles présents.
+        $ecran = $this->ecranDesEmplacements();
+        $ecran->assertSet('adoptionNotice', null)->assertSet('decided', true);
+        self::assertStringContainsString('save-locations', $ecran->html());
+        self::assertSame('nextcloud', $ecran->get('espacePerso'));
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Désigner un produit ne le rend pas joignable : la connexion reste
+     * VÉRIFIÉE, et son incomplétude est nommée. Rien n'est écrit — ni décision,
+     * ni miroir.
+     */
+    #[Test]
+    public function un_cloud_designe_dont_la_connexion_est_incomplete_est_un_refus_nomme(): void
+    {
+        Http::fake();
+        FilePolicyService::setGlobal(false, true, false, 'https://nuage.exemple.fr');
+        $avant = FilePolicyService::globalConfig();
+
+        $this->artisan('files:adopt-locations', ['--cloud' => 'nextcloud'])
+            ->expectsOutputToContain('INCOMPLÈTE')
+            ->expectsOutputToContain('l\'identifiant du compte admin Nextcloud')
+            ->expectsOutputToContain('Désigner un cloud ne le rend pas joignable')
+            ->assertExitCode(1);
+
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
+        self::assertSame($avant, FilePolicyService::globalConfig());
+        Http::assertNothingSent();
+    }
+
+    /**
+     * L'AUTRE héritage sans issue : les deux clouds configurés. Le refus dérivé
+     * attend exactement ce geste de l'administrateur — « la reprise ne choisit
+     * pas à votre place » — et `--cloud=` est la façon de le poser.
+     */
+    #[Test]
+    public function les_deux_clouds_configures_se_tranchent_par_le_choix_explicite(): void
+    {
+        Http::fake();
+        $this->configureLesDeuxClouds(true, false);
+
+        // Le refus dérivé RENVOIE vers l'option.
+        $this->artisan('files:adopt-locations')
+            ->expectsOutputToContain('--cloud=nextcloud ou --cloud=opencloud')
+            ->assertExitCode(1);
+
+        $this->artisan('files:adopt-locations', ['--cloud' => 'opencloud'])->assertExitCode(0);
+
+        self::assertSame(
+            [
+                'espace_perso.autorite' => 'posix',
+                'espace_partage.autorite' => 'opencloud',
+                'cloud.actif' => 'opencloud',
+            ],
+            $this->ligneEnregistree(),
+        );
+
+        // Le miroir ferme « les deux à la fois » dans `files.policy` aussi.
+        self::assertSame(
+            ['home' => true, 'shares' => false, 'nextcloud' => false, 'opencloud' => true],
+            FilePolicyService::capabilities(),
+        );
+        Http::assertNothingSent();
+    }
+
+    /** Le vocabulaire est FERMÉ, et le refus le rappelle en entier. */
+    #[Test]
+    public function une_valeur_de_cloud_inconnue_est_un_refus_nomme(): void
+    {
+        Http::fake();
+        $this->configureNextcloud(true, true);
+
+        $this->artisan('files:adopt-locations', ['--cloud' => 'owncloud'])
+            ->expectsOutputToContain('« owncloud » ne désigne aucun cloud connu')
+            ->expectsOutputToContain('aucun, nextcloud, opencloud')
+            ->assertExitCode(1);
+
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
+    }
+
+    /**
+     * `--cloud=aucun` ne contourne pas la garde de cohérence : un emplacement ne
+     * peut pas désigner un cloud absent, et l'héritage `home = false` en exige
+     * un.
+     */
+    #[Test]
+    public function cloud_aucun_contredit_par_l_heritage_est_un_refus_nomme(): void
+    {
+        Http::fake();
+        $this->configureNextcloud(false, true);
+
+        $this->artisan('files:adopt-locations', ['--cloud' => 'aucun'])
+            ->expectsOutputToContain('ne peut pas désigner un cloud absent')
+            ->expectsOutputToContain('L\'espace perso')
+            ->assertExitCode(1);
+
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
+        self::assertTrue(
+            FilePolicyService::capabilities()['nextcloud'],
+            'un refus ne touche pas davantage au miroir',
+        );
+    }
+
+    /** `--dry-run --cloud=…` n'écrit RIEN : ni décision, ni miroir, ni icône. */
+    #[Test]
+    public function dry_run_avec_un_cloud_designe_n_ecrit_rien(): void
+    {
+        Http::fake();
+        $this->redirigerLeDossierServi();
+        FilePolicyService::setGlobal(false, true, false, '');
+        $this->poserLaConnexionNextcloud();
+        $avant = FilePolicyService::globalConfig();
+
+        $this->artisan('files:adopt-locations', ['--cloud' => 'nextcloud', '--dry-run' => true])
+            ->expectsOutputToContain('Simulation')
+            ->expectsOutputToContain('désigné par --cloud')
+            ->assertExitCode(1);
+
+        self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
+        self::assertSame($avant, FilePolicyService::globalConfig());
+        self::assertNull($this->iconePubliee());
+    }
+
+    /**
+     * L'écran des emplacements, monté sous un compte autorisé — la seule façon
+     * de constater qu'une instance est « sans issue », puis qu'elle ne l'est
+     * plus.
+     */
+    private function ecranDesEmplacements(): Testable
+    {
+        $this->withoutVite();
+
+        $admin = User::query()->firstOrCreate(
+            ['login' => 'files-admin'],
+            ['role' => 'prof', 'is_active' => false],
+        );
+        $admin->forceFill(['source' => 'federated'])->save();
+        $this->actingAs($admin);
+        Gate::before(fn (User $user, string $ability): ?bool => $ability === 'server.admin' ? true : null);
+
+        return Livewire::test('pages::admin.settings.files._partials.emplacements-tab');
     }
 
     /**

@@ -29,7 +29,7 @@ class OpenCloudSettingsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::admin.settings.files._partials.opencloud-tab';
+    private const COMPONENT = 'pages::admin.settings.files._partials.opencloud-connection';
 
     protected function setUp(): void
     {
@@ -40,21 +40,33 @@ class OpenCloudSettingsTest extends TestCase
         \Illuminate\Support\Facades\Gate::before(fn (): bool => true);
     }
 
+    /**
+     * **Retouché par la story 63.3** : l'interrupteur de capacité a QUITTÉ ce
+     * composant — « OpenCloud » est une position du cloud actif, décidée
+     * au-dessus, et projetée sur `files.policy` par le miroir. La propriété que
+     * ce test tient reste la même, et elle est même plus forte : enregistrer une
+     * connexion NE TOUCHE À RIEN D'AUTRE, capacités comprises.
+     */
     #[Test]
-    public function the_capability_toggle_persists_on_its_own_and_touches_nothing_else(): void
+    public function saving_the_connection_persists_on_its_own_and_touches_nothing_else(): void
     {
-        FilePolicyService::setGlobal(true, true, true, 'https://nuage.fr', 'ncadmin', 'se4fs', true);
+        FilePolicyService::setGlobal(true, true, true, 'https://nuage.fr', 'ncadmin', 'se4fs', true, true);
 
         Livewire::test(self::COMPONENT)
-            ->set('opencloud', true)
+            ->set('serverUrl', 'https://fichiers.etab.fr')
             ->assertHasNoErrors();
 
         $policy = FilePolicyService::globalConfig();
-        self::assertTrue($policy['opencloud']);
+        self::assertSame('https://fichiers.etab.fr', $policy['opencloud_server_url']);
 
-        // Les réglages de l'autre produit sont INTACTS : les capacités sont
-        // indépendantes, et l'écran de l'une n'écrit pas celle de l'autre.
-        self::assertTrue($policy['nextcloud']);
+        // Les quatre booléens sont REPASSÉS TELS QUE PERSISTÉS…
+        self::assertSame(
+            ['home' => true, 'shares' => true, 'nextcloud' => true, 'opencloud' => true],
+            FilePolicyService::capabilities(),
+        );
+
+        // …et les réglages de l'autre produit sont INTACTS : l'écran de l'un
+        // n'écrit jamais la connexion de l'autre.
         self::assertSame('https://nuage.fr', $policy['nextcloud_server_url']);
         self::assertSame('ncadmin', $policy['nextcloud_admin_user']);
     }
@@ -63,7 +75,6 @@ class OpenCloudSettingsTest extends TestCase
     public function the_connection_settings_persist_on_blur(): void
     {
         Livewire::test(self::COMPONENT)
-            ->set('opencloud', true)
             ->set('serverUrl', '  https://fichiers.etab.fr  ')
             ->set('adminUser', ' admin ')
             ->assertHasNoErrors();
@@ -94,7 +105,6 @@ class OpenCloudSettingsTest extends TestCase
     public function the_secret_is_stored_encrypted_and_never_reaches_the_rendered_html(): void
     {
         $component = Livewire::test(self::COMPONENT)
-            ->set('opencloud', true)
             ->set('adminPassword', 'ultra-secret-2026');
 
         $component->assertSet('adminPassword', '');
@@ -120,7 +130,6 @@ class OpenCloudSettingsTest extends TestCase
         app(OpenCloudConnectionVerifier::class)->rememberDiagnostic(['ok' => true, 'message' => 'vert']);
 
         Livewire::test(self::COMPONENT)
-            ->set('opencloud', true)
             ->call('forgetAdminPassword')
             ->assertSet('hasAdminSecret', false)
             ->assertSet('probeResult', null);
@@ -139,7 +148,6 @@ class OpenCloudSettingsTest extends TestCase
         app(OpenCloudConnectionVerifier::class)->rememberDiagnostic(['ok' => true, 'message' => 'vert']);
 
         Livewire::test(self::COMPONENT)
-            ->set('opencloud', true)
             ->set('adminPassword', 'nouveau');
 
         $diagnostic = app(OpenCloudConnectionVerifier::class)->lastDiagnostic();

@@ -423,9 +423,17 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     // 2026-08-05) : sa grille de quotas par défaut par profil n'appliquait rien à
     // personne (elle écrivait `SystemSetting('quota.defaults')`, clé que la
     // résolution ne lit pas — cf. story 5.1e, qui réinstallera un défaut GLOBAL en
-    // carte dans « Personnels et partagés »). La route redirige vers la page hôte ;
-    // le nom `admin.quotas` reste stable pour les liens et bookmarks existants.
-    Route::redirect('/quotas', '/admin/settings/files?tab=personnels-partages')->name('quotas');
+    // carte dans le bloc « Réglages » de l'onglet des emplacements). La route
+    // redirige vers la page hôte ; le nom `admin.quotas` reste stable pour les
+    // liens et bookmarks existants.
+    //
+    // ⚠️ La cible SUIT la clé d'onglet : `personnels-partages` a disparu avec la
+    // story 63.3, et une redirection qui viserait encore cette clé retomberait
+    // silencieusement sur le premier onglet — l'UI redeviendrait injoignable sans
+    // que rien ne le dise. C'est exactement ce que
+    // `FilePolicyPageTest::the_tabs_targeted_by_the_legacy_redirects_survive_mount()`
+    // existe pour voir.
+    Route::redirect('/quotas', '/admin/settings/files?tab=emplacements')->name('quotas');
 
     // /admin/settings/profils-itinerants — Profils itinérants est désormais l'onglet
     // « Profils itinérants » de /admin/settings/files (décision Henri 2026-07-17, iso
@@ -439,9 +447,10 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.credentials');
 
-    // /admin/settings/files — Gestion des fichiers : politique d'accès aux fichiers
-    // (mode partages/nextcloud, défaut instance via SystemSetting `files.policy`) +
-    // accès à la gestion des partages réseau. Décision Henri 2026-07-17.
+    // /admin/settings/files — Gestion des fichiers : où vivent les fichiers de
+    // l'établissement (espace personnel, espace partagé, cloud actif — SystemSetting
+    // `files.locations`) + accès à la gestion des partages réseau et aux profils
+    // itinérants. UNE SEULE ROUTE, avec `can:server.admin` seul.
     Route::livewire('/settings/files', 'pages::admin.settings.files.index')
         ->middleware('can:server.admin')
         ->name('settings.files');

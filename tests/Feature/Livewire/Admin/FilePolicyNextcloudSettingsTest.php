@@ -29,7 +29,7 @@ class FilePolicyNextcloudSettingsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::admin.settings.files._partials.personnels-partages-tab';
+    private const COMPONENT = 'pages::admin.settings.files._partials.nextcloud-connection';
 
     private const SECRET = 'AppPasswordAdminTresSecret';
 
@@ -53,20 +53,30 @@ class FilePolicyNextcloudSettingsTest extends TestCase
     // AC11 — les champs de connexion
     // =====================================================================
 
+    /**
+     * **Retouché par la story 63.3** : l'interrupteur de capacité a QUITTÉ ce
+     * composant (« Accès Nextcloud » suit le cloud actif, décidé au-dessus). Ce
+     * qui reste est la propriété que ce test tenait : le bloc de connexion est
+     * bien rendu, et rien n'y est annoncé comme « pas encore disponible ».
+     */
     #[Test]
-    public function the_nextcloud_capability_toggle_is_no_longer_disabled(): void
+    public function the_connection_block_is_rendered_and_nothing_is_announced_as_unavailable(): void
     {
         $html = Livewire::test(self::COMPONENT)->html();
 
         self::assertStringNotContainsString('n\'est pas encore disponible', $html);
-        self::assertStringContainsString('Accès Nextcloud', $html);
+        self::assertStringContainsString('Connexion à l\'instance Nextcloud', $html);
     }
 
     #[Test]
     public function the_connection_fields_persist_into_the_policy(): void
     {
+        // La capacité est posée par le miroir des emplacements, jamais par cet
+        // écran — on la met en place ici, et on épingle plus bas qu'il ne
+        // l'éteint pas en enregistrant.
+        FilePolicyService::setGlobal(true, true, true);
+
         Livewire::test(self::COMPONENT)
-            ->set('nextcloud', true)
             ->set('nextcloudServerUrl', 'https://cloud.etab.fr')
             ->set('nextcloudAdminUser', 'admin')
             ->set('nextcloudSmbHost', 'se4fs')
@@ -87,7 +97,6 @@ class FilePolicyNextcloudSettingsTest extends TestCase
     public function a_url_without_a_scheme_is_rejected_on_the_screen(): void
     {
         Livewire::test(self::COMPONENT)
-            ->set('nextcloud', true)
             ->set('nextcloudServerUrl', 'cloud.etab.fr')
             ->assertHasErrors('nextcloudServerUrl');
     }

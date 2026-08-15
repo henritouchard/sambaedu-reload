@@ -8,15 +8,22 @@ use Livewire\Component;
 /**
  * /admin/settings/files — « Gestion des fichiers » (page HÔTE à onglets).
  *
- * Regroupe en trois onglets (décision Henri 2026-07-17) :
- *   - « Personnels et partagés » : la politique de gestion des fichiers (mode
- *     partages/Nextcloud + config NC) qui gouverne l'accès au home et aux classes
- *     et le montage des lecteurs ({@see \App\Services\FilePolicyService}).
+ * Regroupe en trois onglets :
+ *   - « Emplacements et cloud » (63.3) : OÙ VIVENT LES FICHIERS — le cloud actif
+ *     de l'instance (choix exclusif, avec sa page de connexion), l'emplacement
+ *     de l'espace personnel, celui de l'espace partagé, et les réglages qui en
+ *     dépendent ({@see \App\Services\Filesystem\FileLocationService}).
  *   - « Lecteurs réseaux » : la gestion des partages réseau gérés (liste, création,
  *     assignation) — composant embarqué `pages::admin.shares.index`. Le détail
  *     d'un partage reste une sous-page (`/admin/shares/{id}`).
  *   - « Profils itinérants » (1bis.18f/26.3) : exclusions `ExcludeProfileDirs`,
  *     statistiques roaming et purge des orphelins.
+ *
+ * ⚠️ **Les onglets « Personnels et partagés » et « OpenCloud » ONT DISPARU**
+ * (63.3). Ils portaient quatre interrupteurs indépendants qui disaient ce qui
+ * était allumé sans jamais dire où vivent les fichiers, et leurs deux blocs de
+ * connexion sont maintenant révélés par le choix de cloud du premier onglet.
+ * Leurs clés retombent sur le défaut comme n'importe quelle clé inconnue.
  *
  * « Profils itinérants » était une page dédiée (`/admin/settings/profils-itinerants`)
  * retirée au profit d'une redirection vers `?tab=roaming` — sans que l'onglet cible
@@ -28,7 +35,8 @@ use Livewire\Component;
  * `SystemSetting('quota.defaults')`, clé que la résolution ne lit pas — voir story
  * 5.1e. Conséquence temporaire assumée : la période de grâce et la corbeille
  * `/home/trash`, elles bien fonctionnelles, n'ont plus d'UI jusqu'à ce que 5.1e les
- * réinstalle en cartes dans « Personnels et partagés ». Leurs valeurs persistées
+ * réinstalle en cartes dans le bloc « Réglages » de l'onglet des emplacements
+ * (63.4). Leurs valeurs persistées
  * restent en vigueur (le cron 02h00 continue de tourner) et restent pilotables par
  * `php artisan trash:purge` et en tinker. `admin/settings/_partials/quotas-fs-tab`
  * n'a plus d'hôte : il attend d'être découpé par 5.1e.
@@ -39,9 +47,9 @@ use Livewire\Component;
  */
 new #[Title('Gestion des fichiers')] class extends Component {
     #[Url(keep: true)]
-    public string $tab = 'personnels-partages';
+    public string $tab = 'emplacements';
 
-    private const TABS = ['personnels-partages', 'lecteurs-reseaux', 'opencloud', 'roaming'];
+    private const TABS = ['emplacements', 'lecteurs-reseaux', 'roaming'];
 
     public function mount(): void
     {
@@ -50,7 +58,7 @@ new #[Title('Gestion des fichiers')] class extends Component {
         }
 
         if (! in_array($this->tab, self::TABS, true)) {
-            $this->tab = 'personnels-partages';
+            $this->tab = 'emplacements';
         }
     }
 
@@ -81,17 +89,16 @@ new #[Title('Gestion des fichiers')] class extends Component {
 
         @php
             $filesTabs = [
-                'personnels-partages' => ['label' => 'Personnels et partagés', 'icon' => 'fa-solid fa-sliders'],
+                'emplacements' => ['label' => 'Emplacements et cloud', 'icon' => 'fa-solid fa-cloud'],
                 'lecteurs-reseaux' => ['label' => 'Lecteurs réseaux', 'icon' => 'fa-solid fa-network-wired'],
-                'opencloud' => ['label' => 'OpenCloud', 'icon' => 'fa-solid fa-cloud-arrow-up'],
                 'roaming' => ['label' => 'Profils itinérants', 'icon' => 'fa-solid fa-users-gear'],
             ];
         @endphp
         <x-molecules.tabs :tabs="$filesTabs" :active="$tab" class="bg-base-200 w-fit" />
 
         <div class="flex flex-col">
-            @if ($tab === 'personnels-partages')
-                <livewire:pages::admin.settings.files._partials.personnels-partages-tab />
+            @if ($tab === 'emplacements')
+                <livewire:pages::admin.settings.files._partials.emplacements-tab />
             @elseif ($tab === 'lecteurs-reseaux')
                 @can('view-networkshare')
                     <livewire:pages::admin.shares.index />
@@ -101,12 +108,6 @@ new #[Title('Gestion des fichiers')] class extends Component {
                         <span>Vous n'avez pas la permission de gérer les partages réseau.</span>
                     </div>
                 @endcan
-            @elseif ($tab === 'opencloud')
-                {{-- OpenCloud est une AUTORITÉ D'ÉCRITURE alternative, pas un
-                     réglage de montage : sa capacité est indépendante des trois
-                     autres, et son bloc de connexion a son propre onglet plutôt
-                     qu'une carte de plus dans un écran qui parle de lecteurs. --}}
-                <livewire:pages::admin.settings.files._partials.opencloud-tab />
             @elseif ($tab === 'roaming')
                 {{-- `flex-1 min-h-0` : le partial gère son propre conteneur de
                      scroll interne — sans ça il déborde. --}}

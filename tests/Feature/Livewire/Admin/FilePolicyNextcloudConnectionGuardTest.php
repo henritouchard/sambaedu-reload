@@ -44,7 +44,7 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::admin.settings.files._partials.personnels-partages-tab';
+    private const COMPONENT = 'pages::admin.settings.files._partials.nextcloud-connection';
 
     private const ADMIN_SECRET = 'AppPasswordAdminTresSecret';
 
@@ -143,9 +143,13 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
      * **Retouché par la correction de revue #1** : `nextcloudVerifyTls` a QUITTÉ ce
      * test. Le drapeau TLS n'est pas un réglage orthogonal — il décide de ce qui est
      * joignable, donc il fait partie de ce qui définit la connexion et il déclenche
-     * la sonde-garde ({@see self::changing_only_the_tls_flag_re_probes()}). Restent
-     * ici les réglages qui ne concernent VRAIMENT pas l'instance : les deux
-     * capacités de montage et l'hôte SMB.
+     * la sonde-garde ({@see self::changing_only_the_tls_flag_re_probes()}).
+     *
+     * **Retouché par la story 63.3** : les deux capacités de montage ont QUITTÉ ce
+     * composant — elles sont dérivées des emplacements, réglés sur l'écran voisin.
+     * Reste ici le seul réglage qui ne concerne VRAIMENT pas l'instance : l'hôte
+     * SMB. Et une assertion de plus, qui compte : les quatre booléens ne bougent
+     * PAS quand cet écran enregistre.
      */
     #[Test]
     public function saving_an_unrelated_setting_never_talks_to_the_instance(): void
@@ -154,16 +158,20 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         Http::fake();
 
         Livewire::test(self::COMPONENT)
-            ->set('home', false)
-            ->set('shares', false)
             ->set('nextcloudSmbHost', 'autre-serveur');
 
         Http::assertNothingSent();
 
-        // …et les réglages orthogonaux, eux, sont bien enregistrés.
+        // …et le réglage orthogonal, lui, est bien enregistré.
         $config = FilePolicyService::globalConfig();
-        self::assertFalse($config['home']);
         self::assertSame('autre-serveur', $config['nextcloud_smb_host']);
+
+        // Les quatre booléens sont REPASSÉS TELS QUE PERSISTÉS : cette page de
+        // connexion n'en écrit aucun.
+        self::assertSame(
+            ['home' => true, 'shares' => true, 'nextcloud' => true, 'opencloud' => false],
+            FilePolicyService::capabilities(),
+        );
     }
 
     // =====================================================================
@@ -284,6 +292,65 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
 
         Http::assertNothingSent();
         self::assertSame('admin', FilePolicyService::globalConfig()['nextcloud_admin_user']);
+    }
+
+    // =====================================================================
+    // CORRECTION DE REVUE 63.3 — LA CAPACITÉ EST RELUE À CHAQUE ÉCRITURE,
+    // JAMAIS CELLE DU MONTAGE
+    //
+    // Ce composant est monté au CLIC sur la position « Nextcloud » du choix de
+    // cloud, donc AVANT que le miroir n'allume la capacité. Tant qu'elle vivait
+    // dans une propriété lue au seul `mount()`, la sonde-garde rendait `true`
+    // sans le moindre appel pour toute la session de page : le fail-closed de
+    // 61.2 était annulé sur le parcours de PREMIÈRE configuration — le seul qui
+    // compte. Invisible autrement : `Livewire::test()` re-monte les enfants à
+    // chaque rendu du parent, un navigateur non. Ces deux tests montent donc
+    // l'enfant AVANT l'allumage et n'en remontent JAMAIS un second.
+    // =====================================================================
+
+    #[Test]
+    public function a_capability_switched_on_after_mount_still_probes_and_refuses(): void
+    {
+        // ① Au montage, la capacité est ÉTEINTE — l'état réel au clic sur la
+        //    position « Nextcloud », avant l'enregistrement de la décision.
+        app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, self::ADMIN_SECRET);
+        FilePolicyService::setGlobal(true, true, false, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
+
+        $component = Livewire::test(self::COMPONENT);
+
+        // ② Le miroir l'allume — c'est l'écran parent qui écrit, pas celui-ci.
+        FilePolicyService::patchGlobal(['nextcloud' => true]);
+        Http::fake(self::nonAdmin());
+
+        // ③ Le composant, TOUJOURS MONTÉ, enregistre une nouvelle cible.
+        $component->set('nextcloudAdminUser', 'compte-ordinaire');
+
+        // La sonde a bien eu lieu, la configuration est REFUSÉE, et rien n'est
+        // persisté.
+        Http::assertSentCount(2);
+        self::assertSame('admin', FilePolicyService::globalConfig()['nextcloud_admin_user']);
+        $component->assertSet('nextcloudAdminUser', 'admin');
+        self::assertStringContainsString('administrateur', (string) $component->get('probeResult')['message']);
+    }
+
+    #[Test]
+    public function a_secret_stored_after_the_capability_was_switched_on_is_re_probed(): void
+    {
+        FilePolicyService::setGlobal(true, true, false, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
+
+        $component = Livewire::test(self::COMPONENT);
+
+        FilePolicyService::patchGlobal(['nextcloud' => true]);
+        Http::fake(self::healthyAdmin());
+
+        $component->set('nextcloudAdminPassword', 'PremierAppPassword');
+
+        // Le secret est rangé ET la connexion est VÉRIFIÉE — pas un diagnostic
+        // effacé, qui laisserait l'écran muet sur une configuration neuve.
+        $component->assertSet('hasAdminSecret', true);
+        $diagnostic = $component->get('probeResult');
+        self::assertIsArray($diagnostic);
+        self::assertTrue($diagnostic['ok']);
     }
 
     /** Capacité éteinte : aucune instance à configurer, aucun appel. */
