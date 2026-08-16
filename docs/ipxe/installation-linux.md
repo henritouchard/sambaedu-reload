@@ -110,7 +110,13 @@ Le marqueur est effacé au passage, sans quoi l'écran reviendrait indéfiniment
 > quoi prendre la main sur un poste, mais assez pour fausser un tableau de bord.
 > Une trace est écrite à chaque appel.
 
-## Ce qui manque
+## Ce qui n'existe pas encore
+
+> **Linux n'est pas une plateforme gérée.** SE5 sait **installer** un poste
+> Linux — c'est tout ce que décrit cette fiche, et ça fonctionne. Ce qui vient
+> après l'installation — configuration, applications, reprise de main — n'est pas
+> porté aujourd'hui. Les manques ci-dessous ne sont donc pas des régressions à
+> réparer : ce sont les pièces d'un plan qui n'a pas encore été construit.
 
 **Le point d'entrée `/ipxe/linux/autorun` est un talon sans appelant.** Aucun
 gabarit, aucun fragment, aucun script du dépôt ne l'appelle — il répond un script

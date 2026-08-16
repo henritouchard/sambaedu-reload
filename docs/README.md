@@ -67,7 +67,11 @@ ce que SE5 attend du système hôte.
 ## 4. Carte des domaines
 
 État de la référence technique : **✅** gabarit complet (index + décisions +
-fiches) · **🟡** fiche unique · **🔴** aucune fiche de référence.
+fiches) · **🟡** fiche unique · **🔴** aucune fiche de référence · **⛔** fiche
+existante mais **périmée** — elle décrit un état qui n'a plus cours.
+
+> **⛔ prime sur 🔴.** Une fiche absente coûte une recherche ; une fiche fausse
+> coûte une décision. Traiter les ⛔ avant les 🔴.
 
 | Domaine | Code | Référence | QA | État |
 | --- | --- | --- | --- | --- |
@@ -75,7 +79,8 @@ fiches) · **🟡** fiche unique · **🔴** aucune fiche de référence.
 | **Identité & AD** | `app/Services/AdSync/`, `app/LdapModels/`, `app/Models/User*` | [`identite/`](identite/README.md) | [qa](qa/domains/ad-sync.md), [qa](qa/domains/users.md) | ✅ |
 | **Flux GPEI** | import académique | [`domains/gpei.md`](domains/gpei.md) | — | ✅ |
 | **Parc & postes** | `app/Services/Parc/`, `app/Models/Workstation*` | [`domains/parc.md`](domains/parc.md) | [qa](qa/domains/parc.md) | 🟡 |
-| **Droits & délégations** | `app/Policies/`, `app/Services/Permissions/` | [`domains/rights-management.md`](domains/rights-management.md) | [qa](qa/domains/rights-management.md) | 🟡 |
+| **Droits & délégations** | `app/Policies/`, `app/Services/Permissions/` | [`domains/rights-management.md`](domains/rights-management.md) — *avril, périmée* | [qa](qa/domains/rights-management.md) | ⛔ |
+| **Groupes, rôles & droits (modèle générique)** | `app/Models/Group*`, `app/Enums/RoleResolutionStrategy.php` | — | [qa](qa/domains/rights-management.md) | 🔴 |
 | **Configuration des postes** | `app/Services/AppCustomization/`, `Overlay/`, `Wallpaper/` | [`domains/app-customizations.md`](domains/app-customizations.md) | — | 🟡 |
 | **Impression** | `app/Services/Print/` | [`domains/printers.md`](domains/printers.md) | [qa](qa/domains/printers.md) | 🟡 |
 | **Plan de fichiers, droits & quotas** | `app/Services/Filesystem/`, `app/Services/Nextcloud/`, `app/Services/OpenCloud/` | [`domains/filesystem.md`](domains/filesystem.md) — où vivent les deux espaces, le cloud unique, ce que le poste reçoit, le contrat d'écriture des droits, plafond et corbeille ; [`audit-arborescence-acls.md`](audit-arborescence-acls.md) | [qa](qa/domains/filesystem.md) | 🟡 |
@@ -111,29 +116,46 @@ comparaison legacy ↔ SE5).
 
 ## 6. Manques connus
 
-Classés par volume de code non couvert :
+**D'abord ce qui est faux** (⛔) :
 
-1. **Authentification & SSO** — trois mécanismes distincts (jeton poste↔serveur,
-   OIDC, login fédéré) documentés seulement par leur dette et leurs checklists.
-2. **GPO & SYSVOL** — module natif documenté seulement par son registre de dette.
-3. **Extensions** et **réseau** — checklist de pré-production uniquement.
-4. **Diagnostic d'instance** et **scripts de session** — aucune trace.
+1. **Droits & délégations** — la fiche date d'avril et annonce 18 permissions
+   atomiques ; il y en a 25. Elle ignore aussi que la vérité des rôles a basculé
+   en base. Un bandeau en tête dit ce qui a changé ; la refonte reste à faire.
+
+**Ensuite ce qui manque** (🔴), par volume de code non couvert :
+
+2. **Authentification & SSO** — 56 fichiers, trois mécanismes distincts (jeton
+   poste↔serveur, OIDC, login fédéré) documentés seulement par leur dette et
+   leurs checklists.
+3. **GPO & SYSVOL** — 24 fichiers, documentés seulement par un registre de dette.
+4. **Diagnostic d'instance** — 22 fichiers, aucune trace, pas même une checklist.
 5. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
-   référence**, et il n'apparaît même pas à la carte des domaines ci-dessus. Ce
-   qu'il en reste d'écrit est réparti sans index : les décisions vivantes sont dans
-   le code (rôle porté par l'arête user↔groupe, type de groupe fermé par la
-   déclaration d'un rôle, recette d'arborescence accrochée à un type, fabrique de
-   groupes dérivés) ; la part d'archéologie et les orientations **non exécutées**
-   sont dans [`archive/group-model-multivertical-orientation.md`](archive/group-model-multivertical-orientation.md)
+   référence**. Ce qu'il en reste d'écrit est réparti sans index : les décisions
+   vivantes sont dans le code (rôle porté par l'arête user↔groupe, type de groupe
+   fermé par la déclaration d'un rôle, recette d'arborescence accrochée à un
+   type, fabrique de groupes dérivés) ; la part d'archéologie et les orientations
+   **non exécutées** sont dans
+   [`archive/group-model-multivertical-orientation.md`](archive/group-model-multivertical-orientation.md)
    et son entrée d'[`archive/README.md`](archive/README.md). Le domaine est à
    ouvrir au gabarit.
-6. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
+6. **Extensions** (14 fichiers), **réseau** (10) et **scripts de session** (11) —
+   checklist de pré-production au mieux.
+
+**Enfin l'entretien :**
+
+7. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
    beaucoup évolué depuis sa dernière génération, et un seul contrôleur du dépôt
    porte encore des annotations. À **refaire**, pas à rapiécer.
-7. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
+8. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
    accrétion successive ; l'index est à reconstruire.
-8. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
+9. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
    décisions des mécanismes : ils sont à passer au gabarit quand on les rouvre.
+
+> **Comment une fiche devient fausse sans qu'on le voie.** Rien ne relie une
+> fiche au code qu'elle décrit : elle ne casse pas quand il change. Les fiches
+> périmées se repèrent en comparant leur date de dernier commit à celle du code
+> de leur domaine — c'est le seul signal disponible aujourd'hui, et il est
+> manuel.
 
 ## 7. Écrire une fiche
 

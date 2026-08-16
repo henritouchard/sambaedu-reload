@@ -90,11 +90,10 @@ Checklist de pré-production : [`qa/domains/ipxe.md`](../qa/domains/ipxe.md).
 
 ## Manques connus
 
-- **La boucle d'exécution à distance n'a plus de destinataire.** Le point
-  d'entrée `/ipxe/linux/autorun` répond un script qui ne fait rien et **n'a aucun
-  appelant** dans le dépôt ; l'action « CD de secours », elle, pointe toujours
-  vers le chemin SE4 correspondant, qui n'a pas de route native et tombe en 404.
-  Le mécanisme derrière est le clonage de salle en multicast — cf.
+- **Linux s'installe mais ne se gère pas.** Ce qui suit l'installation d'un poste
+  Linux n'est pas porté : la boucle d'exécution à distance n'a plus de
+  destinataire (point d'entrée natif sans appelant, chemin du CD de secours en
+  404). Ce n'est pas une régression, c'est un plan non construit — cf.
   [installation Linux](installation-linux.md).
 - **Le modèle de préparation au clonage est un gabarit minimal.**
   `/ipxe/windows/sysprep.xml` répond une structure valide mais sans
