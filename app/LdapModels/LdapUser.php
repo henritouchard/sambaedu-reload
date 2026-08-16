@@ -31,6 +31,10 @@ class LdapUser extends BaseUser
         'physicaldeliveryofficename', // Date de naissance, Sexe (F/M) hash
         'title',                 // Numéro unique id ENT (OpenENT), externalId
         'employeenumber',        // Identifiants unique SIECLE et/ou GPEI, ASM... (séparés par des ,)
+        'employeetype',          // Clé immuable d'identité (objectGUID en texte) — cf. config/ad_identity.php.
+                                 // ⚠️ Cette liste est DÉCLARATIVE : LdapRecord ne la lit pas. Ce qui garantit
+                                 // la relecture d'un attribut est la sélection de la requête (`['*']` par
+                                 // défaut, ou un `select()` explicite). Cf. AdImmutableKeyService::selectFor().
         'initials',              // pseudo
         'useraccountcontrol',    // État du compte (actif = 512, désactivé = 514)
         'memberof',              // Groupes

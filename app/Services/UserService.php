@@ -1346,6 +1346,14 @@ class UserService
             'operator' => auth()->user()?->login ?? 'system',
         ]);
 
+        // La CLÉ IMMUABLE d'identité, avant tout ce qui pourrait la lire.
+        //
+        // Elle est posée ICI et pas dans `setUserAttributes()` parce qu'elle DÉRIVE
+        // de l'`objectGUID`, que l'annuaire n'attribue qu'à la création : elle n'est
+        // calculable qu'une fois l'entrée écrite. C'est donc nécessairement une
+        // seconde écriture. Fail-soft — cf. `ensureAdImmutableKey()`.
+        $this->ensureAdImmutableKey($ldapUser);
+
         // Double-write : persister le User Eloquent dans PostgreSQL
         $this->persistUserToSql($ldapUser, $data);
 
@@ -1989,6 +1997,36 @@ class UserService
     // doit pouvoir faire échouer une création de compte ou un changement de mot de
     // passe AD. La visibilité vient du journal, pas de l'exception.
     // =========================================================================
+
+    /**
+     * Pose la clé immuable d'identité sur l'entrée d'annuaire fraîchement créée.
+     *
+     * **Fail-soft, et c'est délibéré** : la clé sert aux plans de fichiers cloud, pas
+     * à la création du compte. Un annuaire qui refuse cette écriture ne doit pas
+     * priver l'établissement d'un utilisateur — la commande `ad:immutable-key`
+     * rattrape ce qui manque, et le journal nomme ce qui a échoué.
+     *
+     * Sans clé, un compte reste parfaitement utilisable côté SE5 ; c'est côté cloud
+     * qu'il devient invisible. Le prix d'un oubli est donc borné et rattrapable, là
+     * où une exception ici bloquerait une rentrée entière.
+     */
+    private function ensureAdImmutableKey(LdapUser $ldapUser): void
+    {
+        try {
+            $service = app(\App\Services\Ad\AdImmutableKeyService::class);
+
+            if (! $service->setOnCreate()) {
+                return;
+            }
+
+            $service->ensure($ldapUser);
+        } catch (\Throwable $e) {
+            Log::warning('ad.immutable_key.hook_error', [
+                'login' => $ldapUser->getLogin(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 
     /**
      * Assure le compte Nextcloud à la création SE5 (AC5).
