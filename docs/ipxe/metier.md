@@ -224,6 +224,43 @@ toute demande active est annulée — et à la pré-autorisation de l'action.
 - L'annulation au démarrage n'est pas passive : elle nettoie la demande plutôt
   que de la laisser expirer.
 
+## 11. Le clonage est conservé, pas entretenu
+
+**Contexte.** Quatre des huit étapes Windows post-installation — préparation avec
+ou sans généralisation, jonction au domaine après clonage, renommage — servent un
+flux de déploiement par image hérité de SE4. Côté Linux, le même besoin passait
+par une boucle d'exécution à distance pilotant un clonage multicast depuis le CD
+de secours.
+
+**Décision.** Le mécanisme reste en place et **n'est pas démonté**, sans être
+pour autant une voie entretenue ni la façon recommandée de déployer une salle.
+
+**Conséquences.**
+- Ces étapes continuent de répondre, et leurs interrupteurs de neutralisation
+  restent utiles.
+- **Le versant Linux, lui, est déjà rompu** : le point d'entrée natif n'a aucun
+  appelant, et l'action « CD de secours » pointe vers un chemin SE4 sans route,
+  donc en 404. Reprendre le clonage Linux suppose de le rétablir, pas seulement
+  de le rallumer.
+- Ne pas traiter ces étapes comme du code mort lors d'un nettoyage : elles ne
+  sont pas abandonnées, elles attendent.
+
+## 12. Deux chemins de nommage coexistent
+
+**Contexte.** Un poste reçoit son nom au démarrage réseau, devant l'écran. L'agent
+en état désiré, lui, s'enrôle ensuite auprès du serveur avec sa propre identité.
+Deux mécanismes touchent donc à l'identité d'une même machine.
+
+**Décision.** Les deux sont conservés. Le nommage depuis le menu de démarrage
+reste la voie d'entrée d'un poste neuf ; nommer après coup, depuis l'interface,
+est jugé souhaitable mais ne remplace pas le premier.
+
+**Conséquences.**
+- Le nommage au démarrage doit rester praticable sans interface web : c'est le
+  seul moment où la machine et son opérateur sont au même endroit.
+- L'enrôlement de l'agent ne peut pas présumer d'un poste déjà nommé, ni
+  l'inverse. Voir [`agent/enrollment.md`](../agent/enrollment.md).
+
 ## Aller plus loin
 
 Les mécanismes : [premier contact](premier-contact.md) ·

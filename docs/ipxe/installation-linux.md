@@ -112,12 +112,29 @@ Le marqueur est effacé au passage, sans quoi l'écran reviendrait indéfiniment
 
 ## Ce qui manque
 
-**La reprise de main après installation est un talon.** Sur SE4,
-`/ipxe/linux/autorun` servait une boucle de scripts post-installation lus dans
-l'annuaire. En SE5 la voie est l'affectation de scripts, mais le raccordement
-n'est pas fait : le point d'entrée répond un script qui affiche un message et
-sort. La boucle côté poste se termine donc sans rien faire
+**Le point d'entrée `/ipxe/linux/autorun` est un talon sans appelant.** Aucun
+gabarit, aucun fragment, aucun script du dépôt ne l'appelle — il répond un script
+qui affiche un message et sort
 (`app/Ipxe/Http/Controllers/IpxeLinuxAutorunController.php:13-32`).
+
+Ce qu'il portait sur SE4 mérite d'être connu, parce que ce n'est pas ce que son
+nom laisse croire. Le script servi était une **boucle d'exécution à distance** :
+la machine appelait le serveur, évaluait le shell renvoyé, rapportait son code de
+retour, et recommençait une seconde plus tard — sans jamais sortir. Le serveur
+poussait donc du shell arbitraire, exécuté en root, en continu.
+
+Deux usages en dépendaient :
+
+- **côté installation Linux**, la boucle était déjà vide sur SE4 : le point
+  d'entrée appelé ne renvoyait aucun script, seulement de l'avancement ;
+- **côté CD de secours**, elle était bien réelle — c'est le moteur du **clonage
+  de salle en multicast** : une machine modèle émet ses partitions, les autres
+  les reçoivent, puis chacune change de nom.
+
+Le second usage n'est pas mort de lui-même : l'action « CD de secours » pointe
+toujours son `ar_source` vers le chemin SE4 `/ipxe/sysrescuecd/autorun.php`, qui
+n'a **pas** de route native et n'a pas été marqué comme éteint. Il tombe donc sur
+l'attrape-tout, en 404. Le CD réessaie cinq fois et poursuit sans démon.
 
 **Pas de déduplication des traces** : chaque appel du hook ajoute une ligne.
 

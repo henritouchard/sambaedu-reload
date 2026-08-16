@@ -58,12 +58,22 @@ Le nom arrive **au clavier, en clair, depuis un firmware**. Trois passes le
 transforment avant toute écriture :
 
 1. **Mise en minuscules** et suppression des espaces de bord.
-2. **Suffixe d'établissement** : si un suffixe est configuré, le nom est tronqué
-   à 9 caractères puis suffixé ; sinon il est tronqué à 15. Un nom déjà suffixé
-   est laissé tel quel. Les noms des serveurs de l'infrastructure — `se4fs*` et
-   `se4ad-<UAI>` — sont exclus du suffixage : ce sont des noms canoniques.
+2. **Troncature à 15 caractères.** Les noms des serveurs de l'infrastructure —
+   `se4fs*` et `se4ad-<UAI>` — sont traités à part : ce sont des noms canoniques.
 3. **Validation stricte** : `[a-z0-9_\-.$]`, 32 caractères au plus. Tout le reste
    est refusé.
+
+> **Le suffixe d'établissement est inerte.** Le code porte encore la règle SE4 :
+> si un suffixe est configuré, tronquer à 9 caractères et l'ajouter. Sur SE4, ce
+> suffixe était dérivé de l'UAI (`0123456a` → `-3456a`) et n'existait qu'en mode
+> central — il servait à distinguer, dans un annuaire plat partagé par plusieurs
+> établissements, deux postes portant le même nom. Une fonction faisait le chemin
+> inverse et relisait l'UAI depuis le nom de la machine.
+>
+> **En SE5 la clé de configuration n'est définie nulle part** : ni dans
+> `config/sambaedu.php`, ni dans l'environnement. La branche ne se déclenche
+> jamais et tout nom est simplement tronqué à 15 caractères. À traiter comme un
+> vestige tant qu'aucun besoin de cohabitation multi-établissement ne le réveille.
 
 > **Cette troisième passe n'est pas cosmétique.** Le nom finit dans une commande
 > `samba-tool` et dans un script iPXE. Un point-virgule, une esperluette ou un
