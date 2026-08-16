@@ -398,6 +398,15 @@ new class extends Component {
                 @error('label')
                     <span class="text-error text-xs">{{ $message }}</span>
                 @enderror
+                {{-- Ce libellé n'est qu'un DÉFAUT : un type de groupe peut le
+                     surcharger. Sans cet avertissement, on renomme ici en croyant
+                     avoir renommé partout — l'écran ne montre aucune surcharge. --}}
+                <p class="text-xs text-base-content/60" data-testid="hint-role-label-translated">
+                    Ce libellé peut être <strong>traduit par type de groupe</strong> : un
+                    « Gestionnaire » se lit « Enseignant » dans une classe, « Porteur » dans un
+                    projet. Ces traductions s'administrent dans l'onglet
+                    <strong>« Types de groupes »</strong>.
+                </p>
             </div>
 
             @if ($isEditing)

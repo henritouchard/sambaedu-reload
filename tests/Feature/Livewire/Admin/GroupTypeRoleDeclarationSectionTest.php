@@ -337,7 +337,15 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
             ->assertSee('Porteur');
     }
 
-    /** Clôture de la review 62.1 #4 : l'onglet « Rôles » renvoie au mécanisme. */
+    /**
+     * Clôture de la review 62.1 #4 : l'onglet « Rôles » renvoie au mécanisme.
+     *
+     * Le renvoi vivait dans un bandeau permanent en tête d'onglet ; il vit
+     * désormais SOUS LE CHAMP « Libellé », c'est-à-dire au moment précis où
+     * l'administrateur saisit la valeur qu'un type de groupe peut surcharger.
+     * Ce qui est épinglé ici est le RENVOI, pas son emplacement — mais il doit
+     * exister : sans lui, on renomme un rôle en croyant avoir renommé partout.
+     */
     #[Test]
     public function the_roles_tab_now_points_to_the_administrable_mechanism(): void
     {
@@ -345,6 +353,8 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
 
         Livewire::test('pages::admin.settings.groups._partials.roles-tab')
             ->assertOk()
+            ->assertSeeHtml('data-testid="hint-role-label-translated"')
+            ->assertSee('traduit par type de groupe')
             ->assertSee('Types de groupes')
             ->assertSee('Porteur')
             ->assertDontSee('certains types de groupes le traduisent déjà');
