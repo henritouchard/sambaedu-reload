@@ -1,7 +1,30 @@
 # Domaine : Gestion des droits (rights-management)
 
-**Status** : livré (Story 7.1 — 2026-04-23)
-**Prérequis Epic 7** : Spatie Permission 6.24, PostgreSQL, matrice `profiles-rights-matrix.md`.
+> # ⛔ Fiche périmée — à lire avec précaution
+>
+> **Cette fiche décrit qui a le droit de faire quoi *dans l'application SE5*.**
+> Ce cadre-là tient toujours : rôles, permissions atomiques, délégations
+> limitées à un périmètre de postes. Mais deux choses ont bougé depuis avril, et
+> une troisième n'a jamais été ici.
+>
+> | Ce qui a changé | Ce que la fiche dit encore |
+> | --- | --- |
+> | Il y a **25 permissions atomiques** | Elle en annonce 18 |
+> | La **vérité des rôles est en base** : la synchronisation d'annuaire les y matérialise, plus de lecture d'annuaire à l'exécution | Que les rôles sont posés par semis et lus depuis l'annuaire |
+> | Un **second modèle de droits existe**, générique et sans rapport avec celui-ci — types de groupes, catalogue de rôles, droits à quatre verbes sur les fichiers | Rien : il n'est pas mentionné |
+>
+> **Ne pas confondre les deux modèles.** Celui décrit ici garde l'accès aux
+> pages et aux gestes de SE5. L'autre décrit ce qu'un membre d'un groupe peut
+> faire **des fichiers** de ce groupe. Ils ne se recouvrent pas et n'ont pas la
+> même autorité.
+>
+> **Où regarder en attendant la refonte :** l'énumération
+> `app/Enums/SambaPermission.php` fait foi pour les permissions, et
+> [`qa/domains/rights-management.md`](../qa/domains/rights-management.md) est
+> tenue à jour.
+
+**Contenu ci-dessous** : état au 2026-04-25.
+**Prérequis** : Spatie Permission 6.24, PostgreSQL, matrice `profiles-rights-matrix.md`.
 
 ## Vue d'ensemble
 

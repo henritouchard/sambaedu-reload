@@ -244,12 +244,8 @@ Au sommet de l'onglet : « Cette interface remplace l'ancienne page de gestion d
 
 ## Références
 
-- [Story 6.1](../../_bmad-output/implementation-artifacts/6-1-consultation-et-gestion-des-imprimantes-cups.md)
-- [Story 6.2](../../_bmad-output/implementation-artifacts/6-2-gestion-des-pilotes-windows.md)
-- [Epic 6 — Impression SER](../../_bmad-output/planning-artifacts/epics.md#epic-6)
-- [PRD FR17-19](../../_bmad-output/planning-artifacts/prd.md#fr17-19)
-- [Architecture — `App\Services\Print\`](../../_bmad-output/planning-artifacts/architecture.md)
-- [Pattern shellout sudo — `XfsQuotaService` (5.1a)](filesystem.md)
+- [Quotas XFS](filesystem.md) — même patron d'appel système sous `sudo`
+- [Checklist de pré-production](../qa/domains/printers.md)
 
 ---
 

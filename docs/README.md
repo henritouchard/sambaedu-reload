@@ -87,7 +87,7 @@ existante mais **périmée** — elle décrit un état qui n'a plus cours.
 | **Déploiement applicatif** | `app/Wpkg/`, `app/Services/AppStore/`, `AppProfile/` | [`wpkg-deploy/architecture.md`](wpkg-deploy/architecture.md) | [qa](qa/domains/wpkg-deploy.md) | 🟡 |
 | **Lien amont controlHub** | `app/Services/ControlHub/` | [`api-controlhub-workstation-groups.md`](api-controlhub-workstation-groups.md) | [qa](qa/domains/controlhub-contract.md) | 🟡 |
 | **GPO & SYSVOL** | `app/Gpo/`, `app/Services/Gpo/` | *dette :* [`tech-debt-gpo.md`](tech-debt-gpo.md) | [qa](qa/domains/gpo.md) | 🔴 |
-| **Authentification & SSO** | `app/Auth/` (V1, OIDC, fédéré), `app/OidcWitness/` | *dette :* [`tech-debt-auth.md`](tech-debt-auth.md) | [qa](qa/domains/auth.md), [qa](qa/domains/federated-login.md) | 🔴 |
+| **Authentification & SSO** | `app/Auth/` (V1, OIDC, fédéré), `app/OidcWitness/` | [`auth/`](auth/README.md) — 5 fiches | [qa](qa/domains/auth.md), [qa](qa/domains/federated-login.md) | ✅ |
 | **Installation de postes (iPXE)** | `app/Ipxe/` | [`ipxe/`](ipxe/README.md) — 6 fiches | [qa](qa/domains/ipxe.md) | ✅ |
 | **Extensions** | `app/Services/Extensions/`, `extensions/` | — | [qa](qa/domains/extensions.md) | 🔴 |
 | **Réseau (DHCP/DNS)** | `app/Services/Network/`, `scripts/system/` | — | [qa](qa/domains/network.md) | 🔴 |
@@ -120,16 +120,14 @@ comparaison legacy ↔ SE5).
 
 1. **Droits & délégations** — la fiche date d'avril et annonce 18 permissions
    atomiques ; il y en a 25. Elle ignore aussi que la vérité des rôles a basculé
-   en base. Un bandeau en tête dit ce qui a changé ; la refonte reste à faire.
+   en base. Un bandeau en tête dit ce qui a changé : le piège est désamorcé, la
+   refonte reste à faire.
 
 **Ensuite ce qui manque** (🔴), par volume de code non couvert :
 
-2. **Authentification & SSO** — 56 fichiers, trois mécanismes distincts (jeton
-   poste↔serveur, OIDC, login fédéré) documentés seulement par leur dette et
-   leurs checklists.
-3. **GPO & SYSVOL** — 24 fichiers, documentés seulement par un registre de dette.
-4. **Diagnostic d'instance** — 22 fichiers, aucune trace, pas même une checklist.
-5. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
+2. **GPO & SYSVOL** — 24 fichiers, documentés seulement par un registre de dette.
+3. **Diagnostic d'instance** — 22 fichiers, aucune trace, pas même une checklist.
+4. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
    référence**. Ce qu'il en reste d'écrit est réparti sans index : les décisions
    vivantes sont dans le code (rôle porté par l'arête user↔groupe, type de groupe
    fermé par la déclaration d'un rôle, recette d'arborescence accrochée à un
@@ -138,7 +136,7 @@ comparaison legacy ↔ SE5).
    [`archive/group-model-multivertical-orientation.md`](archive/group-model-multivertical-orientation.md)
    et son entrée d'[`archive/README.md`](archive/README.md). Le domaine est à
    ouvrir au gabarit.
-6. **Extensions** (14 fichiers), **réseau** (10) et **scripts de session** (11) —
+5. **Extensions** (14 fichiers), **réseau** (10) et **scripts de session** (11) —
    checklist de pré-production au mieux.
 
 **Enfin l'entretien :**
