@@ -2,10 +2,13 @@
 
 use App\Components\Traits\WithToasts;
 use App\Enums\ActiveCloud;
+use App\Enums\ApplicationStatus;
 use App\Enums\CloudAccessPath;
 use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\FileLocationException;
 use App\Exceptions\Filesystem\FileLocationRefusalException;
+use App\Models\Application;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\FilePolicyService;
 use App\Services\Filesystem\FileLocationChangeGuard;
 use App\Services\Filesystem\FileLocationOptions;
@@ -79,10 +82,57 @@ new class extends Component {
     public const ADOPTION_NOTICE = 'Les emplacements n\'ont pas encore été repris depuis les réglages '
         .'historiques. Jouez `php artisan files:adopt-locations` sur le serveur, puis rechargez cette page.';
 
-    /** Littéral figé — le chemin d'accès est enregistré, il n'a pas encore d'effet. */
-    public const ACCESS_PATH_HONESTY = 'La pose du client de synchronisation sur les postes est livrée par '
-        .'un chantier séparé. D\'ici là, cette position est enregistrée mais seul l\'accès par le navigateur '
-        .'est effectivement posé.';
+    /**
+     * Littéral figé — LE RICOCHET DE LA DÉSIGNATION RETIRÉE.
+     *
+     * Retirer la désignation rendrait la position en vigueur non tenable :
+     * l'écran ne la proposerait plus, mais elle resterait persistée, et l'état
+     * compilé cesserait d'unionner l'application sans que rien ne le dise. On
+     * ramène donc le chemin d'accès au navigateur DANS LE MÊME GESTE, et on le
+     * DIT. Même figure que le ricochet des emplacements sur le cloud actif.
+     *
+     * ⚠️ Ce ricochet ne joue QUE sur le geste de désignation — jamais sur
+     * l'enregistrement des emplacements, qui ne touche aucune clé qu'il ne
+     * gouverne pas.
+     */
+    public const ACCESS_PATH_FELL_BACK_TO_WEB = 'Le chemin d\'accès est revenu au navigateur : la position '
+        .'« par le client de synchronisation » n\'est plus tenable.';
+
+    /**
+     * Littéral figé — LE BROUILLON DU BLOC 1 N'EST PAS LE CLOUD ACTIF, et
+     * l'écran le DIT (correction de revue).
+     *
+     * Les blocs 1 et 2 s'enregistrent d'un geste explicite ; le bloc 3, lui,
+     * s'auto-enregistre. Entre les deux, la radio du cloud peut désigner un
+     * produit que la base ne porte pas. Tout ce que le bloc 3 écrit — la
+     * désignation du client, le chemin d'accès — porte alors sur le cloud
+     * PERSISTÉ, le seul que la compilation d'état lise. Le taire laisserait
+     * l'administrateur croire qu'il règle le produit qu'il vient de cliquer.
+     *
+     * `%s` = le libellé du cloud actif, `%s` = celui de la sélection en cours.
+     */
+    public const SETTINGS_BEAR_ON_THE_ACTIVE_CLOUD = 'Ces réglages portent sur le cloud actif enregistré '
+        .'(%s). La sélection « %s » ci-dessus n\'est pas enregistrée : elle ne gouvernera rien tant que '
+        .'vous n\'aurez pas cliqué sur « Enregistrer les emplacements ».';
+
+    /**
+     * Littéral figé — LE SUFFIXE D'UNE POSITION EN VIGUEUR QUI N'EST PLUS
+     * TENABLE (correction de revue).
+     *
+     * Une position en vigueur est un FAIT, pas une proposition : la retirer de
+     * la liste casserait le seul contrôle qui permet d'en sortir — le sélecteur
+     * afficherait « Par le navigateur » sans qu'aucun changement ne parte, et le
+     * persisté resterait « par le client ».
+     */
+    public const STALE_POSITION_SUFFIX = ' — n\'est plus tenable';
+
+    /**
+     * Littéral figé — LA POSITION ENREGISTRÉE N'EST PLUS TENABLE, et l'écran le
+     * DIT plutôt que de la corriger en douce.
+     */
+    public const CLIENT_POSITION_NO_LONGER_HOLDS = 'La position enregistrée est « Par le client de '
+        .'synchronisation », mais elle n\'est plus tenable : rien n\'est posé sur les postes tant '
+        .'qu\'elle ne l\'est pas. Désignez une application cliente, ou choisissez « Par le navigateur ».';
 
     /** Littéral figé — la précision qui évite le contresens sous « Espace personnel ». */
     public const PERSONAL_SHARE_STILL_SERVED = 'Le partage personnel du serveur de fichiers reste en service '
@@ -126,6 +176,18 @@ new class extends Component {
 
     /** Le chemin d'accès au cloud ({@see CloudAccessPath}), en valeur brute. */
     public string $cloudAccessPath = 'web';
+
+    /**
+     * L'`app_id` de l'application du catalogue DÉSIGNÉE comme client de
+     * synchronisation du cloud ACTIF (`''` = aucune).
+     *
+     * ⚠️ **Elle suit le cloud PERSISTÉ, jamais la radio du bloc 1** (correction
+     * de revue). La désignation est par produit, et c'est le produit réellement
+     * actif qui est en jeu : l'écrire sur le brouillon de l'écran armerait le
+     * client d'un cloud que la base ne porte pas. Quand les deux divergent,
+     * l'écran le DIT ({@see self::SETTINGS_BEAR_ON_THE_ACTIVE_CLOUD}).
+     */
+    public string $clientAppId = '';
 
     /** Une décision a-t-elle déjà été enregistrée ? */
     public bool $decided = false;
@@ -183,6 +245,26 @@ new class extends Component {
     }
 
     /**
+     * La désignation persistée du cloud ACTIF, rechargée dans la propriété du
+     * sélecteur.
+     *
+     * ⚠️ **Ce n'est PAS un instantané de montage.** La posabilité, elle, est
+     * recalculée à CHAQUE rendu et rejouée à CHAQUE écriture
+     * ({@see self::syncClientRefusal()}, {@see self::updatedCloudAccessPath()}) :
+     * `Livewire::test()` remonte les composants enfants à chaque rendu, un
+     * navigateur non — un état de posabilité figé au montage passerait les tests
+     * et mentirait à l'écran.
+     */
+    private function reloadDesignation(): void
+    {
+        $key = app(CloudSyncClient::class)->policyKeyFor($this->activeCloud());
+
+        $this->clientAppId = $key === null
+            ? ''
+            : (string) (FilePolicyService::globalConfig()[$key] ?? '');
+    }
+
+    /**
      * Les capacités valent-elles EXACTEMENT les défauts historiques ? C'est la
      * signature d'une instance neuve — la seule où poser les défauts n'invente
      * rien.
@@ -206,6 +288,61 @@ new class extends Component {
     public function selectedCloud(): ActiveCloud
     {
         return ActiveCloud::tryFrom($this->cloudActif) ?? ActiveCloud::Aucun;
+    }
+
+    /**
+     * LE CLOUD RÉELLEMENT ACTIF — celui que `files.locations` PERSISTE, et le
+     * seul que la compilation d'état lise (correction de revue).
+     *
+     * ---------------------------------------------------------------------------
+     * **{@see self::selectedCloud()} ne sert qu'à AFFICHER ; tout ce qui écrit,
+     * ou garde une écriture, lit CELUI-CI.** Le défaut corrigé était réel et
+     * atteignable en deux clics légitimes, sans rien forger : les blocs 1 et 2
+     * s'enregistrent d'un geste explicite, le bloc 3 s'auto-enregistre. Basculer
+     * la radio sur l'autre produit sans enregistrer, puis toucher au bloc 3,
+     * faisait valider la garde contre un BROUILLON pendant que l'écriture, elle,
+     * portait sur le cloud persisté — armant le client du produit que
+     * l'administrateur n'était pas en train de regarder, ou faisant retomber au
+     * navigateur une position parfaitement tenable (donc désinstallant le client
+     * de tout le parc).
+     *
+     * **Fail-closed sur une ligne illisible** : `Aucun` refuse toute position
+     * « par le client ». Le message de lecture, lui, est déjà affiché par
+     * {@see self::mount()} ; on ne l'écrase pas ici, et on n'écrit rien.
+     * ---------------------------------------------------------------------------
+     */
+    public function activeCloud(): ActiveCloud
+    {
+        try {
+            return FileLocationService::current()->cloudActif;
+        } catch (FileLocationException) {
+            return ActiveCloud::Aucun;
+        }
+    }
+
+    /** L'instance porte-t-elle un cloud actif PERSISTÉ ? */
+    public function hasActiveCloud(): bool
+    {
+        return $this->activeCloud() !== ActiveCloud::Aucun;
+    }
+
+    /**
+     * LE BROUILLON DIVERGE DU PERSISTÉ, et l'écran le dit — jamais une
+     * désactivation muette.
+     *
+     * Rendre le bloc 3 inerte serait le même mensonge sous une autre forme :
+     * l'administrateur ne saurait toujours pas sur quel produit portent les
+     * réglages qu'il voit. On les laisse joignables, et on nomme leur objet.
+     */
+    public function cloudSelectionDivergenceNotice(): ?string
+    {
+        $active = $this->activeCloud();
+
+        if ($active === $this->selectedCloud()) {
+            return null;
+        }
+
+        return sprintf(self::SETTINGS_BEAR_ON_THE_ACTIVE_CLOUD, $active->label(), $this->selectedCloud()->label());
     }
 
     /**
@@ -246,6 +383,183 @@ new class extends Component {
     }
 
     /**
+     * Story 63.5 — LE MOTIF D'ABSENCE de la position « par le client de
+     * synchronisation », ou `null` si elle est tenable.
+     *
+     * Recalculé à CHAQUE rendu (le service est interrogé, jamais un instantané) :
+     * la désignation, le statut de l'application et sa recette peuvent changer
+     * sous l'écran, et une posabilité figée au montage serait un mensonge que
+     * `Livewire::test()` ne verrait pas.
+     *
+     * Il porte sur le cloud ACTIF ({@see self::activeCloud()}), jamais sur la
+     * radio : c'est ce refus-là qui garde les écritures.
+     */
+    public function syncClientRefusal(): ?string
+    {
+        return app(CloudSyncClient::class)->refusalFor($this->activeCloud());
+    }
+
+    /**
+     * Les positions du chemin d'accès RÉELLEMENT proposables, dans l'ordre.
+     *
+     * Une position non tenable est ABSENTE, avec son motif à côté — jamais
+     * grisée, jamais proposée puis refusée (doctrine du vocabulaire de résultat,
+     * tenue par tout cet écran).
+     *
+     * ⚠️ **SAUF si elle est EN VIGUEUR** (correction de revue). Une position
+     * persistée est un FAIT, pas une proposition : la masquer rendait le
+     * sélecteur menteur — il affichait déjà « Par le navigateur » alors que la
+     * base portait « par le client », si bien qu'un clic dessus n'émettait aucun
+     * changement et n'écrivait RIEN. Le message qui invitait à en sortir
+     * instruisait donc une sortie que son propre contrôle ne pouvait pas
+     * exécuter. Elle reste dans la liste, suffixée
+     * ({@see self::STALE_POSITION_SUFFIX}).
+     *
+     * @return list<CloudAccessPath>
+     */
+    public function availableAccessPaths(): array
+    {
+        $persisted = FilePolicyService::globalConfig()['cloud_access_path'];
+        $tenable = $this->syncClientRefusal() === null;
+
+        return array_values(array_filter(
+            CloudAccessPath::cases(),
+            fn (CloudAccessPath $path): bool => $path === CloudAccessPath::Web
+                || $tenable
+                || $path->value === $persisted,
+        ));
+    }
+
+    /**
+     * Cette position est-elle EN VIGUEUR SANS ÊTRE TENABLE ? (Elle reste alors
+     * offerte, et dite telle qu'elle est.)
+     */
+    public function accessPathIsStale(CloudAccessPath $path): bool
+    {
+        return $path === CloudAccessPath::ClientNatif && $this->syncClientRefusal() !== null;
+    }
+
+    /**
+     * Les applications du catalogue proposables comme client : INSTALLÉES, et
+     * dont la recette décrit une désinstallation.
+     *
+     * Le filtre prédictif est appliqué ICI aussi, et pas seulement à l'écriture :
+     * proposer un paquet qu'on refusera au clic est exactement le défaut que
+     * cette doctrine ferme.
+     *
+     * @return list<array{app_id: string, name: string}>
+     */
+    public function designatableApplications(): array
+    {
+        $client = app(CloudSyncClient::class);
+
+        return Application::query()
+            ->installed()
+            ->whereNotNull('app_id')
+            ->where('app_id', '!=', '')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Application $app): bool => $client->recipeRefusalFor($app) === null)
+            ->map(fn (Application $app): array => [
+                'app_id' => (string) $app->app_id,
+                'name' => (string) $app->name,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * L'avertissement de VERSION D'AGENT, ou `null`.
+     *
+     * Il informe et n'interdit rien : interdire figerait la décision d'un
+     * établissement sur l'état de mise à jour de son parc, ce qui n'est pas le
+     * sujet. Une lecture SQL, jamais un appel réseau.
+     */
+    public function agentVersionWarning(): ?string
+    {
+        return app(CloudSyncClient::class)->agentVersionWarning();
+    }
+
+    /**
+     * LA DÉSIGNATION S'ENREGISTRE SEULE, et elle est GARDÉE.
+     *
+     * Deux refus possibles, chacun nommé : un `app_id` qui n'est pas une
+     * application installée du catalogue, et une recette qui ne décrit aucune
+     * désinstallation ({@see CloudSyncClient::recipeRefusalFor()}). Refusé ⇒
+     * RIEN n'est persisté et l'écran reprend la désignation persistée.
+     *
+     * **Retirer la désignation est LÉGITIME** — c'est l'un des trois gestes qui
+     * font sortir le client de l'ensemble cible des postes. Mais il rendrait la
+     * position en vigueur non tenable : on ramène donc le chemin d'accès au
+     * navigateur dans le même geste, et on le dit.
+     */
+    public function updatedClientAppId(): void
+    {
+        if (! Gate::allows('server.admin')) {
+            abort(403);
+        }
+
+        $client = app(CloudSyncClient::class);
+
+        // LE CLOUD ACTIF, JAMAIS LA RADIO : c'est la clé du produit réellement
+        // en service qu'on écrit — celle que la compilation d'état relira.
+        $key = $client->policyKeyFor($this->activeCloud());
+
+        if ($key === null) {
+            // Aucun cloud actif : il n'y a pas de produit à désigner, et le bloc
+            // n'est pas rendu. Rien n'est persisté.
+            $this->clientAppId = '';
+
+            return;
+        }
+
+        $appId = trim($this->clientAppId);
+
+        if ($appId !== '') {
+            $refusal = $this->designationRefusalFor($appId);
+
+            if ($refusal !== null) {
+                $this->reloadDesignation();
+                $this->toastError($refusal);
+
+                return;
+            }
+        }
+
+        FilePolicyService::patchGlobal([$key => $appId]);
+
+        // Le ricochet : plus aucune désignation ⇒ la position en vigueur n'est
+        // plus tenable, et le chemin d'accès revient au navigateur DANS LE MÊME
+        // GESTE. Il n'a lieu QU'ICI : c'est la seule écriture dont l'objet est
+        // précisément la désignation.
+        if ($appId === '' && $this->fallBackToWebIfTheClientNoLongerHolds()) {
+            return;
+        }
+
+        // Deux littéraux distincts : vider le sélecteur RETIRE une désignation,
+        // et lire « enregistré » sur un retrait laisse croire qu'une valeur a
+        // été posée.
+        $this->toastSuccess($appId === '' ? 'Désignation retirée.' : 'Client de synchronisation enregistré.');
+    }
+
+    /**
+     * Le motif de refus d'un `app_id` CANDIDAT à la désignation, ou `null`.
+     *
+     * La garde est rejouée à l'ÉCRITURE et pas seulement au filtrage de la liste
+     * — une propriété Livewire se forge.
+     */
+    private function designationRefusalFor(string $appId): ?string
+    {
+        $application = Application::query()->where('app_id', $appId)->orderBy('id')->first();
+
+        if ($application === null || $application->status !== ApplicationStatus::Installed) {
+            return sprintf(CloudSyncClient::REFUSAL_NOT_INSTALLED, $appId);
+        }
+
+        return app(CloudSyncClient::class)->recipeRefusalFor($application);
+    }
+
+    /**
      * Changer le cloud actif fait retomber SUR L'ÉCRAN tout emplacement qui
      * désignait l'ancien produit — sans quoi la combinaison serait
      * irreprésentable et l'écran afficherait une position qu'il n'offre plus.
@@ -264,6 +578,14 @@ new class extends Component {
                 $this->{$property} = FileBackendName::Posix->value;
             }
         }
+
+        // Story 63.5 — LA DÉSIGNATION NE SUIT PAS LA RADIO (correction de revue).
+        // Elle porte sur le cloud ACTIF, et la radio n'est qu'un brouillon tant
+        // qu'« Enregistrer les emplacements » n'a pas été cliqué : la faire
+        // suivre laisserait croire qu'on désigne le client du produit affiché,
+        // alors que toute écriture porte sur le produit persisté. L'écran dit la
+        // divergence ({@see self::cloudSelectionDivergenceNotice()}) au lieu de
+        // la mimer.
     }
 
     /**
@@ -368,6 +690,18 @@ new class extends Component {
      * exactement la classe de défaut que cette story ferme. Il ne nomme que ce
      * qu'il change, et {@see FilePolicyService::patchGlobal()} — seul endroit du
      * dépôt à connaître cet ordre — relit et repasse tout le reste.
+     *
+     * **Story 63.5 — LA POSABILITÉ EST REJOUÉE ICI, AVANT L'ÉCRITURE.** La liste
+     * affichée ne propose pas « par le client de synchronisation » tant qu'aucune
+     * application désignée ne tient ; mais une propriété Livewire se forge, et
+     * une garde qui ne vit que dans la liste protège l'étourderie, pas la requête
+     * forgée. Refusé ⇒ RIEN n'est persisté, et l'écran reprend la valeur
+     * persistée.
+     *
+     * ⚠️ **ELLE INTERROGE LE CLOUD ACTIF, PAS LA RADIO** (correction de revue) :
+     * `cloud_access_path` est un réglage unique, non scopé par produit, et
+     * l'agent le lit à côté du cloud PERSISTÉ. Garder l'écriture contre le
+     * brouillon revenait à valider une combinaison qui n'existera jamais.
      */
     public function updatedCloudAccessPath(): void
     {
@@ -379,6 +713,17 @@ new class extends Component {
             $this->cloudAccessPath = FilePolicyService::globalConfig()['cloud_access_path'];
 
             return;
+        }
+
+        if ($this->cloudAccessPath === CloudAccessPath::ClientNatif->value) {
+            try {
+                app(CloudSyncClient::class)->assertAvailable($this->activeCloud());
+            } catch (\InvalidArgumentException $e) {
+                $this->cloudAccessPath = FilePolicyService::globalConfig()['cloud_access_path'];
+                $this->toastError($e->getMessage());
+
+                return;
+            }
         }
 
         FilePolicyService::patchGlobal(['cloud_access_path' => $this->cloudAccessPath]);
@@ -419,6 +764,58 @@ new class extends Component {
     }
 
     /**
+     * Story 63.5 — ramène le chemin d'accès au navigateur quand la position
+     * « par le client de synchronisation » vient de cesser d'être tenable.
+     * Rend `true` si elle a écrit.
+     *
+     * ⚠️ **APPELÉE DEPUIS LE SEUL GESTE DE DÉSIGNATION, JAMAIS DEPUIS
+     * `save()`.** L'enregistrement des emplacements ne doit toucher AUCUNE clé
+     * qu'il ne gouverne pas — c'est l'invariant « aucun réglage persisté n'est
+     * perdu » que tout cet écran tient, et le mettre là en ferait une exception
+     * silencieuse. Quand un changement de cloud rend la position intenable sans
+     * qu'on ait touché à la désignation, l'écran le DIT
+     * ({@see self::persistedClientPositionNoLongerHolds()}) au lieu de décider à
+     * la place de l'administrateur.
+     */
+    private function fallBackToWebIfTheClientNoLongerHolds(): bool
+    {
+        if (FilePolicyService::globalConfig()['cloud_access_path'] !== CloudAccessPath::ClientNatif->value) {
+            return false;
+        }
+
+        // LE CLOUD ACTIF, JAMAIS LA RADIO (correction de revue) : garder ce
+        // ricochet sur le brouillon faisait retomber au navigateur une position
+        // parfaitement tenable pour le cloud persisté — donc sortir un client
+        // valable de l'ensemble cible de TOUS les postes.
+        if (app(CloudSyncClient::class)->isAvailable($this->activeCloud())) {
+            return false;
+        }
+
+        FilePolicyService::patchGlobal(['cloud_access_path' => CloudAccessPath::Web->value]);
+        $this->cloudAccessPath = CloudAccessPath::Web->value;
+        $this->toastError(self::ACCESS_PATH_FELL_BACK_TO_WEB);
+
+        return true;
+    }
+
+    /**
+     * Story 63.5 — la position PERSISTÉE est « par le client de
+     * synchronisation », et elle n'est plus tenable.
+     *
+     * Trois chemins y mènent, tous réels : un changement de cloud actif, une
+     * application désignée qui perd son statut ou sa désinstallation hors de cet
+     * écran, et un payload enregistré par la story 63.3 — où la position
+     * s'enregistrait sans aucune garde parce qu'elle n'avait aucun effet. On ne
+     * corrige rien en douce : on DIT que rien n'est posé, et l'administrateur
+     * tranche.
+     */
+    public function persistedClientPositionNoLongerHolds(): bool
+    {
+        return FilePolicyService::globalConfig()['cloud_access_path'] === CloudAccessPath::ClientNatif->value
+            && $this->syncClientRefusal() !== null;
+    }
+
+    /**
      * L'icône du raccourci-portail, publiée par TOUT chemin qui rend un cloud
      * actif — comme le fait déjà la commande de reprise. Sans elle, le raccourci
      * « Mes fichiers en ligne » arriverait sur les bureaux avec l'icône de
@@ -455,6 +852,10 @@ new class extends Component {
         $this->espacePerso = $locations->espacePerso->value;
         $this->espacePartage = $locations->espacePartage->value;
         $this->cloudActif = $locations->cloudActif->value;
+
+        // La désignation est PAR PRODUIT : elle suit le cloud qu'on vient de
+        // reposer, jamais celle du produit d'avant.
+        $this->reloadDesignation();
     }
 };
 ?>
@@ -732,9 +1133,12 @@ new class extends Component {
          corriger le plafond qu'on venait d'écrire pour lui. C'est l'orphelinat
          que cette story solde, reconduit sous une autre forme.
 
-         Seul le chemin d'accès au cloud reste conditionné — c'est le seul de ces
-         réglages qui ne gouvernerait rien sans cloud, et il appartient bien à la
-         décision d'emplacement.
+         Seuls la désignation du client et le chemin d'accès au cloud restent
+         conditionnés — ce sont les seuls de ces réglages qui ne gouverneraient
+         rien sans cloud. ⚠️ Et ils sont conditionnés au cloud ACTIF PERSISTÉ,
+         pas à la radio du bloc 1 (correction de revue) : ils portent sur le
+         produit réellement en service, jamais sur celui qu'on envisage. Quand
+         les deux divergent, la phrase ci-dessus le dit.
     ═══════════════════════════════════════════════════════════════════════ --}}
     <section class="flex flex-col gap-4" data-testid="bloc-reglages">
         <div>
@@ -744,9 +1148,60 @@ new class extends Component {
             </h3>
         </div>
 
-        @if ($this->canDecide() && $cloudActif !== 'aucun')
+        {{-- LE BROUILLON DU BLOC 1 DIVERGE DU CLOUD ACTIF — dit, jamais tu, et
+             surtout jamais mimé : tout ce que ce bloc écrit porte sur le cloud
+             PERSISTÉ. Rendu HORS de la carte, parce que le cas « aucun cloud
+             actif, mais une radio déjà cliquée » ne rend aucune carte du tout. --}}
+        @php
+            $divergence = $this->canDecide() ? $this->cloudSelectionDivergenceNotice() : null;
+        @endphp
+
+        @if ($divergence !== null)
+            <p class="text-xs text-info" data-testid="cloud-selection-divergence">
+                <i class="fa-solid fa-circle-info"></i>
+                {{ $divergence }}
+            </p>
+        @endif
+
+        @if ($this->canDecide() && $this->hasActiveCloud())
+            @php
+                $syncRefusal = $this->syncClientRefusal();
+                $accessPaths = $this->availableAccessPaths();
+                $designatable = $this->designatableApplications();
+                // AC6 — INCONDITIONNEL (correction de revue) : il informe, il
+                // n'interdit rien, et c'est AVANT de s'engager sur une
+                // désignation qu'il est le plus utile.
+                $versionWarning = $this->agentVersionWarning();
+            @endphp
+
             <div class="card bg-base-100 border border-base-300 w-full lg:max-w-xl">
                 <div class="card-body p-5 gap-3">
+                    {{-- LA DÉSIGNATION D'ABORD : c'est elle qui rend la seconde
+                         position tenable, et la lire après le sélecteur de chemin
+                         d'accès obligerait à remonter pour comprendre le motif. --}}
+                    <div class="flex flex-col w-full">
+                        <label class="label w-full" for="client-app-id">
+                            <span class="label-text font-medium">
+                                Application cliente du cloud
+                            </span>
+                        </label>
+                        <select id="client-app-id" class="select select-bordered w-full"
+                            wire:model.live="clientAppId" data-testid="client-app-id">
+                            <option value="">— Aucune application désignée —</option>
+                            @foreach ($designatable as $candidate)
+                                <option value="{{ $candidate['app_id'] }}">
+                                    {{ $candidate['name'] }} ({{ $candidate['app_id'] }})
+                                </option>
+                            @endforeach
+                        </select>
+                        <p class="text-xs text-base-content/60 mt-1">
+                            SE5 ne connaît pas le paquet du client : il vient du dépôt d'applications, et son
+                            identifiant varie d'une instance à l'autre. Seules les applications
+                            <strong>installées</strong> dont la recette décrit une <strong>désinstallation</strong>
+                            sont proposées — sans quoi retirer le client des postes le laisserait en place.
+                        </p>
+                    </div>
+
                     <div class="flex flex-col w-full">
                         <label class="label w-full" for="cloud-access-path">
                             <span class="label-text font-medium">
@@ -755,18 +1210,50 @@ new class extends Component {
                         </label>
                         <select id="cloud-access-path" class="select select-bordered w-full"
                             wire:model.live="cloudAccessPath" data-testid="cloud-access-path">
-                            @foreach (\App\Enums\CloudAccessPath::cases() as $path)
-                                <option value="{{ $path->value }}">{{ $path->label() }}</option>
+                            {{-- Une position EN VIGUEUR reste offerte, même quand
+                                 elle n'est plus tenable : c'est un fait, et c'est
+                                 le seul contrôle qui permet d'en sortir. On la
+                                 dit telle qu'elle est plutôt que de la retirer. --}}
+                            @foreach ($accessPaths as $path)
+                                <option value="{{ $path->value }}">{{ $path->label() }}{{ $this->accessPathIsStale($path) ? self::STALE_POSITION_SUFFIX : '' }}</option>
                             @endforeach
                         </select>
                     </div>
 
-                    <p class="text-xs text-warning" data-testid="access-path-honesty">
-                        <i class="fa-solid fa-triangle-exclamation"></i>
-                        La pose du client de synchronisation sur les postes est livrée par un chantier
-                        séparé. D'ici là, cette position est enregistrée mais seul l'accès par le
-                        navigateur est effectivement posé.
-                    </p>
+                    {{-- La position non tenable est ABSENTE de la liste, et son
+                         motif est dit ICI — jamais une entrée grisée, jamais une
+                         position proposée puis refusée au clic. --}}
+                    @if ($syncRefusal !== null)
+                        <p class="text-xs text-warning" data-testid="sync-client-refusal">
+                            <i class="fa-solid fa-circle-info"></i>
+                            {{ $syncRefusal }}
+                        </p>
+                    @endif
+
+                    {{-- LA POSITION ENREGISTRÉE N'EST PLUS TENABLE. Trois chemins
+                         y mènent — un changement de cloud, une application qui
+                         perd son statut ou sa désinstallation hors de cet écran,
+                         et un payload de la story 63.3 (où la position
+                         s'enregistrait sans garde parce qu'elle n'avait aucun
+                         effet). L'écran le DIT ; il ne corrige rien en douce, et
+                         l'enregistrement des emplacements ne touche aucune clé
+                         qu'il ne gouverne pas. --}}
+                    @if ($this->persistedClientPositionNoLongerHolds())
+                        <p class="text-xs text-error" data-testid="client-position-stale">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            {{ self::CLIENT_POSITION_NO_LONGER_HOLDS }}
+                        </p>
+                    @endif
+
+                    {{-- L'AVERTISSEMENT DE VERSION D'AGENT. Il informe, il
+                         n'interdit rien : sous la borne, le client s'installe et
+                         ne se retire jamais — sans aucun signal côté rapport. --}}
+                    @if ($versionWarning !== null)
+                        <p class="text-xs text-warning" data-testid="agent-version-warning">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            {{ $versionWarning }}
+                        </p>
+                    @endif
                 </div>
             </div>
         @endif

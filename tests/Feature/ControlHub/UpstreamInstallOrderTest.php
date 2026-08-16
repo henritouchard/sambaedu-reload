@@ -13,6 +13,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\AgentTtlResolver;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\StateCompiler;
@@ -385,7 +386,7 @@ class UpstreamInstallOrderTest extends TestCase
 
         // Reproduction fidèle du wrap de production (MÊME instance de source partagée).
         $source = new UpstreamContractSource([new RegistryUpstreamAdapter()]);
-        $inner = new ApplicationsStateProvider(new WorkstationPackagesResolver(), $source);
+        $inner = new ApplicationsStateProvider(new WorkstationPackagesResolver(), $source, new CloudSyncClient());
         $decorated = UpstreamAwareProvider::wrap($inner, $source);
 
         $items = $decorated->itemsFor($this->ctx($ws));
@@ -452,7 +453,7 @@ class UpstreamInstallOrderTest extends TestCase
     private function provider(): ApplicationsStateProvider
     {
         // SOURCE fraîche par scénario (mémoïsation == par-requête en prod).
-        return new ApplicationsStateProvider(new WorkstationPackagesResolver(), new UpstreamContractSource([]));
+        return new ApplicationsStateProvider(new WorkstationPackagesResolver(), new UpstreamContractSource([]), new CloudSyncClient());
     }
 
     private function ctx(Workstation $ws): TargetContext

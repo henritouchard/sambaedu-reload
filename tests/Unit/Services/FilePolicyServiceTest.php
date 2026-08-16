@@ -60,4 +60,13 @@ class FilePolicyServiceTest extends TestCase
         );
         self::assertSame('', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
+
+    #[Test]
+    public function the_two_client_designations_are_born_empty(): void
+    {
+        // Story 63.5 — deux clés STRICTEMENT ADDITIVES, UNE PAR PRODUIT : SE5 ne
+        // code aucun `app_id` de client en dur, et n'en devine aucun.
+        self::assertNull(FilePolicyService::globalConfig()['nextcloud_client_app_id']);
+        self::assertNull(FilePolicyService::globalConfig()['opencloud_client_app_id']);
+    }
 }

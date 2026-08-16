@@ -348,6 +348,13 @@ class AgentServiceProvider extends ServiceProvider
                 // un no-op pour `applications` (aucun adaptateur — garde anti
                 // double-injection ci-dessus) : l'union amont passe UNIQUEMENT par
                 // l'accesseur dédié du provider, jamais par la décoration.
+                //
+                // Story 63.5 — le 3ᵉ argument `CloudSyncClient` (désignation du
+                // client de synchronisation du cloud actif) est lui aussi résolu
+                // par AUTO-WIRING : service sans état ni dépendance, aucun binding
+                // à déclarer. Même figure que le 2ᵉ — l'union passe par
+                // l'accesseur dédié du provider, jamais par un adaptateur de
+                // payload (qui ne pourrait pas hydrater le `name` local).
                 $app->make(ApplicationsStateProvider::class),
                 ],
             ),

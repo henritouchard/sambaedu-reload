@@ -8,10 +8,12 @@ use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
 use App\Models\Application;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
+use App\Services\Filesystem\FileLocationService;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -89,6 +91,34 @@ use Illuminate\Support\Facades\Log;
  * sans ordre d'install), l'accesseur renvoie `[]` et l'ensemble reste
  * byte-identique au 27.5. Le moteur d'install (WPKG) n'est pas absorbé : SE5 ne
  * livre que l'ensemble d'`app_id`.
+ *
+ * **Client de synchronisation du cloud (Story 63.5).** Quand l'instance a placé
+ * un espace au cloud ET choisi d'y accéder « par le client de synchronisation »
+ * plutôt que par le navigateur, l'application du catalogue DÉSIGNÉE comme client
+ * du cloud actif est UNIONNÉE à l'ensemble cible — TROISIÈME source, exactement
+ * le patron des deux précédentes, via l'accesseur LECTURE SEULE
+ * {@see CloudSyncClient::appIdFor()}. Le payload hydraté est le même
+ * `{app_id, name}` : une app à la fois désignée ET assignée par ailleurs
+ * collapse en UN item (dédup aggregate). Court-circuit : sans cloud actif, en
+ * position `web` (le DÉFAUT), ou lorsque la désignation ne résout aucune ligne
+ * de catalogue, l'accesseur rend `null` et l'ensemble reste byte-identique.
+ *
+ * ⚠️ **La compilation ne rejoue PAS la garde de SAISIE** (statut installé,
+ * recette portant un `<remove>`) : elle vit à l'écriture, et là seulement. Le
+ * catalogue bouge sans qu'aucun administrateur ne décide — une réinstallation
+ * passe par `Downloading`, un échec laisse `Error`, une synchro amont réécrit
+ * `xml` — et rejouer cette garde ici ferait SORTIR l'`app_id` de l'ensemble
+ * cible, donc désinstaller le client de tout le parc pendant une mise à jour.
+ * Voir {@see CloudSyncClient::appIdFor()}.
+ *
+ * ⚠️ **AUCUN code SE5 ne « désinstalle ».** Repasser au navigateur fait
+ * simplement SORTIR l'`app_id` de l'ensemble cible ; le handler agent constate
+ * que le desired set ne vaut plus le profil déposé, redépose un `profiles.xml`
+ * amaigri et relance WPKG, qui désinstalle par le `<remove>` de la recette. La
+ * frontière « un tuyau, deux outils » n'est pas franchie — et l'union restant
+ * une union, une app aussi assignée par un profil ou un groupe RESTE installée :
+ * le plan de fichiers ajoute une raison d'installer, il ne gouverne pas les
+ * affectations d'applications.
  */
 final class ApplicationsStateProvider implements StateProvider
 {
@@ -99,6 +129,11 @@ final class ApplicationsStateProvider implements StateProvider
         // lien actif). N'enregistre AUCUN adaptateur `applications` (pont au niveau
         // ensemble, pas par décorateur — anti double-injection, cf. AgentServiceProvider).
         private readonly UpstreamContractSource $source,
+        // Story 63.5 — POSABILITÉ + désignation du client de synchronisation du
+        // cloud actif. Service sans état, résolu par auto-wiring (le provider est
+        // instancié par le conteneur dans AgentServiceProvider). Il ne lit que des
+        // réglages et le catalogue : aucun cache, aucun réseau.
+        private readonly CloudSyncClient $syncClient,
     ) {}
 
     public function type(): string
@@ -163,6 +198,25 @@ final class ApplicationsStateProvider implements StateProvider
         // [] (zéro requête items, ensemble byte-identique au 27.5).
         $orderedAppIds = $this->source->orderedApplicationAppIds($ctx);
 
+        // Story 63.5 — CLIENT DE SYNCHRONISATION du cloud actif : l'`app_id` de
+        // l'application DÉSIGNÉE comme client, quand l'instance a choisi
+        // d'atteindre son cloud par le client plutôt que par le navigateur. On
+        // l'UNIONNE à l'ensemble cible AVANT dédup/hydratation, exactement comme
+        // les ordres amont : le payload {app_id, name} hydraté est IDENTIQUE
+        // quelle que soit la source ⇒ une app aussi assignée par un profil, un
+        // groupe ou `is_parc_default` collapse en UN item.
+        //
+        // AUCUN try/catch sur la lecture des emplacements, et c'est le point (iso
+        // DrivesStateProvider) : une ligne `files.locations` forgée LÈVE. Un repli
+        // silencieux inventerait une décision que personne n'a prise. L'ABSENCE de
+        // ligne, elle, n'est pas une corruption : elle rend les défauts
+        // (`cloud.actif = aucun`) et ne lève jamais.
+        //
+        // Court-circuit : `aucun` ⇒ zéro requête ; `web` (le DÉFAUT) ou
+        // désignation qui ne résout aucune ligne de catalogue ⇒ `null`, ensemble
+        // byte-identique au 31.2.
+        $syncClientAppId = $this->syncClient->appIdFor(FileLocationService::current()->cloudActif);
+
         // Union dédupliquée + ré-ordonnée (déterminisme : alpha insensible casse,
         // iso le tri du resolver → ordre aggregate / ETag stables). Un poste sans
         // config spécifique ET sans aucune app défaut parc retombe sur exactement
@@ -170,6 +224,7 @@ final class ApplicationsStateProvider implements StateProvider
         $appIds = collect($resolvedAppIds)
             ->concat($parcDefaultAppIds)
             ->concat($orderedAppIds)
+            ->concat($syncClientAppId === null ? [] : [$syncClientAppId])
             ->filter(fn ($v): bool => is_string($v) && $v !== '')
             ->map(fn ($v): string => (string) $v)
             ->unique()

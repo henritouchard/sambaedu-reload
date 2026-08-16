@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Agent;
 
+use App\Enums\ActiveCloud;
+use App\Enums\ApplicationStatus;
+use App\Enums\CloudAccessPath;
+use App\Enums\FileBackendName;
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
@@ -11,10 +15,14 @@ use App\Models\Application;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
+use App\Services\FilePolicyService;
+use App\Services\Filesystem\FileLocations;
+use App\Services\Filesystem\FileLocationService;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +66,7 @@ class ApplicationsStateProviderTest extends TestCase
         $this->provider = new ApplicationsStateProvider(
             new WorkstationPackagesResolver(),
             new UpstreamContractSource([]),
+            new CloudSyncClient(),
         );
     }
 
@@ -248,6 +257,290 @@ class ApplicationsStateProviderTest extends TestCase
         $candidates = $this->provider->itemsFor($this->ctx($ws));
 
         self::assertCount(0, $candidates, 'sans défaut parc ni config, le state reste inchangé (vide)');
+    }
+
+    // ── Story 63.5 — le CLIENT DE SYNCHRONISATION, troisième source d'union ──
+
+    /** Une recette WPKG qui DÉCRIT une désinstallation (garde prédictive AC3). */
+    private static function recipeWithRemove(string $appId): string
+    {
+        return '<package id="'.$appId.'" name="Client">'
+            .'<install cmd="setup.exe /S" /><remove cmd="uninstall.exe /S" /></package>';
+    }
+
+    /** Une application du catalogue, INSTALLÉE et désinstallable. */
+    private function clientApp(string $appId, string $name): Application
+    {
+        return Application::create([
+            'app_id' => $appId,
+            'name' => $name,
+            'status' => ApplicationStatus::Installed,
+            'xml' => self::recipeWithRemove($appId),
+        ]);
+    }
+
+    /** L'instance a un cloud actif, et l'accès s'y fait par le client. */
+    private function accessByClient(ActiveCloud $cloud, string $designatedAppId): void
+    {
+        FileLocationService::set(FileLocations::make(FileBackendName::Posix, FileBackendName::Posix, $cloud));
+        FilePolicyService::patchGlobal([
+            'cloud_access_path' => CloudAccessPath::ClientNatif->value,
+            $cloud === ActiveCloud::Nextcloud ? 'nextcloud_client_app_id' : 'opencloud_client_app_id' => $designatedAppId,
+        ]);
+    }
+
+    /** @return list<string> */
+    private function appIdsFor(Workstation $ws): array
+    {
+        return $this->provider->itemsFor($this->ctx($ws))
+            ->map(fn (StateCandidate $c): string => (string) $c->payload['app_id'])
+            ->values()
+            ->all();
+    }
+
+    #[Test]
+    public function the_designated_sync_client_is_unioned_into_the_target_set(): void
+    {
+        $assigned = $this->newApp('alpha', 'Alpha');
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+
+        $ws = Workstation::create(['name' => 'PCSYNC', 'status' => 'active']);
+        $ws->applications()->attach([$assigned->id]);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+
+        // Troisième source, exactement comme les deux autres : l'ordre alpha
+        // insensible à la casse et la dédup sont INCHANGÉS.
+        self::assertSame(['alpha', 'nc-client'], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function the_sync_client_payload_is_indistinguishable_from_any_other_application(): void
+    {
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $ws = Workstation::create(['name' => 'PCPAYLOADSYNC', 'status' => 'active']);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+
+        $candidate = $this->provider->itemsFor($this->ctx($ws))->first();
+
+        self::assertNotNull($candidate);
+        // Aucune clé ajoutée, aucun marqueur d'origine — sans quoi une app
+        // désignée ET assignée produirait DEUX items et le hash mentirait.
+        self::assertSame(['app_id', 'name'], array_keys($candidate->payload));
+        self::assertSame('nc-client', $candidate->payload['app_id']);
+        self::assertSame('Nextcloud Desktop', $candidate->payload['name']);
+        self::assertSame(StateMaille::Broadcast, $candidate->maille);
+        self::assertSame(
+            Application::where('app_id', 'nc-client')->value('id'),
+            $candidate->sourceId,
+            'sourceId = PK Application, comme pour toute autre source',
+        );
+    }
+
+    #[Test]
+    public function an_application_both_designated_and_assigned_collapses_into_one_item(): void
+    {
+        $client = $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $client->is_parc_default = true;
+        $client->save();
+
+        $ws = Workstation::create(['name' => 'PCCOLLAPSE', 'status' => 'active']);
+        // Triple source : rattachement direct + défaut parc + désignation.
+        $ws->applications()->attach([$client->id]);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+
+        self::assertSame(['nc-client'], $this->appIdsFor($ws), 'UN seul item, jamais trois');
+    }
+
+    #[Test]
+    public function in_web_position_nothing_is_unioned_and_the_set_is_byte_identical(): void
+    {
+        $assigned = $this->newApp('alpha', 'Alpha');
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+
+        $ws = Workstation::create(['name' => 'PCWEB', 'status' => 'active']);
+        $ws->applications()->attach([$assigned->id]);
+
+        // Cloud actif, désignation valable — mais l'accès se fait par le
+        // navigateur, qui est le DÉFAUT.
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            FileBackendName::Posix,
+            ActiveCloud::Nextcloud,
+        ));
+        FilePolicyService::patchGlobal(['nextcloud_client_app_id' => 'nc-client']);
+
+        self::assertSame(['alpha'], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function without_an_active_cloud_nothing_is_unioned(): void
+    {
+        $assigned = $this->newApp('alpha', 'Alpha');
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+
+        $ws = Workstation::create(['name' => 'PCNOCLOUD', 'status' => 'active']);
+        $ws->applications()->attach([$assigned->id]);
+
+        // Position `client_natif` ET désignation renseignée, mais AUCUN cloud
+        // actif : le court-circuit prime, et rien n'est unionné.
+        FilePolicyService::patchGlobal([
+            'cloud_access_path' => CloudAccessPath::ClientNatif->value,
+            'nextcloud_client_app_id' => 'nc-client',
+        ]);
+
+        self::assertSame(['alpha'], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function a_designation_that_resolves_no_catalog_row_unions_nothing(): void
+    {
+        $ws = Workstation::create(['name' => 'PCUNTENABLE', 'status' => 'active']);
+
+        // La désignation pointe un `app_id` que le catalogue ne porte pas : il
+        // n'y aurait ni `name` à hydrater ni `sourceId`, et le provider
+        // n'émettrait qu'un `Log::warning`.
+        $this->accessByClient(ActiveCloud::Nextcloud, 'jamais-vu');
+
+        self::assertSame([], $this->appIdsFor($ws));
+    }
+
+    /**
+     * ⚠️ LA GARDE DE SAISIE NE SORT PAS DU CHEMIN DE COMPILATION (correction de
+     * revue). Réinstaller ou mettre à jour l'application désignée la fait passer
+     * par `Downloading` — sans qu'aucun administrateur ne décide quoi que ce
+     * soit. La retirer de l'ensemble cible ferait DÉSINSTALLER le client par
+     * WPKG sur tout le parc, puis réinstaller à la passe suivante.
+     */
+    #[Test]
+    public function a_designated_application_being_reinstalled_stays_in_the_target_set(): void
+    {
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $ws = Workstation::create(['name' => 'PCDOWNLOADING', 'status' => 'active']);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+
+        // L'AppStore réinstalle : statut transitoire, aucune décision d'admin.
+        Application::query()->where('app_id', 'nc-client')
+            ->update(['status' => ApplicationStatus::Downloading->value]);
+
+        self::assertSame(['nc-client'], $this->appIdsFor($ws), 'l\'ensemble cible ne bouge pas');
+
+        // Et une recette réécrite par l'amont, qui perdrait son `<remove>`, ne
+        // désinstalle pas davantage : le refus reste une garde d'écriture.
+        Application::query()->where('app_id', 'nc-client')->update([
+            'status' => ApplicationStatus::Installed->value,
+            'xml' => '<package id="nc-client"><install cmd="setup.exe" /></package>',
+        ]);
+
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function going_back_to_the_browser_removes_the_item_from_the_compiled_set(): void
+    {
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $ws = Workstation::create(['name' => 'PCRETRAIT', 'status' => 'active']);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+
+        // Repasser au navigateur : l'item DISPARAÎT de l'état. C'est tout ce que
+        // le serveur garantit — la désinstallation est le `<remove>` de la
+        // recette, exécuté par WPKG après que l'agent a constaté que le desired
+        // set ne vaut plus le profil déposé.
+        FilePolicyService::patchGlobal(['cloud_access_path' => CloudAccessPath::Web->value]);
+
+        self::assertSame([], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function removing_the_designation_also_removes_the_item(): void
+    {
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $ws = Workstation::create(['name' => 'PCDESIGNOFF', 'status' => 'active']);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+
+        FilePolicyService::patchGlobal(['nextcloud_client_app_id' => '']);
+
+        self::assertSame([], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function an_application_assigned_elsewhere_stays_when_going_back_to_the_browser(): void
+    {
+        $client = $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $ws = Workstation::create(['name' => 'PCASSIGNE', 'status' => 'active']);
+        // La MÊME app est aussi rattachée au poste par un geste d'exploitation.
+        $ws->applications()->attach([$client->id]);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+
+        FilePolicyService::patchGlobal(['cloud_access_path' => CloudAccessPath::Web->value]);
+
+        // L'union RESTE une union : le plan de fichiers ajoute une raison
+        // d'installer, il ne gouverne pas les affectations d'applications.
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function switching_clouds_designates_the_other_product_package(): void
+    {
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $this->clientApp('oc-client', 'OpenCloud Desktop');
+        $ws = Workstation::create(['name' => 'PCBASCULE', 'status' => 'active']);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+        FilePolicyService::patchGlobal(['opencloud_client_app_id' => 'oc-client']);
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            FileBackendName::Posix,
+            ActiveCloud::OpenCloud,
+        ));
+
+        self::assertSame(['oc-client'], $this->appIdsFor($ws), 'jamais le paquet de l\'autre produit');
+    }
+
+    #[Test]
+    public function switching_to_a_cloud_without_designation_unions_nothing(): void
+    {
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+        $ws = Workstation::create(['name' => 'PCBASCULE2', 'status' => 'active']);
+
+        $this->accessByClient(ActiveCloud::Nextcloud, 'nc-client');
+        self::assertSame(['nc-client'], $this->appIdsFor($ws));
+
+        // OpenCloud devient actif, mais aucune application n'est désignée pour
+        // LUI : rien n'est unionné — surtout pas le paquet de Nextcloud.
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            FileBackendName::Posix,
+            ActiveCloud::OpenCloud,
+        ));
+
+        self::assertSame([], $this->appIdsFor($ws));
+    }
+
+    #[Test]
+    public function without_any_locations_row_the_set_is_exactly_what_it_was(): void
+    {
+        $assigned = $this->newApp('alpha', 'Alpha');
+        $this->clientApp('nc-client', 'Nextcloud Desktop');
+
+        $ws = Workstation::create(['name' => 'PCNOROW', 'status' => 'active']);
+        $ws->applications()->attach([$assigned->id]);
+
+        // Aucune ligne `files.locations` : les défauts 63.1 (`cloud.actif = aucun`)
+        // s'appliquent, et rien ne lève.
+        self::assertSame(['alpha'], $this->appIdsFor($ws));
     }
 
     #[Test]

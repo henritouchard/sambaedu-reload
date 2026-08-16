@@ -12,12 +12,12 @@ namespace App\Enums;
  * {@see ActiveCloud} et {@see FileBackendName}) : il n'existe littéralement
  * aucune valeur qui signifierait « les deux » ni « on verra ».
  *
- * **CE RÉGLAGE N'A PAS ENCORE D'EFFET SUR LE POSTE, ET L'ÉCRAN LE DIT.** La pose
- * du client de synchronisation est livrée par un chantier séparé ; d'ici là,
- * seul l'accès par le navigateur est effectivement posé. Persister un réglage
- * que personne ne lit est exactement le défaut qu'a porté l'ancienne grille de
- * plafonds par défaut (supprimée par la story 63.4) — la différence, ici, est que
- * l'écran l'ANNONCE au lieu de laisser croire à un effet.
+ * **CE RÉGLAGE A UN EFFET SUR LE POSTE DEPUIS LA STORY 63.5.** En position
+ * {@see self::ClientNatif}, l'application DÉSIGNÉE comme client du cloud actif
+ * entre dans l'ensemble cible des applications du poste
+ * ({@see \App\Services\Agent\CloudSyncClient}), et WPKG l'installe. En position
+ * {@see self::Web}, rien n'est unionné. Ce docblock affirmait le contraire
+ * jusqu'au 2026-08-16 : la doc suit le code, elle ne le devance pas.
  *
  * Cases PascalCase, valeurs snake_case (convention maison).
  */

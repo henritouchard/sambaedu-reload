@@ -579,11 +579,34 @@ résolution de dépendances.
 > méthode **NON CACHÉE**) : single source of truth, jamais une réimplémentation de
 > l'union/BFS de dépendances.
 
-> **« Désactiver = cesser de gérer ».** Une app retirée des affectations disparaît
-> de l'ensemble cible → l'agent ne l'exige plus installée (l'inventaire la
-> libère) ; il ne la **désinstalle pas** de lui-même (c'est WPKG qui le ferait via
-> `<remove>` dans son profil — le handler ne touche jamais au poste hors du
-> déclenchement WPKG).
+> **« Désactiver = RETIRER ».** Une app retirée des affectations disparaît de
+> l'ensemble cible, et **elle est désinstallée du poste**. Le `Test` du handler a
+> **deux** conditions, pas une :
+>
+> 1. **`désiré ⊆ installé`** — lu dans `wpkg.xml` (l'ensemble cible est-il déjà
+>    entièrement installé ?) ;
+> 2. **`ensemble désiré == profil DÉPOSÉ`** — l'ensemble cible courant est comparé
+>    au `profiles.xml` réellement posé sur le poste
+>    (`%ProgramData%\SambaEdu\wpkg\profiles.xml`).
+>
+> C'est la **seconde** qui produit le retrait : `/synchronize` ne désinstalle un
+> paquet que lorsqu'il **quitte le profil déposé**. Quand un `app_id` sort de
+> l'ensemble cible, `désiré ⊊ déposé` → `Test` échoue → `Apply` redépose un
+> `profiles.xml` **amaigri** puis relance `wpkg-client.vbs /synchronize`, et WPKG
+> désinstalle **nativement**, par le `<remove>` de la recette. Le handler, lui, ne
+> touche jamais au poste hors du déclenchement WPKG : SE5 ne « désinstalle » rien,
+> il retire un `app_id` d'un ensemble.
+>
+> ⚠️ **Borne de version : agent `2.2.17`.** La condition 2 est arrivée à cette
+> version. Un poste qui exécute un binaire **antérieur** installe correctement et
+> **ne retire jamais** — sans aucun signal : ni statut, ni erreur, ni ligne de
+> rapport. Ce que chaque poste exécute réellement se lit dans
+> `workstations.agent_reported_version`. Toute fonctionnalité serveur qui fait
+> ENTRER puis SORTIR un `app_id` de l'ensemble cible doit connaître cette borne.
+>
+> *(Cette note remplace une rédaction antérieure — « il ne la désinstalle pas de
+> lui-même » — devenue fausse le 2026-06-19. Le code de l'agent fait autorité :
+> `agent/shared/handler_applications.go`.)*
 
 > **Convergence level-triggered.** `Test` = « l'ensemble cible est-il déjà
 > entièrement installé ? » (désiré ⊆ installé, lu dans `wpkg.xml`) → `compliant`

@@ -5080,6 +5080,167 @@ restauration n'a de sens qu'accompagnée d'un retour au code antérieur.
       volume XFS de test (`umount /srv/xfstest`, ou `umount /home` puis vérifier que
       le contenu d'origine est de retour) et supprimer l'image.
 
+## Story 63.5 — Le client de synchronisation posé par l'agent
+
+**Date livraison** : 2026-08-16
+**Migration à appliquer** : aucune (zéro table, zéro colonne)
+**Release d'agent à publier** : AUCUNE — pas un octet sous `agent/`
+
+> ⚠️ **Ce runbook n'a PAS été déroulé au moment de sa rédaction.** Il décrit la
+> procédure ; ses résultats ne sont pas connus. Il exige un **poste réel** du parc,
+> une instance avec un **cloud actif**, et une **application cliente présente et
+> installée dans le catalogue** — trois choses dont le développement ne dispose
+> pas. Cible : `/vm` ou `/lab1` selon le parc disponible.
+
+### Ce que la story change, en une phrase
+
+Quand l'instance a placé un espace **dans le cloud** et choisi que l'accès s'y
+fasse **par le client de synchronisation** plutôt que par le navigateur,
+l'application du catalogue **désignée** comme client de ce produit entre dans
+l'ensemble cible des applications de **tous les postes** — et **en sort** quand on
+repasse au navigateur. **SE5 n'installe ni ne désinstalle rien** : il fait entrer
+ou sortir un `app_id` d'un ensemble ; c'est WPKG, déclenché par l'agent, qui
+installe et qui désinstalle par le `<remove>` de la recette.
+
+**Trois propriétés à ne pas perdre de vue :**
+
+1. **SE5 ne connaît AUCUN paquet client.** Le catalogue est sous autorité amont.
+   L'administrateur **désigne** l'application, par produit. Sans désignation, la
+   position « Par le client de synchronisation » est **absente de l'écran**, avec
+   son motif : c'est le comportement voulu, pas une panne.
+2. **La garde du `<remove>` est PRÉDICTIVE.** Elle constate qu'une désinstallation
+   est **décrite** dans la recette, pas qu'elle est **complète**. Ce qui reste
+   réellement sur le poste après retrait dépend du `<remove>`, **pas de SE5** — et
+   c'est précisément l'objet du point 6 ci-dessous.
+3. **⚠️ Borne agent `2.2.17`.** Sous cette version, le client **s'installe** et
+   **ne se retire jamais**, sans aucun signal : ni statut, ni erreur, ni ligne de
+   rapport. L'écran avertit ; il n'interdit pas.
+
+### Prérequis
+
+- [ ] **63.5-P1** — une instance avec un **cloud actif** (Nextcloud ou OpenCloud) et
+      sa connexion complète, sur `/admin/settings/files?tab=emplacements`.
+- [ ] **63.5-P2** — une **application cliente** dans le catalogue, en statut
+      **installée**, dont la recette WPKG persistée (`applications.xml`) porte un
+      nœud `<remove>` pour **son** `package-id`. Sans elle, la position reste absente
+      et le runbook s'arrête ici — ce n'est pas un échec de la story.
+- [ ] **63.5-P3** — un **poste du parc** dont `workstations.agent_reported_version`
+      est **≥ 2.2.17**, et si le parc en compte un, un **second poste sous la borne**
+      (pour le point 7).
+- [ ] **63.5-P4** — relever l'état de départ : `SELECT key, value FROM system_settings
+      WHERE key IN ('files.policy','files.locations');` — à restaurer au nettoyage.
+
+### Scénario 63.5-1 — L'écran : la position est absente tant qu'elle n'est pas tenable
+
+- [ ] **63.5-1a** — cloud actif, **aucune** application désignée : le bloc « Réglages »
+      porte le sélecteur « Application cliente du cloud » sur « — Aucune application
+      désignée — », la liste « Chemin d'accès au cloud » n'offre **que** « Par le
+      navigateur », et le motif affiché est : *« Aucune application du catalogue n'est
+      désignée comme client <produit>. Désignez-la ci-dessous avant de choisir ce mode
+      d'accès. »*
+- [ ] **63.5-1b** — la liste des applications désignables ne propose **que** des
+      applications installées dont la recette décrit une désinstallation. Une
+      application en statut « Disponible », ou dont la recette n'a pas de `<remove>`,
+      **n'y figure pas**.
+- [ ] **63.5-1c** — désigner l'application cliente : la position « Par le client de
+      synchronisation » **apparaît**, et le motif disparaît.
+- [ ] **63.5-1d** — retirer la désignation alors que la position « Par le client de
+      synchronisation » est en vigueur : le chemin d'accès **revient au navigateur**,
+      et l'écran le dit (*« Le chemin d'accès est revenu au navigateur : la position
+      « par le client de synchronisation » n'est plus tenable. »*).
+- [ ] **63.5-1e** — l'avertissement de version : si le parc porte au moins un poste
+      sous `2.2.17`, la phrase *« N poste(s) exécutent une version d'agent antérieure
+      à 2.2.17 : sur ceux-là, le client s'installera mais ne sera pas retiré si vous
+      changez d'avis. »* est affichée — et la position reste **choisissable**. Elle
+      s'affiche **même quand aucune application n'est désignée** : elle informe, et
+      c'est avant de s'engager qu'elle est la plus utile.
+- [ ] **63.5-1f** — **le brouillon du bloc 1 ne gouverne rien.** Basculer la radio du
+      cloud vers l'autre produit **sans** cliquer « Enregistrer les emplacements » :
+      le bloc « Réglages » continue de porter le cloud **actif** (sa désignation, son
+      motif), et l'écran le dit — *« Ces réglages portent sur le cloud actif
+      enregistré (…). La sélection « … » ci-dessus n'est pas enregistrée … »*. Rien de
+      ce qui est écrit depuis ce bloc ne doit toucher le produit seulement envisagé.
+- [ ] **63.5-1g** — **une position en vigueur reste offerte, même devenue intenable.**
+      Avec « Par le client de synchronisation » persistée puis la désignation retirée
+      hors de cet écran, la liste porte toujours l'entrée, suffixée *« — n'est plus
+      tenable »* ; choisir « Par le navigateur » **écrit réellement** (relire
+      `files.policy.cloud_access_path`).
+
+### Scénario 63.5-2 — La pose
+
+- [ ] **63.5-2a** — désigner l'application cliente, passer le chemin d'accès à
+      **« Par le client de synchronisation »**, enregistrer.
+- [ ] **63.5-2b** — **L'état l'exprime.** `GET /state` pour le poste de 63.5-P3 : la
+      portée `machine` porte **un item `applications` de plus**, payload exactement
+      `{app_id, name}` — aucune clé de plus, aucun marqueur d'origine.
+- [ ] **63.5-2c** — **et rien d'autre n'a changé** : ni `drives` (aucune lettre de
+      lecteur n'est produite, modifiée ni supprimée), ni `shortcuts`, ni aucun autre
+      type. Comparer l'état avant/après item par item.
+- [ ] **63.5-2d** — **Le poste l'applique.** Forcer une passe d'agent. Vérifier :
+      `%ProgramData%\SambaEdu\wpkg\profiles.xml` contient le `package-id` ; le
+      logiciel apparaît dans « Applications installées » ; le rapport remonte
+      `compliant` et l'inventaire porte l'app.
+
+### Scénario 63.5-3 — Le retrait, et sa convergence
+
+- [ ] **63.5-3a** — repasser à **« Par le navigateur »**, enregistrer, forcer une
+      passe d'agent sur le poste.
+- [ ] **63.5-3b** — `profiles.xml` **ne contient plus** le `package-id`.
+- [ ] **63.5-3c** — `wpkg.xml` ne porte plus l'entrée installée.
+- [ ] **63.5-3d** — le logiciel **a disparu** de « Applications installées ».
+- [ ] **63.5-3e** — le **répertoire d'installation** est absent.
+- [ ] **63.5-3f** — le rapport revient `compliant`, **sans** l'app dans l'inventaire.
+
+### Scénario 63.5-4 — Chercher le résidu, et le NOMMER même s'il est bénin
+
+> ⚠️ **C'est LE livrable de ce runbook.** Aucun test du dépôt ne peut constater
+> l'absence de résidu sur un poste Windows ; écrire un test PHP qui le
+> « prouverait » serait un test qui se valide lui-même. Ce qui reste dépend du
+> `<remove>` de la recette, **pas de SE5** — le constater et le consigner **est** le
+> résultat attendu, y compris s'il est négatif.
+
+- [ ] **63.5-4a** — profil applicatif de l'utilisateur : `%APPDATA%`,
+      `%LOCALAPPDATA%` — présent ? le nommer.
+- [ ] **63.5-4b** — tâche planifiée au logon — présente ? la nommer.
+- [ ] **63.5-4c** — entrée `Run` de la ruche (HKLM et HKCU) — présente ? la nommer.
+- [ ] **63.5-4d** — service Windows résiduel — présent ? le nommer.
+- [ ] **63.5-4e** — raccourci du menu Démarrer / du Bureau — présent ? le nommer.
+
+### Scénario 63.5-5 — Le poste sous la borne : la démonstration de l'AC6
+
+- [ ] **63.5-5a** — sur le second poste (agent **< 2.2.17**), rejouer 63.5-2 puis
+      63.5-3 : le logiciel **reste installé** après le retour au navigateur.
+- [ ] **63.5-5b** — **et rien ne le signale** : le rapport ne porte ni erreur, ni
+      statut particulier. C'est le mensonge tranquille que l'avertissement d'écran
+      annonce, et la raison de son existence.
+
+### Scénario 63.5-6 — L'union reste une union
+
+- [ ] **63.5-6a** — assigner **aussi** l'application cliente au poste (ou à son parc)
+      par un geste d'exploitation ordinaire, puis repasser au navigateur : le
+      logiciel **RESTE installé**. C'est correct — le plan de fichiers ajoute une
+      raison d'installer, il ne gouverne pas les affectations d'applications.
+- [ ] **63.5-6b** — l'état ne porte qu'**UN SEUL** item pour cette application, quel
+      que soit le nombre de sources qui la portent.
+
+### Scénario 63.5-7 — La bascule d'un produit à l'autre
+
+- [ ] **63.5-7a** — avec **deux** désignations différentes (une par produit), basculer
+      le cloud actif : l'ensemble cible porte le paquet du **nouveau** produit, jamais
+      celui de l'ancien.
+- [ ] **63.5-7b** — avec **une seule** désignation renseignée, basculer vers le
+      produit qui n'en a pas : rien n'est unionné. Le chemin d'accès persisté, lui,
+      n'est **pas** corrigé en douce — l'écran DIT que la position enregistrée n'est
+      plus tenable et laisse l'administrateur trancher (le retour automatique au
+      navigateur n'a lieu que sur le geste de **retrait de la désignation**).
+
+### Nettoyage
+
+- [ ] **63.5-8** — restaurer `files.policy` et `files.locations` relevés en 63.5-P4,
+      forcer une dernière passe d'agent sur les postes utilisés, et vérifier que leur
+      `profiles.xml` est revenu à son contenu d'origine.
+
+
 ---
 
 *Mise à jour : 2026-08-15 (Story 63.4 — les quatre défauts de quota par profil sont
@@ -5107,3 +5268,24 @@ coût. Le passage de la gouvernance des plafonds **cloud** est nommé au résum�
 la ligne d'audit, et le rapport de provisionnement compte désormais les plafonds qu'il
 modifie. Aucun octet de donnée utilisateur lu, écrit ni déplacé ; golden agent et
 `FROZEN_STATE_HASH` inchangés.)*
+
+*Mise à jour : 2026-08-16 (Story 63.5 — le client de synchronisation entre dans
+l'ensemble cible des applications, et en sort. **SE5 n'installe ni ne désinstalle
+rien** : il fait entrer ou sortir un `app_id` d'un ensemble, et c'est WPKG,
+déclenché par l'agent, qui pose et retire — la convergence du retrait est acquise
+depuis le 2026-06-19 par la seconde condition du `Test` du handler `applications`
+(ensemble désiré == profil déposé), **borne agent `2.2.17`** sous laquelle le
+client s'installe et ne se retire jamais **sans aucun signal**. Le paquet du client
+n'est **jamais** codé en dur : le catalogue est sous autorité amont, l'administrateur
+DÉSIGNE par produit (`nextcloud_client_app_id` / `opencloud_client_app_id`, deux clés
+strictement additives, défaut `null`), et la désignation est gardée **à l'écriture** —
+application installée **et** recette WPKG persistée décrivant un `<remove>` pour son
+propre `package-id`, validation **PRÉDICTIVE** en `DOMDocument` sur la colonne, jamais
+un appel réseau ; la **compilation**, elle, ne retient que le structurel, pour qu'une
+réinstallation de l'application désignée (statut `downloading`) ne désinstalle pas le
+client de tout le parc. Une position non tenable est **absente** de l'écran avec son motif, et
+la garde est rejouée côté service avant toute écriture. L'union reste une union : une
+app aussi assignée par ailleurs **reste** au retour au navigateur. Aucun type de
+ressource ajouté, aucune clé de payload touchée, aucune lettre de lecteur produite,
+aucun octet de donnée utilisateur lu ni déplacé ; `state.v1.json`, `FROZEN_STATE_HASH`
+et `agent/**` **inchangés**, aucune release d'agent publiée.)*

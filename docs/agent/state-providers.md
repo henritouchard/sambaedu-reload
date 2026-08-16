@@ -1021,6 +1021,38 @@ table de policies = doublon de source de vérité, interdit).
   `app_id`), pas les recettes. Le handler agent **déclenche** WPKG (le moteur
   déclaratif, non absorbé) et lit `wpkg.xml`. Inventaire par app rapporté en
   champ additif (contrat §6) → `agent_application_inventory`.
+- **QUATRE sources unionnées**, toutes hydratées par le même
+  `Application::whereIn('app_id', …)` — donc **payloads indiscernables**, et dédup
+  `aggregate` naturelle (une app portée par plusieurs sources collapse en **un**
+  item) :
+  1. la **résolution WPKG** du poste (`computePackages`) ;
+  2. les apps **défaut parc** (`is_parc_default`, story 27.17) ;
+  3. les **ordres d'install amont** (`UpstreamContractSource::orderedApplicationAppIds()`,
+     story 31.2) ;
+  4. le **client de synchronisation du cloud** (`CloudSyncClient::appIdFor()`,
+     story 63.5).
+- **`applications` — le client de synchronisation du cloud (Story 63.5).** Quand
+  l'instance porte un cloud actif (`files.locations` → `cloud.actif`) **et** que le
+  chemin d'accès vaut `client_natif` (`files.policy` → `cloud_access_path`), l'app
+  du catalogue **DÉSIGNÉE** comme client de ce produit
+  (`files.policy` → `nextcloud_client_app_id` / `opencloud_client_app_id`) entre
+  dans l'ensemble cible. **SE5 ne code aucun `app_id` en dur** : le catalogue est
+  sous autorité amont, l'identifiant varie d'une instance à l'autre, et une entrée
+  ajoutée localement est effacée à la synchro. La désignation est **gardée à
+  l'ÉCRITURE** — application installée, et recette WPKG persistée décrivant un
+  `<remove>` pour SON `package-id` (validation **prédictive**, `DOMDocument` sur
+  `applications.xml`, jamais un appel réseau). ⚠️ **La compilation, elle, ne rejoue
+  PAS cette garde** : elle ne retient que le structurel (une désignation existe, et
+  une ligne `Application` porte cet `app_id`). Le motif est que le catalogue bouge
+  sans qu'aucun administrateur ne décide — réinstaller l'application désignée la
+  fait passer par `Downloading`, un échec la laisse en `Error`, une synchro amont
+  réécrit son `xml` : rejouer la garde de saisie ici désinstallerait le client de
+  **tout le parc** le temps d'une mise à jour. Court-circuit : `cloud.actif = aucun` ⇒ zéro requête ;
+  position `web` (le **défaut**) ⇒ rien n'est unionné, ensemble **byte-identique**.
+  Repasser en `web` fait SORTIR l'`app_id` : le retrait converge par le `Test`
+  deux-conditions du handler (**borne agent `2.2.17`**, cf. contrat §7.4) — sauf si
+  l'app est **aussi** assignée par ailleurs, auquel cas l'union la conserve (le plan
+  de fichiers ajoute une raison d'installer, il ne gouverne pas les affectations).
 
 ### `fs_acl` — `exclusive` PAR ACE / `machine`
 

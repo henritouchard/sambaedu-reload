@@ -13,6 +13,7 @@ use App\Models\ControlHubContractCatalogApp;
 use App\Models\ControlHubContractItem;
 use App\Models\Workstation;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
@@ -493,7 +494,7 @@ class UpstreamOrderProvisioningTest extends TestCase
 
     private function provider(): ApplicationsStateProvider
     {
-        return new ApplicationsStateProvider(new WorkstationPackagesResolver(), new UpstreamContractSource([]));
+        return new ApplicationsStateProvider(new WorkstationPackagesResolver(), new UpstreamContractSource([]), new CloudSyncClient());
     }
 
     private function ctx(Workstation $ws): TargetContext

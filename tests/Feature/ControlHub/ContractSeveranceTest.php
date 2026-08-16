@@ -21,6 +21,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
 use App\Policies\CapabilityPolicy;
 use App\Services\Agent\AgentTtlResolver;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
@@ -722,6 +723,7 @@ class ContractSeveranceTest extends TestCase
         $provider = new ApplicationsStateProvider(
             app(WorkstationPackagesResolver::class),
             new UpstreamContractSource([]),
+            new CloudSyncClient(),
         );
 
         return (new StateCompiler(new StateHasher(), [$provider], new AgentTtlResolver()))->compile(TargetContext::for($ws, null));

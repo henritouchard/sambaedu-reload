@@ -77,7 +77,7 @@ final class FilePolicyService
      * ce qui rendait la faiblesse invisible à l'exploitant. Ici, l'assouplissement
      * est un choix visible, coché sur l'écran et persisté.
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool, cloud_access_path: string}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool, cloud_access_path: string, nextcloud_client_app_id: ?string, opencloud_client_app_id: ?string}
      */
     public static function defaults(): array
     {
@@ -127,6 +127,28 @@ final class FilePolicyService
             // qu'adossée à un cloud actif. Elle n'a pas encore de lecteur sur le
             // poste — l'écran le DIT, plutôt que de laisser croire à un effet.
             'cloud_access_path' => CloudAccessPath::Web->value,
+
+            // --- Story 63.5 : QUELLE application du catalogue EST le client ---
+            // Deux clés, UNE PAR PRODUIT, strictement additives, défaut `null`.
+            //
+            // **Jamais une clé unique « le client du cloud actif ».** Une
+            // instance qui bascule de Nextcloud à OpenCloud (ou l'inverse)
+            // continuerait alors de désigner le paquet de l'ancien produit, et
+            // SE5 poserait silencieusement le mauvais logiciel sur tout le parc.
+            // Deux clés rendent cette confusion irreprésentable — symétriquement
+            // à `nextcloud_server_url` / `opencloud_server_url`.
+            //
+            // La valeur est un `app_id` (`applications.app_id`, l'identifiant de
+            // paquet WPKG), JAMAIS une PK d'`Application` : la PK est un détail
+            // de base, l'`app_id` est l'identité que le contrat agent transporte.
+            //
+            // **SE5 ne code aucun `app_id` en dur** : le catalogue est sous
+            // autorité amont (un dépôt imposé désinstalle en cascade ce qui n'y
+            // figure pas), donc l'identifiant du paquet client varie d'une
+            // instance à l'autre. L'administrateur DÉSIGNE ; le serveur ne
+            // devine pas.
+            'nextcloud_client_app_id' => null,
+            'opencloud_client_app_id' => null,
         ];
     }
 
@@ -135,7 +157,7 @@ final class FilePolicyService
      * ou un ancien payload `{mode:...}` : les clés inconnues sont ignorées, on
      * retombe proprement sur les défauts).
      *
-     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool, cloud_access_path: string}
+     * @return array{home: bool, shares: bool, nextcloud: bool, nextcloud_server_url: string, nextcloud_admin_user: string, nextcloud_smb_host: string, nextcloud_verify_tls: bool, nextcloud_desktop_shortcut: bool, opencloud: bool, opencloud_server_url: string, opencloud_admin_user: string, opencloud_verify_tls: bool, cloud_access_path: string, nextcloud_client_app_id: ?string, opencloud_client_app_id: ?string}
      */
     public static function globalConfig(): array
     {
@@ -185,7 +207,26 @@ final class FilePolicyService
             'cloud_access_path' => CloudAccessPath::isKnown($stored['cloud_access_path'] ?? null)
                 ? (string) $stored['cloud_access_path']
                 : $defaults['cloud_access_path'],
+
+            // Story 63.5 — une chaîne vide, un blanc ou une valeur non textuelle
+            // ne sont PAS une désignation : ils se relisent en `null`, comme
+            // l'absence de clé. Un `''` persisté qui se relirait en `''` ferait
+            // chercher une `Application` d'`app_id` vide.
+            'nextcloud_client_app_id' => self::readAppId($stored, 'nextcloud_client_app_id'),
+            'opencloud_client_app_id' => self::readAppId($stored, 'opencloud_client_app_id'),
         ];
+    }
+
+    /**
+     * Story 63.5 — un `app_id` persisté, ou `null`. Trim, puis « vide = absent ».
+     *
+     * @param  array<mixed>  $stored
+     */
+    private static function readAppId(array $stored, string $key): ?string
+    {
+        $raw = $stored[$key] ?? null;
+
+        return is_string($raw) && trim($raw) !== '' ? trim($raw) : null;
     }
 
     /**
@@ -220,6 +261,16 @@ final class FilePolicyService
      * un appel qui ne les nomme pas ne doit rien effacer. `nextcloudDesktopShortcut`
      * suit la même règle et la même place — en queue, nullable : un appelant qui ne
      * le nomme pas ne fait pas disparaître un raccourci déjà posé sur les bureaux.
+     *
+     * **Story 63.5 — les deux désignations de client, EN QUEUE et nullables**, et
+     * avec une nuance qui n'existait pour aucun paramètre précédent : leur valeur
+     * persistée peut LÉGITIMEMENT être `null` (aucune application désignée). Un
+     * `null` qui signifierait à la fois « conserve » et « efface » rendrait le
+     * retrait d'une désignation impossible. La convention est donc :
+     *  - paramètre ABSENT / `null` ⇒ la désignation persistée est CONSERVÉE ;
+     *  - chaîne VIDE ⇒ la désignation est EFFACÉE (relue en `null`).
+     * {@see self::patchGlobal()} — seul endroit du dépôt à connaître cet ordre —
+     * passe toujours une chaîne, donc l'effacement y est atteignable.
      */
     public static function setGlobal(
         bool $home,
@@ -235,6 +286,8 @@ final class FilePolicyService
         ?bool $opencloudVerifyTls = null,
         ?bool $nextcloudDesktopShortcut = null,
         ?string $cloudAccessPath = null,
+        ?string $nextcloudClientAppId = null,
+        ?string $opencloudClientAppId = null,
     ): void {
         $current = self::globalConfig();
 
@@ -260,7 +313,19 @@ final class FilePolicyService
             'cloud_access_path' => CloudAccessPath::isKnown($cloudAccessPath)
                 ? (string) $cloudAccessPath
                 : $current['cloud_access_path'],
+
+            // Story 63.5 — `null` conserve, chaîne vide efface (cf. docblock).
+            'nextcloud_client_app_id' => self::normalizeAppId($nextcloudClientAppId ?? $current['nextcloud_client_app_id']),
+            'opencloud_client_app_id' => self::normalizeAppId($opencloudClientAppId ?? $current['opencloud_client_app_id']),
         ]);
+    }
+
+    /** Story 63.5 — un `app_id` trimé, ou `null` quand il ne reste rien. */
+    private static function normalizeAppId(?string $appId): ?string
+    {
+        $appId = trim((string) $appId);
+
+        return $appId === '' ? null : $appId;
     }
 
     /**
@@ -303,6 +368,11 @@ final class FilePolicyService
             (bool) $config['opencloud_verify_tls'],
             (bool) $config['nextcloud_desktop_shortcut'],
             (string) $config['cloud_access_path'],
+            // Story 63.5 — TOUJOURS une chaîne (jamais `null`) : c'est ce qui rend
+            // l'effacement d'une désignation atteignable depuis cette méthode,
+            // alors que `null` y signifierait « conserve ».
+            (string) ($config['nextcloud_client_app_id'] ?? ''),
+            (string) ($config['opencloud_client_app_id'] ?? ''),
         );
     }
 }

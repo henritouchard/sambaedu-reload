@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature\Livewire\Admin;
 
 use App\Enums\ActiveCloud;
+use App\Enums\ApplicationStatus;
 use App\Enums\FileBackendName;
+use App\Models\Application;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Models\Workstation;
+use App\Services\Agent\CloudSyncClient;
 use App\Services\FilePolicyService;
 use App\Services\Filesystem\FileLocations;
 use App\Services\Filesystem\FileLocationService;
@@ -84,6 +88,31 @@ class FileLocationsScreenTest extends TestCase
         FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr', 'admin', 'se4fs', true);
         app(ServiceCredentials::class)->put(NextcloudConnectionConfig::CREDENTIAL_NAME, 'secret');
         self::decide(FileBackendName::Posix, FileBackendName::Posix, ActiveCloud::Nextcloud);
+    }
+
+    /**
+     * Story 63.5 — une application du catalogue INSTALLÉE, dont la recette décrit
+     * une désinstallation, et DÉSIGNÉE comme client du produit.
+     */
+    private function designatedClient(
+        string $appId = 'nextcloud-client',
+        string $name = 'Nextcloud Desktop',
+        ActiveCloud $cloud = ActiveCloud::Nextcloud,
+        ?string $xml = null,
+        ApplicationStatus $status = ApplicationStatus::Installed,
+    ): Application {
+        $application = Application::create([
+            'app_id' => $appId,
+            'name' => $name,
+            'status' => $status,
+            'xml' => $xml ?? '<package id="'.$appId.'"><install cmd="s.exe" /><remove cmd="u.exe" /></package>',
+        ]);
+
+        FilePolicyService::patchGlobal([
+            (string) app(CloudSyncClient::class)->policyKeyFor($cloud) => $appId,
+        ]);
+
+        return $application;
     }
 
     /** OpenCloud actif, connexion COMPLÈTE, décision enregistrée. */
@@ -370,27 +399,32 @@ class FileLocationsScreenTest extends TestCase
         self::assertStringContainsString('bloc-reglages', $html);
     }
 
+    /**
+     * Story 63.5 — LA PHRASE D'HONNÊTETÉ DE 63.3 A DISPARU, et c'est un livrable.
+     *
+     * Elle disait que la pose du client était livrée par un chantier séparé. Ce
+     * chantier est arrivé : la garder ferait de cet écran un écran qui promet
+     * moins qu'il ne tient.
+     */
     #[Test]
-    public function the_settings_block_carries_the_access_path_and_says_it_has_no_effect_yet(): void
+    public function the_settings_block_carries_the_access_path_and_no_longer_denies_its_effect(): void
     {
         $this->nextcloudInstance();
 
         $texte = self::readable(Livewire::test(self::COMPONENT)->html());
 
         self::assertStringContainsString('Par le navigateur', $texte);
-        self::assertStringContainsString('Par le client de synchronisation', $texte);
-        self::assertStringContainsString(
-            'La pose du client de synchronisation sur les postes est livrée par un chantier séparé. '
-            .'D\'ici là, cette position est enregistrée mais seul l\'accès par le navigateur est '
-            .'effectivement posé.',
+        self::assertStringNotContainsString(
+            'La pose du client de synchronisation sur les postes est livrée par un chantier séparé',
             $texte,
         );
     }
 
     #[Test]
-    public function the_access_path_persists_on_its_own(): void
+    public function the_access_path_persists_on_its_own_once_a_client_is_designated(): void
     {
         $this->nextcloudInstance();
+        $this->designatedClient();
 
         Livewire::test(self::COMPONENT)->set('cloudAccessPath', 'client_natif');
 
@@ -836,5 +870,427 @@ class FileLocationsScreenTest extends TestCase
         $this->actingAs(User::query()->create(['login' => 'eleve', 'role' => 'eleve', 'is_active' => true]));
 
         Livewire::test(self::COMPONENT)->assertStatus(403);
+    }
+
+    // =====================================================================
+    // Story 63.5 — LA DÉSIGNATION DU CLIENT, ET LA POSITION QUI N'EST PAS
+    // PROPOSÉE TANT QU'ELLE N'EST PAS TENABLE
+    // =====================================================================
+
+    #[Test]
+    public function without_a_designation_the_client_position_is_absent_with_its_reason(): void
+    {
+        $this->nextcloudInstance();
+
+        $html = Livewire::test(self::COMPONENT)->html();
+        $texte = self::readable($html);
+
+        // ABSENTE de la liste — jamais grisée, jamais proposée puis refusée.
+        self::assertStringNotContainsString('value="client_natif"', $html);
+        self::assertStringContainsString('Par le navigateur', $texte);
+
+        // Et le motif est DIT, à côté de la liste.
+        self::assertStringContainsString('sync-client-refusal', $html);
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::REFUSAL_NO_DESIGNATION, 'Nextcloud'),
+            $texte,
+        );
+    }
+
+    #[Test]
+    public function a_designated_client_makes_the_position_appear_without_any_reason(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('value="client_natif"', $html);
+        self::assertStringNotContainsString('sync-client-refusal', $html);
+    }
+
+    #[Test]
+    public function an_application_that_is_not_installed_keeps_the_position_absent(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient(status: ApplicationStatus::Available);
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringNotContainsString('value="client_natif"', $html);
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::REFUSAL_NOT_INSTALLED, 'nextcloud-client'),
+            self::readable($html),
+        );
+    }
+
+    #[Test]
+    public function a_recipe_without_a_removal_keeps_the_position_absent(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient(xml: '<package id="nextcloud-client"><install cmd="s.exe" /></package>');
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringNotContainsString('value="client_natif"', $html);
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::REFUSAL_NO_REMOVE, 'Nextcloud Desktop'),
+            self::readable($html),
+        );
+    }
+
+    #[Test]
+    public function an_unreadable_recipe_keeps_the_position_absent_with_its_own_reason(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient(xml: 'pas du XML <<< &&&');
+
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::REFUSAL_UNREADABLE_RECIPE, 'Nextcloud Desktop'),
+            self::readable(Livewire::test(self::COMPONENT)->html()),
+        );
+    }
+
+    #[Test]
+    public function only_designatable_applications_are_offered_in_the_picker(): void
+    {
+        $this->nextcloudInstance();
+
+        // Trois candidates : une valable, une non installée, une sans <remove>.
+        Application::create([
+            'app_id' => 'bon-client', 'name' => 'Bon Client', 'status' => ApplicationStatus::Installed,
+            'xml' => '<package id="bon-client"><remove cmd="u.exe" /></package>',
+        ]);
+        Application::create([
+            'app_id' => 'pas-installe', 'name' => 'Pas Installe', 'status' => ApplicationStatus::Available,
+            'xml' => '<package id="pas-installe"><remove cmd="u.exe" /></package>',
+        ]);
+        Application::create([
+            'app_id' => 'sans-remove', 'name' => 'Sans Remove', 'status' => ApplicationStatus::Installed,
+            'xml' => '<package id="sans-remove"><install cmd="s.exe" /></package>',
+        ]);
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('value="bon-client"', $html);
+        self::assertStringNotContainsString('value="pas-installe"', $html);
+        self::assertStringNotContainsString('value="sans-remove"', $html);
+    }
+
+    #[Test]
+    public function designating_an_application_persists_it_for_the_active_product_only(): void
+    {
+        $this->nextcloudInstance();
+        Application::create([
+            'app_id' => 'bon-client', 'name' => 'Bon Client', 'status' => ApplicationStatus::Installed,
+            'xml' => '<package id="bon-client"><remove cmd="u.exe" /></package>',
+        ]);
+
+        Livewire::test(self::COMPONENT)->set('clientAppId', 'bon-client');
+
+        self::assertSame('bon-client', FilePolicyService::globalConfig()['nextcloud_client_app_id']);
+        // L'autre produit n'a rien reçu : la désignation est PAR PRODUIT.
+        self::assertNull(FilePolicyService::globalConfig()['opencloud_client_app_id']);
+    }
+
+    #[Test]
+    public function a_forged_designation_is_refused_and_nothing_is_written(): void
+    {
+        $this->nextcloudInstance();
+        Application::create([
+            'app_id' => 'sans-remove', 'name' => 'Sans Remove', 'status' => ApplicationStatus::Installed,
+            'xml' => '<package id="sans-remove"><install cmd="s.exe" /></package>',
+        ]);
+
+        Livewire::test(self::COMPONENT)
+            ->set('clientAppId', 'sans-remove')
+            ->assertSet('clientAppId', '');
+
+        // Refusé ⇒ RIEN n'est persisté.
+        self::assertNull(FilePolicyService::globalConfig()['nextcloud_client_app_id']);
+    }
+
+    /**
+     * LA GARDE EST REJOUÉE CÔTÉ SERVICE. L'écran ne propose pas la position ;
+     * une propriété Livewire se forge tout de même.
+     */
+    #[Test]
+    public function a_forged_client_position_is_refused_and_writes_nothing(): void
+    {
+        $this->nextcloudInstance();
+
+        Livewire::test(self::COMPONENT)
+            ->set('cloudAccessPath', 'client_natif')
+            ->assertSet('cloudAccessPath', 'web');
+
+        self::assertSame('web', FilePolicyService::globalConfig()['cloud_access_path']);
+    }
+
+    #[Test]
+    public function removing_the_designation_brings_the_access_path_back_to_the_browser(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
+
+        Livewire::test(self::COMPONENT)->set('clientAppId', '');
+
+        self::assertNull(FilePolicyService::globalConfig()['nextcloud_client_app_id']);
+        self::assertSame('web', FilePolicyService::globalConfig()['cloud_access_path']);
+    }
+
+    // =====================================================================
+    // AC6 — l'avertissement de version d'agent
+    // =====================================================================
+
+    #[Test]
+    public function a_park_at_the_bound_raises_no_version_warning(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        $this->reportedAgent('PCOK', '2.16.0');
+
+        self::assertStringNotContainsString(
+            'agent-version-warning',
+            Livewire::test(self::COMPONENT)->html(),
+        );
+    }
+
+    #[Test]
+    public function a_park_below_the_bound_is_warned_but_never_forbidden(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        $this->reportedAgent('PCOLD', '2.2.16');
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('agent-version-warning', $html);
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::WARNING_BELOW_MIN_VERSION, 1, CloudSyncClient::MIN_AGENT_VERSION),
+            self::readable($html),
+        );
+        // Il INFORME : la position reste proposée.
+        self::assertStringContainsString('value="client_natif"', $html);
+    }
+
+    #[Test]
+    public function workstations_that_never_reported_are_counted_apart_on_screen(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        $this->reportedAgent('PCMUET', null);
+
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::NOTICE_UNKNOWN_VERSION, 1),
+            self::readable(Livewire::test(self::COMPONENT)->html()),
+        );
+    }
+
+    #[Test]
+    public function the_designation_block_sends_nothing_over_the_network(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        $this->reportedAgent('PCOLD', '2.0.0');
+
+        Livewire::test(self::COMPONENT)->html();
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Story 63.5 — UNE POSITION PERSISTÉE QUI N'EST PLUS TENABLE EST DITE, pas
+     * corrigée en douce.
+     *
+     * Le cas est réel : la story 63.3 enregistrait `client_natif` SANS aucune
+     * garde (la position n'avait alors aucun effet), et un changement de cloud
+     * suffit à le reproduire.
+     */
+    #[Test]
+    public function a_persisted_client_position_that_no_longer_holds_is_named_on_screen(): void
+    {
+        $this->nextcloudInstance();
+        // Payload « à la 63.3 » : la position est persistée, aucune application
+        // n'est désignée.
+        FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('client-position-stale', $html);
+        self::assertStringContainsString(
+            'La position enregistrée est « Par le client de synchronisation », mais elle n\'est plus '
+            .'tenable : rien n\'est posé sur les postes tant qu\'elle ne l\'est pas.',
+            self::readable($html),
+        );
+
+        // ⚠️ ET RIEN N'EST RÉÉCRIT : le simple rendu de l'écran ne corrige aucune
+        // clé, et l'enregistrement des emplacements non plus.
+        self::assertSame('client_natif', FilePolicyService::globalConfig()['cloud_access_path']);
+    }
+
+    #[Test]
+    public function saving_the_locations_never_touches_the_access_path(): void
+    {
+        $this->nextcloudInstance();
+        FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
+
+        Livewire::test(self::COMPONENT)->call('save');
+
+        // L'invariant de l'epic : aucun réglage persisté n'est perdu. Le geste
+        // d'enregistrement ne gouverne pas le chemin d'accès.
+        self::assertSame('client_natif', FilePolicyService::globalConfig()['cloud_access_path']);
+    }
+
+    // =====================================================================
+    // Story 63.5 (correction de revue) — LE BROUILLON DU BLOC 1 N'EST PAS LE
+    // CLOUD ACTIF, et RIEN de ce que le bloc 3 écrit ne s'ancre dessus
+    // =====================================================================
+
+    /**
+     * LE TROU DE TEST QUE CETTE CORRECTION COMBLE : aucune suite ne faisait
+     * DIVERGER la radio de l'écran de la ligne `files.locations` persistée —
+     * toutes enregistraient d'abord. C'est exactement dans cette fenêtre que
+     * vivait le défaut : les blocs 1 et 2 s'enregistrent d'un geste explicite,
+     * le bloc 3 s'auto-enregistre.
+     */
+    #[Test]
+    public function the_settings_block_stays_anchored_on_the_persisted_cloud_when_the_radio_diverges(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+
+        $component = Livewire::test(self::COMPONENT)->assertSet('clientAppId', 'nextcloud-client');
+
+        $html = $component->set('cloudActif', 'opencloud')->html();
+
+        // La radio a bougé ; la désignation affichée, NON : elle porte le cloud
+        // réellement en service.
+        $component->assertSet('clientAppId', 'nextcloud-client');
+
+        // Et l'écran le DIT — pas de désactivation muette.
+        self::assertStringContainsString('cloud-selection-divergence', $html);
+        self::assertStringContainsString(
+            'Ces réglages portent sur le cloud actif enregistré (Nextcloud).',
+            self::readable($html),
+        );
+
+        // La position reste offerte : elle est tenable POUR LE CLOUD ACTIF.
+        self::assertStringContainsString('value="client_natif"', $html);
+        self::assertStringNotContainsString('sync-client-refusal', $html);
+    }
+
+    /**
+     * DEUX CLICS LÉGITIMES, SANS RIEN FORGER. Nextcloud est actif et n'a aucune
+     * désignation ; OpenCloud, lui, en a une parfaitement valable — mais il
+     * n'est pas actif. La garde doit refuser, parce que l'écriture qui en
+     * résulterait s'appliquerait, à la compilation, au cloud PERSISTÉ.
+     */
+    #[Test]
+    public function the_client_position_is_guarded_against_the_persisted_cloud_not_the_draft(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient('oc-client', 'OpenCloud Desktop', ActiveCloud::OpenCloud);
+
+        Livewire::test(self::COMPONENT)
+            ->set('cloudActif', 'opencloud')
+            ->set('cloudAccessPath', 'client_natif')
+            ->assertSet('cloudAccessPath', 'web');
+
+        self::assertSame('web', FilePolicyService::globalConfig()['cloud_access_path']);
+    }
+
+    /**
+     * L'AUTRE MOITIÉ DU DÉFAUT : une désignation saisie pendant que la radio
+     * diverge écrivait la clé du produit SEULEMENT ENVISAGÉ.
+     */
+    #[Test]
+    public function designating_from_a_diverging_radio_writes_the_active_products_key(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        Application::create([
+            'app_id' => 'autre-client', 'name' => 'Autre Client', 'status' => ApplicationStatus::Installed,
+            'xml' => '<package id="autre-client"><remove cmd="u.exe" /></package>',
+        ]);
+
+        Livewire::test(self::COMPONENT)
+            ->set('cloudActif', 'opencloud')
+            ->set('clientAppId', 'autre-client');
+
+        self::assertSame('autre-client', FilePolicyService::globalConfig()['nextcloud_client_app_id']);
+        self::assertNull(FilePolicyService::globalConfig()['opencloud_client_app_id']);
+    }
+
+    /**
+     * ET LE PLUS COÛTEUX DES TROIS : un client valable ne quitte pas l'ensemble
+     * cible de tous les postes parce qu'une radio a bougé sans être enregistrée.
+     */
+    #[Test]
+    public function a_valid_client_never_leaves_the_target_set_because_the_radio_moved(): void
+    {
+        $this->nextcloudInstance();
+        $this->designatedClient();
+        FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
+
+        $html = Livewire::test(self::COMPONENT)->set('cloudActif', 'opencloud')->html();
+
+        self::assertStringNotContainsString('client-position-stale', $html);
+        self::assertSame('client_natif', FilePolicyService::globalConfig()['cloud_access_path']);
+        self::assertSame('nextcloud-client', FilePolicyService::globalConfig()['nextcloud_client_app_id']);
+    }
+
+    /**
+     * UNE POSITION EN VIGUEUR EST UN FAIT, PAS UNE PROPOSITION. La masquer
+     * cassait le seul contrôle qui permettait d'en sortir : le sélecteur
+     * affichait déjà « Par le navigateur », si bien qu'un clic dessus
+     * n'émettait aucun changement et n'écrivait RIEN.
+     */
+    #[Test]
+    public function a_position_in_force_stays_in_the_list_and_can_actually_be_left(): void
+    {
+        $this->nextcloudInstance();
+        FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
+
+        $component = Livewire::test(self::COMPONENT);
+        $texte = self::readable($component->html());
+
+        self::assertStringContainsString('value="client_natif"', $component->html());
+        self::assertStringContainsString('Par le client de synchronisation — n\'est plus tenable', $texte);
+
+        // Et la sortie que le message instruit s'exécute VRAIMENT.
+        $component->set('cloudAccessPath', 'web');
+
+        self::assertSame('web', FilePolicyService::globalConfig()['cloud_access_path']);
+    }
+
+    /**
+     * AC6 — L'AVERTISSEMENT DE VERSION EST INCONDITIONNEL (correction de revue).
+     * Il informe et n'interdit rien : c'est AVANT de s'engager sur une
+     * désignation qu'il est le plus utile.
+     */
+    #[Test]
+    public function the_version_warning_shows_even_when_the_position_is_not_tenable(): void
+    {
+        $this->nextcloudInstance();
+        $this->reportedAgent('PCOLD', '2.2.16');
+
+        $html = Livewire::test(self::COMPONENT)->html();
+
+        self::assertStringContainsString('sync-client-refusal', $html);
+        self::assertStringContainsString('agent-version-warning', $html);
+        self::assertStringContainsString(
+            sprintf(CloudSyncClient::WARNING_BELOW_MIN_VERSION, 1, CloudSyncClient::MIN_AGENT_VERSION),
+            self::readable($html),
+        );
+    }
+
+    /** Un poste du parc, avec (ou sans) version d'agent rapportée. */
+    private function reportedAgent(string $name, ?string $version): Workstation
+    {
+        $ws = Workstation::create(['name' => $name, 'status' => 'active']);
+        $ws->forceFill(['agent_reported_version' => $version])->save();
+
+        return $ws;
     }
 }
