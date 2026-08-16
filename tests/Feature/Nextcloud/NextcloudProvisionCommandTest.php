@@ -68,7 +68,7 @@ class NextcloudProvisionCommandTest extends TestCase
         Http::fake();
         $this->configure(enabled: false);
 
-        $this->artisan('nextcloud:provision')->assertExitCode(2);
+        $this->artisan('nextcloud:provision --force')->assertExitCode(2);
 
         Http::assertNothingSent();
     }
@@ -85,7 +85,7 @@ class NextcloudProvisionCommandTest extends TestCase
             ], 200),
         ]);
 
-        $this->artisan('nextcloud:provision --mounts-only')->assertExitCode(0);
+        $this->artisan('nextcloud:provision --mounts-only --force')->assertExitCode(0);
     }
 
     #[Test]
@@ -101,7 +101,7 @@ class NextcloudProvisionCommandTest extends TestCase
                 ->push(['message' => 'Invalid storage backend "smb"'], 422),
         ]);
 
-        $this->artisan('nextcloud:provision --mounts-only')->assertExitCode(1);
+        $this->artisan('nextcloud:provision --mounts-only --force')->assertExitCode(1);
     }
 
     #[Test]
@@ -126,6 +126,86 @@ class NextcloudProvisionCommandTest extends TestCase
         $this->artisan('nextcloud:provision --dry-run --mounts-only')->assertExitCode(0);
 
         Http::assertNotSent(static fn (Request $r): bool => in_array($r->method(), ['POST', 'PUT', 'DELETE'], true));
+    }
+
+    // =====================================================================
+    // Le garde-fou : un geste déconseillé se confirme
+    // =====================================================================
+
+    /**
+     * Le montage SMB est un chemin d'accès qui n'est pas acquis : la commande
+     * prévient et demande. Un refus ne doit rien laisser derrière lui — donc
+     * AUCUN appel réseau, pas même la sonde de connexion.
+     */
+    #[Test]
+    public function a_declined_confirmation_writes_nothing_and_exits_with_code_two(): void
+    {
+        $this->configure();
+        Http::fake();
+
+        $this->artisan('nextcloud:provision --mounts-only')
+            ->expectsConfirmation('Provisionner malgré tout ?', 'no')
+            ->assertExitCode(2);
+
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function a_confirmed_run_proceeds(): void
+    {
+        $this->configure();
+        Http::fake([
+            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
+            '*/globalstorages*' => Http::response([
+                self::remoteMount(1, 'Partages', 'partages', ''),
+                self::remoteMount(2, 'Documents', 'users', '$user'),
+            ], 200),
+        ]);
+
+        $this->artisan('nextcloud:provision --mounts-only')
+            ->expectsConfirmation('Provisionner malgré tout ?', 'yes')
+            ->assertExitCode(0);
+    }
+
+    /**
+     * L'avertissement parle des montages SMB. `--users-only` n'en pose aucun : le
+     * faire confirmer par ce message serait un avertissement à côté du geste.
+     */
+    #[Test]
+    public function the_users_only_scope_asks_no_confirmation(): void
+    {
+        $this->configure();
+        Http::fake([
+            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
+            // La sonde de connexion LIT les montages pour vérifier le privilège
+            // d'administration — c'est une lecture, pas un geste de montage.
+            '*/globalstorages*' => Http::response([], 200),
+        ]);
+
+        $this->artisan('nextcloud:provision --users-only')
+            ->doesntExpectOutputToContain('Provisionner malgré tout ?')
+            ->assertExitCode(0);
+
+        Http::assertNotSent(static fn (Request $r): bool => str_contains($r->url(), 'globalstorages')
+            && in_array($r->method(), ['POST', 'PUT', 'DELETE'], true));
+    }
+
+    /**
+     * L'aperçu n'écrit rien : le faire confirmer découragerait le seul geste qu'on
+     * souhaite encourager. Ce test échoue si une confirmation apparaît.
+     */
+    #[Test]
+    public function the_dry_run_asks_no_confirmation(): void
+    {
+        $this->configure();
+        Http::fake([
+            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
+            '*/globalstorages*' => Http::response([], 200),
+        ]);
+
+        $this->artisan('nextcloud:provision --dry-run --mounts-only')
+            ->doesntExpectOutputToContain('Provisionner malgré tout ?')
+            ->assertExitCode(0);
     }
 
     // =====================================================================

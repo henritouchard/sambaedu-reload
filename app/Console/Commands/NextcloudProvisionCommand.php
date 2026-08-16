@@ -25,17 +25,45 @@ use Illuminate\Console\Command;
  * `--dry-run` n'émet AUCUNE écriture : ni montage, ni compte, ni cache d'identité.
  * Il LIT (l'état de l'instance et l'existence des comptes) parce qu'un aperçu qui
  * n'interrogerait rien n'apprendrait rien.
+ *
+ * ---------------------------------------------------------------------------
+ * **GESTE DÉCONSEILLÉ — la confirmation est délibérée.** Ce provisionnement
+ * repose sur des montages `files_external` en SMB vers le serveur de fichiers,
+ * et ce chemin d'accès n'est PAS acquis : le partage SMB est appelé à
+ * disparaître. Ce qui est monté aujourd'hui devra être démonté et remplacé, et
+ * chaque instance provisionnée est un état de plus à défaire. La commande
+ * continue de fonctionner — elle reste la seule façon d'aligner les comptes,
+ * et le backend `nextcloud` y renvoie encore quand une identité manque — mais
+ * elle demande confirmation avant d'écrire quoi que ce soit.
+ *
+ * La confirmation porte sur les MONTAGES, parce que c'est d'eux que parle
+ * l'avertissement. Elle est donc sautée pour `--dry-run` (qui n'écrit rien) et
+ * pour `--users-only` (qui n'en pose aucun : il adopte des comptes et écrit le
+ * cache d'identité). Elle est levée par `--force` ; en mode non interactif sans
+ * `--force`, la commande refuse et sort en `2` : rien n'a été tenté.
+ * ---------------------------------------------------------------------------
  */
 class NextcloudProvisionCommand extends Command
 {
     protected $signature = 'nextcloud:provision
         {--dry-run : Dit ce qui serait fait, sans émettre la moindre écriture}
         {--users-only : Ne traite que les comptes utilisateurs}
-        {--mounts-only : Ne traite que les montages external storage}';
+        {--mounts-only : Ne traite que les montages external storage}
+        {--force : Passe outre la confirmation (usage scripté)}';
 
-    protected $description = 'Provisionne l\'accès Nextcloud : montages external storage SMB + comptes utilisateurs';
+    protected $description = 'Provisionne l\'accès Nextcloud : comptes utilisateurs, et montages external storage SMB — ces derniers DÉCONSEILLÉS, avec confirmation';
 
     protected $help = <<<'HELP'
+    <comment>Poser les montages est DÉCONSEILLÉ.</comment> Ils relient l'instance aux partages du
+    serveur de fichiers par du SMB, et ce chemin d'accès n'est pas acquis : le partage
+    SMB est appelé à disparaître. Ce qui est monté aujourd'hui devra être démonté
+    demain, et chaque instance provisionnée est un état de plus à défaire. La commande
+    fonctionne toujours, mais elle demande confirmation avant de créer ou de modifier
+    un montage.
+
+    Le volet <comment>comptes</comment> n'est pas concerné : il n'écrit aucun montage et reste la seule
+    façon d'aligner les comptes de l'instance. <comment>--users-only</comment> ne demande donc rien.
+
     Provisionne l'accès Nextcloud : les montages de stockage externe vers les partages
     du serveur, et les comptes des utilisateurs.
 
@@ -46,7 +74,11 @@ class NextcloudProvisionCommand extends Command
 
     <comment>--dry-run</comment> n'émet AUCUNE écriture — ni montage, ni compte, ni mise en cache
     d'identité. Il lit l'état de l'instance, car un aperçu qui ne regarde pas la
-    réalité ne vaut rien.
+    réalité ne vaut rien. Il ne demande donc aucune confirmation.
+
+    <comment>--force</comment> passe outre la confirmation, pour un usage scripté. Sans lui et hors
+    terminal interactif, un passage touchant aux montages refuse et sort en <info>2</info> :
+    rien n'a été tenté.
 
     <comment>Les codes de retour portent une information, lisez-les :</comment>
 
@@ -74,6 +106,15 @@ class NextcloudProvisionCommand extends Command
             return 2;
         }
 
+        // La confirmation porte sur ce que l'avertissement décrit : les montages.
+        // `--users-only` n'en pose aucun — le faire confirmer par un message qui
+        // parle de SMB serait un avertissement à côté du geste.
+        if (! $dryRun && ! $usersOnly && ! $this->confirmDiscouragedWrite()) {
+            $this->comment('Rien n\'a été tenté.');
+
+            return 2;
+        }
+
         $report = $service->run(
             dryRun: $dryRun,
             mounts: ! $usersOnly,
@@ -83,6 +124,34 @@ class NextcloudProvisionCommand extends Command
         $this->render($report);
 
         return $report->exitCode();
+    }
+
+    /**
+     * L'avertissement, puis la question. Le défaut est NON : un exploitant qui
+     * valide sans lire ne provisionne rien, ce qui est le bon accident.
+     *
+     * `--force` lève la question — sans lui, un appel non interactif retombe sur
+     * le défaut et refuse, ce qui est également volontaire : une planification qui
+     * poserait ces montages toutes les nuits est exactement ce qu'on ne veut plus.
+     */
+    private function confirmDiscouragedWrite(): bool
+    {
+        if ((bool) $this->option('force')) {
+            return true;
+        }
+
+        $this->warn('Poser les montages est DÉCONSEILLÉ.');
+        $this->line(
+            'Ils relient l\'instance aux partages du serveur de fichiers par du SMB, et ce chemin d\'accès '
+            . 'n\'est pas acquis : le partage SMB est appelé à disparaître. Ce qui sera monté ici devra être '
+            . 'démonté ensuite, et chaque instance provisionnée est un état de plus à défaire.'
+        );
+        $this->line('');
+        $this->line('Pour voir ce qui serait fait sans rien écrire : <info>--dry-run</info>.');
+        $this->line('Pour n\'aligner que les comptes, sans toucher aux montages : <info>--users-only</info>.');
+        $this->line('');
+
+        return $this->confirm('Provisionner malgré tout ?', false);
     }
 
     private function render(\App\Services\Nextcloud\NextcloudProvisioningReport $report): void
