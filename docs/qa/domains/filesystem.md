@@ -105,6 +105,20 @@ Nom sans espace ni accent (cf. note #15). Exemple : `TEST6A`.
 > scénarios seront réécrits à ce moment-là, pas avant. Ne pas les jouer : ils
 > décrivent une interface qui n'existe plus.
 
+> **⚠️ ABROGÉ le 2026-08-16** — la suspension ci-dessus est levée par la
+> substitution, pas par un retour à l'existant. Les **quatre types de règle par
+> profil** (`default_eleve`, `default_prof`, `default_admin`,
+> `default_itinerant`) sont **supprimés en base** ; un **plafond d'instance
+> unique** par partition (`QuotaRule::TYPE_DEFAULT`) les remplace, et la
+> résolution ne connaît plus que trois étages (nominatif → groupe → défaut
+> d'instance, sinon illimité). Le plafond, la période de grâce et la corbeille
+> se règlent désormais dans les cartes « Quotas des espaces personnels » et
+> « Corbeille des répertoires personnels » de l'onglet **« Emplacements et
+> cloud »** de `/admin/settings/files` — l'onglet « Quotas & FS » et l'URL
+> `?tab=quotas-fs` n'existent plus. **Scénarios 5.1c-8 à 5.1c-13, 5.1d-5 et
+> 5.1d-6 : définitivement sans objet, conservés pour l'historique.** Remplacés
+> par la section « Story 63.4 » de ce fichier.
+
 ### Scénario 5.1c-8 — Page `/admin/settings` accessible
 
 1. Se reconnecter en `admin` (server.admin).
@@ -231,6 +245,16 @@ $u->update(['quota_snapshot' => [
 - Onglet `/admin/settings → Quotas & FS` opérationnel (5.1c).
 - Connexion `legacy_mysql` configurée dans `.env` (variables `LEGACY_DB_*`)
   uniquement pour le scénario 5.1d-7/8.
+
+> **⚠️ ABROGÉ le 2026-08-16 — scénarios 5.1d-1, 5.1d-2 et 5.1d-10.** Le type de
+> règle `default_itinerant` **n'existe plus**, et avec lui l'étage de résolution
+> qui traitait à part les comptes rattachés à un autre établissement : un compte
+> externe reçoit désormais le **plafond par défaut d'instance** comme tout le
+> monde, et un budget particulier se pose en **règle de groupe**, où il se voit.
+> `quota:seed-from-legacy` ne crée plus huit lignes de défaut (4 profils × 2
+> partitions) mais **deux** — une par partition, de type
+> `QuotaRule::TYPE_DEFAULT`. Texte conservé pour l'historique ; remplacé par la
+> section « Story 63.4 » de ce fichier.
 
 ### Scénario 5.1d-1 — User externe sans règle reçoit `default_itinerant`
 
@@ -3870,6 +3894,20 @@ une commande de reprise qui choisirait à la place de l'administrateur, ou qui
 inventerait un emplacement, romprait la garantie « aucune migration implicite »
 que tout l'Epic 64 présuppose.
 
+> **⚠️ ABROGÉ le 2026-08-16 — la PRÉPARATION de ces scénarios seulement, pas
+> leurs attendus.** Les quatre interrupteurs historiques (`home`, `shares`,
+> « Accès Nextcloud », « Accès OpenCloud ») **ne se manipulent plus depuis
+> `/admin/settings/files`** : ils sont désormais **dérivés** de la décision
+> d'emplacement et écrits par son miroir, et les blocs de connexion ne portent
+> plus de capacité. Toute étape de ces scénarios qui demande de « laisser `home`
+> actif » ou d'« activer Accès Nextcloud » à l'écran se joue en base, sur la clé
+> `files.policy` — même figure que le scénario 5.1d-6 :
+> ```php
+> App\Services\FilePolicyService::patchGlobal(['home' => true, 'shares' => true, 'nextcloud' => true]);
+> ```
+> Les **attendus** de la commande de reprise (codes de retour, refus nommés,
+> idempotence, ligne écrite) restent valables tels quels.
+
 ### Prérequis
 
 - [ ] **63.1-P1** — accès `root` (ou sudo) sur `/vm`, dépôt à jour, migrations
@@ -5289,3 +5327,99 @@ app aussi assignée par ailleurs **reste** au retour au navigateur. Aucun type d
 ressource ajouté, aucune clé de payload touchée, aucune lettre de lecteur produite,
 aucun octet de donnée utilisateur lu ni déplacé ; `state.v1.json`, `FROZEN_STATE_HASH`
 et `agent/**` **inchangés**, aucune release d'agent publiée.)*
+
+---
+
+## Checklist rapide — le plan de fichiers
+
+**Un seul parcours, de bout en bout.** À dérouler quand on veut prouver que le
+plan de fichiers tient sur une instance, sans rejouer les 23 sections de ce
+fichier. Chaque case **renvoie** au scénario qui porte les attendus détaillés —
+ils ne sont pas recopiés ici.
+
+**Pré-requis** : une instance à jour, migrations jouées, un poste partagé enrôlé
+avec l'agent en service, un poste perdir ou portable, une session utilisateur de
+test, et — pour les cases de plafond — `/home` sur un volume XFS avec les quotas
+utilisateur (cf. « ⚠️ Prérequis matériel » de la section « Story 63.4 »).
+
+### 1. La reprise, avant tout le reste
+
+- [ ] la commande de reprise a été jouée et la ligne `files.locations` existe →
+      **63.1-1** ; sur une instance qui ne peut pas être dérivée, la sortie par
+      désignation → **63.3-14**
+- [ ] tant qu'elle n'a pas été jouée, l'écran **ne devine rien** et n'offre aucun
+      contrôle de décision → **63.3-10**
+
+### 2. Décider les deux emplacements
+
+- [ ] le cloud est **un choix à trois positions**, pas deux interrupteurs →
+      **63.3-2**
+- [ ] les deux emplacements se posent, et l'effet sur le poste est dit à côté de
+      chaque position → **63.3-6**
+- [ ] une autorité non posable est **absente avec son motif**, jamais grisée →
+      **63.3-5**
+
+### 3. Constater les lettres — ou leur absence
+
+- [ ] point de départ : tout sur le serveur de fichiers, `K:` et `H:` présents →
+      **63.2-1**
+- [ ] l'espace perso au cloud retire `K:` **et rien d'autre** → **63.2-4**
+- [ ] l'espace partagé au cloud retire `H:` **et rien d'autre** → **63.2-5**
+- [ ] les deux au cloud : il reste les répertoires gérés, avec leur propre
+      autorité → **63.2-6**
+- [ ] **aucune lettre ne désigne un espace que le serveur ne sert pas** →
+      **63.2-7**
+
+### 4. Constater le Bureau
+
+- [ ] poste partagé : Bureau **réseau**, quelle que soit la décision de fichiers →
+      **63.2-2**
+- [ ] poste perdir ou portable : Bureau **local** → **63.2-3**
+
+### 5. Constater le raccourci de portail
+
+- [ ] posé quand un cloud est actif **et** qu'au moins un espace y vit ; retiré
+      dans le cas inverse → **63.2-8**
+
+### 6. Constater le plafond et la corbeille
+
+- [ ] un plafond saisi arrive sur le système de fichiers → **63.4-3**, **63.4-4**
+- [ ] une partition qui ne porte pas de quota ferme le champ **avec son motif**,
+      et « je n'ai pas pu mesurer » ne se dit jamais « il n'y a pas de quota » →
+      **63.4-5**, garde rejouée côté service **63.4-6**
+- [ ] la corbeille des répertoires personnels a son écran et sa purge → **63.4-7**
+- [ ] plus aucune trace des quatre profils, nulle part → **63.4-8**
+
+### 7. Constater le client de synchronisation
+
+> **⚠️ PREMIER PASSAGE — le 2026-08-16, cette section n'a JAMAIS été jouée.**
+> Ni la pose ni le retrait du client de synchronisation n'ont été observés sur un
+> poste réel : aucune instance portant un paquet client à son catalogue, aucun
+> poste enrôlé n'a déroulé la chaîne complète. **L'absence de résidu après
+> désinstallation est déduite, pas constatée.** Le valideur qui coche ces cases
+> est le **premier** à le faire : traiter chaque écart comme un résultat à
+> consigner, pas comme une régression, et remonter ce qui diverge de l'attendu
+> écrit — l'attendu n'a pas encore été confronté au terrain. La borne de version
+> d'agent (case 4) borne un empêchement connu ; **au-dessus d'elle, la convergence
+> n'est pas davantage prouvée.**
+
+- [ ] la position est **absente** tant qu'aucune application n'est désignée →
+      **63.5-1**
+- [ ] la pose, puis le **retrait** et sa convergence → **63.5-2**, **63.5-3**
+- [ ] le résidu éventuel est cherché et **nommé**, même bénin → **63.5-4**
+- [ ] sous la borne de version d'agent : le client s'installe et ne se retire
+      jamais → **63.5-5**
+
+### 8. Les refus, qui valent autant que les succès
+
+- [ ] déplacer un espace qui porte des données est **refusé, et rien n'est écrit**
+      → **63.3-7**
+- [ ] une ligne de réglage illisible **refuse** et n'est jamais remplacée par un
+      défaut → **63.3-11**, côté compilation d'état **63.2-9**
+- [ ] la reprise **refuse de deviner** plutôt que de choisir → **63.1-2**,
+      **63.1-3**
+- [ ] aucun réglage persisté n'est perdu au passage → **63.3-9**
+- [ ] le contrat de l'agent n'a pas bougé → **63.2-10**
+
+*Ajouté le 2026-08-16 — parcours transversal ; aucun scénario existant n'a été
+renuméroté ni réécrit.*

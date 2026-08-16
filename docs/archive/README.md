@@ -38,7 +38,29 @@ correspondant sera repris au gabarit :
 | `documentation/architecture/dataFlow.md` | Flux entre AD central, AD d'établissement et SQL dans SE4 | Identité — décisions |
 | `documentation/architecture/ControlHubTasks.md` | Modèle d'exécution des tâches ordonnées par l'amont | Lien amont |
 | `documentation/CLI/workers-systemd.md` | Découpe des files d'attente en deux services système | Exploitation |
+| `group-model-multivertical-orientation.md` | **Plan largement exécuté — voir l'encart ci-dessous.** Le rôle porté par l'arête est livré ; la déclaration des zones et de la matrice, elle, ne vit **pas** sur le type de groupe comme le plan l'annonçait, mais dans une **recette** d'arborescence qui **s'accroche** à un type (un type, une recette). Le cloud annoncé en « option future » est livré. Reste utile pour l'archéologie : la matrice d'accès SE4 croisée fiche à fiche, l'asymétrie d'héritage des entrées par défaut, l'ACL posée à la main que SE4 lit parfois. La limite physique du nombre d'entrées POSIX — d'où le groupe dérivé plutôt qu'une énumération de personnes — est reprise dans [`../domains/filesystem.md`](../domains/filesystem.md) | Plan de fichiers · Groupes & droits |
 | `documentation/CLI/COMMANDES_ARTISAN.md` | Obsolète (une poignée de commandes sur près de 90) — **à refaire depuis le code**, pas à récupérer | Exploitation |
+
+### ⚠️ `group-model-multivertical-orientation.md` — trois orientations qu'il portait et qui n'ont PAS été exécutées
+
+Ce document part en archive comme « plan exécuté ». Trois de ses orientations ne
+le sont pas, et elles n'ont **aucun autre foyer écrit** : sans cette liste, ce
+sont des décisions perdues, qu'on rouvrira de bonne foi.
+
+1. **Le vocabulaire d'accès borné `none | read | read-write | admin`, et sa
+   dégradation `admin` → `read-write` affichée à l'écran en POSIX.** Le plan
+   voulait des **niveaux** ordonnés. Le livré parle **verbes** — lire, éditer,
+   créer, supprimer —, il n'y a **pas de niveau `admin`**, et donc rien à
+   dégrader ni à afficher comme dégradé. **Décision abandonnée**, jamais
+   consignée comme telle jusqu'ici.
+2. **La nature de zone `workflow`** — un dossier réservé dont les droits
+   appartiennent à une fonctionnalité applicative, avec une ligne de matrice
+   inerte. Les natures livrées sont au nombre de quatre et **aucune n'en porte
+   l'équivalent** : partagée, activable, par membre, à contenu libre.
+3. **Le nommage générique des groupes dérivés.** La projection vers l'annuaire
+   reste sur le **trio historique** de préfixes de classe et d'équipe. Une
+   fabrique de groupes dérivés génériques existe par ailleurs, mais la projection
+   des groupes d'utilisateurs, elle, n'y est pas passée.
 
 ## Sans valeur à récupérer
 

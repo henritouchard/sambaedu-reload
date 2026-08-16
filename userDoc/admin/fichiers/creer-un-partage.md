@@ -70,11 +70,16 @@ dossier est créé aussitôt sur le serveur. Un message confirme la création.
 
 ## À quelle lettre s'attendre
 
-Seuls les lecteurs `K:` (« Mes documents ») et `H:` (« Classes ») portent
-toujours la même lettre. Un partage à lettre automatique peut recevoir une
-lettre différente selon le contexte : **repérez-le par son nom**, qui, lui, ne
-change pas — ne promettez pas une lettre fixe à un utilisateur pour un partage
-dont la lettre est automatique.
+Les lecteurs `K:` (« Mes documents ») et `H:` (« Classes ») sont les seuls à ne
+jamais changer de lettre — mais ils n'apparaissent que si leur espace est servi
+par le **serveur de fichiers** : quand il est servi par le cloud, la lettre
+n'existe pas du tout. Voir
+[Choisir où vivent les fichiers](/admin/fichiers/politique-de-fichiers).
+
+Les partages que vous créez, eux, gardent toujours une lettre. Un partage à
+lettre automatique peut en recevoir une différente selon le contexte :
+**repérez-le par son nom**, qui, lui, ne change pas — ne promettez pas une lettre
+fixe à un utilisateur pour un partage dont la lettre est automatique.
 
 ::: delai-effet session
 La lettre du nouveau partage apparaît sur les postes à la prochaine ouverture de

@@ -319,7 +319,7 @@ export default defineConfig({
                     text: 'Fichiers et partages',
                     link: '/admin/fichiers/',
                     items: [
-                        { text: 'Régler la politique de fichiers', link: '/admin/fichiers/politique-de-fichiers' },
+                        { text: 'Choisir où vivent les fichiers', link: '/admin/fichiers/politique-de-fichiers' },
                         { text: 'Le partage de classe', link: '/admin/fichiers/partage-de-classe' },
                         { text: 'Créer un partage', link: '/admin/fichiers/creer-un-partage' },
                         { text: 'Gérer les accès d\'un partage', link: '/admin/fichiers/gerer-les-acces-d-un-partage' },

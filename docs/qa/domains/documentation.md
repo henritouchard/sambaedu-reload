@@ -951,6 +951,29 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 
 ### Scénario 10.5 — Exactitude métier : verdicts centraux
 **But** : les formulations de vérité sensibles sont fidèlement rendues.
+
+> **⚠️ ABROGÉ le 2026-08-16 — TROIS puces de ce scénario, et elles seules.**
+>
+> 1. **« Politique = 3 interrupteurs GLOBAUX »** et 2. **« Nextcloud : une seule
+>    phrase »** — les trois interrupteurs **n'existent plus** dans le produit :
+>    l'onglet « Emplacements et cloud » pose désormais **où vivent** l'espace
+>    personnel et l'espace partagé, et les capacités historiques en sont
+>    **dérivées**. L'état « web uniquement » n'existe pas davantage, et le cloud
+>    **est activable** — un espace peut avoir un produit cloud pour autorité.
+> 3. **« Limiter l'espace »**, pour deux de ses exigences : *« la règle la plus
+>    favorable au compte s'applique »* est **fausse** (une règle de groupe
+>    illimitée perd contre une règle de groupe bornée — cf. l'écart connu de
+>    `docs/domains/filesystem.md`), et *« aucun réglage de quotas par défaut, de
+>    grâce ni de corbeille »* est **périmée** : le plafond par défaut d'instance
+>    et la période de grâce ont un écran, et c'est aujourd'hui l'étage qui couvre
+>    la majorité des comptes.
+>
+> Exiger de la fiche publique qu'elle porte ces énoncés revenait à
+> **contractualiser un texte faux**. Les puces sont conservées pour l'historique ;
+> ce qu'il faut vérifier à leur place est décrit à la **Section 15** de ce
+> fichier. **Les quatre autres puces de ce scénario restent valables telles
+> quelles.**
+
 **Étapes / attendu** :
 - **Politique = 3 interrupteurs GLOBAUX** : « Répertoire personnel (K:) », « Partages réseau (H:) », « Nextcloud natif », valables pour tout l'établissement, **jamais** présentés comme un réglage par salle ou par parc ; effet concret par interrupteur + renvois `/poste/fichiers/…` ; « web uniquement » quand tout est désactivé ; enregistrement immédiat (pas de bouton Enregistrer, indicateur « Enregistré »). Le mot **« capacité »** n'est **jamais** employé pour ces interrupteurs ; aucun lien `/glossaire#capacite`.
 - **Nextcloud** : une seule phrase (« option visible mais pas encore activable »), jamais présenté comme disponible, jamais d'URL ni de « bientôt ».
@@ -970,6 +993,7 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 **But** : la doc ne déborde pas et n'expose aucune surface sans point d'entrée.
 **Étapes / attendu** :
 - **Quotas par défaut / période de grâce / corbeille / « profils itinérants »** : jamais documentés (onglets orphelins, partials non inclus — F19).
+  > **⚠️ ABROGÉ le 2026-08-16 — cette puce seulement.** Le **plafond par défaut d'instance**, la **période de grâce** et la **corbeille des répertoires personnels** ne sont plus orphelins : ils ont un écran, dans les cartes de l'onglet « Emplacements et cloud ». Le plafond par défaut est l'étage qui couvre la majorité des comptes, et la fiche publique des quotas le documente. Seuls les **« profils itinérants »** restent hors du guide. Voir la **Section 15**.
 - **Règles d'accès aux dossiers** (`/app/folder-rules`) : jamais documentées (aucune entrée de menu — F20, gap consigné à l'orchestrateur).
 - **Impression / imprimantes** : aucune mention (hors épic 53).
 - **Composition des groupes, capacités et profils applicatifs, tiroir des droits** : au plus signalés d'une phrase et renvoyés, jamais documentés.
@@ -997,13 +1021,16 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Gabarit tenu : droits en métier, encarts normalisés seuls, `delai-effet` = `session` (politique/créer/accès) ou `immediat` (classe/limiter), aucun sur « en cas de problème »
 - [ ] Politique = 3 interrupteurs GLOBAUX (jamais « par salle »), enregistrement immédiat, « web uniquement », mot « capacité » proscrit
 - [ ] Nextcloud = une phrase (« pas encore activable »), jamais « disponible »
+  > **⚠️ ABROGÉ le 2026-08-16 — les deux cases ci-dessus.** Les trois interrupteurs n'existent plus et le cloud **est** activable : la fiche publique pose désormais **où vivent** l'espace personnel et l'espace partagé. Ne pas dérouler ces deux cases — ce qu'il faut vérifier à leur place est en **Section 15**.
 - [ ] Chaque énoncé d'accès porte niveau (Lire/Modifier) ET périmètre exact
 - [ ] Lettre visible ≠ accès réel ; parc = montage seul ; avertissement d'écran cité verbatim
 - [ ] Partage de classe : 4 sous-dossiers en lecture/écriture, dossier élève ≠ espace personnel, bascule échange, réappliquer = rattrapage
 - [ ] Créer : direct (contraintes nom/lettre, réservées refusées) + 4 modèles ; seules K:/H: fixes, lettre auto peut changer → repérer par nom
 - [ ] Limiter : quota compte + quota groupe (Hérité/Illimité/valeur), règle la plus favorable, vécu au dépassement, filtre « Quota dépassé » renvoyé ; rien sur défauts/grâce/corbeille
+  > **⚠️ ABROGÉ le 2026-08-16 — cette case, sur deux de ses exigences.** « La règle la plus favorable » est **faux** (une règle de groupe illimitée perd contre une règle de groupe bornée), et « rien sur défauts/grâce/corbeille » est **périmé** : le plafond par défaut d'instance, le dépassement toléré, le blocage calculé et la période de grâce ont un écran, et la fiche publique les documente. Le reste de la case (quota compte, quota groupe, vécu au dépassement, filtre) reste valable. Voir **Section 15**.
 - [ ] « En cas de problème » : 2 symptômes, vérifications interface ordonnées, zéro commande
 - [ ] Frontières : zéro quotas par défaut/grâce/corbeille, zéro règles d'accès aux dossiers, zéro impression, fiches 52.4 liées jamais réécrites
+  > **⚠️ ABROGÉ le 2026-08-16 — la première frontière de cette case seulement.** Le plafond par défaut, la période de grâce et la corbeille des répertoires personnels **ne sont plus des surfaces orphelines** : ils ont un écran et ils se documentent. Les autres frontières de la case restent tenues. Voir **Section 15**.
 - [ ] Lint vert, vocabulaire interdit absent (ACL/POSIX/provisioning…), liens glossaire `#partage`/`#espace-personnel`/`#parc`/`#groupe-de-postes`, jamais `#capacite`, autonomie réseau vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel fiches clair/sombre/mobile + recalage des libellés
 
@@ -1377,3 +1404,152 @@ de schéma dans `theme/custom.css` et le commentaire dans `config.mjs`.
 - [ ] Lint vert ; aucun encart normalisé sur la page ; liens glossaire valides (6 ancres utilisées) ; aucun chemin `.php` ; tableaux markdown natifs
 - [ ] `npm run build` vert (preuve des 36 cibles internes) ; `git diff` limité à 2 fichiers modifiés + 1 nouveau, hors `userDoc/`+`docs/qa/` vide
 - [ ] **VM (différé)** : matrice curl serveur + contrôle visuel clair/sombre/mobile + recalage à l'écran du libellé imprimantes en lecture seule
+
+---
+
+## Section 15 — Le domaine « Fichiers et partages » recalé sur le plan de fichiers (Story 63.6)
+
+**Portée** : refonte de `userDoc/admin/fichiers/politique-de-fichiers.md`,
+correction de `userDoc/admin/fichiers/limiter-l-espace-de-stockage.md`, raccord de
+`userDoc/admin/fichiers/index.md`, et un libellé de barre latérale dans
+`userDoc/.vitepress/config.mjs`. **Aucun chemin de fichier ne change**, aucune
+capture n'est ajoutée, aucun bloc mermaid n'entre dans une fiche publiée.
+
+**Ce qui a rendu ce recalage nécessaire** : le produit ne présente plus « trois
+interrupteurs indépendants ». L'onglet « Emplacements et cloud » pose **où
+vivent** deux espaces d'instance, et les capacités historiques en sont dérivées.
+Les puces correspondantes du scénario 10.5, et une puce du scénario 10.7, portent
+un marqueur d'abrogation daté du 2026-08-16 : elles exigeaient de la fiche
+publique qu'elle décrive une interface disparue.
+
+**Code / sources de référence** :
+- `resources/views/pages/admin/settings/files/index.blade.php` — les trois
+  onglets, dont « Emplacements et cloud »
+- `resources/views/pages/admin/settings/files/_partials/emplacements-tab.blade.php`
+  — les trois blocs, les libellés d'effet, la précision sur le partage personnel,
+  l'avertissement « ce choix se fige »
+- `_partials/quotas-card.blade.php` — « Quotas des espaces personnels », plafond,
+  période de grâce, champ fermé avec motif, « Appliquer à tous les comptes
+  couverts »
+- `app/Services/Filesystem/XfsQuotaService.php` — la résolution à trois étages, et
+  l'écart de tri des règles de groupe
+- `app/Services/Agent/Providers/DrivesStateProvider.php`,
+  `app/Services/Agent/DesktopPathResolver.php`,
+  `app/Services/Agent/Providers/ShortcutsStateProvider.php`
+
+### Scénario 15.1 — Les fiches se construisent et se rendent
+
+**But** : le domaine reste publié, aux mêmes adresses.
+**Étapes / attendu** :
+- `cd userDoc && node .vitepress/lint-doc.mjs` → **zéro violation**.
+- Le build produit `admin/fichiers/{index,politique-de-fichiers,limiter-l-espace-de-stockage,…}.html`.
+- **Matrice curl (VM)** : les 8 pages du domaine en 200 ; aucune adresse n'a
+  changé ; `/doc/poste/` inchangé.
+- La barre latérale `/admin/` porte l'entrée **« Choisir où vivent les fichiers »**
+  au même rang qu'avant, vers la même adresse.
+
+### Scénario 15.2 — Exactitude métier : où vivent les fichiers
+
+**But** : la fiche décrit le produit d'aujourd'hui, sans en promettre un autre.
+**Étapes / attendu** :
+- **Deux décisions, pas trois interrupteurs** : « espace personnel » et « espace
+  partagé », chacun **soit** sur le serveur de fichiers **soit** dans le cloud ;
+  portée établissement, jamais par salle ni par parc.
+- **Un seul cloud à la fois**, trois positions exclusives ; la position retenue
+  révèle sa page de connexion, et elle seule.
+- **Une lettre de lecteur ne pointe jamais un cloud** — énoncé explicitement.
+- **Les partages créés par l'administrateur gardent leur lettre** : ils ne suivent
+  pas les deux décisions d'instance.
+- **Le partage personnel du serveur reste en service pour l'agent** (Bureau,
+  raccourcis, réglages d'applications) : « l'espace personnel au cloud » ne le
+  coupe pas.
+- Le tableau des effets couvre `K:`, `H:`, et le raccourci **« Mes fichiers en
+  ligne »** posé quand un cloud est actif **et** qu'un espace y vit.
+- **Deux chemins d'accès seulement** : par le navigateur, ou par le client de
+  synchronisation — ce dernier n'étant offert qu'après désignation d'une
+  application du dépôt. **SE5 n'installe rien lui-même.**
+- ⚠️ **Le raisonnement d'architecture n'entre PAS dans la fiche publique** :
+  aucune mention d'un montage abandonné, aucune comparaison de protocoles. Seule
+  la **conséquence pratique** est écrite — sur un poste partagé, le client doit
+  être réglé en **fichiers à la demande**.
+- ⚠️ **Aucun vocabulaire de pilotage interne** : le refus de déplacement est
+  **paraphrasé** (« SE5 refuse et n'enregistre rien »), jamais cité — le message
+  affiché à l'administrateur porte un nom de chantier que le lint refuse.
+- ⚠️ **Aucune promesse d'avenir** : ni « à venir », ni « pas encore activable ».
+
+### Scénario 15.3 — Exactitude métier : limiter l'espace de stockage
+
+**But** : la fiche des quotas cesse d'affirmer le contraire du code.
+**Étapes / attendu** :
+- **Trois endroits** énoncés : plafond par défaut de l'établissement, fiche de
+  groupe, fiche de compte.
+- **L'ordre de résolution** est écrit et s'arrête à la première réponse : compte →
+  groupe → plafond par défaut → sinon **sans limite**.
+- ⚠️ La phrase *« la règle la plus favorable au compte s'applique »* a **disparu**.
+  À sa place : parmi les groupes, **le plus grand plafond chiffré** l'emporte, et
+  un encart d'avertissement dit qu'une règle de groupe **Illimité** ne gagne que
+  si **toutes** les règles de groupe du compte sont illimitées — sinon, poser la
+  règle **sur le compte**.
+- **Enregistrer n'est pas appliquer** : le plafond par défaut n'atteint les
+  comptes existants qu'au geste **Appliquer à tous les comptes couverts**, et la
+  carte annonce d'abord la couverture et les dépassements.
+- **Le champ fermé avec son motif** est décrit, et les deux motifs sont
+  **distingués** : « pas de quota appliqué sur cette partition » ≠ « impossible de
+  déterminer ».
+- `delai-effet immediat` conservé, avec la nuance du plafond par défaut.
+
+### Scénario 15.4 — Gabarit, encarts, liens
+
+**But** : les fiches restent conformes au gabarit outillé.
+**Étapes / attendu** :
+- Titre = la **tâche du lecteur** (« Choisir où vivent les fichiers »), pas un nom
+  d'écran ; front-matter `title` + `description` **seuls** (aucune date).
+- « Où ça se passe » présent, gestes **numérotés**, « Résultat observable »
+  présent.
+- Encarts : `droit-requis`, `delai-effet session` (politique) / `immediat`
+  (quotas), `vue-poste`, `attention`. **Aucun** `::: warning` ni `::: danger`.
+- Liens glossaire à la **première occurrence seulement**, vers des ancres
+  existantes (`/glossaire#parc`, `/glossaire#partage`,
+  `/glossaire#espace-personnel`, `/glossaire#agent`). Aucune ancre neuve créée.
+- **Aucun bloc mermaid** : `grep -rn '```mermaid' userDoc/admin/ userDoc/poste/`
+  reste vide.
+- Aucune capture ajoutée.
+
+### Limites connues Section 15
+
+- **Parcours poste non recalé, et c'est délibéré** :
+  `userDoc/poste/fichiers/espace-personnel.md` et `espaces-partages.md`
+  présentent `K:` et `H:` comme des faits. Ils **restent vrais sur le réglage par
+  défaut** (les deux espaces sur le serveur de fichiers) et deviennent faux dès
+  qu'un espace part au cloud. Hors périmètre de cette section.
+- **Fiches voisines du même domaine non recalées** :
+  `userDoc/admin/fichiers/en-cas-de-probleme.md` renvoie encore à
+  « l'interrupteur global correspondant », et
+  `userDoc/admin/reglages/reglages-de-l-etablissement.md` porte l'ancien libellé
+  de lien. Les liens ne sont pas cassés (aucune adresse n'a changé), mais les
+  énoncés sont périmés.
+- **Contrôle visuel non joué** : rendu clair/sombre et mobile non observé ;
+  matrice curl serveur non rejouée — même dette d'environnement que les sections
+  précédentes.
+
+### Checklist rapide Section 15
+- [ ] Lint `userDoc/` vert, zéro violation
+- [ ] Deux décisions + un cloud exclusif, portée établissement, jamais trois
+      interrupteurs
+- [ ] « Une lettre de lecteur ne pointe jamais un cloud » écrit noir sur blanc
+- [ ] Le partage personnel reste servi pour l'agent — dit, pas sous-entendu
+- [ ] Deux chemins d'accès ; fichiers à la demande sur poste partagé ; **aucun**
+      raisonnement d'architecture dans la fiche publique
+- [ ] Refus de déplacement **paraphrasé**, jamais cité
+- [ ] « La règle la plus favorable » disparue ; l'écart de l'illimité de groupe
+      énoncé en encart
+- [ ] Plafond par défaut documenté ; « enregistrer n'est pas appliquer »
+- [ ] Champ fermé : les deux motifs distingués
+- [ ] Gabarit, encarts normalisés, ancres de glossaire valides, aucun mermaid,
+      aucune capture
+- [ ] **VM (différé)** : matrice curl + contrôle visuel
+
+*Mise à jour : 2026-08-16 (Story 63.6 — la fiche de domaine du plan de fichiers :
+`docs/domains/filesystem.md` refondue EN PLACE, deux fiches publiques recalées,
+index QA du domaine complété, marqueurs d'abrogation datés sur les scénarios qui
+contractualisaient un texte faux. Aucune ligne de code produit modifiée.)*

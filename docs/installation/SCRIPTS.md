@@ -117,6 +117,40 @@ sudo ./scripts/update.sh
 - Doit être exécuté en root (sudo)
 - Laravel artisan doit être disponible
 
+#### ⚠️ Reprise du plan de fichiers — à jouer AVANT la mise à jour
+
+Sur une instance déjà en service qui n'a **jamais** joué la reprise des
+emplacements de fichiers, jouer d'abord :
+
+```bash
+php artisan files:adopt-locations --dry-run   # voir ce qui serait écrit
+php artisan files:adopt-locations             # appliquer
+```
+
+**La conséquence si on ne le fait pas** est immédiate et silencieuse :
+
+- sans ligne de décision, le plan de fichiers rend ses **défauts** — les deux
+  espaces sur le serveur de fichiers. Une instance qui servait ses fichiers en
+  accès web **retrouve donc les lecteurs `K:` et `H:` sur tous les postes**, à la
+  première ouverture de session qui suit le déploiement ;
+- et l'écran des réglages **n'offre alors aucune décision d'emplacement** : il
+  affiche l'état hérité en lecture seule et renvoie vers cette même commande.
+
+La commande ne déplace **aucun octet** et n'émet aucun appel réseau. Elle est
+idempotente : la rejouer sur une instance déjà reprise n'écrit rien. Son
+`--dry-run` **rend un code d'échec** tant qu'il reste quelque chose à écrire —
+c'est ce qui permet d'enchaîner `files:adopt-locations --dry-run && <bascule>`
+sans risquer de basculer une instance non reprise.
+
+Elle **refuse** plutôt que de deviner dans deux cas : deux produits cloud
+configurés à la fois, ou un emplacement qui devrait désigner un cloud alors
+qu'aucun n'est configuré. L'option `--cloud=` est la sortie — voir
+`php artisan help files:adopt-locations`.
+
+> Ce prérequis est **documenté, pas câblé** : `scripts/update.sh` ne le joue pas.
+> Voir [`../domains/filesystem.md`](../domains/filesystem.md) pour le modèle
+> complet.
+
 ### Actions effectuées
 
 1. ✅ **Mise à jour Composer**

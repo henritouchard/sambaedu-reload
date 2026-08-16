@@ -3,6 +3,21 @@
 > Runbook E2E pour les stories du domaine GPO. Append-only : chaque story
 > ajoute une section avec ses scénarios numérotés stables.
 
+> **⚠️ ABROGÉ le 2026-08-16 — l'onglet « Quotas & FS » et l'URL
+> `/admin/settings?tab=quotas-fs` n'existent plus.** `/admin/settings` est
+> devenue une page d'accueil de **cartes** ; les réglages de fichiers vivent sous
+> `/admin/settings/files`, dont l'onglet **« Emplacements et cloud »** porte le
+> plafond de stockage et la corbeille. L'onglet **« Profils itinérants »**, lui,
+> existe toujours — il a déménagé sous `/admin/settings/files?tab=roaming`, et la
+> redirection `/admin/settings/profils-itinerants` y mène encore.
+>
+> **Trois endroits de ce fichier portent l'ancienne cible et sont laissés en
+> l'état** (convention append-only : on n'y réécrit pas un scénario existant) —
+> scénario **1bis.18f-1** (étapes 2 à 4), scénario **3.5** (étapes 2 à 4) et
+> scénario **16.9-3** (étape 3). Y lire « l'onglet Quotas & FS » comme « l'autre
+> onglet de l'écran de l'époque », et atteindre les profils itinérants par la
+> redirection ci-dessus.
+
 **Pré-requis** :
 
 - VM accessible : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`

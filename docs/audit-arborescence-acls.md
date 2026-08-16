@@ -49,7 +49,7 @@ La question « l'itinérant existe mais n'a pas de profil, est-ce normal ? » se
 |---|---|---|
 | **Profil itinérant** (roaming) | Magasin serveur réel `/home/profiles/<user>.V6` (NTUSER.DAT) | **Oui** — mais SambaEdu **ne pose jamais `profile path`** (piloté Windows/GPO) |
 | **Poste nomade / perdir** | Classe de poste « tout local » (`WorkstationEnvironment::Nomade`) | **Non** — bureau + données en `%USERPROFILE%` |
-| **Utilisateur itinérant** | Compte externe/fédéré d'un autre établissement | **Non** — juste une règle de quota `default_itinerant` |
+| **Utilisateur itinérant** | Compte externe/fédéré d'un autre établissement | **Non** — et plus aucune règle de quota qui lui soit propre : il reçoit le plafond par défaut d'instance comme tout le monde, un budget particulier se posant en règle de groupe |
 
 Points clés :
 

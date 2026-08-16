@@ -7,7 +7,13 @@ description: "Ouvrir le dossier commun d'une classe, gérer son dossier d'échan
 
 Cette fiche explique comment ouvrir et entretenir le dossier commun d'une
 classe : le [partage](/glossaire#partage) que les enseignants et les élèves
-retrouvent dans le lecteur `H:` « Classes ».
+retrouvent parmi les espaces partagés de l'établissement.
+
+Là où ils le retrouvent dépend d'une décision d'établissement : quand l'espace
+partagé est servi par le **serveur de fichiers**, c'est dans le lecteur `H:`
+« Classes » ; quand il est servi par le **cloud**, il n'y a pas de lecteur `H:`
+et le dossier s'atteint par le raccourci **Mes fichiers en ligne**. Voir
+[Choisir où vivent les fichiers](/admin/fichiers/politique-de-fichiers).
 
 ## Où ça se passe
 
@@ -64,8 +70,10 @@ L'état du partage affiche le dossier d'échange comme **activé** ou
 **désactivé**, et un message confirme chaque action.
 
 ::: vue-poste
-Élèves et enseignants voient le dossier de la classe sous le lecteur `H:`
-« Classes ». Quand le dossier d'échange est activé, les membres de la classe
+Élèves et enseignants voient le dossier de la classe parmi leurs espaces
+partagés — sous le lecteur `H:` « Classes » si l'espace partagé est servi par le
+serveur de fichiers, depuis le raccourci **Mes fichiers en ligne** s'il est servi
+par le cloud. Quand le dossier d'échange est activé, les membres de la classe
 peuvent y déposer des fichiers.
 :::
 

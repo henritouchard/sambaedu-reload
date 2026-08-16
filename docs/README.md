@@ -78,7 +78,7 @@ fiches) · **🟡** fiche unique · **🔴** aucune fiche de référence.
 | **Droits & délégations** | `app/Policies/`, `app/Services/Permissions/` | [`domains/rights-management.md`](domains/rights-management.md) | [qa](qa/domains/rights-management.md) | 🟡 |
 | **Configuration des postes** | `app/Services/AppCustomization/`, `Overlay/`, `Wallpaper/` | [`domains/app-customizations.md`](domains/app-customizations.md) | — | 🟡 |
 | **Impression** | `app/Services/Print/` | [`domains/printers.md`](domains/printers.md) | [qa](qa/domains/printers.md) | 🟡 |
-| **Fichiers, ACL & quotas** | `app/Services/Filesystem/`, `app/Services/Nextcloud/` | [`domains/filesystem.md`](domains/filesystem.md), [`audit-arborescence-acls.md`](audit-arborescence-acls.md) | [qa](qa/domains/filesystem.md) | 🟡 |
+| **Plan de fichiers, droits & quotas** | `app/Services/Filesystem/`, `app/Services/Nextcloud/`, `app/Services/OpenCloud/` | [`domains/filesystem.md`](domains/filesystem.md) — où vivent les deux espaces, le cloud unique, ce que le poste reçoit, le contrat d'écriture des droits, plafond et corbeille ; [`audit-arborescence-acls.md`](audit-arborescence-acls.md) | [qa](qa/domains/filesystem.md) | 🟡 |
 | **Déploiement applicatif** | `app/Wpkg/`, `app/Services/AppStore/`, `AppProfile/` | [`wpkg-deploy/architecture.md`](wpkg-deploy/architecture.md) | [qa](qa/domains/wpkg-deploy.md) | 🟡 |
 | **Lien amont controlHub** | `app/Services/ControlHub/` | [`api-controlhub-workstation-groups.md`](api-controlhub-workstation-groups.md) | [qa](qa/domains/controlhub-contract.md) | 🟡 |
 | **GPO & SYSVOL** | `app/Gpo/`, `app/Services/Gpo/` | *dette :* [`tech-debt-gpo.md`](tech-debt-gpo.md) | [qa](qa/domains/gpo.md) | 🔴 |
@@ -92,9 +92,7 @@ fiches) · **🟡** fiche unique · **🔴** aucune fiche de référence.
 
 **Documents transverses** — [`features-se4-SE5.md`](features-se4-SE5.md) (état du
 portage SE4 → SE5) · [`audit-dependances-systeme.md`](audit-dependances-systeme.md)
-(ce que SE5 attend du système hôte) ·
-[`group-model-multivertical-orientation.md`](group-model-multivertical-orientation.md)
-(orientation du modèle de groupes) · [`testingPlan.md`](testingPlan.md) (méthode de
+(ce que SE5 attend du système hôte) · [`testingPlan.md`](testingPlan.md) (méthode de
 comparaison legacy ↔ SE5).
 
 ## 5. Invariants du corpus
@@ -122,12 +120,21 @@ Classés par volume de code non couvert :
 3. **GPO & SYSVOL** — module natif documenté seulement par son registre de dette.
 4. **Extensions** et **réseau** — checklist de pré-production uniquement.
 5. **Diagnostic d'instance** et **scripts de session** — aucune trace.
-6. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
+6. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
+   référence**, et il n'apparaît même pas à la carte des domaines ci-dessus. Ce
+   qu'il en reste d'écrit est réparti sans index : les décisions vivantes sont dans
+   le code (rôle porté par l'arête user↔groupe, type de groupe fermé par la
+   déclaration d'un rôle, recette d'arborescence accrochée à un type, fabrique de
+   groupes dérivés) ; la part d'archéologie et les orientations **non exécutées**
+   sont dans [`archive/group-model-multivertical-orientation.md`](archive/group-model-multivertical-orientation.md)
+   et son entrée d'[`archive/README.md`](archive/README.md). Le domaine est à
+   ouvrir au gabarit.
+7. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
    beaucoup évolué depuis sa dernière génération, et un seul contrôleur du dépôt
    porte encore des annotations. À **refaire**, pas à rapiécer.
-7. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
+8. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
    accrétion successive ; l'index est à reconstruire.
-8. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
+9. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
    décisions des mécanismes : ils sont à passer au gabarit quand on les rouvre.
 
 ## 7. Écrire une fiche

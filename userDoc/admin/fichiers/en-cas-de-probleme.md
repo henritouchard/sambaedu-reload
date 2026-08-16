@@ -11,19 +11,26 @@ faut vérifier **dans l'interface**, de la cause la plus probable à la plus rar
 
 ## Un espace n'apparaît pas sur le poste
 
-- **L'interrupteur global correspondant est-il actif ?** Un lecteur `K:` absent
-  renvoie à l'option **Répertoire personnel (K:)** ; un lecteur `H:` ou un
-  lecteur réseau absent renvoie à l'option **Partages réseau (H:)**. Voir
-  [Régler la politique de fichiers](/admin/fichiers/politique-de-fichiers).
-- **Pour un lecteur réseau géré : la personne figure-t-elle dans les
-  assignations ?** Vérifiez, sur la page du partage, que l'utilisateur, son
-  groupe ou sa salle y est bien assigné. Voir
+- **Premier réflexe : cet espace est-il servi par le cloud ?** C'est la cause la
+  plus fréquente, et la plus déroutante, parce que **rien n'est en panne**. Un
+  espace hébergé dans le cloud de l'établissement **n'a jamais de lettre de
+  lecteur** : `K:` disparaît quand l'espace personnel y est parti, `H:` quand
+  c'est l'espace partagé. Les fichiers s'atteignent alors par le raccourci
+  **Mes fichiers en ligne** du bureau, ou par le client de synchronisation.
+  Vérifiez la réponse donnée à chaque espace dans
+  [Choisir où vivent les fichiers](/admin/fichiers/politique-de-fichiers).
+- **Pour un lecteur réseau que vous avez créé : la personne figure-t-elle dans
+  les assignations ?** Ces lecteurs-là ne suivent pas la décision ci-dessus ;
+  vérifiez, sur la page du partage, que l'utilisateur, son groupe ou sa salle y
+  est bien assigné. Voir
   [Gérer les accès d'un partage](/admin/fichiers/gerer-les-acces-d-un-partage).
 - **La session a-t-elle été rouverte depuis ?** Une lettre nouvellement ouverte
   n'apparaît qu'à la prochaine ouverture de session.
-- **La lettre attendue était-elle automatique ?** Seuls `K:` et `H:` sont fixes.
-  Une lettre automatique peut changer selon le contexte : repérez le partage par
-  son **nom**, pas par sa lettre.
+- **La lettre attendue était-elle automatique ?** `K:` et `H:` ne changent jamais
+  de lettre — mais ils **n'apparaissent que si leur espace est servi par le
+  serveur de fichiers**. Pour les autres partages, une lettre automatique peut
+  changer selon le contexte : repérez le partage par son **nom**, pas par sa
+  lettre.
 
 ## Accès refusé alors que la personne est dans le groupe
 

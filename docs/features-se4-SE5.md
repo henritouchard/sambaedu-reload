@@ -80,7 +80,7 @@
 | 8.6   | Partages      | Éditeur ACL libre sur chemin arbitraire                          | 🟡 Partiel (remplacé par modèle managé ro/rw) | ok |
 | 8.7   | Partages      | Casiers élève → prof                                             | ⏳ Backlog (34.x)                             | ok |
 | 8.8   | Partages      | Quotas disque XFS (héritage user/groupe)                         | ✅ Natif                                      | ok |
-| 8.9   | Partages      | Sync cloud Nextcloud/Seafile des partages                        | ❌ Non porté                                  | ok |
+| 8.9   | Partages      | Sync cloud Nextcloud/Seafile des partages                        | ✅ Natif (mécanisme changé)                   | ok |
 | 9.1   | Impression    | Imprimantes CUPS (CRUD, pilotes, réservation)                    | ✅ Natif                                      | ok |
 | 9.2   | Impression    | Déploiement par salle/parc (+ défaut)                            | ✅ Natif (agent)                              | ok |
 | 9.3   | Impression    | Déploiement par groupe _utilisateur_                             | 🟡 Partiel (maille poste seulement)           | ok |
@@ -382,11 +382,11 @@ Sous-espaces par élève visibles du prof. Explicitement reporté « 34.x » (le
 
 ### 8.8 Quotas XFS — ✅ Natif
 
-`XfsQuotaService` (héritage user > groupe > défauts typés élève/prof/admin/itinérant), snapshot quotidien, audit, UI admin + page groupe. SE4 : `includes/quotas.inc.php`.
+`XfsQuotaService` (héritage user > groupe > **plafond par défaut d'instance**, une ligne par partition ; les défauts typés par population n'existent plus), snapshot quotidien, audit, UI admin + page groupe. SE4 : `includes/quotas.inc.php`.
 
-### 8.9 Sync cloud Nextcloud/Seafile — ❌ Non porté
+### 8.9 Sync cloud Nextcloud/Seafile — ✅ Natif (mécanisme changé)
 
-`partages/rep_cloud.php` + `includes/cloud.inc.php` (réplication du modèle de partages classes vers Nextcloud/Seafile, lecteur S:). Zéro équivalent SE5 (grep nextcloud/seafile/webdav vide). Le legacy lui-même était semi-expérimental.
+`partages/rep_cloud.php` + `includes/cloud.inc.php` (réplication du modèle de partages classes vers Nextcloud/Seafile, lecteur S:). SE5 ne réplique plus : un espace peut avoir un **produit cloud pour autorité**, et les droits y sont écrits directement par une implémentation du contrat de backend (`app/Services/Filesystem/Backend/Nextcloud/`, `.../OpenCloud/`). Un seul produit cloud est actif à la fois, et un espace servi par lui n'a **aucune lettre de lecteur** : l'accès se fait au navigateur ou par le client natif de l'éditeur. Voir [`domains/filesystem.md`](domains/filesystem.md).
 
 ---
 
@@ -526,5 +526,4 @@ Les manques suivants ne sont couverts par **aucune story backlog** repérée —
 9. **Déploiement d'imprimantes par groupe utilisateur** (§9.3)
 10. **Édition SMTP en UI** (§12.5)
 11. **Actions serveur physiques** (shutdown/Proxmox/console) (§12.6)
-12. **Sync cloud Nextcloud** (§8.9) — probablement à abandonner formellement
-13. **Paramètres conf_params orphelins** : UAI, politique mdp, WPAD, dépôt apt, mail d'alerte (§12.4)
+12. **Paramètres conf_params orphelins** : UAI, politique mdp, WPAD, dépôt apt, mail d'alerte (§12.4)
