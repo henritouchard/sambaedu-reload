@@ -44,6 +44,18 @@ use Illuminate\Support\Facades\Http;
  *    configurée, pourrait la produire — et il vaut mieux la nommer que la
  *    découvrir.
  *
+ * **Une TROISIÈME famille s'est ajoutée le 2026-08-17 : la synchro d'annuaire de
+ * l'instance** (`ocs/v2.php/apps/user_ldap/api/v1/config`, plus l'activation de
+ * l'app par l'API de provisionnement). Elle n'écrit aucun droit et ne crée aucun
+ * objet de partage : elle dit à l'instance de LIRE l'annuaire que SE5 compile
+ * déjà, ce qui est la seule façon d'y faire exister les comptes du stock — le
+ * provisionnement, lui, refuse par conception d'en fabriquer
+ * ({@see NextcloudUserProvisioner}, « on n'invente jamais de mot de passe »).
+ * Elle est ici, et pas dans une classe à elle, parce que la règle « un seul point
+ * de sortie HTTP » ne souffre pas d'exception : c'est elle qui rend tout ceci
+ * falsifiable par `Http::fake()`. Ce que cette famille NE configure PAS — les
+ * groupes — est motivé dans {@see NextcloudLdapSyncSettings}.
+ *
  * **L'en-tête `OCS-APIRequest: true` est posé sur TOUS les appels**, y compris
  * ceux de la seconde famille : c'est l'en-tête que le protocole demande pour les
  * requêtes d'API, et Nextcloud s'en sert pour ne pas exiger d'état de session.
@@ -81,6 +93,9 @@ final class NextcloudAdminClient
 
     /** Chemin de l'endpoint d'administration des montages globaux. */
     private const GLOBAL_STORAGES_PATH = 'index.php/apps/files_external/globalstorages';
+
+    /** Chemin de l'API de configuration de la synchro d'annuaire de l'instance. */
+    private const LDAP_CONFIG_PATH = 'ocs/v2.php/apps/user_ldap/api/v1/config';
 
     /** Statuscode OCS « l'objet existe déjà » — mesuré au spike 60.0. */
     private const OCS_ALREADY_EXISTS = 102;
@@ -406,6 +421,82 @@ final class NextcloudAdminClient
         }
 
         return NextcloudResult::ok(['matches' => $matches], $result->httpStatus, $result->ocsStatusCode);
+    }
+
+    // =========================================================================
+    // La synchro d'annuaire de l'instance
+    // =========================================================================
+
+    /**
+     * Active une app de l'instance. **Idempotent** — mesuré le 2026-08-17 sur
+     * `nc-spike` : réémise sur une app déjà active, l'API rend `100 OK`, pas un
+     * refus. Rejouer la configuration est donc une opération normale.
+     */
+    public function enableApp(string $appId): NextcloudResult
+    {
+        return $this->ocsCall(
+            'POST',
+            'ocs/v1.php/cloud/apps/'.rawurlencode($appId),
+            sprintf('activation de l\'app « %s » sur l\'instance', $appId),
+        );
+    }
+
+    /**
+     * Crée une configuration de synchro d'annuaire VIDE et rend son identifiant
+     * dans `data['configID']` (mesuré : `s01`, `s02`, …).
+     *
+     * **L'API N'A PAS D'ENDPOINT DE LISTE** — mesuré : `GET` sur la collection
+     * rend `405`. L'existant se découvre donc en sondant les identifiants un à un
+     * ({@see readLdapConfig()}), et c'est la seule voie : créer sans chercher
+     * fabriquerait une configuration de plus à chaque exécution.
+     */
+    public function createLdapConfig(): NextcloudResult
+    {
+        return $this->ocsCall(
+            'POST',
+            self::LDAP_CONFIG_PATH,
+            'création d\'une configuration de synchro d\'annuaire',
+        );
+    }
+
+    /**
+     * Relit une configuration de synchro d'annuaire.
+     *
+     * Un identifiant inconnu rend l'échec `Absent` (OCS `404`, « Config ID not
+     * found » — mesuré) : c'est ce qui sert de borne au sondage, jamais une
+     * erreur.
+     *
+     * **Le mot de passe du compte de lecture est rendu MASQUÉ** (`***`) : il est
+     * inobservable, et aucune comparaison ne peut porter sur lui.
+     */
+    public function readLdapConfig(string $configId): NextcloudResult
+    {
+        return $this->ocsCall(
+            'GET',
+            self::LDAP_CONFIG_PATH.'/'.rawurlencode($configId),
+            sprintf('lecture de la configuration de synchro « %s »', $configId),
+        );
+    }
+
+    /**
+     * Écrit des clés dans une configuration de synchro d'annuaire.
+     *
+     * **L'instance NE VALIDE RIEN à l'écriture** (mesuré : une configuration sans
+     * filtre de connexion est acceptée `200`, et ne se révèle invalide qu'à
+     * l'usage). L'écriture qui réussit ne prouve donc pas que la liaison
+     * fonctionne — c'est l'appelant qui doit le vérifier ensuite, en cherchant une
+     * personne réelle.
+     *
+     * @param  array<string, string>  $keys
+     */
+    public function writeLdapConfig(string $configId, array $keys): NextcloudResult
+    {
+        return $this->ocsCall(
+            'PUT',
+            self::LDAP_CONFIG_PATH.'/'.rawurlencode($configId),
+            sprintf('écriture de la configuration de synchro « %s »', $configId),
+            ['configData' => $keys],
+        );
     }
 
     // =========================================================================

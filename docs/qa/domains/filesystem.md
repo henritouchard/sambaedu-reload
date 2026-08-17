@@ -5330,6 +5330,152 @@ et `agent/**` **inchangés**, aucune release d'agent publiée.)*
 
 ---
 
+## Nextcloud — rattacher l'instance à l'annuaire
+
+**Ce que ce chapitre couvre.** `php artisan nextcloud:configure-ldap` : ce qu'il
+écrit sur l'instance, ce qu'il refuse d'écrire, et ce qu'il vérifie après avoir
+écrit.
+
+**Pourquoi cette commande existe, et il faut l'avoir en tête pour valider.** SE5
+**n'invente jamais de mot de passe**. Un compte Nextcloud créé avec un aléa est un
+compte auquel personne ne peut se connecter, et il ferait passer un compteur au
+vert pour rien. Le mot de passe n'est en main qu'à la **création** d'un utilisateur
+SE5. Pour tout le stock existant — la population importée depuis l'annuaire —
+`nextcloud:provision` **rapporte** les comptes absents et n'en fabrique aucun. Le
+seul chemin qui reste est que l'instance lise l'annuaire elle-même, et c'est ce que
+cette commande règle.
+
+**Ce qu'il faut avoir sous la main** : un accès `root` au serveur, la capacité
+« Accès Nextcloud » active avec une connexion complète, et **le login d'un compte
+d'annuaire qui n'a PAS de compte local sur l'instance** (voir le piège de
+l'homonyme en `NC-LDAP-4`).
+
+**Un mot sur ce que la commande NE fait pas.** Elle ne synchronise **aucun groupe**,
+et elle remet les réglages de groupe à vide. Un groupe visible dans Nextcloud est un
+groupe sur lequel n'importe qui peut accrocher un partage Nextcloud, donc un second
+plan de permissions sur une zone que Samba arbitre déjà. Chercher les classes ou les
+équipes dans la liste des groupes de l'instance après ce scénario est une perte de
+temps : leur absence est le résultat attendu.
+
+### 1. Les refus — rien n'est écrit
+
+- [ ] **NC-LDAP-1a** — capacité « Accès Nextcloud » éteinte : la commande refuse,
+      rend `2`, et **aucun appel n'est émis** vers l'instance. Vérifier côté
+      instance que l'app de synchro d'annuaire est restée désactivée.
+- [ ] **NC-LDAP-1b** — vider `ldap_admin_passwd` dans `/etc/sambaedu/sambaedu.conf`,
+      relancer : le refus **nomme la clé manquante** et rend `2`. Poser une synchro
+      incomplète activerait une liaison morte que l'instance annoncerait « active ».
+      Restaurer la valeur ensuite.
+- [ ] **NC-LDAP-1c** — `--dry-run` affiche le tableau des réglages calculés et
+      **n'émet aucun appel**, pas même l'activation de l'app. Vérifier que l'app est
+      restée désactivée. La commande le dit elle-même : elle ne relit pas l'état de
+      l'instance, parce que le relire exigerait déjà d'écrire.
+
+### 2. Rien n'est saisi, tout est dérivé
+
+- [ ] **NC-LDAP-2a** — le tableau du `--dry-run` doit reprendre, **sans qu'on ait
+      rien tapé** : l'URL et le port de `ldap_url` / `ldap_port`, le compte de
+      lecture en `<ldap_admin_name>@<domain>`, le DN de base de `ldap_base_dn`, et le
+      conteneur des personnes en `<people_rdn>,<ldap_base_dn>`. Comparer ligne à
+      ligne avec le fichier de configuration.
+- [ ] **NC-LDAP-2b** — la ligne « identifiant interne » doit valoir
+      `sAMAccountName`. **C'est la clé la plus importante du lot** : sans elle,
+      l'instance choisit l'identifiant interne toute seule, tandis que la création
+      d'un utilisateur SE5 envoie le login — une même personne finirait avec deux
+      comptes, un local et un synchronisé.
+- [ ] **NC-LDAP-2c** — la ligne « certificat non vérifiable » doit valoir
+      **`refusé`** sans option. L'accepter est un geste, jamais un défaut.
+
+### 3. L'écriture, et son idempotence
+
+- [ ] **NC-LDAP-3a** — sur une instance vierge, la commande active l'app, crée une
+      configuration (`s01`), l'écrit, et annonce que l'instance lit désormais
+      l'annuaire.
+- [ ] **NC-LDAP-3b** — **face à un annuaire Samba, il faut `--trust-self-signed`**.
+      Sans lui, l'écriture réussit quand même, la configuration se dit active, et
+      **aucune personne n'apparaît** : l'échec de liaison est silencieux côté API.
+      C'est exactement pourquoi la commande vérifie après avoir écrit — dérouler
+      `NC-LDAP-4b` pour le constater.
+- [ ] **NC-LDAP-3c** — **rejouer la commande à l'identique rend « Déjà conforme :
+      […] Rien à écrire »**. Vérifier qu'aucune seconde configuration (`s02`) n'est
+      apparue côté instance.
+- [ ] **NC-LDAP-3d** — modifier une valeur côté instance (par son écran
+      d'administration), relancer **sans** `--force` : la commande refuse, rend `2`,
+      et affiche un **tableau d'écarts** clé par clé. Vérifier qu'elle n'a rien
+      réécrit.
+- [ ] **NC-LDAP-3e** — relancer avec `--force` : la configuration **existante** est
+      réécrite. Vérifier qu'aucune configuration supplémentaire n'a été créée.
+- [ ] **NC-LDAP-3f** — le mot de passe du compte de lecture **n'apparaît nulle
+      part** : ni dans le tableau, ni dans le tableau d'écarts, ni dans le journal du
+      serveur.
+- [ ] **NC-LDAP-3g** — aucun groupe de l'annuaire n'apparaît côté instance, et les
+      réglages de groupe y sont **vides** (pas simplement « inchangés »).
+
+### 4. La vérification — le cœur du scénario
+
+> **L'écriture qui réussit ne prouve RIEN.** L'instance ne valide pas à l'écriture,
+> et une liaison refusée est silencieuse. Ces cases sont les seules qui constatent
+> quelque chose.
+
+- [ ] **NC-LDAP-4a** — la commande finit sur « Vérifié : l'instance connaît
+      « *login* » par l'annuaire » et rend `0`. Se connecter ensuite à l'instance
+      **avec ce compte et son mot de passe AD** : la connexion doit aboutir.
+- [ ] **NC-LDAP-4b** — **la démonstration du certificat.** Retirer
+      `--trust-self-signed`, forcer la réécriture, et constater que la commande rend
+      **`1`** avec « LA CONFIGURATION EST POSÉE MAIS NE SERT À RIEN ». C'est la
+      valeur du geste de vérification : sans elle, la commande aurait annoncé un
+      succès sur une liaison morte.
+- [ ] **NC-LDAP-4c** — **LE PIÈGE DE L'HOMONYME.** Sur une instance dont le compte
+      d'administration s'appelle `admin` et dont l'annuaire porte aussi un `admin`,
+      l'instance répond par son compte **local** — ce qui ne prouve rien. La commande
+      doit alors soit passer au candidat suivant, soit dire « LIAISON NON PROUVÉE ».
+      Vérifier que le login retenu dans le message final est bien servi **par
+      l'annuaire**, jamais par la base locale.
+- [ ] **NC-LDAP-4d** — `--probe=<login>` impose le compte cherché. Vérifier dans le
+      message final que c'est bien celui-là qui a été interrogé.
+- [ ] **NC-LDAP-4e** — sur une instance sans aucun compte d'annuaire actif en base,
+      la commande **déclare la vérification non faite** au lieu de prétendre avoir
+      vérifié.
+
+### 5. Ce que la commande ne défait pas — à constater, pas à corriger
+
+- [ ] **NC-LDAP-5a** — **si une configuration plus large a déjà tourné sur cette
+      instance** (recherche sur la racine de l'annuaire au lieu du conteneur des
+      personnes), les comptes qu'elle a rattachés **restent connus de l'instance**
+      après le resserrage : comptes de service, et l'homonyme suffixé du compte
+      d'administration (observé : `admin_2930`). Le resserrage est **préventif, pas
+      curatif** — l'instance tient sa propre table de correspondance et ne
+      dé-rattache rien. Consigner ce qui subsiste ; ne pas le traiter comme une
+      régression de la commande.
+
+### 6. Après le rattachement — la boucle avec le provisionnement
+
+- [ ] **NC-LDAP-6a** — rejouer `php artisan nextcloud:provision --users-only
+      --dry-run` : le compteur `introuvables` doit **chuter**, et les comptes
+      précédemment introuvables doivent apparaître comme **adoptés**.
+- [ ] **NC-LDAP-6b** — pour un compte encore introuvable, vérifier que le message du
+      rapport renvoie vers **`php artisan nextcloud:configure-ldap`** et affirme
+      qu'un changement de mot de passe SE5 **ne le créera pas**. L'ancien message
+      annonçait le contraire, et envoyait l'exploitant vers un geste sans effet.
+
+### Nettoyage
+
+- [ ] **NC-LDAP-7** — pour rendre l'instance à son état d'avant, supprimer la
+      configuration de synchro côté instance et désactiver l'app. **Attention** :
+      les comptes déjà rattachés ne disparaissent pas pour autant (voir
+      **NC-LDAP-5a**).
+
+> **Aucune de ces cases n'a été cochée sur une instance d'établissement.** La
+> commande a été éprouvée sur l'instance de sondage locale, contre un annuaire
+> Samba de développement. Le valideur qui déroule ce chapitre est le **premier** à
+> le faire hors de ce cadre : consigner chaque écart comme un résultat, pas comme
+> une régression.
+
+*Ajouté le 2026-08-17 — chapitre nouveau ; aucun scénario existant n'a été
+renuméroté ni réécrit.*
+
+---
+
 ## Checklist rapide — le plan de fichiers
 
 **Un seul parcours, de bout en bout.** À dérouler quand on veut prouver que le
@@ -5423,3 +5569,22 @@ utilisateur (cf. « ⚠️ Prérequis matériel » de la section « Story 63.4 �
 
 *Ajouté le 2026-08-16 — parcours transversal ; aucun scénario existant n'a été
 renuméroté ni réécrit.*
+
+### 9. Les comptes du cloud existent-ils seulement ?
+
+> À dérouler **uniquement** sur une instance dont un espace est servi par
+> Nextcloud. Sans ces cases, tout le reste du parcours peut passer au vert sur une
+> instance où **personne ne peut se connecter au cloud** : SE5 n'y crée aucun compte
+> pour la population importée depuis l'annuaire, par conception.
+
+- [ ] l'instance lit l'annuaire, et **une personne réelle y est trouvée par
+      l'annuaire** → **NC-LDAP-4a**
+- [ ] la liaison est **prouvée**, pas déduite d'une écriture réussie →
+      **NC-LDAP-4b**, **NC-LDAP-4c**
+- [ ] rejouer le rattachement **n'écrit rien** → **NC-LDAP-3c**
+- [ ] aucun groupe de l'annuaire n'est apparu côté instance → **NC-LDAP-3g**
+- [ ] le compteur `introuvables` du provisionnement a **chuté** →
+      **NC-LDAP-6a**
+
+*Ajouté le 2026-08-17 — sous-section nouvelle ; les huit précédentes sont
+inchangées.*

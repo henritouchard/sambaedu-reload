@@ -127,6 +127,21 @@ final class NextcloudProvisioningReport
      * combler le trou (un compte créé avec un aléa est un compte auquel personne
      * ne peut se connecter, et il ferait passer le compteur au vert).
      *
+     * ---------------------------------------------------------------------------
+     * **LA MARCHE À SUIVRE A ÉTÉ CORRIGÉE LE 2026-08-17, ELLE ÉTAIT FAUSSE.** Elle
+     * annonçait que le compte « se créera au prochain changement de mot de passe
+     * SE5 ». C'est vrai à la CRÉATION d'un utilisateur SE5, faux pour un compte du
+     * STOCK : {@see NextcloudUserProvisioner::propagatePassword()} sort
+     * immédiatement quand la colonne d'identité est vide — sans identité connue, on
+     * ne sait pas quel compte mettre à jour. Le message envoyait donc l'exploitant
+     * vers un geste sans aucun effet, indéfiniment.
+     *
+     * La vraie réponse est le rattachement de l'instance à l'annuaire
+     * ({@see \App\Console\Commands\NextcloudConfigureLdapCommand}), et elle est
+     * nommée par sa signature de commande — un rapport n'a pas à dépendre d'une
+     * classe de commande.
+     * ---------------------------------------------------------------------------
+     *
      * `$discardedCandidates` : les comptes que l'autocomplétion a rendus sans
      * qu'aucun soit l'homonyme du login. SE5 n'en adopte AUCUN (adopter un
      * quasi-homonyme reviendrait à écraser plus tard le mot de passe d'un compte
@@ -140,8 +155,9 @@ final class NextcloudProvisioningReport
     {
         $this->userCounters['introuvables']++;
 
-        $detail = 'aucun compte Nextcloud pour ce login : il se créera au prochain '
-            . 'changement de mot de passe SE5, ou se déclarera côté instance (synchro LDAP / création manuelle).';
+        $detail = 'aucun compte Nextcloud pour ce login : rattachez l\'instance à l\'annuaire '
+            . '(php artisan nextcloud:configure-ldap), ou créez le compte côté instance. '
+            . 'Un changement de mot de passe SE5 ne le créera PAS.';
 
         if ($discardedCandidates !== []) {
             $detail .= ' L\'instance a proposé des comptes proches, aucun ne porte ce login — non adoptés : '

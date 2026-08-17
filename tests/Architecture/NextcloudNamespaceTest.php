@@ -54,6 +54,13 @@ class NextcloudNamespaceTest extends TestCase
         // partage pour dépanner » arriverait. (L'enum de mode figurait ici jusqu'au
         // recadrage du 2026-08-08 ; il n'existe plus.)
         'app/Console/Commands/NextcloudIdentityCommand.php',
+        // Le rattachement de l'instance à l'annuaire (2026-08-17). Il est tenu par
+        // les mêmes règles, et par la plus importante des trois : c'est
+        // TYPIQUEMENT ici qu'un `docker exec … occ` se serait glissé, parce que
+        // c'est ainsi que le geste se faisait à la main. Il n'y en a pas — la
+        // commande parle à l'API, ce qui la rend falsifiable sans réseau et
+        // utilisable sur une instance qui n'est pas sur cette machine.
+        'app/Console/Commands/NextcloudConfigureLdapCommand.php',
     ];
 
     /** @var array<string, string> */
@@ -147,9 +154,10 @@ class NextcloudNamespaceTest extends TestCase
         // résultat, échec, action de montage — plus, depuis 61.2, le rattachement
         // d'identité et le vérificateur de connexion. (La configuration, le client
         // et la sonde du compte porteur ont été retirés le 2026-08-08 : le seuil
-        // baisse de 14 à 13, il ne se relâche pas.)
+        // baisse de 14 à 13, il ne se relâche pas. Il remonte à 14 le 2026-08-17
+        // avec la carte de réglages de synchro d'annuaire.)
         self::assertGreaterThanOrEqual(
-            13,
+            14,
             $inspected,
             'la garde doit inspecter le namespace RÉEL de la story',
         );
@@ -234,11 +242,23 @@ class NextcloudNamespaceTest extends TestCase
             '__construct',
             'autocompleteUser',
             'createGlobalStorage',
+            // 2026-08-17 — LES QUATRE MÉTHODES DE LA SYNCHRO D'ANNUAIRE, énumérées
+            // ici pour la même raison que le plafond de 61.3 : leur ajout doit être
+            // un geste. Elles n'écrivent AUCUN droit et ne créent AUCUN objet de
+            // partage — elles disent à l'instance de LIRE l'annuaire que SE5
+            // compile déjà. C'est le seul chemin par lequel les comptes du stock
+            // peuvent exister côté Nextcloud, puisque le provisionnement refuse par
+            // conception d'inventer un mot de passe. Ce qu'elles ne configurent
+            // PAS — les groupes — est motivé dans NextcloudLdapSyncSettings, et
+            // épinglé par le test de cette classe-là.
+            'createLdapConfig',
             'createUser',
             'deleteGlobalStorage',
+            'enableApp',
             'getUser',
             'listGlobalStorages',
             'probe',
+            'readLdapConfig',
             // Story 61.3 — LA SEULE MÉTHODE QUI S'AJOUTE, et elle est énumérée ici
             // pour que son ajout soit un GESTE, pas une dérive. Ce n'est pas un
             // droit : c'est le budget d'une PERSONNE, et l'état par-utilisateur est
@@ -247,6 +267,7 @@ class NextcloudNamespaceTest extends TestCase
             'setUserPassword',
             'setUserQuota',
             'updateGlobalStorage',
+            'writeLdapConfig',
         ], $methods, 'la surface du client est FERMÉE : ni partage, ni groupe, ni dossier d\'équipe');
     }
 

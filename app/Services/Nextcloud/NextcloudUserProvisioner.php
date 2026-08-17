@@ -33,6 +33,16 @@ use Illuminate\Support\Facades\Log;
  * passe n'est en main qu'à deux moments : la création SE5 et le changement de mot
  * de passe — et ce sont exactement les deux crochets de cette classe.
  *
+ * **ET SEUL LE PREMIER DES DEUX CRÉE.** {@see propagatePassword()} exige une
+ * identité DÉJÀ connue et sort sans rien faire quand la colonne est vide : un
+ * changement de mot de passe ne comble donc AUCUN trou du stock. C'est une
+ * propriété volontaire — sans identité connue, on ne sait pas quel compte mettre à
+ * jour, et deviner écrirait à l'aveugle. Mais elle a été mal dite pendant
+ * longtemps : le rapport annonçait à l'exploitant que le compte « se créera au
+ * prochain changement de mot de passe », ce qui était faux et sans terme
+ * (rectifié le 2026-08-17). Le seul chemin pour le stock est que l'instance lise
+ * l'annuaire — `php artisan nextcloud:configure-ldap`.
+ *
  * **Le cache d'identité (`users.nextcloud_user_id`) est un CACHE.** L'identité
  * Nextcloud n'est pas nécessairement le login SE5 ; SE4 la cachait dans
  * l'attribut AD `Id NC` (`cloud.inc.php:702`), ce que SE5 ne peut pas reprendre —
