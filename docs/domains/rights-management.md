@@ -10,7 +10,7 @@
 > - **ce qu'un membre d'un groupe peut faire des fichiers** de ce groupe :
 >   c'est un modèle entièrement distinct, décrit dans
 >   [`groupes-roles.md`](groupes-roles.md) et
->   [`filesystem.md`](filesystem.md).
+>   [`../filesystem/`](../filesystem/README.md).
 >
 > Les deux modèles ne se recouvrent pas et n'ont pas la même autorité. Un
 > professeur peut avoir tous les droits sur les fichiers de sa classe sans

@@ -386,7 +386,7 @@ Sous-espaces par élève visibles du prof. Explicitement reporté « 34.x » (le
 
 ### 8.9 Sync cloud Nextcloud/Seafile — ✅ Natif (mécanisme changé)
 
-`partages/rep_cloud.php` + `includes/cloud.inc.php` (réplication du modèle de partages classes vers Nextcloud/Seafile, lecteur S:). SE5 ne réplique plus : un espace peut avoir un **produit cloud pour autorité**, et les droits y sont écrits directement par une implémentation du contrat de backend (`app/Services/Filesystem/Backend/Nextcloud/`, `.../OpenCloud/`). Un seul produit cloud est actif à la fois, et un espace servi par lui n'a **aucune lettre de lecteur** : l'accès se fait au navigateur ou par le client natif de l'éditeur. Voir [`domains/filesystem.md`](domains/filesystem.md).
+`partages/rep_cloud.php` + `includes/cloud.inc.php` (réplication du modèle de partages classes vers Nextcloud/Seafile, lecteur S:). SE5 ne réplique plus : un espace peut avoir un **produit cloud pour autorité**, et les droits y sont écrits directement par une implémentation du contrat de backend (`app/Services/Filesystem/Backend/Nextcloud/`, `.../OpenCloud/`). Un seul produit cloud est actif à la fois, et un espace servi par lui n'a **aucune lettre de lecteur** : l'accès se fait au navigateur ou par le client natif de l'éditeur. Voir [`filesystem/`](filesystem/README.md).
 
 ---
 

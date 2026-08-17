@@ -244,7 +244,7 @@ Au sommet de l'onglet : « Cette interface remplace l'ancienne page de gestion d
 
 ## Références
 
-- [Quotas XFS](filesystem.md) — même patron d'appel système sous `sudo`
+- [Quotas XFS](../filesystem/quotas-et-corbeille.md) — même patron d'appel système sous `sudo`
 - [Checklist de pré-production](../qa/domains/printers.md)
 
 ---

@@ -84,7 +84,7 @@ elle décrit un état qui n'a plus cours.
 | **Groupes, rôles & types** | `app/Models/Group*`, `app/Support/RoleCatalog.php` | [`domains/groupes-roles.md`](domains/groupes-roles.md) — le vocabulaire de l'appartenance | [qa](qa/domains/rights-management.md) | 🟡 |
 | **Configuration des postes** | `app/Services/AppCustomization/`, `Overlay/`, `Wallpaper/` | [`domains/app-customizations.md`](domains/app-customizations.md) | — | 🟡 |
 | **Impression** | `app/Services/Print/` | [`domains/printers.md`](domains/printers.md) | [qa](qa/domains/printers.md) | 🟡 |
-| **Plan de fichiers, droits & quotas** | `app/Services/Filesystem/`, `app/Services/Nextcloud/`, `app/Services/OpenCloud/` | [`domains/filesystem.md`](domains/filesystem.md) — où vivent les deux espaces, le cloud unique, ce que le poste reçoit, le contrat d'écriture des droits, plafond et corbeille ; [`audit-arborescence-acls.md`](audit-arborescence-acls.md) | [qa](qa/domains/filesystem.md) | 🟡 |
+| **Plan de fichiers, droits & quotas** | `app/Services/Filesystem/`, `app/Services/Nextcloud/`, `app/Services/OpenCloud/` | [`filesystem/`](filesystem/README.md) — 7 fiches ; [`audit-arborescence-acls.md`](audit-arborescence-acls.md) | [qa](qa/domains/filesystem.md) | ✅ |
 | **Déploiement applicatif** | `app/Wpkg/`, `app/Services/AppStore/`, `AppProfile/` | [`wpkg-deploy/architecture.md`](wpkg-deploy/architecture.md) | [qa](qa/domains/wpkg-deploy.md) | 🟡 |
 | **Lien amont controlHub** | `app/Services/ControlHub/` | [`api-controlhub-workstation-groups.md`](api-controlhub-workstation-groups.md) | [qa](qa/domains/controlhub-contract.md) | 🟡 |
 | **GPO & SYSVOL** | `app/Gpo/`, `app/Services/Gpo/` | *dette :* [`tech-debt-gpo.md`](tech-debt-gpo.md) — **canal éteint**, voir ci-dessous | [qa](qa/domains/gpo.md) | ⚪ |
@@ -140,7 +140,12 @@ comparaison legacy ↔ SE5).
    accrétion successive ; l'index est à reconstruire.
 6. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
    décisions des mécanismes : ils sont à passer au gabarit quand on les rouvre.
-   Trois d'entre eux méritent une note particulière :
+   Quelques notes particulières :
+   - le **plan de fichiers** vient d'être passé au gabarit — l'ancienne fiche
+     unique de 890 lignes est éclatée en sept, et la chaîne recette → plan →
+     backend, qui n'était couverte nulle part, l'est désormais. Le domaine reste
+     **en chantier côté code** : l'arbre décrit par recette est peuplé et
+     comparé, mais c'est toujours l'arbre historique qui sert ;
    - **droits & délégations** et **groupes, rôles & types** viennent d'être
      réécrits et se renvoient l'un à l'autre. Ils sont volontairement restés à
      leur emplacement actuel : la première fiche est référencée depuis le code

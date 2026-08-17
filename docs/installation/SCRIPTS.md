@@ -148,7 +148,7 @@ qu'aucun n'est configuré. L'option `--cloud=` est la sortie — voir
 `php artisan help files:adopt-locations`.
 
 > Ce prérequis est **documenté, pas câblé** : `scripts/update.sh` ne le joue pas.
-> Voir [`../domains/filesystem.md`](../domains/filesystem.md) pour le modèle
+> Voir [`../filesystem/`](../filesystem/README.md) pour le modèle
 > complet.
 
 ### Actions effectuées

@@ -7,7 +7,7 @@
 > - **l'accès aux écrans de l'application** — c'est un modèle entièrement
 >   distinct : [`rights-management.md`](rights-management.md) ;
 > - **ce que les droits produisent sur le disque** —
->   [`filesystem.md`](filesystem.md) ;
+>   [`../filesystem/`](../filesystem/README.md) ;
 > - **d'où viennent les groupes** (balayage d'annuaire, import) —
 >   [`../identite/`](../identite/README.md).
 
@@ -235,7 +235,8 @@ arborescence sans demander à personne.
 
 > **Le rôle d'arête n'est pas un niveau d'accès.** Un `member` peut recevoir
 > l'écriture ; le droit se dit ailleurs, en verbes
-> ([`filesystem.md`](filesystem.md)). Renommer les rôles en
+> ([`../filesystem/recettes-et-plan.md`](../filesystem/recettes-et-plan.md)).
+> Renommer les rôles en
 > « contributeur / lecteur » a été examiné puis écarté pour cette raison
 > exacte : ce serait faire croire qu'une façon d'appartenir détermine un droit.
 
@@ -285,7 +286,8 @@ Semis : `GroupRoleSeeder`, `GroupTypeSeeder`.
 
 ## Aller plus loin
 
-- Ce que les droits produisent sur le disque : [`filesystem.md`](filesystem.md)
+- Ce que les droits produisent sur le disque :
+  [`../filesystem/`](../filesystem/README.md)
 - L'autre modèle de droits, celui des écrans :
   [`rights-management.md`](rights-management.md)
 - D'où viennent les groupes : [`../identite/`](../identite/README.md)

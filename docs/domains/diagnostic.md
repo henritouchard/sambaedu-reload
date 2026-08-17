@@ -208,4 +208,4 @@ Tests : `tests/Unit/Doctor/Checks/`.
 - La taxonomie des commandes : [exploitation.md](exploitation.md)
 - Ce que le diagnostic vérifie, domaine par domaine :
   [`../auth/`](../auth/README.md) · [`../ipxe/`](../ipxe/README.md) ·
-  [filesystem.md](filesystem.md)
+  [`../filesystem/`](../filesystem/README.md)
