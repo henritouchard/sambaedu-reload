@@ -2560,6 +2560,30 @@ L'arbre de classe (`H:`) **n'est PAS monté** : le partage SMB de la zone
 
 ### 61.1-3 — Les comptes utilisateurs
 
+> **⚠️ COMPLÉTÉ le 2026-08-17 — ces scénarios restent valides, mais deux de leurs
+> gestes ont changé de porte.**
+>
+> **① « Une instance à synchro LDAP » n'est plus un donné, c'est un geste.**
+> `61.1-3a` suppose une instance qui lit déjà l'annuaire, sans dire comment elle en
+> est arrivée là — c'était un réglage manuel, écran par écran. Il se pose désormais
+> par `php artisan nextcloud:configure-ldap`, et le chapitre
+> **« Nextcloud — rattacher l'instance à l'annuaire »** en porte les attendus. Un
+> valideur qui tombe sur un compteur `introuvables` non nul en `61.1-3b` doit y
+> aller : c'est la seule réponse pour la population importée depuis l'annuaire.
+>
+> **② « Désactiver la capacité Accès Nextcloud » (`61.1-3g`) ne se fait plus par un
+> interrupteur.** Cette capacité est **dérivée** de la décision d'emplacement depuis
+> l'Epic 63 : on l'éteint en portant le cloud actif à **« Aucun »** dans l'onglet
+> « Emplacements et cloud », ce qui exige au préalable que les DEUX espaces soient
+> sur le serveur de fichiers. L'attendu du scénario — aucun appel émis — est
+> inchangé ; seul le chemin pour l'atteindre a bougé.
+>
+> **③ Attention à `61.1-3f`.** La propagation du mot de passe n'atteint que les
+> comptes dont l'identité est **déjà connue de SE5** (colonne
+> `users.nextcloud_user_id`). L'enchaînement écrit ici est correct parce que
+> `61.1-3e` vient de créer le compte. **Ne pas généraliser** : sur un compte du
+> stock, changer le mot de passe ne crée rien et ne propage rien.
+
 - [ ] **61.1-3a** — `php artisan nextcloud:provision --users-only` sur une instance
   **à synchro LDAP** : compteur `adoptés` = population AD active, `créés` = 0,
   `introuvables` = 0.
