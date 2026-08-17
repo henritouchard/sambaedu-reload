@@ -89,10 +89,10 @@ existante mais **périmée** — elle décrit un état qui n'a plus cours.
 | **GPO & SYSVOL** | `app/Gpo/`, `app/Services/Gpo/` | *dette :* [`tech-debt-gpo.md`](tech-debt-gpo.md) | [qa](qa/domains/gpo.md) | 🔴 |
 | **Authentification & SSO** | `app/Auth/` (V1, OIDC, fédéré), `app/OidcWitness/` | [`auth/`](auth/README.md) — 5 fiches | [qa](qa/domains/auth.md), [qa](qa/domains/federated-login.md) | ✅ |
 | **Installation de postes (iPXE)** | `app/Ipxe/` | [`ipxe/`](ipxe/README.md) — 6 fiches | [qa](qa/domains/ipxe.md) | ✅ |
-| **Extensions** | `app/Services/Extensions/`, `extensions/` | — | [qa](qa/domains/extensions.md) | 🔴 |
+| **Extensions** | `app/Services/Extensions/`, `extensions/` | [`extensions/`](extensions/README.md) — 5 fiches | [qa](qa/domains/extensions.md) | ✅ |
 | **Réseau (DHCP/DNS)** | `app/Services/Network/`, `scripts/system/` | — | [qa](qa/domains/network.md) | 🔴 |
 | **Scripts de session** | `app/ScriptsOs/` | — | — | 🔴 |
-| **Diagnostic d'instance** | `app/Doctor/` | — | — | 🔴 |
+| **Diagnostic d'instance** | `app/Doctor/` | [`domains/diagnostic.md`](domains/diagnostic.md) | — | 🟡 |
 | **Exploitation & tâches** | `app/Console/Commands/`, `app/Jobs/` | [`domains/exploitation.md`](domains/exploitation.md) + `php artisan help` | — | 🟡 |
 
 **Documents transverses** — [`features-se4-SE5.md`](features-se4-SE5.md) (état du
@@ -126,8 +126,10 @@ comparaison legacy ↔ SE5).
 **Ensuite ce qui manque** (🔴), par volume de code non couvert :
 
 2. **GPO & SYSVOL** — 24 fichiers, documentés seulement par un registre de dette.
-3. **Diagnostic d'instance** — 22 fichiers, aucune trace, pas même une checklist.
-4. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
+   Le domaine est à moitié porté : plusieurs méthodes d'écriture sont des
+   coquilles vides, et des contournements vers SE4 subsistent. Ce qu'il lui faut
+   n'est pas une fiche de référence mais un **état des lieux de portage**.
+3. **Groupes, rôles et types de groupe** — le modèle n'a **aucune fiche de
    référence**. Ce qu'il en reste d'écrit est réparti sans index : les décisions
    vivantes sont dans le code (rôle porté par l'arête user↔groupe, type de groupe
    fermé par la déclaration d'un rôle, recette d'arborescence accrochée à un
@@ -136,17 +138,17 @@ comparaison legacy ↔ SE5).
    [`archive/group-model-multivertical-orientation.md`](archive/group-model-multivertical-orientation.md)
    et son entrée d'[`archive/README.md`](archive/README.md). Le domaine est à
    ouvrir au gabarit.
-5. **Extensions** (14 fichiers), **réseau** (10) et **scripts de session** (11) —
+4. **Réseau (DHCP/DNS)** (10 fichiers) et **scripts de session** (11) —
    checklist de pré-production au mieux.
 
 **Enfin l'entretien :**
 
-7. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
+5. **Documentation d'API (Swagger)** — périmée : le canal de communication amont a
    beaucoup évolué depuis sa dernière génération, et un seul contrôleur du dépôt
    porte encore des annotations. À **refaire**, pas à rapiécer.
-8. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
+6. `qa/README.md` — l'entrée `controlhub-contract` y est **dupliquée dix fois** par
    accrétion successive ; l'index est à reconstruire.
-9. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
+7. Les domaines en 🟡 tiennent dans un fichier unique et ne séparent pas les
    décisions des mécanismes : ils sont à passer au gabarit quand on les rouvre.
 
 > **Comment une fiche devient fausse sans qu'on le voie.** Rien ne relie une
