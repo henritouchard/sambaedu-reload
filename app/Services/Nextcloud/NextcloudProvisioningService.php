@@ -245,7 +245,7 @@ final class NextcloudProvisioningService
         NextcloudProvisioningReport $report,
         bool $dryRun,
     ): void {
-        $definitions = ExternalStorageDefinition::canonicalSet($this->smbHost());
+        $definitions = ExternalStorageDefinition::canonicalSet($this->smbHost(), $this->smbDomain());
 
         $listing = $client->listGlobalStorages();
 
@@ -375,6 +375,26 @@ final class NextcloudProvisioningService
         $configured = trim((string) FilePolicyService::globalConfig()['nextcloud_smb_host']);
 
         return $configured !== '' ? $configured : trim((string) config('sambaedu.se4fs_name', ''));
+    }
+
+    /**
+     * Le DOMAINE SMB court de l'annuaire, celui que le client SMB de l'instance
+     * doit présenter à Samba.
+     *
+     * Il n'y a PAS de réglage dédié, et il ne doit pas y en avoir : ce n'est pas
+     * une décision d'exploitation, c'est un fait de l'annuaire auquel le serveur
+     * de fichiers est joint. Le dériver de `sambaedu.conf` est ce qui garantit
+     * que le montage web et le lecteur SMB parlent au même domaine — le motif
+     * exact qui vaut déjà pour l'hôte ({@see smbHost()}).
+     *
+     * Vide quand la configuration n'en porte pas : la définition l'écrit alors
+     * explicitement, et l'instance retombe sur son propre défaut. Ce n'est pas un
+     * état souhaitable — c'est celui qui produisait la panne — mais l'inventer
+     * ici serait pire.
+     */
+    private function smbDomain(): string
+    {
+        return trim(app(\App\Config\SambaEduConfig::class)->ldap()->sambaDomain);
     }
 
     private function mountDetail(ExternalStorageDefinition $definition): string

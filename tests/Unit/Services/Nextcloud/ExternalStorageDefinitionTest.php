@@ -21,14 +21,22 @@ use PHPUnit\Framework\TestCase;
 class ExternalStorageDefinitionTest extends TestCase
 {
     /** Réponse RÉELLE d'un montage « Documents » créé sur `nc-spike`. */
-    private static function measuredRemote(string $mountPoint, string $share, string $root): array
-    {
+    private static function measuredRemote(
+        string $mountPoint,
+        string $share,
+        string $root,
+        ?string $domain = null,
+    ): array {
         return [
             'id' => 3,
             'mountPoint' => '/' . $mountPoint,
             'backend' => 'smb',
             'authMechanism' => 'password::sessioncredentials',
-            'backendOptions' => ['host' => 'se4fs', 'share' => $share, 'root' => $root],
+            // `domain` est ABSENT par défaut : c'est la forme qu'ont les montages
+            // posés avant que SE5 le déclare, et c'est cette forme-là qu'il faut
+            // savoir reconnaître ET réparer.
+            'backendOptions' => ['host' => 'se4fs', 'share' => $share, 'root' => $root]
+                + ($domain === null ? [] : ['domain' => $domain]),
             'priority' => 100,
             'mountOptions' => ['enable_sharing' => false],
             // Avec `sessioncredentials`, le statut est INÉVALUABLE hors session :
@@ -53,6 +61,111 @@ class ExternalStorageDefinitionTest extends TestCase
         self::assertSame('Documents', $set[1]->mountPoint);
         self::assertSame('users', $set[1]->share);
         self::assertSame('$user', $set[1]->root);
+    }
+
+    // =========================================================================
+    // LE DOMAINE SMB — le réglage dont l'absence faisait échouer les deux
+    // montages sur toute instance en conteneur (mesuré le 2026-08-17).
+    // =========================================================================
+
+    #[Test]
+    public function the_canonical_set_carries_the_domain_on_both_mounts(): void
+    {
+        $set = ExternalStorageDefinition::canonicalSet('se4fs', 'localdev');
+
+        self::assertSame('localdev', $set[0]->domain);
+        self::assertSame('localdev', $set[1]->domain);
+    }
+
+    /**
+     * Le domaine PART dans la charge utile. Sans lui, le client SMB du conteneur
+     * présente le `workgroup` par défaut de sa distribution et l'annuaire refuse
+     * l'ouverture de session.
+     */
+    #[Test]
+    public function the_domain_is_written_in_the_payload(): void
+    {
+        $payload = (new ExternalStorageDefinition('Partages', 'se4fs', 'partages', '', 'localdev'))->toPayload();
+
+        self::assertSame('localdev', $payload['backendOptions']['domain']);
+    }
+
+    /**
+     * Déclaré MÊME VIDE : une carte asymétrique laisserait une instance réglée à
+     * la main garder un domaine que SE5 ne déclare plus.
+     */
+    #[Test]
+    public function an_empty_domain_is_still_written(): void
+    {
+        $payload = ExternalStorageDefinition::canonicalSet('se4fs')[0]->toPayload();
+
+        self::assertArrayHasKey('domain', $payload['backendOptions']);
+        self::assertSame('', $payload['backendOptions']['domain']);
+    }
+
+    /**
+     * **LE DOMAINE N'ENTRE PAS DANS LA SIGNATURE D'IDENTITÉ.** Un montage dont
+     * seul le domaine change reste LE MÊME montage : s'il y entrait, le passage
+     * suivant ne reconnaîtrait plus l'existant et en poserait un SECOND, à côté
+     * de celui qui ne marche pas.
+     */
+    #[Test]
+    public function a_mount_lacking_the_domain_keeps_the_same_identity(): void
+    {
+        $definition = new ExternalStorageDefinition('Partages', 'se4fs', 'partages', '', 'localdev');
+        $remoteWithoutDomain = self::measuredRemote('Partages', 'partages', '');
+
+        self::assertSame(
+            $definition->signature(),
+            ExternalStorageDefinition::signatureOf($remoteWithoutDomain),
+        );
+    }
+
+    /**
+     * …ET IL EST RÉPARÉ. C'est cette ligne qui profite aux instances déjà
+     * provisionnées : sans elle, la correction ne vaudrait que pour les neuves,
+     * et les montages en place resteraient inutilisables indéfiniment.
+     */
+    #[Test]
+    public function a_mount_lacking_the_domain_is_a_divergence_to_correct(): void
+    {
+        $definition = new ExternalStorageDefinition('Partages', 'se4fs', 'partages', '', 'localdev');
+
+        self::assertSame(
+            ['domain'],
+            $definition->divergences(self::measuredRemote('Partages', 'partages', '')),
+        );
+    }
+
+    #[Test]
+    public function a_mount_carrying_the_wrong_domain_is_a_divergence(): void
+    {
+        $definition = new ExternalStorageDefinition('Partages', 'se4fs', 'partages', '', 'localdev');
+
+        self::assertSame(
+            ['domain'],
+            $definition->divergences(self::measuredRemote('Partages', 'partages', '', 'WORKGROUP')),
+        );
+    }
+
+    #[Test]
+    public function a_mount_carrying_the_expected_domain_is_conforming(): void
+    {
+        $definition = new ExternalStorageDefinition('Partages', 'se4fs', 'partages', '', 'localdev');
+
+        self::assertSame(
+            [],
+            $definition->divergences(self::measuredRemote('Partages', 'partages', '', 'localdev')),
+        );
+    }
+
+    /** Sans domaine déclaré, un montage sans domaine reste conforme. */
+    #[Test]
+    public function an_instance_without_a_domain_is_not_permanently_diverging(): void
+    {
+        $definition = ExternalStorageDefinition::canonicalSet('se4fs')[0];
+
+        self::assertSame([], $definition->divergences(self::measuredRemote('Partages', 'partages', '')));
     }
 
     #[Test]

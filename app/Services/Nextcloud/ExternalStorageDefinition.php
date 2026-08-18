@@ -76,6 +76,47 @@ final class ExternalStorageDefinition
         public readonly string $share,
         /** Sous-chemin dans le partage. Vide = racine du partage. */
         public readonly string $root = '',
+        /**
+         * DOMAINE SMB — le domaine court de l'annuaire (`localdev`), et non son
+         * nom DNS.
+         *
+         * ---------------------------------------------------------------------
+         * **SANS LUI, LES DEUX MONTAGES ÉCHOUENT SUR TOUTE INSTANCE EN
+         * CONTENEUR.** Mesuré le 2026-08-17 sur `nc-spike` : le client SMB du
+         * conteneur porte le `smb.conf` par défaut de Debian, donc
+         * `workgroup = WORKGROUP`. Faute de domaine dans la définition du
+         * montage, il présente CE domaine-là à l'annuaire :
+         *
+         *     smbclient //se4fs/partages -U 'Administrator%…'
+         *         → NT_STATUS_LOGON_FAILURE
+         *     smbclient //se4fs/partages -W localdev -U 'Administrator%…'
+         *         → le partage se liste
+         *
+         * L'échec est particulièrement coûteux à diagnostiquer : côté
+         * utilisateur, les deux dossiers APPARAISSENT dans « Fichiers » et
+         * refusent de s'ouvrir ; côté journal, l'instance rend
+         * `Icewind\SMB\Exception\ConnectionRefusedException` et
+         * « Storage unauthorized. Unknown error », qui ne nomment ni le domaine
+         * ni l'authentification. Et l'instance MÉMORISE l'indisponibilité :
+         * réparer la configuration ne suffit pas, tant que le cache n'a pas
+         * expiré, plus aucune tentative n'est émise.
+         *
+         * Le serveur de fichiers, lui, ne montrait rien : son propre `smb.conf`
+         * porte le bon workgroup, donc tout fonctionne partout SAUF depuis le
+         * conteneur.
+         * ---------------------------------------------------------------------
+         *
+         * **Il n'entre PAS dans la signature d'identité** ({@see signature()}) :
+         * un montage dont seul le domaine change reste LE MÊME montage, et doit
+         * être corrigé, pas dupliqué. Il entre en revanche dans
+         * {@see divergences()} — c'est ce qui répare les instances déjà
+         * provisionnées sans lui.
+         *
+         * Vide est un état valide (annuaire sans domaine court configuré) : on
+         * l'écrit alors explicitement, plutôt que de laisser l'instance
+         * conserver une valeur que SE5 ne déclare plus.
+         */
+        public readonly string $domain = '',
     ) {
     }
 
@@ -92,11 +133,11 @@ final class ExternalStorageDefinition
      *
      * @return list<self>
      */
-    public static function canonicalSet(string $host): array
+    public static function canonicalSet(string $host, string $domain = ''): array
     {
         return [
-            new self('Partages', $host, self::SHARE_PARTAGES),
-            new self('Documents', $host, self::SHARE_USERS, self::USER_PLACEHOLDER),
+            new self('Partages', $host, self::SHARE_PARTAGES, '', $domain),
+            new self('Documents', $host, self::SHARE_USERS, self::USER_PLACEHOLDER, $domain),
         ];
     }
 
@@ -162,6 +203,17 @@ final class ExternalStorageDefinition
             $divergences[] = 'mountPoint';
         }
 
+        // LE DOMAINE EST DANS LE PÉRIMÈTRE, et c'est ce qui répare les instances
+        // provisionnées avant qu'il soit déclaré : leurs montages sont reconnus
+        // par leur signature (le domaine n'y entre pas), et corrigés au passage
+        // suivant au lieu d'être dupliqués. Sans cette ligne, la correction ne
+        // profiterait qu'aux instances neuves.
+        $options = is_array($remote['backendOptions'] ?? null) ? $remote['backendOptions'] : [];
+
+        if ((string) ($options['domain'] ?? '') !== $this->domain) {
+            $divergences[] = 'domain';
+        }
+
         $users = is_array($remote['applicableUsers'] ?? null) ? $remote['applicableUsers'] : [];
         $groups = is_array($remote['applicableGroups'] ?? null) ? $remote['applicableGroups'] : [];
 
@@ -221,6 +273,10 @@ final class ExternalStorageDefinition
                 'host' => $this->host,
                 'share' => $this->share,
                 'root' => $this->root,
+                // Déclaré MÊME VIDE : c'est une valeur que SE5 gouverne, et une
+                // carte asymétrique laisserait une instance réglée à la main
+                // contredire en silence ce que la définition annonce.
+                'domain' => $this->domain,
             ],
             'applicableUsers' => [],
             'applicableGroups' => [],

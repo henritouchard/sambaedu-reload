@@ -72,14 +72,20 @@ class NextcloudProvisioningServiceTest extends TestCase
     }
 
     /** Corps RÉEL d'un montage, tel que l'instance le rend (slash initial compris). */
-    private static function remoteMount(int $id, string $mountPoint, string $share, string $root): array
-    {
+    private static function remoteMount(
+        int $id,
+        string $mountPoint,
+        string $share,
+        string $root,
+        ?string $domain = null,
+    ): array {
         return [
             'id' => $id,
             'mountPoint' => '/' . $mountPoint,
             'backend' => 'smb',
             'authMechanism' => 'password::sessioncredentials',
-            'backendOptions' => ['host' => 'se4fs', 'share' => $share, 'root' => $root],
+            'backendOptions' => ['host' => 'se4fs', 'share' => $share, 'root' => $root]
+                + ($domain === null ? [] : ['domain' => $domain]),
             'priority' => 100,
             'mountOptions' => ['enable_sharing' => false],
             'status' => 4,
@@ -87,6 +93,126 @@ class NextcloudProvisioningServiceTest extends TestCase
             'userProvided' => false,
             'type' => 'system',
         ];
+    }
+
+    /**
+     * Impose un domaine SMB court à la configuration SambaEdu.
+     *
+     * Mock PARTIEL : rien d'autre n'est simulé. Sur l'hôte de test il n'y a pas de
+     * `/etc/sambaedu/sambaedu.conf`, donc le domaine y vaut la chaîne vide — sans
+     * ce double, aucun test ne pourrait faire diverger l'attendu du relu, et la
+     * régression passerait au vert. C'est exactement la classe de défaut qui a
+     * laissé partir la panne.
+     */
+    private function withSmbDomain(string $domain): void
+    {
+        $ldap = new \App\Config\LdapConfig(
+            url: 'ldaps://localdev.fr', port: 636, baseDn: 'dc=localdev,dc=fr',
+            adminName: 'Administrator', adminPassword: 'x', domain: 'localdev.fr',
+            sambaDomain: $domain, peopleRdn: 'ou=Utilisateurs', groupsRdn: 'ou=Groups',
+            computersRdn: 'ou=computers', parcsRdn: 'ou=Parcs', classesRdn: 'ou=classes',
+            equipesRdn: 'ou=equipes', matieresRdn: 'ou=matieres', coursRdn: 'ou=cours',
+            projetsRdn: 'ou=projets', otherGroupsRdn: 'ou=autres', delegationsRdn: 'ou=delegations',
+            equipementsRdn: 'ou=Materiels', rightsRdn: 'ou=Rights', trashRdn: 'ou=Trash',
+            etablissementsRdn: 'ou=Etablissements', adminRdn: 'ou=Admin',
+        );
+
+        $config = \Mockery::mock(\App\Config\SambaEduConfig::class)->makePartial();
+        $config->shouldReceive('ldap')->andReturn($ldap);
+        $this->app->instance(\App\Config\SambaEduConfig::class, $config);
+    }
+
+    // =====================================================================
+    // LE DOMAINE SMB — sans lui, les deux montages échouent en
+    // authentification sur toute instance en conteneur (mesuré 2026-08-17).
+    // =====================================================================
+
+    /** Le domaine part avec la création, dérivé de la configuration SambaEdu. */
+    #[Test]
+    public function the_created_mounts_carry_the_directory_short_domain(): void
+    {
+        $this->configure();
+        $this->withSmbDomain('localdev');
+
+        Http::fake([
+            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
+            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+                ->push([], 200)->push([], 200)
+                ->push(['id' => 1], 201)->push(['id' => 2], 201),
+        ]);
+
+        $this->service()->run(withUsers: false);
+
+        Http::assertSent(static fn (Request $r): bool => $r->method() === 'POST'
+            && str_ends_with($r->url(), '/globalstorages')
+            && ($r->data()['backendOptions']['domain'] ?? null) === 'localdev');
+    }
+
+    /**
+     * **LE CAS QUI COMPTE** : une instance provisionnée AVANT que le domaine soit
+     * déclaré. Son montage est reconnu par sa signature, mis à jour EN PLACE, et
+     * surtout pas doublé — un second montage à côté du premier laisserait
+     * l'utilisateur devant deux dossiers dont un seul s'ouvre.
+     */
+    #[Test]
+    public function a_mount_provisioned_without_the_domain_is_repaired_in_place(): void
+    {
+        $this->configure();
+        $this->withSmbDomain('localdev');
+
+        $existing = [
+            self::remoteMount(1, 'Partages', 'partages', ''),
+            self::remoteMount(2, 'Documents', 'users', '$user'),
+        ];
+
+        Http::fake([
+            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
+            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+                ->push($existing, 200)->push($existing, 200),
+            self::URL . '/index.php/apps/files_external/globalstorages/1' => Http::response(['id' => 1], 200),
+            self::URL . '/index.php/apps/files_external/globalstorages/2' => Http::response(['id' => 2], 200),
+        ]);
+
+        $report = $this->service()->run(withUsers: false);
+
+        self::assertSame(
+            [NextcloudMountAction::MisAJour->value, NextcloudMountAction::MisAJour->value],
+            array_column($report->mounts(), 'action'),
+        );
+
+        Http::assertSent(static fn (Request $r): bool => $r->method() === 'PUT'
+            && ($r->data()['backendOptions']['domain'] ?? null) === 'localdev');
+
+        // Aucun montage neuf : la réparation ne duplique pas.
+        Http::assertNotSent(static fn (Request $r): bool => $r->method() === 'POST'
+            && str_ends_with($r->url(), '/globalstorages'));
+    }
+
+    /** Domaine déjà conforme : rien n'est réécrit. */
+    #[Test]
+    public function a_mount_already_carrying_the_domain_is_left_alone(): void
+    {
+        $this->configure();
+        $this->withSmbDomain('localdev');
+
+        $existing = [
+            self::remoteMount(1, 'Partages', 'partages', '', 'localdev'),
+            self::remoteMount(2, 'Documents', 'users', '$user', 'localdev'),
+        ];
+
+        Http::fake([
+            '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
+            '*/globalstorages*' => Http::response($existing, 200),
+        ]);
+
+        $report = $this->service()->run(withUsers: false);
+
+        self::assertSame(
+            [NextcloudMountAction::Conforme->value, NextcloudMountAction::Conforme->value],
+            array_column($report->mounts(), 'action'),
+        );
+
+        Http::assertNotSent(static fn (Request $r): bool => in_array($r->method(), ['POST', 'PUT'], true));
     }
 
     // =====================================================================
