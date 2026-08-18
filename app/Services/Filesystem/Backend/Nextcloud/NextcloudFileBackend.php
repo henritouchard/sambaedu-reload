@@ -8,12 +8,14 @@ use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
 use App\Services\Filesystem\Backend\FileBackend;
+use App\Services\Filesystem\Backend\GrantRendering;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeObservation;
 use App\Services\Filesystem\Backend\NodeReconciliation;
 use App\Services\Filesystem\Backend\ObservedGrant;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -1251,4 +1253,19 @@ final class NextcloudFileBackend implements FileBackend
         return InspectionReport::covering($this->name(), $plan, array_map($factory, $plan->nodePaths()));
     }
 
+    /**
+     * Rien à déclarer : les quatre verbes du plan sont quatre bits SÉPARÉS de ce
+     * modèle, et la traduction est une somme. Un octroi vide n'est pas davantage
+     * une limite — il s'écrit en règle à zéro, qui est un état exprimable.
+     *
+     * Le nœud ne change rien : aucun mécanisme de ce modèle ne se pose sur le
+     * dossier pour approcher une découpe.
+     */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering
+    {
+        return GrantRendering::of(
+            $grant->verbs,
+            NextcloudPermissionBits::toVerbs(NextcloudPermissionBits::fromVerbs($grant->verbs)),
+        );
+    }
 }

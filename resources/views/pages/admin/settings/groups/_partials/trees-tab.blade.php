@@ -9,13 +9,14 @@ use App\Exceptions\Filesystem\PlanResolutionException;
 use App\Models\DirectoryTemplate;
 use App\Models\GroupTypeRole;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Backend\FileBackend;
 use App\Services\Filesystem\Backend\FileBackendRegistry;
-use App\Services\Filesystem\Backend\Posix\PosixAclCompiler;
-use App\Services\Filesystem\Backend\Posix\PosixVerbRendering;
+use App\Services\Filesystem\Backend\GrantRendering;
 use App\Services\Filesystem\Plan\FilePlan;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
+use App\Services\Filesystem\FileLocationService;
 use App\Services\Filesystem\PlanStateComparator;
 use App\Services\Filesystem\TreePlanService;
 use App\Support\GroupTypeCatalog;
@@ -47,8 +48,8 @@ use Livewire\Component;
  *     nomment le chemin fautif : on les ATTRAPE et on les MONTRE, jamais on ne
  *     les reformule ;
  *  3. **le backend DÉCLARE** — ce qu'il sait rendre d'une liste de verbes est SA
- *     propriété. L'écran l'interroge (voir {@see self::verbAnalysis()}), il ne
- *     redit pas la règle.
+ *     propriété. L'écran l'interroge par le CONTRAT (voir {@see self::renderingOf()}),
+ *     il ne redit pas la règle et ne nomme aucune autorité.
  *
  * ---------------------------------------------------------------------------
  * **L'ÉTAT DU FORMULAIRE EST LE JSON STOCKÉ.** `$rolesSpec` et `$nodesSpec` sont
@@ -460,8 +461,9 @@ new class extends Component {
                 static fn (string $v): bool => $v === $verb || in_array($v, $current, true),
             ));
 
-            if (! $this->verbIsExpressible($wanted, $verb)) {
-                $this->toastError($this->inexpressibleReason($verb));
+            $rendering = $this->renderingOf($this->nodesSpec[$index] ?? [], $wanted);
+            if ($rendering?->forbids($verb)) {
+                $this->toastError($rendering->inexpressible[$verb]);
 
                 return;
             }
@@ -804,93 +806,28 @@ new class extends Component {
      * **LE POINT D'APPEL UNIQUE — la règle du grisé est la DÉCLARATION DU BACKEND.**
      *
      * Elle n'est PAS recopiée ici, et c'est délibéré : une règle redite dans une
-     * vue est une règle qui divergera (la « signature de défaut » des epics 56-57).
-     * L'écran ne lit que ce que la déclaration expose de NEUTRE — `rendered`,
-     * `missing`, `isEmpty()`, `isExact()`, `isDifferentiated()`. Jamais les deux
-     * champs de MODE, même « juste pour une info-bulle » : ils appartiennent au
-     * mécanisme, pas au plan.
+     * vue est une règle qui divergera. L'écran ne lit que ce que le contrat expose
+     * de NEUTRE, et ne nomme aucune autorité — c'est le registre qui la choisit.
      *
-     * **La matrice DOIT être par backend, et elle ne l'est PAS ENCORE ici — dit
-     * franchement.** Mesuré contre une instance réelle (story 61.3), un plan de
-     * fichiers distant rend NATIVEMENT les quatre verbes dans n'importe quelle
-     * combinaison : y appliquer le grisé du serveur de fichiers historique serait un
-     * mensonge. Or cette méthode interroge la déclaration du serveur historique **par
-     * son nom de classe**, pas via le registre — parce que le contrat `FileBackend`
-     * n'expose AUCUNE déclaration de ce qu'un backend sait rendre en verbes (il n'a
-     * que `quota()`, que l'aperçu interroge bien, lui, par le registre). Étendre le
-     * contrat était hors du périmètre de cette story (zéro diff sous `app/`).
+     * **Le nœud entier part avec la question.** Ce qu'un backend rend d'un octroi
+     * peut dépendre de ses voisins : la condition appartient au backend, l'écran ne
+     * la rejoue pas. D'où la sonde — un nœud jetable qui porte les octrois SAISIS,
+     * sans passer par la validation de chemin de la recette, dont ce n'est pas
+     * l'heure.
      *
-     * C'est **exact aujourd'hui** : seul le serveur de fichiers historique exécute des
-     * arborescences. Ça cessera de l'être dès qu'un autre backend en exécutera une —
-     * et alors ce ne sont PAS une mais **trois** méthodes qui devront passer par le
-     * registre : `verbAnalysis()`, `verbIsExpressible()` et `nodeCarriesRestriction()`,
-     * une fois le contrat étendu. Le Blade, lui, restera intact : il ne connaît que
-     * le résultat et n'a aucune constante qui énumère les combinaisons exprimables.
+     * La sonde distingue seulement la RACINE du reste : c'est la seule propriété de
+     * chemin dont un modèle de permissions ait besoin (un espace et un dossier
+     * n'offrent pas les mêmes rôles), et la seule que l'écran puisse affirmer avant
+     * que le motif ne soit valide.
      *
-     * @param  list<string>  $verbs
-     * @return array{rendered: list<string>, missing: list<string>, empty: bool, exact: bool,
-     *               differentiated: bool, approximated: bool, demoted: bool}
+     * `null` = la question n'a pas pu être posée. On n'affirme alors AUCUNE
+     * dégradation et on ne grise rien : inventer une limite qu'aucune autorité n'a
+     * déclarée serait pire que se taire.
+     *
+     * @param  array<string, mixed>  $node  le nœud TEL QUE SAISI
+     * @param  list<string>  $verbs  les verbes de l'octroi examiné
      */
-    private function verbAnalysis(array $verbs, bool $restrictionAvailable): array
-    {
-        $with = PosixVerbRendering::of($verbs, true);
-        $without = PosixVerbRendering::of($verbs, false);
-        $actual = $restrictionAvailable ? $with : $without;
-
-        // Ce que le backend rend EXACTEMENT quand le nœud peut porter sa
-        // restriction, et pas quand il ne le peut pas : c'est la signature de
-        // l'approximation, dérivée de la déclaration elle-même.
-        $dependsOnNode = $with->isExact() && ! $without->isExact();
-
-        return [
-            'rendered' => $actual->rendered,
-            'missing' => $actual->missing,
-            'empty' => $actual->isEmpty(),
-            'exact' => $actual->isExact(),
-            'differentiated' => $actual->isDifferentiated(),
-            'approximated' => $dependsOnNode && $restrictionAvailable,
-            'demoted' => $dependsOnNode && ! $restrictionAvailable,
-        ];
-    }
-
-    /**
-     * Ce verbe est-il exprimable, INDÉPENDAMMENT de l'état du nœud ?
-     *
-     * Un verbe manquant dans les DEUX régimes du nœud est une limite PERMANENTE du
-     * modèle du backend : on grise. Un verbe manquant dans le seul régime courant
-     * est une DÉGRADATION, propriété du nœud : on saisit et on déclare.
-     *
-     * @param  list<string>  $verbs  la combinaison PROSPECTIVE
-     */
-    private function verbIsExpressible(array $verbs, string $verb): bool
-    {
-        return ! in_array($verb, PosixVerbRendering::of($verbs, true)->missing, true)
-            || ! in_array($verb, PosixVerbRendering::of($verbs, false)->missing, true);
-    }
-
-    /** L'explication du grisé, en vocabulaire MÉTIER : des rôles et des verbes. */
-    private function inexpressibleReason(string $verb): string
-    {
-        if ($verb === PlanGrant::VERB_SUPPRIMER) {
-            return 'La suppression sans la création ne peut pas être rendue par ce partage de fichiers : '
-                . 'le même levier porte les deux, et l\'accorder donnerait aussi la création — un verbe que '
-                . 'vous n\'avez pas donné.';
-        }
-
-        return 'Ce partage de fichiers ne sait pas rendre ce verbe séparément du reste de l\'octroi.';
-    }
-
-    /**
-     * Le nœud peut-il porter la restriction qui APPROCHE « déposer sans effacer » ?
-     *
-     * La décision appartient au backend et elle est SUBTILE (une condition qu'on
-     * oublie) : on l'appelle, on ne la recopie pas. Elle est déjà publique et
-     * statique pour cette raison exacte — le planificateur de traversée la rejoue
-     * lui aussi plutôt que de la redire.
-     *
-     * @param  array<string, mixed>  $node
-     */
-    private function nodeCarriesRestriction(array $node): bool
+    private function renderingOf(array $node, array $verbs): ?GrantRendering
     {
         try {
             $grants = [];
@@ -898,37 +835,45 @@ new class extends Component {
                 if (! is_array($grant) || ! is_string($grant['role'] ?? null)) {
                     continue;
                 }
-                $verbs = array_values(array_filter(
+                $grantVerbs = array_values(array_filter(
                     (array) ($grant['verbs'] ?? []),
                     static fn (mixed $v): bool => is_string($v),
                 ));
-                if ($verbs === []) {
+                if ($grantVerbs === []) {
                     continue;
                 }
 
-                $grants[] = new PlanGrant((string) $grant['role'], PlanSubject::group(1), $verbs, (bool) ($grant['suspendable'] ?? false));
+                $grants[] = new PlanGrant(
+                    (string) $grant['role'],
+                    PlanSubject::group(1),
+                    $grantVerbs,
+                    (bool) ($grant['suspendable'] ?? false),
+                );
             }
 
-            return PosixAclCompiler::restrictsDeletion(new PlanNode(
-                PlanNode::ROOT_PATH,
+            $isRoot = (string) ($node['path'] ?? '') === PlanNode::ROOT_PATH;
+
+            $probe = new PlanNode(
+                $isRoot ? PlanNode::ROOT_PATH : 'sonde',
                 'sonde',
-                // Une nature qui accepte les octrois suspendables : la sonde ne
-                // doit refuser aucun état saisissable, elle ne sert qu'à poser la
-                // question « ce nœud est-il mixte ? ».
+                // Une nature qui accepte les octrois suspendables : la sonde ne doit
+                // refuser aucun état saisissable.
                 PlanNodeNature::Activable,
                 $grants,
-            ));
+            );
+
+            return $this->executingBackend()
+                ->rendering($probe, new PlanGrant('sonde', PlanSubject::group(1), $verbs));
         } catch (\Throwable $e) {
             // Dégradation JOURNALISÉE, jamais muette : une recette dont les octrois
-            // sont illisibles ne doit pas faire disparaître l'écran. Sans réponse
-            // du backend, on n'affirme aucune dégradation — le refus de la
-            // validation dira ce qui ne va pas.
+            // sont illisibles, ou une autorité injoignable, ne doivent pas faire
+            // disparaître l'écran.
             Log::warning(
-                '[Arborescences] Décision de nœud illisible — les notes de dégradation sont omises pour ce nœud.',
+                '[Arborescences] Le backend n\'a pas répondu — les notes de dégradation sont omises pour ce nœud.',
                 ['exception' => $e->getMessage()],
             );
 
-            return true;
+            return null;
         }
     }
 
@@ -995,7 +940,6 @@ new class extends Component {
             $natureValue = is_string($node['nature'] ?? null) ? (string) $node['nature'] : '';
             $nature = PlanNodeNature::tryFrom($natureValue);
             $isPerMember = $nature === PlanNodeNature::ParMembre;
-            $restriction = $this->nodeCarriesRestriction($node);
 
             $grantsByRole = [];
             foreach ((array) ($node['grants'] ?? []) as $grant) {
@@ -1029,7 +973,8 @@ new class extends Component {
                     // composer, il ne réécrit pas un octroi stocké. Elle porte sa
                     // marque « non exprimable » et son explication, et reste
                     // décochable.
-                    $expressible = $this->verbIsExpressible($prospective, $verb);
+                    $prospectiveRendering = $this->renderingOf($node, $prospective);
+                    $expressible = ! ($prospectiveRendering?->forbids($verb) ?? false);
 
                     $cells[] = [
                         'verb' => $verb,
@@ -1037,12 +982,12 @@ new class extends Component {
                         'checked' => $checked,
                         'disabled' => ! $checked && ! $expressible,
                         'inexpressible' => ! $expressible,
-                        'reason' => $expressible ? '' : $this->inexpressibleReason($verb),
+                        'reason' => $expressible ? '' : $prospectiveRendering->inexpressible[$verb],
                     ];
                 }
 
-                $analysis = $verbs === [] ? null : $this->verbAnalysis($verbs, $restriction);
-                if ($analysis !== null && $analysis['demoted']) {
+                $analysis = $verbs === [] ? null : $this->renderingOf($node, $verbs);
+                if ($analysis !== null && $analysis->demoted) {
                     $demoted[] = $this->audienceLabel($roleKey);
                 }
 
@@ -1098,12 +1043,11 @@ new class extends Component {
 
     /**
      * Les notes DÉCLARÉES d'un octroi : ce qui ne sera pas rendu, et ce qui ne le
-     * sera qu'approximativement. Toutes dérivées de la déclaration du backend.
+     * sera qu'approximativement. Toutes dérivées de la réponse du backend.
      *
-     * @param  array<string, mixed>|null  $analysis
      * @return list<string>
      */
-    private function grantNotes(?array $analysis): array
+    private function grantNotes(?GrantRendering $analysis): array
     {
         if ($analysis === null) {
             return [];
@@ -1111,19 +1055,19 @@ new class extends Component {
 
         $notes = [];
 
-        if ($analysis['approximated']) {
+        if ($analysis->approximated) {
             $notes[] = 'Rendu approché : le déposant pourra encore retirer ses propres fichiers.';
         }
 
-        if (! $analysis['exact']) {
+        if (! $analysis->isExact()) {
             $notes[] = sprintf(
                 'Non rendu ici : %s. Ce qui est rendu : %s.',
-                PlanStateComparator::accessLabel($analysis['missing']),
-                $analysis['rendered'] === [] ? 'rien' : PlanStateComparator::accessLabel($analysis['rendered']),
+                PlanStateComparator::accessLabel($analysis->missing),
+                $analysis->rendered === [] ? 'rien' : PlanStateComparator::accessLabel($analysis->rendered),
             );
         }
 
-        if ($analysis['differentiated']) {
+        if ($analysis->differentiated) {
             $notes[] = 'Cette combinaison ne traite pas les dossiers et les fichiers de la même façon : '
                 . 'l\'exécution la pose en deux temps.';
         }
@@ -1536,18 +1480,40 @@ new class extends Component {
     }
 
     /**
-     * Le backend qui EXÉCUTE les arborescences aujourd'hui.
+     * L'autorité qui EXÉCUTERA cette recette : celle que l'instance a décidée pour
+     * l'espace partagé. C'est la même que lit la matérialisation d'un arbre de
+     * classe, et c'est ce qui fait que l'écran annonce les limites de l'autorité
+     * qui écrira — pas celles d'une autre.
      *
-     * Ce que cette ligne bascule RÉELLEMENT : la déclaration de **plafond** de
-     * l'aperçu, qui passe par le registre. Elle ne bascule PAS le grisé des verbes,
-     * qui interroge encore la déclaration du serveur de fichiers historique par son
-     * nom de classe faute d'un point d'extension au contrat — voir le docblock de
-     * `verbAnalysis()`, qui nomme les trois méthodes concernées. Le jour où une
-     * arborescence sera servie ailleurs, changer cette seule ligne ne suffira pas.
+     * Elle gouverne tout ce que l'écran DÉCLARE : le plafond de l'aperçu comme le
+     * grisé des verbes. Une décision illisible retombe sur l'aperçu, qui n'exécute
+     * rien et ne contraint donc rien : se taire plutôt qu'annoncer les limites d'un
+     * mécanisme au hasard.
      */
+    /**
+     * L'autorité, résolue UNE FOIS par requête : la matrice l'interroge une fois
+     * par verbe et par audience, et la reconstruire à chaque case n'ajouterait rien
+     * qu'un coût.
+     */
+    private ?FileBackend $resolvedBackend = null;
+
+    private function executingBackend(): FileBackend
+    {
+        return $this->resolvedBackend ??= app(FileBackendRegistry::class)->get($this->executingBackendName());
+    }
+
     private function executingBackendName(): FileBackendName
     {
-        return FileBackendName::Posix;
+        try {
+            return FileLocationService::current()->espacePartage;
+        } catch (\Throwable $e) {
+            Log::warning(
+                '[Arborescences] Autorité de l\'espace partagé illisible — l\'écran ne déclare aucune limite.',
+                ['exception' => $e->getMessage()],
+            );
+
+            return FileBackendName::Preview;
+        }
     }
 };
 ?>

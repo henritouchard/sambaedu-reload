@@ -8,12 +8,14 @@ use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
 use App\Exceptions\OpenCloud\OpenCloudConfigurationException;
 use App\Services\Filesystem\Backend\FileBackend;
+use App\Services\Filesystem\Backend\GrantRendering;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeObservation;
 use App\Services\Filesystem\Backend\NodeReconciliation;
 use App\Services\Filesystem\Backend\ObservedGrant;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\OpenCloud\OpenCloudConnectionConfig;
 use App\Services\OpenCloud\OpenCloudGraphTransport;
@@ -1852,5 +1854,31 @@ final class OpenCloudFileBackend implements FileBackend
     private function everyObservation(FilePlan $plan, callable $factory): InspectionReport
     {
         return InspectionReport::covering($this->name(), $plan, array_map($factory, $plan->nodePaths()));
+    }
+
+    /**
+     * Le catalogue de rôles, interrogé exactement comme à l'écriture — famille
+     * comprise : la racine du plan est un ESPACE, tout le reste est un élément, et
+     * les deux familles n'offrent pas les mêmes rôles.
+     *
+     * Aucun rôle compatible = l'octroi n'est pas posable, et rien n'y remédiera :
+     * ce modèle n'a pas de mécanisme de nœud qui rattraperait la découpe.
+     */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering
+    {
+        $family = $node->path === PlanNode::ROOT_PATH
+            ? OpenCloudRoleTable::FAMILY_SPACE
+            : OpenCloudRoleTable::FAMILY_ITEM;
+
+        $role = OpenCloudRoleTable::resolve($grant->verbs, $family);
+        $rendered = $role['verbs'] ?? [];
+
+        $inexpressible = [];
+        foreach (array_diff($grant->verbs, $rendered) as $verb) {
+            $inexpressible[$verb] = 'Aucun rôle de ce cloud ne transmet ce verbe sans en accorder un autre '
+                . 'que vous n\'avez pas donné.';
+        }
+
+        return GrantRendering::of($grant->verbs, $rendered, $inexpressible);
     }
 }

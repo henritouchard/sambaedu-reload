@@ -8,6 +8,7 @@ use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
 use App\Services\Filesystem\Acl\AclFormat;
 use App\Services\Filesystem\Backend\FileBackend;
+use App\Services\Filesystem\Backend\GrantRendering;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeObservation;
 use App\Services\Filesystem\Backend\NodeReconciliation;
@@ -866,5 +867,47 @@ final class PosixFileBackend implements FileBackend
     public function location(FilePlan $plan): ?string
     {
         return $this->guard->planRoot($plan);
+    }
+
+    /**
+     * Les deux axes du mécanisme, joués sur cet octroi — la MÊME déclaration que
+     * suit le compilateur, et la MÊME condition de nœud qu'il rejoue.
+     *
+     * Elle est demandée dans les deux régimes du nœud pour distinguer ce qui est
+     * perdu ICI de ce qui ne sera jamais rendu : un verbe absent des deux est une
+     * limite du modèle, un verbe absent du seul régime courant est une propriété du
+     * nœud, donc réparable en changeant les octrois voisins.
+     */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering
+    {
+        $verbs = $grant->verbs;
+
+        $with = PosixVerbRendering::of($verbs, true);
+        $without = PosixVerbRendering::of($verbs, false);
+
+        $available = PosixAclCompiler::restrictsDeletion($node);
+        $actual = $available ? $with : $without;
+
+        $inexpressible = [];
+        foreach (array_intersect($with->missing, $without->missing) as $verb) {
+            $inexpressible[$verb] = $verb === PlanGrant::VERB_SUPPRIMER
+                ? 'La suppression sans la création ne peut pas être rendue par ce partage de fichiers : '
+                    . 'le même levier porte les deux, et l\'accorder donnerait aussi la création — un verbe '
+                    . 'que vous n\'avez pas donné.'
+                : 'Ce partage de fichiers ne sait pas rendre ce verbe séparément du reste de l\'octroi.';
+        }
+
+        // L'exactitude qui dépend du RÉGIME du nœud : c'est la signature du
+        // mécanisme d'approche, dérivée de la déclaration et non redite.
+        $dependsOnNode = $with->isExact() && ! $without->isExact();
+
+        return GrantRendering::of(
+            $verbs,
+            $actual->rendered,
+            $inexpressible,
+            $actual->isDifferentiated(),
+            $dependsOnNode && $available,
+            $dependsOnNode && ! $available,
+        );
     }
 }

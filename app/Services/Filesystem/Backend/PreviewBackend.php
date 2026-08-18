@@ -6,6 +6,7 @@ namespace App\Services\Filesystem\Backend;
 
 use App\Enums\FileBackendName;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
@@ -146,5 +147,14 @@ final class PreviewBackend implements FileBackend
     public function location(FilePlan $plan): ?string
     {
         return null;
+    }
+
+    /**
+     * N'exécutant rien, il ne contraint rien : il rend l'octroi tel quel. Répondre
+     * autrement ferait porter à l'aperçu les limites d'un mécanisme qu'il n'a pas.
+     */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering
+    {
+        return GrantRendering::exact($grant->verbs);
     }
 }

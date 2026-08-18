@@ -6,6 +6,8 @@ namespace App\Services\Filesystem\Backend;
 
 use App\Enums\FileBackendName;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
+use App\Services\Filesystem\Plan\PlanNode;
 
 /**
  * Story 60.3 — LA LIGNE DE CONTRAT du plan de fichiers.
@@ -80,11 +82,15 @@ use App\Services\Filesystem\Plan\FilePlan;
  * et des DROITS. S'y brancher aurait donné une dépendance qui ne sert à rien et une
  * fausse impression de portabilité. Une règle d'architecture NOMMÉE l'interdit.
  *
- * **Pas de déclaration de capacités non plus.** Signaler l'expressivité d'un
- * backend au moment où l'administrateur le choisit est un vrai besoin, porté à
- * l'Epic 61. La nuance vit dans le vocabulaire de résultat, où elle est ADOSSÉE à
- * un fait constaté, pas dans une table déclarative qu'un backend pourrait remplir
- * de travers sans que rien ne le contredise.
+ * **Pas de déclaration de capacités non plus.** La nuance vit dans le vocabulaire
+ * de résultat, où elle est ADOSSÉE à un fait constaté, pas dans une table
+ * déclarative qu'un backend pourrait remplir de travers sans que rien ne le
+ * contredise.
+ *
+ * {@see rendering()} n'est pas cette table, et la différence est exactement celle
+ * qui vient d'être posée : elle n'ÉNONCE rien, elle fait TOURNER la traduction de
+ * verbes du backend sur un octroi donné. Sa réponse ne peut donc pas s'écarter de
+ * ce qui sera écrit sans que l'écriture elle-même ait changé.
  *
  * **Pas d'auteur de l'action.** L'audit applicatif est un savoir d'implémentation.
  * Le contrat dit l'état désiré et ce qu'il en est advenu, pas la traçabilité.
@@ -198,4 +204,29 @@ interface FileBackend
      * n'écrit nulle part.
      */
     public function location(FilePlan $plan): ?string;
+
+    /**
+     * Ce que ce backend RENDRAIT de cet octroi, posé sur ce nœud — sans rien
+     * écrire, ni rien lire de l'instance.
+     *
+     * **À quoi ça sert, et pourquoi ça ne pouvait pas rester au-dessus de la
+     * ligne.** L'écran qui compose une recette doit dire à l'administrateur ce que
+     * son octroi produira. Tant qu'une seule autorité exécutait des arborescences,
+     * l'écran pouvait interroger sa déclaration par son nom de classe ; dès la
+     * seconde, cette question devient celle du contrat — sinon l'écran annonce les
+     * limites de POSIX sur un arbre servi ailleurs, c'est-à-dire des dégradations
+     * qui n'auront pas lieu et des combinaisons refusées à la saisie alors qu'elles
+     * s'écriraient exactement.
+     *
+     * **Le NŒUD entier, pas seulement l'octroi.** Ce qu'un backend rend d'un octroi
+     * peut dépendre de ses VOISINS : un mécanisme de nœud posé pour approcher une
+     * découpe vaut pour tout le monde et devient impossible dès qu'un autre octroi
+     * porterait le verbe qu'il retire. Passer l'octroi seul obligerait l'appelant à
+     * rejouer cette condition — donc à la recopier, donc à l'oublier.
+     *
+     * **Aucun effet de bord, aucun appel distant.** C'est une question posée à un
+     * modèle de permissions, pas à une instance : elle doit rester appelable à
+     * chaque frappe d'un formulaire.
+     */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering;
 }

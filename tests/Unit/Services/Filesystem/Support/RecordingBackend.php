@@ -7,11 +7,14 @@ namespace Tests\Unit\Services\Filesystem\Support;
 use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
 use App\Services\Filesystem\Backend\FileBackend;
+use App\Services\Filesystem\Backend\GrantRendering;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeObservation;
 use App\Services\Filesystem\Backend\NodeReconciliation;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\Plan\FilePlan;
+use App\Services\Filesystem\Plan\PlanGrant;
+use App\Services\Filesystem\Plan\PlanNode;
 
 /**
  * Story 60.4 — DOUBLE de backend pour les tests AU-DESSUS de la ligne.
@@ -113,5 +116,11 @@ final class RecordingBackend implements FileBackend
     public function location(FilePlan $plan): ?string
     {
         return null;
+    }
+
+    /** La doublure n'a pas de modèle de permissions : elle rend ce qu'on lui demande. */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering
+    {
+        return GrantRendering::exact($grant->verbs);
     }
 }

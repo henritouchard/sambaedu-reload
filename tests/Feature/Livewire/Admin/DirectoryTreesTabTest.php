@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
+use App\Enums\ActiveCloud;
+use App\Enums\FileBackendName;
 use App\Models\DirectoryTemplate;
 use App\Models\GroupRole;
 use App\Models\NetworkShare;
@@ -12,6 +14,8 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
+use App\Services\Filesystem\FileLocationService;
+use App\Services\Filesystem\FileLocations;
 use App\Services\Filesystem\Plan\PlanGrant;
 use App\Support\RoleCatalog;
 use Database\Seeders\DirectoryTemplateSeeder;
@@ -866,6 +870,75 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertNotSame([], $notes);
         $this->assertStringContainsString('retirer ses propres fichiers', implode(' ', $notes));
         $this->assertNull($component->get('editorNodes')[3]['node_note']);
+    }
+
+    /**
+     * **L'ÉCRAN SUIT L'AUTORITÉ DÉCIDÉE, PAS UNE AUTORITÉ CODÉE EN DUR.**
+     *
+     * Les mêmes octrois, la même recette : sur le serveur de fichiers historique la
+     * combinaison est perdue et la suppression sans création est grisée ; sur le
+     * dossier d'équipe, où les quatre verbes sont quatre bits séparés, il n'y a ni
+     * perte ni grisé. Annoncer la première sur un arbre servi par la seconde était
+     * une dégradation qui n'aurait pas lieu et une saisie refusée sans raison.
+     */
+    #[Test]
+    public function the_declared_limits_follow_the_authority_the_instance_decided(): void
+    {
+        $this->grant(['server.admin']);
+
+        $mixed = [
+            ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
+            ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER]],
+        ];
+
+        // --- espace partagé sur le serveur de fichiers historique -------------
+        $this->decideSharedSpace(FileBackendName::Posix);
+
+        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $nodes = $component->get('nodesSpec');
+        $nodes[3]['grants'] = $mixed;
+        $component->set('nodesSpec', $nodes);
+
+        $column = collect($component->get('editorNodes')[3]['columns'])->firstWhere('role', 'classe');
+        $this->assertNotSame([], $column['notes'], 'le serveur historique perd cette combinaison et se tait');
+
+        $component->call('toggleVerb', 3, 'classe', PlanGrant::VERB_CREER);
+        $cells = collect($component->get('editorNodes')[3]['columns'])->firstWhere('role', 'classe')['cells'];
+        $this->assertTrue(
+            collect($cells)->firstWhere('verb', PlanGrant::VERB_SUPPRIMER)['disabled'],
+            'la suppression sans création doit rester grisée sur le serveur historique',
+        );
+
+        // --- la même recette, espace partagé sur le dossier d'équipe ----------
+        $this->decideSharedSpace(FileBackendName::Nextcloud);
+
+        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $nodes = $component->get('nodesSpec');
+        $nodes[3]['grants'] = $mixed;
+        $component->set('nodesSpec', $nodes);
+
+        $node = $component->get('editorNodes')[3];
+        $column = collect($node['columns'])->firstWhere('role', 'classe');
+
+        $this->assertSame([], $column['notes'], 'le dossier d\'équipe ne perd rien et ne doit rien déclarer');
+        $this->assertNull($node['node_note']);
+
+        $component->call('toggleVerb', 3, 'classe', PlanGrant::VERB_CREER);
+        $cells = collect($component->get('editorNodes')[3]['columns'])->firstWhere('role', 'classe')['cells'];
+        $this->assertFalse(
+            collect($cells)->firstWhere('verb', PlanGrant::VERB_SUPPRIMER)['disabled'],
+            'aucun verbe n\'est une limite permanente du dossier d\'équipe',
+        );
+    }
+
+    /** La décision d'instance pour l'espace partagé — l'espace personnel ne bouge pas. */
+    private function decideSharedSpace(FileBackendName $authority): void
+    {
+        FileLocationService::set(FileLocations::make(
+            FileBackendName::Posix,
+            $authority,
+            $authority === FileBackendName::Nextcloud ? ActiveCloud::Nextcloud : ActiveCloud::Aucun,
+        ));
     }
 
     #[Test]

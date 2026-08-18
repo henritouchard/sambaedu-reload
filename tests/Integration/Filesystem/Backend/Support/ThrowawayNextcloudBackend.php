@@ -6,6 +6,7 @@ namespace Tests\Integration\Filesystem\Backend\Support;
 
 use App\Enums\FileBackendName;
 use App\Services\Filesystem\Backend\FileBackend;
+use App\Services\Filesystem\Backend\GrantRendering;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeObservation;
 use App\Services\Filesystem\Backend\NodeReconciliation;
@@ -472,5 +473,11 @@ final class ThrowawayNextcloudBackend implements FileBackend
     public function location(FilePlan $plan): ?string
     {
         return null;
+    }
+
+    /** La doublure n'a pas de modèle de permissions : elle rend ce qu'on lui demande. */
+    public function rendering(PlanNode $node, PlanGrant $grant): GrantRendering
+    {
+        return GrantRendering::exact($grant->verbs);
     }
 }
