@@ -34,6 +34,13 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * les dossiers par membre exprimables : la classe est refermée sur le dossier d'un
  * élève, et l'élève y garde son accès par sa propre règle.
  *
+ * **Et cette règle nominative doit être ÉCRITE.** Mesuré sur l'instance : les
+ * permissions d'un compte sur un chemin sont la réunion des règles qui visent ce
+ * compte OU l'un de ses groupes, et le plafond du montage n'est atteint que si
+ * aucune ne le vise. Un élève sans règle propre hérite donc du zéro que la clôture
+ * pose sur sa classe — sur son PROPRE dossier. Comparer son octroi au plafond
+ * conclurait « il a déjà tout », n'écrirait rien, et le laisserait dehors.
+ *
  * ---------------------------------------------------------------------------
  * **TROIS ÉTATS D'OCTROI, TROIS TRADUCTIONS DISTINCTES** (aucune ne se confond) :
  *
@@ -64,6 +71,7 @@ final class NextcloudPlanProjection
      * @param  array<string, list<string>>  $nodeDetails  chemin de nœud => causes d'octroi NON ÉCRIT (bloquantes)
      * @param  list<string>  $notices  constats qui n'empêchent AUCUNE écriture
      * @param  array<string, array{subject:PlanSubject,members:list<string>}>  $groups  nom de groupe => appartenance voulue
+     * @param  array<string, list<string>>  $groupsOfUser  identifiant de compte => noms de groupes distants qui le portent
      */
     private function __construct(
         public readonly array $principals,
@@ -75,6 +83,7 @@ final class NextcloudPlanProjection
         public readonly array $nodeDetails,
         public readonly array $groups,
         public readonly array $notices,
+        public readonly array $groupsOfUser,
     ) {
     }
 
@@ -241,6 +250,7 @@ final class NextcloudPlanProjection
             array_map(static fn (array $d): array => array_values($d), $nodeDetails),
             $groups,
             array_values(array_unique($notices)),
+            array_map(static fn (array $names): array => array_keys($names), $memberOfGroup),
         );
     }
 
@@ -321,7 +331,34 @@ final class NextcloudPlanProjection
      */
     public function effectiveAt(string $nodePath): array
     {
-        return ($this->desired[$nodePath] ?? []) + $this->inheritedEffectiveFor($nodePath);
+        $effective = ($this->desired[$nodePath] ?? []) + $this->inheritedEffectiveFor($nodePath);
+
+        foreach ($this->principals as $key => $principal) {
+            if ($principal['type'] !== NextcloudAclRule::TYPE_USER) {
+                continue;
+            }
+            if (array_key_exists($key, $this->desired[$nodePath] ?? [])) {
+                continue;
+            }
+
+            $governed = false;
+            $bits = 0;
+            foreach ($this->groupsOfUser[$principal['id']] ?? [] as $name) {
+                $groupKey = NextcloudAclRule::TYPE_GROUP . ':' . $name;
+                if (! array_key_exists($groupKey, $effective)) {
+                    continue;
+                }
+
+                $governed = true;
+                $bits |= $effective[$groupKey];
+            }
+
+            if ($governed) {
+                $effective[$key] = $bits;
+            }
+        }
+
+        return $effective;
     }
 
     /**

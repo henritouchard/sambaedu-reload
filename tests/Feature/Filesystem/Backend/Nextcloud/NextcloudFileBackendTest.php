@@ -193,6 +193,70 @@ class NextcloudFileBackendTest extends TestCase
     }
 
     /**
+     * L'ÉLÈVE ENTRE CHEZ LUI : sa règle nominative est POSÉE, pas déduite.
+     *
+     * L'instance résout les permissions d'un compte en réunissant les règles qui le
+     * visent lui ou l'un de ses groupes ; le plafond du montage n'est atteint que si
+     * aucune ne le vise. Sans règle à son nom, l'élève hérite donc du zéro que la
+     * clôture pose sur sa classe — sur son PROPRE dossier, qu'il ne voit plus.
+     */
+    #[Test]
+    public function the_personal_folder_carries_its_owner_rule_and_not_only_the_class_closure(): void
+    {
+        $this->backend()->provision($this->plan());
+
+        $rules = $this->instance->acl[self::ROOT . '/alice'] ?? [];
+
+        $own = array_values(array_filter(
+            $rules,
+            static fn (array $r): bool => $r['type'] === 'user' && $r['id'] === 'alice',
+        ));
+        self::assertCount(1, $own, 'l\'élève DOIT porter sa propre règle sur son dossier');
+        self::assertSame(15, $own[0]['permissions']);
+        self::assertSame(31, $own[0]['mask']);
+
+        // Et la clôture de la classe reste posée à côté : c'est leur COEXISTENCE
+        // qui referme le dossier pour les camarades sans en fermer le titulaire.
+        $closure = array_values(array_filter(
+            $rules,
+            static fn (array $r): bool => $r['id'] === self::GROUP_MEMBERS,
+        ));
+        self::assertCount(1, $closure);
+        self::assertSame(0, $closure[0]['permissions']);
+    }
+
+    /**
+     * La RELECTURE ne prend pas le plafond pour un octroi : un compte sans règle
+     * propre est constaté à ce que ses groupes lui laissent, clôture comprise.
+     */
+    #[Test]
+    public function reading_back_never_credits_a_person_with_the_mount_ceiling(): void
+    {
+        $this->backend()->provision($this->plan());
+
+        // On retire la règle nominative SANS toucher au reste : l'état devient
+        // celui qu'une instance mal réconciliée présente.
+        $path = self::ROOT . '/alice';
+        $this->instance->acl[$path] = array_values(array_filter(
+            $this->instance->acl[$path] ?? [],
+            static fn (array $r): bool => ! ($r['type'] === 'user' && $r['id'] === 'alice'),
+        ));
+
+        $node = $this->backend()->inspect($this->plan())->for('alice');
+
+        $observed = [];
+        foreach ($node?->grants ?? [] as $grant) {
+            $observed[$grant->subject->sortKey()] = $grant->verbs;
+        }
+
+        self::assertSame(
+            [],
+            $observed[PlanSubject::user((int) $this->alice->id)->sortKey()] ?? null,
+            'un élève que la clôture de sa classe met à zéro ne doit JAMAIS être relu comme servi',
+        );
+    }
+
+    /**
      * **`rw` VAUT 15, JAMAIS 31** — le bit de re-partage n'est jamais accordé.
      *
      * Le plan n'a aucun verbe pour le re-partage : l'accorder donnerait un droit que

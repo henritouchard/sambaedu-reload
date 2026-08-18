@@ -696,6 +696,15 @@ final class NextcloudFileBackend implements FileBackend
     }
 
     /**
+     * Ce qu'un principal a RÉELLEMENT sur ce chemin : sa règle posée ici, sinon
+     * celle qui descend, sinon — pour un COMPTE — la réunion de ce que gouvernent
+     * ses groupes, et le plafond en tout dernier ressort.
+     *
+     * L'étage des groupes n'est pas une commodité. L'instance résout les
+     * permissions d'un compte en réunissant les règles qui le visent LUI ou l'un de
+     * ses groupes ; sauter cet étage lirait « plafond » là où la clôture de sa
+     * classe met zéro, et ferait passer pour servi quelqu'un qui est dehors.
+     *
      * @param  array<string, int>|null  $ceilings  plafonds OBSERVÉS, `null` = ceux du plan
      */
     private function effectiveBits(
@@ -712,6 +721,28 @@ final class NextcloudFileBackend implements FileBackend
         $inherited = $state->inheritedRuleFor($principalKey);
         if ($inherited !== null) {
             return $inherited->permissions;
+        }
+
+        $principal = $projection->principals[$principalKey] ?? null;
+
+        if ($principal !== null && $principal['type'] === NextcloudAclRule::TYPE_USER) {
+            $governed = false;
+            $bits = 0;
+
+            foreach ($projection->groupsOfUser[$principal['id']] ?? [] as $name) {
+                $groupKey = NextcloudAclRule::TYPE_GROUP . ':' . $name;
+                $rule = $state->ruleFor($groupKey) ?? $state->inheritedRuleFor($groupKey);
+                if ($rule === null) {
+                    continue;
+                }
+
+                $governed = true;
+                $bits |= $rule->permissions;
+            }
+
+            if ($governed) {
+                return $bits;
+            }
         }
 
         if ($ceilings === null) {
@@ -1219,4 +1250,5 @@ final class NextcloudFileBackend implements FileBackend
     {
         return InspectionReport::covering($this->name(), $plan, array_map($factory, $plan->nodePaths()));
     }
+
 }
