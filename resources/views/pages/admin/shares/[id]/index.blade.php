@@ -76,12 +76,12 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
      */
     public ?string $reconciliationFailure = null;
 
-    // Story 60.3 — le backend est une propriété VISIBLE du partage (il détermine
-    // le chemin d'accès de l'utilisateur), et volontairement NON ÉDITABLE : tant
-    // qu'aucun flux ne route par la colonne, un sélecteur serait une propriété qui
-    // ment. Éditabilité et routage arrivent ensemble en 60.4.
     public string $backendLabel = '';
     public string $backendDescription = '';
+    public string $backendValue = '';
+
+    public bool $isBackendOpen = false;
+    public string $targetBackend = '';
 
     // Aperçu du plan AVANT application. `null` tant qu'il n'a pas été demandé —
     // on ne projette pas un plan à chaque rendu de page.
@@ -153,6 +153,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $backend = $share->backendName();
         $this->backendLabel = $backend->label();
         $this->backendDescription = $backend->description();
+        $this->backendValue = $backend->value;
 
         $this->loadTreeOrigin($share);
         $this->loadLastReport($share);
@@ -846,6 +847,97 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $this->reprovision('Réconciliation demandée');
     }
 
+    /**
+     * Les autorités vers lesquelles ce répertoire peut basculer — l'actuelle exclue.
+     *
+     * @return array{options: list<array{value:string,label:string,description:string}>, refusals: list<string>}
+     */
+    public function backendChoice(): array
+    {
+        $selection = app(\App\Services\Filesystem\Backend\FileBackendSelection::class);
+
+        $options = [];
+        foreach ($selection->selectable() as $name) {
+            if ($name->value === $this->backendValue) {
+                continue;
+            }
+            $options[] = [
+                'value' => $name->value,
+                'label' => $name->label(),
+                'description' => $name->description(),
+            ];
+        }
+
+        $refusals = [];
+        foreach (\App\Enums\FileBackendName::cases() as $candidate) {
+            if ($candidate === \App\Enums\FileBackendName::Preview) {
+                continue;
+            }
+            $refusal = $selection->refusalFor($candidate);
+            if ($refusal !== null) {
+                $refusals[] = $refusal;
+            }
+        }
+
+        return ['options' => $options, 'refusals' => $refusals];
+    }
+
+    public function openBackendChange(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        $options = $this->backendChoice()['options'];
+        $this->targetBackend = $options[0]['value'] ?? '';
+        $this->isBackendOpen = true;
+    }
+
+    public function closeBackendChange(): void
+    {
+        $this->isBackendOpen = false;
+        $this->targetBackend = '';
+        $this->resetErrorBag();
+    }
+
+    public function confirmBackendChange(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        $share = $this->share?->fresh();
+        if ($share === null) {
+            return;
+        }
+
+        $target = \App\Enums\FileBackendName::tryFrom($this->targetBackend);
+        if ($target === null) {
+            $this->toastError('Choisissez une autorité d\'écriture.');
+
+            return;
+        }
+
+        try {
+            $engaged = app(NetworkShareService::class)->changeBackend($share, $target);
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+
+            return;
+        }
+
+        $this->isBackendOpen = false;
+        $this->targetBackend = '';
+        $this->loadShare();
+        $this->reconciliationEngaged = $engaged;
+
+        $message = sprintf(
+            'Autorité d\'écriture basculée vers « %s ». L\'arborescence d\'origine est conservée en l\'état ; '
+            . 'aucun fichier n\'a été déplacé.',
+            $target->label(),
+        );
+
+        $engaged
+            ? $this->toastSuccess($message . ' La mise en place des droits est engagée.')
+            : $this->toastWarning($message . " En revanche la réconciliation n'a pas pu être engagée : consultez les journaux serveur.");
+    }
+
     /** Relit l'état à la demande — le bouton d'audit de conformité. */
     public function refreshConformity(): void
     {
@@ -992,13 +1084,20 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                                     @else
                                         <span class="badge badge-ghost badge-sm">Lettre auto</span>
                                     @endif
-                                    {{-- Story 60.3 — autorité d'écriture des droits. VISIBLE (elle
-                                         détermine le chemin d'accès de l'utilisateur), NON ÉDITABLE
-                                         tant qu'aucun flux ne route par elle. --}}
                                     <span class="badge badge-outline badge-sm gap-1 tooltip" data-tip="{{ $backendDescription }}">
                                         <i class="fa-solid fa-server text-[10px]"></i>
                                         {{ $backendLabel }}
                                     </span>
+                                    @can('manage-networkshare')
+                                        @if ($this->backendChoice()['options'] !== [])
+                                            <button type="button"
+                                                class="btn btn-ghost btn-xs gap-1"
+                                                wire:click="openBackendChange">
+                                                <i class="fa-solid fa-right-left text-[10px]"></i>
+                                                Changer
+                                            </button>
+                                        @endif
+                                    @endcan
                                 </h2>
                             </div>
                             @can('manage-networkshare')
@@ -1349,6 +1448,67 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
             <button type="button" class="btn btn-ghost" wire:click="closePlanPreview">Fermer</button>
         </x-slot:footer>
     </x-molecules.modal>
+
+    {{-- ===================== Modale : changer l'autorité d'écriture ===================== --}}
+    @can('manage-networkshare')
+        @php
+            $backendChoice = $this->backendChoice();
+        @endphp
+        <x-molecules.modal wire:model="isBackendOpen" size="max-w-2xl" height="h-auto"
+            close-method="closeBackendChange"
+            title="Changer l'autorité d'écriture" icon="fa-right-left text-warning"
+            subtitle="Les droits seront désormais écrits ailleurs. Les fichiers, eux, ne bougent pas.">
+
+            <x-molecules.modal.section title="Ce qui va se passer" icon="fa-triangle-exclamation text-warning" dense>
+                <div class="alert alert-warning text-sm">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div class="space-y-2">
+                        <p>
+                            L'arborescence est <strong>recréée à vide</strong> sur la nouvelle autorité,
+                            avec ses droits. <strong>Aucun fichier n'est transféré.</strong>
+                        </p>
+                        <p>
+                            L'arborescence actuelle (<span class="font-mono">{{ $backendLabel }}</span>)
+                            reste en place avec ses données, mais SE5 n'y écrira plus rien : elle devient
+                            invisible pour l'application. Récupérez ou nettoyez son contenu depuis le serveur.
+                        </p>
+                    </div>
+                </div>
+            </x-molecules.modal.section>
+
+            <x-molecules.modal.section title="Nouvelle autorité" icon="fa-server text-primary" dense>
+                @if ($backendChoice['options'] === [])
+                    <p class="text-sm text-base-content/70">
+                        Aucune autre autorité n'est disponible pour le moment.
+                    </p>
+                @else
+                    <select wire:model.live="targetBackend" class="select select-bordered w-full">
+                        @foreach ($backendChoice['options'] as $option)
+                            <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                    @foreach ($backendChoice['options'] as $option)
+                        @if ($option['value'] === $targetBackend)
+                            <p class="mt-2 text-xs text-base-content/70">{{ $option['description'] }}</p>
+                        @endif
+                    @endforeach
+                @endif
+
+                @foreach ($backendChoice['refusals'] as $refusal)
+                    <p class="mt-2 text-xs text-base-content/60">{{ $refusal }}</p>
+                @endforeach
+            </x-molecules.modal.section>
+
+            <x-slot:footer>
+                <button type="button" class="btn btn-ghost" wire:click="closeBackendChange">Annuler</button>
+                <button type="button" class="btn btn-warning"
+                    @disabled($backendChoice['options'] === [])
+                    wire:click="confirmBackendChange">
+                    <i class="fa-solid fa-right-left"></i> Basculer sans transférer les fichiers
+                </button>
+            </x-slot:footer>
+        </x-molecules.modal>
+    @endcan
 
     {{-- ===================== Modale : ajouter une assignation (recherche dynamique) ===================== --}}
     @can('manage-networkshare')

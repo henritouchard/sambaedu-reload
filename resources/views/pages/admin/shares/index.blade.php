@@ -46,12 +46,13 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public bool $isCreateOpen = false;
     public string $name = '';
     /**
-     * Story 61.3 — L'AUTORITÉ D'ÉCRITURE, choisie À LA CRÉATION et jamais après.
+     * Story 61.3 — L'AUTORITÉ D'ÉCRITURE du répertoire créé.
      *
      * Elle n'est proposée que parmi les backends POSABLES ({@see FileBackendSelection}) :
      * une case dont la capacité est éteinte est ABSENTE, avec son motif dit sous le
-     * champ — pas grisée sans explication. Le geste de création est le SEUL écrivain
-     * de cette colonne : un répertoire provisionné ne bascule jamais (D9).
+     * champ — pas grisée sans explication. Sa valeur d'ouverture suit la décision
+     * d'instance ({@see self::defaultBackendValue()}) : le cas ordinaire est de
+     * créer là où l'instance a décidé d'écrire.
      */
     public string $createBackend = 'posix';
     public string $directoryName = '';
@@ -306,8 +307,23 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->directoryName = '';
         $this->label = '';
         $this->letter = '';
-        $this->createBackend = \App\Enums\FileBackendName::Posix->value;
+        $this->createBackend = $this->defaultBackendValue();
         $this->resetErrorBag();
+    }
+
+    /**
+     * Le défaut proposé : l'autorité décidée par l'instance pour l'espace partagé.
+     *
+     * Repli sur `posix` si cette autorité est devenue non posable — proposer une
+     * case que la validation refusera ferait tourner l'exploitant en rond.
+     */
+    private function defaultBackendValue(): string
+    {
+        $authority = \App\Services\Filesystem\FileLocationService::current()->espacePartage;
+
+        return app(\App\Services\Filesystem\Backend\FileBackendSelection::class)->refusalFor($authority) === null
+            ? $authority->value
+            : \App\Enums\FileBackendName::Posix->value;
     }
 
     protected function createRules(): array
@@ -860,7 +876,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->templateLetter = '';
         $this->roleSelections = [];
         $this->materializationGroupId = null;
-        $this->createBackend = \App\Enums\FileBackendName::Posix->value;
+        $this->createBackend = $this->defaultBackendValue();
         $this->resetErrorBag();
     }
 

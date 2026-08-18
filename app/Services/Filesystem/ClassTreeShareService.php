@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Filesystem;
 
+use App\Enums\FileBackendName;
 use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
 use App\Models\UserGroup;
+use App\Services\Filesystem\Backend\FileBackendSelection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -68,9 +71,7 @@ class ClassTreeShareService
         self::$enabled = true;
     }
 
-    public function __construct(private readonly NetworkShareService $shares)
-    {
-    }
+    public function __construct(private readonly NetworkShareService $shares) {}
 
     /**
      * La recette d'ARBRE que ce groupe matérialise, ou `null`.
@@ -105,9 +106,9 @@ class ClassTreeShareService
      * Sert au déclencheur d'appartenance, qui réconcilie l'EXISTANT et ne crée
      * jamais rien : un changement de membre n'est pas une demande de partage.
      *
-     * @return \Illuminate\Support\Collection<int, NetworkShare>
+     * @return Collection<int, NetworkShare>
      */
-    public function existingSharesOf(UserGroup $group): \Illuminate\Support\Collection
+    public function existingSharesOf(UserGroup $group): Collection
     {
         return NetworkShare::query()
             ->whereNotNull('directory_template_id')
@@ -145,11 +146,11 @@ class ClassTreeShareService
         if ($occupant !== null) {
             throw new \RuntimeException(sprintf(
                 'le dossier « %s » est déjà celui du partage #%d%s : deux groupes mènent au même '
-                . 'emplacement. Le groupe #%d (« %s ») ne peut donc pas matérialiser son arbre — '
-                . 'vérifiez s\'il ne fait pas doublon avec un groupe résiduel préfixé.',
+                .'emplacement. Le groupe #%d (« %s ») ne peut donc pas matérialiser son arbre — '
+                .'vérifiez s\'il ne fait pas doublon avec un groupe résiduel préfixé.',
                 $plan->rootPath,
                 $occupant->id,
-                $occupant->user_group_id !== null ? ' (groupe #' . $occupant->user_group_id . ')' : '',
+                $occupant->user_group_id !== null ? ' (groupe #'.$occupant->user_group_id.')' : '',
                 (int) $group->id,
                 (string) $group->name,
             ));
@@ -165,9 +166,28 @@ class ClassTreeShareService
         ]);
         $share->directory_template_id = $template->id;
         $share->user_group_id = $group->id;
+        $share->backend = $this->sharedSpaceAuthority();
         $share->save();
 
         return $share;
+    }
+
+    /**
+     * L'autorité décidée par l'instance pour l'espace partagé — celle dont relève
+     * un arbre de classe.
+     *
+     * Une autorité non posable LÈVE plutôt que de retomber sur `posix` : le repli
+     * silencieux matérialiserait ailleurs que là où l'instance l'a décidé.
+     *
+     * @throws \InvalidArgumentException si l'autorité décidée n'est pas posable
+     */
+    private function sharedSpaceAuthority(): FileBackendName
+    {
+        $authority = FileLocationService::current()->espacePartage;
+
+        app(FileBackendSelection::class)->assertSelectable($authority);
+
+        return $authority;
     }
 
     /**
@@ -205,7 +225,7 @@ class ClassTreeShareService
                 'skipped' => true,
                 'reason' => sprintf(
                     'l\'annuaire ne connaît pas %s — aucun arbre n\'a été créé.',
-                    implode(' ni ', array_map(static fn (string $g): string => '« ' . $g . ' »', $missing)),
+                    implode(' ni ', array_map(static fn (string $g): string => '« '.$g.' »', $missing)),
                 ),
             ];
         }
@@ -261,7 +281,7 @@ class ClassTreeShareService
         $first = (string) array_key_first($reasons);
         $extra = count($reasons) - 1;
 
-        return $extra > 0 ? $first . sprintf(' (+%d autre(s) motif(s))', $extra) : $first;
+        return $extra > 0 ? $first.sprintf(' (+%d autre(s) motif(s))', $extra) : $first;
     }
 
     /**

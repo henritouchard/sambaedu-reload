@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Filesystem;
 
+use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
 use App\Exceptions\Filesystem\PlanResolutionException;
 use App\Jobs\ReconcileNetworkShareJob;
@@ -13,8 +14,10 @@ use App\Models\QuotaAuditLog;
 use App\Models\QuotaRule;
 use App\Models\UserGroup;
 use App\Services\Filesystem\Backend\FileBackendRegistry;
+use App\Services\Filesystem\Backend\FileBackendSelection;
 use App\Services\Filesystem\Backend\InspectionReport;
 use App\Services\Filesystem\Backend\NodeReconciliation;
+use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\Backend\ReconciliationReport;
 use App\Services\Filesystem\Plan\FilePlan;
 use Illuminate\Support\Facades\Cache;
@@ -30,7 +33,7 @@ use Throwable;
  * Son travail tient en quatre gestes : valider le nom de répertoire (une règle de
  * NOMMAGE, neutre), projeter le répertoire en PLAN, résoudre l'autorité d'écriture
  * PAR LA COLONNE, et déléguer. Tout le reste est descendu dans
- * {@see \App\Services\Filesystem\Backend\Posix\PosixFileBackend} — c'est la coupe
+ * {@see PosixFileBackend} — c'est la coupe
  * de l'epic, et le piège du chantier était précisément de déplacer la dérivation
  * des permissions en laissant ses appelants au-dessus.
  *
@@ -94,9 +97,8 @@ class NetworkShareService
         private readonly SharePlanProjector $projector,
         private readonly FileBackendRegistry $registry,
         private readonly PlanStateComparator $comparator,
-        private readonly TreePlanService $treePlans = new TreePlanService(),
-    ) {
-    }
+        private readonly TreePlanService $treePlans = new TreePlanService,
+    ) {}
 
     // =========================================================================
     // Nommage
@@ -272,7 +274,7 @@ class NetworkShareService
             'success' => $revoked,
         ]);
 
-        Cache::forget(self::REPORT_CACHE_PREFIX . $share->id);
+        Cache::forget(self::REPORT_CACHE_PREFIX.$share->id);
         $this->forgetFailure($share);
 
         Log::info('NetworkShareService: déprovisionnement terminé', [
@@ -340,7 +342,7 @@ class NetworkShareService
      */
     public function lastReport(NetworkShare $share): ?array
     {
-        $data = Cache::get(self::REPORT_CACHE_PREFIX . $share->id);
+        $data = Cache::get(self::REPORT_CACHE_PREFIX.$share->id);
 
         return is_array($data) ? $data : null;
     }
@@ -366,7 +368,7 @@ class NetworkShareService
      * **Aucun partage en place ne change de plan**, et c'est un garde-fou d'epic
      * testé : sans origine, on ne passe même pas par la recette.
      *
-     * @throws \App\Exceptions\Filesystem\PlanResolutionException
+     * @throws PlanResolutionException
      */
     public function planFor(NetworkShare $share): FilePlan
     {
@@ -387,7 +389,7 @@ class NetworkShareService
             // en retirant des accès. Un lien cassé se répare, il ne s'interprète pas.
             throw PlanResolutionException::make(sprintf(
                 'le partage « %s » se réclame d\'une recette et d\'un groupe qui ne se chargent pas : '
-                . 'rien n\'a été projeté.',
+                .'rien n\'a été projeté.',
                 (string) $share->directory_name,
             ));
         }
@@ -415,9 +417,9 @@ class NetworkShareService
      */
     private function rememberFailure(NetworkShare $share, string $reason): void
     {
-        Cache::forget(self::REPORT_CACHE_PREFIX . $share->id);
+        Cache::forget(self::REPORT_CACHE_PREFIX.$share->id);
         Cache::put(
-            self::FAILURE_CACHE_PREFIX . $share->id,
+            self::FAILURE_CACHE_PREFIX.$share->id,
             $reason,
             now()->addMinutes(self::REPORT_CACHE_MINUTES),
         );
@@ -425,7 +427,7 @@ class NetworkShareService
 
     private function forgetFailure(NetworkShare $share): void
     {
-        Cache::forget(self::FAILURE_CACHE_PREFIX . $share->id);
+        Cache::forget(self::FAILURE_CACHE_PREFIX.$share->id);
     }
 
     /**
@@ -434,15 +436,46 @@ class NetworkShareService
      */
     public function lastFailure(NetworkShare $share): ?string
     {
-        $reason = Cache::get(self::FAILURE_CACHE_PREFIX . $share->id);
+        $reason = Cache::get(self::FAILURE_CACHE_PREFIX.$share->id);
 
         return is_string($reason) && $reason !== '' ? $reason : null;
+    }
+
+    /**
+     * Change l'autorité d'écriture d'un répertoire déjà provisionné.
+     *
+     * Ne déplace AUCUN octet : l'arborescence d'origine reste intacte et devient
+     * orpheline — plus rien n'y sera écrit, et seul un accès serveur peut la
+     * reprendre. La nouvelle autorité repart d'un arbre vide, droits compris.
+     *
+     * @throws \InvalidArgumentException si la cible n'est pas posable
+     */
+    public function changeBackend(NetworkShare $share, FileBackendName $target, ?string $performedBy = null): bool
+    {
+        $current = $share->backendName();
+
+        if ($current === $target) {
+            return true;
+        }
+
+        app(FileBackendSelection::class)->assertSelectable($target);
+
+        $share->backend = $target;
+        $share->save();
+
+        $this->writeAudit('change_share_backend', $this->actor($performedBy), $share, [
+            'from' => $current->value,
+            'to' => $target->value,
+            'data_moved' => false,
+        ]);
+
+        return $this->queueReconciliation($share, $performedBy);
     }
 
     /** @param array<string,mixed> $data */
     private function rememberArray(NetworkShare $share, array $data): void
     {
-        Cache::put(self::REPORT_CACHE_PREFIX . $share->id, $data, now()->addMinutes(self::REPORT_CACHE_MINUTES));
+        Cache::put(self::REPORT_CACHE_PREFIX.$share->id, $data, now()->addMinutes(self::REPORT_CACHE_MINUTES));
     }
 
     private function actor(?string $performedBy): string

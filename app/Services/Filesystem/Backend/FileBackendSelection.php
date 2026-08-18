@@ -30,12 +30,11 @@ use InvalidArgumentException;
  * administrateur est déjà refusée à la SAISIE, et un second contrôle ici ferait
  * dépendre la posabilité d'un état qui ne peut plus exister.
  *
- * **Le choix se fait À LA CRÉATION, jamais après** (D9). Aucun chemin d'écriture de
- * la colonne n'existe sur un partage déjà provisionné : elle est hors du
- * remplissage de masse du modèle, et le seul écrivain est le geste de création. La
- * migration d'un partage d'un backend à l'autre — déplacer les données, retraduire
- * les droits — est un chantier à part entière, que cette story rend NÉCESSAIRE sans
- * le livrer.
+ * **La colonne a deux écrivains, et aucun autre** : le geste de création et la
+ * bascule d'autorité. Elle reste hors du remplissage de masse du modèle. La bascule
+ * ne déplace aucune donnée : elle repose les droits sur la nouvelle autorité et
+ * laisse l'arborescence d'origine intacte et orpheline. Déplacer les fichiers et
+ * retraduire les droits reste un chantier à part entière.
  */
 final class FileBackendSelection
 {
@@ -71,7 +70,7 @@ final class FileBackendSelection
             FileBackendName::Nextcloud => FilePolicyService::capabilities()['nextcloud']
                 ? null
                 : 'La capacité « Accès Nextcloud » est désactivée : activez-la et renseignez la connexion '
-                    . 'dans Administration › Fichiers avant de servir un répertoire par Nextcloud.',
+                    .'dans Administration › Fichiers avant de servir un répertoire par Nextcloud.',
 
             // Capacité INDÉPENDANTE — les deux produits s'activent séparément, et
             // l'un éteint ne dit rien de l'autre — mais la garde va plus loin :
@@ -85,7 +84,7 @@ final class FileBackendSelection
             FileBackendName::OpenCloud => $this->openCloudRefusal(),
 
             FileBackendName::Preview => 'Le backend d\'aperçu n\'écrit aucun droit : il ne peut pas servir '
-                . 'un répertoire réel.',
+                .'un répertoire réel.',
         };
     }
 
@@ -100,7 +99,7 @@ final class FileBackendSelection
     {
         if (! FilePolicyService::capabilities()['opencloud']) {
             return 'La capacité « Accès OpenCloud » est désactivée : activez-la et renseignez la connexion '
-                . 'dans Administration › Fichiers avant de servir un répertoire par OpenCloud.';
+                .'dans Administration › Fichiers avant de servir un répertoire par OpenCloud.';
         }
 
         try {
@@ -108,9 +107,9 @@ final class FileBackendSelection
         } catch (OpenCloudConfigurationException $e) {
             return sprintf(
                 'La connexion à l\'instance OpenCloud est incomplète : %s Complétez-la dans '
-                . 'Administration › Fichiers avant de servir un répertoire par OpenCloud — un répertoire '
-                . 'créé maintenant ne pourrait jamais se réconcilier, et le choix de son autorité '
-                . 'd\'écriture ne se change pas après coup.',
+                .'Administration › Fichiers avant de servir un répertoire par OpenCloud — un répertoire '
+                .'créé maintenant ne pourrait jamais se réconcilier, et le choix de son autorité '
+                .'d\'écriture ne se change pas après coup.',
                 $e->getMessage(),
             );
         }

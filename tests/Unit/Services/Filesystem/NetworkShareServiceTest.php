@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Filesystem;
 
+use App\Enums\FileBackendName;
 use App\Enums\FileBackendOutcome;
 use App\Jobs\ReconcileNetworkShareJob;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
 use App\Models\QuotaAuditLog;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\FilePolicyService;
 use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\Plan\PlanSubject;
@@ -54,7 +57,7 @@ class NetworkShareServiceTest extends TestCase
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
 
-        $this->backend = new RecordingBackend();
+        $this->backend = new RecordingBackend;
         $this->app->instance(PosixFileBackend::class, $this->backend);
 
         $this->service = app(NetworkShareService::class);
@@ -314,5 +317,52 @@ class NetworkShareServiceTest extends TestCase
 
         self::assertSame(['deprovision'], $this->backend->calls);
         self::assertNotNull(QuotaAuditLog::where('target_name', 'revoque')->where('action', 'deprovision_share')->first());
+    }
+
+    #[Test]
+    public function changing_the_authority_traces_the_move_and_says_no_data_followed(): void
+    {
+        SystemSetting::set(FilePolicyService::SETTING_KEY, ['nextcloud' => true]);
+        $share = NetworkShare::factory()->create(['directory_name' => 'bascule']);
+        self::assertSame(FileBackendName::Posix, $share->backendName());
+
+        $this->service->changeBackend($share, FileBackendName::Nextcloud, 'qa');
+
+        self::assertSame(FileBackendName::Nextcloud, $share->fresh()->backendName());
+
+        $row = QuotaAuditLog::where('target_name', 'bascule')
+            ->where('action', 'change_share_backend')
+            ->first();
+
+        self::assertNotNull($row);
+        self::assertSame('posix', $row->new_values['from']);
+        self::assertSame('nextcloud', $row->new_values['to']);
+        // Le geste ne déplace rien : la trace doit le dire, sans quoi une
+        // relecture confondrait cette bascule avec une migration.
+        self::assertFalse($row->new_values['data_moved']);
+    }
+
+    #[Test]
+    public function reposing_the_authority_already_in_place_is_not_a_move(): void
+    {
+        $share = NetworkShare::factory()->create(['directory_name' => 'inchange']);
+
+        self::assertTrue($this->service->changeBackend($share, FileBackendName::Posix, 'qa'));
+
+        self::assertNull(QuotaAuditLog::where('target_name', 'inchange')->where('action', 'change_share_backend')->first());
+    }
+
+    #[Test]
+    public function an_authority_that_is_not_selectable_is_refused_before_any_write(): void
+    {
+        $share = NetworkShare::factory()->create(['directory_name' => 'refuse']);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        try {
+            $this->service->changeBackend($share, FileBackendName::Preview, 'qa');
+        } finally {
+            self::assertSame(FileBackendName::Posix, $share->fresh()->backendName());
+        }
     }
 }
