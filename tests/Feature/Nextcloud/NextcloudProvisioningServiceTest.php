@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Nextcloud;
 
+use App\Config\LdapConfig;
+use App\Config\SambaEduConfig;
 use App\Models\User;
 use App\Services\FilePolicyService;
 use App\Services\Nextcloud\NextcloudConnectionConfig;
@@ -81,7 +83,7 @@ class NextcloudProvisioningServiceTest extends TestCase
     ): array {
         return [
             'id' => $id,
-            'mountPoint' => '/' . $mountPoint,
+            'mountPoint' => '/'.$mountPoint,
             'backend' => 'smb',
             'authMechanism' => 'password::sessioncredentials',
             'backendOptions' => ['host' => 'se4fs', 'share' => $share, 'root' => $root]
@@ -106,7 +108,7 @@ class NextcloudProvisioningServiceTest extends TestCase
      */
     private function withSmbDomain(string $domain): void
     {
-        $ldap = new \App\Config\LdapConfig(
+        $ldap = new LdapConfig(
             url: 'ldaps://localdev.fr', port: 636, baseDn: 'dc=localdev,dc=fr',
             adminName: 'Administrator', adminPassword: 'x', domain: 'localdev.fr',
             sambaDomain: $domain, peopleRdn: 'ou=Utilisateurs', groupsRdn: 'ou=Groups',
@@ -117,9 +119,9 @@ class NextcloudProvisioningServiceTest extends TestCase
             etablissementsRdn: 'ou=Etablissements', adminRdn: 'ou=Admin',
         );
 
-        $config = \Mockery::mock(\App\Config\SambaEduConfig::class)->makePartial();
+        $config = \Mockery::mock(SambaEduConfig::class)->makePartial();
         $config->shouldReceive('ldap')->andReturn($ldap);
-        $this->app->instance(\App\Config\SambaEduConfig::class, $config);
+        $this->app->instance(SambaEduConfig::class, $config);
     }
 
     // =====================================================================
@@ -136,7 +138,7 @@ class NextcloudProvisioningServiceTest extends TestCase
 
         Http::fake([
             '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+            self::URL.'/index.php/apps/files_external/globalstorages' => Http::sequence()
                 ->push([], 200)->push([], 200)
                 ->push(['id' => 1], 201)->push(['id' => 2], 201),
         ]);
@@ -167,10 +169,10 @@ class NextcloudProvisioningServiceTest extends TestCase
 
         Http::fake([
             '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+            self::URL.'/index.php/apps/files_external/globalstorages' => Http::sequence()
                 ->push($existing, 200)->push($existing, 200),
-            self::URL . '/index.php/apps/files_external/globalstorages/1' => Http::response(['id' => 1], 200),
-            self::URL . '/index.php/apps/files_external/globalstorages/2' => Http::response(['id' => 2], 200),
+            self::URL.'/index.php/apps/files_external/globalstorages/1' => Http::response(['id' => 1], 200),
+            self::URL.'/index.php/apps/files_external/globalstorages/2' => Http::response(['id' => 2], 200),
         ]);
 
         $report = $this->service()->run(withUsers: false);
@@ -268,7 +270,7 @@ class NextcloudProvisioningServiceTest extends TestCase
         $this->configure();
         Http::fake([
             '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+            self::URL.'/index.php/apps/files_external/globalstorages' => Http::sequence()
                 ->push([], 200)          // probe
                 ->push([], 200)          // lecture avant écriture
                 ->push(['id' => 1], 201) // Partages
@@ -324,10 +326,10 @@ class NextcloudProvisioningServiceTest extends TestCase
 
         Http::fake([
             '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+            self::URL.'/index.php/apps/files_external/globalstorages' => Http::sequence()
                 ->push($existing, 200)
                 ->push($existing, 200),
-            self::URL . '/index.php/apps/files_external/globalstorages/1' => Http::response(['id' => 1], 200),
+            self::URL.'/index.php/apps/files_external/globalstorages/1' => Http::response(['id' => 1], 200),
         ]);
 
         $report = $this->service()->run(withUsers: false);
@@ -382,7 +384,7 @@ class NextcloudProvisioningServiceTest extends TestCase
 
         Http::fake([
             '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+            self::URL.'/index.php/apps/files_external/globalstorages' => Http::sequence()
                 ->push([], 200)
                 ->push([], 200)
                 ->push(['id' => 1], 201)
@@ -405,7 +407,7 @@ class NextcloudProvisioningServiceTest extends TestCase
         $this->configure();
         Http::fake([
             '*/ocs/v2.php/cloud/capabilities*' => Http::response(self::ocs(100), 200),
-            self::URL . '/index.php/apps/files_external/globalstorages' => Http::sequence()
+            self::URL.'/index.php/apps/files_external/globalstorages' => Http::sequence()
                 ->push([], 200)
                 ->push([], 200)
                 ->push(['message' => 'Invalid storage backend "smb"'], 422)
@@ -582,7 +584,7 @@ class NextcloudProvisioningServiceTest extends TestCase
         // `source` est hors `$fillable` : la forcer est le seul moyen honnête de
         // fabriquer une identité fédérée (le `create()` la laisserait à « ad »,
         // et le test passerait pour la mauvaise raison).
-        (new User())->forceFill([
+        (new User)->forceFill([
             'login' => 'ext:tech', 'role' => 'autre', 'is_active' => true, 'source' => 'federated',
         ])->save();
 

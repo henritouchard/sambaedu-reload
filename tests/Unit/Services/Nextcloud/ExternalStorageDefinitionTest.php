@@ -29,7 +29,7 @@ class ExternalStorageDefinitionTest extends TestCase
     ): array {
         return [
             'id' => 3,
-            'mountPoint' => '/' . $mountPoint,
+            'mountPoint' => '/'.$mountPoint,
             'backend' => 'smb',
             'authMechanism' => 'password::sessioncredentials',
             // `domain` est ABSENT par défaut : c'est la forme qu'ont les montages

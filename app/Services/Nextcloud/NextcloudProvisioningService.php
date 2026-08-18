@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Nextcloud;
 
+use App\Config\SambaEduConfig;
 use App\Exceptions\Nextcloud\NextcloudConfigurationException;
+use App\Jobs\ProvisionNextcloudJob;
 use App\Models\User;
 use App\Services\FilePolicyService;
 use Illuminate\Support\Facades\Cache;
@@ -50,7 +52,7 @@ final class NextcloudProvisioningService
      *
      * **Publique parce qu'elle contraint le traitement en file** : le délai
      * maximal d'un job DOIT rester inférieur à ce TTL
-     * ({@see \App\Jobs\ProvisionNextcloudJob::$timeout}), sinon un job tué par
+     * ({@see ProvisionNextcloudJob::$timeout}), sinon un job tué par
      * l'ouvrier laisserait un verrou qu'aucun `finally` ne relâche — un SIGKILL
      * ne s'intercepte pas — et la commande comme le bouton répondraient « déjà en
      * cours » pendant tout le reste du TTL. Un test de garde épingle l'ordre des
@@ -86,8 +88,7 @@ final class NextcloudProvisioningService
     public function __construct(
         private readonly NextcloudClientFactory $factory,
         private readonly NextcloudUserProvisioner $users,
-    ) {
-    }
+    ) {}
 
     /**
      * Exécute le provisionnement.
@@ -105,7 +106,7 @@ final class NextcloudProvisioningService
         if (! $lock->get()) {
             $report->recordRefusal(
                 'Un provisionnement Nextcloud est déjà en cours (commande ou traitement en file) : '
-                . 'rien n\'a été tenté.',
+                .'rien n\'a été tenté.',
             );
             $this->remember($report);
 
@@ -298,7 +299,7 @@ final class NextcloudProvisioningService
                 $report->recordMount(
                     $definition->label(),
                     NextcloudMountAction::Simule,
-                    'divergent (' . implode(', ', $divergences) . ') : serait mis à jour.',
+                    'divergent ('.implode(', ', $divergences).') : serait mis à jour.',
                 );
 
                 continue;
@@ -321,7 +322,7 @@ final class NextcloudProvisioningService
                 : $report->recordMount(
                     $definition->label(),
                     NextcloudMountAction::MisAJour,
-                    'divergences corrigées : ' . implode(', ', $divergences),
+                    'divergences corrigées : '.implode(', ', $divergences),
                 );
         }
     }
@@ -394,7 +395,7 @@ final class NextcloudProvisioningService
      */
     private function smbDomain(): string
     {
-        return trim(app(\App\Config\SambaEduConfig::class)->ldap()->sambaDomain);
+        return trim(app(SambaEduConfig::class)->ldap()->sambaDomain);
     }
 
     private function mountDetail(ExternalStorageDefinition $definition): string
@@ -403,7 +404,7 @@ final class NextcloudProvisioningService
             'SMB //%s/%s%s, identifiants de session, applicable à tous.',
             $definition->host,
             $definition->share,
-            $definition->root === '' ? '' : '/' . $definition->root,
+            $definition->root === '' ? '' : '/'.$definition->root,
         );
     }
 
