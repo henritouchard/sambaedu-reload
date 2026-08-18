@@ -328,8 +328,23 @@ new class extends Component {
 ?>
 
 <div class="flex flex-col gap-6">
+<div class="flex items-start justify-between gap-4 flex-wrap">
+        <div class="alert alert-info shadow-sm flex-1 min-w-72">
+            <i class="fa-solid fa-circle-info"></i>
+            <div>
+                <p class="font-medium">Ce que porte un rôle</p>
+                <p class="text-sm opacity-80">
+                    Un rôle qualifie une <strong>appartenance</strong> à un groupe (« qui est quoi dans ce
+                    groupe ? »). Il ne porte pas de droits par lui-même : ce sont les arborescences de
+                    fichiers qui décident, pour chacun de leurs dossiers, ce que peut faire chaque rôle. Le
+                    même rôle peut donc ouvrir plus ou moins selon l'arborescence. Sa <strong>clé</strong>
+                    est stockée sur l'appartenance et visée par les arborescences : elle ne change jamais.
+                    Son <strong>libellé</strong>, lui, se modifie librement — et certains types de groupes le
+                    traduisent déjà (un « Gestionnaire » se lit « Enseignant » dans une classe).
+                </p>
+            </div>
+        </div>
 
-    <div class="flex items-start justify-end gap-4 flex-wrap">
         <button type="button" class="btn highlight btn-primary" wire:click="openCreate" data-testid="open-create-role">
             <i class="fa-solid fa-plus"></i> Ajouter un rôle
         </button>
