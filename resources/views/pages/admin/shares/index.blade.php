@@ -1458,10 +1458,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         </tbody>
                     </table>
                 @endif
-                <div class="alert alert-warning mt-3 text-xs">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span>Les accès portent sur des utilisateurs et groupes d'utilisateurs (jamais sur un parc — un parc ne donnerait que la visibilité, sans accès réel). Le répertoire est un dépôt partagé : il n'y a pas de cloisonnement par utilisateur (casiers individuels = à venir).</span>
-                </div>
             </x-molecules.modal.section>
         @endif
 
