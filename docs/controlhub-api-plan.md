@@ -120,34 +120,6 @@ Les relations retournées incluent uniquement les entités ControlHub (ayant un 
 }
 ```
 
-### `GET /api/v1/workstation-groups/{controlhub_id}`
-
-**Réponse :**
-
-```json
-{
-  "success": true,
-  "data": {
-    "controlhub_id": "uuid-group-1",
-    "controlhub_version": "2026-02-11T12:00:00Z",
-    "name": "salle-101",
-    "display_name": "Salle 101",
-    "description": "Salle informatique 101",
-    "is_physical": true,
-    "is_active": true,
-    "parent_controlhub_id": "uuid-group-parent",
-    "app_profile_name": "profil-bureautique",
-    "shortcuts": [
-      { "controlhub_id": "uuid-shortcut-1", "name": "LibreOffice Writer" },
-      { "controlhub_id": "uuid-shortcut-2", "name": "Firefox" }
-    ],
-    "app_profiles": [
-      { "controlhub_id": "uuid-profile-1", "name": "profil-bureautique" }
-    ]
-  }
-}
-```
-
 ### `GET /api/v1/app-profiles/{controlhub_id}`
 
 > Un profil applicatif SE5 ne porte que `name` et `description` : les colonnes
@@ -233,10 +205,7 @@ Endpoints existants, conservés. Tous les payloads doivent désormais inclure `c
       "path": "",
       "startupwmclass": "libreoffice-writer",
       "icon": { "data": "base64...", "mime": "image/png" }
-    },
-    "workstation_groups": [
-      { "controlhub_id": "uuid-group-1" }
-    ]
+    }
   }
 }
 ```
@@ -251,11 +220,7 @@ Endpoints existants, conservés. Tous les payloads doivent désormais inclure `c
   "payload": {
     "controlhub_id": "uuid-shortcut-1",
     "controlhub_version": "2026-02-11T14:00:00Z",
-    "name": "LibreOffice Writer 2",
-    "workstation_groups": [
-      { "controlhub_id": "uuid-group-1" },
-      { "controlhub_id": "uuid-group-2" }
-    ]
+    "name": "LibreOffice Writer 2"
   }
 }
 ```
@@ -274,59 +239,6 @@ Endpoints existants, conservés. Tous les payloads doivent désormais inclure `c
 }
 ```
 
-### Workstation Groups
-
-#### `POST /api/v1/workstation-groups/create`
-
-```json
-{
-  "task_id": "uuid-task",
-  "task_name": "create_workstation_group",
-  "task_type": "create_workstation_group",
-  "payload": {
-    "name": "salle-101",
-    "controlhub_version": "2026-02-11T13:00:00Z",
-    "is_physical": true,
-    "display_name": "Salle 101",
-    "description": "Salle informatique 101",
-    "parent_name": "batiment-a",
-    "shortcuts": ["uuid-shortcut-1", "uuid-shortcut-2"],
-    "app_profiles": ["uuid-profile-1"]
-  }
-}
-```
-
-#### `POST /api/v1/workstation-groups/update`
-
-```json
-{
-  "task_id": "uuid-task",
-  "task_name": "update_workstation_group",
-  "task_type": "update_workstation_group",
-  "payload": {
-    "name": "salle-101",
-    "controlhub_version": "2026-02-11T14:00:00Z",
-    "new_name": "salle-101-renamed",
-    "display_name": "Salle 101 (renommée)",
-    "shortcuts": ["uuid-shortcut-1"],
-    "app_profiles": ["uuid-profile-1", "uuid-profile-2"]
-  }
-}
-```
-
-#### `POST /api/v1/workstation-groups/delete`
-
-```json
-{
-  "task_id": "uuid-task",
-  "task_name": "delete_workstation_group",
-  "task_type": "delete_workstation_group",
-  "payload": {
-    "name": "salle-101"
-  }
-}
-```
-
 ---
 
 ## 4. Sync Manifest (convergence complète)
@@ -335,8 +247,8 @@ Endpoints existants, conservés. Tous les payloads doivent désormais inclure `c
 
 Envoie l'état souhaité complet. L'instance converge en 3 passes :
 
-1. **Pass 1 — Upsert entités** : Créer/mettre à jour shortcuts, app_profiles, workstation_groups SANS relations
-2. **Pass 2 — Résolution relations** : shortcuts↔groups, groups↔appProfiles, groups↔parent, appProfiles↔applications (soft)
+1. **Pass 1 — Upsert entités** : Créer/mettre à jour shortcuts, app_profiles SANS relations
+2. **Pass 2 — Résolution relations** : appProfiles↔applications (soft)
 3. **Pass 3 — Nettoyage** : Supprimer les entités ControlHub absentes du manifeste
 
 **Payload :**
@@ -377,32 +289,6 @@ Envoie l'état souhaité complet. L'instance converge en 3 passes :
           { "app_id": "firefox-esr" }
         ]
       }
-    ],
-    "workstation_groups": [
-      {
-        "controlhub_id": "uuid-group-parent",
-        "controlhub_version": "2026-02-11T13:00:00Z",
-        "name": "batiment-a",
-        "display_name": "Bâtiment A",
-        "is_physical": true,
-        "parent_controlhub_id": null,
-        "shortcuts": [],
-        "app_profiles": []
-      },
-      {
-        "controlhub_id": "uuid-group-1",
-        "controlhub_version": "2026-02-11T13:00:00Z",
-        "name": "salle-101",
-        "display_name": "Salle 101",
-        "is_physical": true,
-        "parent_controlhub_id": "uuid-group-parent",
-        "shortcuts": [
-          { "controlhub_id": "uuid-shortcut-1" }
-        ],
-        "app_profiles": [
-          { "controlhub_id": "uuid-profile-1" }
-        ]
-      }
     ]
   }
 }
@@ -428,20 +314,15 @@ Envoie l'état souhaité complet. L'instance converge en 3 passes :
   "result": {
     "manifest_version": "2026-02-11T13:00:00Z",
     "pass1_entities": {
-      "shortcuts":          { "created": 1, "updated": 0, "unchanged": 0 },
-      "app_profiles":       { "created": 1, "updated": 0, "unchanged": 0 },
-      "workstation_groups": { "created": 2, "updated": 0, "unchanged": 0 }
+      "shortcuts":    { "created": 1, "updated": 0, "unchanged": 0 },
+      "app_profiles": { "created": 1, "updated": 0, "unchanged": 0 }
     },
     "pass2_relations": {
-      "shortcuts_to_groups":          { "attached": 1, "detached": 0 },
-      "groups_to_app_profiles":       { "attached": 1, "detached": 0 },
-      "groups_parent_resolved":       1,
       "app_profiles_to_applications": { "resolved": 2, "missing": 0 }
     },
     "pass3_cleanup": {
       "shortcuts_deleted": 0,
-      "app_profiles_deleted": 0,
-      "workstation_groups_deleted": 0
+      "app_profiles_deleted": 0
     },
     "warnings": [],
     "executed_at": "2026-02-11T13:00:05Z"
@@ -459,14 +340,10 @@ Envoie l'état souhaité complet. L'instance converge en 3 passes :
 |---------|----------|-------|
 | `GET` | `/api/v1/snapshot` | Inventaire léger (map controlhub_id → timestamp) |
 | `GET` | `/api/v1/shortcuts/{controlhub_id}` | Détail shortcut + relations |
-| `GET` | `/api/v1/workstation-groups/{controlhub_id}` | Détail groupe + relations |
 | `GET` | `/api/v1/app-profiles/{controlhub_id}` | Détail profil + relations |
 | `POST` | `/api/v1/shortcuts/create` | Créer un shortcut |
 | `POST` | `/api/v1/shortcuts/update` | Modifier un shortcut |
 | `POST` | `/api/v1/shortcuts/delete` | Supprimer un shortcut |
-| `POST` | `/api/v1/workstation-groups/create` | Créer un groupe |
-| `POST` | `/api/v1/workstation-groups/update` | Modifier un groupe |
-| `POST` | `/api/v1/workstation-groups/delete` | Supprimer un groupe |
 | `POST` | `/api/v1/sync-manifest` | Convergence complète |
 
 ---

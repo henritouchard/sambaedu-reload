@@ -525,13 +525,12 @@ class ImposedDepotReconciliationTest extends TestCase
     #[Test]
     public function the_shared_entry_point_does_not_steal_primary_without_promotion(): void
     {
-        // Review 51.1 #6 — le chemin WGSync (SyncWorkstationGroupJob embarquant des apps)
-        // consomme getOrCreateImposedDepot() SANS promotion : dans la fenêtre « contrat
-        // actif + catalogue VIDE » (AC9), le dépôt imposé ne doit PAS voler is_primary au
-        // dépôt classique encore vivant (sinon getDefaultDepot() bascule sur un dépôt vide).
+        // Appelé SANS promotion : dans la fenêtre « contrat actif + catalogue VIDE »,
+        // le dépôt imposé ne doit PAS voler is_primary au dépôt classique encore vivant
+        // (sinon getDefaultDepot() bascule sur un dépôt vide).
         $classic = $this->classicDepot(); // is_primary => true (helper)
 
-        // Voie WGSync (promote défaut = false).
+        // promote défaut = false.
         $imposed = ImposedDepotReconciler::getOrCreateImposedDepot();
         self::assertFalse($imposed->is_primary, 'le dépôt imposé ne se promeut PAS hors bascule');
         self::assertTrue($classic->fresh()->is_primary, 'le dépôt classique garde is_primary');

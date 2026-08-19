@@ -53,19 +53,6 @@ class SyncManifestController extends Controller
                 'payload.app_profiles.*.applications.*.xml_url' => 'nullable|string|max:512',
                 'payload.app_profiles.*.applications.*.xml_sha' => 'nullable|string|max:128',
                 'payload.app_profiles.*.applications.*.log_url' => 'nullable|string|max:512',
-                // Workstation groups
-                'payload.workstation_groups' => 'nullable|array',
-                'payload.workstation_groups.*.controlhub_id' => 'required|uuid',
-                'payload.workstation_groups.*.controlhub_version' => 'nullable|date',
-                'payload.workstation_groups.*.name' => 'required|string|max:255',
-                'payload.workstation_groups.*.display_name' => 'nullable|string|max:255',
-                'payload.workstation_groups.*.description' => 'nullable|string|max:1000',
-                'payload.workstation_groups.*.is_physical' => 'nullable|boolean',
-                'payload.workstation_groups.*.parent_controlhub_id' => 'nullable|uuid',
-                'payload.workstation_groups.*.shortcuts' => 'nullable|array',
-                'payload.workstation_groups.*.shortcuts.*.controlhub_id' => 'required|uuid',
-                'payload.workstation_groups.*.app_profiles' => 'nullable|array',
-                'payload.workstation_groups.*.app_profiles.*.controlhub_id' => 'required|uuid',
             ]);
 
             // Idempotence
@@ -103,7 +90,6 @@ class SyncManifestController extends Controller
                 'manifest_version' => $validated['manifest_version'],
                 'shortcuts_count' => count($validated['payload']['shortcuts'] ?? []),
                 'app_profiles_count' => count($validated['payload']['app_profiles'] ?? []),
-                'workstation_groups_count' => count($validated['payload']['workstation_groups'] ?? []),
             ]);
 
             $task->markAsQueued();

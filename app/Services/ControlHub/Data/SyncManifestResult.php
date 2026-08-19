@@ -19,25 +19,13 @@ class SyncManifestResult
     /** @var array{created: int, updated: int, unchanged: int} */
     public array $applicationsStats = ['created' => 0, 'updated' => 0, 'unchanged' => 0];
 
-    /** @var array{created: int, updated: int, unchanged: int} */
-    public array $workstationGroupsStats = ['created' => 0, 'updated' => 0, 'unchanged' => 0];
-
-    /** @var array{attached: int, detached: int} */
-    public array $shortcutsToGroups = ['attached' => 0, 'detached' => 0];
-
-    /** @var array{attached: int, detached: int} */
-    public array $groupsToAppProfiles = ['attached' => 0, 'detached' => 0];
-
-    public int $groupsParentResolved = 0;
-
     /** @var array{resolved: int, missing: int} */
     public array $appProfilesToApplications = ['resolved' => 0, 'missing' => 0];
 
-    /** @var array{shortcuts_deleted: int, app_profiles_deleted: int, workstation_groups_deleted: int} */
+    /** @var array{shortcuts_deleted: int, app_profiles_deleted: int} */
     public array $cleanup = [
         'shortcuts_deleted' => 0,
         'app_profiles_deleted' => 0,
-        'workstation_groups_deleted' => 0,
     ];
 
     /** @var string[] */
@@ -66,12 +54,8 @@ class SyncManifestResult
                 'applications' => $this->applicationsStats,
                 'shortcuts' => $this->shortcutsStats,
                 'app_profiles' => $this->appProfilesStats,
-                'workstation_groups' => $this->workstationGroupsStats,
             ],
             'pass2_relations' => [
-                'shortcuts_to_groups' => $this->shortcutsToGroups,
-                'groups_to_app_profiles' => $this->groupsToAppProfiles,
-                'groups_parent_resolved' => $this->groupsParentResolved,
                 'app_profiles_to_applications' => $this->appProfilesToApplications,
             ],
             'pass3_cleanup' => $this->cleanup,

@@ -118,19 +118,13 @@ class ImposedDepotReconciler
     }
 
     /**
-     * Point d'entrée UNIQUE de définition du dépôt imposé (AC4). Idempotent
-     * (`updateOrCreate` par nom canonique) : le stub historique de
-     * {@see WorkstationGroupSyncService} est promu ici (une seule définition).
+     * Point d'entrée UNIQUE de définition du dépôt imposé. Idempotent
+     * (`updateOrCreate` par nom canonique).
      *
-     * Statique et public : {@see WorkstationGroupSyncService::getOrCreateControlHubDepot()}
-     * le RÉUTILISE (pas deux définitions).
-     *
-     * ⚠️ `$promote` (défaut false) : SEULE la voie réconciliateur (catalogue NON vide,
-     * bascule effective AC4) promeut le dépôt imposé en `is_primary` — sinon un simple
-     * `SyncWorkstationGroupJob` embarquant des applications, dans la fenêtre « contrat
-     * actif + catalogue VIDE » (AC9), volerait le flag `is_primary` au dépôt classique
-     * encore vivant et détournerait `getDefaultDepot()`. Le chemin WGSync appelle donc
-     * SANS promotion (garantit l'existence + le marqueur `is_imposed`, rien de plus).
+     * ⚠️ `$promote` (défaut false) : promouvoir le dépôt imposé en `is_primary` alors
+     * que le catalogue amont est VIDE détourne `getDefaultDepot()` vers un dépôt sans
+     * application. Seule la réconciliation sur catalogue NON vide promeut ; tout autre
+     * appelant garantit l'existence + le marqueur `is_imposed`, rien de plus.
      */
     public static function getOrCreateImposedDepot(bool $promote = false): Depot
     {

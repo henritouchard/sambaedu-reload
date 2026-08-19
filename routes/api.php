@@ -10,7 +10,6 @@ use App\Http\Controllers\Api\v1\ControlHub\ContractIngestionController;
 use App\Http\Controllers\Api\v1\ControlHub\InstanceStatusController;
 use App\Http\Controllers\Api\v1\ControlHub\GreetmeController;
 use App\Http\Controllers\Api\v1\ControlHub\TaskController;
-use App\Http\Controllers\Api\v1\ControlHub\WorkstationGroupController;
 use App\Http\Controllers\Api\v1\ControlHub\SnapshotController;
 use App\Http\Controllers\Api\v1\ControlHub\ApplicationController;
 use App\Http\Controllers\Api\v1\ControlHub\AppProfileController;
@@ -106,13 +105,6 @@ Route::prefix('v1')->middleware('controlhub.auth')->group(function () {
     Route::prefix('shortcuts')->name('shortcut.')->group(function () {
         Route::post('/sync', [ShortcutController::class, 'syncShortcut'])->name('sync');
         Route::post('/delete', [ShortcutController::class, 'deleteShortcut'])->name('delete');
-    });
-
-    Route::prefix('workstation-groups')->name('workstation-group.')->group(function () {
-        Route::post('/sync', [WorkstationGroupController::class, 'syncWorkstationGroup'])->name('sync');
-        Route::post('/sync-tree', [WorkstationGroupController::class, 'syncWorkstationGroupTree'])->name('sync-tree');
-        Route::post('/delete', [WorkstationGroupController::class, 'deleteWorkstationGroup'])->name('delete');
-        Route::get('/{controlhubId}', [SnapshotController::class, 'showWorkstationGroup'])->name('show');
     });
 
     // Routes pour les applications ControlHub

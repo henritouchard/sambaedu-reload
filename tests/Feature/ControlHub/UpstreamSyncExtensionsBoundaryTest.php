@@ -482,7 +482,6 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
                         ],
                     ],
                 ],
-                'workstation_groups' => [],
             ], 'v1');
 
             // … puis manifeste VIDE : `pass3Cleanup` supprime les entités

@@ -69,8 +69,8 @@ tâches faites) · `LDAPRECORD_MIGRATION.md` (migration achevée) ·
 `applicationBridge.md` (pont vers le legacy, canal éteint) ·
 `EDIT_USER_rights_New.md` (proposition d'architecture non retenue telle quelle) ·
 `wallpaper-legacy-disable.md`, `wallpaper-smoke-test.md` (procédures ponctuelles) ·
-`controlhub-workstation-groups-api.md` (doublon ancien de
-[`../api-controlhub-workstation-groups.md`](../api-controlhub-workstation-groups.md)) ·
+`controlhub-workstation-groups-api.md` (API controlHub de synchronisation des
+parcs, retirée du contrat amont) ·
 `documentation/Laravel/`, `documentation/databases/LDAPRecord.md` (tutoriels de
 bibliothèques tierces, mieux servis par leur documentation officielle) ·
 `documentation/architecture/routes.md`, `documentation/CLI/nouvelle fonctionnalité.md`

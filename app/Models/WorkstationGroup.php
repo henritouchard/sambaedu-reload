@@ -28,7 +28,7 @@ use App\Enums\LockReason;
  * @property bool $is_physical true = groupe physique (OU dans Computers), false = groupe logique (CN dans Parcs)
  * @property string|null $display_name Nom d'affichage
  * @property string|null $description
- * @property string|null $app_profile_name Champ hérité INERTE (Story 38.7) — la création auto d'AppProfile a été retirée. Conservé sans migration car lu par SnapshotController (export controlHub) et écrit par BulkCreateWorkstationGroupsJob (payload controlHub descendant).
+ * @property string|null $app_profile_name Colonne INERTE : plus personne ne l'alimente ni ne la lit hors des scopes ci-dessous. Conservée sans migration de retrait.
  * @property int|null $parent_id Parent pour les groupes physiques (hiérarchie GPO)
  * @property string|null $ad_dn Distinguished Name dans AD
  * @property string|null $ad_guid objectGUID dans AD

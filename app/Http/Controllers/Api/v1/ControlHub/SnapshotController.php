@@ -194,68 +194,6 @@ class SnapshotController extends Controller
     }
 
     /**
-     * GET /api/v1/workstation-groups/{controlhubId}
-     */
-    public function showWorkstationGroup(string $controlhubId): JsonResponse
-    {
-        $group = WorkstationGroup::where('controlhub_id', $controlhubId)->first();
-
-        if (!$group) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Workstation group non trouvé',
-                'controlhub_id' => $controlhubId,
-            ], 404);
-        }
-
-        // Relations shortcuts ayant un controlhub_id
-        $shortcuts = $group->shortcuts()
-            ->whereNotNull('shortcuts.controlhub_id')
-            ->select('shortcuts.controlhub_id', 'shortcuts.name')
-            ->get()
-            ->map(fn (Shortcut $s) => [
-                'controlhub_id' => $s->controlhub_id,
-                'name' => $s->name,
-            ])
-            ->values();
-
-        // Relations app_profiles ayant un controlhub_id
-        $appProfiles = $group->appProfiles()
-            ->whereNotNull('app_profiles.controlhub_id')
-            ->select('app_profiles.controlhub_id', 'app_profiles.name')
-            ->get()
-            ->map(fn (AppProfile $p) => [
-                'controlhub_id' => $p->controlhub_id,
-                'name' => $p->name,
-            ])
-            ->values();
-
-        // Parent controlhub_id
-        $parentControlhubId = null;
-        if ($group->parent_id) {
-            $parent = WorkstationGroup::find($group->parent_id);
-            $parentControlhubId = $parent?->controlhub_id;
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'controlhub_id' => $group->controlhub_id,
-                'controlhub_version' => $this->formatTimestamp($group->controlhub_version),
-                'name' => $group->name,
-                'display_name' => $group->display_name,
-                'description' => $group->description,
-                'is_physical' => $group->is_physical,
-                'is_active' => $group->is_active,
-                'parent_controlhub_id' => $parentControlhubId,
-                'app_profile_name' => $group->app_profile_name,
-                'shortcuts' => $shortcuts,
-                'app_profiles' => $appProfiles,
-            ],
-        ]);
-    }
-
-    /**
      * GET /api/v1/applications/{controlhubId}
      */
     public function showApplication(string $controlhubId): JsonResponse
