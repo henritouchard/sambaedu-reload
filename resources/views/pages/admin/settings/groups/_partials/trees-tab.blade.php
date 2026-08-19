@@ -905,7 +905,7 @@ new class extends Component {
         return $keys;
     }
 
-    /** Le libellé d'une audience : celui de la RECETTE, tel qu'il y est écrit. */
+    /** @see RoleCatalog::audienceLabel() — dérivé du catalogue dès que l'audience vise un rôle d'arête. */
     private function audienceLabel(string $roleKey): string
     {
         if ($roleKey === DirectoryTemplate::TREE_ROLE_MEMBER) {
@@ -914,9 +914,7 @@ new class extends Component {
 
         foreach ($this->rolesSpec as $role) {
             if (is_array($role) && ($role['key'] ?? null) === $roleKey) {
-                $label = $role['label'] ?? null;
-
-                return is_string($label) && trim($label) !== '' ? $label : $roleKey;
+                return RoleCatalog::audienceLabel($role, $this->typeKey !== '' ? $this->typeKey : null);
             }
         }
 

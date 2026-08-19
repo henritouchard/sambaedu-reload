@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Filesystem\Backend\FileBackendSelection;
 use App\Services\Filesystem\Plan\PlanGrant;
+use App\Support\RoleCatalog;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -369,7 +370,7 @@ class DirectoryTemplateService
             $access = self::assignmentAccessOf($role);
             $cardinality = ($role['cardinality'] ?? 'one') === 'many' ? 'many' : 'one';
             $groupType = $role['group_type'] ?? null;
-            $roleLabel = (string) ($role['label'] ?? $roleKey);
+            $roleLabel = RoleCatalog::audienceLabel($role, $template->attached_group_type);
 
             if (! in_array($maille, DirectoryTemplate::ALLOWED_ROLE_MAILLES, true)) {
                 throw new InvalidArgumentException("Maille non autorisée pour le rôle « {$roleLabel} ».");

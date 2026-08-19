@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Enums\RoleResolutionStrategy;
 use App\Models\GroupRole;
 use App\Models\Pivot\UserGroupUserPivot;
 use Illuminate\Support\Facades\DB;
@@ -151,6 +152,57 @@ final class RoleCatalog
             ?? $rows[$role]
             ?? self::GENERIC_FALLBACK[$role]
             ?? $role;
+    }
+
+    /**
+     * Le libellé d'affichage d'une AUDIENCE de recette (une entrée de `roles_spec`).
+     *
+     * Une audience résolue par rôle d'arête ne nomme personne d'elle-même : elle
+     * vise `<type> × <rôle>`, dont le seul nom légitime est celui du catalogue.
+     * Rendre son libellé stocké laisse deux mots pour une même population — la
+     * recette de classe seedée dit « Équipe enseignante » là où le catalogue dit
+     * « Enseignant ». Les autres stratégies désignent un groupe entier ou une
+     * saisie, que le catalogue ne sait pas nommer : leur libellé stocké passe tel
+     * quel.
+     *
+     * @param  array<string, mixed>  $roleSpec
+     * @param  ?string  $groupType  type à consulter ; à défaut celui du rôle
+     */
+    public static function audienceLabel(array $roleSpec, ?string $groupType = null): string
+    {
+        $stored = is_string($roleSpec['label'] ?? null) && trim((string) $roleSpec['label']) !== ''
+            ? (string) $roleSpec['label']
+            : (string) ($roleSpec['key'] ?? '');
+
+        $resolution = $roleSpec[RoleResolutionStrategy::SPEC_KEY] ?? null;
+
+        if (! is_array($resolution)) {
+            return $stored;
+        }
+
+        $strategy = $resolution[RoleResolutionStrategy::SPEC_STRATEGY_KEY] ?? null;
+
+        if ($strategy !== RoleResolutionStrategy::EdgeRole->value) {
+            return $stored;
+        }
+
+        $edgeRoles = array_values(array_filter(
+            (array) ($resolution[RoleResolutionStrategy::SPEC_EDGE_ROLES_KEY] ?? []),
+            static fn ($role): bool => is_string($role) && trim($role) !== '',
+        ));
+
+        if ($edgeRoles === []) {
+            return $stored;
+        }
+
+        $type = $groupType !== null && trim($groupType) !== ''
+            ? $groupType
+            : (is_string($roleSpec['group_type'] ?? null) ? (string) $roleSpec['group_type'] : null);
+
+        return implode(', ', array_map(
+            static fn (string $roleKey): string => self::label($type, $roleKey),
+            $edgeRoles,
+        ));
     }
 
     /**

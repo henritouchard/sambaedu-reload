@@ -812,7 +812,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
             $preview[] = [
                 'label' => $audience,
-                'maille' => (string) ($role['label'] ?? $roleKey),
+                'maille' => RoleCatalog::audienceLabel($role, $group->type),
                 'access' => $access,
             ];
         }
@@ -1397,7 +1397,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         <div class="form-control">
                             <label class="label py-1">
                                 <span class="label-text font-medium">
-                                    {{ $role['label'] }}
+                                    {{ \App\Support\RoleCatalog::audienceLabel($role, $selectedTpl->attached_group_type) }}
                                     @if ($isMany)
                                         <span class="tooltip align-middle" data-tip="Maintenez Ctrl (ou Cmd) pour sélectionner plusieurs groupes.">
                                             <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
