@@ -8,6 +8,7 @@ use App\Support\GroupTypeCatalog;
 use App\Support\RoleCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
@@ -157,6 +158,38 @@ new class extends Component {
         }
 
         return $rows;
+    }
+
+    /**
+     * Les libellés locaux DÉJÀ posés sur d'autres types, proposés en suggestions.
+     *
+     * Le champ reste libre — un vertical qui dit « Animateur » doit pouvoir
+     * l'écrire sans qu'on l'ait prévu. Mais rien ne rappelait à l'écran qu'un
+     * autre type disait déjà « Enseignant », et trois types finissaient par porter
+     * « Prof », « Professeur » et « Enseignant » pour la même chose. La liste est
+     * donc du CONSTAT, pas un vocabulaire livré : elle n'existe que si un
+     * administrateur a saisi ces mots.
+     *
+     * @return list<string>
+     */
+    public function getKnownRoleLabelsProperty(): array
+    {
+        $labels = GroupTypeRole::query()
+            ->whereNotNull('label')
+            ->distinct()
+            ->pluck('label')
+            ->map(static fn ($label): string => trim((string) $label))
+            ->filter(static fn (string $label): bool => $label !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        // Tri sur la forme TRANSLITTÉRÉE : `sort()` compare des octets, ce qui
+        // renvoie « Élève » derrière « Référent » dans une liste française.
+        usort($labels, static fn (string $a, string $b): int => strcasecmp(Str::ascii($a), Str::ascii($b))
+            ?: strcmp($a, $b));
+
+        return $labels;
     }
 
     /**
@@ -768,6 +801,9 @@ new class extends Component {
                     Cochez les rôles qui ont un sens dans ce type de groupe. Pour chacun, vous pouvez donner
                     un <strong>libellé local</strong> — c'est ainsi que le rôle se lira sur les groupes de ce
                     type (un « Gestionnaire » se dit « Enseignant » dans une classe).
+                    @if ($this->knownRoleLabels !== [])
+                        Le champ propose les libellés déjà employés ailleurs ; vous pouvez en saisir un autre.
+                    @endif
                 </p>
 
                 <div class="flex items-center gap-2 mt-3 pb-2 border-b border-base-300">
@@ -796,6 +832,7 @@ new class extends Component {
                                         wire:model.live="roleLabels.{{ $roleKey }}"
                                         class="input input-bordered input-sm w-full"
                                         placeholder="{{ $roleLabel }}"
+                                        list="known-role-labels"
                                         data-testid="role-local-label-{{ $roleKey }}" />
                                     <span class="text-xs opacity-60">
                                         Laissé vide, le libellé du catalogue (« {{ $roleLabel }} ») s'applique.
@@ -805,6 +842,14 @@ new class extends Component {
                         </div>
                     @endforeach
                 </div>
+
+                {{-- Suggestions partagées par tous les champs de libellé : le
+                     navigateur les propose à la frappe, la saisie reste libre. --}}
+                <datalist id="known-role-labels" data-testid="known-role-labels">
+                    @foreach ($this->knownRoleLabels as $knownLabel)
+                        <option value="{{ $knownLabel }}"></option>
+                    @endforeach
+                </datalist>
 
                 @if ($selectedRoleKeys === [])
                     {{-- Le régime de repli est DIT avant d'enregistrer, pas

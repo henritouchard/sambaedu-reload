@@ -391,4 +391,69 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
         // `custom`, son homonyme de casse, n'a rien attrapé.
         $this->assertSame([], GroupTypeRole::declaredFor('custom'));
     }
+
+    // =========================================================================
+    // Suggestions de libellé — du CONSTAT, jamais un vocabulaire livré
+    // =========================================================================
+
+    /**
+     * Rien n'empêchait « Prof », « Professeur » et « Enseignant » de coexister sur
+     * trois types pour la même chose. Le champ reste libre — il rappelle
+     * simplement ce qui a déjà été écrit ailleurs.
+     */
+    #[Test]
+    public function the_label_field_suggests_the_labels_already_in_use(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::TAB)
+            ->assertSet('knownRoleLabels', [
+                'Élève', 'Enseignant', 'Porteur', 'Professeur principal', 'Référent',
+            ]);
+    }
+
+    #[Test]
+    public function a_label_saved_on_one_type_becomes_a_suggestion_for_the_others(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::TAB)
+            ->call('openEdit', $this->typeId('cours'))
+            ->set('selectedRoleKeys', ['manager'])
+            ->set('roleLabels.manager', 'Animateur')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertContains('Animateur', Livewire::test(self::TAB)->get('knownRoleLabels'));
+    }
+
+    /** Les suggestions sont des VALEURS distinctes : un même mot n'y figure qu'une fois. */
+    #[Test]
+    public function the_same_word_used_by_two_types_is_suggested_once(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::TAB)
+            ->call('openEdit', $this->typeId('cours'))
+            ->set('selectedRoleKeys', ['manager'])
+            ->set('roleLabels.manager', 'Enseignant')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $suggestions = Livewire::test(self::TAB)->get('knownRoleLabels');
+
+        $this->assertSame(1, count(array_keys($suggestions, 'Enseignant', true)));
+    }
+
+    /** Sans aucune déclaration locale, aucune suggestion n'est inventée. */
+    #[Test]
+    public function an_instance_without_local_labels_suggests_nothing(): void
+    {
+        $this->grant(['server.admin']);
+
+        GroupTypeRole::query()->update(['label' => null]);
+        RoleCatalog::flush();
+
+        Livewire::test(self::TAB)->assertSet('knownRoleLabels', []);
+    }
 }
