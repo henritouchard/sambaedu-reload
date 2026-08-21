@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ControlHubArtifactPullStatus;
+use App\Enums\ControlHubContractApplyStatus;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -43,6 +44,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $artifact_size Story 39.4 — taille attendue du binaire en octets
  * @property \App\Enums\ControlHubArtifactPullStatus|null $pull_status Story 39.4 — état du pull (pending|downloaded|error)
  * @property string|null $pull_error Story 39.4 — message court d'échec du pull
+ * @property ControlHubContractApplyStatus|null $apply_status Verdict d'application rapporté au canal ③
+ * @property string|null $apply_detail Motif lisible du verdict d'application
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property-read ControlHubContract $contract
@@ -58,6 +61,7 @@ class ControlHubContractItem extends Model
         'type',
         'key',
         'value',
+        'spec',
         'enforcement_state',
         'target_type',
         'target_label',
@@ -68,14 +72,18 @@ class ControlHubContractItem extends Model
         'artifact_size',
         'pull_status',
         'pull_error',
+        'apply_status',
+        'apply_detail',
     ];
 
     protected $casts = [
+        'spec' => 'array',
         'enforcement_state' => ControlHubEnforcementState::class,
         'target_type' => ControlHubContractTarget::class,
         // Story 39.4
         'artifact_size' => 'integer',
         'pull_status' => ControlHubArtifactPullStatus::class,
+        'apply_status' => ControlHubContractApplyStatus::class,
     ];
 
     /**

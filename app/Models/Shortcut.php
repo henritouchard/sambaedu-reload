@@ -20,6 +20,8 @@ use Livewire\Wireable;
  * @property string|null $owner Propriétaires (groupes AD, séparés par virgules)
  * @property string $place desktop, startup, taskbar
  * @property bool $is_global Géré par ControlHub
+ * @property bool $is_parc_default Posé sur tous les postes sans assignation (défaut de parc)
+ * @property string|null $controlhub_contract_key Clé de l'item de contrat amont qui l'a matérialisé
  * @property string|null $windows_link Chemin de l'exécutable Windows
  * @property string|null $windows_args Arguments Windows
  * @property string|null $windows_path Répertoire de travail Windows
@@ -63,6 +65,8 @@ class Shortcut extends Model implements Wireable
         'owner',
         'place',
         'is_global',
+        'is_parc_default',
+        'controlhub_contract_key',
         'windows_link',
         'windows_args',
         'windows_path',
@@ -96,6 +100,7 @@ class Shortcut extends Model implements Wireable
         'controlhub_id' => 'string',
         'controlhub_version' => 'datetime',
         'is_global' => 'boolean',
+        'is_parc_default' => 'boolean',
         'is_active' => 'boolean',
         'is_url' => 'boolean',
         'metadata' => 'array',

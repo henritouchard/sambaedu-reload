@@ -7,7 +7,9 @@ namespace App\Services\ControlHub;
 use App\Enums\ControlHubArtifactPullStatus;
 use App\Models\AgentTool;
 use App\Models\ControlHubContractItem;
+use App\Models\Shortcut;
 use App\Models\WallpaperAsset;
+use App\Services\Shortcuts\ShortcutIconAssetService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -178,6 +180,7 @@ class ArtifactPullService
             match ($type) {
                 'wallpapers' => $this->materializeWallpaper($tmp, $destDir, $checksum, $byteSize),
                 'agent_tools' => $this->materializeAgentTool($tmp, $destDir, $key, $checksum, $filename, $byteSize),
+                Shortcut::TYPE_SHORTCUTS => $this->materializeShortcutIcon($tmp, $destDir, $key, $checksum),
                 default => @unlink($tmp),
             };
 
@@ -263,6 +266,11 @@ class ArtifactPullService
         return match ($type) {
             'wallpapers' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
             'agent_tools' => AgentTool::query()->where('key', $key)->exists(),
+            // L'icône est content-adressée sur disque : présente, il n'y a rien à tirer,
+            // et c'est le réconciliateur de raccourcis qui recolle les colonnes.
+            Shortcut::TYPE_SHORTCUTS => is_file(
+                app(ShortcutIconAssetService::class)->servedDir().DIRECTORY_SEPARATOR.$checksum.'.ico'
+            ),
             default => true,
         };
     }
@@ -273,6 +281,7 @@ class ArtifactPullService
         return match ($type) {
             'wallpapers' => WallpaperAsset::libraryPath(),
             'agent_tools' => rtrim((string) config('agent.tools_path'), '/\\'),
+            Shortcut::TYPE_SHORTCUTS => app(ShortcutIconAssetService::class)->servedDir(),
             default => null,
         };
     }
@@ -307,6 +316,41 @@ class ArtifactPullService
                 'uploaded_by' => null,
             ],
         );
+    }
+
+    /**
+     * Matérialise l'icône d'un raccourci imposé (`<checksum>.ico`, nommage dérivé du
+     * seul contenu) puis la recolle sur le raccourci que le contrat a matérialisé.
+     *
+     * Le raccourci est retrouvé par la clé de l'item, pas par `shortcuts.key` : cette
+     * dernière peut avoir été préfixée à la création pour ne pas écraser un raccourci
+     * local homonyme.
+     *
+     * Une icône dont le raccourci n'existe pas (item sans cible, donc non matérialisé)
+     * reste sur disque sans être rattachée — le fichier est content-adressé, il servira
+     * si le contrat complète l'item plus tard.
+     */
+    private function materializeShortcutIcon(string $tmp, string $iconDir, string $key, string $checksum): void
+    {
+        $filename = $checksum.'.ico';
+        $target = rtrim($iconDir, '/\\').DIRECTORY_SEPARATOR.$filename;
+
+        if (is_file($target)) {
+            @unlink($tmp);
+        } else {
+            @chmod($tmp, 0o644);
+            if (! @rename($tmp, $target)) {
+                @unlink($tmp);
+                throw new \RuntimeException("échec du dépôt de l'icône de raccourci ({$target})");
+            }
+        }
+
+        Shortcut::query()
+            ->where('controlhub_contract_key', $key)
+            ->update([
+                'icon_asset' => $filename,
+                'icon_checksum' => $checksum,
+            ]);
     }
 
     /**

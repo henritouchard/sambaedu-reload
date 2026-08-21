@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Events\ControlHubContractChanged;
+use App\Listeners\ApplyContractAssignments;
+use App\Listeners\MaterializeContractShortcuts;
 use App\Listeners\NotifyQuotaOverageOnLogin;
 use App\Listeners\ProvisionOrderedApplications;
 use App\Listeners\ReconcileImposedDepot;
@@ -44,9 +46,14 @@ class EventServiceProvider extends ServiceProvider
         // le dépôt IMPOSÉ (bascule exclusive du canal dépôts). DOIT s'exécuter APRÈS
         // ProvisionOrderedApplications, dont les apps matérialisées (depot_id=null) sont
         // calculées avant que ce réconciliateur ne fasse transferts/purges.
+        // MaterializeContractShortcuts précède le dispatch des binaires imposés
+        // (émis par l'ingestion juste après cet événement) : l'icône tirée doit
+        // trouver un raccourci sur lequel se recoller.
         ControlHubContractChanged::class => [
             ReconcileImposedWorkstationGroups::class,
             ProvisionOrderedApplications::class,
+            MaterializeContractShortcuts::class,
+            ApplyContractAssignments::class,
             ReconcileImposedDepot::class,
         ],
     ];

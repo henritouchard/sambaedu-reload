@@ -104,6 +104,70 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
     }
 
     #[Test]
+    public function creates_a_physical_parc_when_the_contract_declares_it(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        ControlHubContractImposedGroup::factory()->create([
+            'controlhub_contract_id' => $contract->id,
+            'name' => 'salle_101',
+            'is_physical' => true,
+        ]);
+
+        $result = $this->reconciler()->reconcile();
+
+        $group = WorkstationGroup::findByName('salle_101');
+        self::assertNotNull($group);
+        self::assertTrue($group->is_physical);
+        self::assertSame(1, $result->created);
+
+        // Seule une salle physique justifie une écriture AD (`OU` sous `OU=Computers`).
+        Queue::assertPushed(WorkstationGroupAdSyncJob::class);
+    }
+
+    #[Test]
+    public function creates_a_logical_parc_when_the_contract_stays_silent(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        ControlHubContractImposedGroup::factory()->create([
+            'controlhub_contract_id' => $contract->id,
+            'name' => 'parc_muet',
+            'is_physical' => null,
+        ]);
+
+        $this->reconciler()->reconcile();
+
+        $group = WorkstationGroup::findByName('parc_muet');
+        self::assertNotNull($group);
+        self::assertFalse($group->is_physical);
+        Queue::assertNotPushed(WorkstationGroupAdSyncJob::class);
+    }
+
+    #[Test]
+    public function does_not_switch_the_nature_of_an_existing_parc(): void
+    {
+        app(WorkstationGroupService::class)->createGroup([
+            'name' => 'parc_deja_la',
+            'is_physical' => false,
+            'is_active' => true,
+        ]);
+
+        $contract = ControlHubContract::factory()->create();
+        ControlHubContractImposedGroup::factory()->create([
+            'controlhub_contract_id' => $contract->id,
+            'name' => 'parc_deja_la',
+            'is_physical' => true,
+        ]);
+
+        $result = $this->reconciler()->reconcile();
+
+        $group = WorkstationGroup::findByName('parc_deja_la');
+        self::assertNotNull($group);
+        self::assertFalse($group->is_physical, 'La nature d\'un parc existant ne doit jamais basculer.');
+        self::assertSame(1, $result->confirmed);
+        self::assertSame([], $result->errors);
+    }
+
+    #[Test]
     public function creates_an_absent_imposed_group_without_label(): void
     {
         $this->activeContractWithImposedGroups(['compta_x' => null]);

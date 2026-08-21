@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $controlhub_contract_id
  * @property string $name Nom du workstationGroup à garantir
  * @property string|null $label_name Nom du label réservé associé (nullable — rattachement logique)
+ * @property bool|null $is_physical Nature du parc réclamée par l'amont ; null = non déclarée
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property-read ControlHubContract $contract
@@ -44,6 +45,11 @@ class ControlHubContractImposedGroup extends Model
         'controlhub_contract_id',
         'name',
         'label_name',
+        'is_physical',
+    ];
+
+    protected $casts = [
+        'is_physical' => 'boolean',
     ];
 
     /**

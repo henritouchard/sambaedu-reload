@@ -18,9 +18,10 @@ use Illuminate\Support\Facades\Log;
  *
  * Garantit que, pour chaque groupe imposé du contrat amont **actif** :
  *  - s'il est absent → il est CRÉÉ via le chemin parc existant
- *    ({@see WorkstationGroupService::createGroup()} → observer → `WorkstationGroupAdSyncJob`,
- *    AD réel `OU=Parcs`, `is_physical = false`) avec son label réservé, le flag
- *    `managed_by_control_hub` et le verrou de suppression `locked = control_hub` ;
+ *    ({@see WorkstationGroupService::createGroup()} → observer) avec son label réservé,
+ *    le flag `managed_by_control_hub` et le verrou de suppression
+ *    `locked = control_hub`. Sa nature suit `is_physical` du contrat (logique par
+ *    défaut : un parc physique déclenche seul une écriture AD) ;
  *  - s'il existe déjà → il est CONFIRMÉ de façon idempotente par écriture **ciblée**
  *    (jamais via `updateGroup()` qui throw sur `isLocked()`), sans doublon (résolution
  *    par nom), sans écraser un verrou de plus forte priorité (ex. `root`).
@@ -79,9 +80,10 @@ class ImposedWorkstationGroupReconciler
                 $existing = WorkstationGroup::findByName($name);
 
                 if ($existing === null) {
-                    $this->createImposedGroup($name, $labelName);
+                    $this->createImposedGroup($name, $labelName, $group->is_physical);
                     $result->created++;
                 } else {
+                    $this->warnOnNatureDivergence($existing, $group->is_physical);
                     $this->confirmImposedGroup($existing, $labelName, $result);
                 }
             } catch (\InvalidArgumentException | \Illuminate\Database\QueryException $e) {
@@ -125,22 +127,43 @@ class ImposedWorkstationGroupReconciler
     /**
      * Crée un WorkstationGroup imposé absent via le chemin parc existant.
      *
-     * Story 38.7 — le groupe imposé est LOGIQUE (`is_physical = false`) : il est
-     * désormais purement SQL. L'observer ne dispatche plus aucun job AD pour lui
-     * (`OU=Parcs` est en lecture seule ; on l'y LIT à l'import de migration, on
-     * n'y ÉCRIT plus rien). Seules les salles physiques restent écrites, dans
-     * leur `OU` sous `OU=Computers`.
+     * Un groupe imposé est logique par défaut : `OU=Parcs` est en lecture seule
+     * (on l'y lit à l'import de migration, on n'y écrit plus), donc rien ne
+     * justifie une écriture AD. L'amont peut néanmoins réclamer un parc PHYSIQUE
+     * (`is_physical: true`) — dans ce cas l'observer crée l'`OU` sous
+     * `OU=Computers`, là où les machines sont rangées et les GPO liées.
      */
-    private function createImposedGroup(string $name, ?string $labelName): void
+    private function createImposedGroup(string $name, ?string $labelName, ?bool $isPhysical): void
     {
         $this->workstationGroupService->createGroup([
             'name' => $name,
-            'is_physical' => false,
+            'is_physical' => $isPhysical === true,
             'is_active' => true,
             'managed_by_control_hub' => true,
             'locked' => LockReason::CONTROL_HUB->value,
             // $labelName est déjà normalisé en amont ('' → null) : pas de `?: null` ici.
             'controlhub_label' => $labelName,
+        ]);
+    }
+
+    /**
+     * Signale un parc existant dont la nature diverge de celle réclamée par l'amont.
+     *
+     * La nature n'est JAMAIS mutée après coup : basculer un parc en physique crée
+     * une `OU` AD, l'inverse en laisse une orpheline, et les postes déjà membres
+     * changeraient de rattachement AD sans que personne l'ait demandé. La divergence
+     * est donc tracée pour arbitrage humain, pas résolue en silence.
+     */
+    private function warnOnNatureDivergence(WorkstationGroup $group, ?bool $imposedPhysical): void
+    {
+        if ($imposedPhysical === null || $group->is_physical === $imposedPhysical) {
+            return;
+        }
+
+        Log::warning('[ImposedWorkstationGroupReconciler] Nature de parc divergente — non modifiée', [
+            'group_name' => $group->name,
+            'local_is_physical' => $group->is_physical,
+            'imposed_is_physical' => $imposedPhysical,
         ]);
     }
 

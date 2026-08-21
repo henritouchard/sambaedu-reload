@@ -46,10 +46,12 @@ class Wallpaper extends Model
         'owner_id',
         'is_default',
         'uploaded_by',
+        'managed_by_control_hub',
     ];
 
     protected $casts = [
         'is_default' => 'boolean',
+        'managed_by_control_hub' => 'boolean',
     ];
 
     public function owner(): MorphTo

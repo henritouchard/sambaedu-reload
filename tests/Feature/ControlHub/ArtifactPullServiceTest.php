@@ -9,6 +9,7 @@ use App\Enums\ControlHubLinkState;
 use App\Models\AgentTool;
 use App\Models\ControlHubContract;
 use App\Models\ControlHubContractItem;
+use App\Models\Shortcut;
 use App\Models\WallpaperAsset;
 use App\Services\ControlHub\ArtifactPullService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,23 +38,28 @@ class ArtifactPullServiceTest extends TestCase
 
     private string $toolsDir;
 
+    private string $iconDir;
+
     protected function setUp(): void
     {
         parent::setUp();
         $base = sys_get_temp_dir() . '/ch-pull-' . bin2hex(random_bytes(6));
         $this->wallpaperDir = $base . '/wallpapers';
         $this->toolsDir = $base . '/tools';
+        $this->iconDir = $base . '/shortcut-icons';
         @mkdir($this->wallpaperDir, 0o755, true);
         @mkdir($this->toolsDir, 0o755, true);
+        @mkdir($this->iconDir, 0o755, true);
         config([
             'wallpapers.library_path' => $this->wallpaperDir,
             'agent.tools_path' => $this->toolsDir,
+            'shortcut_icons.served_path' => $this->iconDir,
         ]);
     }
 
     protected function tearDown(): void
     {
-        foreach ([$this->wallpaperDir, $this->toolsDir] as $dir) {
+        foreach ([$this->wallpaperDir, $this->toolsDir, $this->iconDir] as $dir) {
             if (is_dir($dir)) {
                 foreach ((array) glob($dir . '/*') as $f) {
                     if (is_string($f)) {
@@ -132,6 +138,63 @@ class ArtifactPullServiceTest extends TestCase
         $item->refresh();
         $this->assertSame(ControlHubArtifactPullStatus::Downloaded, $item->pull_status);
         $this->assertNull($item->pull_error);
+    }
+
+    public function test_sha256_ok_materializes_shortcut_icon_and_binds_it_to_its_shortcut(): void
+    {
+        $body = 'ICO-BYTES';
+        $checksum = hash('sha256', $body);
+        Http::fake(['*' => Http::response($body, 200)]);
+
+        $item = $this->makeItem(Shortcut::TYPE_SHORTCUTS, 'firefox', $checksum);
+        $shortcut = Shortcut::create([
+            'key' => 'firefox',
+            'name' => 'Firefox',
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'firefox.exe',
+            'is_active' => true,
+            'controlhub_contract_key' => 'firefox',
+        ]);
+
+        $this->service()->pull($item->id, Shortcut::TYPE_SHORTCUTS, 'firefox', 'https://cdn.example/i?sig=1', $checksum, 'icone.ico', strlen($body));
+
+        // Nommage dérivé du seul contenu, jamais du nom annoncé par l'amont.
+        $this->assertFileExists($this->iconDir . '/' . $checksum . '.ico');
+        $this->assertFileDoesNotExist($this->iconDir . '/icone.ico');
+
+        $shortcut->refresh();
+        $this->assertSame($checksum . '.ico', $shortcut->icon_asset);
+        $this->assertSame($checksum, $shortcut->icon_checksum);
+        $this->assertSame(ControlHubArtifactPullStatus::Downloaded, $item->refresh()->pull_status);
+    }
+
+    public function test_shortcut_icon_lands_on_disk_even_without_a_shortcut_to_bind(): void
+    {
+        // Item sans cible : aucun raccourci matérialisé. L'icône est content-adressée,
+        // elle servira si le contrat complète l'item plus tard.
+        $body = 'ORPHAN-ICO';
+        $checksum = hash('sha256', $body);
+        Http::fake(['*' => Http::response($body, 200)]);
+
+        $item = $this->makeItem(Shortcut::TYPE_SHORTCUTS, 'orphelin', $checksum);
+
+        $this->service()->pull($item->id, Shortcut::TYPE_SHORTCUTS, 'orphelin', 'https://cdn.example/i?sig=1', $checksum, null, null);
+
+        $this->assertFileExists($this->iconDir . '/' . $checksum . '.ico');
+        $this->assertSame(ControlHubArtifactPullStatus::Downloaded, $item->refresh()->pull_status);
+    }
+
+    public function test_local_shortcut_icon_precedence_skips_http(): void
+    {
+        $checksum = hash('sha256', 'DEJA-LA');
+        file_put_contents($this->iconDir . '/' . $checksum . '.ico', 'DEJA-LA');
+        Http::fake();
+
+        $item = $this->makeItem(Shortcut::TYPE_SHORTCUTS, 'firefox', $checksum);
+
+        $this->service()->pull($item->id, Shortcut::TYPE_SHORTCUTS, 'firefox', 'https://cdn.example/i?sig=1', $checksum, null, null);
+
+        Http::assertNothingSent();
     }
 
     public function test_sha256_ok_materializes_agent_tool_disabled_by_default(): void

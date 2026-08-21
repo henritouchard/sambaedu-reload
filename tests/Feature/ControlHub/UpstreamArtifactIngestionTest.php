@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\ControlHub;
 
 use App\Enums\ControlHubArtifactPullStatus;
+use App\Models\ControlHubContractItem;
 use App\Events\ControlHubContractChanged;
 use App\Jobs\ControlHub\PullContractArtifactJob;
 use App\Models\AgentTool;
@@ -101,6 +102,47 @@ class UpstreamArtifactIngestionTest extends TestCase
                 && $job->filename === 'corporate-wallpaper.png'
                 && $job->size === 12345;
         });
+    }
+
+    public function test_losing_its_artifact_descriptor_clears_the_pull_verdict(): void
+    {
+        Bus::fake();
+        $checksum = str_repeat('a', 64);
+
+        $withArtifact = [
+            'type' => 'wallpapers',
+            'key' => 'wp_default',
+            'enforcement_state' => 'locked',
+            'target_type' => 'instance',
+            'artifact' => [
+                'url' => 'https://cdn.example/signed/AAA?sig=1',
+                'checksum' => $checksum,
+                'filename' => 'fond.png',
+                'size' => 10,
+            ],
+        ];
+
+        $this->service()->ingest($this->payload(['items' => [$withArtifact]]));
+
+        // Le pull a été engagé : l'item porte un verdict.
+        $item = ControlHubContractItem::where('key', 'wp_default')->firstOrFail();
+        self::assertSame(ControlHubArtifactPullStatus::Pending, $item->pull_status);
+
+        // Nouvelle émission du MÊME item, mais sans bloc artifact : l'item ne décrit
+        // plus aucun binaire, son verdict de pull ne veut donc plus rien dire.
+        $this->service()->ingest($this->payload([
+            'items' => [[
+                'type' => 'wallpapers',
+                'key' => 'wp_default',
+                'enforcement_state' => 'locked',
+                'target_type' => 'instance',
+            ]],
+        ]));
+
+        $item->refresh();
+        self::assertNull($item->artifact_checksum);
+        self::assertNull($item->pull_status, 'Un item sans descripteur ne peut pas rester « téléchargé ».');
+        self::assertNull($item->pull_error);
     }
 
     public function test_payload_without_artifact_is_unchanged_and_dispatches_no_pull(): void

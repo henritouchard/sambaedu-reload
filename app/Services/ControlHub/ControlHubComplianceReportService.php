@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\ControlHub;
 
+use App\Enums\ControlHubArtifactPullStatus;
+use App\Enums\ControlHubContractApplyStatus;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
 use App\Models\Capability;
@@ -23,9 +25,13 @@ use Illuminate\Support\Facades\Log;
  * d'application de chaque item du contrat amont reçu (doctrine full-state, jamais
  * un delta). Ce service LIT l'état résolu (`controlhub_contracts` /
  * `controlhub_contract_items`, Epics 28-33) + les signaux d'override locaux
- * (`capability_assignments`, Epic 27/29) et **invente** la politique de mapping de
- * statut par item — aucune agrégation de conformité par item n'existe ailleurs dans
- * le code (cf. Dev Notes de la story).
+ * (`capability_assignments`, Epic 27/29).
+ *
+ * Il ne juge pas lui-même de l'application : le verdict est rendu à la réception,
+ * par ceux qui ont essayé de poser l'item — `pull_status` pour le tirage du binaire,
+ * `apply_status` pour l'assignation. Ce service les traduit dans le vocabulaire du
+ * canal ③. Tant qu'il déduisait le statut du seul `enforcement_state`, il affirmait
+ * à l'amont « appliqué » sans avoir rien vérifié.
  *
  * NE touche NI l'ingestion NI `StateCompiler` NI l'agent : chemin 100% SORTANT.
  *
@@ -179,19 +185,41 @@ final class ControlHubComplianceReportService
     }
 
     /**
-     * Politique de mapping de statut par item (position par défaut de la story) :
-     *   - `locked`                              → `applied` ;
-     *   - `permissive` + `registry` + instance  → `overridden` s'il existe un override
-     *                                             local actif, sinon `applied` ;
-     *   - tout autre `permissive`               → `applied` (aucun mécanisme d'override
-     *                                             câblé — pas de faux `overridden`).
-     * `pending`/`error` ne sont PAS calculés en v1 (aucun signal fiable au grain par
-     * item aujourd'hui) — point d'extension documenté, non construit ici.
+     * Politique de mapping de statut par item.
+     *
+     * Le rapport dit d'abord ce qui BLOQUE, ensuite seulement ce qui s'applique :
+     *   1. le pull du binaire (canal ④) a échoué ou n'a pas abouti → `error` / `pending` ;
+     *   2. le réconciliateur d'assignations a rendu un verdict → il fait foi ;
+     *   3. sinon, politique d'origine : `locked` → `applied` ; `permissive` +
+     *      `registry` + instance → `overridden` s'il existe un override local actif ;
+     *      tout autre `permissive` → `applied` (aucun mécanisme d'override câblé —
+     *      pas de faux `overridden`).
+     *
+     * Le pull passe AVANT le verdict d'application parce qu'il en est la cause : un
+     * fond d'écran non assigné parce que son image n'est pas arrivée doit rapporter
+     * l'image manquante, pas l'assignation manquante.
+     *
+     * Un item dont `apply_status` est `null` relève d'un type qu'aucun
+     * réconciliateur ne revendique (`agent_tools`, `registry`) : l'étape 3 s'applique
+     * telle quelle, comme avant.
      *
      * @return array{0:string,1:?string} [status, detail]
      */
     private function resolveStatus(ControlHubContractItem $item): array
     {
+        $pullVerdict = $this->pullVerdict($item);
+
+        if ($pullVerdict !== null) {
+            return $pullVerdict;
+        }
+
+        $applyStatus = $item->apply_status;
+
+        if ($applyStatus instanceof ControlHubContractApplyStatus
+            && $applyStatus !== ControlHubContractApplyStatus::Applied) {
+            return [$applyStatus->value, $this->trimmedOrNull($item->apply_detail)];
+        }
+
         $state = $this->enforcementState($item);
 
         if ($state === ControlHubEnforcementState::Locked) {
@@ -211,6 +239,44 @@ final class ControlHubComplianceReportService
         }
 
         return ['applied', null];
+    }
+
+    /**
+     * Statut imposé par l'état du pull de binaire, ou `null` si le pull ne bloque rien
+     * (binaire tiré, ou item sans artefact à tirer).
+     *
+     * @return array{0:string,1:?string}|null
+     */
+    private function pullVerdict(ControlHubContractItem $item): ?array
+    {
+        // Un item que le contrat ne décrit plus par un `artifact` n'a plus de binaire :
+        // le `pull_status` qui traîne décrit une version antérieure de l'ordre, et
+        // rapporter « en attente » d'un binaire que personne n'attend serait faux.
+        if (($item->artifact_checksum ?? '') === '') {
+            return null;
+        }
+
+        return match ($item->pull_status) {
+            ControlHubArtifactPullStatus::Error => [
+                'error',
+                $this->trimmedOrNull($item->pull_error) ?? 'Échec du téléchargement du binaire imposé',
+            ],
+            ControlHubArtifactPullStatus::Pending => [
+                'pending',
+                'Binaire imposé pas encore tiré ni vérifié',
+            ],
+            default => null,
+        };
+    }
+
+    /**
+     * Chaîne non vide, ou `null` — le `detail` du rapport ne porte jamais de vide.
+     */
+    private function trimmedOrNull(?string $value): ?string
+    {
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 
     /**

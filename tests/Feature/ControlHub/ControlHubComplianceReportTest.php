@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ControlHub;
 
+use App\Enums\ControlHubArtifactPullStatus;
+use App\Enums\ControlHubContractApplyStatus;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
 use App\Jobs\ControlHubReportComplianceJob;
@@ -278,6 +280,131 @@ class ControlHubComplianceReportTest extends TestCase
 
         self::assertSame('applied', $status['status']);
         self::assertNull($status['detail']);
+    }
+
+    // ── Le rapport ne peut plus affirmer ──────────────────────────────────────
+
+    #[Test]
+    public function a_locked_item_the_reconciler_could_not_apply_is_reported_pending(): void
+    {
+        $item = $this->item(ControlHubEnforcementState::Locked, 'applications', 'jamais-vue');
+        $item->update([
+            'apply_status' => ControlHubContractApplyStatus::Pending,
+            'apply_detail' => 'Application « jamais-vue » absente de l\'inventaire local',
+        ]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('pending', $status['status'], 'locked ne vaut plus applied sans vérification');
+        self::assertStringContainsString('inventaire local', $status['detail']);
+    }
+
+    #[Test]
+    public function a_locked_item_the_reconciler_refused_is_reported_error(): void
+    {
+        $item = $this->item(ControlHubEnforcementState::Locked, 'shortcuts', 'racc-sans-cible');
+        $item->update([
+            'apply_status' => ControlHubContractApplyStatus::Error,
+            'apply_detail' => 'Raccourci sans cible : ni `spec.windows_link` ni `value` ne désignent quoi ouvrir',
+        ]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('error', $status['status']);
+        self::assertStringContainsString('sans cible', $status['detail']);
+    }
+
+    #[Test]
+    public function an_applied_verdict_leaves_the_original_policy_in_place(): void
+    {
+        $item = $this->item(ControlHubEnforcementState::Locked, 'applications', 'ccleaner');
+        $item->update(['apply_status' => ControlHubContractApplyStatus::Applied]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('applied', $status['status']);
+        self::assertNull($status['detail']);
+    }
+
+    #[Test]
+    public function an_unclaimed_type_keeps_the_original_policy(): void
+    {
+        // `agent_tools` n'a pas de réconciliateur d'assignation : apply_status reste null.
+        $item = $this->item(ControlHubEnforcementState::Locked, 'agent_tools', 'outil');
+
+        self::assertNull($item->apply_status);
+        self::assertSame('applied', $this->statusFor($item)['status']);
+    }
+
+    #[Test]
+    public function a_failed_binary_pull_is_reported_error_with_its_reason(): void
+    {
+        $item = $this->item(ControlHubEnforcementState::Locked, 'wallpapers', 'fond-casse');
+        $item->update([
+            'artifact_checksum' => str_repeat('a', 64),
+            'pull_status' => ControlHubArtifactPullStatus::Error,
+            'pull_error' => 'sha256 non concordant',
+        ]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('error', $status['status']);
+        self::assertStringContainsString('sha256', $status['detail']);
+    }
+
+    #[Test]
+    public function a_pull_still_running_outranks_the_assignment_verdict(): void
+    {
+        // L'assignation manque PARCE QUE l'image n'est pas là : le rapport doit
+        // nommer la cause, pas le symptôme.
+        $item = $this->item(ControlHubEnforcementState::Locked, 'wallpapers', 'fond-en-vol');
+        $item->update([
+            'artifact_checksum' => str_repeat('b', 64),
+            'pull_status' => ControlHubArtifactPullStatus::Pending,
+            'apply_status' => ControlHubContractApplyStatus::Pending,
+            'apply_detail' => 'Image pas encore tirée localement (canal ④ en cours)',
+        ]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('pending', $status['status']);
+        self::assertStringContainsString('Binaire', $status['detail']);
+    }
+
+    #[Test]
+    public function a_downloaded_binary_does_not_shadow_the_assignment_verdict(): void
+    {
+        $item = $this->item(ControlHubEnforcementState::Locked, 'wallpapers', 'fond-tire');
+        $item->update([
+            'artifact_checksum' => str_repeat('c', 64),
+            'pull_status' => ControlHubArtifactPullStatus::Downloaded,
+            'apply_status' => ControlHubContractApplyStatus::Pending,
+            'apply_detail' => 'Aucun parc ne porte le label « CDIX »',
+        ]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('pending', $status['status']);
+        self::assertStringContainsString('CDIX', $status['detail']);
+    }
+
+    #[Test]
+    public function a_pull_status_left_over_from_a_dropped_artifact_is_ignored(): void
+    {
+        // Le contrat a cessé de décrire l'image ; le `downloaded` d'une réception
+        // antérieure ne doit pas masquer le vrai blocage.
+        $item = $this->item(ControlHubEnforcementState::Locked, 'wallpapers', 'fond-orphelin');
+        $item->update([
+            'artifact_checksum' => null,
+            'pull_status' => ControlHubArtifactPullStatus::Pending,
+            'apply_status' => ControlHubContractApplyStatus::Error,
+            'apply_detail' => 'Aucun bloc `artifact` : le contrat impose un fond sans dire quelle image',
+        ]);
+
+        $status = $this->statusFor($item);
+
+        self::assertSame('error', $status['status']);
+        self::assertStringContainsString('artifact', $status['detail']);
     }
 
     // ── AC 4 — reported_at monotone (NFR-A2) ──────────────────────────────────

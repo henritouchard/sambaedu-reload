@@ -316,4 +316,53 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_labels', 0);
         $this->assertDatabaseCount('controlhub_contract_imposed_groups', 0);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Nature du parc réclamée (`is_physical`)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public function test_imposed_group_nature_is_received_in_its_three_states(): void
+    {
+        $this->service()->ingest([
+            'imposed_groups' => [
+                ['name' => 'salle-physique', 'is_physical' => true],
+                ['name' => 'parc-logique', 'is_physical' => false],
+                ['name' => 'parc-muet'],
+            ],
+        ]);
+
+        $this->assertTrue(ControlHubContractImposedGroup::where('name', 'salle-physique')->firstOrFail()->is_physical);
+        $this->assertFalse(ControlHubContractImposedGroup::where('name', 'parc-logique')->firstOrFail()->is_physical);
+        $this->assertNull(ControlHubContractImposedGroup::where('name', 'parc-muet')->firstOrFail()->is_physical);
+    }
+
+    public function test_imposed_group_nature_accepts_string_and_integer_forms(): void
+    {
+        $this->service()->ingest([
+            'imposed_groups' => [
+                ['name' => 'en-chaine', 'is_physical' => 'true'],
+                ['name' => 'en-entier', 'is_physical' => 1],
+                ['name' => 'chaine-vide', 'is_physical' => ''],
+            ],
+        ]);
+
+        $this->assertTrue(ControlHubContractImposedGroup::where('name', 'en-chaine')->firstOrFail()->is_physical);
+        $this->assertTrue(ControlHubContractImposedGroup::where('name', 'en-entier')->firstOrFail()->is_physical);
+        $this->assertNull(ControlHubContractImposedGroup::where('name', 'chaine-vide')->firstOrFail()->is_physical);
+    }
+
+    public function test_out_of_domain_nature_is_rejected_before_any_write(): void
+    {
+        try {
+            $this->service()->ingest([
+                'imposed_groups' => [['name' => 'parc-x', 'is_physical' => 'peut-etre']],
+            ]);
+            $this->fail('Une InvalidUpstreamContractException était attendue.');
+        } catch (InvalidUpstreamContractException $e) {
+            $this->assertStringContainsString('is_physical', $e->getMessage());
+        }
+
+        $this->assertDatabaseCount('controlhub_contract_imposed_groups', 0);
+        $this->assertDatabaseCount('controlhub_contracts', 0);
+    }
 }

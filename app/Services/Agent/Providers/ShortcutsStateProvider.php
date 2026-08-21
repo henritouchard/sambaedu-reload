@@ -199,9 +199,53 @@ final class ShortcutsStateProvider implements StateProvider
             sourceId: (int) $row->id,
         ));
 
+        $candidates = $candidates->concat(
+            $this->parcDefaultCandidates($desktopPath, $desktopSweepPaths),
+        );
+
         $portal = $this->portalCandidate($desktopPath, $desktopSweepPaths);
 
         return $portal === null ? $candidates : $candidates->prepend($portal);
+    }
+
+    /**
+     * Les raccourcis DÉFAUT DE PARC : posés sur tous les postes, sans assignation.
+     *
+     * Pendant exact des applications `is_parc_default` — même page d'administration,
+     * même promesse. Sans eux, un raccourci ne pouvait viser que des cibles nommées,
+     * et un parc créé après coup ne l'héritait jamais.
+     *
+     * Maille `Broadcast` (la moins spécifique) : le type étant `aggregate`, la
+     * précédence ne joue pas — le raccourci s'AJOUTE, il n'évince rien. Un raccourci
+     * à la fois défaut de parc et assigné produit deux candidats de payload
+     * IDENTIQUE, que le compilateur collapse en un seul item.
+     *
+     * @param  array<int, string>  $desktopSweepPaths
+     * @return Collection<int, StateCandidate>
+     */
+    private function parcDefaultCandidates(string $desktopPath, array $desktopSweepPaths): Collection
+    {
+        return Shortcut::query()
+            ->where('shortcuts.is_active', true)
+            ->where('shortcuts.is_parc_default', true)
+            ->get([
+                'shortcuts.id',
+                'shortcuts.name',
+                'shortcuts.place',
+                'shortcuts.windows_link',
+                'shortcuts.windows_args',
+                'shortcuts.windows_icon',
+                'shortcuts.icon_path',
+                'shortcuts.icon_asset',
+                'shortcuts.icon_checksum',
+                'shortcuts.updated_at',
+            ])
+            ->map(fn (Shortcut $row): StateCandidate => new StateCandidate(
+                maille: StateMaille::Broadcast,
+                payload: $this->payloadFor($row, $desktopPath, $desktopSweepPaths),
+                updatedAt: $row->updated_at,
+                sourceId: (int) $row->id,
+            ));
     }
 
     /**

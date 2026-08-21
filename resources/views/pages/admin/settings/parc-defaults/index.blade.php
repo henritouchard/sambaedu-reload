@@ -43,7 +43,7 @@ new #[Title('Configuration par défaut du parc')] class extends Component {
     public ?string $from_gpo = null;
 
     /** Onglets disponibles (l'overlay arrive en 27.18). */
-    private const TABS = ['wallpaper', 'lockscreen', 'registry', 'apps', 'tools'];
+    private const TABS = ['wallpaper', 'lockscreen', 'registry', 'apps', 'shortcuts', 'tools'];
 
     public function mount(): void
     {
@@ -103,6 +103,7 @@ new #[Title('Configuration par défaut du parc')] class extends Component {
                 'lockscreen' => ['label' => 'Écran de verrouillage', 'icon' => 'fa-solid fa-lock'],
                 'registry' => ['label' => 'Registre / capacités', 'icon' => 'fa-solid fa-sliders'],
                 'apps' => ['label' => 'Applications', 'icon' => 'fa-solid fa-cube'],
+                'shortcuts' => ['label' => 'Raccourcis', 'icon' => 'fa-solid fa-link'],
                 'tools' => ['label' => 'Outils agent', 'icon' => 'fa-solid fa-screwdriver-wrench'],
             ];
         @endphp
@@ -118,6 +119,8 @@ new #[Title('Configuration par défaut du parc')] class extends Component {
                 <livewire:pages::admin.settings.parc-defaults._partials.registry-tab />
             @elseif ($tab === 'apps')
                 <livewire:pages::admin.settings.parc-defaults._partials.apps-tab />
+            @elseif ($tab === 'shortcuts')
+                <livewire:pages::admin.settings.parc-defaults._partials.shortcuts-tab />
             @elseif ($tab === 'tools')
                 <livewire:pages::admin.settings.parc-defaults._partials.tools-tab />
             @endif

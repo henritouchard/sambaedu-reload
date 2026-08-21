@@ -119,6 +119,50 @@ class ShortcutsStateProviderTest extends TestCase
         ], $mailles->all());
     }
 
+    // ── Défaut de parc : posé partout, sans assignation ──────────────────────
+
+    #[Test]
+    public function a_parc_default_shortcut_reaches_a_workstation_without_any_assignment(): void
+    {
+        $this->shortcut('poste-partout', ['is_parc_default' => true]);
+
+        $candidates = $this->provider->itemsFor($this->ctx());
+
+        $names = $candidates->map(fn (StateCandidate $c): string => $c->payload['name']);
+        self::assertContains('poste-partout', $names->all());
+
+        $candidate = $candidates->first(fn (StateCandidate $c): bool => $c->payload['name'] === 'poste-partout');
+        self::assertSame(StateMaille::Broadcast, $candidate->maille);
+    }
+
+    #[Test]
+    public function an_inactive_parc_default_shortcut_reaches_nobody(): void
+    {
+        $this->shortcut('eteint', ['is_parc_default' => true, 'is_active' => false]);
+
+        $names = $this->provider->itemsFor($this->ctx())
+            ->map(fn (StateCandidate $c): string => $c->payload['name']);
+
+        self::assertNotContains('eteint', $names->all());
+    }
+
+    #[Test]
+    public function a_shortcut_both_assigned_and_parc_default_is_not_emitted_twice(): void
+    {
+        // Deux candidats de payload identique : le compilateur les collapse (aggregate),
+        // mais le provider doit déjà produire un payload strictement identique — sans
+        // quoi le poste verrait deux fois le même raccourci.
+        $shortcut = $this->shortcut('doublon', ['is_parc_default' => true]);
+        $this->assign($shortcut, WorkstationGroup::class, $this->room->id);
+
+        $payloads = $this->provider->itemsFor($this->ctx())
+            ->filter(fn (StateCandidate $c): bool => $c->payload['name'] === 'doublon')
+            ->map(fn (StateCandidate $c): string => json_encode($c->payload))
+            ->unique();
+
+        self::assertCount(1, $payloads, 'Les deux origines doivent produire le même payload.');
+    }
+
     #[Test]
     public function unions_all_applicable_mailles_without_precedence(): void
     {

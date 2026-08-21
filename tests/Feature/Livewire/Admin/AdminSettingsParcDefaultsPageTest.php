@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
+use App\Enums\ControlHubEnforcementState;
 use App\Models\AgentTool;
 use App\Models\Application;
 use App\Models\Capability;
+use App\Models\ControlHubContract;
+use App\Models\ControlHubContractItem;
+use App\Models\Shortcut;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Tools\AgentToolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,6 +38,7 @@ class AdminSettingsParcDefaultsPageTest extends TestCase
     private const APPS_TAB = 'pages::admin.settings.parc-defaults._partials.apps-tab';
     private const REGISTRY_TAB = 'pages::admin.settings.parc-defaults._partials.registry-tab';
     private const TOOLS_TAB = 'pages::admin.settings.parc-defaults._partials.tools-tab';
+    private const SHORTCUTS_TAB = 'pages::admin.settings.parc-defaults._partials.shortcuts-tab';
 
     protected function setUp(): void
     {
@@ -179,6 +184,92 @@ class AdminSettingsParcDefaultsPageTest extends TestCase
             ->call('setParcDefault', $app->id, false);
 
         self::assertFalse((bool) Application::query()->find($app->id)->is_parc_default);
+    }
+
+    // ── Onglet « Raccourcis » ────────────────────────────────────────────────
+
+    #[Test]
+    public function shortcuts_tab_marks_shortcut_as_parc_default(): void
+    {
+        $this->actAsAdmin();
+        $shortcut = Shortcut::create([
+            'key' => 'firefox', 'name' => 'Firefox', 'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'firefox.exe', 'is_active' => true,
+        ]);
+
+        Livewire::test(self::SHORTCUTS_TAB)
+            ->call('setParcDefault', $shortcut->id, true);
+
+        self::assertTrue((bool) Shortcut::query()->find($shortcut->id)->is_parc_default);
+    }
+
+    #[Test]
+    public function shortcuts_tab_lists_only_current_defaults(): void
+    {
+        $this->actAsAdmin();
+        Shortcut::create([
+            'key' => 'a', 'name' => 'AvecDefaut', 'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'a.exe', 'is_active' => true, 'is_parc_default' => true,
+        ]);
+        Shortcut::create([
+            'key' => 'b', 'name' => 'SansDefaut', 'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'b.exe', 'is_active' => true,
+        ]);
+
+        $defaults = Livewire::test(self::SHORTCUTS_TAB)->instance()->defaults();
+
+        self::assertCount(1, $defaults);
+        self::assertSame('AvecDefaut', $defaults->first()->name);
+    }
+
+    #[Test]
+    public function shortcuts_tab_refuses_to_touch_a_shortcut_locked_upstream(): void
+    {
+        $this->actAsAdmin();
+
+        $contract = ControlHubContract::factory()->create();
+        ControlHubContractItem::factory()->create([
+            'controlhub_contract_id' => $contract->id,
+            'type' => Shortcut::TYPE_SHORTCUTS,
+            'key' => 'impose',
+            'enforcement_state' => ControlHubEnforcementState::Locked,
+        ]);
+        $shortcut = Shortcut::create([
+            'key' => 'impose', 'name' => 'Imposé', 'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'x.exe', 'is_active' => true, 'is_parc_default' => true,
+            'controlhub_contract_key' => 'impose',
+        ]);
+
+        Livewire::test(self::SHORTCUTS_TAB)
+            ->call('setParcDefault', $shortcut->id, false);
+
+        self::assertTrue(
+            (bool) Shortcut::query()->find($shortcut->id)->is_parc_default,
+            'Un raccourci verrouillé amont ne doit pas pouvoir être retiré du défaut parc.',
+        );
+    }
+
+    #[Test]
+    public function shortcuts_tab_lets_a_permissive_upstream_shortcut_be_overridden(): void
+    {
+        $this->actAsAdmin();
+
+        $contract = ControlHubContract::factory()->create();
+        ControlHubContractItem::factory()->permissive()->create([
+            'controlhub_contract_id' => $contract->id,
+            'type' => Shortcut::TYPE_SHORTCUTS,
+            'key' => 'souple',
+        ]);
+        $shortcut = Shortcut::create([
+            'key' => 'souple', 'name' => 'Souple', 'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'x.exe', 'is_active' => true, 'is_parc_default' => true,
+            'controlhub_contract_key' => 'souple',
+        ]);
+
+        Livewire::test(self::SHORTCUTS_TAB)
+            ->call('setParcDefault', $shortcut->id, false);
+
+        self::assertFalse((bool) Shortcut::query()->find($shortcut->id)->is_parc_default);
     }
 
     #[Test]

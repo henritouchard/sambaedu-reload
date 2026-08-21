@@ -19,8 +19,10 @@ use App\Models\ControlHubContractCatalogApp;
 use App\Models\ControlHubContractImposedGroup;
 use App\Models\ControlHubContractItem;
 use App\Models\ControlHubContractLabel;
+use App\Models\Shortcut;
 use App\Models\WallpaperAsset;
 use App\Services\ControlHub\Data\ContractIngestionResult;
+use App\Services\Shortcuts\ShortcutIconAssetService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -77,6 +79,13 @@ use Illuminate\Support\Facades\Log;
  */
 class ControlHubContractIngestionService
 {
+    /** Emplacements de pose qu'un raccourci peut réclamer (domaine de `spec.place`). */
+    private const SHORTCUT_PLACES = [
+        Shortcut::PLACE_DESKTOP,
+        Shortcut::PLACE_STARTUP,
+        Shortcut::PLACE_TASKBAR,
+    ];
+
     /**
      * Ingère un payload de contrat amont de façon idempotente.
      *
@@ -292,7 +301,7 @@ class ControlHubContractIngestionService
      */
     private function dispatchArtifactPulls(int $contractId, array $items): void
     {
-        $pullableTypes = ['wallpapers', 'agent_tools'];
+        $pullableTypes = ['wallpapers', 'agent_tools', Shortcut::TYPE_SHORTCUTS];
 
         foreach ($items as $row) {
             $type = (string) $row['key']['type'];
@@ -306,6 +315,10 @@ class ControlHubContractIngestionService
             // Un artefact « complet » exige au minimum checksum (identité stable) + url (pull).
             // Un checksum sans url reste persisté mais NON pullable (rien à tirer).
             if ($checksum === null || $checksum === '' || $url === null || $url === '') {
+                if ($checksum === null || $checksum === '') {
+                    $this->forgetPullStatusOfDescriptorlessItem($contractId, $row);
+                }
+
                 continue;
             }
 
@@ -315,6 +328,10 @@ class ControlHubContractIngestionService
             $presentLocally = match ($type) {
                 'wallpapers' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
                 'agent_tools' => AgentTool::query()->where('key', $itemKey)->exists(),
+                // Icône de raccourci : content-adressée sur disque, jamais en table.
+                Shortcut::TYPE_SHORTCUTS => is_file(
+                    app(ShortcutIconAssetService::class)->servedDir().DIRECTORY_SEPARATOR.$checksum.'.ico'
+                ),
                 default => true,
             };
             if ($presentLocally) {
@@ -520,6 +537,7 @@ class ControlHubContractIngestionService
                 ],
                 'attrs' => [
                     'value' => $value === null ? null : (string) $value,
+                    'spec' => $this->normalizeSpec($item['spec'] ?? null, $type, $key),
                     'enforcement_state' => $enforcementRaw,
                     // Additifs 39.4 — normalisation '' → null (iso source_xml_*). pull_status /
                     // pull_error NE sont PAS dans les attrs : ils sont pilotés par le flux de pull
@@ -601,11 +619,106 @@ class ControlHubContractIngestionService
                 ],
                 'attrs' => [
                     'label_name' => $labelName === null || $labelName === '' ? null : (string) $labelName,
+                    'is_physical' => $this->normalizeOptionalBool(
+                        $group['is_physical'] ?? null,
+                        'imposed_groups.is_physical',
+                    ),
                 ],
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * Efface le verdict de pull d'un item qui ne décrit plus aucun binaire.
+     *
+     * Un item peut perdre son descripteur d'artefact d'une émission à l'autre. Sans
+     * cet effacement, il resterait `downloaded` (ou `error`) tout en n'ayant plus
+     * ni checksum ni fichier à désigner — le rapport de conformité affirmerait alors
+     * un téléchargement qui ne correspond à rien.
+     *
+     * @param  array{key: array<string, mixed>, attrs: array<string, mixed>}  $row
+     */
+    private function forgetPullStatusOfDescriptorlessItem(int $contractId, array $row): void
+    {
+        ControlHubContractItem::query()
+            ->where('controlhub_contract_id', $contractId)
+            ->where('type', (string) $row['key']['type'])
+            ->where('key', (string) $row['key']['key'])
+            ->where('target_type', (string) $row['key']['target_type'])
+            ->where('target_label', (string) $row['key']['target_label'])
+            ->whereNotNull('pull_status')
+            ->update(['pull_status' => null, 'pull_error' => null]);
+    }
+
+    /**
+     * Attributs typés d'un item, triés pour que deux réceptions identiques
+     * produisent le même JSON (sans quoi le no-op serait cassé par l'ordre des clés).
+     *
+     * Le contenu n'est PAS un domaine fermé : chaque type y met son vocabulaire, et
+     * un type que SE5 ne consomme pas encore reste stocké tel quel. Seul `place`
+     * est contrôlé — l'agent rejette en bloc un raccourci dont la place est
+     * inconnue, autant refuser à la porte plutôt que servir un poste cassé.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function normalizeSpec(mixed $spec, string $type, string $key): ?array
+    {
+        if (! is_array($spec) || $spec === []) {
+            return null;
+        }
+
+        if ($type === Shortcut::TYPE_SHORTCUTS && isset($spec['place'])) {
+            $place = (string) $spec['place'];
+
+            if (! in_array($place, self::SHORTCUT_PLACES, true)) {
+                throw InvalidUpstreamContractException::for(
+                    "items.spec.place ({$key})",
+                    "valeur hors domaine « {$place} » (attendu : ".implode('|', self::SHORTCUT_PLACES).')',
+                );
+            }
+        }
+
+        ksort($spec);
+
+        return $spec;
+    }
+
+    /**
+     * Booléen optionnel du payload amont : `null` quand l'autorité ne se prononce pas.
+     *
+     * JSON transporte parfois un booléen en chaîne ou en entier selon le sérialiseur
+     * amont ; les deux formes sont admises. Toute autre valeur est hors domaine et
+     * rejetée comme n'importe quel champ invalide (rollback total, aucune écriture).
+     */
+    private function normalizeOptionalBool(mixed $value, string $field): ?bool
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) && ($value === 0 || $value === 1)) {
+            return $value === 1;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+
+            if (in_array($normalized, ['true', '1'], true)) {
+                return true;
+            }
+
+            if (in_array($normalized, ['false', '0'], true)) {
+                return false;
+            }
+        }
+
+        throw InvalidUpstreamContractException::for($field, 'booléen attendu');
     }
 
     /**
