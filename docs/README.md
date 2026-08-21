@@ -86,7 +86,7 @@ elle décrit un état qui n'a plus cours.
 | **Impression** | `app/Services/Print/` | [`domains/printers.md`](domains/printers.md) | [qa](qa/domains/printers.md) | 🟡 |
 | **Plan de fichiers, droits & quotas** | `app/Services/Filesystem/`, `app/Services/Nextcloud/`, `app/Services/OpenCloud/` | [`filesystem/`](filesystem/README.md) — 7 fiches ; [`audit-arborescence-acls.md`](audit-arborescence-acls.md) | [qa](qa/domains/filesystem.md) | ✅ |
 | **Déploiement applicatif** | `app/Wpkg/`, `app/Services/AppStore/`, `AppProfile/` | [`wpkg-deploy/architecture.md`](wpkg-deploy/architecture.md) | [qa](qa/domains/wpkg-deploy.md) | 🟡 |
-| **Lien amont controlHub** | `app/Services/ControlHub/` | [`controlhub-api-plan.md`](controlhub-api-plan.md) | [qa](qa/domains/controlhub-contract.md) | 🟡 |
+| **Lien amont controlHub** | `app/Services/ControlHub/` | [`controlhub-schema-echange.md`](controlhub-schema-echange.md) — **format du contrat, source unique partagée avec l'amont** ; [`controlhub-api-plan.md`](controlhub-api-plan.md) | [qa](qa/domains/controlhub-contract.md) | 🟡 |
 | **GPO & SYSVOL** | `app/Gpo/`, `app/Services/Gpo/` | *dette :* [`tech-debt-gpo.md`](tech-debt-gpo.md) — **canal éteint**, voir ci-dessous | [qa](qa/domains/gpo.md) | ⚪ |
 | **Authentification & SSO** | `app/Auth/` (V1, OIDC, fédéré), `app/OidcWitness/` | [`auth/`](auth/README.md) — 5 fiches | [qa](qa/domains/auth.md), [qa](qa/domains/federated-login.md) | ✅ |
 | **Installation de postes (iPXE)** | `app/Ipxe/` | [`ipxe/`](ipxe/README.md) — 6 fiches | [qa](qa/domains/ipxe.md) | ✅ |

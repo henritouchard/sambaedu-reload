@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\Log;
  * Story 33.1 — Schéma d'ÉCHANGE versionné : le payload déclare une `schema_version`
  * (racine) ; l'ingestion la **négocie** ({@see ControlHubContractSchema::negotiate()}) et
  * **enregistre** la version retenue sur le contrat (colonne `schema_version`). Format figé
- * dans l'artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md
+ * dans l'artefact partagé docs/controlhub-schema-echange.md
  * (source unique pointée par les deux BMAD — R2). Un payload **conforme** (version supportée) ou
  * **sans version** (défaut = version courante, rétro-compat 28.2) est accepté ; une version
  * **déclarée non supportée** est **rejetée** (Story 33.2 — {@see UnsupportedSchemaVersionException}
@@ -120,7 +120,7 @@ class ControlHubContractIngestionService
         // (fausse ACCEPTATION silencieuse d'une version incompatible, viole AC#1). Coercé, il est
         // rejeté en égalité stricte comme un int/string non supporté. (array/bool/objet restent
         // traités comme absents — non couverts par 33.2.)
-        // Cf. artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md.
+        // Cf. artefact partagé docs/controlhub-schema-echange.md.
         $declaredVersion = $payload['schema_version'] ?? null;
         $declaredVersion = is_string($declaredVersion) || is_int($declaredVersion) || is_float($declaredVersion)
             ? (string) $declaredVersion

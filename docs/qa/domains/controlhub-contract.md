@@ -2131,7 +2131,7 @@ semver, racine du payload). L'ingestion **négocie** la version
 (`ControlHubContractSchema::negotiate()`), l'**enregistre** sur le contrat actif (colonne
 `controlhub_contracts.schema_version`) et l'expose dans le DTO de résultat
 (`ContractIngestionResult::$schemaVersion`). Le format est figé dans l'**artefact partagé**
-`_bmad-output/planning-artifacts/schema-echange-controlhub-se5.md` (source unique, R2).
+`docs/controlhub-schema-echange.md` (source unique).
 
 > **Partie heureuse uniquement.** Un payload **conforme** (version supportée) ou **sans version**
 > (défaut = version courante, rétro-compat 28.2) est **accepté**. Le **rejet gracieux** d'une

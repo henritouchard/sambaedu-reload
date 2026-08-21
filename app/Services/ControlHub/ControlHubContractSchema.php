@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Ce référentiel est la source de vérité CÔTÉ CODE de la version du format de payload
  * échangé entre l'autorité amont (controlHub) et SE5. Il accompagne l'artefact partagé
- * {@see _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md} qui documente
+ * {@see docs/controlhub-schema-echange.md} qui documente
  * le format pour les DEUX BMAD (R2 — référence unique vérifiable).
  *
  * ⚠️ NE PAS CONFONDRE avec {@see \App\Services\Agent\StateContract} / `ContractV1` : ce
