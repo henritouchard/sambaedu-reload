@@ -1,5 +1,5 @@
 {{--
-    Story 62.6 — L'APERÇU du plan résolu, AVANT enregistrement.
+    L'APERÇU du plan résolu, AVANT enregistrement.
 
     Il résout l'état du formulaire sur un groupe d'ESSAI et le fait décrire par le
     backend d'aperçu — celui qui n'exécute rien et qui le dit. Ce qui s'affiche ici
@@ -10,7 +10,13 @@
     Aucun chemin absolu n'apparaît : un aperçu ne vise aucun endroit réel, et le
     backend d'aperçu ne prétend pas le contraire.
 --}}
-<x-molecules.modal.section title="Aperçu du plan résolu" icon="fa-eye text-primary" dense>
+<div class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body p-5 gap-4">
+
+        <h2 class="font-semibold flex items-center gap-2">
+            <i class="fa-solid fa-eye text-primary"></i> Aperçu du plan résolu
+        </h2>
+
 
     <div class="flex flex-wrap items-end gap-2">
         <div class="flex flex-col gap-1 grow min-w-64">
@@ -140,4 +146,5 @@
             </div>
         @endif
     @endif
-</x-molecules.modal.section>
+    </div>
+</div>

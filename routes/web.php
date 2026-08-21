@@ -467,6 +467,18 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.groups');
 
+    // /admin/settings/groups/trees/{type} — l'ÉDITEUR d'arborescence d'un type de
+    // groupe : l'arbre, les fiches de dossier et l'aperçu du plan résolu. Une page
+    // et non une modale : la hiérarchie doit rester visible pendant qu'on pose les
+    // droits, et un dossier se crée SOUS un parent qu'on désigne.
+    //
+    // Le paramètre est une clé de type — slug du catalogue ; la contrainte de
+    // route ferme la forme, `GroupTypeCatalog::isKnown()` ferme le fond au mount.
+    Route::livewire('/settings/groups/trees/{type}', 'pages::admin.settings.groups.trees.[type].index')
+        ->where('type', '[a-z][a-z0-9_]*')
+        ->middleware('can:server.admin')
+        ->name('settings.groups.tree');
+
     // /admin/settings/app-profiles — Story 36.7 : catalogue des profils applicatifs
     // itinérants (Firefox/Thunderbird…) redirigés vers le home réseau. Édition du
     // `spec` de la projection `app_profile` de la capacité `roaming_app_profile`

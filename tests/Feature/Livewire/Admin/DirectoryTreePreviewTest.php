@@ -40,6 +40,9 @@ class DirectoryTreePreviewTest extends TestCase
 
     private const TAB = 'pages::admin.settings.groups._partials.trees-tab';
 
+
+    private const EDITOR = 'pages::admin.settings.groups.trees.[type].index';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -93,7 +96,7 @@ class DirectoryTreePreviewTest extends TestCase
             return new PreviewBackend;
         });
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         $this->assertSame(1, $resolved, 'le backend d\'aperçu n\'a pas été obtenu par le registre');
         $this->assertSame('', $component->get('previewError'));
@@ -114,7 +117,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         $profs = collect($component->get('previewData')['nodes'])->firstWhere('path', '_profs');
 
@@ -129,7 +132,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         $paths = array_column($component->get('previewData')['nodes'], 'path');
 
@@ -143,7 +146,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers(12);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         $rows = $component->get('previewData')['nodes'];
 
@@ -166,7 +169,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         $nodes = $component->get('nodesSpec');
         // `_travail/prive` : servi à l'équipe et à personne d'autre… mais l'équipe
@@ -201,7 +204,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         $this->assertSame([], $component->get('previewData')['traversal']);
     }
@@ -213,7 +216,7 @@ class DirectoryTreePreviewTest extends TestCase
     #[Test]
     public function without_a_group_of_the_type_the_preview_says_what_to_do_and_saving_still_works(): void
     {
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         $this->assertSame([], $component->get('previewData'));
         $this->assertStringContainsString('créez-en un', $component->get('previewError'));
@@ -231,8 +234,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $group = UserGroup::create(['name' => '   ', 'type' => 'classe']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('previewGroupId', (int) $group->id)
             ->call('preview');
 
@@ -247,7 +249,7 @@ class DirectoryTreePreviewTest extends TestCase
         $this->classWithMembers();
         $before = DB::table('directory_templates')->where('key', DirectoryTemplate::KEY_CLASSE_SE4)->first();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         $nodes[1]['nature'] = 'coffre_fort';
         $component->set('nodesSpec', $nodes)->call('preview');
@@ -268,8 +270,7 @@ class DirectoryTreePreviewTest extends TestCase
         $this->classWithMembers();
         $before = DB::table('directory_templates')->where('key', DirectoryTemplate::KEY_CLASSE_SE4)->first();
 
-        Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('label', 'Jamais enregistré')
             ->set('pathPattern', 'Autre_{group.bare_name}')
             ->call('preview')
@@ -299,7 +300,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         $nodes[3]['plafond'] = 1073741824;
         $component->set('nodesSpec', $nodes)->call('preview');
@@ -321,7 +322,7 @@ class DirectoryTreePreviewTest extends TestCase
     {
         $this->classWithMembers();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('preview');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('preview');
 
         foreach ($component->get('previewData')['nodes'] as $row) {
             $this->assertNull($row['quota_declaration']);

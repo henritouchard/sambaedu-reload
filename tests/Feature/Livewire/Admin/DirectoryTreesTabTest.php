@@ -57,6 +57,8 @@ class DirectoryTreesTabTest extends TestCase
 
     private const TAB = 'pages::admin.settings.groups._partials.trees-tab';
 
+    private const EDITOR = 'pages::admin.settings.groups.trees.[type].index';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -99,6 +101,7 @@ class DirectoryTreesTabTest extends TestCase
     public function a_non_admin_is_forbidden_at_mount(): void
     {
         Livewire::test(self::TAB)->assertForbidden();
+        Livewire::test(self::EDITOR, ['type' => 'classe'])->assertForbidden();
     }
 
     /**
@@ -115,8 +118,7 @@ class DirectoryTreesTabTest extends TestCase
 
         $before = $this->storedRow();
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('label', 'Renommée');
 
         $allowed = false;
@@ -141,7 +143,7 @@ class DirectoryTreesTabTest extends TestCase
 
         UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         $allowed = false;
 
@@ -250,7 +252,7 @@ class DirectoryTreesTabTest extends TestCase
 
         $before = $this->storedRow();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $this->assertEquals($before, $this->storedRow(), 'ouvrir l\'éditeur a écrit');
 
         $component->call('preview')->assertSet('previewError', '');
@@ -280,7 +282,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $nodes = Livewire::test(self::TAB)->call('openEditor', 'classe')->get('nodesSpec');
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])->get('nodesSpec');
 
         $paths = array_map(static fn (array $node): string => $node['path'], $nodes);
         $this->assertSame(
@@ -307,7 +309,7 @@ class DirectoryTreesTabTest extends TestCase
         UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
         $before = $this->storedRow();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         $nodes[] = ['path' => 'a/b/c', 'label' => 'Orphelin', 'nature' => 'partagee', 'grants' => []];
 
@@ -326,7 +328,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('editorNodes');
 
         // Nœud PARTAGÉ : le jeton du membre n'y est pas proposé.
@@ -347,12 +349,12 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->call('addNode');
 
         $index = count($component->get('nodesSpec')) - 1;
-        $component->call('insertPlaceholder', $index, DirectoryTemplate::PLACEHOLDER_GROUP_BARE_NAME);
+        $component->set('nodesSpec.' . $index . '.path', '')
+            ->call('insertPlaceholder', $index, DirectoryTemplate::PLACEHOLDER_GROUP_BARE_NAME);
 
         $this->assertSame('{group.bare_name}', $component->get('nodesSpec')[$index]['path']);
     }
@@ -363,10 +365,11 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe')->call('addNode');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])->call('addNode');
         $index = count($component->get('nodesSpec')) - 1;
 
-        $component->call('insertPlaceholder', $index, 'group.secret');
+        $component->set('nodesSpec.' . $index . '.path', '')
+            ->call('insertPlaceholder', $index, 'group.secret');
 
         $this->assertSame('', $component->get('nodesSpec')[$index]['path']);
     }
@@ -376,7 +379,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         // `_echange` porte `activable => true`. En changeant sa nature, la clé
         // disparaît : la nature est la source unique.
@@ -397,7 +400,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         $nodes = $component->get('nodesSpec');
         $nodes[1]['activable'] = false;
@@ -412,8 +415,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('nodesSpec.1.nature', 'activable');
 
         $this->assertArrayNotHasKey('activable', $component->get('nodesSpec')[1]);
@@ -424,8 +426,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('nodesSpec.3.plafond', '1073741824');
 
         $this->assertSame(1073741824, $component->get('nodesSpec')[3]['plafond']);
@@ -444,7 +445,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('editorNodes');
 
         $shared = collect($nodes[1]['columns'])->firstWhere('role', 'equipe');
@@ -465,8 +466,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('nodesSpec.4.nature', 'partagee');
 
         $column = collect($component->get('editorNodes')[4]['columns'])->firstWhere('role', 'classe');
@@ -487,8 +487,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->assertSet('editId', null)
             ->assertSet('typeKey', 'projet')
             ->assertSet('rootAnchor', 'classes')
@@ -501,8 +500,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->set('label', 'Projet — arbre 2026');
 
         $this->assertSame('projet_arbre_2026', $component->get('previewKey'));
@@ -517,7 +515,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $nodes = Livewire::test(self::TAB)->call('openEditor', 'classe')->get('editorNodes');
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])->get('editorNodes');
 
         $this->assertSame(['equipe', 'classe'], array_column($nodes[1]['columns'], 'role'));
     }
@@ -527,7 +525,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $nodes = Livewire::test(self::TAB)->call('openEditor', 'classe')->get('editorNodes');
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])->get('editorNodes');
 
         $this->assertNotContains(DirectoryTemplate::TREE_ROLE_MEMBER, array_column($nodes[1]['columns'], 'role'));
         $this->assertContains(DirectoryTemplate::TREE_ROLE_MEMBER, array_column($nodes[5]['columns'], 'role'));
@@ -542,7 +540,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'projet');
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet']);
 
         $offered = array_keys($component->get('audienceOptions'));
 
@@ -571,7 +569,7 @@ class DirectoryTreesTabTest extends TestCase
         GroupRole::create(['key' => 'referent', 'label' => 'Référent', 'sort_order' => 90]);
         $this->installCollegeRoleProfile();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'projet');
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet']);
 
         $offered = array_keys($component->get('audienceOptions'));
         $declared = RoleCatalog::assignableKeys('projet');
@@ -597,11 +595,11 @@ class DirectoryTreesTabTest extends TestCase
 
         $this->assertArrayHasKey(
             $owner,
-            Livewire::test(self::TAB)->call('openEditor', 'classe')->get('audienceOptions'),
+            Livewire::test(self::EDITOR, ['type' => 'classe'])->get('audienceOptions'),
         );
         $this->assertArrayNotHasKey(
             $owner,
-            Livewire::test(self::TAB)->call('openEditor', 'projet')->get('audienceOptions'),
+            Livewire::test(self::EDITOR, ['type' => 'projet'])->get('audienceOptions'),
         );
     }
 
@@ -610,8 +608,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->set('pendingAudience', '@groupe')
             ->call('addAudience');
 
@@ -635,8 +632,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->set('pendingAudience', '@groupe')
             ->call('addAudience')
             ->set('pendingAudience', '@groupe')
@@ -661,7 +657,7 @@ class DirectoryTreesTabTest extends TestCase
         GroupRole::create(['key' => 'groupe', 'label' => 'Groupe', 'sort_order' => 95]);
         RoleCatalog::flush();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'projet');
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet']);
         $options = $component->get('audienceOptions');
 
         $this->assertSame('Tout le groupe', $options['@groupe'] ?? null);
@@ -714,8 +710,7 @@ class DirectoryTreesTabTest extends TestCase
             });
         });
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->set('label', 'Arbre de projet')
             ->set('pathPattern', 'Projet_{group.bare_name}')
             ->set('pendingAudience', '@groupe')
@@ -741,8 +736,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->call('removeAudience', 'classe');
 
         $this->assertCount(2, $component->get('rolesSpec'), 'une audience portant des octrois a été retirée');
@@ -758,7 +752,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         // `.` (racine) : l'octroi de `classe` ne porte que `lire`.
         $component->call('toggleVerb', 0, 'classe', PlanGrant::VERB_LIRE);
@@ -772,7 +766,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         // `_profs` n'octroie rien à `classe`.
         $component->call('toggleVerb', 3, 'classe', PlanGrant::VERB_LIRE);
@@ -790,7 +784,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         // `_profs` : on part d'un octroi neuf pour `classe`, en lecture seule.
         $component->call('toggleVerb', 3, 'classe', PlanGrant::VERB_LIRE);
 
@@ -809,7 +803,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $component->call('toggleVerb', 3, 'classe', PlanGrant::VERB_LIRE);
         $component->call('toggleVerb', 3, 'classe', PlanGrant::VERB_SUPPRIMER);
 
@@ -833,7 +827,7 @@ class DirectoryTreesTabTest extends TestCase
         $template->nodes_spec = $nodes;
         $template->save();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         $cells = collect($component->get('editorNodes')[3]['columns'])
             ->firstWhere('role', 'classe')['cells'];
@@ -859,7 +853,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         // Un dépôt : lire + créer, sans supprimer, seul octroi du nœud.
         $nodes[3]['grants'] = [['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER]]];
@@ -894,7 +888,7 @@ class DirectoryTreesTabTest extends TestCase
         // --- espace partagé sur le serveur de fichiers historique -------------
         $this->decideSharedSpace(FileBackendName::Posix);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         $nodes[3]['grants'] = $mixed;
         $component->set('nodesSpec', $nodes);
@@ -912,7 +906,7 @@ class DirectoryTreesTabTest extends TestCase
         // --- la même recette, espace partagé sur le dossier d'équipe ----------
         $this->decideSharedSpace(FileBackendName::Nextcloud);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         $nodes[3]['grants'] = $mixed;
         $component->set('nodesSpec', $nodes);
@@ -946,7 +940,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         $nodes[3]['grants'] = [
             ['role' => 'equipe', 'verbs' => PlanGrant::VERBS],
@@ -1048,7 +1042,7 @@ class DirectoryTreesTabTest extends TestCase
 
         $before = $this->storedRow();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $component->set('nodesSpec', $mutate($component->get('nodesSpec')))->call('save');
 
         $errors = $component->errors()->get('tree');
@@ -1069,7 +1063,7 @@ class DirectoryTreesTabTest extends TestCase
 
         $before = $this->storedRow();
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
         $nodes = $component->get('nodesSpec');
         // La racine n'octroie plus rien à l'audience du groupe entier.
         $nodes[0]['grants'] = [['role' => 'equipe', 'verbs' => ['lire']]];
@@ -1088,8 +1082,7 @@ class DirectoryTreesTabTest extends TestCase
         // L'écran ouvre `projet` en CRÉATION (aucun arbre)… puis un arbre arrive
         // par un autre chemin avant l'enregistrement. C'est exactement la course
         // que le check-then-act du modèle doit perdre proprement.
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        $component = Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->assertSet('editId', null)
             ->set('label', 'Second arbre')
             ->set('newKey', 'projet_arbre_2')
@@ -1129,12 +1122,15 @@ class DirectoryTreesTabTest extends TestCase
         // 60.5) : on repart d'une file NEUVE pour ne mesurer que l'enregistrement.
         Queue::fake();
 
-        $component = Livewire::test(self::TAB)
-            ->call('openEditor', 'classe')
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
             ->set('label', 'Classe (arbre révisé)')
             ->call('save')
-            ->assertHasNoErrors()
-            ->assertSet('isEditorOpen', false);
+            ->assertHasNoErrors();
+
+        $component->assertSet(
+            'editId',
+            (int) DirectoryTemplate::where('key', DirectoryTemplate::KEY_CLASSE_SE4)->value('id'),
+        );
 
         $this->assertSame(
             'Classe (arbre révisé)',
@@ -1151,7 +1147,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        $html = Livewire::test(self::TAB)->call('openEditor', 'classe')->html();
+        $html = Livewire::test(self::EDITOR, ['type' => 'classe'])->html();
 
         $this->assertStringContainsString('data-testid="materialization-notice"', $html);
         $this->assertStringContainsString('Les groupes', $html);
@@ -1163,8 +1159,7 @@ class DirectoryTreesTabTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        Livewire::test(self::TAB)
-            ->call('openEditor', 'projet')
+        Livewire::test(self::EDITOR, ['type' => 'projet'])
             ->set('label', 'Arbre de projet')
             ->set('pathPattern', 'Projet_{group.bare_name}')
             ->set('pendingAudience', '@groupe')
@@ -1181,5 +1176,261 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertSame('projet', $created->attachedGroupType());
         $this->assertTrue($created->materializesOnGroupCreation());
         $this->assertSame('classes', (string) $created->root_anchor);
+    }
+
+    // =========================================================================
+    // L'ARBRE — une vue ordonnée, et les gestes qui en découlent
+    // =========================================================================
+
+    /**
+     * L'arbre se lit parent puis enfants, et la profondeur DÉCOULE du chemin.
+     *
+     * L'ordre stocké, lui, ne bouge pas : c'est l'oracle anti-normalisation de
+     * l'écran, étendu à la vue qui pourrait le plus facilement le casser.
+     */
+    #[Test]
+    public function the_tree_orders_parents_before_children_without_touching_the_stored_order(): void
+    {
+        $this->grant(['server.admin']);
+
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
+        $rows = $component->get('treeRows');
+
+        $this->assertSame(
+            ['.', '_echange', '_profs', '_travail', '_travail/devoirs', '{member.login}'],
+            array_column($rows, 'path'),
+            'l\'arbre ne montre pas les enfants sous leur parent',
+        );
+        $this->assertSame([0, 1, 1, 1, 2, 1], array_column($rows, 'depth'));
+        $this->assertSame(
+            ['.', '_travail', '_travail/devoirs', '_profs', '_echange', '{member.login}'],
+            array_column($component->get('nodesSpec'), 'path'),
+            'afficher l\'arbre a retrié la recette stockée',
+        );
+    }
+
+    /**
+     * Un frère dont le nom prolonge celui d'un autre ne s'insère pas dans sa
+     * descendance : `-` précède `/` dans l'ordre des octets, et un tri de chaînes
+     * s'y ferait prendre.
+     */
+    #[Test]
+    public function a_sibling_whose_name_extends_another_is_not_read_as_a_child(): void
+    {
+        $this->grant(['server.admin']);
+
+        $rows = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('addNode')
+            ->set('nodesSpec.6.path', '_travail-bis')
+            ->get('treeRows');
+
+        $byPath = array_column($rows, 'depth', 'path');
+
+        $this->assertSame(1, $byPath['_travail-bis'], 'un frère est passé pour un enfant');
+        $this->assertSame(2, $byPath['_travail/devoirs']);
+    }
+
+    /** L'initiale d'un verbe est DÉCOUPÉE dans son libellé, jamais recopiée. */
+    #[Test]
+    public function the_tree_marks_carry_the_initials_of_the_real_verb_labels(): void
+    {
+        $this->grant(['server.admin']);
+
+        $rows = collect(Livewire::test(self::EDITOR, ['type' => 'classe'])->get('treeRows'))
+            ->keyBy('path');
+
+        $expected = array_map(
+            static fn (string $verb): string => mb_strtoupper(mb_substr(
+                \App\Services\Filesystem\PlanStateComparator::verbLabel($verb),
+                0,
+                1,
+            )),
+            PlanGrant::VERBS,
+        );
+
+        $equipe = collect($rows['_travail']['audiences'])->firstWhere('role', 'equipe');
+
+        $this->assertSame($expected, array_column($equipe['marks'], 'letter'));
+        $this->assertSame([true, true, true, true], array_column($equipe['marks'], 'on'));
+    }
+
+    /**
+     * `_profs` n'accorde rien aux élèves : l'arbre le montre éteint et le dit en
+     * toutes lettres, sans jamais inventer un refus.
+     */
+    #[Test]
+    public function an_audience_that_receives_nothing_is_shown_extinguished(): void
+    {
+        $this->grant(['server.admin']);
+
+        $rows = collect(Livewire::test(self::EDITOR, ['type' => 'classe'])->get('treeRows'))
+            ->keyBy('path');
+
+        $classe = collect($rows['_profs']['audiences'])->firstWhere('role', 'classe');
+
+        $this->assertFalse($classe['has_grant']);
+        $this->assertSame('', $classe['summary']);
+        $this->assertSame([false, false, false, false], array_column($classe['marks'], 'on'));
+    }
+
+    /** Un sous-dossier naît SOUS son parent : son chemin n'est jamais retapé. */
+    #[Test]
+    public function a_child_folder_is_born_under_the_parent_it_was_created_from(): void
+    {
+        $this->grant(['server.admin']);
+
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('addChildNode', 1);
+
+        $nodes = $component->get('nodesSpec');
+
+        $this->assertSame('_travail/nouveau_dossier', end($nodes)['path']);
+        $this->assertSame(count($nodes) - 1, $component->get('focusedNode'), 'le dossier neuf n\'est pas visé');
+    }
+
+    /** Depuis la racine, un dossier neuf naît au premier niveau, sans préfixe. */
+    #[Test]
+    public function a_child_of_the_root_carries_no_prefix(): void
+    {
+        $this->grant(['server.admin']);
+
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('addChildNode', 0)
+            ->get('nodesSpec');
+
+        $this->assertSame('nouveau_dossier', end($nodes)['path']);
+    }
+
+    /** Le nom proposé est suffixé tant qu'il est pris : deux clics, deux dossiers. */
+    #[Test]
+    public function two_new_folders_under_the_same_parent_never_collide(): void
+    {
+        $this->grant(['server.admin']);
+
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('addChildNode', 1)
+            ->call('addChildNode', 1)
+            ->get('nodesSpec');
+
+        $this->assertSame('_travail/nouveau_dossier', $nodes[6]['path']);
+        $this->assertSame('_travail/nouveau_dossier_2', $nodes[7]['path']);
+    }
+
+    /** Renommer un dossier emporte ses enfants — sinon ils deviendraient orphelins. */
+    #[Test]
+    public function renaming_a_folder_carries_its_children(): void
+    {
+        $this->grant(['server.admin']);
+
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('renameSegment', 1, '_documents')
+            ->get('nodesSpec');
+
+        $this->assertSame('_documents', $nodes[1]['path']);
+        $this->assertSame('_documents/devoirs', $nodes[2]['path'], 'l\'enfant est resté sur l\'ancien parent');
+    }
+
+    /** Renommer un enfant ne touche PAS son parent : seul le dernier segment change. */
+    #[Test]
+    public function renaming_a_child_only_changes_its_last_segment(): void
+    {
+        $this->grant(['server.admin']);
+
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('renameSegment', 2, 'sujets')
+            ->get('nodesSpec');
+
+        $this->assertSame('_travail', $nodes[1]['path']);
+        $this->assertSame('_travail/sujets', $nodes[2]['path']);
+    }
+
+    /** La racine ne se renomme pas ici : son nom est le motif de la recette. */
+    #[Test]
+    public function the_root_is_never_renamed_from_a_folder_field(): void
+    {
+        $this->grant(['server.admin']);
+
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('renameSegment', 0, 'autre_chose')
+            ->get('nodesSpec');
+
+        $this->assertSame('.', $nodes[0]['path']);
+    }
+
+    /** Retirer un dossier emporte sa descendance : un arbre n'a pas d'enfant sans parent. */
+    #[Test]
+    public function removing_a_folder_removes_its_descendants(): void
+    {
+        $this->grant(['server.admin']);
+
+        $nodes = Livewire::test(self::EDITOR, ['type' => 'classe'])
+            ->call('removeNode', 1)
+            ->get('nodesSpec');
+
+        $paths = array_column($nodes, 'path');
+
+        $this->assertNotContains('_travail', $paths);
+        $this->assertNotContains('_travail/devoirs', $paths, 'l\'enfant a survécu à son parent');
+        $this->assertContains('_profs', $paths, 'un dossier sans lien de parenté a été emporté');
+    }
+
+    /** La liste n'édite plus : elle renvoie vers la page, avec sa provenance. */
+    #[Test]
+    public function the_tab_links_to_the_editor_page(): void
+    {
+        $this->grant(['server.admin']);
+
+        $html = Livewire::test(self::TAB)->assertOk()->html();
+
+        $this->assertStringContainsString(
+            'href="' . e(route('admin.settings.groups.tree', [
+                'type' => 'classe',
+                'from' => route('admin.settings.groups', ['tab' => 'trees'], false),
+            ])) . '"',
+            $html,
+        );
+    }
+
+    /** Un type hors catalogue n'a pas de page d'arborescence. */
+    #[Test]
+    public function an_unknown_type_has_no_tree_page(): void
+    {
+        $this->grant(['server.admin']);
+
+        Livewire::test(self::EDITOR, ['type' => 'inexistant'])->assertNotFound();
+    }
+
+    /**
+     * Le champ « nom du dossier » est CÂBLÉ sur le renommage.
+     *
+     * Les tests au-dessus appellent la méthode directement : sans cette
+     * vérification du rendu, retirer le câblage laisserait un champ inerte et
+     * toute la suite resterait verte.
+     */
+    #[Test]
+    public function the_folder_name_field_is_wired_to_the_rename(): void
+    {
+        $this->grant(['server.admin']);
+
+        $html = Livewire::test(self::EDITOR, ['type' => 'classe'])->html();
+
+        $this->assertStringContainsString('wire:blur="renameSegment(1, $event.target.value)"', $html);
+        $this->assertStringContainsString('wire:click="addChildNode(1)"', $html);
+        $this->assertStringContainsString('wire:click="focusNode(1)"', $html);
+    }
+
+    /** L'arbre montre la hiérarchie : l'enfant est indenté sous son parent. */
+    #[Test]
+    public function the_rendered_tree_indents_a_child_under_its_parent(): void
+    {
+        $this->grant(['server.admin']);
+
+        $html = Livewire::test(self::EDITOR, ['type' => 'classe'])->html();
+
+        $rows = collect(Livewire::test(self::EDITOR, ['type' => 'classe'])->get('treeRows'))->keyBy('path');
+
+        $this->assertStringContainsString('style="width: ' . ($rows['_travail']['depth'] * 22) . 'px"', $html);
+        $this->assertStringContainsString('style="width: ' . ($rows['_travail/devoirs']['depth'] * 22) . 'px"', $html);
+        $this->assertStringContainsString('data-testid="tree-tip-', $html, 'l\'arbre ne porte aucune infobulle');
     }
 }

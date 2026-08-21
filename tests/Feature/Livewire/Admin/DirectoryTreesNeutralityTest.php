@@ -42,6 +42,9 @@ class DirectoryTreesNeutralityTest extends TestCase
 
     private const TAB = 'pages::admin.settings.groups._partials.trees-tab';
 
+
+    private const EDITOR = 'pages::admin.settings.groups.trees.[type].index';
+
     /**
      * Les mots de MÉCANISME qu'aucune explication de cet écran ne doit employer.
      *
@@ -101,7 +104,7 @@ class DirectoryTreesNeutralityTest extends TestCase
             $group->users()->attach($user->id, ['role' => 'member']);
         }
 
-        $component = Livewire::test(self::TAB)->call('openEditor', 'classe');
+        $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
 
         $nodes = $component->get('nodesSpec');
         // Un dépôt « créer sans supprimer » : la note de dégradation déclarée.
@@ -183,10 +186,11 @@ class DirectoryTreesNeutralityTest extends TestCase
     {
         $sources = [
             'resources/views/pages/admin/settings/groups/_partials/trees-tab.blade.php',
-            'resources/views/pages/admin/settings/groups/_partials/trees/identity.blade.php',
-            'resources/views/pages/admin/settings/groups/_partials/trees/audiences.blade.php',
-            'resources/views/pages/admin/settings/groups/_partials/trees/editor.blade.php',
-            'resources/views/pages/admin/settings/groups/_partials/trees/preview.blade.php',
+            'resources/views/pages/admin/settings/groups/_partials/tree-editor/identity.blade.php',
+            'resources/views/pages/admin/settings/groups/_partials/tree-editor/audiences.blade.php',
+            'resources/views/pages/admin/settings/groups/_partials/tree-editor/tree.blade.php',
+            'resources/views/pages/admin/settings/groups/_partials/tree-editor/nodes.blade.php',
+            'resources/views/pages/admin/settings/groups/_partials/tree-editor/preview.blade.php',
         ];
 
         foreach ($sources as $relative) {

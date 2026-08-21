@@ -1,59 +1,113 @@
 {{--
-    Story 62.6 — LES DOSSIERS et leur matrice.
+    LES FICHES des dossiers et leur matrice.
 
-    La vue ne DÉCIDE rien : tout ce qu'elle affiche (cases cochées, cases grisées,
-    explications, notes de dégradation, note de nœud mixte) est calculé par le
-    composant, qui l'obtient de la DÉCLARATION du backend. Aucune règle n'est
-    recopiée ici, et aucune constante n'énumère les combinaisons exprimables.
+    La vue ne DÉCIDE rien : cases cochées, cases grisées, explications, notes de
+    dégradation et note de nœud mixte sont calculées par le composant, qui les
+    obtient de la DÉCLARATION du backend. Aucune règle n'est recopiée ici, et
+    aucune constante n'énumère les combinaisons exprimables.
 
     Il n'y a AUCUN champ de traversée, AUCUN champ d'interdiction, AUCUNE priorité :
     la traversée est dérivée par le backend, et un octroi est positif.
+
+    Les fiches suivent l'ordre de l'ARBRE, pas celui du JSON stocké : c'est ce qui
+    rend le clic depuis l'arbre lisible, et l'ordre stocké reste intact.
 --}}
-<x-molecules.modal.section title="Dossiers" icon="fa-folder-tree text-primary" dense>
+@php($nodesByIndex = collect($this->editorNodes)->keyBy('index'))
 
-    <div class="flex items-start justify-between gap-4 flex-wrap">
-        <p class="text-xs text-base-content/70 grow min-w-64">
-            Chaque ligne est un dossier de l'arborescence. Sa <strong>profondeur découle de son chemin</strong>
-            (<code>a/b/c</code>) : il n'y a pas de champ de niveau. Un dossier profond exige que ses parents
-            soient eux aussi déclarés — sinon l'enregistrement le refuse en nommant le chemin fautif.
-        </p>
-        <button type="button" class="btn btn-outline btn-sm" wire:click="addNode" data-testid="add-node">
-            <i class="fa-solid fa-plus"></i> Ajouter un dossier
-        </button>
-    </div>
+<div class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body p-5 gap-4">
 
-    <div class="flex flex-col gap-4 mt-4">
-        @forelse ($this->editorNodes as $node)
-            <div class="rounded-box border border-base-300 p-4 flex flex-col gap-3"
-                wire:key="node-{{ $node['index'] }}" data-testid="node-{{ $node['index'] }}">
+        <div>
+            <h2 class="font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-folder-open text-primary"></i> Fiches des dossiers
+            </h2>
+            <p class="text-xs text-base-content/70 mt-1">
+                Un dossier ne porte qu'un <strong>nom</strong> : sa place dans l'arbre lui donne son chemin. Le
+                renommer emporte ses sous-dossiers.
+            </p>
+        </div>
 
-                <div class="flex items-start justify-between gap-3 flex-wrap">
-                    <div class="flex flex-col gap-1 grow min-w-72">
-                        <label class="label" for="node-path-{{ $node['index'] }}">
+        @foreach ($this->treeRows as $row)
+            @php($node = $nodesByIndex[$row['index']] ?? null)
+            @continue($node === null)
+
+            @php($focused = $focusedNode === $node['index'])
+
+            <div class="rounded-box border p-4 flex flex-col gap-3 scroll-mt-24 {{ $focused ? 'border-primary ring-2 ring-primary/20' : 'border-base-300' }}"
+                wire:key="node-{{ $node['index'] }}-{{ $focused ? 'focus' : 'idle' }}"
+                data-testid="node-{{ $node['index'] }}"
+                @if ($focused) x-data x-init="$el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })" @endif>
+
+                <div class="flex items-center gap-3 flex-wrap">
+                    <i class="fa-solid fa-folder {{ $row['nature_tone'] }} opacity-70" aria-hidden="true"></i>
+                    <span class="font-mono font-semibold">{{ $row['segment'] }}</span>
+                    <span class="text-sm opacity-70">{{ $node['label'] }}</span>
+                    <span class="badge badge-sm badge-ghost">{{ $node['nature_label'] }}</span>
+                    @if ($focused)
+                        <span class="badge badge-sm badge-info" data-testid="focused-{{ $node['index'] }}">
+                            ciblé depuis l'arbre
+                        </span>
+                    @endif
+                    <div class="ml-auto flex items-center gap-2">
+                        <button type="button" class="btn btn-ghost btn-xs"
+                            wire:click="addChildNode({{ $node['index'] }})"
+                            data-testid="card-add-child-{{ $node['index'] }}">
+                            <i class="fa-solid fa-plus"></i> Sous-dossier ici
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-xs text-error"
+                            wire:click="removeNode({{ $node['index'] }})"
+                            data-testid="remove-node-{{ $node['index'] }}">
+                            <i class="fa-solid fa-trash"></i> Retirer
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="flex flex-col gap-1">
+                        <label class="label" for="node-name-{{ $node['index'] }}">
                             <span class="label-text font-medium">
-                                Chemin <span class="text-error" aria-hidden="true">*</span>
+                                Nom du dossier <span class="text-error" aria-hidden="true">*</span>
                             </span>
                         </label>
-                        <input id="node-path-{{ $node['index'] }}" type="text"
-                            wire:model.blur="nodesSpec.{{ $node['index'] }}.path"
-                            class="input input-bordered input-sm w-full font-mono"
-                            data-testid="node-path-{{ $node['index'] }}" />
-                        <div class="flex flex-wrap gap-1 mt-1">
-                            @foreach ($node['placeholders'] as $placeholder)
-                                <button type="button" class="btn btn-ghost btn-xs font-mono"
-                                    title="{{ $placeholder['help'] }}"
-                                    wire:click="insertPlaceholder({{ $node['index'] }}, '{{ $placeholder['token'] }}')"
-                                    data-testid="node-{{ $node['index'] }}-placeholder-{{ $placeholder['token'] }}">
-                                    &#123;{{ $placeholder['token'] }}&#125;
-                                </button>
-                            @endforeach
-                            <span class="text-xs opacity-50 self-center ml-2">
-                                Profondeur : {{ $node['depth'] }}
+                        @if ($node['is_root'])
+                            <span class="input input-bordered input-sm w-full bg-base-200 font-mono items-center"
+                                data-testid="node-root-{{ $node['index'] }}">{{ $row['segment'] }}</span>
+                            <span class="text-xs opacity-60">
+                                C'est le dossier racine : son nom est le <strong>motif de chemin</strong> de la
+                                recette, plus haut.
                             </span>
-                        </div>
+                        @else
+                            <input id="node-name-{{ $node['index'] }}" type="text"
+                                wire:key="node-name-{{ $node['index'] }}-{{ $node['segment'] }}"
+                                value="{{ $node['segment'] }}"
+                                wire:blur="renameSegment({{ $node['index'] }}, $event.target.value)"
+                                class="input input-bordered input-sm w-full font-mono"
+                                data-testid="node-name-{{ $node['index'] }}" />
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                @foreach ($node['placeholders'] as $placeholder)
+                                    <button type="button" class="btn btn-ghost btn-xs font-mono"
+                                        title="{{ $placeholder['help'] }}"
+                                        wire:click="insertPlaceholder({{ $node['index'] }}, '{{ $placeholder['token'] }}')"
+                                        data-testid="node-{{ $node['index'] }}-placeholder-{{ $placeholder['token'] }}">
+                                        &#123;{{ $placeholder['token'] }}&#125;
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
                     </div>
 
-                    <div class="flex flex-col gap-1 grow min-w-64">
+                    <div class="flex flex-col gap-1">
+                        <span class="label-text font-medium">Sous</span>
+                        <span class="input input-bordered input-sm w-full bg-base-200 font-mono text-xs items-center overflow-x-auto whitespace-nowrap"
+                            data-testid="node-parent-{{ $node['index'] }}">
+                            {{ $node['parent_display'] !== '' ? $node['parent_display'] : '—' }}
+                        </span>
+                        <span class="text-xs opacity-60">
+                            La place découle de l'arbre — profondeur {{ $node['depth'] }}.
+                        </span>
+                    </div>
+
+                    <div class="flex flex-col gap-1">
                         <label class="label" for="node-label-{{ $node['index'] }}">
                             <span class="label-text font-medium">
                                 Libellé <span class="text-error" aria-hidden="true">*</span>
@@ -64,12 +118,6 @@
                             class="input input-bordered input-sm w-full"
                             data-testid="node-label-{{ $node['index'] }}" />
                     </div>
-
-                    <button type="button" class="btn btn-ghost btn-xs text-error self-end"
-                        wire:click="removeNode({{ $node['index'] }})"
-                        data-testid="remove-node-{{ $node['index'] }}">
-                        <i class="fa-solid fa-trash"></i> Retirer
-                    </button>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -215,10 +263,7 @@
                     </p>
                 @endif
             </div>
-        @empty
-            <p class="text-sm opacity-50" data-testid="no-node">
-                Aucun dossier déclaré. L'arborescence se résumera à son dossier racine.
-            </p>
-        @endforelse
+        @endforeach
+
     </div>
-</x-molecules.modal.section>
+</div>
