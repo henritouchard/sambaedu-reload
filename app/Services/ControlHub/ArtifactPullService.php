@@ -192,6 +192,8 @@ class ArtifactPullService
                 'key' => $key,
                 'checksum' => strtolower($checksum),
             ]);
+
+            $this->reapplyAssignmentsAfterWallpaperPull($type, $item);
         } catch (Throwable $e) {
             @unlink($tmp);
             // Review 39.4 #E11 (NFR-A3) — NE JAMAIS persister `$e->getMessage()` dans
@@ -435,6 +437,42 @@ class ArtifactPullService
         }
 
         return $default;
+    }
+
+    /**
+     * Repose les assignations du contrat après le tirage d'un fond d'écran.
+     *
+     * Le fond d'écran est le seul type dont l'assignation exige un binaire local :
+     * {@see ContractAssignmentReconciler::collectWallpaper()} sort en `pending` quand
+     * le `WallpaperAsset` manque. Or la pose est SYNCHRONE à la réception (listener
+     * {@see \App\Listeners\ApplyContractAssignments}) tandis que le pull est asynchrone
+     * et dispatché APRÈS : à la première réception d'une image inédite, la pose voit
+     * donc toujours l'asset absent. Sans ce rappel, l'item reste `pending` pour
+     * toujours — une ré-émission identique est un no-op, donc sans événement.
+     *
+     * Pendant exact du recollage déjà fait pour l'icône de raccourci. Un échec ici ne
+     * remonte pas : le binaire, lui, est bien tiré, et la reprise manuelle reste
+     * disponible (`controlhub:apply-assignments`).
+     */
+    private function reapplyAssignmentsAfterWallpaperPull(string $type, ControlHubContractItem $item): void
+    {
+        if ($type !== 'wallpapers') {
+            return;
+        }
+
+        try {
+            $result = app(ContractAssignmentReconciler::class)->reconcile();
+
+            Log::info('ArtifactPullService: assignations reposées après tirage du fond d\'écran', [
+                'item_id' => $item->id,
+            ] + $result->toArray());
+        } catch (Throwable $e) {
+            Log::error('ArtifactPullService: échec de la repose des assignations après tirage', [
+                'item_id' => $item->id,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function markDownloaded(ControlHubContractItem $item): void

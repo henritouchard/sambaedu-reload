@@ -13,6 +13,7 @@ use App\Models\WorkstationGroup;
 use App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Story 30.2 — Service de mapping refnum : rattache un label « libre » (`free`)
@@ -31,6 +32,10 @@ use Illuminate\Support\Facades\Log;
  * `RuntimeException` si le groupe est `locked` (verrou AD), ce qui n'a aucun sens
  * pour un label libre — concern distinct. Écriture ciblée sur la seule colonne
  * `controlhub_label`.
+ *
+ * Écrire le label ne suffit pas : ce qu'un item de contrat destine au label doit
+ * atteindre le parc. Chaque écriture rejoue donc la pose du
+ * {@see ContractAssignmentReconciler} — {@see reapplyContractAssignments()}.
  *
  * ⚠️ GARDE-FOU R3 : aucun mot « central » dans ce service, ses méthodes, ses
  *    messages. Vocabulaire imposé : « amont » / `ControlHub*` / `label`. [prd#R3]
@@ -113,6 +118,40 @@ class WorkstationGroupLabelService
             'group_name' => $group->name,
             'label' => $labelName,
         ]);
+
+        $this->reapplyContractAssignments($group, $labelName);
+    }
+
+    /**
+     * Rejoue la pose des assignations du contrat après un changement de label.
+     *
+     * Le lien label↔parc est la SEULE donnée que
+     * {@see ContractAssignmentReconciler} ne relit pas de lui-même : sa passe est
+     * déclenchée par la réception d'un contrat, jamais par le parc. Un parc
+     * étiqueté après la dernière réception restait donc `pending` avec le motif
+     * « Aucun parc ne porte le label » — le contrat le destinait à ce parc, et rien
+     * n'était posé jusqu'à la réception suivante.
+     *
+     * La passe est globale et idempotente. Elle suit le commit du label : un échec
+     * ici ne doit pas défaire un rattachement valide — il est tracé, et la
+     * prochaine réception rattrape.
+     */
+    private function reapplyContractAssignments(WorkstationGroup $group, ?string $label): void
+    {
+        try {
+            $result = app(ContractAssignmentReconciler::class)->reconcile();
+
+            Log::info('WorkstationGroupLabelService: assignations du contrat rejouées', [
+                'group_id' => $group->id,
+                'label' => $label,
+            ] + $result->toArray());
+        } catch (Throwable $e) {
+            Log::error('WorkstationGroupLabelService: échec de la pose déclenchée par un changement de label', [
+                'group_id' => $group->id,
+                'label' => $label,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -202,5 +241,9 @@ class WorkstationGroupLabelService
             'group_name' => $group->name,
             'previous_label' => $previous,
         ]);
+
+        // Le prune du reconciler retire ce que le parc ne doit plus recevoir : sans
+        // cette passe, un parc détaché gardait les assignations du label perdu.
+        $this->reapplyContractAssignments($group, $previous);
     }
 }

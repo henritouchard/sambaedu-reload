@@ -7,12 +7,15 @@ namespace Tests\Feature\ControlHub;
 use App\Enums\ControlHubLabelMode;
 use App\Enums\ControlHubLinkState;
 use App\Exceptions\ControlHub\LabelAssignmentException;
+use App\Models\Application;
 use App\Models\ControlHubContract;
+use App\Models\ControlHubContractItem;
 use App\Models\ControlHubContractLabel;
 use App\Models\User;
 use App\Models\WorkstationGroup;
 use App\Services\ControlHub\WorkstationGroupLabelService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -43,8 +46,9 @@ class WorkstationGroupLabelTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const EDIT_COMPONENT = 'pages::parc.groups.[id].edit.index';
-    private const NEW_COMPONENT = 'pages::parc.groups.new.index';
+    // Création ET édition passent par la MÊME modale réutilisable : `open()` sans
+    // argument = création, `open($id)` = édition.
+    private const MODAL_COMPONENT = 'pages::parc.groups._partials.group-form-modal';
 
     protected function setUp(): void
     {
@@ -84,7 +88,9 @@ class WorkstationGroupLabelTest extends TestCase
     {
         $user = User::query()->create(['login' => 'refnum', 'role' => 'prof', 'is_active' => true]);
         $this->actingAs($user);
-        Gate::before(fn ($u, string $ability) => in_array($ability, ['update-workstationGroup', 'create-workstationGroup'], true) ? true : null);
+        // `computer.install` est la garde de la modale de création/édition ; les
+        // deux abilities `*-workstationGroup` restent celles du service et des policies.
+        Gate::before(fn ($u, string $ability) => in_array($ability, ['update-workstationGroup', 'create-workstationGroup', 'computer.install'], true) ? true : null);
 
         return $user;
     }
@@ -132,7 +138,8 @@ class WorkstationGroupLabelTest extends TestCase
         $this->actingAsRefnum();
         $this->activeContractWithLabels(['salle-info' => ControlHubLabelMode::Free]);
 
-        Livewire::test(self::NEW_COMPONENT)
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open')
             ->set('display_name', 'parc-nouveau')
             ->set('is_physical', false)
             ->set('controlhubLabel', 'salle-info')
@@ -145,7 +152,8 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertNotNull($group);
         self::assertSame('salle-info', $group->controlhub_label);
         // Le redirect de succès pointe la fiche du groupe, pas la page d'édition (refus label).
-        Livewire::test(self::NEW_COMPONENT)
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open')
             ->set('display_name', 'parc-bis')
             ->set('is_physical', false)
             ->set('controlhubLabel', 'salle-info')
@@ -163,7 +171,14 @@ class WorkstationGroupLabelTest extends TestCase
 
         self::assertTrue(Gate::forUser($user)->denies('create-workstationGroup'));
 
-        Livewire::test(self::NEW_COMPONENT)
+        // La modale refuse à l'OUVERTURE, avant tout formulaire.
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open')
+            ->assertForbidden();
+
+        // Et une fois de plus à l'enregistrement : un client qui forgerait
+        // l'état du composant sans passer par `open()` reste refusé.
+        Livewire::test(self::MODAL_COMPONENT)
             ->set('display_name', 'parc-interdit')
             ->set('is_physical', false)
             ->set('controlhubLabel', 'salle-info')
@@ -287,7 +302,13 @@ class WorkstationGroupLabelTest extends TestCase
 
         self::assertTrue(Gate::forUser($user)->denies('update-workstationGroup', $group));
 
-        Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open', $group->id)
+            ->assertForbidden();
+
+        Livewire::test(self::MODAL_COMPONENT)
+            ->set('editingId', $group->id)
+            ->set('display_name', $group->display_name_or_name)
             ->set('controlhubLabel', 'salle-info')
             ->call('save')
             ->assertForbidden();
@@ -307,7 +328,8 @@ class WorkstationGroupLabelTest extends TestCase
         ]);
         $group = WorkstationGroup::factory()->create(['controlhub_label' => null]);
 
-        Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open', $group->id)
             ->assertSet('hasActiveContract', true)
             ->assertSet('freeLabelNames', ['salle-info'])
             ->set('controlhubLabel', 'salle-info')
@@ -323,7 +345,8 @@ class WorkstationGroupLabelTest extends TestCase
         $this->activeContractWithLabels(['salle-info' => ControlHubLabelMode::Free]);
         $group = WorkstationGroup::factory()->create(['controlhub_label' => null]);
 
-        Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open', $group->id)
             ->set('controlhubLabel', 'fantome')
             ->call('save')
             ->assertDispatched('toastMagic', fn ($event, $params) => ($params['status'] ?? null) === 'error')
@@ -342,7 +365,8 @@ class WorkstationGroupLabelTest extends TestCase
         $this->actingAsRefnum();
         $group = WorkstationGroup::factory()->create(['controlhub_label' => null]);
 
-        Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open', $group->id)
             ->assertSet('hasActiveContract', false)
             ->assertSet('freeLabelNames', [])
             ->call('save'); // comportement parc inchangé, aucune contrainte ajoutée
@@ -375,7 +399,8 @@ class WorkstationGroupLabelTest extends TestCase
         $this->activeContractWithLabels(['direction' => ControlHubLabelMode::Reserved]);
         $group = WorkstationGroup::factory()->create(['controlhub_label' => 'direction', 'name' => 'avant']);
 
-        Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open', $group->id)
             ->assertSet('reservedLabelHeld', 'direction') // affiché en lecture seule
             ->set('display_name', 'apres')
             ->call('save')
@@ -396,7 +421,8 @@ class WorkstationGroupLabelTest extends TestCase
         $this->activeContractWithLabels(['salle-info' => ControlHubLabelMode::Free]);
         $group = WorkstationGroup::factory()->create(['controlhub_label' => 'label-disparu', 'name' => 'avant']);
 
-        Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
+        Livewire::test(self::MODAL_COMPONENT)
+            ->call('open', $group->id)
             ->assertSet('reservedLabelHeld', 'label-disparu')
             ->set('display_name', 'apres')
             ->call('save')
@@ -406,6 +432,55 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertSame('apres', $group->display_name);
         self::assertSame('avant', $group->name); // nom technique immuable
         self::assertSame('label-disparu', $group->controlhub_label);
+    }
+
+    // ── Le label posé ATTEINT le parc, sans attendre la réception suivante ───
+
+    #[Test]
+    public function assigning_a_label_immediately_applies_what_the_contract_destines_to_it(): void
+    {
+        $contract = $this->activeContractWithLabels(['modelibre' => ControlHubLabelMode::Free]);
+        $app = Application::create(['app_id' => 'bkchem', 'name' => 'BKChem']);
+        ControlHubContractItem::factory()->create([
+            'controlhub_contract_id' => $contract->id,
+            'type' => Application::TYPE_APPLICATIONS,
+            'key' => 'bkchem',
+            'target_type' => 'label',
+            'target_label' => 'modelibre',
+        ]);
+
+        $group = WorkstationGroup::factory()->create(['controlhub_label' => null]);
+
+        $this->service()->assignLabel($group, 'modelibre');
+
+        // Sans la passe rejouée, l'item restait « pending — aucun parc ne porte
+        // le label » jusqu'à la réception suivante du contrat.
+        self::assertSame(
+            [$group->id],
+            DB::table('application_workstation_group')->pluck('workstation_group_id')->all(),
+        );
+    }
+
+    #[Test]
+    public function detaching_a_label_withdraws_what_it_had_brought(): void
+    {
+        $contract = $this->activeContractWithLabels(['modelibre' => ControlHubLabelMode::Free]);
+        Application::create(['app_id' => 'bkchem', 'name' => 'BKChem']);
+        ControlHubContractItem::factory()->create([
+            'controlhub_contract_id' => $contract->id,
+            'type' => Application::TYPE_APPLICATIONS,
+            'key' => 'bkchem',
+            'target_type' => 'label',
+            'target_label' => 'modelibre',
+        ]);
+
+        $group = WorkstationGroup::factory()->create(['controlhub_label' => null]);
+        $this->service()->assignLabel($group, 'modelibre');
+        self::assertNotEmpty(DB::table('application_workstation_group')->get());
+
+        $this->service()->detachLabel($group);
+
+        self::assertEmpty(DB::table('application_workstation_group')->get());
     }
 
     #[Test]
