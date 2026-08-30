@@ -218,11 +218,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
 
     public function getShortcutIconUrl(): string
     {
-        $iconPath = '/etc/sambaedu/applications/shortcuts/' . $this->name . '.png';
-        if (file_exists($iconPath)) {
-            return route('shortcuts.icon', ['name' => $this->name]);
-        }
-        return asset('elements/images/system-run.png');
+        return $this->shortcutModel?->iconUrl() ?? asset('elements/images/system-run.png');
     }
 
     public function isUrlShortcut(): bool

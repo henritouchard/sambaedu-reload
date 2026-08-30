@@ -342,6 +342,36 @@ class Shortcut extends Model implements Wireable
     }
 
     /**
+     * URL d'aperçu de l'icône, ou l'icône générique à défaut.
+     *
+     * Deux foyers coexistent. Le `<name>.png` de `/etc/sambaedu/applications/shortcuts`
+     * est produit par le formulaire d'upload et reste prioritaire : c'est lui que
+     * l'interface a toujours affiché. Le `<sha256>.ico` content-adressé, lui, est le
+     * seul foyer qu'alimente le contrat amont — son icône arrive par le canal des
+     * binaires et ne passe jamais par le convertisseur du formulaire. Sans ce repli,
+     * un raccourci imposé s'affichait avec l'icône générique alors que son icône
+     * était bien tirée, vérifiée et servie.
+     */
+    public function iconUrl(): string
+    {
+        $legacyPng = '/etc/sambaedu/applications/shortcuts/'.$this->name.'.png';
+
+        if ($this->name !== null && $this->name !== '' && file_exists($legacyPng)) {
+            return route('shortcuts.icon', ['name' => $this->name]);
+        }
+
+        if (!empty($this->icon_asset)) {
+            $servedDir = rtrim((string) config('shortcut_icons.served_path'), '/');
+
+            if (file_exists($servedDir.'/'.$this->icon_asset)) {
+                return url(trim((string) config('shortcut_icons.route_path'), '/').'/'.$this->icon_asset);
+            }
+        }
+
+        return asset('elements/images/system-run.png');
+    }
+
+    /**
      * Vérifie si c'est un raccourci URL.
      *
      * La colonne `is_url` fait foi : le type est désormais CHOISI au

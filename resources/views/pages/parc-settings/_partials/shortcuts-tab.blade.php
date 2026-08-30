@@ -305,13 +305,9 @@ new class extends Component {
         $this->loadShortcuts();
     }
 
-    public function getShortcutIconUrl(string $name): string
+    public function getShortcutIconUrl(Shortcut $shortcut): string
     {
-        $iconPath = '/etc/sambaedu/applications/shortcuts/' . $name . '.png';
-        if (file_exists($iconPath)) {
-            return route('shortcuts.icon', ['name' => $name]);
-        }
-        return asset('elements/images/system-run.png');
+        return $shortcut->iconUrl();
     }
 };
 ?>
@@ -371,7 +367,7 @@ new class extends Component {
                                 </td>
                                 <td>
                                     <div class="flex items-center gap-3">
-                                        <img src="{{ $this->getShortcutIconUrl($shortcut->name) }}"
+                                        <img src="{{ $this->getShortcutIconUrl($shortcut) }}"
                                             alt="{{ $shortcut->name }}" class="w-8 h-8 rounded"
                                             onerror="this.src='/elements/images/system-run.png'">
                                         <div>
