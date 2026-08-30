@@ -56,6 +56,10 @@ flowchart TD
 de rédaction) → `features-se4-SE5.md` (ce qui est porté, ce qui ne l'est pas) →
 le domaine qui t'intéresse dans la carte ci-dessous.
 
+**Tu veux reprendre le code en profondeur, par séances.** `parcours-lecture-code.md` —
+neuf séances de 30 à 45 min, du cœur (capacités → état compilé → agent) vers les
+canaux périphériques, chacune avec sa lecture et sa preuve.
+
 **Tu vas modifier un domaine.** Sa fiche de référence, puis son entrée dans
 `qa/domains/` (elle dit ce que la modification devra ne pas casser).
 
