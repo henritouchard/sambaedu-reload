@@ -250,6 +250,14 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
     # reste un 404 réel (PAS de FallbackResource, PAS de redirection vers
     # Laravel), simplement avec le contenu du site déjà présent dans le
     # dossier publié.
+    # /doc SANS slash final : servir l'index en interne plutôt que laisser
+    # mod_dir émettre son 301 « ajoute le slash ». Ce 301 porte une URL
+    # ABSOLUE reconstruite par Apache (http://<Host>/doc/) : derrière le
+    # reverse-proxy elle perd le préfixe d'établissement ET retombe en http,
+    # que le proxy ne sert pas. Une réécriture interne n'émet aucun Location.
+    RewriteEngine On
+    RewriteRule ^/doc\$ /doc/index.html [PT,L]
+
     Alias /doc $SER_ROOT/userDoc/dist
     <Directory $SER_ROOT/userDoc/dist>
         Options -Indexes +FollowSymLinks
