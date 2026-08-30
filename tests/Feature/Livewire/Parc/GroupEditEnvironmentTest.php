@@ -25,7 +25,9 @@ class GroupEditEnvironmentTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::parc.groups.[id].edit.index';
+    // L'édition d'un groupe passe par la modale réutilisable (`open($id)`) ;
+    // la page /groups/{id}/edit n'existe plus.
+    private const COMPONENT = 'pages::parc.groups._partials.group-form-modal';
 
     protected function setUp(): void
     {
@@ -39,11 +41,10 @@ class GroupEditEnvironmentTest extends TestCase
         $admin = User::query()->create(['login' => 'grp-admin', 'role' => 'prof', 'is_active' => true]);
         $this->actingAs($admin);
 
-        // Story 30.2 : la page d'édition autorise désormais explicitement la gate
-        // `update-workstationGroup` en tête de save() (défense en profondeur, le
-        // mapping de label EST une modification du parc). On l'accorde ici sans
-        // monter de permissions Spatie (iso ParcBulkEnvironmentTest).
-        Gate::before(fn ($user, string $ability) => $ability === 'update-workstationGroup' ? true : null);
+        // `computer.install` garde l'ouverture et l'enregistrement de la modale ;
+        // `update-workstationGroup` reste la gate du service. On les accorde ici
+        // sans monter de permissions Spatie (iso ParcBulkEnvironmentTest).
+        Gate::before(fn ($user, string $ability) => in_array($ability, ['update-workstationGroup', 'computer.install'], true) ? true : null);
     }
 
     #[Test]
@@ -53,7 +54,8 @@ class GroupEditEnvironmentTest extends TestCase
             'environment' => WorkstationEnvironment::PersonalLocal,
         ]);
 
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
+        Livewire::test(self::COMPONENT)
+            ->call('open', $group->id)
             ->assertSet('environment', 'personal_local');
     }
 
@@ -62,7 +64,8 @@ class GroupEditEnvironmentTest extends TestCase
     {
         $group = WorkstationGroup::factory()->create(['environment' => null]);
 
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
+        Livewire::test(self::COMPONENT)
+            ->call('open', $group->id)
             ->set('environment', 'nomade')
             ->call('save')
             ->assertHasNoErrors();
@@ -80,7 +83,8 @@ class GroupEditEnvironmentTest extends TestCase
             'environment' => WorkstationEnvironment::PersonalLocal,
         ]);
 
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
+        Livewire::test(self::COMPONENT)
+            ->call('open', $group->id)
             ->set('environment', '')
             ->call('save');
 
@@ -96,7 +100,8 @@ class GroupEditEnvironmentTest extends TestCase
             'environment' => WorkstationEnvironment::SharedLocal,
         ]);
 
-        Livewire::test(self::COMPONENT, ['id' => $group->id])
+        Livewire::test(self::COMPONENT)
+            ->call('open', $group->id)
             ->set('environment', 'bogus')
             ->call('save')
             ->assertDispatched('toastMagic', fn ($event, $params) => ($params['status'] ?? null) === 'error');

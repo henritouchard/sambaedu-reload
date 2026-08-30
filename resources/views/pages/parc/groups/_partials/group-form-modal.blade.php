@@ -2,8 +2,14 @@
 
 use Livewire\Component;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Locked;
 use App\Services\Parc\WorkstationGroupService;
+use App\Services\ControlHub\WorkstationGroupLabelService;
+use App\Exceptions\ControlHub\LabelAssignmentException;
+use App\Exceptions\ControlHub\UpstreamLockCollisionException;
 use App\Enums\WorkstationEnvironment;
+use App\Enums\ControlHubLabelMode;
+use App\Models\ControlHubContract;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
 use Illuminate\Support\Facades\Gate;
@@ -17,9 +23,11 @@ use Illuminate\Support\Collection;
  *   - sans argument            → mode création (redirige vers le groupe créé).
  *   - avec `{ id: <int> }`      → mode édition (redirige vers le groupe modifié).
  *
- * Remplace les anciennes pages /groups/new et /groups/{id}/edit côté UX, en
- * réutilisant le même WorkstationGroupService. Les pages restent accessibles
- * en deep-link (routes inchangées).
+ * C'est le SEUL chemin de création et d'édition d'un groupe : les pages
+ * /groups/new et /groups/{id}/edit ont été retirées, ainsi que leurs routes.
+ * Tout champ du formulaire vit donc ici, y compris le label de contrat amont
+ * ({@see \App\Services\ControlHub\WorkstationGroupLabelService}) : le porter
+ * ailleurs le rendrait inatteignable.
  */
 new class extends Component {
     use WithToasts;
@@ -40,6 +48,21 @@ new class extends Component {
     // Nature des postes (Story 26.1). Défaut « partagé » (shared_local) appliqué
     // dans resetForm() ; le choix « non déclaré » n'est plus exposé en UI.
     public string $environment = '';
+
+    // Label de contrat amont (Story 30.2). '' = aucun → null en base (miroir exact
+    // du pattern `environment`). Section masquée si pas de contrat amont actif.
+    public string $controlhubLabel = '';
+    // Propriétés DÉRIVÉES côté serveur (loadControlHubLabels) : #[Locked] interdit
+    // leur mutation par requête Livewire forgée — sinon un client pourrait neutraliser
+    // l'affichage lecture seule ou injecter un label assignable (review 30.2 M2).
+    #[Locked]
+    public bool $hasActiveContract = false;
+    /** @var array<int,string> Noms des labels libres assignables du contrat actif. */
+    #[Locked]
+    public array $freeLabelNames = [];
+    /** Label réservé/hors-liste actuellement porté (affiché en lecture seule), ou null. */
+    #[Locked]
+    public ?string $reservedLabelHeld = null;
 
     public Collection $availableParents;
 
@@ -75,9 +98,11 @@ new class extends Component {
             // Pas de choix « non déclaré » en UI : un groupe historique sans
             // environnement (null) retombe sur « partagé » coché.
             $this->environment = $group->environment?->value ?? WorkstationEnvironment::SharedLocal->value;
+            $this->controlhubLabel = $group->controlhub_label ?? '';
         }
 
         $this->loadParents();
+        $this->loadControlHubLabels();
         $this->isOpen = true;
     }
 
@@ -89,7 +114,10 @@ new class extends Component {
 
     private function resetForm(): void
     {
-        $this->reset(['display_name', 'description', 'parent_id', 'environment', 'editingId']);
+        $this->reset(['display_name', 'description', 'parent_id', 'environment', 'editingId', 'controlhubLabel']);
+        $this->hasActiveContract = false;
+        $this->freeLabelNames = [];
+        $this->reservedLabelHeld = null;
         $this->is_physical = true;
         // « Partagé » coché par défaut (plus d'option « non déclaré »).
         $this->environment = WorkstationEnvironment::SharedLocal->value;
@@ -99,8 +127,7 @@ new class extends Component {
     private function loadParents(): void
     {
         try {
-            // Édition : tous les groupes sauf lui-même. Création : groupes racine
-            // (parité avec l'ancienne page /groups/new).
+            // Édition : tous les groupes sauf lui-même. Création : groupes racine.
             if ($this->editingId !== null) {
                 $this->availableParents = WorkstationGroup::where('id', '!=', $this->editingId)
                     ->orderBy('name')
@@ -114,6 +141,37 @@ new class extends Component {
         }
     }
 
+    /**
+     * Story 30.2 — Charge le contrat amont actif et les labels assignables (free).
+     *
+     * NFR3 : sans contrat actif, la section UI est masquée (hasActiveContract=false)
+     * et aucune contrainte n'est ajoutée. Le label actuellement porté qui n'est PAS
+     * dans la liste free (réservé — cf. 30.3 — ou « dangling ») est exposé en lecture
+     * seule via $reservedLabelHeld, jamais sélectionnable par le refnum.
+     */
+    private function loadControlHubLabels(): void
+    {
+        $activeContract = ControlHubContract::active();
+        $this->hasActiveContract = $activeContract !== null;
+
+        if ($activeContract === null) {
+            $this->freeLabelNames = [];
+            $this->reservedLabelHeld = null;
+            return;
+        }
+
+        $this->freeLabelNames = $activeContract->labels()
+            ->where('mode', ControlHubLabelMode::Free)
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+
+        $this->reservedLabelHeld = ($this->controlhubLabel !== ''
+            && !in_array($this->controlhubLabel, $this->freeLabelNames, true))
+            ? $this->controlhubLabel
+            : null;
+    }
+
     public function rules(): array
     {
         return [
@@ -121,6 +179,9 @@ new class extends Component {
             'description' => 'nullable|string|max:500',
             'parent_id' => 'nullable|integer|exists:workstation_groups,id',
             'is_physical' => 'boolean',
+            // Le nom seul est validé ici ; l'appartenance au contrat et le mode
+            // (free/reserved/inconnu) sont tranchés par WorkstationGroupLabelService.
+            'controlhubLabel' => 'nullable|string|max:255',
         ];
     }
 
@@ -134,7 +195,29 @@ new class extends Component {
         ];
     }
 
-    public function save(): void
+    /**
+     * Aligne le label amont du groupe édité sur la saisie. Renvoie false si le
+     * service a refusé — l'appelant s'arrête alors sans rediriger.
+     */
+    private function applyLabel(WorkstationGroupLabelService $labelService, WorkstationGroup $group): bool
+    {
+        try {
+            if ($this->controlhubLabel === '') {
+                $labelService->detachLabel($group);
+            } else {
+                $labelService->assignLabel($group, $this->controlhubLabel);
+            }
+        } catch (LabelAssignmentException | UpstreamLockCollisionException $e) {
+            // Story 30.5 — collision verrou/verrou prédite : message explicite
+            // (item / périmètre / valeurs) en toast, sans redirection.
+            $this->toastError($e->getMessage());
+            return false;
+        }
+
+        return true;
+    }
+
+    public function save(WorkstationGroupLabelService $labelService): void
     {
         abort_unless(Gate::allows('computer.install'), 403);
 
@@ -172,6 +255,16 @@ new class extends Component {
                     'environment' => $environment,
                 ]);
 
+                // Story 30.2 — Mapping du label de contrat amont via le service dédié
+                // (jamais via updateGroup, qui throw sur isLocked — concern distinct).
+                // '' = détacher ; sinon assigner. Un refus métier laisse le reste de
+                // l'édition enregistré : on reste dans la modale pour corriger.
+                $group = WorkstationGroup::find($this->editingId);
+
+                if ($group !== null && !$this->applyLabel($labelService, $group)) {
+                    return;
+                }
+
                 session()->flash('toast', [
                     'type' => 'success',
                     'title' => 'Groupe modifié',
@@ -190,6 +283,25 @@ new class extends Component {
                 'is_physical' => $validated['is_physical'],
                 'environment' => $environment,
             ]);
+
+            // Story 30.2 (AC #3) — Rattacher le label libre choisi. Un refus laisse
+            // le groupe créé : on redirige vers sa fiche avec le motif du refus,
+            // plutôt que de garder ouverte une modale de création déjà consommée.
+            if ($this->controlhubLabel !== '') {
+                try {
+                    $labelService->assignLabel($group, $this->controlhubLabel);
+                } catch (LabelAssignmentException | UpstreamLockCollisionException $e) {
+                    // Le toast DOIT survivre au redirect : session flash, pas
+                    // toastError (event navigateur, perdu à la navigation).
+                    session()->flash('toast', [
+                        'type' => 'error',
+                        'title' => 'Label non attribué',
+                        'message' => $e->getMessage(),
+                    ]);
+                    $this->redirect(route('app.parc.groups.show', $group->id));
+                    return;
+                }
+            }
 
             session()->flash('toast', [
                 'type' => 'success',
@@ -316,6 +428,40 @@ new class extends Component {
                         Le parent définit la hiérarchie des OU dans Active Directory.
                     </span>
                 </label>
+            </div>
+        @endif
+
+        {{-- Label de contrat amont (Story 30.2) — masqué si pas de contrat actif (NFR3). --}}
+        @if ($hasActiveContract)
+            <div class="form-control w-full">
+                <label class="label py-2">
+                    <x-atoms.tooltip label="Label de contrat amont" labelClass="label-text font-medium" icon="true"
+                        iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
+                        Rattache ce parc à un label « libre » défini par l'autorité amont, pour cibler les
+                        politiques imposées. Au plus un label par groupe. Les labels réservés à l'autorité amont ne
+                        sont pas attribuables.
+                    </x-atoms.tooltip>
+                </label>
+
+                @if ($reservedLabelHeld !== null)
+                    {{-- Label réservé porté (cas 30.3) : lecture seule, jamais éditable par le refnum. --}}
+                    <select class="select select-bordered w-full" disabled>
+                        <option>{{ $reservedLabelHeld }}</option>
+                    </select>
+                    <label class="label py-1">
+                        <span class="label-text-alt text-warning whitespace-normal">
+                            <i class="fa-solid fa-lock text-xs"></i>
+                            Label réservé — imposé par l'autorité amont, non modifiable.
+                        </span>
+                    </label>
+                @else
+                    <select wire:model="controlhubLabel" class="select select-bordered w-full">
+                        <option value="">Aucun</option>
+                        @foreach ($freeLabelNames as $labelName)
+                            <option value="{{ $labelName }}">{{ $labelName }}</option>
+                        @endforeach
+                    </select>
+                @endif
             </div>
         @endif
 

@@ -76,10 +76,6 @@ class RoutesProtectionTest extends TestCase
             'parc settings'     => ['/app/parc-settings', 'computer.install'],
             'sync from ad'      => ['/admin/sync-from-ad', 'server.admin'],
             'file policy'       => ['/admin/settings/files', 'server.admin'],
-            // Review 7.2 #M4 : couverture explicite des 2 routes dont la perm a
-            // été corrigée (#1 : computer.modify → computer.install).
-            'parc groups new'   => ['/app/parc/groups/new', 'computer.install'],
-            'parc groups edit'  => ['/app/parc/groups/1/edit', 'computer.install'],
             // Story 34.2 — lecteurs réseau gérés : feature réservée admin+refnum,
             // gardée par la permission dédiée `networkshare.view` (review #4). La
             // LISTE est désormais l'onglet « Lecteurs réseaux » de /admin/settings/files

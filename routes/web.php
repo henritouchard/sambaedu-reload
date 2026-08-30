@@ -227,15 +227,12 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->name('index');
 
         // Groupes de machines — scoping fin via WorkstationGroupPolicy dans le mount.
-        Route::livewire('/groups/new', 'pages::parc.groups.new.index')
-            ->middleware('can:computer.install')
-            ->name('groups.new');
+        // Création et édition n'ont pas de page : elles vivent dans la modale
+        // `pages::parc.groups._partials.group-form-modal`, ouverte depuis la liste
+        // et depuis la fiche du groupe.
         Route::livewire('/groups/{id}', 'pages::parc.groups.[id].index')
             ->middleware('can:viewAny-workstationGroup')
             ->name('groups.show');
-        Route::livewire('/groups/{id}/edit', 'pages::parc.groups.[id].edit.index')
-            ->middleware('can:computer.install')
-            ->name('groups.edit');
 
         // Historique d'exécution d'une programmation (story 4-4 AC9)
         Route::livewire('/groups/{id}/schedules/{scheduleId}/runs', 'pages::parc.groups.[id].schedules.[scheduleId].runs.index')
