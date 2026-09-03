@@ -37,6 +37,7 @@ use Throwable;
  * | `shortcuts`    | `shortcut_assignables`           | `shortcuts.is_parc_default`     |
  * | `capabilities` | `capability_assignments`         | `capabilities.default_value`    |
  * | `wallpapers`   | `wallpapers` (owner = parc)      | `wallpapers.is_default`         |
+ * | `lockscreens`  | idem, `type = 'lockscreen'`      | idem, `type = 'lockscreen'`     |
  *
  * **Le prune ne déborde jamais.** Seules les lignes marquées `managed_by_control_hub`
  * sont candidates au retrait : une assignation posée à la main survit à une réception
@@ -96,12 +97,14 @@ class ContractAssignmentReconciler
         $desired = [
             'applications' => [],   // [applicationId => [groupId, …]]
             'shortcuts' => [],      // [shortcutId => [groupId, …]]
-            'capabilities' => [],   // [capabilityId => [groupId => value]]
+            'capabilities' => [],   // [capabilityId => [groupId => [value, locked]]]
             'wallpapers' => [],     // [groupId => assetId]
+            'lockscreens' => [],    // [groupId => assetId]
             'defaults' => [
                 'applications' => [],
                 'shortcuts' => [],
                 'wallpapers' => null,
+                'lockscreens' => null,
             ],
         ];
 
@@ -123,7 +126,8 @@ class ContractAssignmentReconciler
             $this->applyApplications($desired['applications'], $result);
             $this->applyShortcuts($desired['shortcuts'], $result);
             $this->applyCapabilities($desired['capabilities'], $result);
-            $this->applyWallpapers($desired['wallpapers'], $result);
+            $this->applyWallpapers(Wallpaper::TYPE_WALLPAPER, $desired['wallpapers'], $result);
+            $this->applyWallpapers(Wallpaper::TYPE_LOCKSCREEN, $desired['lockscreens'], $result);
             $this->applyDefaults($desired['defaults'], $result);
             $this->flushVerdicts();
         });
@@ -179,8 +183,9 @@ class ContractAssignmentReconciler
         match ($item->type) {
             Application::TYPE_APPLICATIONS => $this->collectApplication($item, $groupIds, $targetsInstance, $desired, $result),
             Shortcut::TYPE_SHORTCUTS => $this->collectShortcut($item, $groupIds, $targetsInstance, $desired, $result),
-            'capabilities' => $this->collectCapability($item, $groupIds, $targetsInstance, $desired, $result),
-            'wallpapers' => $this->collectWallpaper($item, $groupIds, $targetsInstance, $desired, $result),
+            Capability::TYPE_CAPABILITIES => $this->collectCapability($item, $groupIds, $targetsInstance, $desired, $result),
+            'wallpapers' => $this->collectWallpaper('wallpapers', $item, $groupIds, $targetsInstance, $desired, $result),
+            'lockscreens' => $this->collectWallpaper('lockscreens', $item, $groupIds, $targetsInstance, $desired, $result),
             default => null, // type sans support d'assignation local : ignoré proprement
         };
     }
@@ -298,8 +303,13 @@ class ContractAssignmentReconciler
             return;
         }
 
+        $locked = $item->enforcement_state === ControlHubEnforcementState::Locked;
+
         foreach ($groupIds as $groupId) {
-            $desired['capabilities'][$capability->id][$groupId] = $item->value;
+            $desired['capabilities'][$capability->id][$groupId] = [
+                'value' => $item->value,
+                'locked' => $locked,
+            ];
         }
     }
 
@@ -308,6 +318,7 @@ class ContractAssignmentReconciler
      * @param  array<string, mixed>  $desired
      */
     private function collectWallpaper(
+        string $bucket,
         ControlHubContractItem $item,
         array $groupIds,
         bool $targetsInstance,
@@ -323,7 +334,8 @@ class ContractAssignmentReconciler
                 ControlHubContractApplyStatus::Error,
                 'Aucun bloc `artifact` : le contrat impose un fond sans dire quelle image',
             );
-            Log::warning('[ContractAssignmentReconciler] Fond d\'écran imposé sans descripteur d\'artefact', [
+            Log::warning('[ContractAssignmentReconciler] Fond imposé sans descripteur d\'artefact', [
+                'type' => $item->type,
                 'key' => $item->key,
             ]);
 
@@ -349,13 +361,13 @@ class ContractAssignmentReconciler
         $this->recordVerdict($item, ControlHubContractApplyStatus::Applied);
 
         if ($targetsInstance) {
-            $desired['defaults']['wallpapers'] = $asset->id;
+            $desired['defaults'][$bucket] = $asset->id;
 
             return;
         }
 
         foreach ($groupIds as $groupId) {
-            $desired['wallpapers'][$groupId] = $asset->id;
+            $desired[$bucket][$groupId] = $asset->id;
         }
     }
 
@@ -441,7 +453,16 @@ class ContractAssignmentReconciler
     }
 
     /**
-     * @param  array<int, array<int, mixed>>  $desired  [capabilityId => [groupId => value]]
+     * Un item `permissive` ne reprend jamais la main sur un parc que l'administrateur
+     * a réglé lui-même : `managed_by_control_hub = false` dit que la ligne lui
+     * appartient désormais, et la réception passe son chemin. Sans cette lecture,
+     * « permissif » ne voudrait rien dire pour ce canal — l'amont écrit dans la même
+     * ligne que l'administrateur, et sa valeur reviendrait à chaque réception.
+     *
+     * Un item `locked`, lui, écrit toujours et reprend la ligne : c'est par ce
+     * chemin qu'un contrat qui durcit un item récupère un parc parti en surcharge.
+     *
+     * @param  array<int, array<int, array{value: string|null, locked: bool}>>  $desired
      */
     private function applyCapabilities(array $desired, ContractAssignmentResult $result): void
     {
@@ -452,7 +473,7 @@ class ContractAssignmentReconciler
 
         $wantedKeys = [];
         foreach ($desired as $capabilityId => $byGroup) {
-            foreach ($byGroup as $groupId => $value) {
+            foreach ($byGroup as $groupId => $directive) {
                 $wantedKeys[$capabilityId.':'.$groupId] = true;
             }
         }
@@ -465,7 +486,8 @@ class ContractAssignmentReconciler
         }
 
         foreach ($desired as $capabilityId => $byGroup) {
-            foreach ($byGroup as $groupId => $value) {
+            foreach ($byGroup as $groupId => $directive) {
+                $value = $directive['value'];
                 $match = [
                     'capability_id' => $capabilityId,
                     'assignable_type' => WorkstationGroup::class,
@@ -488,6 +510,10 @@ class ContractAssignmentReconciler
                     continue;
                 }
 
+                if (! $directive['locked'] && ! (bool) $current->managed_by_control_hub) {
+                    continue;
+                }
+
                 // Rien à écrire quand la valeur ET l'origine sont déjà les bonnes :
                 // sans cette comparaison la passe compterait une pose à chaque
                 // réception et remonterait un mouvement là où rien n'a bougé.
@@ -506,13 +532,18 @@ class ContractAssignmentReconciler
     }
 
     /**
+     * Fond de bureau et fond de verrouillage partagent la table et la bibliothèque
+     * d'assets : seule la colonne `type` les distingue, et chaque passe ne prune que
+     * les lignes de SON type — un parc peut porter les deux.
+     *
+     * @param  string  $wallpaperType  {@see Wallpaper::TYPE_WALLPAPER} ou {@see Wallpaper::TYPE_LOCKSCREEN}
      * @param  array<int, int>  $desired  [groupId => assetId]
      */
-    private function applyWallpapers(array $desired, ContractAssignmentResult $result): void
+    private function applyWallpapers(string $wallpaperType, array $desired, ContractAssignmentResult $result): void
     {
         $existing = Wallpaper::query()
             ->where('owner_type', WorkstationGroup::class)
-            ->where('type', Wallpaper::TYPE_WALLPAPER)
+            ->where('type', $wallpaperType)
             ->where('managed_by_control_hub', true)
             ->get(['id', 'owner_id']);
 
@@ -534,7 +565,7 @@ class ContractAssignmentReconciler
                 [
                     'owner_type' => WorkstationGroup::class,
                     'owner_id' => $groupId,
-                    'type' => Wallpaper::TYPE_WALLPAPER,
+                    'type' => $wallpaperType,
                 ],
                 [
                     'asset_id' => $assetId,
@@ -559,11 +590,20 @@ class ContractAssignmentReconciler
         $this->syncParcDefault(Application::query(), $defaults['applications'], $result);
         $this->syncParcDefault(Shortcut::query(), $defaults['shortcuts'], $result);
 
-        if ($defaults['wallpapers'] !== null) {
+        $etabDefaults = [
+            Wallpaper::TYPE_WALLPAPER => $defaults['wallpapers'],
+            Wallpaper::TYPE_LOCKSCREEN => $defaults['lockscreens'],
+        ];
+
+        foreach ($etabDefaults as $wallpaperType => $assetId) {
+            if ($assetId === null) {
+                continue;
+            }
+
             Wallpaper::query()->updateOrCreate(
-                ['owner_type' => null, 'owner_id' => null, 'type' => 'wallpaper'],
+                ['owner_type' => null, 'owner_id' => null, 'type' => $wallpaperType],
                 [
-                    'asset_id' => $defaults['wallpapers'],
+                    'asset_id' => $assetId,
                     'is_default' => true,
                     'managed_by_control_hub' => true,
                     'name' => 'défaut étab',

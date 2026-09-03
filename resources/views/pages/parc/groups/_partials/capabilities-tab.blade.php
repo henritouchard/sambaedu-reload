@@ -108,8 +108,9 @@ new class extends Component {
         // Stories 29.2/29.4 — pré-calcul du statut amont une seule fois (set
         // mémoïsé ; court-circuit NFR3 sans contrat) pour éviter le N+1.
         $lock = app(UpstreamLockResolver::class);
+        $label = $this->parcLabel;
 
-        return $rows->map(function ($row) use ($capabilities, $lock): array {
+        return $rows->map(function ($row) use ($capabilities, $lock, $label): array {
             $capability = $capabilities->get($row->capability_id);
             if ($capability === null) {
                 return [];
@@ -118,7 +119,7 @@ new class extends Component {
             $effective = $row->value ?? (string) $capability->default_value;
             // Story 29.4 — statut tri-état : 'locked'|'permissive'|'local'.
             // `is_upstream_locked` dérivé du statut (évite un double appel).
-            $upstreamStatus = $lock->capabilityUpstreamStatus($capability);
+            $upstreamStatus = $lock->capabilityUpstreamStatus($capability, $label);
 
             return [
                 'id' => (int) $capability->id,
@@ -155,6 +156,7 @@ new class extends Component {
 
         // Stories 29.2/29.4 — statut amont pré-calculé une fois (court-circuit NFR3).
         $lock = app(UpstreamLockResolver::class);
+        $label = $this->parcLabel;
 
         return Capability::query()
             ->where('is_active', true)
@@ -166,7 +168,7 @@ new class extends Component {
             // Une capacité VERROUILLÉE amont n'est PAS proposée à l'ajout (le geste
             // d'override serait défait au compilé ET refusé au serveur). Une capacité
             // PERMISSIVE reste proposée : son override par WG mord au compilé (29.3).
-            ->reject(fn (Capability $c): bool => $lock->isCapabilityLocked($c))
+            ->reject(fn (Capability $c): bool => $lock->isCapabilityLocked($c, $label))
             // Story 36.7 (AC4) — le mécanisme `app_profile` suit l'UTILISATEUR
             // (maille User, résolu par assignation UserGroup), jamais le poste : un
             // override par PARC serait INERTE (anti-pattern « override qui ne mord
@@ -182,12 +184,27 @@ new class extends Component {
                 // Story 29.4 — statut amont dans le picker (badge « Imposé permissif »).
                 // #4 : `locked` déjà rejeté par reject() ci-dessus → les survivants sont
                 // soit permissifs soit locaux. Évite le double appel à isCapabilityLocked().
-                'upstream_status' => $lock->isCapabilityPermissive($c) ? 'permissive' : 'local',
+                'upstream_status' => $lock->isCapabilityPermissive($c, $label) ? 'permissive' : 'local',
                 // Story 43.2 (D5/D6) — temporalité d'effet dans le picker.
                 'effect_timing' => $c->effectTiming(),
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Label amont porté par ce parc (`workstation_groups.controlhub_label`), ou
+     * `null`. Le canal `capabilities` du contrat désigne ses cibles par label : sans
+     * lui, un verrou ciblé ne saurait pas quels parcs il concerne. Lu à chaque rendu
+     * plutôt que figé au `mount` — retirer le label à un parc doit lever son verrou
+     * sans qu'aucun état local n'ait à être purgé.
+     */
+    #[Computed]
+    public function parcLabel(): ?string
+    {
+        $label = WorkstationGroup::query()->whereKey($this->groupId)->value('controlhub_label');
+
+        return $label !== null && $label !== '' ? (string) $label : null;
     }
 
     /**
@@ -350,7 +367,7 @@ new class extends Component {
         // par authorizeUpstream ci-dessus) → permissif imposé OU purement local. La
         // résolution réutilise le resolver mémoïsé (court-circuit NFR3 préservé :
         // sans contrat actif, aucune requête `controlhub_contract_items`).
-        $upstreamStatus = app(UpstreamLockResolver::class)->isCapabilityPermissive($capability)
+        $upstreamStatus = app(UpstreamLockResolver::class)->isCapabilityPermissive($capability, $this->parcLabel)
             ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
             : CapabilityOverrideAuditLog::UPSTREAM_LOCAL;
 
@@ -372,9 +389,15 @@ new class extends Component {
                     'assignable_type' => WorkstationGroup::class,
                     'assignable_id' => $parc->id,
                 ],
+                // `managed_by_control_hub = false` : l'administrateur reprend la
+                // ligne à son compte. C'est ce que lit `ContractAssignmentReconciler`
+                // pour ne PAS réécrire un override sur un item amont `permissive` —
+                // sans ce marquage, la valeur saisie ici reviendrait à l'état amont
+                // à la prochaine réception. Un item `locked` reprend la ligne de
+                // toute façon (et n'atteint jamais ce point : le gate le refuse).
                 fn (bool $exists) => $exists
-                    ? ['value' => $value, 'updated_at' => now()]
-                    : ['value' => $value, 'created_at' => now(), 'updated_at' => now()],
+                    ? ['value' => $value, 'managed_by_control_hub' => false, 'updated_at' => now()]
+                    : ['value' => $value, 'managed_by_control_hub' => false, 'created_at' => now(), 'updated_at' => now()],
             );
 
             CapabilityOverrideAuditLog::log(
@@ -438,7 +461,7 @@ new class extends Component {
 
         // Statut amont (court-circuit NFR3 préservé). `null` capability → local.
         $upstreamStatus = ($capability !== null
-            && app(UpstreamLockResolver::class)->isCapabilityPermissive($capability))
+            && app(UpstreamLockResolver::class)->isCapabilityPermissive($capability, $this->parcLabel))
             ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
             : CapabilityOverrideAuditLog::UPSTREAM_LOCAL;
 
@@ -591,7 +614,7 @@ new class extends Component {
     private function authorizeUpstream(Capability $capability): bool
     {
         try {
-            Gate::authorize('modify-capability', $capability);
+            Gate::authorize('modify-capability', [$capability, $this->parcLabel]);
 
             return true;
         } catch (AuthorizationException) {
@@ -604,7 +627,7 @@ new class extends Component {
             // (ceinture + bretelles) comme garde-fou contre un futur appelant qui
             // invoquerait `modify-capability` sans garde de droit en amont : on
             // afficherait un message correct plutôt qu'un faux « verrouillé amont ».
-            if (app(UpstreamLockResolver::class)->isCapabilityLocked($capability)) {
+            if (app(UpstreamLockResolver::class)->isCapabilityLocked($capability, $this->parcLabel)) {
                 $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
             } else {
                 $this->toastError("Vous n'avez pas le droit de modifier cette capacité.");

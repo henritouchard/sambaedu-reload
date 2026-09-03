@@ -23,11 +23,15 @@ use Illuminate\Contracts\Auth\Authenticatable;
  * de l'acteur — le contrôle de droit doit être porté par la surface appelante
  * (`guardCustomize` scopé / `server.admin` global), cf. note de `modify()`.
  *
- * **Le verrou est INSTANCE-WIDE**, PAS une délégation par-salle : il se résout par
- * PRÉSENCE d'un item `locked`/`instance`/`registry` au contrat amont actif
- * ({@see UpstreamLockResolver}), indépendamment de l'utilisateur et du parc — ne
- * PAS réimporter `PermissionService::canOnWorkstationGroup` (29.1). Le scoping par
- * label viendra en Epic 30.
+ * **Le verrou n'est PAS une délégation par-salle** : il se résout par PRÉSENCE
+ * d'un item verrouillant au contrat amont actif ({@see UpstreamLockResolver}),
+ * indépendamment de l'utilisateur — ne PAS réimporter
+ * `PermissionService::canOnWorkstationGroup` (29.1). Sa PORTÉE dépend du canal :
+ * un item `registry`/`instance` verrouille toute l'instance ; un item
+ * `capabilities` désigne sa cible par un LABEL et ne verrouille alors que les
+ * parcs qui le portent. D'où le second argument `$label` — le label du parc
+ * édité, ou `null` pour une surface d'instance (défaut diffusé), qui ne voit que
+ * les verrous de portée instance.
  *
  * **Distinct du gel local `overrides_locked` (27.12)** : ce dernier gèle l'AJOUT
  * d'overrides par parc pour les besoins de l'admin SE5 ; le verrou amont gèle
@@ -76,15 +80,19 @@ class CapabilityPolicy
      * l'authentification en amont (`guardCustomize` fait `auth()->check()`,
      * `guardAdmin` passe par `Gate::allows('server.admin')` qui refuse l'invité).
      *
-     * `locked` amont → refus ; `permissive`/`absent`/standalone/severed → autorisé
-     * (le resolver ne retient que `locked`/`instance`/`registry`).
+     * `locked` amont → refus ; `permissive`/`absent`/standalone/severed → autorisé.
+     *
+     * `$label` est le label amont du parc édité (`workstation_groups.controlhub_label`).
+     * Absent, seuls les verrous de portée instance sont vus : c'est le cas des
+     * surfaces globales (défaut diffusé), qu'un verrou ciblant un label ne concerne
+     * pas.
      */
-    public function modify(?Authenticatable $user, ?Capability $capability = null): bool
+    public function modify(?Authenticatable $user, ?Capability $capability = null, ?string $label = null): bool
     {
         if ($capability === null) {
             return true;
         }
 
-        return ! $this->lockResolver->isCapabilityLocked($capability);
+        return ! $this->lockResolver->isCapabilityLocked($capability, $label);
     }
 }

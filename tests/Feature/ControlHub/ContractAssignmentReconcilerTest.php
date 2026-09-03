@@ -377,6 +377,69 @@ class ContractAssignmentReconcilerTest extends TestCase
         ]);
     }
 
+    #[Test]
+    public function a_permissive_capability_leaves_the_value_the_administrator_chose(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $capability = $this->capability('onedrive_hidden');
+        $group = $this->labeledGroup('CDIX');
+        $item = $this->item($contract, Capability::TYPE_CAPABILITIES, 'onedrive_hidden', [
+            'value' => 'on',
+            'enforcement_state' => 'permissive',
+        ]);
+        $item->update(['target_type' => 'label', 'target_label' => 'CDIX']);
+
+        $this->reconciler()->reconcile();
+
+        // L'administrateur surcharge et reprend la ligne à son compte — c'est ce que
+        // fait l'onglet « Options / Capacités » du parc.
+        DB::table('capability_assignments')
+            ->where('capability_id', $capability->id)
+            ->where('assignable_id', $group->id)
+            ->update(['value' => 'off', 'managed_by_control_hub' => false]);
+
+        $second = $this->reconciler()->reconcile();
+
+        self::assertSame(0, $second->attached, 'un item permissif ne repose rien sur une ligne reprise');
+        self::assertSame(0, $second->detached, 'et ne la retire pas non plus');
+        self::assertDatabaseHas('capability_assignments', [
+            'capability_id' => $capability->id,
+            'assignable_id' => $group->id,
+            'value' => 'off',
+            'managed_by_control_hub' => false,
+        ]);
+    }
+
+    #[Test]
+    public function a_contract_hardening_to_locked_takes_back_an_overridden_capability(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $capability = $this->capability('onedrive_hidden');
+        $group = $this->labeledGroup('CDIX');
+        $item = $this->item($contract, Capability::TYPE_CAPABILITIES, 'onedrive_hidden', [
+            'value' => 'on',
+            'enforcement_state' => 'permissive',
+        ]);
+        $item->update(['target_type' => 'label', 'target_label' => 'CDIX']);
+
+        $this->reconciler()->reconcile();
+        DB::table('capability_assignments')
+            ->where('capability_id', $capability->id)
+            ->where('assignable_id', $group->id)
+            ->update(['value' => 'off', 'managed_by_control_hub' => false]);
+
+        $item->update(['enforcement_state' => 'locked']);
+        $second = $this->reconciler()->reconcile();
+
+        self::assertSame(1, $second->attached);
+        self::assertDatabaseHas('capability_assignments', [
+            'capability_id' => $capability->id,
+            'assignable_id' => $group->id,
+            'value' => 'on',
+            'managed_by_control_hub' => true,
+        ]);
+    }
+
     // ── Le verdict rendu au canal ③ ──────────────────────────────────────────
 
     #[Test]
