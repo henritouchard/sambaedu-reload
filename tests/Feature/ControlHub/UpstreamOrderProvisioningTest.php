@@ -7,6 +7,7 @@ namespace Tests\Feature\ControlHub;
 use App\Enums\ApplicationStatus;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
+use App\Jobs\InstallOrderedApplicationJob;
 use App\Models\Application;
 use App\Models\ControlHubContract;
 use App\Models\ControlHubContractCatalogApp;
@@ -25,6 +26,7 @@ use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
@@ -59,6 +61,10 @@ class UpstreamOrderProvisioningTest extends TestCase
         WorkstationGroupObserver::disableSync();
         WpkgSchemaBootstrapper::bootstrap();
         Cache::flush();
+
+        // Le travail du provisionneur s'arrête à la mise en file : la pose serveur
+        // elle-même (téléchargement du dépôt distant) a sa propre suite.
+        Queue::fake();
     }
 
     protected function tearDown(): void
@@ -133,6 +139,104 @@ class UpstreamOrderProvisioningTest extends TestCase
 
         // L'hydratation 27.5 trouve la ligne : l'app figure dans le désiré (machine).
         self::assertSame(['firefox'], $this->appIdsOf($this->provider()->itemsFor($this->ctx($ws))));
+    }
+
+    // ── Pose serveur : sans elle, l'ordre n'atteint jamais le poste ──────────
+
+    /**
+     * Le catalogue projeté au poste ne contient que les applications INSTALLÉES sur
+     * le serveur. Matérialiser sans poser laisserait WPKG sans recette : le poste
+     * réclamerait l'app à chaque run, et rien n'aurait échoué nulle part.
+     */
+    #[Test]
+    public function a_freshly_materialized_order_queues_its_server_install(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $this->orderInstance($contract, 'firefox');
+        $this->catalogWithSource($contract, 'firefox', 'Mozilla Firefox', 'https://depot.example/firefox.xml', 'sha-firefox');
+
+        $result = $this->provisioner()->provision();
+
+        $app = Application::query()->where('app_id', 'firefox')->firstOrFail();
+        Queue::assertPushed(
+            InstallOrderedApplicationJob::class,
+            fn (InstallOrderedApplicationJob $job): bool => $job->applicationId === $app->id,
+        );
+        self::assertSame(1, $result->installDispatched);
+    }
+
+    /**
+     * Le cas terrain : l'app est en inventaire depuis une réception antérieure, mais
+     * en `Available`. C'est elle qu'il faut poser — sans quoi le trou ne se referme
+     * jamais sur un parc déjà en service.
+     */
+    #[Test]
+    public function an_ordered_app_already_in_inventory_but_not_installed_is_still_posed(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $this->orderInstance($contract, 'firefox');
+        $this->catalogWithSource($contract, 'firefox', 'Mozilla Firefox', 'https://depot.example/firefox.xml', 'sha-firefox');
+
+        $existing = Application::create([
+            'app_id' => 'firefox',
+            'name' => 'Firefox ESR',
+            'status' => ApplicationStatus::Available,
+            'xml_url' => 'https://depot.example/firefox.xml',
+        ]);
+
+        $result = $this->provisioner()->provision();
+
+        Queue::assertPushed(
+            InstallOrderedApplicationJob::class,
+            fn (InstallOrderedApplicationJob $job): bool => $job->applicationId === $existing->id,
+        );
+        self::assertSame(1, $result->installDispatched);
+        self::assertSame(1, $result->alreadyPresent);
+    }
+
+    #[Test]
+    public function an_ordered_app_already_installed_is_not_posed_again(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $this->orderInstance($contract, 'firefox');
+        $this->catalogWithSource($contract, 'firefox', 'Mozilla Firefox', 'https://depot.example/firefox.xml', 'sha-firefox');
+
+        Application::create([
+            'app_id' => 'firefox',
+            'name' => 'Firefox ESR',
+            'status' => ApplicationStatus::Installed,
+            'xml_url' => 'https://depot.example/firefox.xml',
+        ]);
+
+        $result = $this->provisioner()->provision();
+
+        Queue::assertNotPushed(InstallOrderedApplicationJob::class);
+        self::assertSame(0, $result->installDispatched);
+    }
+
+    /**
+     * Une app locale sans recette à tirer ne doit pas être ABÎMÉE par un ordre qu'on
+     * ne sait pas servir : le job la passerait en `Error` pour rien.
+     */
+    #[Test]
+    public function an_ordered_app_without_a_recipe_url_is_counted_not_posed(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $this->orderInstance($contract, 'maison');
+        $this->catalogWithSource($contract, 'maison', 'App maison', 'https://depot.example/maison.xml', 'sha-maison');
+
+        Application::create([
+            'app_id' => 'maison',
+            'name' => 'App maison',
+            'status' => ApplicationStatus::Available,
+            'xml_url' => null,
+        ]);
+
+        $result = $this->provisioner()->provision();
+
+        Queue::assertNotPushed(InstallOrderedApplicationJob::class);
+        self::assertSame(1, $result->installSkipped);
+        self::assertSame(0, $result->installDispatched);
     }
 
     // ── AC3 — idempotence / non-écrasement ───────────────────────────────────

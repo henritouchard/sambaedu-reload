@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\ControlHub;
 
+use App\Enums\ApplicationStatus;
 use App\Enums\ControlHubEnforcementState;
+use App\Jobs\InstallOrderedApplicationJob;
 use App\Models\Application;
 use App\Models\ControlHubContract;
 use App\Models\ControlHubContractCatalogApp;
@@ -22,8 +24,18 @@ use Throwable;
  *  - résout l'entrée du catalogue amont (`controlhub_contract_catalog_apps{app_key}`) →
  *    référence de SOURCE par-app (`source_xml_url`/`source_xml_sha`, « Option B », D1) ;
  *  - MATÉRIALISE la ligne `Application` (status `Available`, recette WPKG) via
- *    {@see AppStoreService::materializeFromSource()} — SANS install serveur, SANS
- *    `Depot`/`DepotApplication`/`DepotSyncService` (jamais appelés par ce mécanisme).
+ *    {@see AppStoreService::materializeFromSource()}, SANS
+ *    `Depot`/`DepotApplication`/`DepotSyncService` (jamais appelés par ce mécanisme) ;
+ *  - MET EN FILE la POSE SERVEUR ({@see InstallOrderedApplicationJob}) de toute app
+ *    ordonnée qui n'est pas déjà installée — matérialisée à l'instant comme
+ *    préexistante.
+ *
+ * **Matérialiser ne suffit pas.** Le catalogue projeté au poste ne contient que les
+ * applications INSTALLÉES sur le serveur ({@see Application::scopeInstalled()}). Une
+ * app ordonnée laissée en `Available` n'a donc pas de recette dans `packages.xml` :
+ * l'agent la réclame à WPKG, qui ne trouve aucun `<package id="…">` et n'installe
+ * rien. Rien n'échoue nulle part — le poste rapporte simplement l'app manquante à
+ * chaque passage. C'est ce trou que ferme la pose serveur.
  *
  * Après matérialisation, l'hydratation 27.5 trouve la ligne et l'ordre 31.2 est
  * PLEINEMENT honoré (plus de skip+warn).
@@ -79,9 +91,14 @@ class OrderedApplicationProvisioner
 
         foreach ($orderedAppIds as $appId) {
             try {
-                // Déjà en inventaire (matérialisée antérieurement ou app locale) → no-op (AC3).
-                if (Application::query()->where('app_id', $appId)->exists()) {
+                // Déjà en inventaire (matérialisée antérieurement ou app locale) : la
+                // ligne n'est pas touchée (AC3), mais la POSE SERVEUR reste due — c'est
+                // elle, et non la ligne d'inventaire, qui fait entrer la recette dans le
+                // catalogue projeté au poste.
+                $existing = Application::query()->where('app_id', $appId)->first();
+                if ($existing !== null) {
                     $result->alreadyPresent++;
+                    $this->dispatchServerInstall($existing, $result);
 
                     continue;
                 }
@@ -120,6 +137,8 @@ class OrderedApplicationProvisioner
                     // Course rare : créée entre le exists() et le firstOrCreate ⇒ no-op (AC3).
                     $result->alreadyPresent++;
                 }
+
+                $this->dispatchServerInstall($application, $result);
             } catch (Throwable $e) {
                 // Résilience (AC6) : on n'interrompt NI les autres apps NI l'ingestion.
                 $result->failed++;
@@ -132,5 +151,58 @@ class OrderedApplicationProvisioner
         }
 
         return $result;
+    }
+
+    /**
+     * Met en file la pose SERVEUR d'une application ordonnée.
+     *
+     * Matérialiser la ligne d'inventaire ne suffit pas : le catalogue servi au poste
+     * ne projette que les applications INSTALLÉES sur le serveur
+     * ({@see \App\Models\Application::scopeInstalled()}). Une app ordonnée restée en
+     * `Available` n'a donc pas de `<package id="…">` dans `packages.xml` — WPKG ne
+     * trouve rien à installer et l'agent la rapporte manquante à chaque passage, sans
+     * qu'aucune étape n'ait signalé d'échec.
+     *
+     * Sans `xml_url` il n'y a pas de recette à tirer : on compte et on trace plutôt
+     * que de lancer un job condamné à passer l'application en `Error` — une app locale
+     * ordonnée par le contrat ne doit pas être abîmée par un ordre qu'on ne sait pas
+     * servir.
+     */
+    private function dispatchServerInstall(
+        Application $application,
+        OrderedApplicationProvisioningResult $result,
+    ): void {
+        if ($application->status === ApplicationStatus::Installed) {
+            return;
+        }
+
+        if ($application->xml_url === null || $application->xml_url === '') {
+            $result->installSkipped++;
+            Log::warning('agent.applications.install_skipped', [
+                'app_id' => $application->app_id,
+                'reason' => 'no_xml_url',
+            ]);
+
+            return;
+        }
+
+        // La mise en file ne doit JAMAIS faire échouer la matérialisation : sur une
+        // connexion `sync` le job s'exécute ici même, et un dépôt distant injoignable
+        // remonterait alors comme un échec de provisionnement — l'ordre serait compté
+        // perdu alors que la ligne d'inventaire, elle, est bien posée.
+        try {
+            InstallOrderedApplicationJob::dispatch($application->id);
+            $result->installDispatched++;
+
+            Log::info('agent.applications.install_dispatched', [
+                'app_id' => $application->app_id,
+                'application_id' => $application->id,
+            ]);
+        } catch (Throwable $e) {
+            Log::error('agent.applications.install_dispatch_failed', [
+                'app_id' => $application->app_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

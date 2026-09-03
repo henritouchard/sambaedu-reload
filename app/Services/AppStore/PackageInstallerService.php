@@ -116,20 +116,24 @@ class PackageInstallerService
     /**
      * Telecharge le XML recipe d'un package dans un fichier temporaire
      *
+     * L'appelant fournit l'URL : elle vient d'un `DepotApplication` pour une install
+     * depuis un depot, de l'`Application` elle-meme pour une app ordonnee par le
+     * contrat amont (materialisee sans depot derriere elle).
+     *
      * @return string Chemin du fichier XML telecharge
      * @throws \RuntimeException Si l'URL est absente ou le telechargement echoue
      */
-    public function downloadXmlRecipe(DepotApplication $depotApp): string
+    public function downloadXmlRecipe(string $appId, ?string $xmlUrl): string
     {
-        if (empty($depotApp->xml_url)) {
-            throw new \RuntimeException('URL du XML non definie pour ' . $depotApp->app_id);
+        if (empty($xmlUrl)) {
+            throw new \RuntimeException('URL du XML non definie pour ' . $appId);
         }
 
-        $safeAppId = basename($depotApp->app_id);
+        $safeAppId = basename($appId);
         $targetPath = $this->storagePath . '/wpkg/tmp2/' . $safeAppId . '_' . date('Ymd_His') . '_' . uniqid() . '.xml';
 
         $this->fileManagerService->downloadWithHash(
-            url: $depotApp->xml_url,
+            url: $xmlUrl,
             targetPath: $targetPath,
             timeout: $this->syncTimeout,
         );

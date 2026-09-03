@@ -85,7 +85,7 @@ class PackageInstallerServiceTest extends TestCase
         $depotApp->app_id = 'firefox';
         $depotApp->xml_url = 'http://example.com/firefox.xml';
 
-        $path = $this->service->downloadXmlRecipe($depotApp);
+        $path = $this->service->downloadXmlRecipe($depotApp->app_id, $depotApp->xml_url);
 
         $this->assertStringContainsString('/wpkg/tmp2/', $path);
         $this->assertStringContainsString('firefox_', $path);
@@ -109,7 +109,7 @@ class PackageInstallerServiceTest extends TestCase
         // Verifier que tmp2 n'existe pas avant
         $this->assertDirectoryDoesNotExist($this->tmpDir . '/wpkg/tmp2');
 
-        $this->service->downloadXmlRecipe($depotApp);
+        $this->service->downloadXmlRecipe($depotApp->app_id, $depotApp->xml_url);
 
         $this->assertDirectoryExists($this->tmpDir . '/wpkg/tmp2');
     }
@@ -124,7 +124,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('URL du XML non definie');
 
-        $this->service->downloadXmlRecipe($depotApp);
+        $this->service->downloadXmlRecipe($depotApp->app_id, $depotApp->xml_url);
     }
 
     // ========================================

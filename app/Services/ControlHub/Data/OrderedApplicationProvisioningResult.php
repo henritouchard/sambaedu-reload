@@ -15,6 +15,8 @@ namespace App\Services\ControlHub\Data;
  *  - `provisioned`     : lignes `Application` matérialisées depuis la source (net-new).
  *  - `alreadyPresent`  : `app_id` ordonnés déjà présents en inventaire (no-op, AC3).
  *  - `skipped`         : ordres laissés non matérialisés (catalogue absent / source vide — AC6).
+ *  - `installDispatched` : poses serveur mises en file (l'app ordonnée n'était pas installée).
+ *  - `installSkipped`  : ordres sans recette à tirer (`xml_url` vide) — rien mis en file.
  *  - `failed`          : matérialisations en exception (résilience par app — AC6).
  *  - `errors`          : messages d'échec par `app_id` (la boucle n'abandonne jamais).
  *
@@ -28,6 +30,10 @@ class OrderedApplicationProvisioningResult
     public int $alreadyPresent = 0;
 
     public int $skipped = 0;
+
+    public int $installDispatched = 0;
+
+    public int $installSkipped = 0;
 
     public int $failed = 0;
 
@@ -43,6 +49,8 @@ class OrderedApplicationProvisioningResult
             'provisioned' => $this->provisioned,
             'already_present' => $this->alreadyPresent,
             'skipped' => $this->skipped,
+            'install_dispatched' => $this->installDispatched,
+            'install_skipped' => $this->installSkipped,
             'failed' => $this->failed,
             'errors' => $this->errors,
         ];

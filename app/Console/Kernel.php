@@ -149,6 +149,18 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
+        // Ingestion des rapports WPKG déposés par les postes sur le partage [rapports].
+        // Un poste dépose son rapport en fin de run, quand il veut : sans passe
+        // régulière, les fichiers s'empilent sans jamais être lus, et l'interface reste
+        // muette sur un échec d'installation (le log complet du poste n'est atteignable
+        // qu'après ingestion, qui renseigne `workstations.log_path`).
+        // Verrou interne par hostname + idempotence par SHA : une passe qui retombe sur
+        // un rapport inchangé ne réécrit rien.
+        $schedule->command('wpkg:process-reports')
+                 ->everyTenMinutes()
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Story 15.5 : Rotation quotidienne des archives brutes des rapports WPKG.
         // Supprime les fichiers > config('sambaedu.wpkg.reports_archive_retention_days')
         // (90 jours par défaut). Best-effort : si le dossier d'archive est absent,

@@ -160,11 +160,58 @@ class AppStoreService
             ]
         );
 
+        return $this->runInstallPipeline(
+            $application,
+            $depotApp->xml_url,
+            $depotApp->xml_sha,
+            $depotApp->version,
+            $initiatedBy,
+        );
+    }
+
+    /**
+     * Installe côté SERVEUR une application dont la recette est portée par la ligne
+     * d'inventaire elle-même — le cas des applications ORDONNÉES par le contrat amont,
+     * matérialisées par {@see \App\Services\ControlHub\OrderedApplicationProvisioner}
+     * depuis le catalogue amont, sans `DepotApplication` derrière elles.
+     *
+     * Sans cette pose serveur, une app ordonnée reste en `Available` : sa recette
+     * n'entre jamais dans le catalogue projeté au poste (`Application::installed()`),
+     * WPKG ne trouve pas de `<package id="…">` et l'agent rapporte l'app manquante
+     * run après run, sans que rien n'ait échoué visiblement.
+     */
+    public function installOrderedApplication(Application $application, string $initiatedBy = 'controlhub'): InstallationLog
+    {
+        Log::info('[AppStore] Debut installation (ordre amont)', [
+            'app_id' => $application->app_id,
+            'version' => $application->version,
+        ]);
+
+        return $this->runInstallPipeline(
+            $application,
+            $application->xml_url,
+            $application->xml_sha,
+            $application->version,
+            $initiatedBy,
+        );
+    }
+
+    /**
+     * Télécharge la recette, tire les fichiers, post-traite, finalise. Un échec passe
+     * l'application en `Error` et relance : c'est l'appelant (job) qui décide du retry.
+     */
+    private function runInstallPipeline(
+        Application $application,
+        ?string $xmlUrl,
+        ?string $xmlSha,
+        ?string $version,
+        string $initiatedBy,
+    ): InstallationLog {
         // Creer le log d'installation
         $log = InstallationLog::create([
             'application_id' => $application->id,
             'status' => InstallationStatus::Pending,
-            'version' => $depotApp->version,
+            'version' => $version,
             'initiated_by' => $initiatedBy,
             'started_at' => now(),
         ]);
@@ -175,12 +222,12 @@ class AppStoreService
 
             // Etape 1 : Telecharger le XML recipe, verifier le hash, parser les directives
             $log->update(['status' => InstallationStatus::Downloading, 'message' => 'Telechargement du package XML...', 'progress' => 10]);
-            $xmlPath = $this->packageInstallerService->downloadXmlRecipe($depotApp);
-            $this->packageInstallerService->verifyXmlHash($xmlPath, $depotApp->xml_sha);
+            $xmlPath = $this->packageInstallerService->downloadXmlRecipe($application->app_id, $xmlUrl);
+            $this->packageInstallerService->verifyXmlHash($xmlPath, $xmlSha);
             $directives = $this->packageInstallerService->parseDirectives($xmlPath);
 
             Log::debug('[AppStore] Directives XML parsees', [
-                'app_id' => $depotApp->app_id,
+                'app_id' => $application->app_id,
                 'packages' => count($directives['packages']),
                 'downloads' => count($directives['downloads']),
                 'deletes' => count($directives['deletes']),

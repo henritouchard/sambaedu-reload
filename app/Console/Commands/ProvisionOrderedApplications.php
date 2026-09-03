@@ -58,6 +58,8 @@ class ProvisionOrderedApplications extends Command
         $this->line("  Matérialisées  : {$result->provisioned}");
         $this->line("  Déjà présentes : {$result->alreadyPresent}");
         $this->line("  Ignorées       : {$result->skipped}");
+        $this->line("  Poses en file  : {$result->installDispatched}");
+        $this->line("  Poses ignorées : {$result->installSkipped} (aucune recette à tirer)");
         $this->line("  Échecs         : {$result->failed}");
 
         if ($result->errors !== []) {
