@@ -19,6 +19,9 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
     public string $key = '';
     public ?Shortcut $shortcutModel = null;
     public bool $isGlobal = false;
+    // Figé par le contrat amont (item `locked`). Sert l'AFFICHAGE ; les gardes
+    // d'écriture relisent le modèle, jamais cette propriété.
+    public bool $isUpstreamLocked = false;
     public bool $editing = false;
     public array $filters = [];
 
@@ -73,6 +76,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             }
 
             $this->isGlobal = $this->shortcutModel->is_global;
+            $this->isUpstreamLocked = $this->shortcutModel->isUpstreamLocked();
 
             // Remplir les champs du formulaire
             $this->name = $this->shortcutModel->name ?? '';
@@ -109,6 +113,11 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
 
         if ($this->isGlobal) {
             $this->toast('error', 'Erreur', 'Ce raccourci est géré par le ControlHub et ne peut pas être modifié ici');
+            return;
+        }
+
+        if ($this->shortcutModel->isUpstreamLocked()) {
+            $this->toast('error', 'Raccourci imposé', "L'autorité amont impose ce raccourci : il ne peut pas être modifié ici.");
             return;
         }
 
@@ -203,6 +212,11 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
 
         if ($this->isGlobal) {
             $this->toast('error', 'Erreur', 'Ce raccourci est géré par le ControlHub et ne peut pas être supprimé ici');
+            return;
+        }
+
+        if ($this->shortcutModel->isUpstreamLocked()) {
+            $this->toast('error', 'Raccourci imposé', "L'autorité amont impose ce raccourci : il ne peut pas être supprimé ici.");
             return;
         }
 
@@ -371,7 +385,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
                     <i class="fa-solid fa-ellipsis-vertical"></i>
                 </div>
                 <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow-lg border border-base-300">
-                    @if (!$isGlobal)
+                    @if (!$isGlobal && !$isUpstreamLocked)
                         <li>
                             <button type="button" @click="$wire.openAssignmentModal(); document.activeElement.blur();">
                                 <i class="fa-solid fa-bullseye"></i>
@@ -390,6 +404,18 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             </div>
         </div>
     </x-slot:actions>
+
+    @if ($isUpstreamLocked)
+        <div role="alert" class="alert alert-warning mb-4">
+            <i class="fa-solid fa-lock"></i>
+            <span>
+                <strong>Raccourci imposé.</strong>
+                L'autorité amont le verrouille : ni son contenu, ni ses assignations ne
+                sont modifiables ici. La prochaine réception du contrat rétablirait tout
+                changement.
+            </span>
+        </div>
+    @endif
 
     <!-- Formulaire raccourci (vue/édition) -->
     <form wire:submit="save" class="space-y-6 mb-4">

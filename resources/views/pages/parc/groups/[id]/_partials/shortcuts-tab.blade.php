@@ -42,7 +42,12 @@
                                 <div class="min-w-0">
                                     <div class="font-medium truncate">
                                         {{ $shortcut->name }}
-                                        @if ($shortcut->is_global)
+                                        @if ($shortcut->isUpstreamLocked())
+                                            <span class="badge badge-warning badge-sm ml-1"
+                                                title="Imposé et verrouillé par l'autorité amont">
+                                                <i class="fa-solid fa-lock text-xs mr-1"></i>Imposé
+                                            </span>
+                                        @elseif ($shortcut->is_global)
                                             <span class="badge badge-warning badge-sm ml-1" title="Géré par le ControlHub">
                                                 <i class="fa-solid fa-lock text-xs mr-1"></i>ControlHub
                                             </span>
@@ -61,11 +66,13 @@
                                 </div>
                             </div>
                             @can('update-workstationGroup', $group)
-                                <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
-                                    wire:click="detachShortcut({{ $shortcut->id }})"
-                                    wire:confirm="Retirer le raccourci « {{ $shortcut->name }} » de ce groupe ?">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
+                                @unless ($shortcut->isUpstreamLocked())
+                                    <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
+                                        wire:click="detachShortcut({{ $shortcut->id }})"
+                                        wire:confirm="Retirer le raccourci « {{ $shortcut->name }} » de ce groupe ?">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                @endunless
                             @endcan
                         </li>
                     @endforeach

@@ -1746,10 +1746,22 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
         try {
+            // Un raccourci que le contrat amont verrouille n'est pas attribuable à la
+            // main : c'est le contrat qui désigne les parcs qui le reçoivent, et la
+            // réception suivante défait le geste sans rien dire.
+            $selected = Shortcut::whereIn('id', $this->selectedShortcutIdsToAdd)->get();
+            $attachable = $selected->reject(fn (Shortcut $s): bool => $s->isUpstreamLocked());
+            $lockedCount = $selected->count() - $attachable->count();
+
             // syncWithoutDetaching : idempotent, n'écrase pas les assignations
             // existantes (parité avec le versant raccourci, Story 27.8 STRICT).
-            $this->group->shortcuts()->syncWithoutDetaching($this->selectedShortcutIdsToAdd);
-            $this->toastSuccess(count($this->selectedShortcutIdsToAdd) . ' raccourci(s) attribué(s) au groupe');
+            $this->group->shortcuts()->syncWithoutDetaching($attachable->pluck('id')->all());
+
+            $message = $attachable->count() . ' raccourci(s) attribué(s) au groupe';
+            if ($lockedCount > 0) {
+                $message .= ". {$lockedCount} raccourci(s) imposé(s) par l'autorité amont ignoré(s).";
+            }
+            $this->toastSuccess($message);
             $this->closeAttachShortcutModal();
             $this->loadGroup();
         } catch (AuthorizationException $e) {
@@ -1764,6 +1776,13 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     {
         Gate::authorize('update-workstationGroup', $this->group);
         try {
+            $shortcut = Shortcut::find($shortcutId);
+
+            if ($shortcut !== null && $shortcut->isUpstreamLocked()) {
+                $this->toastError("« {$shortcut->name} » est imposé par l'autorité amont : il ne peut pas être retiré du parc.");
+                return;
+            }
+
             $this->group->shortcuts()->detach($shortcutId);
             $this->toastSuccess('Raccourci retiré du groupe');
             $this->loadGroup();
