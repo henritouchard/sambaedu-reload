@@ -36,7 +36,7 @@
                         <li wire:key="grp-attached-shortcut-{{ $shortcut->id }}"
                             class="flex items-center justify-between py-2">
                             <div class="flex items-center gap-3 min-w-0">
-                                <img src="{{ route('shortcuts.icon', ['name' => $shortcut->name]) }}"
+                                <img src="{{ $shortcut->iconUrl() }}"
                                     alt="{{ $shortcut->name }}" class="w-8 h-8 object-contain rounded shrink-0"
                                     onerror="this.src='/elements/images/system-run.png'" />
                                 <div class="min-w-0">

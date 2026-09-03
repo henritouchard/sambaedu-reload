@@ -219,6 +219,36 @@ class UpstreamLockedShortcutWriteGuardTest extends TestCase
     // ── Onglet raccourcis d'un parc ──────────────────────────────────────────
 
     #[Test]
+    public function the_parc_tab_shows_the_content_addressed_icon_of_an_imposed_shortcut(): void
+    {
+        // L'icône d'un raccourci imposé n'existe QUE sous sa forme content-adressée :
+        // le canal des binaires ne produit jamais le `<name>.png` du formulaire
+        // d'upload. Une vue qui pointe la route de ce png affiche l'icône générique.
+        $servedDir = sys_get_temp_dir().'/se5-icons-'.uniqid();
+        mkdir($servedDir, 0777, true);
+        config(['shortcut_icons.served_path' => $servedDir]);
+
+        $asset = str_repeat('d', 64).'.ico';
+        file_put_contents($servedDir.'/'.$asset, 'ico');
+
+        $locked = $this->imposedShortcut('libre-max');
+        $locked->forceFill(['icon_asset' => $asset])->save();
+
+        $group = WorkstationGroup::factory()->create();
+        $group->shortcuts()->attach($locked->id);
+
+        $html = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('tab', 'shortcuts')
+            ->html();
+
+        self::assertStringContainsString($asset, $html);
+
+        unlink($servedDir.'/'.$asset);
+        rmdir($servedDir);
+    }
+
+
+    #[Test]
     public function a_parc_cannot_detach_a_locked_shortcut(): void
     {
         $locked = $this->imposedShortcut('libre-max');
