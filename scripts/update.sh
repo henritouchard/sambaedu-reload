@@ -1347,6 +1347,54 @@ ensure_appstore_write_dirs() {
 }
 
 # ============================================================================
+# Boîte de dépôt des rapports WPKG (écriture par le compte machine des postes)
+# ============================================================================
+# En fin de run, wpkg-client.vbs recopie %WinDir%\wpkg.{log,txt} vers
+# \\<se4fs>\rapports\<POSTE>.{log,txt}. Il tourne en SYSTEM, donc sous le compte
+# machine, que Samba mappe « other » — même mappage que pour la lecture (cf.
+# verify-install-permissions.sh). Sur un partage [install] legacy, wpkg/rapports/
+# naît root:root 755 : la copie est REFUSÉE SANS MESSAGE. Le poste finit son run,
+# et le serveur n'a ni le log complet du moteur WPKG, ni le .txt qu'ingère
+# `php artisan wpkg:process-reports` — un échec d'installation ne laisse alors
+# que la liste d'app_id manquantes rapportée par l'agent.
+#
+# Sticky (1777) et non 0777 : chaque poste réécrit SON rapport (il en est
+# propriétaire) sans pouvoir effacer celui d'un autre. archive/ reste hors dépôt
+# (0755 www-admin) — seul PHP-FPM y déplace les rapports traités.
+#
+# Concern ÉCRITURE, comme ensure_appstore_write_dirs et pour la même raison
+# distinct de verify-install-permissions.sh (lecture « other » seule, jamais
+# owner/group). Idempotent.
+
+ensure_wpkg_reports_inbox() {
+    log "Vérification boîte de dépôt des rapports WPKG..."
+
+    local install_root="${SE_INSTALL_ROOT:-/var/sambaedu/unattended/install}"
+    if [[ ! -d "$install_root" ]]; then
+        log_warning "Racine partage absente ($install_root) — étape ignorée"
+        return 0
+    fi
+
+    local inbox="$install_root/wpkg/rapports"
+    local archive="$inbox/archive"
+
+    [[ -d "$inbox" ]]   || mkdir -p "$inbox"
+    [[ -d "$archive" ]] || mkdir -p "$archive"
+
+    if id www-admin &>/dev/null; then
+        chown www-admin:www-admin "$inbox" "$archive" 2>/dev/null \
+            || log_warning "chown www-admin échoué sur $inbox (droits insuffisants ?)"
+    else
+        log_warning "Compte www-admin absent — ownership du dépôt non appliqué"
+    fi
+
+    chmod 1777 "$inbox"
+    chmod 0755 "$archive"
+
+    log_success "Dépôt rapports WPKG prêt : $inbox en 1777 (postes), archive/ en 0755 (www-admin)"
+}
+
+# ============================================================================
 # Amorçage des helpers SambaEdu dans wpkg.cmd (bootstrap %PROGRAMFILES%)
 # ============================================================================
 # Le déploiement des helpers .ps1/.cmd dans %PROGRAMFILES%\SambaEdu côté poste
@@ -2005,6 +2053,9 @@ main() {
 
     echo ""
     ensure_appstore_write_dirs
+
+    echo ""
+    ensure_wpkg_reports_inbox
 
     echo ""
     ensure_appstore_catalog_sync
