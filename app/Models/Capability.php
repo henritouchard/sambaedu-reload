@@ -53,6 +53,9 @@ class Capability extends Model
 
     public const TOGGLE_OFF = 'off';
 
+    /** Vocabulaire d'entité amont pour ce support, iso {@see Application::TYPE_APPLICATIONS}. */
+    public const TYPE_CAPABILITIES = 'capabilities';
+
     public const OS_WINDOWS = 'windows';
 
     public const OS_LINUX = 'linux';

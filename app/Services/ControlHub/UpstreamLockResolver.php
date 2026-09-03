@@ -31,17 +31,23 @@ use Illuminate\Support\Collection;
  * Pendant côté ÉCRITURE de {@see \App\Services\ControlHub\Resolution\UpstreamContractSource}
  * (qui, lui, sert la résolution du compilé desired-state).
  *
- * **Périmètre du verrou en 29.2 (strict)** : un item est verrouillant ssi
- *   - `type = registry` (exclusive-par-clé — sémantique de verrou nette ;
- *      les types aggregate type `shortcuts` sont HORS verrou 29.2, couture) ;
- *   - `enforcement_state = locked` UNIQUEMENT (`permissive` est surchargeable —
- *      Story 29.3 / FR4 — et `absent` n'impose rien : NE PAS les bloquer) ;
- *   - `target_type = instance` (le ciblage par `label` est différé Epic 30 :
- *      ignoré proprement, ni résolution ni plantage).
- * C'est un SOUS-ENSEMBLE strict de ce que lit `UpstreamContractSource` (qui
- * retient locked ET permissive). Le verrou est INSTANCE-WIDE : il se résout par
- * PRÉSENCE d'un item `locked` au contrat actif, indépendamment de l'utilisateur
- * et du parc (PAS une délégation par-salle — ne pas confondre avec la 29.1).
+ * **Deux canaux, deux portées.** Seul `enforcement_state = locked` verrouille
+ * (`permissive` est surchargeable — FR4 — et `absent` n'impose rien) ; les types
+ * agrégats comme `shortcuts` restent hors verrou (couture). Mais la PORTÉE d'un
+ * verrou dépend du canal qui le porte :
+ *   - `type = registry`, `target_type = instance` : verrou INSTANCE-WIDE, résolu
+ *      par la clé de registre. Le ciblage par `label` de ce canal reste hors
+ *      verrou (ignoré proprement, ni résolution ni plantage).
+ *   - `type = capabilities` : la clé d'item EST la clé de capacité et la cible est
+ *      un LABEL. Le verrou ne vaut alors que pour les parcs qui portent ce label —
+ *      d'où le paramètre `$label` des méthodes publiques. Un item de ce canal ciblé
+ *      `instance`, lui, vaut partout.
+ * Le verrou ne dépend jamais de l'utilisateur : ce n'est PAS une délégation
+ * par-salle (ne pas confondre avec la 29.1).
+ *
+ * Un verrou n'est JAMAIS persisté : il se relit du contrat à chaque requête. Un
+ * item qui passe `permissive`, un item retiré, un parc qui perd son label — tout
+ * cela lève le verrou au rendu suivant, sans qu'aucun état local n'ait à être purgé.
  *
  * **NFR3 — court-circuit (CRITIQUE)** : la résolution est MÉMOÏSÉE (singleton
  * par-requête, voir AgentServiceProvider). S'il n'y a AUCUN contrat actif, la
@@ -94,6 +100,23 @@ final class UpstreamLockResolver
      * @var array<string, true>
      */
     private array $permissiveRegistryKeys = [];
+
+    /**
+     * Clés de CAPACITÉ verrouillées amont par le canal `capabilities`, indexées par
+     * cible. Ce canal désigne sa cible par un LABEL et non par une clé de registre :
+     * son verrou ne vaut que pour les parcs qui portent ce label. La chaîne vide
+     * indexe les items de cible `instance`, qui eux valent pour tous les parcs.
+     *
+     * @var array<string, array<string, true>> [clé de capacité => [label => true]]
+     */
+    private array $lockedCapabilityKeys = [];
+
+    /**
+     * Pendant permissif de {@see self::$lockedCapabilityKeys}, même indexation.
+     *
+     * @var array<string, array<string, true>>
+     */
+    private array $permissiveCapabilityKeys = [];
 
     /**
      * Story 29.4 — Indicateur mémoïsé : un contrat `active` existe-t-il ?
@@ -179,10 +202,14 @@ final class UpstreamLockResolver
     }
 
     /**
-     * La capacité est-elle verrouillée amont ? `true` ssi AU MOINS UNE clé de ses
-     * projections `registry` (`spec.keys[]`) appartient au set verrouillé. Toutes
-     * les ruches sont considérées (HKLM ∪ HKCU) : un verrou sur n'importe quelle
-     * clé de la capacité la rend non éditable.
+     * La capacité est-elle verrouillée amont, pour un parc portant `$label` ?
+     * `true` si le canal `capabilities` la vise (par ce label ou en cible instance),
+     * OU si AU MOINS UNE clé de ses projections `registry` (`spec.keys[]`) appartient
+     * au set verrouillé. Toutes les ruches sont considérées (HKLM ∪ HKCU) : un verrou
+     * sur n'importe quelle clé de la capacité la rend non éditable.
+     *
+     * `$label` omis (surface d'instance, ex. le défaut diffusé) : seuls les verrous
+     * de portée instance sont vus.
      *
      * Court-circuit NFR3 : si le set verrouillé est vide (aucun contrat actif),
      * renvoie `false` SANS expanser les projections.
@@ -190,9 +217,13 @@ final class UpstreamLockResolver
      * Eager-load `projections` (filtre `mechanism = registry`) en amont pour
      * éviter le N+1 quand cette méthode est appelée en boucle (rendu UI).
      */
-    public function isCapabilityLocked(Capability $capability): bool
+    public function isCapabilityLocked(Capability $capability, ?string $label = null): bool
     {
         $this->ensureResolved();
+
+        if ($this->matchesCapabilityChannel($this->lockedCapabilityKeys, $capability, $label)) {
+            return true;
+        }
 
         if ($this->lockedRegistryKeys === []) {
             return false;
@@ -216,9 +247,9 @@ final class UpstreamLockResolver
     }
 
     /**
-     * Story 29.4 — La capacité est-elle imposée PERMISSIVE amont ? `true` ssi AU
-     * MOINS UNE clé de ses projections `registry` appartient au set permissif
-     * (item `permissive`/`instance`/`registry` du contrat actif).
+     * Story 29.4 — La capacité est-elle imposée PERMISSIVE amont, pour un parc
+     * portant `$label` ? Miroir exact de {@see self::isCapabilityLocked()} : mêmes
+     * canaux, même portée par label, même sémantique de `$label` omis.
      *
      * **Miroir exact de `isCapabilityLocked()`** : mêmes helpers, mêmes gardes N+1
      * et court-circuit NFR3. Un item `permissive` est un PLANCHER (rang le MOINS
@@ -232,9 +263,13 @@ final class UpstreamLockResolver
      *
      * ⚠️ GARDE-FOU R3 : aucun mot « central ». [Source: prd-contrat-manage-se5.md#R3]
      */
-    public function isCapabilityPermissive(Capability $capability): bool
+    public function isCapabilityPermissive(Capability $capability, ?string $label = null): bool
     {
         $this->ensureResolved();
+
+        if ($this->matchesCapabilityChannel($this->permissiveCapabilityKeys, $capability, $label)) {
+            return true;
+        }
 
         if ($this->permissiveRegistryKeys === []) {
             return false;
@@ -268,14 +303,14 @@ final class UpstreamLockResolver
      *
      * ⚠️ GARDE-FOU R3 : aucun mot « central ». [Source: prd-contrat-manage-se5.md#R3]
      */
-    public function capabilityUpstreamStatus(Capability $capability): string
+    public function capabilityUpstreamStatus(Capability $capability, ?string $label = null): string
     {
         // Précédence : verrouillé > permissif > local (AC #4).
-        if ($this->isCapabilityLocked($capability)) {
+        if ($this->isCapabilityLocked($capability, $label)) {
             return 'locked';
         }
 
-        if ($this->isCapabilityPermissive($capability)) {
+        if ($this->isCapabilityPermissive($capability, $label)) {
             return 'permissive';
         }
 
@@ -286,9 +321,9 @@ final class UpstreamLockResolver
      * Résout le contrat actif UNE fois (mémoïsé). Court-circuit NFR3 : sans
      * contrat actif, on ne touche JAMAIS la table `items` (≤ 1 requête).
      *
-     * Story 29.4 — bucketing `locked`+`permissive` en une seule requête `items`
-     * (`whereIn([Locked, Permissive])` + `get(['key', 'enforcement_state'])`).
-     * Garantit ≤ 1 requête `items` au total ET préserve le court-circuit NFR3.
+     * Les deux canaux (`registry` et `capabilities`) et les deux enforcements
+     * (`locked`, `permissive`) sont bucketisés depuis la MÊME requête `items` :
+     * ≤ 1 requête au total, court-circuit NFR3 préservé.
      */
     private function ensureResolved(): void
     {
@@ -308,32 +343,81 @@ final class UpstreamLockResolver
         // Story 29.4 — contrat actif trouvé : positionner le flag pour hasActiveContract().
         $this->activeContract = true;
 
-        // Story 29.4 : bucketing `locked`+`permissive` en UNE requête items.
-        // `absent` est exclu (n'impose rien). `target_type = label` est ignoré
-        // proprement (Epic 30). Type `registry` uniquement (exclusive-par-clé).
+        // Bucketing `locked`+`permissive` des DEUX canaux en UNE requête items.
+        // `absent` est exclu : il n'impose rien.
         $items = $contract->items()
-            ->where('type', CapabilityProjection::MECHANISM_REGISTRY)
+            ->whereIn('type', [
+                CapabilityProjection::MECHANISM_REGISTRY,
+                Capability::TYPE_CAPABILITIES,
+            ])
             ->whereIn('enforcement_state', [
                 ControlHubEnforcementState::Locked->value,
                 ControlHubEnforcementState::Permissive->value,
             ])
-            ->where('target_type', ControlHubContractTarget::Instance->value)
-            ->get(['key', 'enforcement_state']);
+            ->get(['type', 'key', 'enforcement_state', 'target_type', 'target_label']);
 
         foreach ($items as $item) {
-            $normalized = $this->normalizeItemKey((string) $item->key);
             // Normaliser l'enforcement_state qu'il soit casté en enum ou en string.
             $rawState = $item->enforcement_state instanceof ControlHubEnforcementState
                 ? $item->enforcement_state->value
                 : (string) $item->enforcement_state;
+            $locked = $rawState === ControlHubEnforcementState::Locked->value;
 
-            if ($rawState === ControlHubEnforcementState::Locked->value) {
-                $this->lockedRegistryKeys[$normalized] = true;
+            $rawTarget = $item->target_type instanceof ControlHubContractTarget
+                ? $item->target_type->value
+                : (string) $item->target_type;
+            $targetsInstance = $rawTarget === ControlHubContractTarget::Instance->value;
+
+            if ((string) $item->type === CapabilityProjection::MECHANISM_REGISTRY) {
+                // Canal registre : cible `instance` uniquement (le ciblage par label
+                // reste hors verrou ici, cf. l'en-tête de classe).
+                if (! $targetsInstance) {
+                    continue;
+                }
+
+                $normalized = $this->normalizeItemKey((string) $item->key);
+
+                if ($locked) {
+                    $this->lockedRegistryKeys[$normalized] = true;
+                } else {
+                    $this->permissiveRegistryKeys[$normalized] = true;
+                }
+
+                continue;
+            }
+
+            // Canal `capabilities` : la clé d'item EST la clé de capacité, et la
+            // cible est un label. Chaîne vide = cible `instance` (vaut partout).
+            $target = $targetsInstance ? '' : (string) $item->target_label;
+
+            if ($locked) {
+                $this->lockedCapabilityKeys[(string) $item->key][$target] = true;
             } else {
-                // Permissive (by the whereIn filter above — only Locked or Permissive).
-                $this->permissiveRegistryKeys[$normalized] = true;
+                $this->permissiveCapabilityKeys[(string) $item->key][$target] = true;
             }
         }
+    }
+
+    /**
+     * Le label `$label` est-il visé par un index du canal `capabilities` pour cette
+     * capacité ? Un item de cible `instance` (indexé sous la chaîne vide) l'emporte
+     * quel que soit le label du parc — y compris quand le parc n'en porte aucun.
+     *
+     * @param  array<string, array<string, true>>  $index
+     */
+    private function matchesCapabilityChannel(array $index, Capability $capability, ?string $label): bool
+    {
+        $targets = $index[(string) $capability->key] ?? null;
+
+        if ($targets === null) {
+            return false;
+        }
+
+        if (isset($targets[''])) {
+            return true;
+        }
+
+        return $label !== null && $label !== '' && isset($targets[$label]);
     }
 
     /**

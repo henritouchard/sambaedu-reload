@@ -30,7 +30,7 @@
                     class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-300 last:border-b-0">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                         wire:model.live="selectedShortcutIdsToAdd" value="{{ $shortcut->id }}" />
-                    <img src="{{ route('shortcuts.icon', ['name' => $shortcut->name]) }}"
+                    <img src="{{ $shortcut->iconUrl() }}"
                         alt="{{ $shortcut->name }}" class="w-8 h-8 object-contain rounded shrink-0"
                         onerror="this.src='/elements/images/system-run.png'" />
                     <div class="flex-1 min-w-0">

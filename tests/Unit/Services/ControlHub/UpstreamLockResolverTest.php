@@ -444,6 +444,71 @@ class UpstreamLockResolverTest extends TestCase
         );
     }
 
+    // ── Canal `capabilities` : le verrou suit le label ───────────────────────
+
+    #[Test]
+    public function capabilities_item_locks_only_the_parcs_carrying_its_label(): void
+    {
+        $cap = Capability::factory()->create();
+        ControlHubContractItem::factory()->forLabel('modelibre')->create([
+            'type' => Capability::TYPE_CAPABILITIES,
+            'key' => $cap->key,
+        ]);
+
+        $resolver = new UpstreamLockResolver();
+
+        self::assertTrue($resolver->isCapabilityLocked($cap, 'modelibre'));
+        self::assertFalse($resolver->isCapabilityLocked($cap, 'CDIX'), 'un autre label n\'est pas concerné');
+        self::assertFalse($resolver->isCapabilityLocked($cap), 'sans label, seule la portée instance est vue');
+        self::assertSame('locked', $resolver->capabilityUpstreamStatus($cap, 'modelibre'));
+        self::assertSame('local', $resolver->capabilityUpstreamStatus($cap, 'CDIX'));
+    }
+
+    #[Test]
+    public function capabilities_item_targeting_the_instance_locks_regardless_of_label(): void
+    {
+        $cap = Capability::factory()->create();
+        ControlHubContractItem::factory()->create([
+            'type' => Capability::TYPE_CAPABILITIES,
+            'key' => $cap->key,
+        ]);
+
+        $resolver = new UpstreamLockResolver();
+
+        self::assertTrue($resolver->isCapabilityLocked($cap));
+        self::assertTrue($resolver->isCapabilityLocked($cap, 'nimporte-quel-label'));
+    }
+
+    #[Test]
+    public function permissive_capabilities_item_reports_permissive_not_locked(): void
+    {
+        $cap = Capability::factory()->create();
+        ControlHubContractItem::factory()->permissive()->forLabel('modelibre')->create([
+            'type' => Capability::TYPE_CAPABILITIES,
+            'key' => $cap->key,
+        ]);
+
+        $resolver = new UpstreamLockResolver();
+
+        self::assertFalse($resolver->isCapabilityLocked($cap, 'modelibre'));
+        self::assertTrue($resolver->isCapabilityPermissive($cap, 'modelibre'));
+        self::assertFalse($resolver->isCapabilityPermissive($cap, 'CDIX'));
+        self::assertSame('permissive', $resolver->capabilityUpstreamStatus($cap, 'modelibre'));
+    }
+
+    #[Test]
+    public function a_capabilities_item_on_another_capability_key_leaves_this_one_free(): void
+    {
+        $cap = Capability::factory()->create();
+        $other = Capability::factory()->create();
+        ControlHubContractItem::factory()->forLabel('modelibre')->create([
+            'type' => Capability::TYPE_CAPABILITIES,
+            'key' => $other->key,
+        ]);
+
+        self::assertFalse((new UpstreamLockResolver())->isCapabilityLocked($cap, 'modelibre'));
+    }
+
     /**
      * @param  list<array{query:string,bindings:array<mixed>,time:float}>  $log
      */

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ControlHub\UpstreamMaterializationGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
@@ -577,6 +578,22 @@ class Shortcut extends Model implements Wireable
     public function isGlobal(): bool
     {
         return $this->is_global;
+    }
+
+    /**
+     * Le contrat amont fige-t-il ce raccourci ? Ni son contenu, ni ses assignations
+     * ne sont alors modifiables localement : la prochaine réception les rétablirait
+     * sans que rien n'ait prévenu l'administrateur.
+     *
+     * ⚠️ `is_global` ne répond PAS à cette question, et c'était la panne : il marque
+     * le canal de tâches historique ({@see \App\Jobs\SyncShortcutJob}). Un raccourci
+     * matérialisé par le contrat porte `controlhub_contract_key` et `is_global`
+     * à false — toutes les gardes écrites sur `is_global` le laissaient passer.
+     */
+    public function isUpstreamLocked(): bool
+    {
+        return app(UpstreamMaterializationGuard::class)
+            ->isLocked(self::TYPE_SHORTCUTS, $this->controlhub_contract_key);
     }
 
     /**

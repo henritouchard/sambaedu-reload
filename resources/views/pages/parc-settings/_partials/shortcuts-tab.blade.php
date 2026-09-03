@@ -166,14 +166,32 @@ new class extends Component {
         }
 
         try {
-            $deletedCount = Shortcut::whereIn('key', $this->selectedShortcuts)
+            // Le lot ne peut pas se résoudre en une seule requête : le verrou amont
+            // ne vit pas dans une colonne mais dans le contrat, item par item.
+            $candidates = Shortcut::whereIn('key', $this->selectedShortcuts)
                 ->where('is_global', false)
-                ->delete();
+                ->get();
 
-            $globalCount = count($this->selectedShortcuts) - $deletedCount;
+            $deletedCount = 0;
+            $lockedCount = 0;
+
+            foreach ($candidates as $shortcut) {
+                if ($shortcut->isUpstreamLocked()) {
+                    $lockedCount++;
+                    continue;
+                }
+
+                $shortcut->delete();
+                $deletedCount++;
+            }
+
+            $globalCount = count($this->selectedShortcuts) - $candidates->count();
             $message = $deletedCount . ' raccourci(s) supprimé(s) avec succès';
             if ($globalCount > 0) {
                 $message .= ". {$globalCount} raccourci(s) ControlHub ignoré(s).";
+            }
+            if ($lockedCount > 0) {
+                $message .= ". {$lockedCount} raccourci(s) imposé(s) par l'autorité amont ignoré(s).";
             }
 
             $this->toast('success', 'Suppression réussie', $message);
@@ -239,8 +257,10 @@ new class extends Component {
 
             foreach ($shortcuts as $shortcut) {
                 // Les raccourcis ControlHub sont pilotés en amont : on les ignore
-                // silencieusement plutôt que de faire échouer le lot.
-                if ($shortcut->is_global) {
+                // silencieusement plutôt que de faire échouer le lot. Un raccourci
+                // imposé VERROUILLÉ relève de la même règle — c'est le contrat qui
+                // décide qui le reçoit, et la réception suivante défait le geste.
+                if ($shortcut->is_global || $shortcut->isUpstreamLocked()) {
                     $globalCount++;
                     continue;
                 }
@@ -256,7 +276,7 @@ new class extends Component {
 
             $message = "{$targetCount} cible(s) assignée(s) à {$assignedCount} raccourci(s)";
             if ($globalCount > 0) {
-                $message .= ". {$globalCount} raccourci(s) ControlHub ignoré(s).";
+                $message .= ". {$globalCount} raccourci(s) imposé(s) ignoré(s).";
             }
 
             $this->toast('success', 'Assignations ajoutées', $message);
@@ -284,6 +304,11 @@ new class extends Component {
 
             if ($shortcut->is_global) {
                 $this->toast('error', 'Erreur', 'Ce raccourci est géré par le ControlHub et ne peut pas être supprimé ici');
+                return;
+            }
+
+            if ($shortcut->isUpstreamLocked()) {
+                $this->toast('error', 'Raccourci imposé', "L'autorité amont impose ce raccourci : il ne peut pas être supprimé ici.");
                 return;
             }
 
@@ -387,7 +412,12 @@ new class extends Component {
                                         @else
                                             <span class="badge badge-success badge-sm">Application</span>
                                         @endif
-                                        @if ($shortcut->is_global)
+                                        @if ($shortcut->isUpstreamLocked())
+                                            <span class="badge badge-warning badge-sm"
+                                                title="Imposé et verrouillé par l'autorité amont : ni modifiable, ni supprimable, ni réassignable ici">
+                                                <i class="fa-solid fa-lock text-xs mr-1"></i>Imposé
+                                            </span>
+                                        @elseif ($shortcut->is_global)
                                             <span class="badge badge-warning badge-sm" title="Géré par ControlHub">
                                                 <i class="fa-solid fa-lock text-xs mr-1"></i>Global
                                             </span>

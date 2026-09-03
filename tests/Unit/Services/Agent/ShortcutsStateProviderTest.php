@@ -528,6 +528,30 @@ class ShortcutsStateProviderTest extends TestCase
     }
 
     #[Test]
+    public function contract_shortcut_without_icon_name_still_emits_its_asset(): void
+    {
+        // Raccourci IMPOSÉ par le contrat amont : son `.ico` arrive par le canal
+        // des binaires, qui renseigne `icon_asset`/`icon_checksum` sans jamais
+        // toucher `windows_icon`. Exiger un nom nu le privait de son icône —
+        // l'agent recevait `icon: ""` et rien d'autre, donc l'icône par défaut.
+        $sha = str_repeat('c', 64);
+        $sc = $this->shortcut('ctrlhub', [
+            'place' => Shortcut::PLACE_DESKTOP,
+            'windows_link' => 'C:\\user\\test',
+            // windows_icon ET icon_path laissés null
+            'icon_asset' => $sha . '.ico',
+            'icon_checksum' => $sha,
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame('', $payload['icon']);
+        self::assertSame($sha . '.ico', $payload['icon_asset']);
+        self::assertSame($sha, $payload['icon_checksum']);
+    }
+
+    #[Test]
     public function bare_name_without_backfilled_asset_falls_back_to_raw_icon(): void
     {
         // Nom nu mais AUCUN asset content-addressed en base (`icon_asset` null) :
