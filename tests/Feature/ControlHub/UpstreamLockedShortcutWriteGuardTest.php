@@ -170,6 +170,24 @@ class UpstreamLockedShortcutWriteGuardTest extends TestCase
         self::assertCount(0, $locked->refresh()->workstationGroups);
     }
 
+    #[Test]
+    public function the_library_marks_the_locked_shortcut_and_leaves_the_local_one_plain(): void
+    {
+        $this->imposedShortcut('libre-max');
+        Shortcut::query()->create([
+            'key' => 'local',
+            'name' => 'Raccourci local',
+            'place' => Shortcut::PLACE_DESKTOP,
+            'is_global' => false,
+        ]);
+
+        $html = Livewire::test(self::LIBRARY_COMPONENT)->html();
+
+        self::assertStringContainsString('Imposé', $html);
+        self::assertStringContainsString("verrouillé par l'autorité amont", $html);
+        self::assertStringNotContainsString('>Global', $html, 'le badge du canal historique ne doit pas apparaître');
+    }
+
     // ── Fiche d'un raccourci ─────────────────────────────────────────────────
 
     #[Test]

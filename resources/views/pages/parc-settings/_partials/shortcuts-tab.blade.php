@@ -412,7 +412,12 @@ new class extends Component {
                                         @else
                                             <span class="badge badge-success badge-sm">Application</span>
                                         @endif
-                                        @if ($shortcut->is_global)
+                                        @if ($shortcut->isUpstreamLocked())
+                                            <span class="badge badge-warning badge-sm"
+                                                title="Imposé et verrouillé par l'autorité amont : ni modifiable, ni supprimable, ni réassignable ici">
+                                                <i class="fa-solid fa-lock text-xs mr-1"></i>Imposé
+                                            </span>
+                                        @elseif ($shortcut->is_global)
                                             <span class="badge badge-warning badge-sm" title="Géré par ControlHub">
                                                 <i class="fa-solid fa-lock text-xs mr-1"></i>Global
                                             </span>
