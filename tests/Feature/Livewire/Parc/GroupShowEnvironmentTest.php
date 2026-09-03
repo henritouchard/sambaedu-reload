@@ -18,8 +18,8 @@ use Tests\TestCase;
  * La fiche de présentation d'un groupe AFFICHE l'environnement (nature des postes,
  * Story 26.1) en lecture seule dans sa carte d'identité — l'édition se fait
  * ailleurs (formulaire « Modifier » + action groupée). Garde anti-régression :
- * l'environnement avait d'abord été posé dans un partial orphelin (group-info)
- * jamais inclus, donc invisible.
+ * la carte d'identité vit dans `index.blade.php` et non dans un partial ; poser
+ * un fait du groupe ailleurs le rendrait invisible sans qu'aucun test ne tombe.
  *
  * RefreshDatabase (vraies migrations) — contrairement à GroupShowPageTest qui
  * forge ses tables à la main (pivot imprimante sans la colonne `is_default`).

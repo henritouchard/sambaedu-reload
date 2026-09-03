@@ -2200,6 +2200,16 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                 {{ $group->environment?->shortLabel() ?? 'Non déclaré' }}
                             </p>
                         </div>
+                        @if ($group->controlhub_label)
+                            <div>
+                                <span class="text-xs text-base-content/60 uppercase tracking-wide">Label amont</span>
+                                <p class="font-medium mt-0.5 truncate"
+                                    title="Ce parc reçoit les politiques que le contrat amont adresse au label « {{ $group->controlhub_label }} ».">
+                                    <i class="fa-solid fa-tag text-xs text-base-content/50 mr-1"></i>
+                                    {{ $group->controlhub_label }}
+                                </p>
+                            </div>
+                        @endif
                         @if ($group->parent)
                             <div>
                                 <span class="text-xs text-base-content/60 uppercase tracking-wide">Groupe parent</span>
