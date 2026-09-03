@@ -2,6 +2,8 @@
 
 use Livewire\Component;
 use Livewire\Attributes\On;
+use App\Models\AgentResourceState;
+use App\Models\Application;
 use App\Models\WorkstationApplicationStatus;
 use App\Services\Windows\WorkstationLogReader;
 use App\Components\Traits\WithToasts;
@@ -28,6 +30,16 @@ new class extends Component {
     public ?string $installedVersion = null;
     public ?string $reportedAt = null;
     public bool $rebootRequired = false;
+
+    // Ouverture depuis l'état agent : le détail rapporté est TRONQUÉ dans le
+    // tableau (80 car.) alors que c'est précisément là que se trouve la liste
+    // des paquets en échec. On le porte ici en entier.
+    public ?string $reportedDetail = null;
+
+    // Un état agent sans rapport avec WPKG (fond d'écran, raccourcis…) n'a pas
+    // de log de poste à montrer : on masque le bloc plutôt que d'afficher un
+    // « non disponible » qui se lirait comme une anomalie.
+    public bool $showLog = true;
 
     public function boot(WorkstationLogReader $logReader): void
     {
@@ -86,6 +98,61 @@ new class extends Component {
         $this->visible = true;
     }
 
+    /**
+     * Ouverture depuis « État rapporté par type » (onglet Agent d'un poste).
+     *
+     * Le tableau ne montre qu'un détail tronqué et aucun log : quand l'agent
+     * rapporte « WPKG déclenché mais apps non installées », la cause est dans le
+     * log du moteur WPKG, que seul le poste connaît. On lit le même fichier que
+     * pour un statut d'application — c'est le rapport du poste, pas celui d'une app.
+     */
+    #[On('open-agent-state-modal')]
+    public function openForAgentState(int $stateId): void
+    {
+        $this->resetState();
+
+        $state = AgentResourceState::with('workstation')->find($stateId);
+
+        if (!$state || !$state->workstation) {
+            $this->installLogMissing = true;
+            $this->visible = true;
+            return;
+        }
+
+        $this->wstName = $state->workstation->name ?? '—';
+        $this->appName = "Type « {$state->type} »";
+        $this->statusLabel = $state->status?->value ?? '—';
+        $this->statusBadge = $state->status?->value === 'compliant' ? 'badge-success' : 'badge-error';
+        $this->reportedAt = $state->reported_at?->format('d/m/Y H:i');
+        $this->reportedDetail = $state->detail;
+
+        // Seul le type `applications` déclenche WPKG : c'est le seul dont le log
+        // de poste éclaire le verdict.
+        $this->showLog = $state->type === Application::TYPE_APPLICATIONS;
+
+        if (!$this->showLog) {
+            $this->visible = true;
+            return;
+        }
+
+        try {
+            $result = $this->logReader->read($state->workstation);
+            $this->installLogContent = $result->content;
+            $this->installLogMissing = $result->missing;
+            $this->installLogTruncated = $result->truncated;
+            $this->installLogFilename = $result->filename;
+        } catch (\Throwable $e) {
+            Log::error('[InstallLogModal] Erreur lecture log', [
+                'agent_state_id' => $stateId,
+                'workstation_id' => $state->workstation->id,
+                'error'          => $e->getMessage(),
+            ]);
+            $this->installLogMissing = true;
+        }
+
+        $this->visible = true;
+    }
+
     public function close(): void
     {
         $this->resetState();
@@ -117,6 +184,8 @@ new class extends Component {
         $this->installedVersion = null;
         $this->reportedAt = null;
         $this->rebootRequired = false;
+        $this->reportedDetail = null;
+        $this->showLog = true;
     }
 };
 ?>
@@ -145,11 +214,13 @@ new class extends Component {
                     </div>
 
                     {{-- Métadonnées --}}
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 flex-shrink-0">
-                        <div class="bg-base-200 rounded-lg p-3">
-                            <p class="text-xs text-base-content/60">Version installée</p>
-                            <p class="font-mono font-medium text-sm">{{ $installedVersion ?: '—' }}</p>
-                        </div>
+                    <div class="grid grid-cols-2 md:grid-cols-{{ $reportedDetail === null ? '4' : '2' }} gap-3 mb-4 flex-shrink-0">
+                        @if ($reportedDetail === null)
+                            <div class="bg-base-200 rounded-lg p-3">
+                                <p class="text-xs text-base-content/60">Version installée</p>
+                                <p class="font-mono font-medium text-sm">{{ $installedVersion ?: '—' }}</p>
+                            </div>
+                        @endif
                         <div class="bg-base-200 rounded-lg p-3">
                             <p class="text-xs text-base-content/60">Dernier rapport</p>
                             <p class="font-medium text-sm">{{ $reportedAt ?? '—' }}</p>
@@ -158,22 +229,35 @@ new class extends Component {
                             <p class="text-xs text-base-content/60">Statut</p>
                             <span class="badge badge-sm {{ $statusBadge ?? 'badge-warning' }}">{{ $statusLabel ?? '—' }}</span>
                         </div>
-                        @if ($rebootRequired)
-                            <div class="bg-warning/10 rounded-lg p-3">
-                                <p class="text-xs text-base-content/60">Redémarrage</p>
-                                <p class="font-medium text-warning text-sm">
-                                    <i class="fa-solid fa-rotate-right mr-1"></i>Requis
-                                </p>
-                            </div>
-                        @else
-                            <div class="bg-base-200 rounded-lg p-3">
-                                <p class="text-xs text-base-content/60">Redémarrage</p>
-                                <p class="text-base-content/50 text-sm">Non requis</p>
-                            </div>
+                        @if ($reportedDetail === null)
+                            @if ($rebootRequired)
+                                <div class="bg-warning/10 rounded-lg p-3">
+                                    <p class="text-xs text-base-content/60">Redémarrage</p>
+                                    <p class="font-medium text-warning text-sm">
+                                        <i class="fa-solid fa-rotate-right mr-1"></i>Requis
+                                    </p>
+                                </div>
+                            @else
+                                <div class="bg-base-200 rounded-lg p-3">
+                                    <p class="text-xs text-base-content/60">Redémarrage</p>
+                                    <p class="text-base-content/50 text-sm">Non requis</p>
+                                </div>
+                            @endif
                         @endif
                     </div>
 
+                    {{-- Détail rapporté, en entier (tronqué à 80 car. dans le tableau) --}}
+                    @if ($reportedDetail !== null && $reportedDetail !== '')
+                        <div class="mb-4 flex-shrink-0">
+                            <p class="text-xs text-base-content/60 uppercase tracking-wide font-semibold mb-2">
+                                Détail rapporté par l'agent
+                            </p>
+                            <div class="bg-base-200 rounded-lg p-3 text-sm break-words">{{ $reportedDetail }}</div>
+                        </div>
+                    @endif
+
                     {{-- Bloc log --}}
+                    @if ($showLog)
                     <div class="flex-1 min-h-0 flex flex-col">
                         <div class="flex items-center justify-between mb-2 flex-shrink-0">
                             <p class="text-xs text-base-content/60 uppercase tracking-wide font-semibold">
@@ -259,6 +343,7 @@ new class extends Component {
                             </div>
                         @endif
                     </div>
+                    @endif
 
                 </div>
 

@@ -110,8 +110,21 @@
                                 <td class="text-sm" title="{{ $state->reported_at }}">
                                     {{ $state->reported_at?->diffForHumans() ?? '—' }}
                                 </td>
+                                {{-- Le détail est tronqué ici par nécessité (une liste
+                                     de paquets en échec dépasse la colonne) : le clic
+                                     ouvre le détail entier et, pour `applications`, le
+                                     log du moteur WPKG rapporté par le poste. --}}
                                 <td class="text-sm text-base-content/70">
-                                    {{ $state->detail ? Str::limit($state->detail, 80) : '—' }}
+                                    @if ($state->detail)
+                                        <button type="button"
+                                                class="link link-hover text-left"
+                                                wire:click="$dispatch('open-agent-state-modal', { stateId: {{ $state->id }} })"
+                                                title="Voir le détail complet et le log du poste">
+                                            {{ Str::limit($state->detail, 80) }}
+                                        </button>
+                                    @else
+                                        —
+                                    @endif
                                 </td>
                                 {{-- Hash OPAQUE, tronqué, jamais interprété (piège 9). --}}
                                 <td class="font-mono text-xs text-base-content/40"
