@@ -390,18 +390,17 @@ final class ShortcutsStateProvider implements StateProvider
      * arguments, `icon` = chemin d'icône (windows_icon prioritaire, fallback
      * icon_path). Toujours des strings (jamais de float, §4.1).
      *
-     * **Story 27.7 — distinction nom nu / chemin réel (AC2, piège n° 3).**
+     * **Story 27.7 — distinction chemin réel / reste (AC2, piège n° 3).**
      * Le champ `icon` peut valoir un CHEMIN réel (`firefox.exe,0`,
-     * `%APPDATA%\x.ico` — posé tel quel) OU le NOM NU d'une icône UPLOADÉE
-     * (`Calculatrice` — pas un chemin, le `.ico` réel vit côté serveur). On
-     * reproduit la détection legacy `!preg_match('#[\\/.,%]#', $icon)`
-     * (pas de séparateur `\ / . , %` = nom nu — regex iso-legacy conservée).
-     * Si c'est un nom nu ET qu'un asset content-addressed existe en base
-     * (`icon_asset` non null) → on émet `{icon_asset, icon_checksum}` (PAS
-     * d'URL, décision n° 4 — l'agent dérive l'URL) à CÔTÉ de `icon` (champs
-     * ajoutés, forward-compatible). L'agent préfère l'asset local content-
-     * addressed ; faute d'asset téléchargé il retombe gracieusement (pas de
-     * « feuille blanche », jamais une icône cassée). Un nom nu SANS asset
+     * `%APPDATA%\x.ico` — posé tel quel, il prime), le NOM NU d'une icône
+     * UPLOADÉE (`Calculatrice` — le `.ico` réel vit côté serveur), ou RIEN.
+     * Seul le chemin réel est reconnu ({@see isRealIconPath()}, regex legacy
+     * `#[\\/.,%]#` conservée) ; dans les deux autres cas, un asset content-
+     * addressed en base (`icon_asset` non null) est émis en `{icon_asset,
+     * icon_checksum}` (PAS d'URL, décision n° 4 — l'agent dérive l'URL) à CÔTÉ
+     * de `icon` (champs ajoutés, forward-compatible). L'agent préfère l'asset
+     * local content-addressed ; faute d'asset téléchargé il retombe gracieusement
+     * (pas de « feuille blanche », jamais une icône cassée). Sans asset
      * backfillé (`icon_asset` null) → `icon` brut seul (ancien comportement,
      * jamais un asset cassé).
      *
@@ -438,7 +437,7 @@ final class ShortcutsStateProvider implements StateProvider
         // Icône UPLOADÉE (nom nu) backfillée en asset content-addressed : on
         // ajoute les champs asset. Lecture de colonnes pures (zéro hash/I/O au
         // render — invariant perf, piège n° 2).
-        if ($this->isBareIconName($icon)
+        if (! $this->isRealIconPath($icon)
             && $row->icon_asset !== null && $row->icon_asset !== ''
             && $row->icon_checksum !== null && $row->icon_checksum !== ''
         ) {
@@ -458,15 +457,22 @@ final class ShortcutsStateProvider implements StateProvider
     }
 
     /**
-     * Détecte un NOM NU d'icône uploadée (≠ chemin réel) — regex iso-legacy
-     * conservée : aucun séparateur de chemin/index
-     * (`\ / . , %`) ⇒ ce n'est pas un chemin, c'est le nom d'un raccourci dont
-     * l'icône a été uploadée côté serveur. Chaîne vide = pas un nom nu (pas
-     * d'icône). Story 27.7, AC2.
+     * Détecte un CHEMIN d'icône réel — regex iso-legacy conservée : un séparateur
+     * de chemin ou d'index (`\ / . , %`) ⇒ l'administrateur a désigné un fichier
+     * précis sur le poste (`firefox.exe,0`, `%APPDATA%\x.ico`), qui prime sur
+     * tout asset servi par SE5. Story 27.7, AC2.
+     *
+     * Tout le reste — nom nu d'icône uploadée (`Calculatrice`) comme chaîne VIDE
+     * — laisse l'asset content-addressed s'appliquer. Le vide est le cas des
+     * raccourcis dont le `.ico` n'a jamais eu de nom côté poste : celui du
+     * portail, et ceux qu'impose le contrat amont, dont l'icône arrive par le
+     * canal des binaires ({@see \App\Services\ControlHub\ArtifactPullService})
+     * sans jamais toucher `windows_icon`. Exiger un nom nu les privait de leur
+     * icône alors que `icon_asset` était renseigné et le `.ico` sur disque.
      */
-    private function isBareIconName(string $icon): bool
+    private function isRealIconPath(string $icon): bool
     {
-        return $icon !== '' && ! preg_match('#[\\\\/.,%]#', $icon);
+        return $icon !== '' && (bool) preg_match('#[\\\\/.,%]#', $icon);
     }
 
     /**
