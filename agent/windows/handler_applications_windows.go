@@ -345,6 +345,10 @@ func (o *applicationsOps) TriggerWpkg(specs []shared.ApplicationsSpec) (shared.W
 	//    (les recettes qui en dépendent échoueront côté poste, pas le run global).
 	o.stageSharedTools()
 
+	// 2ter. Garantir le point de dépôt des rapports AVANT le run (voir
+	//    ensureReportsLink). FAIL-SOFT au même titre que le staging des outils.
+	o.ensureReportsLink()
+
 	// 3. Garantir %SE4FS% (variable machine) pour le process déclenché + donner
 	//    l'URL du bundle au bootstrap (le client télécharge depuis Apache).
 	bundleURL := o.bundleURL()
@@ -545,6 +549,53 @@ func writeFileAtomicLocal(path string, data []byte) error {
 	renamed = true
 
 	return nil
+}
+
+// ensureReportsLink garantit `%WinDir%\rapports` → `\\<se4fs>\rapports`, le point
+// de dépôt où `wpkg-client.vbs` recopie `wpkg.log` et `wpkg.txt` en fin de run.
+//
+// Le chemin est EN DUR dans le client (`fso.CopyFile fLocal, "c:\windows\rapports\"
+// & ComputerName & ".log"`), et le lien n'était créé que par `wpkg.cmd` — que
+// l'agent ne lance pas, puisqu'il appelle le client directement. Sur un poste
+// piloté par l'agent, le lien n'existe donc jamais : le client échoue sa copie en
+// silence (`On Error Resume Next`), et le serveur n'a plus ni le log du moteur ni
+// le rapport `.txt` qu'ingère `wpkg:process-reports`. Le poste, lui, converge
+// normalement — d'où un trou de diagnostic invisible côté parc.
+//
+// On ne pose le lien que si la cible répond ET est un répertoire : `os.Symlink`
+// choisit le drapeau répertoire d'après un `Stat` de la cible, donc un partage
+// injoignable produirait un lien de FICHIER définitivement cassé. Partage muet =
+// on ne fait rien, nouvel essai au passage suivant (level-triggered).
+//
+// FAIL-SOFT : aucun échec ici n'empêche le déclenchement WPKG.
+func (o *applicationsOps) ensureReportsLink() {
+	winDir := os.Getenv("WinDir")
+	if winDir == "" {
+		winDir = `C:\Windows`
+	}
+	link := filepath.Join(winDir, "rapports")
+
+	// Lstat et non Stat : un lien déjà posé vers un partage momentanément muet
+	// doit compter comme présent, sinon on tenterait de le recréer à chaque run.
+	if _, err := os.Lstat(link); err == nil {
+		return
+	}
+
+	target := `\\` + o.resolveSe4fs() + `\rapports`
+	fi, err := os.Stat(target)
+	if err != nil || !fi.IsDir() {
+		o.logf("⚠ partage des rapports injoignable (%s) : %v — lien non posé, nouvel essai au prochain passage", target, err)
+
+		return
+	}
+
+	if err := os.Symlink(target, link); err != nil {
+		o.logf("⚠ création du lien %s → %s : %v (fail-soft) — les rapports WPKG resteront locaux", link, target, err)
+
+		return
+	}
+
+	o.logf("Point de dépôt des rapports WPKG posé : %s → %s", link, target)
 }
 
 // locateClientVbs : localise `wpkg-client.vbs` (copié en `%WinDir%` par

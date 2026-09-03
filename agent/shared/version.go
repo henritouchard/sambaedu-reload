@@ -586,7 +586,15 @@ package shared
 // `FROZEN_STATE_HASH` (PHP + Go) RÉGÉNÉRÉS sciemment (le golden gagne UN item
 // `folders` en portée `machine_user`).
 //
+// 2.16.1 = correctif terrain : l'agent pose `%WinDir%\rapports` →
+// `\\<se4fs>\rapports` avant de déclencher WPKG. Le client recopie ses rapports
+// vers un chemin EN DUR (`c:\windows\rapports\<POSTE>.{log,txt}`) dont le lien
+// n'était créé que par `wpkg.cmd` — que l'agent ne lance pas. Sur un poste piloté
+// par l'agent la copie échouait donc en silence : plus aucun log de moteur ni
+// rapport `.txt` sur le serveur, alors que le poste convergeait normalement. Aucun
+// changement de contrat wire.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.16.0"
+var Version = "2.16.1"
