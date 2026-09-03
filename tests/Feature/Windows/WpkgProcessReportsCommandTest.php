@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Windows;
 
+use App\Services\Windows\IngestionResult;
+use App\Services\Windows\WpkgReportIngestionService;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
  * Tests Feature : commande artisan wpkg:process-reports
  *
  * Couverture :
- *   - Rapport présent → POST appelé → fichier archivé
- *   - API retourne 304 → fichier archivé sans warning
- *   - API retourne 500 → fichier PAS archivé, warning loggé
+ *   - Rapport présent → ingéré → fichier archivé
+ *   - Rapport inchangé → fichier archivé sans warning
+ *   - Ingestion en échec → fichier PAS archivé, warning loggé
  *   - Répertoire vide → commande termine sans erreur
  *
- * Convention : Http::fake() pour simuler l'API locale.
+ * L'ingestion est appelée EN PROCESS : c'est le service qu'on double, pas une
+ * réponse HTTP. Le worker a POSTé sur sa propre API jusqu'à ce que `APP_URL` le
+ * fasse sortir par le réseau et revenir avec une IP non locale — 403 à chaque
+ * relevé. Doubler le transport laissait ce défaut invisible.
  */
 class WpkgProcessReportsCommandTest extends TestCase
 {
@@ -40,7 +44,6 @@ class WpkgProcessReportsCommandTest extends TestCase
 
         Config::set('sambaedu.wpkg.reports_inbox', $this->tmpDir);
         Config::set('sambaedu.wpkg.reports_archive', $this->archiveDir);
-        Config::set('app.url', 'http://127.0.0.1');
     }
 
     protected function tearDown(): void
@@ -80,26 +83,31 @@ class WpkgProcessReportsCommandTest extends TestCase
         return $path;
     }
 
+    /**
+     * Double l'ingestion : le verdict rendu par le service est le seul signal que
+     * la commande lit pour décider d'archiver ou de laisser le fichier en place.
+     */
+    private function fakeIngestion(IngestionResult $result): void
+    {
+        $this->mock(
+            WpkgReportIngestionService::class,
+            fn ($mock) => $mock->shouldReceive('ingest')->andReturn($result),
+        );
+    }
+
     // ─── Tests ───────────────────────────────────────────────────────────────
 
     /**
-     * AC #6 : Fichier rapport présent → POST appelé → fichier archivé.
+     * AC #6 : Fichier rapport présent → ingéré → fichier archivé.
      */
     public function test_valid_report_is_processed_and_archived(): void
     {
         $filePath = $this->createReportFile('PC-SALLE-01');
 
-        Http::fake([
-            '*/api/wpkg/reports/PC-SALLE-01' => Http::response(
-                ['status' => 'processed', 'packages_count' => 1],
-                200
-            ),
-        ]);
+        $this->fakeIngestion(IngestionResult::processed('PC-SALLE-01', 1));
 
         $this->artisan('wpkg:process-reports')
             ->assertExitCode(0);
-
-        Http::assertSent(fn($request) => str_contains($request->url(), 'wpkg/reports/PC-SALLE-01'));
 
         // Fichier original supprimé (archivé)
         $this->assertFileDoesNotExist($filePath);
@@ -110,18 +118,13 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : API retourne 200 unchanged → fichier archivé sans warning (Fix #10 : 304 → 200).
+     * AC #6 : verdict « inchangé » → fichier archivé sans warning.
      */
     public function test_unchanged_report_is_archived(): void
     {
         $filePath = $this->createReportFile('PC-SALLE-02');
 
-        Http::fake([
-            '*/api/wpkg/reports/PC-SALLE-02' => Http::response(
-                ['status' => 'unchanged', 'packages_count' => 0],
-                200
-            ),
-        ]);
+        $this->fakeIngestion(IngestionResult::unchanged('PC-SALLE-02'));
 
         $this->artisan('wpkg:process-reports')
             ->assertExitCode(0);
@@ -135,15 +138,13 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : API retourne 500 → fichier PAS archivé, warning loggé.
+     * AC #6 : ingestion en échec → fichier PAS archivé, warning loggé.
      */
     public function test_api_error_does_not_archive_file(): void
     {
         $filePath = $this->createReportFile('PC-SALLE-03');
 
-        Http::fake([
-            '*/api/wpkg/reports/PC-SALLE-03' => Http::response('Internal Server Error', 500),
-        ]);
+        $this->fakeIngestion(IngestionResult::parseFailed('PC-SALLE-03'));
 
         $this->artisan('wpkg:process-reports')
             ->assertExitCode(1); // FAILURE car erreur
@@ -200,13 +201,15 @@ class WpkgProcessReportsCommandTest extends TestCase
         // Forcer un mtime très récent (dans le futur proche = clairement < 10s)
         touch($filePath, time() + 5);
 
-        Http::fake(); // aucun appel ne doit être fait
+        // Un fichier encore en cours d'écriture ne doit atteindre l'ingestion
+        // sous aucun prétexte : on la rend explosive pour le prouver.
+        $this->mock(
+            WpkgReportIngestionService::class,
+            fn ($mock) => $mock->shouldNotReceive('ingest'),
+        );
 
         $this->artisan('wpkg:process-reports')
             ->assertExitCode(0);
-
-        // Aucun appel HTTP vers l'API (fichier ignoré)
-        Http::assertNothingSent();
 
         // Fichier toujours en place (non archivé)
         $this->assertFileExists($filePath);
@@ -220,10 +223,14 @@ class WpkgProcessReportsCommandTest extends TestCase
         $this->createReportFile('PC-OK');
         $this->createReportFile('PC-FAIL');
 
-        Http::fake([
-            '*/api/wpkg/reports/PC-OK'   => Http::response(['status' => 'processed', 'packages_count' => 2], 200),
-            '*/api/wpkg/reports/PC-FAIL' => Http::response('Error', 500),
-        ]);
+        $this->mock(
+            WpkgReportIngestionService::class,
+            fn ($mock) => $mock->shouldReceive('ingest')->andReturnUsing(
+                fn (string $hostname): IngestionResult => $hostname === 'PC-OK'
+                    ? IngestionResult::processed($hostname, 2)
+                    : IngestionResult::parseFailed($hostname),
+            ),
+        );
 
         $this->artisan('wpkg:process-reports')
             ->assertExitCode(1); // Au moins une erreur → FAILURE

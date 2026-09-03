@@ -4,34 +4,43 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\Windows\WpkgReportIngestionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Worker local : lit les fichiers rapport WPKG (.txt) et les POST vers l'API locale.
+ * Worker local : relève les rapports WPKG (.txt) déposés par les postes et les ingère.
  *
  * Signature : wpkg:process-reports {--path= : Override du chemin rapports}
  *
  * Comportement :
  *   1. Scan du répertoire (config('sambaedu.wpkg.reports_inbox') ou --path)
- *   2. Pour chaque fichier .txt → extrait hostname → POST vers /api/wpkg/reports/{hostname}
- *   3. Si 200 (traité ou inchangé d'après body JSON) → fichier archivé dans reports_archive/
- *   4. Si erreur → log + fichier laissé en place (retry au prochain run)
+ *   2. Pour chaque fichier .txt → extrait hostname → ingestion
+ *   3. Traité ou inchangé → fichier archivé dans reports_archive/
+ *   4. Erreur → log + fichier laissé en place (retry au prochain run)
  *   5. Log des compteurs : traités, inchangés, erreurs
  *
- * Architecture Phase 1 (cette story) :
- *   poste Windows → écrit HOSTNAME.txt sur SMB → ce worker lit → POST /api/wpkg/reports/{hostname}
+ * **L'ingestion est appelée EN PROCESS**, jamais par un aller-retour HTTP sur sa
+ * propre API. Le POST vers `/api/wpkg/reports/{hostname}` partait sur `APP_URL`,
+ * donc sortait par l'interface réseau et revenait avec l'IP de la machine comme
+ * `REMOTE_ADDR` : `EnsureLocalRequest` n'autorisant que la boucle locale, chaque
+ * relevé finissait en 403 et les rapports s'accumulaient sans qu'aucun poste ne
+ * remonte plus rien. Le détour ne servait à rien — la commande tourne dans la même
+ * application que le service.
  *
- * En Phase 2 : les postes POSTent directement (ce worker devient inutile).
+ * La route HTTP reste en place : c'est la surface prévue pour que les postes
+ * POSTent un jour directement, sans passer par le partage.
  */
 class WpkgProcessReportsCommand extends Command
 {
+    /** Borne dure d'un rapport relevé, iso la garde que portait le contrôleur HTTP. */
+    private const MAX_REPORT_BYTES = 2_000_000;
+
     protected $signature = 'wpkg:process-reports
         {--path= : Override du chemin du répertoire des rapports}';
 
-    protected $description = 'Traite les rapports WPKG (.txt) du partage SMB et les ingère via l\'API locale';
+    protected $description = 'Traite les rapports WPKG (.txt) du partage SMB et les ingère.';
 
     protected $help = <<<'HELP'
     Relève les comptes rendus d'installation déposés par les postes sur le partage,
@@ -51,6 +60,12 @@ class WpkgProcessReportsCommand extends Command
     regardez d'abord si les fichiers s'accumulent dans le répertoire de dépôt — c'est
     le signe que ce relevé ne tourne pas.
     HELP;
+
+    public function __construct(
+        private readonly WpkgReportIngestionService $ingestionService,
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -136,60 +151,77 @@ class WpkgProcessReportsCommand extends Command
     }
 
     /**
-     * Traite un fichier rapport : POST vers l'API locale.
+     * Traite un fichier rapport : ingestion en process.
+     *
+     * Reprend les gardes que portait le contrôleur HTTP et qui n'appartenaient pas
+     * au transport : rapport vide, taille bornée. Le poste inconnu, lui, est déjà
+     * le verdict `notFound` du service — le contrôleur ne le pré-testait que pour
+     * rendre un 404.
      *
      * @return string 'processed'|'unchanged'|'error'
      */
     private function processFile(string $filePath, string $hostname): string
     {
+        $size = @filesize($filePath);
+        if ($size !== false && $size > self::MAX_REPORT_BYTES) {
+            $this->warn("  ✗ {$hostname} — rapport trop volumineux ({$size} octets)");
+            Log::warning('wpkg:process-reports — rapport trop volumineux', [
+                'hostname' => $hostname,
+                'bytes' => $size,
+            ]);
+
+            return 'error';
+        }
+
         $content = @file_get_contents($filePath);
 
         if ($content === false) {
             $this->warn("Impossible de lire le fichier : {$filePath}");
             Log::warning('wpkg:process-reports — lecture impossible', ['file' => $filePath]);
+
             return 'error';
         }
 
-        $url = url("/api/wpkg/reports/{$hostname}");
+        if (trim($content) === '') {
+            $this->warn("  ✗ {$hostname} — rapport vide");
+            Log::warning('wpkg:process-reports — rapport vide', ['hostname' => $hostname]);
+
+            return 'error';
+        }
 
         try {
-            $response = Http::withHeaders(['Content-Type' => 'text/plain'])
-                ->timeout(30)
-                ->send('POST', $url, ['body' => $content]);
-
-            $status = $response->status();
-
-            if ($status === 200) {
-                $responseStatus = $response->json('status');
-
-                if ($responseStatus === 'unchanged') {
-                    $this->line("  = {$hostname} — inchangé (SHA identique)");
-                    Log::info('wpkg:process-reports — rapport inchangé', ['hostname' => $hostname]);
-                    return 'unchanged';
-                }
-
-                $this->line("  ✓ {$hostname} — traité ({$response->json('packages_count')} packages)");
-                Log::info('wpkg:process-reports — rapport traité', ['hostname' => $hostname]);
-                return 'processed';
-            }
-
-            // Tout autre code HTTP → erreur
-            $this->warn("  ✗ {$hostname} — HTTP {$status}");
-            Log::warning('wpkg:process-reports — erreur HTTP', [
-                'hostname' => $hostname,
-                'status'   => $status,
-                'body'     => $response->body(),
-            ]);
-            return 'error';
-
+            $result = $this->ingestionService->ingest($hostname, $content);
         } catch (\Throwable $e) {
             $this->warn("  ✗ {$hostname} — exception : {$e->getMessage()}");
             Log::error('wpkg:process-reports — exception', [
                 'hostname' => $hostname,
-                'error'    => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
+
             return 'error';
         }
+
+        if ($result->isUnchanged()) {
+            $this->line("  = {$hostname} — inchangé (SHA identique)");
+            Log::info('wpkg:process-reports — rapport inchangé', ['hostname' => $hostname]);
+
+            return 'unchanged';
+        }
+
+        if ($result->isProcessed()) {
+            $this->line("  ✓ {$hostname} — traité ({$result->packagesCount} packages)");
+            Log::info('wpkg:process-reports — rapport traité', ['hostname' => $hostname]);
+
+            return 'processed';
+        }
+
+        $this->warn("  ✗ {$hostname} — " . ($result->error ?? 'ingestion refusée'));
+        Log::warning('wpkg:process-reports — ingestion refusée', [
+            'hostname' => $hostname,
+            'error' => $result->error,
+        ]);
+
+        return 'error';
     }
 
     /**
