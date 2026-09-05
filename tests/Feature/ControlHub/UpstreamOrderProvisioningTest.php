@@ -241,6 +241,59 @@ class UpstreamOrderProvisioningTest extends TestCase
 
     // ── AC3 — idempotence / non-écrasement ───────────────────────────────────
 
+    /**
+     * Un paquet republié en amont change d'empreinte. Sans réalignement, la ligne
+     * matérialisée garde celle de sa création et la pose serveur compare la recette
+     * courante à une empreinte périmée : l'ordre est rejoué en échec à chaque ingestion.
+     */
+    #[Test]
+    public function a_managed_app_follows_its_catalog_when_the_upstream_recipe_changed(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $this->orderInstance($contract, 'firefox');
+        $this->catalogWithSource($contract, 'firefox', 'Mozilla Firefox', 'https://depot.example/firefox.xml', 'sha-v2');
+
+        $existing = Application::create([
+            'app_id' => 'firefox',
+            'name' => 'Mozilla Firefox',
+            'status' => ApplicationStatus::Error,
+            'xml_url' => 'https://depot.example/firefox.xml',
+            'xml_sha' => 'sha-v1',
+            'managed_by_control_hub' => true,
+        ]);
+
+        $this->provisioner()->provision();
+
+        $existing->refresh();
+        self::assertSame('sha-v2', $existing->xml_sha);
+        Queue::assertPushed(
+            InstallOrderedApplicationJob::class,
+            fn (InstallOrderedApplicationJob $job): bool => $job->applicationId === $existing->id,
+        );
+    }
+
+    #[Test]
+    public function a_local_application_keeps_its_recipe_reference(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $this->orderInstance($contract, 'firefox');
+        $this->catalogWithSource($contract, 'firefox', 'Mozilla Firefox', 'https://depot.example/firefox.xml', 'sha-amont');
+
+        $existing = Application::create([
+            'app_id' => 'firefox',
+            'name' => 'Firefox MAISON',
+            'status' => ApplicationStatus::Available,
+            'xml_url' => 'https://local/custom.xml',
+            'xml_sha' => 'sha-maison',
+        ]);
+
+        $this->provisioner()->provision();
+
+        $existing->refresh();
+        self::assertSame('https://local/custom.xml', $existing->xml_url);
+        self::assertSame('sha-maison', $existing->xml_sha);
+    }
+
     #[Test]
     public function a_preexisting_local_application_is_never_overwritten(): void
     {

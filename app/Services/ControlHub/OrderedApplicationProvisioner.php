@@ -91,21 +91,23 @@ class OrderedApplicationProvisioner
 
         foreach ($orderedAppIds as $appId) {
             try {
+                $catalogApp = $contract->catalogApps()
+                    ->where('app_key', $appId)
+                    ->first();
+
                 // Déjà en inventaire (matérialisée antérieurement ou app locale) : la
-                // ligne n'est pas touchée (AC3), mais la POSE SERVEUR reste due — c'est
-                // elle, et non la ligne d'inventaire, qui fait entrer la recette dans le
-                // catalogue projeté au poste.
+                // ligne n'est pas touchée (AC3), hormis la référence de recette d'une app
+                // d'origine amont. La POSE SERVEUR, elle, reste due — c'est elle, et non la
+                // ligne d'inventaire, qui fait entrer la recette dans le catalogue projeté
+                // au poste.
                 $existing = Application::query()->where('app_id', $appId)->first();
                 if ($existing !== null) {
                     $result->alreadyPresent++;
+                    $this->refreshSourceReference($existing, $catalogApp);
                     $this->dispatchServerInstall($existing, $result);
 
                     continue;
                 }
-
-                $catalogApp = $contract->catalogApps()
-                    ->where('app_key', $appId)
-                    ->first();
 
                 // AC6 — ordre sans entrée catalogue OU sans source : laissé non matérialisé,
                 // journalisé, SANS exception (31.2 retombe sur son skip+warn). Re-tentable.
@@ -151,6 +153,56 @@ class OrderedApplicationProvisioner
         }
 
         return $result;
+    }
+
+    /**
+     * Réaligne la référence de recette (`xml_url`/`xml_sha`) d'une application d'origine
+     * amont sur son entrée de catalogue.
+     *
+     * {@see AppStoreService::materializeFromSource()} ne pose cette référence qu'à la
+     * CRÉATION. Quand le paquet est republié en amont, le catalogue et le dépôt suivent
+     * mais la ligne d'inventaire garde l'empreinte du jour de sa matérialisation : la pose
+     * serveur tire alors la recette courante et la compare à une empreinte périmée. Le
+     * hash ne concorde jamais, et l'ordre est rejoué en échec à chaque ingestion sans
+     * pouvoir converger.
+     *
+     * Les deux colonnes forment UNE référence : elles sont réalignées ensemble, y compris
+     * vers un `xml_sha` nul si l'amont n'en déclare plus — état identique à celui qu'une
+     * matérialisation neuve produirait.
+     *
+     * Une application d'origine locale n'est jamais touchée (AC3) : seule celle que le
+     * contrat a matérialisée suit son catalogue.
+     */
+    private function refreshSourceReference(
+        Application $application,
+        ?ControlHubContractCatalogApp $catalogApp,
+    ): void {
+        if ($catalogApp === null || ! $application->managed_by_control_hub) {
+            return;
+        }
+
+        $sourceUrl = $catalogApp->source_xml_url;
+        if ($sourceUrl === null || $sourceUrl === '') {
+            return;
+        }
+
+        $sourceSha = $catalogApp->source_xml_sha;
+        if (
+            $application->xml_url === $sourceUrl
+            && strtolower((string) $application->xml_sha) === strtolower((string) $sourceSha)
+        ) {
+            return;
+        }
+
+        $application->update([
+            'xml_url' => $sourceUrl,
+            'xml_sha' => $sourceSha,
+        ]);
+
+        Log::info('agent.applications.source_reference_refreshed', [
+            'app_id' => $application->app_id,
+            'application_id' => $application->id,
+        ]);
     }
 
     /**
