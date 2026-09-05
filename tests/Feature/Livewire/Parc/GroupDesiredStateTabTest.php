@@ -76,10 +76,7 @@ class GroupDesiredStateTabTest extends TestCase
             ->assertSee('via profil ProfilBureautique')
             ->assertSee('7-Zip')
             ->assertSee('Socle commun')
-            ->assertSee('RaccourciParc')
-            // Review #6b — mention UI de l'écart : ordres amont ciblés par label
-            // poste-portés, non affichés sur la page du groupe.
-            ->assertSee('ciblés par label');
+            ->assertSee('RaccourciParc');
     }
 
     #[Test]
@@ -95,11 +92,9 @@ class GroupDesiredStateTabTest extends TestCase
 
         Livewire::test(self::COMPONENT, ['groupId' => $salle->id])
             ->assertOk()
-            ->assertSee('État cible de la salle')
             ->assertSee('Cette salle')
             ->assertSee('Room App')
-            ->assertDontSee('Ce parc')
-            ->assertDontSee('État cible du parc');
+            ->assertDontSee('Ce parc');
     }
 
     #[Test]

@@ -96,22 +96,6 @@ new #[Lazy] class extends Component {
      physique/logique du groupe (cohérent D6, badges room_self/group_self). --}}
 @php $isRoom = $this->group?->is_physical === true; @endphp
 <div class="space-y-6 mt-4">
-    <div class="alert alert-info shadow-sm">
-        <i class="fa-solid fa-circle-info"></i>
-        <div>
-            <p class="font-medium">État cible {{ $isRoom ? 'de la salle' : 'du parc' }}</p>
-            <p class="text-sm opacity-80">
-                La <strong>contribution de {{ $isRoom ? 'cette salle' : 'ce parc' }}</strong> à l'état cible de ses postes : raccourcis assignés,
-                applications apportées (directes ou via profils), plus les <strong>planchers</strong> hérités
-                (socle commun, contrat amont). Les réglages propres à chaque poste membre sont visibles sur
-                leur fiche.
-                {{-- Review #6b — écart assumé D4 rendu VISIBLE : les ordres amont
-                     ciblés par label sont poste-portés, pas affichés ici. --}}
-                Les ordres d'installation du contrat amont ciblés par label sont propres aux postes qui
-                portent ce label — consultez les fiches des postes concernés.
-            </p>
-        </div>
-    </div>
 
     {{-- ── Raccourcis ─────────────────────────────────────────────────────── --}}
     <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -139,7 +123,9 @@ new #[Lazy] class extends Component {
                                 <td class="text-xs opacity-70"><code class="break-all">{{ $row['detail'] }}</code></td>
                                 <td class="text-xs opacity-70">{{ $row['place_label'] }}</td>
                                 <td>
-                                    @include('pages.parc._partials.desired-state-origins', ['origins' => $row['origins']])
+                                    @include('pages.parc._partials.desired-state-origins', [
+                                        'origins' => $row['origins'],
+                                    ])
                                 </td>
                             </tr>
                         @empty
@@ -179,7 +165,9 @@ new #[Lazy] class extends Component {
                                 <td class="font-medium">{{ $row['label'] }}</td>
                                 <td class="text-xs opacity-70"><code>{{ $row['detail'] }}</code></td>
                                 <td>
-                                    @include('pages.parc._partials.desired-state-origins', ['origins' => $row['origins']])
+                                    @include('pages.parc._partials.desired-state-origins', [
+                                        'origins' => $row['origins'],
+                                    ])
                                 </td>
                             </tr>
                         @empty
