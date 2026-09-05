@@ -245,6 +245,94 @@ class ContractAssignmentReconcilerTest extends TestCase
         self::assertDatabaseCount('wallpapers', 0);
     }
 
+    // ── Fonds de verrouillage ────────────────────────────────────────────────
+
+    #[Test]
+    public function assigns_an_imposed_lockscreen_to_the_labeled_group(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $asset = WallpaperAsset::create([
+            'filename' => str_repeat('a1', 32).'.jpg',
+            'checksum' => str_repeat('a1', 32),
+            'byte_size' => 100,
+        ]);
+        $group = $this->labeledGroup('CDIX');
+
+        $this->item($contract, 'lockscreens', 'verrou-cdix', ['artifact_checksum' => str_repeat('a1', 32)])
+            ->update(['target_type' => 'label', 'target_label' => 'CDIX']);
+
+        $this->reconciler()->reconcile();
+
+        self::assertDatabaseHas('wallpapers', [
+            'owner_type' => WorkstationGroup::class,
+            'owner_id' => $group->id,
+            'type' => Wallpaper::TYPE_LOCKSCREEN,
+            'asset_id' => $asset->id,
+            'managed_by_control_hub' => true,
+        ]);
+    }
+
+    #[Test]
+    public function an_instance_wide_lockscreen_becomes_the_etab_default(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $asset = WallpaperAsset::create([
+            'filename' => str_repeat('b1', 32).'.jpg',
+            'checksum' => str_repeat('b1', 32),
+            'byte_size' => 100,
+        ]);
+
+        $this->item($contract, 'lockscreens', 'verrou-etab', ['artifact_checksum' => str_repeat('b1', 32)]);
+
+        $this->reconciler()->reconcile();
+
+        self::assertDatabaseHas('wallpapers', [
+            'owner_id' => null,
+            'type' => Wallpaper::TYPE_LOCKSCREEN,
+            'asset_id' => $asset->id,
+            'is_default' => true,
+        ]);
+    }
+
+    /**
+     * Les deux fonds vivent dans la même table : sans le filtre par `type`, poser
+     * l'un prunerait l'autre sur le même parc.
+     */
+    #[Test]
+    public function a_group_carries_its_wallpaper_and_its_lockscreen_at_once(): void
+    {
+        $contract = ControlHubContract::factory()->create();
+        $desktop = WallpaperAsset::create([
+            'filename' => str_repeat('c1', 32).'.jpg',
+            'checksum' => str_repeat('c1', 32),
+            'byte_size' => 100,
+        ]);
+        $lock = WallpaperAsset::create([
+            'filename' => str_repeat('d1', 32).'.jpg',
+            'checksum' => str_repeat('d1', 32),
+            'byte_size' => 100,
+        ]);
+        $group = $this->labeledGroup('CDIX');
+
+        $this->item($contract, 'wallpapers', 'fond-cdix', ['artifact_checksum' => str_repeat('c1', 32)])
+            ->update(['target_type' => 'label', 'target_label' => 'CDIX']);
+        $this->item($contract, 'lockscreens', 'verrou-cdix', ['artifact_checksum' => str_repeat('d1', 32)])
+            ->update(['target_type' => 'label', 'target_label' => 'CDIX']);
+
+        $this->reconciler()->reconcile();
+
+        self::assertDatabaseHas('wallpapers', [
+            'owner_id' => $group->id,
+            'type' => Wallpaper::TYPE_WALLPAPER,
+            'asset_id' => $desktop->id,
+        ]);
+        self::assertDatabaseHas('wallpapers', [
+            'owner_id' => $group->id,
+            'type' => Wallpaper::TYPE_LOCKSCREEN,
+            'asset_id' => $lock->id,
+        ]);
+    }
+
     // ── Le prune ne déborde jamais ───────────────────────────────────────────
 
     #[Test]

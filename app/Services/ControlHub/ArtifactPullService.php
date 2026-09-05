@@ -44,6 +44,13 @@ class ArtifactPullService
     private const ERROR_MAX = 500;
 
     /**
+     * Types dont le binaire est une image de la bibliothèque de fonds : même foyer
+     * (`wallpaper_assets`, content-adressé), même garde anti-bombe, même repose
+     * d'assignations après tirage. Seule l'assignation aval les distingue.
+     */
+    private const IMAGE_TYPES = ['wallpapers', 'lockscreens'];
+
+    /**
      * Extensions sûres autorisées pour un outil agent (dérivées, jamais du nom client brut).
      * Défaut `bin` si l'extension déclarée est hors liste (anti-traversal / anti-double-ext).
      */
@@ -54,7 +61,7 @@ class ArtifactPullService
      * localement (précédence) n'entraîne aucun téléchargement.
      *
      * @param  int          $itemId    id de l'item {@see ControlHubContractItem} à mettre à jour
-     * @param  string       $type      `wallpapers` | `agent_tools`
+     * @param  string       $type      `wallpapers` | `lockscreens` | `agent_tools`
      * @param  string       $key       clé fonctionnelle de l'item (identité par-clé des agent_tools)
      * @param  string       $url       URL SIGNÉE volatile (jamais persistée en colonne — AC5)
      * @param  string       $checksum  sha256 hex attendu (identité stable — base du no-op)
@@ -166,7 +173,7 @@ class ArtifactPullService
             // introduisant la classe de vuln « bombe pixel » corrigée dans WallpaperUploadService. On
             // valide donc EN LECTURE SEULE (getimagesize = en-têtes uniquement, pas de décompression
             // complète) le type réel avant matérialisation ; rejet propre sinon.
-            if ($type === 'wallpapers' && ! $this->pulledFileIsSafeImage($tmp)) {
+            if (in_array($type, self::IMAGE_TYPES, true) && ! $this->pulledFileIsSafeImage($tmp)) {
                 @unlink($tmp);
                 $this->markError($item, 'binaire wallpaper rejeté : contenu non reconnu comme image sûre');
 
@@ -178,7 +185,7 @@ class ArtifactPullService
             $byteSize = $byteSize === false ? $size : (int) $byteSize;
 
             match ($type) {
-                'wallpapers' => $this->materializeWallpaper($tmp, $destDir, $checksum, $byteSize),
+                'wallpapers', 'lockscreens' => $this->materializeWallpaper($tmp, $destDir, $checksum, $byteSize),
                 'agent_tools' => $this->materializeAgentTool($tmp, $destDir, $key, $checksum, $filename, $byteSize),
                 Shortcut::TYPE_SHORTCUTS => $this->materializeShortcutIcon($tmp, $destDir, $key, $checksum),
                 default => @unlink($tmp),
@@ -261,12 +268,12 @@ class ArtifactPullService
     }
 
     /**
-     * Précédence locale (identité par contenu pour les wallpapers, par clé pour les agent_tools).
+     * Précédence locale (identité par contenu pour les images, par clé pour les agent_tools).
      */
     private function presentLocally(string $type, string $key, string $checksum): bool
     {
         return match ($type) {
-            'wallpapers' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
+            'wallpapers', 'lockscreens' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
             'agent_tools' => AgentTool::query()->where('key', $key)->exists(),
             // L'icône est content-adressée sur disque : présente, il n'y a rien à tirer,
             // et c'est le réconciliateur de raccourcis qui recolle les colonnes.
@@ -281,7 +288,7 @@ class ArtifactPullService
     private function foyer(string $type): ?string
     {
         return match ($type) {
-            'wallpapers' => WallpaperAsset::libraryPath(),
+            'wallpapers', 'lockscreens' => WallpaperAsset::libraryPath(),
             'agent_tools' => rtrim((string) config('agent.tools_path'), '/\\'),
             Shortcut::TYPE_SHORTCUTS => app(ShortcutIconAssetService::class)->servedDir(),
             default => null,
@@ -456,7 +463,7 @@ class ArtifactPullService
      */
     private function reapplyAssignmentsAfterWallpaperPull(string $type, ControlHubContractItem $item): void
     {
-        if ($type !== 'wallpapers') {
+        if (! in_array($type, self::IMAGE_TYPES, true)) {
             return;
         }
 

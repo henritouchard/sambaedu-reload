@@ -64,7 +64,7 @@ Tous les agrégats sont des **listes** ; une liste absente vaut liste vide, donc
 
 | Champ               | Type     | Domaine / règle                                                            | Requis |
 | ------------------- | -------- | -------------------------------------------------------------------------- | ------ |
-| `type`              | string   | vocabulaire d'entité amont (`capabilities`, `wallpapers`, `applications`, `shortcuts`, `agent_tools`, …) | oui |
+| `type`              | string   | vocabulaire d'entité amont (`capabilities`, `wallpapers`, `lockscreens`, `applications`, `shortcuts`, `agent_tools`, …) | oui |
 | `key`               | string   | clé de l'item (identifiant de capacité, `app_id`, clé de raccourci…)       | oui    |
 | `value`             | string?  | valeur ; sémantique selon `type` ; `null` = absence explicite              | non    |
 | `enforcement_state` | enum     | `locked` \| `permissive` \| `absent`                                       | oui    |
@@ -133,6 +133,7 @@ un item ciblant l'`instance` devient un **défaut d'établissement**.
 | `shortcuts`    | assigné à chaque parc porteur                 | défaut de parc (tous les postes)        |
 | `capabilities` | valeur surchargée sur chaque parc porteur     | déplace le **défaut diffusé** de la capacité |
 | `wallpapers`   | fond du parc porteur                          | fond par défaut de l'établissement      |
+| `lockscreens`  | fond de VERROUILLAGE du parc porteur          | fond de verrouillage par défaut de l'établissement |
 | `registry`     | appliqué par le compilé d'état (pas d'écriture d'assignation) | idem |
 | `agent_tools`  | binaire tiré en bibliothèque ; pas d'assignation | idem |
 
@@ -140,9 +141,19 @@ un item ciblant l'`instance` devient un **défaut d'établissement**.
 `onedrive_hidden`), et `value` une valeur de son domaine (`on`/`off` pour un booléen).
 Une clé inconnue n'est jamais appliquée en silence.
 
-**`wallpapers`** : l'assignation exige que l'image ait été **tirée** au préalable
-(bloc `artifact`, §3.1.4). Tant qu'elle ne l'est pas, le fond n'est pas posé — la
-réception suivante, ou `php artisan controlhub:apply-assignments`, le rattrape.
+**`wallpapers` et `lockscreens`** : l'assignation exige que l'image ait été **tirée**
+au préalable (bloc `artifact`, §3.1.4). Tant qu'elle ne l'est pas, le fond n'est pas
+posé — la réception suivante, ou `php artisan controlhub:apply-assignments`, le rattrape.
+
+Les deux types sont **jumeaux et indépendants** : même bibliothèque d'images côté SE5
+(dédup par checksum — une image servant aux deux n'est tirée qu'une fois), même bloc
+`artifact`, même sémantique de cible. Ils s'écrivent dans deux lignes distinctes
+(`wallpapers.type` = `wallpaper` / `lockscreen`), donc un même parc — ou l'établissement
+— peut porter les deux à la fois, et retirer l'un ne touche jamais l'autre.
+
+Le fond de verrouillage est posé **machine-wide** sur le poste (il s'affiche avant
+toute ouverture de session) : un ciblage par utilisateur ou groupe d'utilisateurs n'a
+pas de sens pour lui, et le contrat ne l'expose pas.
 
 > **Ce qui n'est jamais défait.** Le contrat retire ce qu'il a lui-même posé, et
 > **rien d'autre** : une assignation faite à la main par l'administrateur survit à une
@@ -169,8 +180,8 @@ Le champ `detail` porte le motif en clair. Cas typiques :
 | ----------------------------------------------------------------- | --------- |
 | Aucun parc ne porte le label ciblé                                 | `pending` |
 | Application ordonnée absente de l'inventaire local                 | `pending` |
-| Image d'un fond déclarée mais pas encore tirée                     | `pending` |
-| Fond d'écran **sans bloc `artifact`**                              | `error`   |
+| Image d'un fond (bureau ou verrouillage) déclarée mais pas encore tirée | `pending` |
+| Fond (bureau ou verrouillage) **sans bloc `artifact`**             | `error`   |
 | Raccourci **sans cible** (ni `spec.windows_link` ni `value`)       | `error`   |
 | Clé de capacité inconnue du catalogue SE5                          | `error`   |
 | Échec du pull d'un binaire (sha256 non concordant, réseau)         | `error`   |
@@ -183,7 +194,7 @@ la règle antérieure : `locked` → `applied`.
 
 #### 3.1.4 Le bloc `artifact` — pull des binaires imposés
 
-Significatif pour `type ∈ {wallpapers, agent_tools, shortcuts}`.
+Significatif pour `type ∈ {wallpapers, lockscreens, agent_tools, shortcuts}`.
 
 | Sous-champ | Type   | Rôle                                                                 |
 | ---------- | ------ | -------------------------------------------------------------------- |

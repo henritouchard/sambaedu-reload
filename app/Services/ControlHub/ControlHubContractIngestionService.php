@@ -284,12 +284,13 @@ class ControlHubContractIngestionService
     /**
      * Story 39.4 (AC8) — Déclenche le pull ASYNCHRONE des binaires imposés, APRÈS le commit de
      * l'ingestion (hors transaction, uniquement sur mutation). Seuls les items
-     * `type ∈ {wallpapers, agent_tools}` porteurs d'un `artifact` complet (checksum + url non vides)
-     * sont candidats.
+     * `type ∈ {wallpapers, lockscreens, agent_tools}` porteurs d'un `artifact` complet (checksum + url
+     * non vides) sont candidats.
      *
      * **Précédence locale stricte** (le pull COMBLE l'absence, ne REMPLACE jamais une source locale) :
-     *  - `wallpapers`  : présent si un {@see WallpaperAsset} existe pour ce `checksum` (identité par
-     *    contenu, cohérente avec la bibliothèque content-addressée) ;
+     *  - `wallpapers` / `lockscreens` : présent si un {@see WallpaperAsset} existe pour ce `checksum`
+     *    (identité par contenu, cohérente avec la bibliothèque content-addressée — les deux types
+     *    puisent dans la MÊME bibliothèque d'images, seule l'assignation aval diffère) ;
      *  - `agent_tools` : présent si un {@see AgentTool} existe pour cette `key` (identité par clé
      *    fonctionnelle, mono-version, cohérente avec `AgentToolService::registerEmbedded()`).
      *
@@ -301,7 +302,7 @@ class ControlHubContractIngestionService
      */
     private function dispatchArtifactPulls(int $contractId, array $items): void
     {
-        $pullableTypes = ['wallpapers', 'agent_tools', Shortcut::TYPE_SHORTCUTS];
+        $pullableTypes = ['wallpapers', 'lockscreens', 'agent_tools', Shortcut::TYPE_SHORTCUTS];
 
         foreach ($items as $row) {
             $type = (string) $row['key']['type'];
@@ -326,7 +327,7 @@ class ControlHubContractIngestionService
 
             // Précédence locale : le pull ne se déclenche QUE si l'asset est absent localement.
             $presentLocally = match ($type) {
-                'wallpapers' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
+                'wallpapers', 'lockscreens' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
                 'agent_tools' => AgentTool::query()->where('key', $itemKey)->exists(),
                 // Icône de raccourci : content-adressée sur disque, jamais en table.
                 Shortcut::TYPE_SHORTCUTS => is_file(

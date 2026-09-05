@@ -140,6 +140,24 @@ class ArtifactPullServiceTest extends TestCase
         $this->assertNull($item->pull_error);
     }
 
+    public function test_sha256_ok_materializes_lockscreen_in_the_wallpaper_library(): void
+    {
+        $body = $this->minimalPng();
+        $checksum = hash('sha256', $body);
+        Http::fake(['*' => Http::response($body, 200)]);
+
+        $item = $this->makeItem('lockscreens', 'ls_default', $checksum);
+
+        $this->service()->pull($item->id, 'lockscreens', 'ls_default', 'https://cdn.example/l?sig=1', $checksum, 'declared.png', strlen($body));
+
+        $this->assertFileExists($this->wallpaperDir . '/' . $checksum . '.jpg');
+        $this->assertDatabaseHas('wallpaper_assets', [
+            'checksum' => $checksum,
+            'filename' => $checksum . '.jpg',
+        ]);
+        $this->assertSame(ControlHubArtifactPullStatus::Downloaded, $item->refresh()->pull_status);
+    }
+
     public function test_sha256_ok_materializes_shortcut_icon_and_binds_it_to_its_shortcut(): void
     {
         $body = 'ICO-BYTES';
