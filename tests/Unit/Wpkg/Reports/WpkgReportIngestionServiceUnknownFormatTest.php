@@ -168,6 +168,35 @@ final class WpkgReportIngestionServiceUnknownFormatTest extends TestCase
     }
 
     #[Test]
+    public function query_all_packages_format_yields_one_status_per_package(): void
+    {
+        $w = Workstation::create(['name' => 'PC-QUERYALL-01', 'status' => 'active']);
+        $sevenZip = Application::create(['app_id' => '7za', 'name' => '7-Zip autonome']);
+        $firefox = Application::create(['app_id' => 'firefox', 'name' => 'Firefox ESR']);
+        $ccleaner = Application::create(['app_id' => 'ccleaner', 'name' => 'CCleaner 5']);
+
+        $reportContent = file_get_contents(base_path('tests/Fixtures/wpkg/reports/query-all-packages.txt'));
+        $this->assertNotFalse($reportContent);
+
+        /** @var WpkgReportIngestionService $svc */
+        $svc = app(WpkgReportIngestionService::class);
+        $result = $svc->ingest('PC-QUERYALL-01', $reportContent);
+
+        $this->assertTrue($result->isProcessed());
+        $this->assertSame(3, $result->packagesCount);
+
+        $rows = DB::table('workstation_application_status')
+            ->where('workstation_id', $w->id)
+            ->pluck('status', 'application_id');
+
+        $this->assertSame('installed', $rows[$sevenZip->id]);
+        $this->assertSame('installed', $rows[$firefox->id]);
+        $this->assertSame('not-installed', $rows[$ccleaner->id]);
+
+        $this->assertSame('10.0.0.60', $w->fresh()->ip);
+    }
+
+    #[Test]
     public function additional_fields_are_captured_in_details(): void
     {
         $w = Workstation::create(['name' => 'PC-EXT-01', 'status' => 'active']);

@@ -1,0 +1,24 @@
+03/09/2026 17:02:57 PC-QUERYALL-01 AA:BB:CC:DD:EE:FF (10.0.0.60 fe80::1/255.255.255.0/64) Windows 10 ProAll available packages (3):
+7-Zip autonome
+    ID:                7za
+    Revision:          442
+    Reboot:            false
+    Status:            Installed
+
+
+Firefox ESR
+    ID:                firefox
+    Revision:          140.10.1
+    Reboot:            false
+    Status:            Installed
+
+
+CCleaner 5
+    ID:                ccleaner
+    Revision:          5.60.0.7307
+    Reboot:            false
+    Status:            Not Installed
+
+
+
+Fin de WPKG !

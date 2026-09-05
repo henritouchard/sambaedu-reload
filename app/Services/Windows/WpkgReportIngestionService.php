@@ -151,6 +151,9 @@ class WpkgReportIngestionService
      * ---
      * ```
      *
+     * Le rapport réel du poste (`queryAllPackages`) n'émet pas de `---` et
+     * préfixe chaque bloc du nom du paquet — cf. {@see splitPackageBlocks()}.
+     *
      * Story 15.5 / AC2.3 : graceful unknown — si une ligne d'un bloc package
      * est inconnue, elle est conservée dans `_parser_warnings` (sentinelle
      * interne) sans bloquer l'ingestion.
@@ -185,16 +188,11 @@ class WpkgReportIngestionService
 
         $header['os'] = $this->detectOs($headerLine);
 
-        $rawBlocks = explode('---', implode("\n", array_slice($lines, 1)));
+        $rawBlocks = $this->splitPackageBlocks(array_slice($lines, 1));
         $packages = [];
         $warnings = [];
 
         foreach ($rawBlocks as $block) {
-            $block = trim($block);
-            if (empty($block)) {
-                continue;
-            }
-
             $pkg = $this->parsePackageBlock($block, $warnings);
             if ($pkg !== null) {
                 $packages[] = $pkg;
@@ -213,6 +211,68 @@ class WpkgReportIngestionService
         return $result;
     }
 
+    /**
+     * Découpe le corps du rapport en un bloc par paquet.
+     *
+     * Le séparateur `---` ne borne que les rapports de test : `queryAllPackages()`
+     * (`resources/wpkg/wpkg-se4.js`) sépare ses blocs par une ligne vide et
+     * préfixe chacun du nom du paquet. On borne donc sur la ligne `ID:`, seule
+     * présente dans les deux formats. Un découpage sur `---` seul repliait tout
+     * un rapport client en un bloc unique où chaque clé écrasait la précédente :
+     * seul le dernier paquet du rapport survivait.
+     *
+     * Une ligne sans `:` n'est jamais une donnée de paquet — c'est le nom qui
+     * annonce le bloc suivant, ou le pied de rapport. Elle est mise en attente :
+     * rattachée au bloc qu'ouvre le prochain `ID:`, refoulée dans le bloc courant
+     * si une clé arrive d'abord, jetée s'il n'y a plus rien après elle.
+     *
+     * @param  list<string>  $lines  corps du rapport, header exclu
+     * @return list<string>
+     */
+    private function splitPackageBlocks(array $lines): array
+    {
+        $blocks = [];
+        $current = [];
+        $pending = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '' || preg_match('/^[-=_*]+$/', $line) === 1) {
+                continue;
+            }
+
+            if (preg_match('/^ID\s*:/i', $line) === 1) {
+                if ($current !== []) {
+                    $blocks[] = implode("\n", $current);
+                }
+                $current = $pending;
+                $pending = [];
+                $current[] = $line;
+                continue;
+            }
+
+            if (! str_contains($line, ':')) {
+                $pending[] = $line;
+                continue;
+            }
+
+            if ($current === []) {
+                continue;
+            }
+
+            $current = array_merge($current, $pending);
+            $pending = [];
+            $current[] = $line;
+        }
+
+        if ($current !== []) {
+            $blocks[] = implode("\n", $current);
+        }
+
+        return $blocks;
+    }
+
     private function parseHeaderLine(string $line): array
     {
         $parts = preg_split('/\s+/', $line, -1, PREG_SPLIT_NO_EMPTY);
@@ -221,7 +281,8 @@ class WpkgReportIngestionService
             'date'        => ($parts[0] ?? '') . ' ' . ($parts[1] ?? ''),
             'hostname'    => $parts[2] ?? '',
             'mac_address' => $parts[3] ?? '',
-            'ip'          => isset($parts[4]) ? trim($parts[4], '[]') : null,
+            // Le rapport de test encadre l'IP de `[]`, le rapport client de `()`.
+            'ip'          => isset($parts[4]) ? trim($parts[4], '[]()') : null,
         ];
     }
 
@@ -244,6 +305,10 @@ class WpkgReportIngestionService
             }
 
             if (! str_contains($line, ':')) {
+                // Le format client ouvre chaque bloc par le nom du paquet.
+                if ($data === []) {
+                    continue;
+                }
                 $warnings[] = 'unknown_line:' . substr($line, 0, 80);
                 continue;
             }

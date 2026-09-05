@@ -25,6 +25,7 @@ use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\SyncRequestService;
 use App\Wpkg\Deployment\Generators\WorkstationIniGenerator;
 use App\Wpkg\Deployment\Services\WorkstationOptionsService;
+use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Gate;
@@ -823,6 +824,12 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         }
     }
 
+    /**
+     * Le rapport du poste inventorie TOUT le catalogue (`queryAllPackages`), pas
+     * son etat cible : une app jamais attribuee y figure forcement en
+     * `not-installed`. Seule une app attendue sur ce poste et absente est un
+     * echec de deploiement.
+     */
     public function getDeploymentStatusesProperty(): array
     {
         $statuses = WorkstationApplicationStatus::query()
@@ -830,9 +837,19 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             ->where('workstation_id', $this->workstation->id)
             ->get();
 
+        $targeted = app(WorkstationPackagesResolver::class)
+            ->resolve($this->workstation->name)
+            ->flip();
+
+        $isMissingTarget = function ($s) use ($targeted): bool {
+            $appId = $s->application?->app_id;
+
+            return $s->status === 'not-installed' && $appId !== null && $targeted->has($appId);
+        };
+
         return [
             'success'     => $statuses->filter(fn ($s) => $s->status === 'installed'),
-            'errors'      => $statuses->filter(fn ($s) => in_array($s->status, ['error', 'not-installed'])),
+            'errors'      => $statuses->filter(fn ($s) => $s->status === 'error' || $isMissingTarget($s)),
             'in_progress' => $statuses->filter(fn ($s) => in_array($s->status, ['upgrading', 'downgrading'])),
         ];
     }
