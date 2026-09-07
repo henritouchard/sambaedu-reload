@@ -11,16 +11,16 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Story 55.1 — Task 6.
+ * Task 6.
  *
  * `php artisan oidc:client:register "Nom" --redirect-uri=… [--extension=clé]`
  *
- * Déclare un client confidentiel au registre OIDC. En 55.1 c'est le SEUL canal
+ * Déclare un client confidentiel au registre OIDC. En c'est le SEUL canal
  * d'enregistrement : le provisioning automatique à l'installation d'une
- * extension de type `app` arrive avec l'Epic 56, et s'accrochera au même
+ * extension de type `app` viendra plus tard, et s'accrochera au même
  * {@see OidcClientRegistry::register()}.
  *
- * ⚠️ **Le secret n'est affiché qu'UNE FOIS** (NFR3). Il n'est stocké nulle part
+ * ⚠️ **Le secret n'est affiché qu'UNE FOIS.** Il n'est stocké nulle part
  * en clair et n'est pas ré-affichable : un secret perdu se remplace (révoquer +
  * réenregistrer), il ne se retrouve pas.
  *
@@ -70,7 +70,7 @@ class OidcClientRegister extends Command
         $extensionKey = $this->option('extension');
         $extensionKey = is_string($extensionKey) && $extensionKey !== '' ? $extensionKey : null;
 
-        // Story 56.4 — l'enregistrement MANUEL est un acte d'opérateur : le
+        // L'enregistrement MANUEL est un acte d'opérateur : le
         // défaut accorde tous les scopes à claims, ce qui préserve VERBATIM le
         // comportement observable des runbooks 55.x (le client déclaré à la
         // main servait un flux `openid profile groups` complet). Restreindre se

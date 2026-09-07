@@ -11,26 +11,26 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — Gestion des liaisons GPO ↔ OU (Story 16.5 / Volet 2).
- * Story 16.9 — déplacement sous `/admin/settings/gpo/{guid}/links`.
+ * Page Livewire SFC — Gestion des liaisons GPO ↔ OU (Volet 2).
+ * Déplacement sous `/admin/settings/gpo/{guid}/links`.
  *
- * Pattern strict iso-Story 16.2 (page détail) :
+ * Pattern strict iso- (page détail) :
  *  - filesystem-based router (`/admin/settings/gpo/{guid}/links`)
  *  - `boot(GpoService, OrganizationalUnitRepository)` DI Livewire
  *  - `mount(string $guid)` avec normalizeGuid + abort_unless permission
- *  - regex GUID tolérante (16.2 fix #9)
+ *  - regex GUID tolérante
  *
- * Sécurité (AC5.1 / AC5.2) :
+ * Sécurité :
  *  - middleware `can:server.admin` côté route
  *  - re-check permission dans `mount()` (defense in depth)
  *  - GUID malformé → 404 SANS appel `samba-tool`
  *  - validation regex GUID + DN AVANT toute action write (déléguée à
- *    `GpoService::assertValidGuid()` / `assertValidContainerDn()`)
+ *  `GpoService::assertValidGuid()` / `assertValidContainerDn()`)
  *
  * UX :
  *  - 4 actions par lien : toggle disabled / toggle enforced / réordonner / délier
  *  - 1 action par OU : toggle inheritance
- *  - Modales `<x-molecules.modal>` pour TOUTE confirmation write AD (D6)
+ *  - Modales `<x-molecules.modal>` pour TOUTE confirmation write AD
  *  - Toasts via `WithToasts` (CLAUDE.md)
  *  - Loading state Livewire (wire:loading) sur les actions lentes (reorderLinks
  *    peut prendre 2-3s).
@@ -38,8 +38,7 @@ use Livewire\Component;
 new #[Title('Liaisons GPO - SE4FS')] class extends Component {
     use WithToasts;
 
-    // --- Propriétés persistées ---
-    // Story 16.5 review #7 : `#[Locked]` interdit toute mutation client-side
+    // `#[Locked]` interdit toute mutation client-side
     // de propriétés sensibles (audit trail / bypass de modale). Les méthodes
     // serveur peuvent toujours muter ces propriétés (Locked = client-side only).
     #[Locked]
@@ -56,7 +55,6 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
     /** @var array<string, int> DN → count workstations */
     public array $workstationCountByOu = [];
 
-    // --- État modale ---
     public bool $isModalOpen = false;
     /** Type d'action en attente de confirmation (add, remove, toggleDisabled, toggleEnforced, moveUp, moveDown, toggleInheritance). */
     #[Locked]
@@ -69,11 +67,9 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
     #[Locked]
     public string $pendingActionMessage = '';
 
-    // --- Sélecteur OU dans modale d'ajout ---
     public string $selectedOuForAdd = '';
     public string $ouSearchQuery = '';
 
-    // --- Erreurs partielles ---
     public array $loadErrors = [];
 
     private GpoService $gpoService;
@@ -104,7 +100,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
 
     /**
      * Normalise un GUID au format Microsoft canonique avec accolades.
-     * Iso Story 16.2.
+     * Iso.
      */
     private function normalizeGuid(string $guid): ?string
     {
@@ -198,7 +194,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
             if ($dn === '' || $dn === null) {
                 continue;
             }
-            // Story 16.5 review #4 : échapper les wildcards SQL `%` et `_` dans
+            // Échapper les wildcards SQL `%` et `_` dans
             // le DN avant concaténation dans le pattern ILIKE/LIKE (sinon faux
             // matches sur DN exotiques). Le backslash doit être échappé EN
             // PREMIER pour éviter le double-échappement. On force `ESCAPE '\'`
@@ -226,10 +222,6 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         }
         return $out;
     }
-
-    // -------------------------------------------------------------------------
-    // Ouverture des modales de confirmation (D6 — toute action write confirmée)
-    // -------------------------------------------------------------------------
 
     public function openAddLinkModal(): void
     {
@@ -321,10 +313,6 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         $this->closeModal();
     }
 
-    // -------------------------------------------------------------------------
-    // Dispatcher de l'action confirmée
-    // -------------------------------------------------------------------------
-
     public function confirmPendingAction(): void
     {
         if ($this->pendingActionType === null) {
@@ -346,7 +334,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
             };
         } catch (\Throwable $e) {
             $this->toast('error', 'Échec de l\'opération', $e->getMessage());
-            // Story 16.5 review #2 : refresh même en cas d'échec — un toggle
+            // Refresh même en cas d'échec — un toggle
             // peut avoir réussi removeLink puis échoué setLink (avec rollback
             // best effort) ; on veut que l'UI reflète l'état AD réel.
             $this->loadAll();
@@ -363,7 +351,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         if ($dn === '') {
             throw new \RuntimeException('Aucune OU sélectionnée.');
         }
-        // Story 16.5 review #S2 : garde serveur "OU déjà liée". UI bloque déjà
+        // Garde serveur "OU déjà liée". L'UI bloque déjà
         // mais sans cette défense un client manipulant `selectedOuForAdd` via
         // DevTools pourrait provoquer un toast trompeur (setLink idempotent).
         if (in_array($dn, $this->containers, true)) {
@@ -386,7 +374,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         $initialDisabled = (bool) ($current['disabled'] ?? false);
 
         // Toggle disabled : dellink + setlink avec nouveau flag (T0.9 — safe path).
-        // Story 16.5 review #2 : si setLink échoue après removeLink réussi, on
+        // Si setLink échoue après removeLink réussi, on
         // tente un rollback (re-setLink avec flags initiaux) pour ne pas laisser
         // le lien disparu en AD. Pattern iso `GpoService::reorderLinks`.
         $this->gpoService->removeLink($ouDn, $this->guid);
@@ -431,7 +419,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         $initialDisabled = (bool) ($current['disabled'] ?? false);
         $initialEnforced = (bool) ($current['enforced'] ?? false);
 
-        // Story 16.5 review #2 : rollback en cas d'échec setLink après removeLink réussi.
+        // Rollback en cas d'échec setLink après removeLink réussi.
         $this->gpoService->removeLink($ouDn, $this->guid);
         try {
             $this->gpoService->setLink($ouDn, $this->guid, enforce: $newEnforced, disable: $initialDisabled);
@@ -502,10 +490,6 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
         }
         return null;
     }
-
-    // -------------------------------------------------------------------------
-    // Computed properties
-    // -------------------------------------------------------------------------
 
     /**
      * OUs candidates pour ajout (toutes les OUs hors celles déjà liées).
@@ -732,13 +716,13 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
 
     </div>
 
-    {{-- Modale de confirmation (D6) --}}
+    {{-- Modale de confirmation --}}
     <x-molecules.modal wire:model="isModalOpen" size="max-w-2xl" height="h-auto"
         :title="$pendingActionTitle ?: 'Confirmer'" icon="fa-shield-halved text-primary">
         <x-molecules.modal.section dense>
             <p class="text-sm">{{ $pendingActionMessage }}</p>
 
-            {{-- Sélecteur OU pour l'action "ajouter" (AC2.3) --}}
+            {{-- Sélecteur OU pour l'action "ajouter" --}}
             @if ($pendingActionType === 'add')
                 <div class="mt-3 space-y-2">
                     <label class="text-xs font-medium text-base-content/70 block">Filtrer</label>

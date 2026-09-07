@@ -7,16 +7,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.1 — AC4 (mode strict|default par règle, décision n° 2).
- *
  * Greffe la colonne `mode` sur `overlay_signals` : le toggle strict/default est
- * exposé DÈS 27.1 sur les 3 types (shortcuts + wallpaper + overlay). Le
+ * exposé DÈS sur les 3 types (shortcuts + wallpaper + overlay). Le
  * `OverlayStateProvider` lit désormais le mode de SA table au lieu de la
  * constante `StateMode::Strict`.
  *
  *  - `mode` VARCHAR(16) **NULL** — null = non déclaré, défaut résolu côté
  *    provider. ⚠️ Non-régression : le défaut historique de l'overlay était
- *    `StateMode::Strict` (constante `OverlayStateProvider::mode()`) ; le
+ *  `StateMode::Strict` (constante `OverlayStateProvider::mode()`) ; le
  *    provider continue de retourner `strict` quand la colonne est null.
  *    Le candidat synthétique `identity` (sans ligne en base) reste `strict`.
  *  - Varchar simple (compat SQLite tests, pas d'enum Postgres natif).

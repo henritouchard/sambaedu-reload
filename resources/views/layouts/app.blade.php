@@ -85,7 +85,7 @@
             { title: 'Configuration des applications Wine', description: 'Configurer Wine', url: '/gpo/wine.php' },
             { title: 'Sources Windows', description: 'Gérer les images Windows', url: '/ipxe/Win10/win_iso.php' }
         ],
-        // Story 57.4 / AR12 — la catégorie « Visioconférences » et ses trois
+        // AR12 — la catégorie « Visioconférences » et ses trois
         // liens en dur vers le BBB legacy ont été RETIRÉS : l'extension
         // « Visioconférences » (sambaedu-ext-bbb) en est le successeur intégral.
         // Elle n'est PAS remplacée par un lien vers /ext/bbb : la tuile du

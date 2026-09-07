@@ -12,7 +12,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC5.2 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/windows/unattend.xml`.
  */
@@ -98,11 +98,10 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
         $body = (string) $response->getContent();
         // PAS de UnattendedJoin.
         self::assertStringNotContainsString('Microsoft-Windows-UnattendedJoin', $body);
-        // Username perso.
         self::assertMatchesRegularExpression('@<Username>perso-user</Username>@', $body);
     }
 
-    // ── Story 23.3 — le ticket d'enrôlement naît à la génération (AC1/AC2) ──
+    // — le ticket d'enrôlement naît à la génération
 
     private function fetchUnattend(string $mac, string $uuid): string
     {
@@ -153,7 +152,7 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
     #[Test]
     public function it_revokes_existing_agent_token_on_reinstall(): void
     {
-        // AC2 — FR14 : réinstall = révocation immédiate, dès la génération.
+        // Réinstall = révocation immédiate, dès la génération.
         $this->seedWorkstation('aa:bb:cc:dd:ee:25', '12345678-1234-1234-1234-eeeeeeeeee25', 'pc-reinstall');
         $ws = Workstation::where('mac', 'aa:bb:cc:dd:ee:25')->firstOrFail();
         app(\App\Services\Agent\Enrollment\TokenRotationService::class)->issueFor($ws);
@@ -224,7 +223,7 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
     }
 
     /**
-     * Post-review code-review #1 (Critique) — l'URL OOBE post-installation
+     * L'URL OOBE post-installation
      * dans le template unattend.xml doit pointer vers le endpoint natif
      * `/ipxe/windows/action` (SE5), PAS vers `/ipxe/Win10/action.php` (legacy
      * PHP). En SE5-only, l'URL legacy tombe en 404 → tracker OOBE jamais
@@ -248,9 +247,9 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
     }
 
     /**
-     * Post-review code-review #N1 (Important) — l'OU AD du poste pour le join
-     * domain est lue depuis `Workstation::physicalRoom()->ad_dn` (alimenté par
-     * l'enrollment story 3-3) et NON parsée depuis `Workstation::ad_dn`.
+     * L'OU AD du poste pour le join domain est lue depuis
+     * `Workstation::physicalRoom()->ad_dn` (alimenté par l'enrôlement) et NON
+     * parsée depuis `Workstation::ad_dn`.
      *
      * Si le poste est rattaché à une salle physique qui a son `ad_dn` rempli,
      * le `<MachineObjectOU>` du unattend doit refléter exactement cette OU
@@ -272,7 +271,7 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
             'mac' => 'aa:bb:cc:dd:ee:09',
             'status' => 'active',
         ]);
-        // Story 4.11 — la salle (source de l'OU) vit dans le pivot global.
+        // La salle (source de l'OU) vit dans le pivot global.
         $ws->groups()->attach($room->id);
 
         $response = $this->get('/ipxe/windows/unattend.xml?mac=aa:bb:cc:dd:ee:09&uuid=12345678-1234-1234-1234-aaaabbbb0001&version=Win11&bios=uefi&perso=0');
@@ -293,7 +292,7 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
     }
 
     /**
-     * Post-review code-review #N1 — quand le poste n'a pas de `physical_room_id`
+     * Quand le poste n'a pas de `physical_room_id`
      * (jamais enrôlé) OU que la salle n'a pas encore son `ad_dn` synchronisé,
      * le fallback `config('sambaedu.computers_rdn')` est utilisé.
      */

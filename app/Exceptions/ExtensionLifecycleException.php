@@ -7,10 +7,10 @@ namespace App\Exceptions;
 use RuntimeException;
 
 /**
- * Story 54.2 (AC3) — Levée quand `ExtensionLifecycleService::integrate()` /
+ * Levée quand `ExtensionLifecycleService::integrate` /
  * `uninstall()` est appelé sur une cible qui ne peut PAS transiter :
  * identifiant inconnu, ou type ≠ `link` (fail-closed défensif — le moteur
- * d'installation `app` n'existe pas avant l'Epic 56).
+ * D'installation `app` n'existe pas avant l').
  *
  * Toujours attrapée par le SFC appelant → `toastError`, jamais une 500.
  */
@@ -28,21 +28,21 @@ final class ExtensionLifecycleException extends RuntimeException
     }
 
     /**
-     * Type non pris en charge par le cycle de vie 54.2 — seul `link` est
+     * Type non pris en charge par le cycle de vie — seul `link` est
      * intégrable/désinstallable aujourd'hui ; le type `app` arrive avec son
-     * vrai moteur d'installation en Epic 56.
+     * vrai moteur d'installation en.
      */
     public static function unsupportedType(string $typeValue): self
     {
         return new self(
-            "Type d'extension « {$typeValue} » non pris en charge par cette action — Epic 56."
+            "Type d'extension « {$typeValue} » non pris en charge par cette action."
         );
     }
 
     /**
-     * Story 56.1 (review #1) — L'extension existe et est `available`, mais sa
+     * L'extension existe et est `available`, mais sa
      * source ne la propose plus : source gelée par l'admin, ou dernier
-     * catalogue non vérifié (`error`). Le fail-closed NFR2 doit tenir même
+     * catalogue non vérifié (`error`). Le fail-closed doit tenir même
      * quand l'appel ne vient pas du rendu de la bibliothèque (appel Livewire
      * direct sur un identifiant connu, écran périmé, futur canal artisan).
      */

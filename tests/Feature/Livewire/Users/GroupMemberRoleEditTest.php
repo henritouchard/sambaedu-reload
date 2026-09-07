@@ -24,17 +24,17 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 42.3 — UI rôle d'arête éditable sur la page groupe.
+ * UI rôle d'arête éditable sur la page groupe.
  *
  * Couvre :
- *  - AC2/AC3 : édition UNITAIRE `updateMemberRole` (write pivot direct,
- *    validation/gardes D3/D7, double guard `update-group`)
- *  - AC4 : cohérence colonne ↔ badge PP (D2)
- *  - AC5 : rattachement avec défaut dérivé + surcharge en MASSE (contrat
- *    review 42.2 #4 — disableAdResync/enableAdResync + 1 resync explicite)
- *  - T4.3 : le canal unitaire déclenche EXACTEMENT une reprojection AD via
- *    l'observer pivot (42.2), le contrat masse en déclenche EXACTEMENT une
- *    aussi malgré K surcharges.
+ *  - l'édition UNITAIRE `updateMemberRole` (write pivot direct, validation et
+ *    gardes, double guard `update-group`) ;
+ *  - la cohérence colonne ↔ badge professeur principal ;
+ *  - le rattachement avec défaut dérivé + surcharge en MASSE
+ *    (disableAdResync/enableAdResync + 1 resync explicite) ;
+ *  - le canal unitaire déclenche EXACTEMENT une reprojection AD via l'observer
+ *    pivot, et le contrat de masse en déclenche EXACTEMENT une aussi, malgré
+ *    K surcharges.
  */
 class GroupMemberRoleEditTest extends TestCase
 {
@@ -87,11 +87,9 @@ class GroupMemberRoleEditTest extends TestCase
         UserGroupUserPivotObserver::enableAdResync();
         Mockery::close();
 
-
         $this->dropPermissionSchema();
         parent::tearDown();
     }
-
 
     private function makeAdmin(string $login = 'manager'): User
     {
@@ -139,7 +137,7 @@ class GroupMemberRoleEditTest extends TestCase
      * passthrough réel (SQL, zéro LDAP), `updateGroup` fake écrivant le pivot
      * au défaut dérivé pour les SEULS ids réellement nouveaux (pattern
      * `HeadTeacherSectionTest::bindFakeUserGroupService`), `resyncGroupAdProjection`
-     * avec l'expectation fournie (comptage — preuve du contrat masse 42.2 #4).
+     * avec l'expectation fournie (comptage — preuve du contrat de masse).
      */
     private function bindFakeUserGroupService(callable $configureResyncExpectation): UserGroupService
     {
@@ -182,19 +180,15 @@ class GroupMemberRoleEditTest extends TestCase
         return $mock;
     }
 
-    // =========================================================================
-    // AC2 — Édition unitaire : write pivot + gardes D3/D7
-    // =========================================================================
-
     #[Test]
     public function it_updates_member_role_and_persists_pivot(): void
     {
         $this->actingAs($this->makeAdmin());
         [$group, , , $eleve] = $this->makeClasse();
 
-        // Review 42.3 #1 — vrai canal Livewire (`->call()`) : le défaut de
-        // ré-rendu de la page classe (enfants SFC sans balise racine stable)
-        // est corrigé — plus de contournement par appel direct d'instance.
+        // On passe par le vrai canal Livewire (`->call`), pas par un appel
+        // direct d'instance : c'est au ré-rendu de la page classe qu'un enfant
+        // SFC sans balise racine stable casserait.
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->call('updateMemberRole', $eleve->id, UserGroupUserPivot::ROLE_MANAGER)
             ->assertOk();
@@ -211,8 +205,8 @@ class GroupMemberRoleEditTest extends TestCase
         $this->actingAs($this->makeAdmin());
         [$group, , , $eleve] = $this->makeClasse();
 
-        // Piège n°8 — valeur reçue NON constante : jamais de 500, y compris
-        // au ré-rendu du vrai canal (AC2, review 42.3 #2).
+        // Valeur reçue NON constante : jamais de 500, y compris au ré-rendu
+        // du vrai canal.
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->call('updateMemberRole', $eleve->id, 'superadmin')
             ->assertOk();
@@ -231,7 +225,7 @@ class GroupMemberRoleEditTest extends TestCase
         $prof = User::create(['login' => 'prof.projet', 'role' => 'prof', 'fullname' => 'Eve Projet', 'is_active' => true]);
         $group->users()->sync([$prof->id => ['role' => UserGroupUserPivot::ROLE_MANAGER]]);
 
-        // D3 — refus serveur même en payload forgé (l'UI ne propose owner que
+        // Refus serveur même en payload forgé (l'UI ne propose owner que
         // pour les classes).
         Livewire::test($this->componentPath(), ['id' => $group->id])
             ->call('updateMemberRole', $prof->id, UserGroupUserPivot::ROLE_OWNER)
@@ -259,8 +253,8 @@ class GroupMemberRoleEditTest extends TestCase
             $group->fresh()->users()->whereKey($prof->id)->first()->pivot->role
         );
 
-        // D2/D4 — le badge PP (lu sur `role === 'owner'`) suit immédiatement,
-        // aucune écriture PP parallèle (canal modale 4.15 intact).
+        // Le badge PP (lu sur `role === 'owner'`) suit immédiatement,
+        // aucune écriture PP parallèle (canal modale intact).
         $members = collect(
             Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members()
         )->keyBy('id');
@@ -297,10 +291,6 @@ class GroupMemberRoleEditTest extends TestCase
         $this->assertFalse($group->fresh()->users()->whereKey($outsider->id)->exists());
     }
 
-    // =========================================================================
-    // T4.3 — Resync unitaire EXACTEMENT une fois via l'observer (42.2 #4)
-    // =========================================================================
-
     #[Test]
     public function it_triggers_exactly_one_ad_resync_on_role_change(): void
     {
@@ -334,7 +324,7 @@ class GroupMemberRoleEditTest extends TestCase
 
         $this->bindFakeUserGroupService(function ($mock): void {
             // Pivot non dirty (même valeur) : AUCUN event `updated`, donc
-            // AUCUN appel resync (preuve du no-op silencieux, AC2).
+            // AUCUN appel resync (preuve du no-op silencieux).
             $mock->shouldReceive('resyncGroupAdProjection')->never();
         });
 
@@ -349,10 +339,6 @@ class GroupMemberRoleEditTest extends TestCase
             $group->fresh()->users()->whereKey($eleve->id)->first()->pivot->role
         );
     }
-
-    // =========================================================================
-    // AC5/T4.4 — Rattachement : défaut dérivé + surcharge + contrat masse
-    // =========================================================================
 
     #[Test]
     public function it_exposes_default_role_for_assignable_users(): void
@@ -417,7 +403,7 @@ class GroupMemberRoleEditTest extends TestCase
         $this->assertSame(UserGroupUserPivot::ROLE_MANAGER, $fresh[$eleveASurcharger->id]->pivot->role);
         // Défaut dérivé (pas de surcharge) pour l'autre nouveau membre.
         $this->assertSame(UserGroupUserPivot::ROLE_MANAGER, $fresh[$profSansSurcharge->id]->pivot->role);
-        // Arête PRÉEXISTANTE jamais réécrite par ce chemin (piège 42.1 #2).
+        // Arête PRÉEXISTANTE jamais réécrite par ce chemin.
         $this->assertSame(UserGroupUserPivot::ROLE_MANAGER, $fresh[$existingProf->id]->pivot->role);
     }
 

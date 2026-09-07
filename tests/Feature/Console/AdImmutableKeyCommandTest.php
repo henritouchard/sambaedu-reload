@@ -23,7 +23,7 @@ final class AdImmutableKeyCommandTest extends TestCase
     /**
      * ⚠️ Ce test doit prouver le MESSAGE, pas seulement le code de retour : la branche
      * « aucun compte trouvé » rend elle aussi `1`. Sans l'assertion sur le libellé, un
-     * `catch` remplacé par un `return FAILURE` sec passerait, et l'AC5 (« refus nommé,
+     * `catch` remplacé par un `return FAILURE` sec passerait, et l' (« refus nommé,
      * pas une trace ») serait violé sans que rien ne rougisse.
      */
     #[Test]

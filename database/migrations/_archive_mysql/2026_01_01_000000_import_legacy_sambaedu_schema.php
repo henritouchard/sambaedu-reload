@@ -16,7 +16,6 @@ return new class extends Migration {
         // Désactiver les vérifications de clés étrangères temporairement
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
-        // Table: applications
         DB::statement("CREATE TABLE IF NOT EXISTS `applications` (
             `id_app` int(11) NOT NULL AUTO_INCREMENT,
             `id_nom_app` varchar(255) NOT NULL,
@@ -38,7 +37,6 @@ return new class extends Migration {
             KEY `id_depot_2` (`id_depot`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='legacy'");
 
-        // Table: connexions_stat
         DB::statement("CREATE TABLE IF NOT EXISTS `connexions_stat` (
             `id_connexions_stat` int(11) NOT NULL AUTO_INCREMENT,
             `netbios_name` varchar(255) NOT NULL,
@@ -71,7 +69,6 @@ return new class extends Migration {
             UNIQUE KEY `netbios_name` (`netbios_name`,`date`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='legacy'");
 
-        // Table: dependance
         DB::statement("CREATE TABLE IF NOT EXISTS `dependance` (
             `id_dependance` int(11) NOT NULL AUTO_INCREMENT,
             `id_app` int(11) NOT NULL,
@@ -80,7 +77,6 @@ return new class extends Migration {
             UNIQUE KEY `id_app` (`id_app`,`id_app_requise`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='legacy'");
 
-        // Table: depot
         DB::statement("CREATE TABLE IF NOT EXISTS `depot` (
             `id_depot` int(11) NOT NULL AUTO_INCREMENT,
             `url_depot` varchar(255) NOT NULL,
@@ -91,7 +87,6 @@ return new class extends Migration {
             PRIMARY KEY (`id_depot`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='legacy'");
 
-        // Table: depot_applications
         DB::statement("CREATE TABLE IF NOT EXISTS `depot_applications` (
             `id_depot_applications` int(11) NOT NULL AUTO_INCREMENT,
             `id_nom_app` varchar(255) NOT NULL,
@@ -113,7 +108,6 @@ return new class extends Migration {
             KEY `id_depot_2` (`id_depot`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='legacy'");
 
-        // Table: journal_app
         DB::statement("CREATE TABLE IF NOT EXISTS `journal_app` (
             `id_journal_app` int(11) NOT NULL AUTO_INCREMENT,
             `id_app` int(11) NOT NULL,
@@ -146,7 +140,6 @@ return new class extends Migration {
             KEY `stoptime` (`stoptime`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='legacy'");
 
-        // Table: mise_en_forme
         DB::statement("CREATE TABLE IF NOT EXISTS `mise_en_forme` (
             `id_mef` int(11) NOT NULL AUTO_INCREMENT,
             `label_mef` varchar(25) NOT NULL,
@@ -213,7 +206,6 @@ return new class extends Migration {
             UNIQUE KEY `uuid_poste` (`uuid_poste`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci");
 
-        // Table: quotas
         DB::statement("CREATE TABLE IF NOT EXISTS `quotas` (
             `nom` varchar(255) DEFAULT NULL,
             `quotasoft` mediumint(9) DEFAULT NULL,

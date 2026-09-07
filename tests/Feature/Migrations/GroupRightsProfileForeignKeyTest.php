@@ -15,11 +15,11 @@ use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
- * Story 49.1 (AC1 / AC6) — le filet DB, sur le schéma RÉEL (migrations jouées).
+ * Le filet DB, sur le schéma RÉEL (migrations jouées).
  *
  * `user_groups.rights_profile_id` est une FK **nullable** vers `roles.id` en
  * `restrictOnDelete` : c'est la défense en profondeur SOUS la garde applicative
- * d'AC6. Un `Role::delete()` hors UI doit échouer plutôt que de retirer
+ * D'. Un `Role::delete` hors UI doit échouer plutôt que de retirer
  * silencieusement des droits à tout un parc.
  */
 class GroupRightsProfileForeignKeyTest extends TestCase

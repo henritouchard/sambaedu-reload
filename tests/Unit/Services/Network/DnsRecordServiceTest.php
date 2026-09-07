@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 8.4 — DDNS piloté par DHCP, level-triggered.
+ * DDNS piloté par DHCP, level-triggered.
  *
  * `samba-tool` est faké au niveau `Process` (et non du runner) pour couvrir
  * aussi la commande réellement construite : c'est le seul moyen de prouver
@@ -133,12 +133,10 @@ class DnsRecordServiceTest extends TestCase
         });
     }
 
-    // ── Le test pivot de la story ───────────────────────────────────────────
-
     /**
      * Renouvellement de bail (~toutes les 5 min et par poste) : l'état DNS est
      * déjà conforme → AUCUNE commande d'écriture ne doit partir. C'est le
-     * défaut legacy que la story corrige.
+     * défaut legacy corrigé par ce port.
      */
     #[Test]
     public function add_on_identical_state_writes_nothing(): void
@@ -165,7 +163,7 @@ class DnsRecordServiceTest extends TestCase
         $this->assertSame([], $this->writeCommands());
     }
 
-    // ── add ─────────────────────────────────────────────────────────────────
+    // add
 
     #[Test]
     public function add_creates_record_when_name_is_absent(): void
@@ -227,7 +225,7 @@ class DnsRecordServiceTest extends TestCase
         $this->assertFalse($outcome->isWrite());
     }
 
-    // ── delete ──────────────────────────────────────────────────────────────
+    // delete
 
     #[Test]
     public function delete_removes_matching_record_by_name(): void
@@ -286,7 +284,7 @@ class DnsRecordServiceTest extends TestCase
         $this->assertSame([], $this->writeCommands());
     }
 
-    // ── Garde-fous (AC3) ────────────────────────────────────────────────────
+    // Garde-fous
 
     /** @return list<array{0: string}> */
     public static function ignoredNameProvider(): array

@@ -19,25 +19,17 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
 /**
- * Story 3.1 — D5 / D7 / D10 / AC4.1 / AC4.2 / AC7.3.
- *
  * Orchestrateur de l'endpoint `GET|POST /ipxe/boot` :
  *
  *  1. Extrait `mac`/`uuid`/`product`/`ip` du `Request`.
  *  2. Détecte le **handshake** (mac et uuid vides) → préambule iPXE.
  *  3. Sinon → résolution via {@see WorkstationLocator}.
- *  4. Log structuré sur le channel `ipxe` (D7) avec **préfixes** sur les
- *     valeurs sensibles (6-8 chars max — D7 + AC7.3).
- *  5. Insert `MachineBootLog` avec `action='ipxe_boot'` (D5 — pas de nouvelle
- *     table). Audit T0.6 : `action` est varchar(20) sans CHECK constraint,
- *     `'ipxe_boot'` (9 chars) passe sans escalation.
- *  6. Rendu Blade via {@see IpxeMenuRenderer} + headers D10 (`text/plain`,
- *     `no-store`, `noindex`).
- *
- * **`resolveProgrammedAction()` placeholder** (AC4.2) : retourne toujours
- * `null` en 3.1. Sera enrichi par Story 3.2 qui lira les actions programmées
- * (install, clonage, etc.) depuis une table dédiée ou via les relations
- * `Workstation::appProfiles`/`Workstation::groups`.
+ *  4. Log structuré sur le channel `ipxe`, avec **préfixes** sur les valeurs
+ *     sensibles (6 à 8 caractères au plus).
+ *  5. Insert `MachineBootLog` avec `action='ipxe_boot'` — pas de nouvelle
+ *     table. La colonne `action` est un varchar(20) sans CHECK.
+ *  6. Rendu Blade via {@see IpxeMenuRenderer} + headers `text/plain`,
+ *     `no-store`, `noindex`.
  */
 final class IpxeService
 {
@@ -51,14 +43,14 @@ final class IpxeService
     }
 
     /**
-     * Story 4.10 — Helper d'autorisation iPXE.
+     * Helper d'autorisation iPXE.
      *
      * Cas d'usage : tous les endpoints sensibles (admin, maintenance,
      * action/*, installation-linux/windows, clonezilla-menu — et côté
      * enrollment via {@see IpxeEnrollmentOrchestrator}).
      *
      * Si l'auth échoue, on rend l'écran iPXE `auth_failed` (wrap safeRender,
-     * headers D10 préservés) et on retourne la Response prête à servir au
+     * headers préservés) et on retourne la Response prête à servir au
      * caller. Sinon retourne `null` et le caller continue son flow normal.
      */
     public function guard(Request $request, string $context): ?Response
@@ -93,7 +85,7 @@ final class IpxeService
         $ip = (string) ($request->ip() ?? '');
 
         // Cas handshake : MAC ou UUID manquant → préambule de re-paramétrage.
-        // Fix review #1 / Q1 Henri — parité iso-legacy stricte `boot.php:26` qui
+        // Parité iso-legacy stricte avec `boot.php:26`, qui
         // teste `empty($mac) || empty($uuid)`. La condition `||` (au lieu de
         // `&&`) garantit :
         //  - compatibilité firmware iPXE ancien qui ne pose pas toujours
@@ -104,7 +96,6 @@ final class IpxeService
         //    sinon sert un menu known du mauvais poste ;
         //  - mitigation usurpation MAC (spoof → menu known) — avec `||` il
         //    faut aussi connaître l'UUID exact ;
-        //  - conformité D4 « iso-legacy stricte ».
         if ($mac === '' || $uuid === '') {
             Log::channel($this->channel())->info('ipxe.boot.handshake', [
                 'action_type' => 'ipxe.boot.handshake',
@@ -121,9 +112,9 @@ final class IpxeService
             );
         }
 
-        // D7 — détection input malformé : MAC fournie mais format invalide
+        // Détection d'un input malformé : MAC fournie mais format invalide
         // après normalisation, ou UUID fourni mais vide après trim. Le caller
-        // continue quand même (parité legacy tolérante D4) — l'event sert
+        // continue quand même (parité legacy tolérante) — l'event sert
         // l'observabilité pour distinguer "poste inconnu" de "input corrompu".
         if ($mac !== '' && MacAddressNormalizer::normalize($mac) === null) {
             Log::channel($this->channel())->warning('ipxe.boot.invalid_input', [
@@ -228,8 +219,6 @@ final class IpxeService
     }
 
     /**
-     * Story 3.1 — D7 / D10 — fix review #2/#3.
-     *
      * Wrap un appel de rendu Blade dans un try/catch pour garantir que la
      * réponse HTTP reste **toujours** `text/plain` même en cas d'exception
      * (template manquant, variable mal typée, etc.). Sans cette protection,
@@ -237,16 +226,16 @@ final class IpxeService
      * bloque le firmware iPXE (poste figé au boot, pas de menu).
      *
      * En cas d'erreur : log structuré `ipxe.boot.render_error` (channel
-     * `ipxe`, niveau error, préfixes 6/8 chars D7) + fallback minimal iPXE
+     * `ipxe`, niveau error, préfixes 6/8 chars) + fallback minimal iPXE
      * qui affiche un message générique et exit (le firmware retentera au
      * prochain DHCP).
      *
-     * @param  callable():string  $render  Closure renvoyant le corps iPXE rendu.
+     * @param callable():string $render Closure renvoyant le corps iPXE rendu.
      * @param  IpxeMenuKind  $kind  Type de menu rendu (utilisé comme libellé log).
-     *                              Fix review #B3 / Q4 Henri — l'ancien
-     *                              paramètre `string` ouvrait la porte aux typos
-     *                              `'admin_handsahke'`. L'enum {@see IpxeMenuKind}
-     *                              est désormais source de vérité unique.
+     *                              L'enum {@see IpxeMenuKind} est la source
+     *                              de vérité unique de ces libellés : en `string`,
+     *                              une typo (`'admin_handsahke'`) passait
+     *                              inaperçue dans les logs.
      */
     private function safeRender(
         callable $render,
@@ -273,17 +262,17 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — AC3.1 — Orchestre la route native `GET|POST /ipxe/admin`.
+     * Orchestre la route native `GET|POST /ipxe/admin`.
      *
      * Flow :
      *
      *  1. Extrait `mac`/`uuid`/`product`/`ip`.
      *  2. Handshake si MAC ou UUID manquant (chainTarget=`'admin'`).
      *  3. Sinon résolution `WorkstationLocator` → menu admin (connu ou
-     *     dégradé D7 si poste inconnu).
+     *     dégradé si poste inconnu).
      *  4. Log structuré `ipxe.admin.menu_rendered` + insert `MachineBootLog`
      *     (`action='ipxe_admin'`).
-     *  5. Headers iso D10 (`text/plain`, `no-store`, `noindex`).
+     *  5. Headers `text/plain`, `no-store`, `noindex`.
      *  6. safeRender wrap — fallback minimal iPXE en cas d'exception
      *     template.
      */
@@ -310,7 +299,7 @@ final class IpxeService
             );
         }
 
-        // Story 4.10 — Auth iso-legacy (validatePassword AD + permission
+        // Auth iso-legacy (validatePassword AD + permission
         // Spatie `computer.install`). Refus → écran `auth_failed` + chain
         // back boot. Aucun leak de password (cf. IpxeAuthService).
         if (($denied = $this->guard($request, 'admin')) !== null) {
@@ -333,7 +322,7 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — AC3.2 — Orchestre la route native `GET|POST /ipxe/maintenance`.
+     * Orchestre la route native `GET|POST /ipxe/maintenance`.
      *
      * Flow identique à {@see handleAdmin()} mais :
      *
@@ -367,7 +356,7 @@ final class IpxeService
             );
         }
 
-        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        // Auth obligatoire (cf. handleAdmin).
         if (($denied = $this->guard($request, 'maintenance')) !== null) {
             return $denied;
         }
@@ -388,18 +377,18 @@ final class IpxeService
     }
 
     /**
-     * Story 3.7 — AC4.1 — Orchestre la route native
+     * Orchestre la route native
      * `GET|POST /ipxe/clonezilla-menu`.
      *
-     * Flow iso `handleMaintenance` (3.2) :
+     * Flow iso `handleMaintenance` :
      *
      *  1. Handshake si MAC/UUID manquant (chainTarget='clonezilla-menu').
      *  2. Résolution Workstation via {@see WorkstationLocator}.
-     *  3. Log handshake `ipxe.clonezilla.handshake` (D9 — pattern aligné
-     *     Epic 3 post-review #8 : `ipxe.<domain>.handshake`).
-     *  4. Rendu via {@see IpxeMenuRenderer::renderClonezillaMenu()} (AC4.2).
-     *  5. Log render `ipxe.clonezilla.menu_rendered` (pattern aligné Epic 3
-     *     post-review #8 : `ipxe.<domain>.menu_rendered`).
+     *  3. Log handshake `ipxe.clonezilla.handshake` (pattern
+     *     `ipxe.<domain>.handshake`).
+     *  4. Rendu via {@see IpxeMenuRenderer::renderClonezillaMenu}.
+     *  5. Log render `ipxe.clonezilla.menu_rendered` (pattern
+     *     `ipxe.<domain>.menu_rendered`).
      *  6. safeRender wrap.
      */
     public function handleClonezillaMenu(Request $request): Response
@@ -410,7 +399,6 @@ final class IpxeService
         $ip = (string) ($request->ip() ?? '');
 
         if ($mac === '' || $uuid === '') {
-            // Post-review #8 — pattern Epic 3 aligné : `ipxe.<domain>.handshake`.
             Log::channel($this->channel())->info('ipxe.clonezilla.handshake', [
                 'action_type' => 'ipxe.clonezilla.handshake',
                 'ip' => $ip,
@@ -426,13 +414,12 @@ final class IpxeService
             );
         }
 
-        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        // Auth obligatoire (cf. handleAdmin).
         if (($denied = $this->guard($request, 'clonezilla')) !== null) {
             return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);
-        // Post-review #8 — pattern Epic 3 aligné : `ipxe.<domain>.menu_rendered`
         // (iso `ipxe.admin.menu_rendered`, `ipxe.maintenance.menu_rendered`,
         // `ipxe.install_linux.menu_rendered`, `ipxe.install_windows.menu_rendered`).
         $this->logMenuRendered('ipxe.clonezilla.menu_rendered', $workstation, $mac, $uuid, $ip);
@@ -456,13 +443,12 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — AC3.3 — Orchestre la route native
+     * Orchestre la route native
      * `GET|POST /ipxe/action/{action}`.
      *
      * Flow :
      *
-     *  1. Validation enum whitelist `IpxeAdminAction::tryFrom($action)`
-     *     (D9) :
+     *  1. Validation enum whitelist `IpxeAdminAction::tryFrom($action)` :
      *     - `null` → log warning `ipxe.action.unknown_action` + `abort(404)`.
      *     - case  → continue.
      *  2. Handshake si MAC/UUID manquant (chainTarget=`'action/<value>'`).
@@ -481,7 +467,7 @@ final class IpxeService
         $product = (string) $request->input('product', '');
         $ip = (string) ($request->ip() ?? '');
 
-        // D9 — whitelist enum stricte.
+        // Whitelist enum stricte.
         $adminAction = IpxeAdminAction::tryFrom($action);
         if ($adminAction === null) {
             Log::channel($this->channel())->warning('ipxe.action.unknown_action', [
@@ -520,17 +506,17 @@ final class IpxeService
         }
 
         // Résolution du poste AVANT la garde (locate() est read-only, sans effet
-        // de bord) : elle sert la pré-autorisation par requête de réinstall (#1).
+        // de bord) : elle sert la pré-autorisation par requête de réinstall.
         $workstation = $this->locator->locate($mac, $uuid, $product);
 
-        // Fix review #1 (3.11) — pré-autorisation par requête de réinstallation
-        // active. Le chain automatique du menu `known` (bloc `:action`) chaine
+        // Pré-autorisation par requête de réinstallation active.
+        // Le chain automatique du menu `known` (bloc `:action`) chaine
         // vers `/ipxe/action/{action}` SANS credentials AD : sans dérogation, la
         // garde renverrait `auth_failed` et la feature ne se déclencherait
         // jamais. On autorise l'action SANS auth SI ET SEULEMENT SI le poste
         // porte une requête de réinstall ACTIVE dont `target_action` ===
         // l'action EXACTE demandée (l'armement via l'UI gardée `computer.install`
-        // EST l'artefact d'autorisation, D8). Best-effort DB : tout échec de
+        // EST l'artefact d'autorisation). Best-effort DB : tout échec de
         // résolution retombe sur la garde AD normale (sécurité par défaut =
         // fermé).
         if (! $this->isReinstallPreAuthorized($workstation, $adminAction)
@@ -547,7 +533,7 @@ final class IpxeService
             'action' => $adminAction->value,
         ]);
 
-        // Fix review #3 / Q1 Henri — log warning dédié pour `factory_reset`.
+        // Log warning dédié pour `factory_reset`.
         // Cette action écrase `sda1` via Clonezilla sans confirmation iPXE
         // (parité legacy `clz_rest_sda2_sur_sda1.php`). Un event warning
         // séparé permet à SIEM/observabilité de filtrer/alerter sur cette
@@ -562,9 +548,8 @@ final class IpxeService
             ]);
         }
 
-        // Story 3.7 — D11 / AC8.1-8.4 — utiliser bootLogAction() pour les actions
-        // 3.7 (clonezilla/gparted/hdt/memtest) afin d'obtenir des valeurs
-        // distinctes dans machine_boot_logs.action. Les actions 3.2-3.5 conservent
+        // `bootLogAction()` donne aux actions clonezilla/gparted/hdt/memtest des valeurs
+        // distinctes dans machine_boot_logs.action. Les autres actions conservent
         // 'ipxe_action' (pattern historique — pas de migration).
         $this->persistEndpointLog(
             $workstation,
@@ -583,19 +568,18 @@ final class IpxeService
     }
 
     /**
-     * Story 3.4 — D2 / AC4.1 — Orchestre la route native
-     * `GET|POST /ipxe/installation-linux`.
+     * Orchestre la route native `GET|POST /ipxe/installation-linux`.
      *
-     * Flow iso 3.2/3.3 :
+     * Flow iso :
      *
      *  1. Extrait `mac`/`uuid`/`product`/`ip`.
      *  2. Handshake si MAC/UUID manquant (chainTarget=`'installation-linux'`).
-     *  3. Résolution `WorkstationLocator`. Poste inconnu = menu erreur D7
+     *  3. Résolution `WorkstationLocator`. Poste inconnu = menu d'erreur
      *     (délégué au renderer `renderInstallationLinuxMenu` qui rend l'écran
      *     d'erreur si `$ws === null`).
      *  4. Log structuré `ipxe.install_linux.menu_rendered` + insert
      *     `MachineBootLog` (`action='ipxe_install_linux'`).
-     *  5. Headers iso D10 (`text/plain`, `no-store`, `noindex`).
+     *  5. Headers `text/plain`, `no-store`, `noindex`.
      *  6. safeRender wrap — fallback minimal iPXE en cas d'exception template.
      */
     public function handleInstallationLinuxMenu(Request $request): Response
@@ -621,7 +605,7 @@ final class IpxeService
             );
         }
 
-        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        // Auth obligatoire (cf. handleAdmin).
         if (($denied = $this->guard($request, 'install_linux')) !== null) {
             return $denied;
         }
@@ -642,18 +626,17 @@ final class IpxeService
     }
 
     /**
-     * Story 3.5 — D2 / AC4.1 — Orchestre la route native
-     * `GET|POST /ipxe/installation-windows`.
+     * Orchestre la route native `GET|POST /ipxe/installation-windows`.
      *
-     * Flow iso 3.4 `handleInstallationLinuxMenu()` :
+     * Flow iso `handleInstallationLinuxMenu()` :
      *
      *  1. Extrait `mac`/`uuid`/`product`/`ip`.
      *  2. Handshake si MAC/UUID manquant (chainTarget=`'installation-windows'`).
-     *  3. Résolution `WorkstationLocator`. Poste inconnu = menu erreur D7
+     *  3. Résolution `WorkstationLocator`. Poste inconnu = menu d'erreur
      *     (délégué au renderer qui rend l'écran d'erreur si `$ws === null`).
      *  4. Log structuré `ipxe.install_windows.menu_rendered` + insert
      *     `MachineBootLog` (`action='ipxe_install_win'`).
-     *  5. Headers iso D10 (`text/plain`, `no-store`, `noindex`).
+     *  5. Headers `text/plain`, `no-store`, `noindex`.
      *  6. safeRender wrap — fallback minimal iPXE en cas d'exception template.
      */
     public function handleInstallationWindowsMenu(Request $request): Response
@@ -679,7 +662,7 @@ final class IpxeService
             );
         }
 
-        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        // Auth obligatoire (cf. handleAdmin).
         if (($denied = $this->guard($request, 'install_windows')) !== null) {
             return $denied;
         }
@@ -700,16 +683,16 @@ final class IpxeService
     }
 
     /**
-     * Fix review #1 (3.11) — Une action `/ipxe/action/{action}` est
-     * pré-autorisée SANS auth AD si et seulement si le poste résolu porte une
+     * Une action `/ipxe/action/{action}` est pré-autorisée SANS auth AD si et
+     * seulement si le poste résolu porte une
      * requête de réinstallation ACTIVE dont `target_action` correspond
      * EXACTEMENT à l'action demandée.
      *
      * Garde-fous stricts (« fermé par défaut ») :
      *  - poste inconnu (`null`) → jamais pré-autorisé (garde AD).
-     *  - poste `protected` (D10 niveau 3) → jamais pré-autorisé (de toute façon
+     *  - poste `protected` → jamais pré-autorisé (de toute façon
      *    `resolveProgrammedAction` aura déjà annulé la requête au boot).
-     *  - action hors whitelist install-only (D9) → jamais pré-autorisé. En
+     *  - action hors whitelist install-only → jamais pré-autorisé. En
      *    pratique `target_action` est toujours un `install_*` (validé à
      *    l'armement), donc l'égalité stricte exclut déjà `factory_reset`,
      *    `clonezilla_*`, `winpe`, etc. ; le check `isInstallOnly` est une
@@ -748,7 +731,7 @@ final class IpxeService
     }
 
     /**
-     * Story 3.11 — Résolution de la réinstallation OS armée depuis l'admin.
+     * Résolution de la réinstallation OS armée depuis l'admin.
      *
      * Lit la requête active du poste (table dédiée `workstation_reinstall_requests`,
      * distincte de `Workstation::programmed_action` réservé au post-install) et,
@@ -759,10 +742,10 @@ final class IpxeService
      *
      * Garde-fous (best-effort — un échec DB ne doit JAMAIS priver le poste de
      * menu, cf. wrapping `safeRender` du caller) :
-     *  - **D10 niveau 3** : poste `protected` → `cancel` de toute requête active
+     *  - poste `protected` → `cancel` de toute requête active
      *    + retourne `null` (filet de sécurité non-contournable, couvre la course
      *    « poste devenu protégé après armement »).
-     *  - **D5** : requête expirée (`expires_at < now`) ou plafond de serves
+     *  - requête expirée (`expires_at < now`) ou plafond de serves
      *    atteint → `markFailed` + `null` (le poste repasse en boot disque normal).
      *  - Sinon : incrémente les serves + `markServed` (armed → serving) et sert
      *    l'install.
@@ -773,7 +756,7 @@ final class IpxeService
     public function resolveProgrammedAction(Workstation $ws): ?array
     {
         try {
-            // D10 niveau 3 — un poste protégé ne se réinstalle jamais, même si
+            // Un poste protégé ne se réinstalle jamais, même si
             // une requête a été armée avant qu'il ne devienne `protected`.
             if ($ws->isProtected()) {
                 $active = $this->reinstallService->activeRequestFor($ws);
@@ -799,7 +782,7 @@ final class IpxeService
                 return null;
             }
 
-            // Fix review #2 — une planification future ne doit JAMAIS être servie
+            // Une planification future ne doit JAMAIS être servie
             // avant l'heure : on ne sert pas, on ne markFailed pas, on n'incrémente
             // pas boot_served_count (le poste repasse en boot disque normal jusqu'à
             // l'heure prévue). Filtre strictement local ici (pas dans
@@ -809,7 +792,7 @@ final class IpxeService
                 return null;
             }
 
-            // D5 — garde anti-boucle : TTL dépassé ou plafond de serves atteint.
+            // Garde anti-boucle : TTL dépassé ou plafond de serves atteint.
             if ($request->isExpired() || $request->hasExceededServeCap()) {
                 $this->reinstallService->markFailed($request);
                 Log::channel($this->channel())->warning('ipxe.reinstall.aborted', [
@@ -831,7 +814,7 @@ final class IpxeService
                 return null;
             }
 
-            // Comptabilise le serve (garde anti-boucle D5) : armed → serving.
+            // Comptabilise le serve (garde anti-boucle) : armed → serving.
             $this->reinstallService->markServed($request);
 
             return [
@@ -852,7 +835,7 @@ final class IpxeService
     }
 
     /**
-     * Insère une row `MachineBootLog` avec `action='ipxe_boot'` (D5).
+     * Insère une row `MachineBootLog` avec `action='ipxe_boot'`.
      *
      * Encapsule l'écriture en `try/catch` — un échec d'insert log ne doit
      * jamais bloquer la réponse iPXE (un poste qui boot ne doit pas être
@@ -886,14 +869,12 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — D11 / AC3.1 / AC3.2 / AC3.3.
-     *
-     * Insère une row `MachineBootLog` pour les endpoints 3.2 avec une
+     * Insère une row `MachineBootLog` pour les endpoints avec une
      * `action` extensible (`'ipxe_admin'`, `'ipxe_maintenance'`,
      * `'ipxe_action'`) et un `initiated_by` configurable (`'ipxe'` ou
      * `'ipxe:<action_value>'`).
      *
-     * Audit T0.6 : `action` est `varchar(20)` sans CHECK ; les 3 valeurs 3.2
+     * Audit T0.6 : `action` est `varchar(20)` sans CHECK ; les 3 valeurs
      * (10/16/11 chars) passent. `initiated_by` est `varchar(100)` ; la valeur
      * la plus longue (`ipxe:factory_reset`, 19 chars) passe sans risque.
      *
@@ -930,11 +911,11 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — D8 — Émet le log info `ipxe.admin.menu_rendered` ou
+     * Émet le log info `ipxe.admin.menu_rendered` ou
      * `ipxe.maintenance.menu_rendered` selon `$event`.
      *
-     * Préfixes obligatoires iso 3.1 AC7.3 (MAC 6 chars, UUID 8 chars, name
-     * 6 chars). Variant `known|unknown` selon résolution Workstation.
+     * Préfixes obligatoires (MAC 6 chars, UUID 8 chars, name 6 chars). Variant
+     * `known|unknown` selon la résolution Workstation.
      */
     private function logMenuRendered(
         string $event,
@@ -957,7 +938,7 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — D8 — Wrap le rendu d'une action whitelistée dans un
+     * Wrap le rendu d'une action whitelistée dans un
      * try/catch dédié qui émet l'event `ipxe.action.render_error` (au lieu
      * de `ipxe.boot.render_error` du wrap générique).
      */
@@ -987,7 +968,7 @@ final class IpxeService
     }
 
     /**
-     * Story 3.2 — D8 — Sanitize une action requested hors whitelist pour le
+     * Sanitize une action requested hors whitelist pour le
      * log warning `ipxe.action.unknown_action`. Tronque 32 chars + remplace
      * tout char non ASCII par `?` (parité {@see IpxeMenuRenderer::sanitizeAscii()}).
      */
@@ -1003,14 +984,14 @@ final class IpxeService
      * Émet un log info `ipxe.boot.known_workstation` ou
      * `ipxe.boot.unknown_workstation` selon le résultat de la résolution.
      *
-     * **Préfixes obligatoires** sur les valeurs sensibles (AC7.3) :
+     * **Préfixes obligatoires** sur les valeurs sensibles :
      *
      *  - MAC : 6 premiers chars (`xx:xx:`)
      *  - UUID : 8 premiers chars
      *  - Product : 8 premiers chars
      *  - Workstation name : 6 premiers chars
      *
-     * IP loggée en clair (LAN scolaire, parité 16.10 D13).
+     * IP loggée en clair (LAN scolaire, parité legacy).
      */
     private function logBootAttempt(
         ?Workstation $workstation,
@@ -1043,7 +1024,7 @@ final class IpxeService
     }
 
     /**
-     * Wrap la chaîne iPXE dans une Response HTTP avec les headers D10 :
+     * Wrap la chaîne iPXE dans une Response HTTP avec les headers :
      *
      *  - `Content-Type: text/plain; charset=utf-8`
      *  - `Cache-Control: no-store`
@@ -1080,7 +1061,7 @@ final class IpxeService
     }
 
     /**
-     * Channel Monolog dédié (D7).
+     * Channel Monolog dédié.
      */
     private function channel(): string
     {

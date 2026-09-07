@@ -16,7 +16,7 @@ use Tests\Unit\Services\Filesystem\Backend\Support\FakePropagatingBackend;
 use Tests\Unit\Services\Filesystem\Backend\Support\RootedClassPlan;
 
 /**
- * Story 60.3 — LES CINQ CONTRAINTES DU SONDAGE, une par une, contre un backend
+ * LES CINQ CONTRAINTES DU SONDAGE, une par une, contre un backend
  * qui se comporte comme le modèle MESURÉ.
  *
  * Le backend d'aperçu ne peut pas porter ces preuves : n'exécutant rien, il
@@ -26,10 +26,6 @@ use Tests\Unit\Services\Filesystem\Backend\Support\RootedClassPlan;
 class FakePropagatingBackendTest extends TestCase
 {
     use RootedClassPlan;
-
-    // =========================================================================
-    // Contrainte 1 — un statut PAR NŒUD, incluant « non exprimable »
-    // =========================================================================
 
     /**
      * Le dossier privé des enseignants n'est ni conforme, ni appliqué : l'octroi
@@ -81,10 +77,6 @@ class FakePropagatingBackendTest extends TestCase
         $this->assertSame(FileBackendOutcome::Applique, $report->for(PlanNode::ROOT_PATH)->outcome);
     }
 
-    // =========================================================================
-    // Contrainte 2 — la relecture BALAIE, racine comprise
-    // =========================================================================
-
     #[Test]
     public function inspect_sweeps_every_node_of_the_plan_including_the_root(): void
     {
@@ -98,10 +90,6 @@ class FakePropagatingBackendTest extends TestCase
         $this->assertNotNull($report->for(PlanNode::ROOT_PATH));
         $this->assertSame(FileBackendObservation::Observe, $report->for(PlanNode::ROOT_PATH)->status);
     }
-
-    // =========================================================================
-    // Contrainte 3 — l'idempotence est NORMALISÉE, les échecs ne le sont pas
-    // =========================================================================
 
     /**
      * Trois sémantiques natives différentes pour « c'était déjà fait », trois
@@ -170,10 +158,6 @@ class FakePropagatingBackendTest extends TestCase
         $this->assertCount(2, $report->failures());
     }
 
-    // =========================================================================
-    // Contrainte 4 — le plafond se DÉCLINE, et il dit laquelle de ses deux raisons
-    // =========================================================================
-
     #[Test]
     public function the_ceiling_is_declined_as_a_model_limit_never_as_a_failure(): void
     {
@@ -189,10 +173,6 @@ class FakePropagatingBackendTest extends TestCase
             $this->assertStringContainsString('par utilisateur', (string) $entry->detail);
         }
     }
-
-    // =========================================================================
-    // Contrainte 5 — la CLÔTURE traverse la ligne, et la fuite devient détectable
-    // =========================================================================
 
     /**
      * Tout ce qu'un backend à propagation doit savoir pour refermer est dans ce
@@ -215,7 +195,7 @@ class FakePropagatingBackendTest extends TestCase
     }
 
     /**
-     * LA PRÉFIGURATION de la comparaison de la story 60.4, écrite ici EN LIGNE :
+     * LA PRÉFIGURATION de la comparaison, écrite ici EN LIGNE :
      * on confronte l'observation d'un nœud à la clôture du plan et on retrouve la
      * fuite mesurée — un accès en lecture là où le plan n'a rien octroyé.
      *
@@ -281,10 +261,6 @@ class FakePropagatingBackendTest extends TestCase
             }
         }
     }
-
-    // =========================================================================
-    // La révocation ne détruit rien
-    // =========================================================================
 
     #[Test]
     public function deprovision_covers_every_node_and_says_the_data_stays(): void

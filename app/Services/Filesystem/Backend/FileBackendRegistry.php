@@ -13,27 +13,27 @@ use App\Services\Filesystem\Backend\Posix\PosixFileBackend;
 use Illuminate\Contracts\Container\Container;
 
 /**
- * Story 60.3 — RÉSOLUTION d'un backend par son nom.
+ * RÉSOLUTION d'un backend par son nom.
  *
  * Patron familier : on demande une autorité d'écriture par son nom, comme on
  * demande un disque de stockage par le sien — mais sans la bibliothèque de
  * fichiers derrière, qui n'abstrait pas les permissions et ne sert donc à rien ici.
  *
- * **La table des implémentations est du CODE, pas de la configuration** (D6). Un
+ * **La table des implémentations est du CODE, pas de la configuration.** Un
  * fichier de configuration qui associerait un nom à une classe laisserait croire
  * qu'ajouter un backend est un réglage ; c'est un chantier d'adaptateur, avec ses
  * mesures et ses tests. Le vocabulaire est fermé par une enum, la table est fermée
  * par cette constante.
  *
- * **Story 60.4 — `posix` RÉPOND.** La story 60.3 laissait ce nom sans
+ * **`posix` RÉPOND.** La laissait ce nom sans
  * implémentation : la valeur de colonne était légitime (tous les répertoires
  * existants sont servis par le serveur de fichiers historique), mais rien
- * n'exécutait derrière, et le demander levait une exception nommant la story à
- * venir. La descente de l'exécution sous la ligne de contrat est faite : la table
+ * n'exécutait derrière, et le demander levait une exception nommant ce qui
+ * manquait. La descente de l'exécution sous la ligne de contrat est faite : la table
  * porte l'implémentation, et le test qui épinglait le refus est RETOURNÉ.
  *
  * Un nom sans implémentation reste un échec EXPLICITE, jamais un repli : c'est ce
- * qui attend les backends de l'Epic 61 tant qu'ils ne sont pas écrits.
+ * qui attend les backends restants tant qu'ils ne sont pas écrits.
  */
 final class FileBackendRegistry
 {
@@ -45,7 +45,7 @@ final class FileBackendRegistry
     private const IMPLEMENTATIONS = [
         'posix' => PosixFileBackend::class,
         'preview' => PreviewBackend::class,
-        // Story 61.3 — le SECOND backend réel. Depuis qu'il existe, l'invariant
+        // Le SECOND backend réel. Depuis qu'il existe, l'invariant
         // épinglé n'est plus « aucun backend distant » (un état daté) mais
         // « aucune case sans implémentation » (la propriété permanente) :
         // {@see \Tests\Unit\Enums\FileBackendVocabularyTest}.

@@ -10,13 +10,13 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 5.2 — Section "Partage de classe" Livewire de la fiche groupe
+ * Section "Partage de classe" Livewire de la fiche groupe
  * `/app/users/groups/[id]`.
  *
- * Pattern aligné sur `_partials/group-quota-section.blade.php` 5.1c :
+ * Pattern aligné sur `_partials/group-quota-section.blade.php` :
  *  - Component SFC anonyme via `new class extends Component`.
  *  - Double guard `manage-share` (UI `@can` + serveur `Gate::authorize`).
- *  - Toasts `WithToasts` génériques (pas `$e->getMessage()` — leçon 5.1b #4).
+ *  - Toasts `WithToasts` génériques (jamais `$e->getMessage()`).
  *  - Section affichée UNIQUEMENT si `$group->type === 'classe'` — un payload
  *    Livewire forgé avec un groupId non-classe est rejeté en mount via abort.
  *
@@ -25,10 +25,10 @@ use Livewire\Component;
  *  - Lecture cachée 60s pour éviter de spammer `getfacl` à chaque render.
  *
  * Actions :
- *  - `createShare()`     : (re-)applique les ACLs canoniques (idempotent).
- *  - `reapplyAcls()`     : alias `createShare()` — UX bouton plus clair quand
+ *  - `createShare()` : (re-)applique les ACLs canoniques (idempotent).
+ *  - `reapplyAcls()` : alias `createShare()` — UX bouton plus clair quand
  *                          le partage existe déjà.
- *  - `toggleEchange()`   : switch ACL `_echange` ↔ ---.
+ *  - `toggleEchange()` : switch ACL `_echange` ↔ ---.
  */
 new class extends Component {
     use WithToasts;
@@ -103,14 +103,10 @@ new class extends Component {
     private function bustCache(): void
     {
         Cache::forget('share-status:' . $this->groupId);
-        // Review 5.2 #6 — invalide aussi la mémoïsation du UserGroup pour
+        // Invalide aussi la mémoïsation du UserGroup pour
         // refléter d'éventuels changements (rename, type, etc.) post-action.
         $this->cachedGroup = null;
     }
-
-    // =========================================================================
-    // ACTIONS — toutes commencent par `Gate::authorize('manage-share', $group)`.
-    // =========================================================================
 
     public function createShare(): void
     {
@@ -151,7 +147,7 @@ new class extends Component {
 
         $this->isLoading = true;
         try {
-            // Si l'état est inconnu, on assume "activer" par défaut (D6=A).
+            // Si l'état est inconnu, on assume "activer" par défaut.
             $newState = ! ($this->echangeActive ?? false);
             $ok = $this->shareService->toggleEchange($group, active: $newState);
             if ($ok) {
@@ -177,7 +173,7 @@ new class extends Component {
 
     public function refresh(): void
     {
-        // Review 5.2 #16 — cohérence pattern double-guard : on ajoute
+        // Cohérence du pattern double-guard : on ajoute
         // `Gate::authorize('viewAny-share')` même si `refreshState()` exit
         // early sur non-classe et que la lecture FS est sans side-effect.
         // L'objectif est uniquement la cohérence : pas de méthode publique
@@ -202,7 +198,7 @@ new class extends Component {
      * dans le template Blade. Retourne le UserGroup chargé (ou null si
      * absent — laisse @can renvoyer false dans ce cas).
      *
-     * Review 5.2 #6 — mémoïsation per-instance pour éviter 2 queries par
+     * Mémoïsation per-instance pour éviter 2 queries par
      * render (le template appelle groupModel() 2 fois).
      */
     public function groupModel(): ?UserGroup
@@ -212,11 +208,10 @@ new class extends Component {
 };
 ?>
 
-{{-- Review 42.3 #1 — balise RACINE STABLE obligatoire : un @if de premier
-     niveau fait capturer un tag racine vide par SupportNestingComponents
-     (marqueur [if BLOCK] de SupportMorphAwareBladeCompilation) → ViewException
-     « Invalid Livewire child tag name » au re-render de la page parente
-     (cassait updateMemberRole 42.3 ET removeMember pré-existant). --}}
+{{-- Balise RACINE STABLE obligatoire : un @if de premier niveau fait capturer
+     un tag racine vide par SupportNestingComponents (marqueur [if BLOCK] de
+     SupportMorphAwareBladeCompilation) → ViewException « Invalid Livewire child
+     tag name » au re-render de la page parente. --}}
 <div>
 @if (! $isClasse)
     {{-- Le component n'affiche rien si le UserGroup n'est pas de type classe. --}}

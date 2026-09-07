@@ -8,23 +8,19 @@ use App\Services\ControlHub\Resolution\UpstreamLockCollision;
 use RuntimeException;
 
 /**
- * Story 30.5 — Levée lorsqu'une assignation de label à un parc, ou le
+ * Levée lorsqu'une assignation de label à un parc, ou le
  * rattachement d'un poste à un parc labellisé, INTRODUIRAIT une collision
  * **insoluble** : deux items amont (controlHub) VERROUILLÉS (`locked`) imposant
  * des valeurs CONTRADICTOIRES sur la MÊME propriété exclusive (`exclusiveKey`)
- * d'un même poste (FR13). L'opération est alors REFUSÉE avant toute écriture.
+ * d'un même poste. L'opération est alors REFUSÉE avant toute écriture.
  *
  * Le message est en français et **affichable** (repris tel quel en toast via
  * {@see \App\Components\Traits\WithToasts}). Il nomme explicitement, pour chaque
  * collision : la propriété en conflit, les deux labels en cause, les deux valeurs
  * contradictoires, les deux sources amont (`sourceId`) et le périmètre (postes
- * touchés). [Story 30.5 AC #1/#4/#7]
+ * touchés).
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » dans le nom de l'exception ni dans ses
- *    messages. Vocabulaire imposé : « amont » / `controlHub` / `label`. [prd#R3]
- *
- * Patron : {@see LabelAssignmentException} (30.2) + `InvalidUpstreamContractException`
- * (28.2).
+ * Patron : {@see LabelAssignmentException} + `InvalidUpstreamContractException`.
  */
 final class UpstreamLockCollisionException extends RuntimeException
 {

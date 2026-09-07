@@ -90,19 +90,19 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AdSyncService::class);
         $this->app->singleton(UserGroupAdSyncService::class);
         $this->app->singleton(\App\Services\AdSync\AdSyncChecker::class);
-        // AppProfileAdSyncService retiré en 38.7 : OU=Parcs est en lecture seule,
+        // AppProfileAdSyncService retiré : OU=Parcs est en lecture seule,
         // un AppProfile n'a plus de représentation AD à écrire.
 
         // Services Parc
         $this->app->singleton(MachinePowerService::class);
 
-        // Story 16.14 Q2 — cache santé GPO 24h + warm-up 22h (singleton).
+        // Cache santé GPO 24 h + warm-up 22 h (singleton).
         $this->app->singleton(\App\Gpo\Support\CachedGpoLookups::class);
 
         // Service de pont legacy pour les parcs
         $this->app->singleton(LegacyParcBridgeService::class);
 
-        // Story 60.3 — résolution des backends de fichiers PAR NOM (ligne de
+        // Résolution des backends de fichiers PAR NOM (ligne de
         // contrat du plan de fichiers). Le registre est sans état : il ne fait que
         // traduire un nom en implémentation, via le conteneur.
         $this->app->singleton(\App\Services\Filesystem\Backend\FileBackendRegistry::class);
@@ -117,14 +117,14 @@ class AppServiceProvider extends ServiceProvider
                 : \App\Http\Middleware\Auth\SambaEduAuthGuard::class
         );
 
-        // Story 6.1 — CommandRunner injectable pour les services CUPS.
+        // CommandRunner injectable pour les services CUPS.
         // Permet de mocker les exec dans les tests via FakeCommandRunner.
         $this->app->bind(
             \App\Services\Print\Contracts\CommandRunner::class,
             \App\Services\Print\RealCommandRunner::class,
         );
 
-        // Story 56.2 — LE seam privilégié du moteur d'installation d'extensions
+        // LE seam privilégié du moteur d'installation d'extensions
         // (patron CommandRunner ci-dessus). Toute la surface root du système
         // d'extensions passe par cette interface : les tests la remplacent par
         // `FakeExtensionHelperRunner` et observent la séquence exacte des appels
@@ -169,7 +169,7 @@ class AppServiceProvider extends ServiceProvider
      * SOLUTION:
      * - Surcharge la méthode hasValidSignature() de Laravel via des macros
      * - Utilise url($request->path()) au lieu de $request->url() pour reconstruire l'URL
-     * - url() helper utilise APP_URL configuré dans .env, garantissant le chemin complet /0950000x/
+     * - url() helper utilise APP_URL configuré dans.env, garantissant le chemin complet /0950000x/
      * - Les signatures correspondent maintenant → Upload fonctionne
      * 
      * TODO: Cette solution globale surcharge une méthode de sécurité critique de Laravel.
@@ -227,7 +227,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Story 62.1 — LA COUTURE DE PURETÉ. Le namespace du plan de fichiers vit
+        // LA COUTURE DE PURETÉ. Le namespace du plan de fichiers vit
         // au-dessus de la ligne de contrat : il n'interroge rien, et un test
         // d'architecture le vérifie sur le TEXTE des fichiers. Le vocabulaire de
         // rôle d'arête, lui, est désormais une table administrable. La source
@@ -239,7 +239,7 @@ class AppServiceProvider extends ServiceProvider
             static fn (): array => \App\Support\RoleCatalog::keys(),
         );
 
-        // Review 62.1 #1 — la mémo du catalogue est une propriété STATIQUE, et
+        // La mémo du catalogue est une propriété STATIQUE, et
         // `RoleCatalog::flush()` n'est déclenchée que par les hooks d'écriture du
         // modèle, donc uniquement dans le PROCESSUS qui a écrit. Sous PHP-FPM ça
         // suffit (chaque requête repart d'un moteur neuf) ; un worker
@@ -256,7 +256,7 @@ class AppServiceProvider extends ServiceProvider
         // pour `queue_task_runs`.
         Queue::before(static function (): void {
             \App\Support\RoleCatalog::flush();
-            // Story 62.2 — le catalogue de TYPES de groupes a exactement la même
+            // Le catalogue de TYPES de groupes a exactement la même
             // mémo statique et le même worker au long cours. Le job de
             // synchronisation d'annuaire valide des groupes : un type créé à
             // l'écran lui resterait invisible jusqu'à une heure.
@@ -268,7 +268,7 @@ class AppServiceProvider extends ServiceProvider
         UserGroup::observe(UserGroupObserver::class);
         AppProfile::observe(AppProfileObserver::class);
 
-        // Story 4.9 — Observer Workstation : enregistré uniquement hors
+        // Observer Workstation : enregistré uniquement hors
         // environnement de test (queue=sync en PHPUnit → tout dispatch
         // tape LDAP/AD réel et casse les tests qui touchent Workstation
         // sans muter l'event dispatcher). Les tests qui veulent l'observer
@@ -277,26 +277,26 @@ class AppServiceProvider extends ServiceProvider
             Workstation::observe(WorkstationObserver::class);
         }
 
-        // Story 5.2 (D5=A) — Observer sur le pivot user_group_user pour
+        // Observer sur le pivot user_group_user pour
         // synchroniser les ACLs FS lors d'un changement de classe d'élève.
         \App\Models\Pivot\UserGroupUserPivot::observe(
             \App\Observers\UserGroupUserPivotObserver::class
         );
 
-        // Story 36.1 (corr. review #2b) — garde-fou d'authoring fs_acl RÉEL :
-        // une projection windows/fs_acl dangereuse (Q2 : deny descendant sur
-        // racine protégée, deny principal système, nom court 8.3, deny sans
+        // Garde-fou d'authoring fs_acl RÉEL :
+        // une projection windows/fs_acl dangereuse (deny descendant sur
+        // racine protégée, deny principal système, nom court, deny sans
         // warning…) ne peut plus être persistée (FsAclAuthoringException).
-        // Story 36.2 — le MÊME enregistrement gate AUSSI le garde-fou firewall :
+        // Le MÊME enregistrement gate AUSSI le garde-fou firewall :
         // l'observer dispatche par mécanisme (fs_acl → FsAclAuthoringGuard ;
-        // firewall → FirewallAuthoringGuard, Q3 = refus block couvrant le LAN),
+        // firewall → FirewallAuthoringGuard, qui refuse un block couvrant le LAN),
         // une projection windows/firewall dangereuse lève FirewallAuthoringException.
-        // Story 35.6 — idem pour le mécanisme privilege (privilege →
+        // Idem pour le mécanisme privilege (privilege →
         // PrivilegeAuthoringGuard, SeDeny*-only : un droit *grant* verrouillerait
         // la machine) : une projection windows/privilege fautive lève
         // PrivilegeAuthoringException.
-        // Story 36.5 — idem pour le mécanisme app_profile (app_profile →
-        // AppProfileAuthoringGuard, piège n°1 : un nom de profil bâti sur le
+        // Idem pour le mécanisme app_profile (app_profile →
+        // AppProfileAuthoringGuard : un nom de profil bâti sur le
         // radical « sambaedu » collisionnerait avec le nettoyage legacy_cleanup) :
         // une projection windows/app_profile fautive lève AppProfileAuthoringException.
         // Enregistré hors environnement de test (patron Workstation ci-dessous) :
@@ -341,13 +341,13 @@ class AppServiceProvider extends ServiceProvider
             return $route;
         });
 
-        // Story 29.9 — réactive le tracking d'exécution des jobs queue.
+        // Réactive le tracking d'exécution des jobs queue.
         // Cet appel avait été retiré de boot() dans le commit 997df15 (« fix
         // livewire update redirection ») ; conséquence : le dashboard /workers
         // (WorkerMonitoringService → queue_task_runs) n'enregistrait plus aucun
         // run. On le rétablit ici. Le garde Schema::hasTable rend les handlers
         // inertes si la table n'existe pas encore.
-        // Dette connue (hors-scope 29.9, à traiter en story dédiée) : rétention
+        // Dette connue, non traitée : rétention
         // de queue_task_runs (croissance non bornée) et coût DB par job.
         $this->registerQueueTaskTracking();
 
@@ -397,10 +397,10 @@ class AppServiceProvider extends ServiceProvider
 
     private function registerQueueTaskTracking(): void
     {
-        // Story 29.10 — Mémoïsation : Schema::hasTable est une introspection
+        // Mémoïsation : Schema::hasTable est une introspection
         // coûteuse (information_schema sur PG). On mémoïse UNIQUEMENT le `true` :
         // dès que la table est vue présente, plus aucune introspection (coût/job
-        // = 0 en régime établi, AC#2). Tant qu'elle est absente (fenêtre greenfield
+        // = 0 en régime établi). Tant qu'elle est absente (fenêtre greenfield
         // : worker démarré avant `migrate`), on re-vérifie à chaque événement — son
         // apparition en cours de vie du worker est ainsi captée (comportement
         // préservé ; les chemins INSERT de `after`/`failing` restent atteignables).
@@ -425,7 +425,7 @@ class AppServiceProvider extends ServiceProvider
             // Closure : `created_at` est posé UNIQUEMENT à l'INSERT.
             // Sur un retry (UPDATE — même task_uuid), `created_at` d'origine est
             // PRÉSERVÉ. Les autres champs (reset intentionnel) sont écrits dans les
-            // deux cas. (Story 29.9 — correctif du bug pré-existant.)
+            // deux cas. (correctif du bug pré-existant.)
             DB::table('queue_task_runs')->updateOrInsert(
                 ['task_uuid' => $taskUuid],
                 fn (bool $exists): array => array_merge([

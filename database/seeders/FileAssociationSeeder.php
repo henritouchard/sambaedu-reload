@@ -10,7 +10,7 @@ use App\Models\WorkstationGroup;
 use Illuminate\Database\Seeder;
 
 /**
- * Story 27.3bis (D-Henri n°4 + n°7) — Seeder de REPRODUCTION de l'existant legacy,
+ * Seeder de REPRODUCTION de l'existant legacy,
  * TAGUÉ par source (`native` vs `wpkg`).
  *
  * But : à la bascule du canal legacy vers l'agent, les défauts d'associations
@@ -19,14 +19,14 @@ use Illuminate\Database\Seeder;
  * `syncWithoutDetaching`) et REJOUABLE — câblé dans `DatabaseSeeder` (iso
  * `ShortcutSeeder`) et exposable via le flux de refresh.
  *
- * **Deux sources peuplées (D-Henri n°7) :**
+ * **Deux sources peuplées :**
  *   1. **Natives** — `default.xml` legacy ({@see self::LEGACY_DEFAULT_XML_PATH},
  *      sous `/usr/share/sambaedu/applications/associations/`) : les built-ins
  *      Windows → tag `source=native`, `wpkg_package=null` (toujours applicable).
- *   2. **WPKG** — `packages.xml` via {@see PackagesXmlAssociationsReader::read()}
+ *  2. **WPKG** — `packages.xml` via {@see PackagesXmlAssociationsReader::read()}
  *      (`packageId → identifier → {ProgId, type}`) : les associations fournies par
  *      les paquets → tag `source=wpkg`, `wpkg_package=<packageId>`. Le `<package id>`
- *      = `Application::$app_id` (cf. `PackagesXmlService::regenerate()` qui émet le
+ *  = `Application::$app_id` (cf. `PackagesXmlService::regenerate()` qui émet le
  *      `$app->xml` dont la racine `<package id>` vaut `app_id`) → clé de jointure
  *      avec le déploiement par parc (validation prédictive UI).
  *
@@ -40,11 +40,12 @@ use Illuminate\Database\Seeder;
  * ⚠️ Pourquoi le reader legacy (`App\Gpo`) ici et pas dans le provider ? Le seeder
  * est un geste d'ADMINISTRATION ponctuel (peuplement du catalogue), pas le chemin
  * critique desired-state — y lire `packages.xml` est acceptable. Le PROVIDER, lui,
- * reste PG-pur (NFR7) : il lit le catalogue déjà peuplé, jamais le reader. Aucune
+ * reste PG-pur : il lit le catalogue déjà peuplé, jamais le reader. Aucune
  * source NON-legacy équivalente n'existe : `App\Services\AppStore\PackagesXmlService`
  * ÉCRIT `packages.xml` (regenerate) mais n'expose PAS les associations par paquet.
  *
- * Le hash UserChoice n'est JAMAIS seedé : il est calculé côté agent (piège n° 2).
+ * Le hash UserChoice n'est JAMAIS seedé : il dépend du SID de l'utilisateur et
+ * n'est calculable que côté agent.
  *
  * ASSIGNATION par défaut : les associations reproduites sont attachées à TOUS les
  * parcs actifs (`WorkstationGroup`), reproduisant la portée legacy « all ». NB : si
@@ -57,7 +58,7 @@ class FileAssociationSeeder extends Seeder
      * `default.xml` legacy (sous `/usr/share/sambaedu/applications/associations/`)
      * — source des associations NATIVES quand elle est lisible (VM/prod). Constante
      * LOCALE volontaire : le seeder ne dépend PAS du namespace legacy `App\Gpo`
-     * (qui meurt en 27.6) pour un simple chemin de fichier.
+     * (qui meurt) pour un simple chemin de fichier.
      */
     private const LEGACY_DEFAULT_XML_PATH = '/usr/share/sambaedu/applications/associations/default.xml';
 
@@ -127,7 +128,7 @@ class FileAssociationSeeder extends Seeder
 
     /**
      * Fusionne les deux sources par identité `(identifier, progid)` avec
-     * **préférence NATIVE** (D-Henri n°7) : on insère d'abord les `wpkg`, puis les
+     * **préférence NATIVE** : on insère d'abord les `wpkg`, puis les
      * `native` écrasent une clé identique → un built-in toujours disponible bat un
      * paquet. Static/protected pour être testable sans I/O.
      *
@@ -251,7 +252,7 @@ class FileAssociationSeeder extends Seeder
      * clés `catalogKey`, mêmes tags `source`/`wpkg_package` → zéro doublon).
      *   - Firefox (`.html/.htm/http/https`) = `wpkg`, paquet `firefox` ;
      *   - `.jpg → WindowsPhotoViewer` = `native` ;
-     *   - `.txt → txtfile` = `native` (le cas de Henri).
+     *   - `.txt → txtfile` = `native`.
      *
      * @return list<array{label:string,description:string,identifier:string,assoc_type:string,progid:string,source:string,wpkg_package:?string}>
      */

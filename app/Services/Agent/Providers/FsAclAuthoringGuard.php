@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Agent\Providers;
 
 /**
- * Story 36.1 (AC3) — garde-fou d'AUTHORING des projections `windows/fs_acl` :
+ * Garde-fou d'AUTHORING des projections `windows/fs_acl` :
  * refuse à la SOURCE les ACE que l'agent refuserait (défense en profondeur, le
  * serveur peut avoir tort mais ne doit JAMAIS produire un catalogue dangereux).
  *
@@ -13,50 +13,50 @@ namespace App\Services\Agent\Providers;
  * création n'existe encore) : ce service PUR (projections en entrée, violations
  * NOMMÉES en sortie, zéro requête/écriture) est exécuté par un invariant de
  * test sur les données réellement seedées ({@see \Tests\Feature\Migrations\CapabilityFsAclSeedTest}).
- * Il est conçu pour être RÉUTILISÉ TEL QUEL par le formulaire « règles d'accès »
- * de la Story 36.4 (mêmes messages FR, mêmes constantes publiques).
+ * Il est conçu pour être RÉUTILISÉ TEL QUEL par le formulaire « règles
+ * d'accès » (mêmes messages FR, mêmes constantes publiques).
  *
- * **Ce qu'il refuse** (Q1/Q2 + principals système, décisions Henri) :
+ * **Ce qu'il refuse** :
  *   1. un `deny` sur un principal SYSTÈME ({@see SYSTEM_TRUSTEES}, avec ou sans
  *      préfixe domaine, insensible à la casse) — casser SYSTEM/Administrators/
  *      TrustedInstaller/… briserait le poste. Les jetons `@…` ne sont JAMAIS
  *      système (ils résolvent des groupes MÉTIER) ;
  *   2. un `deny` à héritage DESCENDANT (`folder_subfolders_files` /
- *      `subfolders_files_only`) sur une racine protégée ({@see PROTECTED_ROOTS},
- *      liste Q2 TELLE QUELLE) — le `deny list_folder folder_only` (masquer sans
- *      casser) y reste AUTORISÉ ;
+ *      `subfolders_files_only`) sur une racine protégée
+ *      ({@see PROTECTED_ROOTS}) — le `deny list_folder folder_only` (masquer
+ *      sans casser) y reste AUTORISÉ ;
  *   3. enums hors domaine (`ace_type`/`rights`/`applies_to`/`ensure`), `path`
  *      non absolu, `trustee` vide, jeton d'audience inconnu (hors
  *      {@see AudienceTokens::TOKENS}) ;
  *   4. une capacité dont AU MOINS une entrée `deny` existe SANS `warning` non
  *      vide (l'implication doit être confirmée).
  *
- * **Pas de ciblage par utilisateur (piège #10).** Le mécanisme `fs_acl` est de
+ * **Pas de ciblage par utilisateur.** Le mécanisme `fs_acl` est de
  * portée MACHINE : « quel utilisateur est bridé » = le `trustee` DANS le
  * payload, « quels postes » = les assignations parc/salle/poste/broadcast. Un
  * override UserGroup/User est structurellement SANS EFFET (le service SYSTEM
  * fetch sans `?user`) — pas un garde-fou runtime, un fait de compilation.
  *
  * **Différence avec {@see CapabilitySpecCollisionGuard}** (registre) : service
- * SÉPARÉ (36.3 écrit dans le guard registre en parallèle) ; il valide la
+ * SÉPARÉ (le guard registre s'écrit en parallèle) ; il valide la
  * SÉCURITÉ des ACE, pas l'arbitrabilité de clés-conteneurs.
  */
 final class FsAclAuthoringGuard
 {
-    /** Types d'ACE admis (D3, contrat §7.7). */
+    /** Types d'ACE admis (contrat §7.7). */
     public const ACE_TYPES = ['allow', 'deny'];
 
     /** Droits admis (mots métier — la traduction en masques vit dans le handler). */
     public const RIGHTS = ['list_folder', 'read', 'write', 'modify'];
 
-    /** Portée d'héritage admise (D3). */
+    /** Portée d'héritage admise. */
     public const APPLIES_TO = ['folder_only', 'folder_subfolders_files', 'subfolders_files_only'];
 
-    /** Verbe de convergence (D3, TOUJOURS explicite côté payload — piège #13). */
+    /** Verbe de convergence, TOUJOURS explicite côté payload. */
     public const ENSURE = ['present', 'absent'];
 
     /**
-     * Portées d'héritage DESCENDANT (deny interdit sur racine protégée, Q2).
+     * Portées d'héritage DESCENDANT (deny interdit sur racine protégée).
      * `folder_only` en est ABSENT : masquer sans casser reste autorisé partout.
      *
      * @var list<string>
@@ -64,8 +64,8 @@ final class FsAclAuthoringGuard
     public const DESCENDANT_APPLIES_TO = ['folder_subfolders_files', 'subfolders_files_only'];
 
     /**
-     * Racines protégées (Q2 — liste Henri TELLE QUELLE). Un `deny` à héritage
-     * descendant y est REFUSÉ. Forme normalisée (minuscules, sans backslash
+     * Racines protégées. Un `deny` à héritage descendant y est REFUSÉ.
+     * Forme normalisée (minuscules, sans backslash
      * final) : `C:\` → `c:`, `C:\Windows` → `c:\windows`, … (cf.
      * {@see normalizePath}).
      *
@@ -128,7 +128,7 @@ final class FsAclAuthoringGuard
                 $appliesTo = strtolower(trim((string) ($ace['applies_to'] ?? '')));
                 $path = (string) ($ace['path'] ?? '');
 
-                // Enums bornés (D3).
+                // Enums bornés.
                 if (! in_array($aceType, self::ACE_TYPES, true)) {
                     $violations[] = sprintf("fs_acl [%s] chemin '%s' : ace_type '%s' hors domaine (allow|deny).", $capability, $path, $aceType);
                 }
@@ -144,13 +144,13 @@ final class FsAclAuthoringGuard
                     }
                 }
 
-                // Path absolu Windows (D3 : `<lettre>:\…`).
+                // Path absolu Windows : `<lettre>:\…`.
                 if (! $this->isAbsoluteWindowsPath($path)) {
                     $violations[] = sprintf("fs_acl [%s] : chemin '%s' non absolu (attendu : chemin Windows absolu <lettre>:\\…).", $capability, $path);
                 }
 
-                // Noms courts 8.3 REFUSÉS (contournement Q2) : `C:\PROGRA~1`
-                // désigne `C:\Program Files` sans matcher aucune racine protégée
+                // Noms courts REFUSÉS : `C:\PROGRA~1` désigne
+                // `C:\Program Files` sans matcher aucune racine protégée
                 // littéralement. On exige le nom long (l'agent applique la même
                 // garde en défense en profondeur).
                 if ($this->hasShortName83($path)) {
@@ -175,7 +175,7 @@ final class FsAclAuthoringGuard
                     }
 
                     if (AudienceTokens::isToken($trustee)) {
-                        // Jeton d'audience : doit être dans l'enum fermé (Q1).
+                        // Jeton d'audience : doit être dans l'enum fermé.
                         if (! array_key_exists(strtolower($trustee), AudienceTokens::TOKENS)) {
                             $violations[] = sprintf(
                                 "fs_acl [%s] chemin '%s' : jeton d'audience '%s' inconnu (admis : %s).",
@@ -203,14 +203,14 @@ final class FsAclAuthoringGuard
                     }
                 }
 
-                // Deny à héritage DESCENDANT sur racine protégée REFUSÉ (Q2) —
-                // le deny list_folder folder_only y reste autorisé.
+                // Deny à héritage DESCENDANT sur racine protégée REFUSÉ — le
+                // deny list_folder folder_only y reste autorisé.
                 if ($aceType === 'deny'
                     && in_array($appliesTo, self::DESCENDANT_APPLIES_TO, true)
                     && $this->isProtectedRoot($path)) {
                     $violations[] = sprintf(
                         "fs_acl [%s] : deny à héritage descendant (applies_to '%s') interdit sur la racine protégée '%s' "
-                        .'(Q2) — seul « deny list_folder folder_only » (masquer sans casser) y est autorisé.',
+                        .'— seul « deny list_folder folder_only » (masquer sans casser) y est autorisé.',
                         $capability,
                         $appliesTo,
                         $path,
@@ -218,7 +218,7 @@ final class FsAclAuthoringGuard
                 }
             }
 
-            // Deny ⇒ warning non vide (AC3).
+            // Deny ⇒ warning non vide.
             if ($hasDeny && trim((string) ($warning ?? '')) === '') {
                 $violations[] = sprintf(
                     "fs_acl [%s] : au moins une entrée `deny` sans `warning` non vide — l'implication (accès refusé) doit être confirmée.",
@@ -246,7 +246,7 @@ final class FsAclAuthoringGuard
 
     /**
      * Valeurs possibles d'un champ `trustee`/`ensure` de `spec` : littéral (1)
-     * OU chaque valeur d'une map valeur-capacité (D8). Une map dont une valeur
+     * OU chaque valeur d'une map valeur-capacité. Une map dont une valeur
      * est elle-même une structure est ignorée (le provider ne l'émettra pas).
      *
      * @return list<mixed>
@@ -292,9 +292,10 @@ final class FsAclAuthoringGuard
     }
 
     /**
-     * Un segment du chemin porte-t-il un marqueur de nom court 8.3 (`~` suivi
+     * Un segment du chemin porte-t-il un marqueur de nom court (`~` suivi
      * d'un chiffre, ex. `PROGRA~1`) ? Un tel chemin désigne une racine protégée
-     * sans la matcher littéralement → contournement de Q2 (miroir de la garde
+     * sans la matcher littéralement → contournement des racines protégées
+     * (miroir de la garde
      * agent `hasShortName83`).
      */
     private function hasShortName83(string $path): bool
@@ -303,7 +304,7 @@ final class FsAclAuthoringGuard
     }
 
     /**
-     * Normalise un chemin pour la comparaison EXACTE (Q2) : minuscules,
+     * Normalise un chemin pour la comparaison EXACTE : minuscules,
      * backslashes multiples réduits, backslash final retiré (la racine `C:\`
      * devient `c:` — forme stable).
      */
@@ -330,7 +331,7 @@ final class FsAclAuthoringGuard
     /**
      * Un trustee littéral est-il un principal SYSTÈME ?
      *
-     * Le serveur ne résout PAS les SID (NFR7 : l'autorité finale reste l'agent,
+     * Le serveur ne résout PAS les SID (l'autorité finale reste l'agent,
      * qui refuse par SID well-known après résolution LSA). Le guard couvre donc
      * les cas NOMMABLES, alignés sur ce que l'agent refuse :
      *   1. tout trustee sous les autorités `BUILTIN\` (S-1-5-32-*, ex.

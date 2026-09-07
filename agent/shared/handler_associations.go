@@ -11,7 +11,7 @@ import (
 )
 
 // Handler `associations` (exclusive PAR IDENTIFIANT / scope session) —
-// Story 27.3bis. Logique PURE, OS-agnostique (les accès registre HKCU et la
+// . Logique PURE, OS-agnostique (les accès registre HKCU et la
 // lecture du SID/experience/temps sont injectés via AssociationsOps) → testée
 // sur l'hôte ; agent/windows ne fait que câbler
 // golang.org/x/sys/windows/registry + la résolution des entrées poste.
@@ -34,10 +34,10 @@ import (
 //   - apply : (ré)imposer ProgId+Hash pour les identifiants divergents.
 //     IDEMPOTENT (2 passes sur état stable = aucune réécriture).
 //
-// « DÉSACTIVER = CESSER DE GÉRER » (piège n° 5) : une association retirée côté
+// « DÉSACTIVER = CESSER DE GÉRER » : une association retirée côté
 // serveur DISPARAÎT de la liste → le handler NE TOUCHE PLUS à cette clé.
 //
-// PROGID ABSENT (D-Henri n°5) : si le ProgId cible n'est PAS enregistré sur le
+// PROGID ABSENT : si le ProgId cible n'est PAS enregistré sur le
 // poste, l'agent NE supprime PAS et NE réécrit PAS la clé UserChoice existante
 // (choix utilisateur PRÉSERVÉ, pas de clobber, pas de suppression-avant-réécriture
 // sur ProgId absent). Statut `error` NON fatal (isolation par item), `detail`
@@ -63,12 +63,12 @@ func (s AssociationSpec) isProtocol() bool {
 }
 
 // genericApplicationsPrefix : préfixe des ProgId GÉNÉRIQUES fabriqués par le
-// composer serveur (Story 27.11) — `Applications\<exe>` (« Ouvrir avec », ce que
+// composer serveur — `Applications\<exe>` (« Ouvrir avec », ce que
 // Windows crée nativement). Casse réelle de la clé HKCR.
 const genericApplicationsPrefix = `Applications\`
 
 // isGenericApplication : le ProgId cible est-il un générique `Applications\<exe>`
-// (Story 27.11) plutôt qu'un ProgId riche (`FirefoxHTML`, `txtfile`…) ? Insensible
+// plutôt qu'un ProgId riche (`FirefoxHTML`, `txtfile`…) ? Insensible
 // à la casse (Windows l'est sur les clés de registre).
 func (s AssociationSpec) isGenericApplication() bool {
 	return strings.HasPrefix(strings.ToLower(s.ProgID), strings.ToLower(genericApplicationsPrefix))
@@ -76,7 +76,7 @@ func (s AssociationSpec) isGenericApplication() bool {
 
 // applicationExe : le NOM de l'exe (basename) d'un ProgId générique
 // `Applications\<exe>`. Vide si le ProgId n'est pas générique. Le chemin COMPLET
-// n'est JAMAIS dans le payload (invariant AC7) : il est résolu sur le poste
+// N'est JAMAIS dans le payload (invariant) : il est résolu sur le poste
 // (App Paths / PATH) par AssociationsOps.RegisterApplicationProgID.
 func (s AssociationSpec) applicationExe() string {
 	if !s.isGenericApplication() {
@@ -96,23 +96,23 @@ type AssociationsOps interface {
 	ReadUserChoiceProgID(spec AssociationSpec) (progID string, present bool, err error)
 
 	// ProgIDRegistered indique si le ProgId cible est enregistré/installé sur le
-	// poste. false → l'agent NE touche PAS la clé existante (D-Henri n°5).
+	// poste. false → l'agent NE touche PAS la clé existante.
 	//
-	// Story 27.11 (raffinement CAS GÉNÉRIQUE uniquement) : pour un ProgId
+	// Pour un ProgId
 	// `Applications\<exe>`, la simple présence du nœud `HKCR\Applications\<exe>`
 	// ne suffit PAS — Windows ouvrirait « Comment voulez-vous ouvrir… » sans
 	// `shell\open\command`. L'impl vérifie donc la sous-clé `shell\open\command`
 	// pour ce cas (les ProgId riches restent inchangés : présence du nœud).
 	ProgIDRegistered(progID string) (bool, error)
 
-	// RegisterApplicationProgID (Story 27.11, AC6) auto-enregistre PER-USER un
+	// RegisterApplicationProgID auto-enregistre PER-USER un
 	// ProgId générique `Applications\<exe>` : écrit
 	// `HKCU\Software\Classes\Applications\<exe>\shell\open\command = "<chemin>" "%1"`.
 	// Le chemin COMPLET de `<exe>` est résolu sur le POSTE (App Paths / PATH) — il
-	// n'est JAMAIS dans le payload (invariant AC7). AUCUNE écriture HKLM/admin.
+	// N'est JAMAIS dans le payload (invariant). AUCUNE écriture HKLM/admin.
 	//
 	// Retourne registered=false si l'exe est INTROUVABLE sur le poste (abstention,
-	// D-Henri n°5 : le choix utilisateur est préservé, pas de générique sans exe).
+	// le choix utilisateur est préservé, pas de générique sans exe).
 	// err = échec d'écriture/accès registre.
 	RegisterApplicationProgID(exe string) (registered bool, err error)
 
@@ -166,7 +166,7 @@ func (h *AssociationsHandler) desiredSpecs(items []StateItem) ([]AssociationSpec
 // d'accès remonte (le moteur rend error pour le type).
 //
 // ProgId absent du poste : on NE considère PAS l'item comme conforme (le défaut
-// n'est pas appliqué) — mais apply NE clobberera pas pour autant (D-Henri n°5) ;
+// n'est pas appliqué) — mais apply NE clobberera pas pour autant ;
 // l'item sera rapporté error non fatal. Ici on renvoie « non conforme » pour que
 // le moteur déclenche apply, qui décidera (et rapportera error sans toucher).
 func (h *AssociationsHandler) Test(items []StateItem) (bool, error) {
@@ -201,9 +201,9 @@ func (h *AssociationsHandler) Test(items []StateItem) (bool, error) {
 // Apply : converge — (ré)impose ProgId+Hash pour les identifiants divergents.
 // Idempotent (un identifiant déjà conforme n'est pas réécrit). EFFORT MAXIMAL :
 // on tente TOUS les identifiants ; la première erreur est remontée à la fin
-// (les associations saines convergent quand même, isolation inter-items AC5).
+// (les associations saines convergent quand même, isolation inter-items).
 //
-// ProgId NON enregistré (D-Henri n°5) : on NE supprime PAS et NE réécrit PAS la
+// ProgId NON enregistré : on NE supprime PAS et NE réécrit PAS la
 // clé UserChoice existante (choix utilisateur préservé) ; on remonte une erreur
 // (error non fatal), SANS réécriture en boucle.
 func (h *AssociationsHandler) Apply(items []StateItem) error {
@@ -230,12 +230,12 @@ func (h *AssociationsHandler) Apply(items []StateItem) error {
 			continue
 		}
 		if !registered {
-			// Story 27.11 (AC6) : pour un ProgId GÉNÉRIQUE `Applications\<exe>`
+			// Pour un ProgId GÉNÉRIQUE `Applications\<exe>`
 			// non enregistré, le compagnon (droits user) tente l'auto-enregistrement
 			// PER-USER (`HKCU\Software\Classes\Applications\<exe>\shell\open\command`)
 			// AVANT d'imposer UserChoice — le chemin de l'exe est résolu sur le poste.
 			// Réussite → on poursuit (imposera UserChoice). Échec (exe introuvable)
-			// → on retombe sur l'abstention D-Henri n°5 (choix préservé).
+			// → on retombe sur l'abstention (choix préservé).
 			if spec.isGenericApplication() {
 				ok, regErr := h.Ops.RegisterApplicationProgID(spec.applicationExe())
 				if regErr != nil {
@@ -253,7 +253,7 @@ func (h *AssociationsHandler) Apply(items []StateItem) error {
 			}
 		}
 		if !registered {
-			// D-Henri n°5 : ProgId absent (ou exe générique introuvable) → on NE
+			// ProgId absent (ou exe générique introuvable) → on NE
 			// touche PAS la clé existante (pas de clobber, pas de
 			// suppression-avant-réécriture). Choix utilisateur conservé. Erreur NON
 			// fatale (isolation), pas de boucle.
@@ -356,7 +356,6 @@ func getHash(baseInfo string) string {
 		return ""
 	}
 
-	// --- Passe 1 ---
 	md51 := ((getLong(bytesMD5, 0) | 1) + 0x69FB0000)
 	md52 := ((getLong(bytesMD5, 4) | 1) + 0x13DB0000)
 	index := getShiftRight(length-2, 1)
@@ -385,7 +384,6 @@ func getHash(baseInfo string) string {
 	binary.LittleEndian.PutUint32(outHash[0:], uint32(int32(outHash1)))
 	binary.LittleEndian.PutUint32(outHash[4:], uint32(int32(outHash2)))
 
-	// --- Passe 2 ---
 	md51 = (getLong(bytesMD5, 0) | 1)
 	md52 = (getLong(bytesMD5, 4) | 1)
 	index = getShiftRight(length-2, 1)

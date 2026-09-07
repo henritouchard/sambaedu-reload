@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 60.5 — l'ANCRE LOGIQUE d'un plan : le nom NEUTRE de la zone dans laquelle
+ * L'ANCRE LOGIQUE d'un plan : le nom NEUTRE de la zone dans laquelle
  * il vit.
  *
- * **Ce n'est pas un chemin, et c'est tout l'intérêt.** La coupe de l'epic interdit
+ * **Ce n'est pas un chemin, et c'est tout l'intérêt.** La coupe du modèle interdit
  * à un plan de porter un chemin absolu : la racine réelle est un savoir de
  * backend. Mais SE5 gouverne désormais DEUX zones disjointes — les répertoires
- * réseau nommés (Epic 34) et les arbres de classe (60.5) — et le plan doit
+ * réseau nommés et les arbres de classe — et le plan doit
  * pouvoir dire laquelle sans dire où. L'ancre est ce mot-là : un jeton d'un
  * vocabulaire FERMÉ, que seule la garde de chemin du backend sait traduire
  * ({@see \App\Services\Filesystem\Backend\Posix\PosixPathGuard}). Une ancre
@@ -33,15 +33,14 @@ enum PlanAnchor: string
 {
     /**
      * Zone des répertoires réseau nommés — l'ancre par DÉFAUT. Les plans plats de
-     * l'Epic 34 ne changent donc pas d'un octet : ils n'ont jamais eu à se
+     * L' ne changent donc pas d'un octet : ils n'ont jamais eu à se
      * prononcer, et leur silence vaut cette zone.
      */
     case Reseau = 'reseau';
 
     /**
      * Zone des arbres de classe matérialisés par la chaîne générique — la racine
-     * NEUVE de la story 60.5, distincte de l'arbre historique auquel SE5 n'écrit
-     * jamais.
+     * NEUVE, distincte de l'arbre historique auquel SE5 n'écrit jamais.
      */
     case Classes = 'classes';
 

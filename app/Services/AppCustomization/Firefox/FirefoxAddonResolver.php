@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Résolution d'un addon Firefox via l'API publique addons.mozilla.org.
  *
- * Story 4.8 — alternative au téléchargement XPI : l'admin colle l'URL
+ * Alternative au téléchargement XPI : l'admin colle l'URL
  * de la page AMO (ex. `https://addons.mozilla.org/fr/firefox/addon/clearurls/`),
  * on extrait le slug, on appelle `GET /api/v5/addons/addon/{slug}/` et on
  * récupère :

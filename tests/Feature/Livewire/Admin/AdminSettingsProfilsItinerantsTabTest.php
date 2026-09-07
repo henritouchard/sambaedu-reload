@@ -15,10 +15,9 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 1bis.18f — Tests Feature Livewire onglet "Profils itinérants"
- * (/admin/settings).
+ * L'onglet « Profils itinérants » de /admin/settings.
  *
- * Couvre AC #2, #3, #4, #5, #10 :
+ * Couvre :
  *   - rendu du partial avec server.admin
  *   - blocage 403 sans server.admin (mount + payloads forgés)
  *   - addExclusion via modale + persistance via service stub
@@ -27,7 +26,7 @@ use Tests\TestCase;
  *   - removeExclusion
  *
  * Stratégie de stub : on bind dans le container une sous-classe anonyme de
- * `RoamingProfileService` qui capture les calls (pattern 5.1c stub
+ * `RoamingProfileService` qui capture les calls (pattern stub
  * `XfsQuotaService`) — pas de mock du legacy via Mockery.
  */
 class AdminSettingsProfilsItinerantsTabTest extends TestCase
@@ -192,10 +191,6 @@ class AdminSettingsProfilsItinerantsTabTest extends TestCase
         return 'pages::admin.settings._partials.profils-itinerants-tab';
     }
 
-    // =========================================================================
-    // Rendu page
-    // =========================================================================
-
     #[Test]
     public function it_renders_profils_tab_with_server_admin(): void
     {
@@ -243,10 +238,6 @@ class AdminSettingsProfilsItinerantsTabTest extends TestCase
 
         $component->set('newExclusion', 'foo')->call('addExclusion')->assertStatus(403);
     }
-
-    // =========================================================================
-    // Méthodes mutantes
-    // =========================================================================
 
     #[Test]
     public function it_adds_exclusion_via_modal_and_persists_via_service(): void

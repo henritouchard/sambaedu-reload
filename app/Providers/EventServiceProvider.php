@@ -27,22 +27,22 @@ class EventServiceProvider extends ServiceProvider
             SendEmailVerificationNotification::class,
         ],
 
-        // Story 5.1c (D5=A) — Toast warning si user en dépassement quota
+        // Toast warning si user en dépassement quota
         // (lecture `users.quota_snapshot`). Émis 1×/session naturellement
         // (Login event = vrai login effectif, pas re-session cookie).
         Login::class => [
             NotifyQuotaOverageOnLogin::class,
         ],
 
-        // Story 30.3 — Garantie d'existence des groupes imposés par le contrat
-        // amont (controlHub). 1er consommateur de cet événement (inerte depuis
-        // 28.2) : à chaque mutation du contrat, la réconciliation crée/confirme
+        // Garantie d'existence des groupes imposés par le contrat
+        // amont (controlHub). 1er consommateur de cet événement :
+        // à chaque mutation du contrat, la réconciliation crée/confirme
         // les WorkstationGroup imposés et lève le verrou des groupes non-imposés.
         // shouldDiscoverEvents() === false → enregistrement explicite obligatoire.
-        // Story 31.3 — 2e consommateur : approvisionne en inventaire les applications
+        // 2e consommateur : approvisionne en inventaire les applications
         // ORDONNÉES par le contrat amont (matérialisation depuis la source de dépôt,
-        // status Available, sans install serveur) → comble le gap D4 de 31.2.
-        // Story 51.1 — 3e consommateur, EN DERNIER (ordre invariant testé) : réconcilie
+        // status Available, sans install serveur).
+        // 3e consommateur, EN DERNIER (ordre invariant testé) : réconcilie
         // le dépôt IMPOSÉ (bascule exclusive du canal dépôts). DOIT s'exécuter APRÈS
         // ProvisionOrderedApplications, dont les apps matérialisées (depot_id=null) sont
         // calculées avant que ce réconciliateur ne fasse transferts/purges.

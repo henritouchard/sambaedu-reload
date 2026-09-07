@@ -17,7 +17,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire de la section Quota fiche user (story 5.1b, AC 9 cas 4-7).
+ * Tests Feature Livewire de la section Quota de la fiche user.
  *
  * Couvre :
  *  - rendu du snapshot avec captured_at + breakdown héritage
@@ -106,7 +106,7 @@ class UserShowQuotaSectionTest extends TestCase
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->unsignedBigInteger('user_id');
                 $table->unsignedBigInteger('user_group_id');
-                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                // Rôle sur l'arête, lu par withPivot('role').
                 $table->string('role', 20)->default('member');
                 $table->primary(['user_id', 'user_group_id']);
             });

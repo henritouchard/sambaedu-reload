@@ -9,7 +9,7 @@ use App\Exceptions\Filesystem\InvalidBackendReportException;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
 
 /**
- * Story 60.3 — ce qu'un backend a fait (ou pas) SUR UN NŒUD.
+ * Ce qu'un backend a fait (ou pas) SUR UN NŒUD.
  *
  * Trois champs, et pas un de plus. En particulier : **aucun code natif, aucun
  * statut de transport**. Les trois sémantiques mesurées pour « c'était déjà fait »

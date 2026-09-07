@@ -15,7 +15,6 @@ class Kernel extends HttpKernel
      * @var array<int, class-string|string>
      */
     protected $middleware = [
-        // \App\Http\Middleware\TrustHosts::class,
         \App\Http\Middleware\TrustProxies::class,
         \Illuminate\Http\Middleware\HandleCors::class,
         \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
@@ -70,16 +69,16 @@ class Kernel extends HttpKernel
         'sambaedu.auth' => \App\Http\Middleware\Auth\SambaEduAuth::class,
         'sambaedu.admin' => \App\Http\Middleware\RequireAdminRights::class,
 
-        // Story 20.4 — audit dénormalisé des actions externes. À appliquer
+        // Audit dénormalisé des actions externes. À appliquer
         // APRÈS `sambaedu.auth` (le guard a alors peuplé Auth::user()). N'agit
-        // que sur les sessions fédérées (AC2) ; no-op pour l'AD locale.
+        // que sur les sessions fédérées ; no-op pour l'AD locale.
         'federated.audit' => \App\Http\Middleware\Auth\AuditExternalAction::class,
         'password.change' => \App\Http\Middleware\PasswordChangeMiddleware::class,
         
         // ControlHub middleware pour l'authentification API
         'controlhub.auth' => \App\Http\Middleware\ControlHubAuth::class,
 
-        // Story 56.4 — API extensions `/api/ext/v1/` : access token OPAQUE
+        // API extensions `/api/ext/v1/` : access token OPAQUE
         // par-extension, avec le scope requis en paramètre (`ext.token:profile`).
         //
         // ⚠️ L'alias n'est pas cosmétique : c'est LUI qui permet à
@@ -90,7 +89,7 @@ class Kernel extends HttpKernel
         // WPKG middleware — restreint aux requêtes locales
         'local.request' => EnsureLocalRequest::class,
 
-        // DDNS 8.4 — restreint au serveur lui-même (dhcpd co-localisé), plus
+        // DDNS — restreint au serveur lui-même (dhcpd co-localisé), plus
         // strict que `local.request` : primitive d'écriture/suppression DNS.
         'dhcp.server.request' => \App\Http\Middleware\EnsureDhcpServerRequest::class,
     ];

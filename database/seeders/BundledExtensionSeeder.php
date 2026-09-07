@@ -11,7 +11,7 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 54.1 — Pose la source EMBARQUÉE du registre d'extensions puis charge
+ * Pose la source EMBARQUÉE du registre d'extensions puis charge
  * ses manifests (`resources/extensions/<id>/manifest.json`).
  *
  * Idempotent / rejouable (patron {@see DirectoryTemplateSeeder}) :
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  *  - la source est posée par `updateOrCreate` sur la clé naturelle `bundled` —
  *    le CODE est la baseline canonique de son libellé et de sa nature ;
  *  - le chargement des manifests est délégué à
- *    {@see ExtensionCatalogService::syncBundled()}, qui upsert sur
+ *  {@see ExtensionCatalogService::syncBundled()}, qui upsert sur
  *    `(source, key)` et **n'écrit jamais `status`** : re-seeder ne duplique rien
  *    et ne dé-intègre aucune extension.
  *

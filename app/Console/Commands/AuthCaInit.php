@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 /**
- * Story 16.10 — AC1.1 / AC1.2 / T2.2.
+ * T2.2.
  *
  * Commande Artisan `auth:ca:init` qui initialise (ou régénère) la PKI
  * locale + la paire JWT RS256.
@@ -25,7 +25,7 @@ use Throwable;
  * Sortie standard :
  *
  *  - Liste les 6 fichiers gérés
- *  - Affiche le bloc Apache + nginx à intégrer manuellement (AC1.2 — l'op
+ * - Affiche le bloc Apache + nginx à intégrer manuellement (l'op
  *    choisit selon son serveur web)
  *
  * Code retour : 0 succès, 1 erreur, 2 conflit d'options.

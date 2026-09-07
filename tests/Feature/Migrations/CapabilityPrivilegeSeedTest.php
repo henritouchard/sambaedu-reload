@@ -19,10 +19,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 35.6 (AC5) — seed de PREUVE `rdp_denied_for_group` + intégration
+ * Seed de PREUVE `rdp_denied_for_group` + intégration
  * provider sur données RÉELLES + invariant `PrivilegeAuthoringGuard`.
  *
- * FICHIER DÉDIÉ (piège #12 de 36.1) : ne touche NI
+ * FICHIER DÉDIÉ : ne touche NI
  * `CapabilitiesSchemaAndSeedTest.php` NI `CapabilityFsAclSeedTest.php` (tests
  * d'autres mécanismes). La migration de seed est jouée par `RefreshDatabase`.
  */
@@ -91,7 +91,7 @@ class CapabilityPrivilegeSeedTest extends TestCase
         UserGroup::factory()->create(['name' => 'Eleves', 'type' => 'role']);
     }
 
-    // ── Seed : options / défaut / warning / projection ────────────────────
+    // Seed : options / défaut / warning / projection
 
     #[Test]
     public function seed_creates_the_capability_with_enum_options_default_and_warning(): void
@@ -126,7 +126,7 @@ class CapabilityPrivilegeSeedTest extends TestCase
         self::assertSame([], $spec['accounts']['off']);
     }
 
-    // ── Idempotence / réversibilité ───────────────────────────────────────
+    // Idempotence / réversibilité
 
     #[Test]
     public function migration_is_idempotent_and_reversible(): void
@@ -150,7 +150,7 @@ class CapabilityPrivilegeSeedTest extends TestCase
         self::assertNotNull($this->capabilityRow());
     }
 
-    // ── Intégration provider sur données RÉELLES ──────────────────────────
+    // Intégration provider sur données RÉELLES
 
     #[Test]
     public function value_eleves_emits_one_item_denying_rdp_to_the_eleves_group(): void
@@ -198,7 +198,7 @@ class CapabilityPrivilegeSeedTest extends TestCase
         Log::shouldHaveReceived('warning')->atLeast()->once();
     }
 
-    // ── Invariant guard sur le catalogue seedé + combo interdit ───────────
+    // Invariant guard sur le catalogue seedé + combo interdit
 
     #[Test]
     public function authoring_guard_passes_on_the_seeded_catalog(): void
@@ -225,7 +225,7 @@ class CapabilityPrivilegeSeedTest extends TestCase
     {
         // Combo interdit fabriqué : droit *grant* — une convergence « possède
         // la liste entière » sur SeRemoteInteractiveLogonRight révoquerait le
-        // droit de session RDP à TOUT LE MONDE (machine verrouillée, piège #3).
+        // droit de session RDP à TOUT LE MONDE (machine verrouillée).
         $violations = (new PrivilegeAuthoringGuard())->violations([[
             'capability' => 'rogue',
             'warning' => 'w',

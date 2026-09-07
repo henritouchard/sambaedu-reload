@@ -49,30 +49,30 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Story 23.2 — Service Provider du canal agent desired-state (Epic 23).
+ * Service Provider du canal agent desired-state.
  *
  * Frontière nette ancien/nouveau : ce provider est le foyer du canal NEUF
  * (bearer token custom, zéro AD), distinct d'`AuthV1ServiceProvider` (canal
  * JWT legacy-migration, intouché pendant la transition).
  *
  *  - Binding singleton `TokenRotationService` (stateless réutilisable).
- *  - Binding singleton `EnrollmentService` (Story 23.3 — enrôlement porte 1).
- *  - Binding singleton `ReportIngestService` (Story 24.1 — ingestion des
+ * - Binding singleton `EnrollmentService` (enrôlement porte 1).
+ * - Binding singleton `ReportIngestService` (ingestion des
  *    rapports de conformité, POST /report).
  *  - Registry des StateProviders + binding singleton `StateCompiler`
- *    (Story 23.4) : ajouter un type de ressource = ajouter UNE ligne au
- *    tableau ci-dessous (Epic 27), zéro modification du compilateur.
+ * ajouter un type de ressource = ajouter UNE ligne au
+ * tableau ci-dessous, zéro modification du compilateur.
  *  - Alias middleware `agent.token` (toujours, y compris tests — les Feature
  *    tests montent des routes éphémères derrière cet alias).
  *
- * Évolutions prévues : complétion `config/agent.php` (23.5).
+ * Évolutions prévues : complétion `config/agent.php`.
  */
 class AgentServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
         $this->app->singleton(TokenRotationService::class, fn () => new TokenRotationService());
-        // Story 25.3 — Porte 2 : rapprochement du faisceau + mode campagne
+        // Porte 2 : rapprochement du faisceau + mode campagne
         // (anti-usurpation jamais débrayé) injectés dans EnrollmentService.
         $this->app->singleton(EnrollmentMatchService::class, fn () => new EnrollmentMatchService());
         $this->app->singleton(EnrollmentCampaign::class, fn () => new EnrollmentCampaign());
@@ -84,49 +84,48 @@ class AgentServiceProvider extends ServiceProvider
                 $app->make(EnrollmentCampaign::class),
             ),
         );
-        // Story 24.1 — ingestion des rapports de conformité (POST /report).
+        // Ingestion des rapports de conformité (POST /report).
         // Le StateCompiler fournit les types PAR SESSION (nettoyage des fantômes).
         $this->app->singleton(ReportIngestService::class, fn ($app) => new ReportIngestService(
             $app->make(StateCompiler::class),
         ));
-        // Story 24.7 — « forcer la synchro » (UI request / report fulfill) +
+        // « forcer la synchro » (UI request / report fulfill) +
         // lecture agrégée de conformité pour les pages parc (stateless).
         $this->app->singleton(SyncRequestService::class, fn () => new SyncRequestService());
         $this->app->singleton(ConformityService::class, fn () => new ConformityService());
-        // Story 25.1 — distribution des releases (D6) : création vérifiée
+        // Distribution des releases : création vérifiée
         // hash + manifest résolu par ring (stateless tous les deux).
         $this->app->singleton(ReleaseCreationService::class, fn () => new ReleaseCreationService());
         $this->app->singleton(ReleaseManifestService::class, fn () => new ReleaseManifestService());
-        // Story 26.1 — résolution de la nature du poste (précédence
+        // Résolution de la nature du poste (précédence
         // nomade>personal_local>shared_local, défaut shared_local, Postgres-only),
-        // consommable par les StateProviders de l'Epic 27. Stateless.
+        // consommable par les StateProviders de l'agent. Stateless.
         $this->app->singleton(WorkstationEnvironmentResolver::class, fn () => new WorkstationEnvironmentResolver());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
-        // Story 43.3 — résolveur du TTL de poll PAR CONTEXTE (D1, FR-A4) :
+        // Résolveur du TTL de poll PAR CONTEXTE :
         // lecture Postgres pure (capability_assignments), stateless (aucun
         // cache du verdict — cf. docblock AgentTtlResolver).
         $this->app->singleton(AgentTtlResolver::class, fn () => new AgentTtlResolver());
-        // Story 28.3 — SOURCE des candidats AMONT (contrat controlHub actif) +
+        // SOURCE des candidats AMONT (contrat controlHub actif) +
         // adaptateurs de payload (bridge minimal type-agnostique). Singleton ⇒
         // résolution du contrat MÉMOÏSÉE et PARTAGÉE par tous les providers d'une
         // compilation (≤ 1 requête « contrat actif ? », court-circuitée quand
-        // aucun lien actif — NFR3). PAS de cache ; l'event ControlHubContractChanged
-        // reste sans listener (28.2).
+        // aucun lien actif). PAS de cache.
         //
         // ⚠️ SEUL `registry` (exclusive-par-clé) est enregistré en prod. L'adaptateur
         // `shortcuts` (aggregate) EXISTE et démontre que le bridge est type-agnostique
         // (test unitaire), mais n'est PAS câblé ici : son payload minimal {name,target}
         // est INCOMPLET pour l'agent (manque `place`/`args`/`icon` — handler_shortcuts.go
         // rejette en bloc tout spec sans `place`, cassant TOUTE la convergence shortcuts
-        // du poste). L'expansion par-type complète + le schéma d'échange figé relèvent
-        // d'Epic 33 (décision review 28.3, finding #1). Réenregistrer `shortcuts` ICI
-        // une fois le payload aligné sur ShortcutsStateProvider::payloadFor().
+        // du poste). L'expansion par-type complète et le schéma d'échange figé
+        // restent à faire : réenregistrer `shortcuts` ICI une fois le payload
+        // aligné sur `ShortcutsStateProvider::payloadFor()`.
         //
-        // ⚠️ STORY 31.2 — GARDE ANTI DOUBLE-INJECTION (NE PAS enregistrer d'adaptateur
+        // ⚠️ — GARDE ANTI DOUBLE-INJECTION (NE PAS enregistrer d'adaptateur
         // `applications` ici). Les ORDRES D'INSTALL amont (items `type='applications'`)
         // sont unionnés à l'ensemble cible DIRECTEMENT par
         // `ApplicationsStateProvider` via l'accesseur `orderedApplicationAppIds()`
-        // (pont au niveau ENSEMBLE — D3). Le décorateur `UpstreamAwareProvider` qui
+        // (pont au niveau ENSEMBLE). Le décorateur `UpstreamAwareProvider` qui
         // enrobe ce provider reste donc un NO-OP pour ce type. Ajouter un
         // `UpstreamPayloadAdapter` pour `applications` produirait une DOUBLE injection
         // (accesseur + décorateur) ET un doublon d'item (le `toPayload` pur ne peut
@@ -135,25 +134,25 @@ class AgentServiceProvider extends ServiceProvider
         $this->app->singleton(UpstreamContractSource::class, fn () => new UpstreamContractSource([
             new RegistryUpstreamAdapter(),
         ]));
-        // Story 29.2 — VERROU d'écriture amont (pendant côté édition de
+        // VERROU d'écriture amont (pendant côté édition de
         // UpstreamContractSource). Singleton ⇒ set des clés `locked`/`instance`/
         // `registry` résolu UNE fois et partagé par les surfaces capacité (override
-        // parc + défaut instance) ; court-circuit NFR3 sans contrat actif (≤ 1
+        // parc + défaut instance) ; court-circuit sans contrat actif (≤ 1
         // requête, jamais la table `items`). Mémoïsation == par-requête (PHP-FPM).
         $this->app->singleton(UpstreamLockResolver::class, fn () => new UpstreamLockResolver());
         // Catalogue applicatif amont — outillage de l'ADMINISTRATION des applications
         // (scope Application::scopeInUpstreamCatalog). L'assignation d'apps aux entités
         // n'est PAS bornée. Singleton ⇒ catalogue (`app_key` du contrat actif) résolu
-        // UNE fois. Court-circuit NFR3 sans contrat actif (≤ 1 requête
+        // UNE fois. Court-circuit sans contrat actif (≤ 1 requête
         // `controlhub_contracts`, jamais la table catalog). Mémoïsation == par-requête (PHP-FPM).
         $this->app->singleton(UpstreamCatalogResolver::class, fn () => new UpstreamCatalogResolver());
-        // Story 30.5 — DÉTECTEUR de collision verrou/verrou à l'assignation
-        // (prévention prédictive, FR13). Singleton par-requête : réutilise le
-        // singleton UpstreamContractSource (28.3, contrat mémoïsé) + les providers
+        // DÉTECTEUR de collision verrou/verrou à l'assignation
+        // (prévention prédictive). Singleton par-requête : réutilise le
+        // singleton UpstreamContractSource (contrat mémoïsé) + les providers
         // EXCLUSIFS `registry` (KeyedExclusiveProvider) pour DÉLÉGUER `exclusiveKey()`
-        // — aucune dérivation de clé réinventée, aucune écriture. Court-circuit NFR3
+        // — aucune dérivation de clé réinventée, aucune écriture. Court-circuit
         // sans item label locked. NE touche NI StateCompiler NI StateMaille NI la
-        // décoration des providers (D2 confiné, AC #5b) : on AJOUTE seulement ce binding.
+        // décoration des providers : on AJOUTE seulement ce binding.
         $this->app->singleton(UpstreamLockCollisionDetector::class, fn ($app) => new UpstreamLockCollisionDetector(
             $app->make(UpstreamContractSource::class),
             [
@@ -163,7 +162,7 @@ class AgentServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),
-            // Story 28.3 — chaque provider est ENROBÉ par le décorateur amont :
+            // Chaque provider est ENROBÉ par le décorateur amont :
             // itemsFor() = candidats_internes ∪ candidats_amont(maille Upstream).
             // L'ordre et la liste des providers sont préservés (zéro retiré/
             // ajouté) ; le marqueur KeyedExclusiveProvider est relayé (registry).
@@ -182,16 +181,16 @@ class AgentServiceProvider extends ServiceProvider
                 // au verrouillage). Une ligne, zéro modif du compilateur.
                 $app->make(LockscreenStateProvider::class),
                 $app->make(OverlayStateProvider::class),
-                // Story 27.10 — volet MACHINE de l'overlay : la salle
+                // Volet MACHINE de l'overlay : la salle
                 // (`{kind:"machine", room}`) passe en portée machine (cache
                 // persistant) pour précharger poste+salle au logon sans attendre
                 // le fetch per-user. `room` retiré de l'item identity session.
                 $app->make(OverlayMachineStateProvider::class),
-                // Story 27.1 — type `shortcuts` (aggregate / machine_user) :
+                // Type `shortcuts` (aggregate / machine_user) :
                 // union des raccourcis des mailles, chemin du bureau résolu
                 // serveur (fix Bug C). Une ligne, zéro modif du compilateur.
                 $app->make(ShortcutsStateProvider::class),
-                // Story 58.1 — type `folders` (exclusive / machine_user) :
+                // Type `folders` (exclusive / machine_user) :
                 // REDIRECTION du Bureau (`User Shell Folders\Desktop`) vers le
                 // MÊME chemin que celui où `shortcuts` pose les `.lnk`. Sans
                 // elle, l'agent dépose des raccourcis dans un dossier que le
@@ -201,37 +200,37 @@ class AgentServiceProvider extends ServiceProvider
                 // ShortcutsStateProvider ci-dessus : les deux partagent le
                 // DesktopPathResolver et ne doivent jamais diverger.
                 $app->make(ShellFoldersStateProvider::class),
-                // Story 27.2 — types `printers` (aggregate / session) : union
+                // Types `printers` (aggregate / session) : union
                 // des imprimantes des mailles POSTE, défaut exclusif réglé par
                 // WG (physique > logique) ; et `drives` (aggregate / session) :
                 // projection des partages de classe en montages réseau (MVP-A,
                 // pas de table). Deux lignes, zéro modif du compilateur.
                 $app->make(PrintersStateProvider::class),
                 $app->make(DrivesStateProvider::class),
-                // Story 27.12 — type `registry` CAPABILITY-FIRST (exclusive PAR
-                // IDENTITÉ DE CLÉ). Rewrite de 27.3/27.3ter : la table d'authoring
+                // Type `registry` CAPABILITY-FIRST (exclusive PAR
+                // IDENTITÉ DE CLÉ). Rewrite : la table d'authoring
                 // devient `capabilities` (intention métier), le registre est UNE
                 // projection (`capability_projections.mechanism = registry`). Le
                 // provider EXPANSE une capacité → items concrets
-                // {hive,path,name,type,value} (interpréteur de `spec` D5, map/
+                // {hive,path,name,type,value} (interpréteur de `spec` : map ou
                 // littéral). Broadcast (défaut diffusé) + override de VALEUR de
-                // capacité par maille (D4). DEUX providers, UN handler Go : HKLM →
+                // capacité par maille. DEUX providers, UN handler Go : HKLM →
                 // portée machine (service SYSTEM), HKCU → portée session
                 // (compagnon). Le `key`/`id` de capacité/projection ne fuit JAMAIS
-                // au payload (invariant central). Contrat + agent INCHANGÉS (D3).
+                // au payload (invariant central). Contrat + agent INCHANGÉS.
                 // Zéro modif du routage compilateur (le scope() de chaque provider
                 // suffit). Remplace Registry{Machine,User}StateProvider (retirés).
                 $app->make(RegistryMachineCapabilityProvider::class),
                 $app->make(RegistryUserCapabilityProvider::class),
-                // Story 35.2 — type `registry_list` (exclusive PAR CLÉ-CONTENEUR,
+                // Type `registry_list` (exclusive PAR CLÉ-CONTENEUR,
                 // contrat §7.6) : listes registre à sous-valeurs indexées `\1..\N`
                 // (Forcelist Chrome/Edge, DisallowRun). Même modèle capability-first
                 // que `registry` (projection `capability_projections.mechanism =
-                // registry_list`, bi-projection D5 admise), mais l'agent POSSÈDE la
-                // clé-conteneur (D3 : écrit `1..N`, supprime les noms numériques
+                // registry_list`, bi-projection admise), mais l'agent POSSÈDE la
+                // clé-conteneur (il écrit `1..N`, supprime les noms numériques
                 // hors canon). `exclusiveKey() = {hive|path}` (2 segments) : la
                 // maille la plus spécifique gagne le conteneur ENTIER — jamais
-                // d'union de listes entre mailles, StateCompiler INTOUCHÉ (D2).
+                // d'union de listes entre mailles, StateCompiler INTOUCHÉ.
                 // DEUX providers, UN handler Go `registry_list` : HKLM → portée
                 // machine (SYSTEM), HKCU → portée session (compagnon). Le canal
                 // amont (UpstreamLockCollisionDetector / RegistryUpstreamAdapter)
@@ -239,117 +238,117 @@ class AgentServiceProvider extends ServiceProvider
                 // modif du compilateur.
                 $app->make(RegistryListMachineCapabilityProvider::class),
                 $app->make(RegistryListUserCapabilityProvider::class),
-                // Story 36.2 — type `firewall` (exclusive PAR rule_id / portée
+                // Type `firewall` (exclusive PAR rule_id / portée
                 // MACHINE, deuxième mécanisme HORS-REGISTRE). Le provider EXPANSE
                 // une capacité → items concrets {rule_id, direction, action,
                 // remote_scope, protocol, ensure} (+ remote_addresses/ports
                 // conditionnels — interpréteur de `spec` surchargé, `StateCompiler`
-                // INTOUCHÉ D2). `exclusiveKey() = rule_id` : la maille la plus
+                // INTOUCHÉ). `exclusiveKey() = rule_id` : la maille la plus
                 // spécifique gagne CETTE règle, les rule_id distincts s'accumulent
                 // dans le groupe `SambaEdu-Agent`. La traduction
                 // `remote_scope: internet` en plages inverses-RFC1918 vit dans le
-                // handler (D6). Postgres pur (la propriété par groupe + la
+                // handler. Postgres pur (la propriété par groupe + la
                 // convergence sont côté POSTE). UN seul provider (portée Machine).
                 // Une ligne, zéro modif du compilateur (⚠️ fichier partagé avec la
-                // story 36.4 — conflit de merge trivial, garder les deux lignes).
+                // conflit de merge trivial, garder les deux lignes).
                 $app->make(FirewallCapabilityProvider::class),
-                // Story 36.1 + 36.4 — type `fs_acl` (exclusive PAR ACE / portée
+                // + — type `fs_acl` (exclusive PAR ACE / portée
                 // MACHINE, premier mécanisme HORS-REGISTRE). Le provider EXPANSE
                 // une capacité → items concrets {path, trustee, ace_type, rights,
                 // applies_to, ensure} (6 clés, interpréteur de `spec` surchargé —
-                // `StateCompiler` INTOUCHÉ D2). `exclusiveKey() =
+                // `StateCompiler` INTOUCHÉ). `exclusiveKey() =
                 // {path|trustee|ace_type}` : la maille la plus spécifique gagne
                 // CETTE ACE, les ACE distinctes s'accumulent. Jetons d'audience
                 // @eleves|@profs|@personnels résolus par AudienceTokens (enum
-                // FERMÉ, Q1). Postgres pur (résolution SID côté POSTE, LSA D5).
+                // FERMÉ). Postgres pur (résolution SID côté POSTE, via la LSA).
                 //
-                // Story 36.4 (D1) — BI-ALIMENTATION D8 : la ligne
+                // BI-ALIMENTATION : la ligne
                 // `FsAclCapabilityProvider` est REMPLACÉE par le composite
                 // `FolderAccessRulesStateProvider`, qui l'enveloppe et unionne les
                 // candidats-RÈGLES (formulaire refnum) aux candidats-CAPACITÉS.
                 // UN SEUL provider `fs_acl` compilé = condition STRUCTURELLE de
                 // l'arbitrage règle↔capacité par le compilateur (selectExclusive
-                // arbitre PAR provider — deux providers = collision non arbitrée,
-                // piège #1). `exclusiveKey()`/type/semantics/scope DÉLÉGUÉS ;
-                // byte-identité golden sans règles (piège #5). Zéro modif du
+                // arbitre PAR provider — deux providers = collision non arbitrée).
+                // `exclusiveKey()`/type/semantics/scope DÉLÉGUÉS ;
+                // byte-identité golden sans règles. Zéro modif du
                 // compilateur, zéro changement agent/contrat (2.6.0 porte déjà le
-                // handler). ⚠️ Fichier partagé avec 36.2 (firewall AJOUTE sa ligne
+                // handler). ⚠️ Fichier partagé avec (firewall AJOUTE sa ligne
                 // ici) — conflit de merge trivial, garder les deux.
                 $app->make(FolderAccessRulesStateProvider::class),
-                // Story 35.6 — type `privilege` (exclusive PAR nom de privilège /
+                // Type `privilege` (exclusive PAR nom de privilège /
                 // portée MACHINE, troisième mécanisme HORS-REGISTRE). Le provider
                 // EXPANSE une capacité → AU PLUS un item concret 2 clés
                 // {privilege, accounts} (interpréteur de `spec` surchargé,
-                // `StateCompiler` INTOUCHÉ D2). `exclusiveKey() = <privilège>`
+                // `StateCompiler` INTOUCHÉ). `exclusiveKey() = <privilège>`
                 // minuscule (1 segment) : la maille la plus spécifique gagne la
                 // liste `accounts` ENTIÈRE (NON cumulatif — le ciblage « qui est
                 // refusé » vit DANS la liste). Enum FERMÉ SeDeny*-only (un grant
                 // verrouillerait la machine — refus guard + agent). Jetons
                 // d'audience @eleves|@profs|@personnels résolus par AudienceTokens
-                // (36.1, réutilisé). Postgres pur (résolution SID côté POSTE, LSA
-                // D5, conteneur SANS store D4). UN seul provider (portée Machine).
+                // (réutilisé tel quel). Postgres pur (résolution SID côté POSTE via la
+                // LSA, conteneur SANS store). UN seul provider (portée Machine).
                 // Une ligne, zéro modif du compilateur.
                 $app->make(PrivilegeCapabilityProvider::class),
-                // Story 38.3 — type `legacy_cleanup` (exclusive à IDENTITÉ FIXE /
+                // Type `legacy_cleanup` (exclusive à IDENTITÉ FIXE /
                 // portée MACHINE, quatrième mécanisme HORS-REGISTRE). Le provider
                 // EXPANSE la capacité de gating `legacy_hooks_cleanup` → AU PLUS
                 // un item concret 1 clé {mozilla: "vanilla"} (enum FERMÉ §7.10,
-                // Q5-a VANILLA ; interpréteur de `spec` surchargé, `StateCompiler`
+                // valeur VANILLA ; interpréteur de `spec` surchargé, `StateCompiler`
                 // INTOUCHÉ). `exclusiveKey() = "legacy_cleanup"` FIXE : UN seul
                 // nettoyage par poste, la maille la plus spécifique gagne l'item
-                // ENTIER (patron défaut Broadcast + override parc, 27.3ter). Le
-                // CATALOGUE d'artefacts legacy est versionné DANS l'agent (D3) —
+                // ENTIER (patron défaut Broadcast + override parc). Le
+                // CATALOGUE d'artefacts legacy est versionné DANS l'agent —
                 // le serveur ne fait que GATER. Une ligne, zéro modif du
                 // compilateur.
                 $app->make(LegacyCleanupCapabilityProvider::class),
-                // Story 36.5 — type `app_profile` (aggregate / portée SESSION,
+                // Type `app_profile` (aggregate / portée SESSION,
                 // sixième mécanisme HORS-REGISTRE mais le SEUL côté compagnon).
                 // Le provider projette le CATALOGUE des applications redirigeables
                 // (spec de la capacité `app_profile` windows) → un item concret
                 // {app, link, server, profile_name}(+ install_hash/cache_local) par
                 // app, maille User, chemin serveur en TOKEN `\\<se4fs>\users\<user>\…`
-                // (jamais résolu — AC3). Gate d'instance FilePolicyService['home']
-                // (AC7 : rediriger vers une cible non montée n'a pas de sens) et
+                // (jamais résolu —). Gate d'instance FilePolicyService['home']
+                // ( : rediriger vers une cible non montée n'a pas de sens) et
                 // `$ctx->user === null` ⇒ VIDE (iso DrivesStateProvider). Nom de
                 // profil `managed.default` NEUF/hors radical sambaedu ⇒ jamais
-                // matché par referencesSambaeduProfile() du legacy_cleanup (38.3) :
+                // matché par referencesSambaeduProfile du legacy_cleanup :
                 // les deux canaux coexistent. Une ligne, zéro modif du compilateur.
                 $app->make(AppProfileCapabilityProvider::class),
-                // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
+                // Type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées
                 // en items concrets {identifier, progid, type}. Le hash UserChoice
                 // est calculé 100 % côté agent (jamais au payload). Une ligne,
                 // zéro modif du compilateur (exclusiveKey()=identifier suffit).
                 $app->make(AssociationsStateProvider::class),
-                // Story 27.4 — type `app_config` (aggregate PAR app_kind /
+                // Type `app_config` (aggregate PAR app_kind /
                 // session) : projection en LECTURE SEULE des policies d'app
-                // résolues (`app_customizations`, story 4.8) via
+                // résolues (`app_customizations`) via
                 // AppCustomizationService::resolvePoliciesForMachine (PG +
-                // config-pur, NFR7). UN item par app (Firefox/Thunderbird),
+                // config-pur, aucune requête sortante). UN item par app (Firefox/Thunderbird),
                 // policies CONCRÈTES au payload (jamais un id de scope). Le
                 // handler agent écrit le SEUL mécanisme enterprise natif
                 // `policies.json` au chemin natif de l'install. Une ligne, zéro
                 // modif du compilateur.
                 $app->make(AppConfigStateProvider::class),
-                // Story 27.5 — type `applications` (aggregate / machine) :
+                // Type `applications` (aggregate / machine) :
                 // projection en LECTURE SEULE de l'ensemble cible WPKG d'un poste
                 // (WorkstationPackagesResolver::computePackages, méthode NON
-                // CACHÉE — NFR7, jamais l'APCu de resolve()). UN item par app_id
+                // CACHÉE — jamais l'APCu de resolve()). UN item par app_id
                 // affecté, payload concret {app_id, name} (jamais une recette
                 // d'install : WPKG reste le moteur déclaratif, non absorbé). Le
                 // handler agent DÉCLENCHE WPKG (service SYSTEM = portée machine) ;
-                // l'ensemble cible est aussi la clé d'inventaire par poste (AC4).
+                // L'ensemble cible est aussi la clé d'inventaire par poste.
                 // Une ligne, zéro modif du compilateur.
                 //
-                // Story 31.2 — le 2ᵉ argument `UpstreamContractSource` (pont des
-                // ORDRES D'INSTALL amont, FR6) est résolu par AUTO-WIRING (singleton
+                // Le 2ᵉ argument `UpstreamContractSource` (pont des
+                // ORDRES D'INSTALL amont) est résolu par AUTO-WIRING (singleton
                 // déjà bindé ci-dessus). Le décorateur `UpstreamAwareProvider` reste
                 // un no-op pour `applications` (aucun adaptateur — garde anti
                 // double-injection ci-dessus) : l'union amont passe UNIQUEMENT par
                 // l'accesseur dédié du provider, jamais par la décoration.
                 //
-                // Story 63.5 — le 3ᵉ argument `CloudSyncClient` (désignation du
+                // Le 3ᵉ argument `CloudSyncClient` (désignation du
                 // client de synchronisation du cloud actif) est lui aussi résolu
                 // par AUTO-WIRING : service sans état ni dépendance, aucun binding
                 // à déclarer. Même figure que le 2ᵉ — l'union passe par
@@ -358,8 +357,7 @@ class AgentServiceProvider extends ServiceProvider
                 $app->make(ApplicationsStateProvider::class),
                 ],
             ),
-            // Story 43.3 — 3ᵉ argument : résolveur du TTL par contexte (D1),
-            // remplace la constante `ttl_seconds` ligne 74 de StateCompiler.
+            // 3ᵉ argument : résolveur du TTL par contexte.
             $app->make(AgentTtlResolver::class),
         ));
     }

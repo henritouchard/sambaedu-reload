@@ -99,7 +99,6 @@ class PasswordService
                     break;
 
                 case 3:
-                    // Code d'activation
                     $rules['min-pwd-length'] = strlen(SEConfig::get('activation_code', ''));
                     $rules['complexity'] = 'off';
                     break;
@@ -355,7 +354,6 @@ class PasswordService
                     return $this->generateRandomPassword();
 
                 case 3:
-                    // Code d'activation
                     return SEConfig::get('activation_code') ?? $this->generateRandomPassword();
 
                 default:
@@ -426,8 +424,6 @@ class PasswordService
             'errors' => $errors
         ];
     }
-
-    // ===== GESTION DES LISTES DE MOTS =====
 
     /**
      * Récupère la liste de noms

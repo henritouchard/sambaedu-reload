@@ -15,8 +15,6 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 /**
- * Story 16.12 — AC4.1 / AC4.2 / AC4.3 / D5 / D7.
- *
  * Page Livewire SFC index — `/admin/settings/scripts-logs/`.
  *
  *  - Filtres `#[Url(history: true)]` (Livewire 3) — deeplinking + bouton

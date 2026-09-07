@@ -10,10 +10,9 @@ use App\Models\OidcClient;
 use Throwable;
 
 /**
- * Story 56.5 — **Legs de la review 56.4 #4** : détecter les CLIENTS OIDC
+ * Détecter les CLIENTS OIDC
  * FANTÔMES d'une extension.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  L'ANGLE MORT, EN UNE PHRASE
  *
  *  {@see \App\Services\Extensions\ExtensionScopeService::grantedScopesFor()}
@@ -25,12 +24,11 @@ use Throwable;
  *  scopes que le client affiché n'a PAS. L'admin ne les voit pas, donc il ne
  *  pense pas à les révoquer, et ils continuent d'être servis.
  *
- *  La review a jugé le cas non actionnable pour 56.4 (« la détection de clients
+ *  La review a jugé le cas non actionnable pour (« la détection de clients
  *  fantômes appartient au périmètre santé/diagnostic, pas à l'UI des scopes ») et
  *  l'a légué ici. Le geste retenu est donc un DIAGNOSTIC, pas un nettoyage
  *  automatique : SE5 ne révoque jamais un client tout seul — `ext:remove` est le
  *  nettoyeur désigné, et il est déclenché par l'admin.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * Verdicts :
  *  - `ok` : au plus un client `enabled` par clé d'extension.
@@ -38,13 +36,13 @@ use Throwable;
  *    porte un scope ABSENT du client affiché. C'est exactement le scénario de la
  *    review : de la donnée servie qu'aucun écran ne montre. Le détail nomme la
  *    clé et les scopes invisibles — jamais un `client_id`, jamais un secret
- *    (NFR3 : le journal du doctor est lisible par tout admin).
+ *    (le journal du doctor est lisible par tout admin).
  *  - `warn` : plusieurs clients `enabled` pour une clé, mais aucun scope
  *    invisible. L'état reste anormal (il est le symptôme d'une installation
  *    interrompue) sans conséquence de confidentialité.
  *
  * ⚠️ Un client `enabled` dont la clé ne correspond à AUCUNE `app` installée
- * n'est PAS une anomalie : l'app-témoin `sso-demo` (55.3) est une extension
+ * n'est PAS une anomalie : l'app-témoin `sso-demo` est une extension
  * `link` et possède un client légitime. Signaler ce cas produirait un faux
  * positif permanent sur toute instance où le témoin est activé — et un check qui
  * crie au loup ne se lit plus.

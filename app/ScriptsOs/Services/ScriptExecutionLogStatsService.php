@@ -10,8 +10,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Story 16.12 — AC6.1 / D7.
- *
  * Calcule les indicateurs affichés dans le bandeau d'en-tête de
  * `/admin/settings/scripts-logs/` :
  *

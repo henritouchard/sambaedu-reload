@@ -15,16 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 5.1d — Tests Feature de la commande `trash:purge`.
- *
- * Couvre AC 5-7 + edge cases :
- *   - it_purges_directories_older_than_ttl (AC 5)
- *   - it_keeps_directories_younger_than_ttl (AC 5 négatif)
- *   - it_skips_when_ttl_is_zero_or_missing (AC 7)
- *   - it_continues_on_individual_failure + audit log (AC 6)
- *   - it_returns_failure_when_all_deletes_fail (AC 6 edge)
- *   - it_supports_dry_run_without_modifying_db (mode --dry-run)
- *   - it_force_flag_ignores_ttl_guard (mode --force)
+ * Tests Feature de la commande `trash:purge`.
  *
  * Stratégie tests : on remplace `static::$trashDir` par un répertoire temporaire
  * sous `sys_get_temp_dir()` pour ne pas toucher `/home/trash`. La méthode
@@ -146,10 +137,6 @@ class TrashPurgeCommandTest extends TestCase
         $this->app->instance(HomeDirService::class, $stub);
     }
 
-    // =========================================================================
-    // AC 5 — Suppression sélective TTL
-    // =========================================================================
-
     #[Test]
     public function it_purges_directories_older_than_ttl(): void
     {
@@ -189,10 +176,6 @@ class TrashPurgeCommandTest extends TestCase
         $this->assertSame([], $deleted);
     }
 
-    // =========================================================================
-    // AC 7 — Garde-fou TTL invalide → erreur explicite (Q2 — décision Henri 2026-04-29)
-    // =========================================================================
-
     #[Test]
     public function it_fails_with_explicit_error_when_ttl_is_zero_or_missing(): void
     {
@@ -215,10 +198,6 @@ class TrashPurgeCommandTest extends TestCase
         // Le dossier existe toujours (rien n'a été purgé).
         $this->assertDirectoryExists($this->tmpTrashDir . '/alice');
     }
-
-    // =========================================================================
-    // AC 6 — Fail-soft erreurs non-silencieuses + audit
-    // =========================================================================
 
     #[Test]
     public function it_continues_on_individual_failure_and_logs_audit_for_success(): void
@@ -257,10 +236,6 @@ class TrashPurgeCommandTest extends TestCase
         $this->assertSame(1, $exit, 'FAILURE car TOUTES les suppressions ont échoué');
     }
 
-    // =========================================================================
-    // Mode --dry-run + mode --force
-    // =========================================================================
-
     #[Test]
     public function it_supports_dry_run_without_modifying_db(): void
     {
@@ -286,8 +261,8 @@ class TrashPurgeCommandTest extends TestCase
     #[Test]
     public function it_force_flag_ignores_ttl_guard_and_purges_all_when_unconfigured(): void
     {
-        // Pas de SystemSetting → TTL = 0. Sans --force → FAILURE explicite (Q2).
-        // Avec --force → bypass garde-fou + purge tout dossier > 0j (Q2 intentionnel).
+        // Pas de SystemSetting → TTL = 0. Sans --force → FAILURE explicite.
+        // Avec --force → bypass garde-fou + purge tout dossier > 0j (intentionnel).
         $this->makeTrashDir('alice', 100); // > 0j → sera purgé en mode --force
 
         $deleted = [];
@@ -296,7 +271,7 @@ class TrashPurgeCommandTest extends TestCase
             return true;
         });
 
-        // Sans --force : TTL=0 → FAILURE + message explicite (décision Q2).
+        // Sans --force : TTL=0 → FAILURE + message explicite.
         $this->artisan('trash:purge')
             ->expectsOutputToContain('TTL non configuré')
             ->assertExitCode(1);
@@ -310,17 +285,13 @@ class TrashPurgeCommandTest extends TestCase
         $this->assertSame(['alice'], $deleted, 'alice doit avoir été purgée en mode --force.');
     }
 
-    // =========================================================================
-    // Edge case (review #M9) — trashDir absent → SUCCESS + log
-    // =========================================================================
-
     #[Test]
     public function it_returns_success_when_trash_dir_missing(): void
     {
         SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false]);
 
         // On supprime le tmpDir AVANT l'appel : la commande doit gérer
-        // l'absence sans erreur (D2-bis : no-op safe défensif).
+        // l'absence sans erreur (no-op safe défensif).
         @rmdir($this->tmpTrashDir);
         $this->assertFalse(is_dir($this->tmpTrashDir), 'precondition: trashDir absent');
 
@@ -337,12 +308,6 @@ class TrashPurgeCommandTest extends TestCase
         $this->assertSame([], $deleted, 'Aucun delete ne doit avoir été appelé.');
         $this->assertSame(0, QuotaAuditLog::query()->count(), 'Aucun audit ne doit avoir été créé.');
     }
-
-    // =========================================================================
-    // Q1 — Sémantique TTL : J+31 (> exclusif). Décision Henri 2026-04-29.
-    // Un dossier d'âge exactement TTL est CONSERVÉ (ageDays=30 n'est pas > 30).
-    // Un dossier d'âge TTL+1 est PURGÉ.
-    // =========================================================================
 
     #[Test]
     public function it_keeps_directory_at_exactly_ttl_boundary(): void
@@ -364,10 +329,6 @@ class TrashPurgeCommandTest extends TestCase
         // Seul bob doit être purgé. Alice (frontière exacte) doit être conservée.
         $this->assertSame(['bob'], $deleted, 'Frontière TTL exclusive : ageDays=TTL est conservé.');
     }
-
-    // =========================================================================
-    // Q3 — Cache::lock per-login : skip si lock indisponible (décision Henri 2026-04-29).
-    // =========================================================================
 
     #[Test]
     public function it_skips_locked_directory_during_purge(): void

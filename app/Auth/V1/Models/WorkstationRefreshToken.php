@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 16.10 — AC3.1.
  *
  * Modèle Eloquent pour la table `workstation_refresh_tokens`.
  *

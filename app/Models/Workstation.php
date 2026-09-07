@@ -32,18 +32,18 @@ use Livewire\Wireable;
  * @property string|null $ad_dn Distinguished Name dans AD
  * @property string|null $ad_guid objectGUID dans AD
  * @property bool $managed_by_control_hub
- * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
- * @property string|null $agent_token_hash SHA-256 hex du bearer agent (Story 23.2)
- * @property string|null $agent_previous_token_hash Fenêtre de grâce rotation D5 (Story 23.2)
- * @property \DateTimeInterface|null $agent_token_rotated_at Dernière émission/rotation token agent (Story 23.2)
- * @property \DateTimeInterface|null $agent_last_checkin_at Dernier check-in canal agent (Story 23.2)
+ * @property \DateTimeInterface|null $archived_at Archivage logique
+ * @property string|null $agent_token_hash SHA-256 hex du bearer agent
+ * @property string|null $agent_previous_token_hash Fenêtre de grâce à la rotation
+ * @property \DateTimeInterface|null $agent_token_rotated_at Dernière émission/rotation token agent
+ * @property \DateTimeInterface|null $agent_last_checkin_at Dernier check-in canal agent
  * @property \DateTimeInterface|null $agent_reported_offline_at Extinction signalée par l'agent au shutdown Windows
- * @property \DateTimeInterface|null $agent_quarantined_at Quarantaine anti-clonage (Story 23.2)
- * @property string|null $agent_enroll_ticket_hash SHA-256 hex du ticket d'enrôlement one-time (Story 23.3)
- * @property \DateTimeInterface|null $agent_enroll_ticket_expires_at Expiration du ticket d'enrôlement (Story 23.3)
- * @property \DateTimeInterface|null $agent_sync_requested_at Demande de resynchronisation pendante (Story 24.7)
- * @property string|null $agent_reported_version Dernière version d'agent rapportée (Story 25.5)
- * @property \DateTimeInterface|null $agent_reported_version_at Fraîcheur de la version rapportée (Story 25.5)
+ * @property \DateTimeInterface|null $agent_quarantined_at Quarantaine anti-clonage
+ * @property string|null $agent_enroll_ticket_hash SHA-256 hex du ticket d'enrôlement one-time
+ * @property \DateTimeInterface|null $agent_enroll_ticket_expires_at Expiration du ticket d'enrôlement
+ * @property \DateTimeInterface|null $agent_sync_requested_at Demande de resynchronisation pendante
+ * @property string|null $agent_reported_version Dernière version d'agent rapportée
+ * @property \DateTimeInterface|null $agent_reported_version_at Fraîcheur de la version rapportée
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -85,9 +85,8 @@ class Workstation extends Model implements Wireable
     /**
      * Les attributs qui doivent être castés
      *
-     * Story 3.8 — D3 / AC7.3 : `programmed_action` cast en `array` —
-     * sérialisation JSON applicative (compatible JSONB Postgres + fallback
-     * text SQLite/MySQL via migration 2026_05_22_120000).
+     * `programmed_action` est casté en `array` (JSON applicatif : JSONB côté
+     * Postgres, fallback text côté SQLite/MySQL).
      */
     protected $casts = [
         'last_report_at' => 'datetime',
@@ -96,7 +95,7 @@ class Workstation extends Model implements Wireable
         'programmed_action' => 'array',
         // Mode debug du poste (exposé dans l'enveloppe desired-state).
         'debug' => 'boolean',
-        // Story 23.2 — cycle de vie du token agent. Les colonnes `agent_*`
+        // Cycle de vie du token agent. Les colonnes `agent_*`
         // ne sont volontairement PAS dans $fillable : seules les écritures
         // explicites de TokenRotationService / AuthenticateAgentToken les
         // touchent (anti mass-assignment).
@@ -104,13 +103,13 @@ class Workstation extends Model implements Wireable
         'agent_last_checkin_at' => 'datetime',
         'agent_reported_offline_at' => 'datetime',
         'agent_quarantined_at' => 'datetime',
-        // Story 23.3 — ticket d'enrôlement one-time (porte 1 iPXE). Hors
+        // Ticket d'enrôlement one-time (porte 1 iPXE). Hors
         // $fillable pour la même raison : seul EnrollmentService écrit.
         'agent_enroll_ticket_expires_at' => 'datetime',
-        // Story 24.7 — demande de resynchronisation pendante. Hors $fillable :
+        // Demande de resynchronisation pendante. Hors $fillable :
         // exactement 2 écrivains (SyncRequestService::request/fulfill).
         'agent_sync_requested_at' => 'datetime',
-        // Story 25.5 — version d'agent rapportée (greffe ReportController). Hors
+        // Version d'agent rapportée (greffe ReportController). Hors
         // $fillable : seul écrivain = ReportController::store() (forceFill). La
         // surface « progression du déploiement » lit ces colonnes (lecture seule).
         'agent_reported_version_at' => 'datetime',
@@ -148,11 +147,11 @@ class Workstation extends Model implements Wireable
     /**
      * Relation pivot filtrée vers la (les) salle(s) physique(s) du poste.
      *
-     * Story 4.11 — l'appartenance « salle » vit désormais dans le pivot global
+     * L'appartenance « salle » vit désormais dans le pivot global
      * `workstation_group_workstation`, plus dans une FK dédiée. La salle est un
      * groupe `is_physical = true` ; l'invariant « 1 salle max par poste » est
      * une règle de service (swap transactionnel `WorkstationGroupService`), pas
-     * une contrainte DB (D3). Cette relation retourne donc *techniquement* une
+     * une contrainte DB. Cette relation retourne donc *techniquement* une
      * collection, dont l'accessor singulier {@see getPhysicalRoomAttribute}
      * extrait l'unique salle (ou null).
      */
@@ -170,7 +169,7 @@ class Workstation extends Model implements Wireable
     /**
      * Accessor singulier : LA salle physique du poste (ou null).
      *
-     * Story 4.11 — remplace l'ancienne relation `belongsTo` FK. API de lecture
+     * Remplace l'ancienne relation `belongsTo` FK. API de lecture
      * inchangée pour les consommateurs (`$ws->physicalRoom`, `?->ad_dn`,
      * `?->id`, `?->name`). Réutilise la relation eager-loadée `physicalRooms`
      * si présente pour éviter le N+1.
@@ -187,7 +186,7 @@ class Workstation extends Model implements Wireable
     /**
      * Vérifie si la machine est assignée à une salle physique.
      *
-     * Story 4.11 — lecture via le pivot (`is_physical = true`).
+     * Lecture via le pivot (`is_physical = true`).
      */
     public function hasPhysicalRoom(): bool
     {
@@ -225,7 +224,7 @@ class Workstation extends Model implements Wireable
     /**
      * Relation pivot filtrée vers les groupes logiques (parcs) du poste.
      *
-     * Story 4.11 — pendant logique de {@see physicalRooms()} : depuis le pivot
+     * Pendant logique de {@see physicalRooms} : depuis le pivot
      * global, la salle physique est aussi une ligne de `groups`. Les vues qui
      * affichent les parcs doivent passer par cette relation pour ne pas faire
      * remonter la salle parmi les groupes logiques.
@@ -244,9 +243,8 @@ class Workstation extends Model implements Wireable
     /**
      * Ajoute la machine à un ou plusieurs groupes.
      *
-     * Note Story 4.9 (D4) : les hooks pivot audit-only `onGroupAttached` ont
-     * été supprimés (code mort depuis 2026-05-20 — la sync AD machine→groupe
-     * a été retirée, le pivot SQL est la source de vérité).
+     * Aucun hook pivot d'audit : la sync AD machine→groupe a été retirée, le
+     * pivot SQL est la source de vérité.
      */
     public function attachGroups(int|array $groupIds): void
     {
@@ -257,7 +255,7 @@ class Workstation extends Model implements Wireable
     /**
      * Retire la machine d'un ou plusieurs groupes.
      *
-     * Note Story 4.9 (D4) : voir {@see attachGroups()}.
+     * Voir {@see attachGroups}.
      */
     public function detachGroups(int|array $groupIds): void
     {
@@ -268,7 +266,7 @@ class Workstation extends Model implements Wireable
     /**
      * Synchronise les groupes de la machine.
      *
-     * Note Story 4.9 (D4) : voir {@see attachGroups()}.
+     * Voir {@see attachGroups}.
      *
      * @param array $groupIds IDs des groupes à synchroniser
      * @return array Les changements effectués
@@ -344,11 +342,10 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 15.3 / AC3.4 — Scope pour exclure les postes archivés.
+     * Scope pour exclure les postes archivés.
      *
-     * Filtre par défaut à appliquer dans les listings UI (Story 15.4) et
-     * dans le pipeline de déploiement (`WorkstationPackagesResolver`,
-     * décision D8 actée pendant T1).
+     * Filtre par défaut à appliquer dans les listings UI et dans le pipeline de
+     * déploiement (`WorkstationPackagesResolver`).
      */
     public function scopeNotArchived(Builder $query): Builder
     {
@@ -388,8 +385,8 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 23.2 — Vrai si le poste détient un token agent actif
-     * (canal desired-state, Epic 23).
+     * Vrai si le poste détient un token agent actif
+     * (canal desired-state).
      */
     public function isAgentEnrolled(): bool
     {
@@ -397,7 +394,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 23.2 — Vrai si le poste est en quarantaine anti-clonage
+     * Vrai si le poste est en quarantaine anti-clonage
      * (403 AGENT_QUARANTINED sur le canal agent tant que non levée).
      */
     public function isAgentQuarantined(): bool
@@ -406,8 +403,8 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 24.7 — États COURANTS de conformité par type de ressource,
-     * rapportés par l'agent (`agent_resource_states`, upsert 24.1). Lus par
+     * États COURANTS de conformité par type de ressource,
+     * rapportés par l'agent (`agent_resource_states`, upsert). Lus par
      * l'UI conformité (badge tableau, table « État rapporté par type »).
      */
     public function agentResourceStates(): HasMany
@@ -416,8 +413,8 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 24.7 — Journal append-only des CHANGEMENTS d'état rapportés
-     * (`agent_report_events`, 24.1, rétention 14 j). Lu par la sous-section
+     * Journal append-only des CHANGEMENTS d'état rapportés
+     * (`agent_report_events`,, rétention 14 j). Lu par la sous-section
      * « Derniers événements » de la fiche poste.
      */
     public function agentReportEvents(): HasMany
@@ -426,7 +423,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 24.7 / AC5 — Vrai si une demande « forcer la synchro » est
+     * Vrai si une demande « forcer la synchro » est
      * pendante (timestamp posé par {@see \App\Services\Agent\SyncRequestService},
      * soldé au prochain `POST /report`).
      */
@@ -436,9 +433,9 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 24.7 / décision n° 7 — Vrai si le poste est « muet » : enrôlé
+     * Décision n° 7 — Vrai si le poste est « muet » : enrôlé
      * mais aucun check-in récent (dernier check-in > 2 × `agent.ttl_seconds`,
-     * clé existante 23.5 — aucune nouvelle clé config). Un poste jamais
+     * clé existante — aucune nouvelle clé config). Un poste jamais
      * enrôlé ou jamais checké n'est PAS « muet » (état dérivé distinct :
      * non enrôlé / jamais rapporté).
      */
@@ -456,10 +453,10 @@ class Workstation extends Model implements Wireable
     /**
      * Présence du poste dérivée du canal agent :
      *  - 'reported_off' : l'agent a signalé son extinction (`POST /shutdown`
-     *    au shutdown Windows) et aucun check-in plus récent ne l'a démenti —
+     *  au shutdown Windows) et aucun check-in plus récent ne l'a démenti
      *    éteint immédiat, sans attendre le seuil de silence ;
      *  - 'online' : dernier check-in < 2 × `agent.ttl_seconds` (même seuil
-     *    que {@see isAgentSilent()}) ;
+     *  que {@see isAgentSilent()}) ;
      *  - 'silent' : enrôlé mais muet au-delà du seuil sans signal d'extinction
      *    (coupure brutale, agent planté, réseau) — probablement éteint, sans
      *    certitude ; granularité ≈ 2 × ttl ;
@@ -518,7 +515,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 27.5 — inventaire per-app rapporté par l'AGENT (canal natif SE5).
+     * Inventaire per-app rapporté par l'AGENT (canal natif SE5).
      * `status` ∈ {compliant, drift = installé, error = non installé}. Alimente
      * la colonne « Déploiement » du parc pour les postes natifs, en lieu et
      * place du canal WPKG en extinction.
@@ -529,7 +526,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — AppProfiles assignés directement à ce poste (pivot
+     * AppProfiles assignés directement à ce poste (pivot
      * `app_profile_workstation`).
      */
     public function appProfiles(): BelongsToMany
@@ -543,7 +540,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — Apps WPKG rattachées directement à ce poste (pivot
+     * Apps WPKG rattachées directement à ce poste (pivot
      * `application_workstation`, équivalent legacy
      * `applications_profile.type_entite='poste'`).
      */
@@ -558,7 +555,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — Overrides des options `.ini` WPKG pour ce poste.
+     * Overrides des options `.ini` WPKG pour ce poste.
      */
     public function wpkgOptions(): HasMany
     {
@@ -566,10 +563,10 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 16.13bis — relation HasOne vers `workstations_migration_status`
-     * (table livrée par 16.11). FK `workstation_uuid` ↔ PK locale `uuid`.
+     * Relation HasOne vers `workstations_migration_status`
+     * FK `workstation_uuid` ↔ PK locale `uuid`.
      *
-     * Note : pas de FK SQL formelle côté DB (cf. 16.11 D7) — un poste peut
+     * Note : pas de FK SQL formelle côté DB — un poste peut
      * apparaître dans `workstations_migration_status` avant d'exister dans
      * `workstations` (cas d'un poste qui s'enrôle avant d'être déclaré
      * côté admin).
@@ -580,7 +577,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 16.13bis — Accessor booléen : poste basculé SE5 si présence
+     * Accessor booléen : poste basculé SE5 si présence
      * d'une row `workstation_migration_status` matching son UUID.
      */
     public function getMigratedAttribute(): bool
@@ -598,7 +595,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 16.13bis — Scope : postes ayant une row migration_status.
+     * Scope : postes ayant une row migration_status.
      */
     public function scopeMigrated(Builder $query): Builder
     {
@@ -606,7 +603,7 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Story 16.13bis — Scope : postes sans row migration_status.
+     * Scope : postes sans row migration_status.
      */
     public function scopeNotMigrated(Builder $query): Builder
     {

@@ -22,7 +22,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature porte 2 — Story 25.3 (AC1-AC4, AC6, AC7).
+ * Tests Feature porte 2.
  *
  * Le poste migré rejoue `POST /api/v1/agent/enrollment` SANS ticket : la branche
  * d'échec de `redeem()` crée/rafraîchit une demande pending (403 indistinct,
@@ -89,7 +89,7 @@ final class EnrollmentGate2Test extends TestCase
         $this->campaign->enableUntil(now()->addDay());
     }
 
-    // ── AC1 — demande pending + 403 indistinct + idempotence ────────────
+    // — demande pending + 403 indistinct + idempotence
 
     #[Test]
     public function unknown_workstation_without_ticket_creates_pending_request_and_returns_403(): void
@@ -130,7 +130,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertSame('aa:bb:cc:dd:ee:ff', $refreshed->mac);
     }
 
-    // ── AC3 — campagne ON + concordance → auto-approbation ──────────────
+    // — campagne ON + concordance → auto-approbation
 
     #[Test]
     public function campaign_on_concordant_known_workstation_is_auto_approved_then_births_token(): void
@@ -180,7 +180,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertFalse($ws->isAgentEnrolled());
     }
 
-    // ── AC3 — invariant : divergence/inconnu/multi-candidat = manuel ────
+    // — invariant : divergence/inconnu/multi-candidat = manuel
 
     #[Test]
     public function campaign_on_diverging_hostname_never_auto_approves(): void
@@ -224,8 +224,6 @@ final class EnrollmentGate2Test extends TestCase
         self::assertNull($req->matched_workstation_id);
     }
 
-    // ── AC4 / piège n° 4 — poste connu déjà enrôlé = conflit 409 ────────
-
     #[Test]
     public function enrolled_known_workstation_returns_409_and_never_creates_pending(): void
     {
@@ -243,7 +241,7 @@ final class EnrollmentGate2Test extends TestCase
     }
 
     /**
-     * Review #M2 : sous MAC partagée (clone), le conflit est détecté par
+     * Sous MAC partagée (clone), le conflit est détecté par
      * l'EXISTENCE d'un poste enrôlé partageant la MAC (`exists()`), quel que
      * soit l'ordre des lignes — pas par un `.first()` qui pourrait tomber sur le
      * clone non-enrôlé et rater le conflit.
@@ -265,9 +263,9 @@ final class EnrollmentGate2Test extends TestCase
     }
 
     /**
-     * Review #M3 : présenter SEULEMENT l'uuid d'un poste enrôlé (preuve faible,
+     * Présenter SEULEMENT l'uuid d'un poste enrôlé (preuve faible,
      * spoofable) ne déclenche PAS de 409 — le conflit ne se fonde que sur la MAC
-     * (ancre). Sinon le 409≠403 serait un oracle de présence (AC6). Sans MAC
+     * (ancre). Sinon le 409≠403 serait un oracle de présence. Sans MAC
      * concordante : 403 indistinct + demande pending (traçable, non
      * auto-approuvable).
      */
@@ -288,7 +286,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertNull(AgentEnrollmentRequest::query()->first()->matched_workstation_id);
     }
 
-    // ── AC3 — campagne expirée → manuel ─────────────────────────────────
+    // — campagne expirée → manuel
 
     #[Test]
     public function expired_campaign_falls_back_to_manual(): void
@@ -305,7 +303,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertFalse($req->auto_approved);
     }
 
-    // ── AC6 — non-régression porte 1 : ticket valide enrôle directement ─
+    // ── — non-régression porte 1 : ticket valide enrôle directement ─
 
     #[Test]
     public function valid_ticket_still_enrolls_directly_without_any_request(): void
@@ -320,7 +318,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertSame(0, AgentEnrollmentRequest::query()->count());
     }
 
-    // ── AC2 — approbation manuelle (service) → token au prochain redeem ─
+    // ── — approbation manuelle (service) → token au prochain redeem ─
 
     #[Test]
     public function manual_approval_then_next_redeem_births_token_and_logs_approved(): void
@@ -349,7 +347,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertSame(0, AgentEnrollmentRequest::query()->count());
     }
 
-    // ── AC4 — rejet manuel : poste hors système, pas de ré-ouverture ─────
+    // — rejet manuel : poste hors système, pas de ré-ouverture
 
     #[Test]
     public function manual_reject_keeps_post_out_and_replay_does_not_reopen(): void
@@ -374,7 +372,7 @@ final class EnrollmentGate2Test extends TestCase
         self::assertFalse($ws->refresh()->isAgentEnrolled());
     }
 
-    // ── AC6 — sans-oracle / pas de token/hash en log ────────────────────
+    // — sans-oracle / pas de token/hash en log
 
     #[Test]
     public function gate2_logs_never_leak_a_token(): void

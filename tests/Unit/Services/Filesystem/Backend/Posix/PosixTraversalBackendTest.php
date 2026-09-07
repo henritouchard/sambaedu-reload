@@ -29,7 +29,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.5 — LE COULOIR, ÉCRIT, RELU, ET NE DONNANT RIEN DE PLUS.
+ * LE COULOIR, ÉCRIT, RELU, ET NE DONNANT RIEN DE PLUS.
  *
  * Le planificateur se teste à nu ailleurs ({@see PosixTraversalPlannerTest}) ; ici
  * on regarde ce qui touche réellement le disque : la FORME de l'entrée, la FORME de
@@ -39,7 +39,7 @@ use Tests\TestCase;
  * **La simulation d'exécution est posée UNE fois par test, motifs NOMMÉS d'abord.**
  * Un attrape-tout déclaré en premier avale le motif de relecture, et le backend
  * rapporte alors « observé, aucun octroi » — vrai en apparence, faux en silence.
- * C'est la leçon de la story 62.4, et elle vaut aussi ici.
+ * C'est une leçon déjà payée ailleurs, et elle vaut aussi ici.
  */
 class PosixTraversalBackendTest extends TestCase
 {
@@ -74,10 +74,6 @@ class PosixTraversalBackendTest extends TestCase
         UserGroupObserver::enableSync();
         parent::tearDown();
     }
-
-    // =========================================================================
-    // Décor : un ancêtre qui n'accorde rien au rôle profond
-    // =========================================================================
 
     /** @return array{0:UserGroup,1:UserGroup} [servi sur l'ancêtre, servi en profondeur] */
     private function makeGroups(): array
@@ -133,10 +129,6 @@ class PosixTraversalBackendTest extends TestCase
         return $commands;
     }
 
-    // =========================================================================
-    // AC3 — LA FORME DE L'ENTRÉE, ET CE QU'ELLE NE PORTE PAS
-    // =========================================================================
-
     /**
      * **LE test de « rien de plus ».** L'entrée dérivée porte la traversée SEULE :
      * pas de lecture, pas d'écriture, pas de miroir d'héritage, pas de contrepartie
@@ -173,7 +165,7 @@ class PosixTraversalBackendTest extends TestCase
     /**
      * Le rôle qui lit `a/b` **ne peut pas LISTER `a`** : sur l'ancêtre, la seule
      * entrée qui le concerne est le couloir, et le couloir ne porte pas la lecture.
-     * C'est le piège central de la story, vérifié sur la chaîne compilée.
+     * C'est le piège central, vérifié sur la chaîne compilée.
      */
     #[Test]
     public function the_deep_role_cannot_list_the_ancestor_it_only_walks_through_it(): void
@@ -221,7 +213,7 @@ class PosixTraversalBackendTest extends TestCase
         ));
 
         self::assertCount(1, $posted, 'un couloir, une commande');
-        // Review 62.5 #3 — l'oracle gagne `-n` (masque non recalculé). Ce n'est pas
+        // L'oracle porte `-n` (masque non recalculé). Ce n'est pas
         // un assouplissement : la forme reste épinglée au caractère près, et les
         // deux interdits qu'elle porte — descendre, sélectionner — sont vérifiés
         // juste en dessous, inchangés. `-n` est ce qui empêche un couloir d'élargir
@@ -325,10 +317,6 @@ class PosixTraversalBackendTest extends TestCase
         self::assertStringContainsString('profs', (string) $entry->detail);
     }
 
-    // =========================================================================
-    // AC4 — LA BOUCLE FERMÉE
-    // =========================================================================
-
     /**
      * **LA BOUCLE, DANS LE BON SENS.** Compilation → pose simulée → relecture →
      * comparaison : le couloir n'est PAS un octroi observé, le comparateur ne voit
@@ -413,10 +401,6 @@ class PosixTraversalBackendTest extends TestCase
         self::assertStringNotContainsString('intrus', (string) $observation->detail, 'aucun nom système ne remonte');
     }
 
-    // =========================================================================
-    // AC1 — LA DÉCISION, ÉPINGLÉE STRUCTURELLEMENT
-    // =========================================================================
-
     /**
      * **LA DÉCISION EST VÉRIFIABLE, pas seulement écrite.** Le plan d'un rôle
      * octroyé UNIQUEMENT en profondeur ne porte AUCUNE trace de traversée : pas
@@ -454,10 +438,6 @@ class PosixTraversalBackendTest extends TestCase
         );
         self::assertSame(['group:' . self::DEEP_GROUP . ':--x'], $compiled->traversalAcls);
     }
-
-    // =========================================================================
-    // AC7 — LA CLÔTURE RESTE CALCULÉE, ET LE COULOIR NE LA ROUVRE PAS
-    // =========================================================================
 
     /**
      * **DEUX RÔLES EN CLÔTURE, CÔTE À CÔTE.** Celui dont AUCUN descendant ne lui
@@ -505,10 +485,6 @@ class PosixTraversalBackendTest extends TestCase
             self::assertStringNotContainsStringIgnoringCase('deny', $line);
         }
     }
-
-    // =========================================================================
-    // AC6 — L'IMPACT SUR LE SEED : L'ENSEMBLE VIDE, ÉPINGLÉ POSITIVEMENT
-    // =========================================================================
 
     /**
      * **AUCUNE INSTANCE EN PLACE NE BOUGE, ET ON LE PROUVE PAR L'AFFIRMATIVE.**

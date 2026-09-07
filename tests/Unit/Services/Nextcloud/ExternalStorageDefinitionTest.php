@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 61.1 — LA SIGNATURE CANONIQUE, et le piège qu'elle referme.
+ * LA SIGNATURE CANONIQUE, et le piège qu'elle referme.
  *
  * Les corps de réponse employés ici sont ceux MESURÉS sur l'instance de sondage le
  * 2026-08-08, **slash initial du point de montage compris** — c'est tout l'objet
@@ -62,11 +62,6 @@ class ExternalStorageDefinitionTest extends TestCase
         self::assertSame('users', $set[1]->share);
         self::assertSame('$user', $set[1]->root);
     }
-
-    // =========================================================================
-    // LE DOMAINE SMB — le réglage dont l'absence faisait échouer les deux
-    // montages sur toute instance en conteneur (mesuré le 2026-08-17).
-    // =========================================================================
 
     #[Test]
     public function the_canonical_set_carries_the_domain_on_both_mounts(): void
@@ -186,7 +181,7 @@ class ExternalStorageDefinitionTest extends TestCase
     /**
      * **LE PIÈGE.** Nextcloud relit le point de montage avec un slash initial. Sans
      * normalisation, chaque passage verrait une divergence, mettrait à jour, et
-     * l'idempotence de l'AC3 serait fausse.
+     * l'idempotence serait fausse.
      */
     #[Test]
     public function the_leading_slash_added_by_the_instance_is_not_a_divergence(): void
@@ -234,7 +229,7 @@ class ExternalStorageDefinitionTest extends TestCase
         ]));
 
         // Même backend SMB, mais avec un COMPTE DE SERVICE : ce n'est pas le
-        // mécanisme de la story, et l'adopter dupliquerait l'autorité d'accès.
+        // mécanisme retenu, et l'adopter dupliquerait l'autorité d'accès.
         self::assertNull(ExternalStorageDefinition::signatureOf([
             'id' => 10,
             'mountPoint' => '/Commun',

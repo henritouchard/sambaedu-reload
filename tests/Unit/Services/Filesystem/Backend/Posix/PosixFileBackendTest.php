@@ -23,7 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 — LE BACKEND RÉEL : réconciliation, précédence, idempotence,
+ * LE BACKEND RÉEL : réconciliation, précédence, idempotence,
  * garde-fou d'échelle, plafond décliné.
  *
  * La simulation d'exécution est ici l'outil NORMAL : ce code exécute, c'est sa
@@ -69,10 +69,6 @@ class PosixFileBackendTest extends TestCase
             new PlanNode(PlanNode::ROOT_PATH, 'Racine', PlanNodeNature::ContenuLibre, $grants, true, $plafond),
         ]);
     }
-
-    // =========================================================================
-    // Réconciliation
-    // =========================================================================
 
     #[Test]
     public function a_missing_directory_is_created_and_its_rights_are_applied(): void
@@ -179,9 +175,9 @@ class PosixFileBackendTest extends TestCase
     }
 
     /**
-     * Story 62.4 — L'IDEMPOTENCE TIENT AVEC LA RESTRICTION DE SUPPRESSION.
+     * L'IDEMPOTENCE TIENT AVEC LA RESTRICTION DE SUPPRESSION.
      *
-     * C'est le piège nommé de la story : l'option qui masquait l'en-tête de la
+     * C'est le piège nommé : l'option qui masquait l'en-tête de la
      * relecture masquait aussi les drapeaux du dossier. La restriction serait alors
      * REPOSÉE à chaque passage — « déjà conforme » n'aurait plus jamais été
      * atteignable sur un nœud « déposer sans effacer ».
@@ -215,7 +211,7 @@ class PosixFileBackendTest extends TestCase
     }
 
     /**
-     * Story 62.4 — et la réciproque : une restriction posée que le plan ne demande
+     * Et la réciproque : une restriction posée que le plan ne demande
      * PLUS est RETIRÉE. Sans cela, un nœud qui repasse en écriture pleine garderait
      * indéfiniment une restriction que plus personne n'a écrite.
      */
@@ -259,10 +255,6 @@ class PosixFileBackendTest extends TestCase
         self::assertSame(FileBackendOutcome::Applique, $report->for(PlanNode::ROOT_PATH)->outcome);
         Process::assertRan(fn ($p): bool => str_contains($p->command, 'setfacl'));
     }
-
-    // =========================================================================
-    // Précédence (AC9)
-    // =========================================================================
 
     /**
      * LE TEST COMPOSITE DE PRÉCÉDENCE. Quatre situations sur la même échelle :
@@ -347,10 +339,6 @@ class PosixFileBackendTest extends TestCase
         @rmdir($this->tempRoot . '/compose');
     }
 
-    // =========================================================================
-    // Garde-fou d'échelle (AC10)
-    // =========================================================================
-
     #[Test]
     public function a_node_beyond_the_nominative_ceiling_writes_nothing_and_says_the_numbers(): void
     {
@@ -398,10 +386,6 @@ class PosixFileBackendTest extends TestCase
         @rmdir($this->tempRoot . '/echelle');
     }
 
-    // =========================================================================
-    // Plafond (AC11)
-    // =========================================================================
-
     #[Test]
     public function a_capped_node_declines_honestly_as_a_debt_never_as_a_model_limit(): void
     {
@@ -426,10 +410,6 @@ class PosixFileBackendTest extends TestCase
         self::assertSame(0, $report->count());
         self::assertSame(FileBackendName::Posix, $report->backend);
     }
-
-    // =========================================================================
-    // Verrou
-    // =========================================================================
 
     #[Test]
     public function a_pass_held_by_another_writes_nothing_and_says_so_on_every_node(): void

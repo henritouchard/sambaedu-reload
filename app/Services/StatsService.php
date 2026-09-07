@@ -132,9 +132,6 @@ class StatsService
         ];
     }
     
-    /**
-     * Usage CPU
-     */
     private function getCpuUsage(): float
     {
         // Méthode simplifiée - en production utiliser une méthode plus précise
@@ -260,8 +257,6 @@ class StatsService
         // TODO: Implémenter avec de vraies données
         return rand(5, 20);
     }
-
-    // ===== NOUVELLES MÉTHODES POUR COLLECTE DIFFÉRENCIÉE =====
 
     /**
      * Données statiques de l'instance SE4FS
@@ -437,8 +432,6 @@ class StatsService
             ]
         ];
     }
-
-    // ===== MÉTHODES PRIVÉES AUXILIAIRES =====
 
     /**
      * Version SE4FS

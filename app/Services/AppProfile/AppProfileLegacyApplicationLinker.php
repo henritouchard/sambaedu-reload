@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Log;
  * existant — les assignations posées manuellement côté SE5 sont préservées.
  * Idempotent : un rejeu n'attache que les liens encore absents.
  *
- * Source legacy = connexion `legacy_mysql` (Story 5.1d). Si elle n'est pas
+ * Source legacy = connexion `legacy_mysql`. Si elle n'est pas
  * configurée / injoignable, le linker ne fait rien (flag `legacy_unavailable`)
  * et n'interrompt PAS l'import des profils.
  */

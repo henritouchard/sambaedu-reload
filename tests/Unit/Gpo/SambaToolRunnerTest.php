@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unitaires {@see SambaToolRunner} (Story 16.1 / AC3.2).
+ * Tests unitaires {@see SambaToolRunner}.
  *
  * - Argument passing en mode array (pas concat string)
  * - bin_path configurable + global args (`--use-kerberos=required`)
@@ -272,7 +272,7 @@ class SambaToolRunnerTest extends TestCase
     }
 
     /**
-     * Story 8.4 — `samba-tool dns *` prend le serveur en argument positionnel
+     * `samba-tool dns *` prend le serveur en argument positionnel
      * et n'embarque PAS le groupe d'options `hostopts` : `-H` y est rejeté
      * (« no such option »). `withoutDirectoryUrl()` doit donc retirer `-H`
      * SANS perdre les credentials (`-U` + env `PASSWD`), sinon l'appel

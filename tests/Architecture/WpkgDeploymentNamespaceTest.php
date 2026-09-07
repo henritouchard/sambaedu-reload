@@ -15,10 +15,10 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Epic 15 (Story 15.1 / AC2.1, étendu Story 15.2 / AC7.6).
+ * Garde-fou architectural (étendu).
  *
  * Vérifie qu'aucune classe sous `App\Wpkg\*` n'importe `LdapRecord\*`,
- * `App\LdapModels\*` ou `App\Services\Ad\*` (rappel garde-fou Epic 15 :
+ * `App\LdapModels\*` ou `App\Services\Ad\*` (rappel garde-fou :
  * *Eloquent first* en chemin critique). La direction d'écriture canonique
  * est Eloquent → AD via observers `*AdSyncJob` sortants. La sync entrante
  * (AD → Eloquent) est limitée aux imports manuels `/admin/sync-from-ad`,
@@ -33,10 +33,10 @@ use Symfony\Component\Finder\Finder;
  * **Limitation connue** : seuls les `use` statements (Use_, GroupUse) sont
  * scannés. Les usages inline FQCN (`new \LdapRecord\Connection()`,
  * `class_exists('\\LdapRecord\\…')`) ne sont pas détectés. Couverture
- * runtime complémentaire : `EloquentFirstChemiCritiqueTest` (Story 15.3 / T5).
+ * runtime complémentaire : `EloquentFirstChemiCritiqueTest` (T5).
  *
  * @todo Migrer vers ArchTest / PHPStan rule lorsqu'un de ces outils sera
- *       introduit dans le projet (ticket tooling séparé hors scope 15.1).
+ *  introduit dans le projet (ticket tooling séparé hors scope).
  */
 class WpkgDeploymentNamespaceTest extends TestCase
 {
@@ -155,8 +155,8 @@ class WpkgDeploymentNamespaceTest extends TestCase
     }
 
     /**
-     * Story 15.2 / AC7.6 — extension : vérifie que le scan couvre bien les
-     * sous-namespaces livrés par 15.2 (Services, Http\Controllers, Generators,
+     * Extension : vérifie que le scan couvre bien les
+     * sous-namespaces livrés par (Services, Http\Controllers, Generators,
      * Listeners) en plus de Events / Models / Jobs / Support.
      *
      * On vérifie que pour CHAQUE sous-dossier déclaré dans le namespace au

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Story 38.6 — Tests des commandes d'extinction `se4:*`.
+ * Tests des commandes d'extinction `se4:*`.
  *
  * Système fake de bout en bout : `Process::fake()` pour a2query/a2dissite/
  * a2ensite/systemctl/mv/trash, garde root contournée via le seam statique
@@ -108,7 +108,7 @@ class Se4ExtinctionCommandsTest extends TestCase
     }
 
     /**
-     * Vhost SER antérieur à la Story 38.1 : `/ipxe` aliasé DANS l'arbre legacy.
+     * Vhost SER d'avant l'extinction : `/ipxe` aliasé DANS l'arbre legacy.
      * Contient aussi les pièges que la détection ne doit PAS relever : la ligne
      * commentée, et les chemins `sambaedu-reload` (même préfixe que le legacy).
      */
@@ -130,7 +130,7 @@ class Se4ExtinctionCommandsTest extends TestCase
     }
 
     /**
-     * Vhost SER courant (38.1) : `/ipxe` servi depuis storage/ipxe/static.
+     * Vhost SER courant : `/ipxe` servi depuis storage/ipxe/static.
      */
     private function writeCurrentVhost(): void
     {
@@ -231,7 +231,7 @@ class Se4ExtinctionCommandsTest extends TestCase
         }
     }
 
-    // ── se4:status ──────────────────────────────────────────────────────────
+    // se4:status
 
     public function test_status_is_go_with_only_tombstone_noise_and_old_hits(): void
     {
@@ -262,7 +262,7 @@ class Se4ExtinctionCommandsTest extends TestCase
     {
         $this->fakeVhostDisabled();
 
-        // Lignes pré-38.2 : source null → même traitement que catchall.
+        // Lignes antérieur : source null → même traitement que catchall.
         $this->seedHit(['source' => null]);
 
         $this->artisan('se4:status')
@@ -348,7 +348,7 @@ class Se4ExtinctionCommandsTest extends TestCase
         });
     }
 
-    // ── se4:unplug ──────────────────────────────────────────────────────────
+    // se4:unplug
 
     public function test_unplug_refuses_without_root(): void
     {
@@ -413,7 +413,7 @@ class Se4ExtinctionCommandsTest extends TestCase
     }
 
     /**
-     * Le cas qui a mordu : vhost antérieur à la 38.1, `Alias /ipxe` dans
+     * Le cas qui a mordu : vhost antérieur, `Alias /ipxe` dans
      * l'arbre legacy. Déplacer le FS ferait tomber l'Alias ET le <Directory>
      * porteur du FallbackResource — donc TOUT `/ipxe/*`, y compris les routes
      * Laravel. L'extinction doit refuser AVANT de toucher quoi que ce soit.
@@ -623,7 +623,7 @@ class Se4ExtinctionCommandsTest extends TestCase
         Process::assertDidntRun('a2dissite sambaedu-legacy');
     }
 
-    // ── se4:replug ──────────────────────────────────────────────────────────
+    // se4:replug
 
     public function test_replug_refuses_without_root(): void
     {
@@ -718,7 +718,7 @@ class Se4ExtinctionCommandsTest extends TestCase
         Process::assertDidntRun('a2ensite sambaedu-legacy');
     }
 
-    // ── se4:purge ───────────────────────────────────────────────────────────
+    // se4:purge
 
     public function test_purge_refuses_without_confirm(): void
     {

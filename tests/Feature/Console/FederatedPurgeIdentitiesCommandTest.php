@@ -11,17 +11,17 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 20.2 — Feature de la commande `federated:purge-identities`.
+ * Feature de la commande `federated:purge-identities`.
  *
- * Couvre AC8-10, AC13 + edge cases (calqués `TrashPurgeCommandTest`) :
+ * Couvre-10 + edge cases (calqués `TrashPurgeCommandTest`) :
  *   - sélection par last_login_at + pii_ttl_days
  *   - identité encore active récemment → conservée
- *   - anonymize_enabled=false → no-op safe (exit 0, rien modifié) (AC9)
- *   - pii_ttl_days <= 0 sans --force → no-op safe (exit 0) (AC9)
- *   - --dry-run n'écrit rien (AC10)
- *   - anonymise effectivement (PII vidée, anonymized_at posé) (AC8)
- *   - ne hard-delete jamais (withTrashed() retrouve la ligne) (AC8)
- *   - fail-soft (un échec n'arrête pas la boucle) (AC13)
+ * - anonymize_enabled=false → no-op safe (exit 0, rien modifié)
+ * - pii_ttl_days <= 0 sans --force → no-op safe (exit 0)
+ * - --dry-run n'écrit rien
+ * - anonymise effectivement (PII vidée, anonymized_at posé)
+ * - ne hard-delete jamais (withTrashed retrouve la ligne)
+ * - fail-soft (un échec n'arrête pas la boucle)
  */
 class FederatedPurgeIdentitiesCommandTest extends TestCase
 {
@@ -105,7 +105,7 @@ class FederatedPurgeIdentitiesCommandTest extends TestCase
     #[Test]
     public function dry_run_lists_candidates_even_when_anonymize_disabled(): void
     {
-        // P-1 (review 20.2) : un --dry-run est sans effet de bord ; il doit
+        // P-1 (review) : un --dry-run est sans effet de bord ; il doit
         // énumérer les candidats MÊME toggle OFF (état par défaut), pour audit
         // préventif DPO avant activation. Il avertit que c'est une simulation et
         // ne modifie rien.

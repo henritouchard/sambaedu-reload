@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Retour iso-legacy auth WPKG (2026-05-11) — la table `workstation_api_secrets`
- * créée en Story 15.5 (auth Bearer Phase 2) est supprimée. L'ingestion des
- * rapports redevient pilotée par le worker `wpkg:process-reports` (Story 9.4 /
+ * créée en (auth Bearer Phase 2) est supprimée. L'ingestion des
+ * rapports redevient pilotée par le worker `wpkg:process-reports` (
  * Phase 1), authentifié par IP allowlist locale. La jointure AD + ACL Samba
  * du partage `rapports/` reste l'autorité d'identité machine.
  */

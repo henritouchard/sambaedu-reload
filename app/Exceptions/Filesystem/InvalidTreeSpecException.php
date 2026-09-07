@@ -7,7 +7,7 @@ namespace App\Exceptions\Filesystem;
 use InvalidArgumentException;
 
 /**
- * Story 60.1 — la RECETTE STOCKÉE est mal formée (motif de chemin ou `nodes_spec`
+ * La RECETTE STOCKÉE est mal formée (motif de chemin ou `nodes_spec`
  * hors vocabulaire).
  *
  * Frontière volontaire avec {@see PlanResolutionException} : cette exception-ci
@@ -27,7 +27,7 @@ final class InvalidTreeSpecException extends InvalidArgumentException
     }
 
     /**
-     * Story 60.2 — même exception, autre volet de la MÊME recette : la règle par
+     * Même exception, autre volet de la MÊME recette : la règle par
      * laquelle un rôle trouve sa cible (`resolution`), ou l'accrochage de la
      * recette à un type de groupe.
      *

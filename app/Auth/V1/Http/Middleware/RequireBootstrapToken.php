@@ -14,8 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 16.10 — AC4.2.
- * Story 16.11 — AC3.1 (durcissement couple token↔UUID).
+ * (durcissement couple token↔UUID).
  *
  * Protège `POST /api/v1/agent/enroll` par un `X-Bootstrap-Token` md5 valide.
  * Le token est validé contre l'APCu legacy via
@@ -24,7 +23,7 @@ use Symfony\Component\HttpFoundation\Response;
  * **Ne consomme PAS le token côté APCu** (cf. dev notes — race condition
  * retry réseau).
  *
- * **Story 16.11 — couple token↔UUID** :
+ * **couple token↔UUID** :
  *
  *  - Le middleware extrait le `uuid` du body de la requête (`$request->json('uuid')`)
  *    si présent et au format UUID v4. Il est ensuite passé au validator
@@ -72,7 +71,7 @@ class RequireBootstrapToken
 
         $declaredUuid = $this->extractDeclaredUuid($request);
 
-        // Story 16.11 — si on a un uuid format valide, validation durcie
+        // Si on a un uuid format valide, validation durcie
         // (couple token↔UUID via APCu).
         if ($declaredUuid !== null) {
             if (! $this->validator->isValid($token, $declaredUuid)) {
@@ -107,7 +106,7 @@ class RequireBootstrapToken
                 );
             }
         } elseif (! $this->validator->isValid($token)) {
-            // Pas d'uuid déclaré — validation 16.10 standard (APCu présent suffit).
+            // Pas d'uuid déclaré — validation standard (APCu présent suffit).
             $this->logAttempt($request, $token, false, 'invalid_or_expired');
             $this->attemptRecorder->recordFailure(
                 $request,

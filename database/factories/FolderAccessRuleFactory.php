@@ -9,7 +9,7 @@ use App\Models\UserGroup;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 36.4 — factory de règle d'accès aux dossiers. Par défaut : un
+ * Factory de règle d'accès aux dossiers. Par défaut : un
  * `deny list_folder folder_only` sur `D:\Ressources` (masquer sans casser, hors
  * racine protégée → passe le guard), actif, ciblant un groupe frais.
  *

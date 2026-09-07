@@ -11,7 +11,7 @@ use App\Models\ControlHubContractItem;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 28.1 — Factory d'item imposé d'un contrat amont controlHub.
+ * Factory d'item imposé d'un contrat amont controlHub.
  * Défaut : type `capabilities`, état `locked`, cible `instance`.
  *
  * @extends Factory<ControlHubContractItem>
@@ -29,7 +29,8 @@ class ControlHubContractItemFactory extends Factory
             'value' => 'on',
             'enforcement_state' => ControlHubEnforcementState::Locked,
             'target_type' => ControlHubContractTarget::Instance,
-            // '' = cible instance (NOT NULL pour que la clé naturelle NFR4 soit effective). [Review 28.1 #1]
+            // '' = cible instance : la colonne est NOT NULL car NULL est DISTINCT de NULL
+            // dans un index unique, ce qui rendrait la clé naturelle inopérante.
             'target_label' => '',
         ];
     }

@@ -14,7 +14,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 56.4 — **LES SCOPES ACCORDÉS, VUS DEPUIS L'EXTENSION** (FR23, FR36).
+ * **LES SCOPES ACCORDÉS, VUS DEPUIS L'EXTENSION.**
  *
  * Deux gestes, et un seul sujet : ce que l'admin a réellement accordé à une
  * extension, et son retrait.
@@ -24,33 +24,31 @@ use Illuminate\Support\Facades\DB;
  *    pas « une liste vide ») ;
  *  - {@see self::revokeScope()} — le retrait, en transaction, audité.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE SERVICE NE COUPE PAS L'ACCÈS, IL COUPE UNE DONNÉE
  *
  *  Révoquer `groups` ne casse pas le SSO de l'extension : ses utilisateurs
  *  continuent de s'y connecter, elle n'apprend simplement plus leurs classes.
- *  Couper l'accès, c'est désinstaller (FR10). Cette distinction est ce qui
+ *  Couper l'accès, c'est désinstaller. Cette distinction est ce qui
  *  permet à un admin de restreindre sans provoquer de panne — et c'est
  *  pourquoi la révocation d'un scope RÉDUIT les jetons au lieu de les refuser.
  *
  *  L'effet est IMMÉDIAT, y compris sur les jetons déjà émis : rien n'est
  *  purgé, le scope effectif est recalculé à chaque usage
  *  ({@see \App\Models\OidcClient::effectiveScopeFor()}).
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **À SENS UNIQUE.** Il n'y a pas de ré-octroi : re-consentir passe par une
  * désinstallation puis une réinstallation, comme pour toute modification du
  * contrat d'une extension installée (même doctrine que
- * `ERROR_REDIRECT_PATHS_CHANGED`, 56.3). Un bouton « ré-accorder » ferait de
+ * `ERROR_REDIRECT_PATHS_CHANGED`). Un bouton « ré-accorder » ferait de
  * l'écart demandés/accordés un réglage à cliquer, alors que c'est une décision
  * d'installation.
  *
- * **Patron lifecycle** (54.2/56.2) : transaction + `lockForUpdate` sur
+ * **Patron lifecycle** : transaction + `lockForUpdate` sur
  * l'extension, revalidation SERVEUR de l'entrée (l'input Livewire n'est jamais
  * cru), acte et trace d'audit dans la MÊME transaction, no-op ⇒ ZÉRO ligne
  * d'audit. L'acteur est passé en paramètre — le service ne lit jamais `auth()`.
  *
- * NFR15 : rien d'Eloquent ne sort d'ici, uniquement des tableaux plats.
+ * Rien d'Eloquent ne sort d'ici, uniquement des tableaux plats.
  */
 class ExtensionScopeService
 {
@@ -130,7 +128,7 @@ class ExtensionScopeService
                 throw ExtensionLifecycleException::unknownExtension($extensionId);
             }
 
-            // ── Revalidation SERVEUR du scope ──────────────────────────────
+            // Revalidation SERVEUR du scope
             //
             // L'entrée vient d'un clic Livewire : elle est traitée comme
             // hostile. Un scope hors catalogue — `openid` compris — est refusé
@@ -153,7 +151,7 @@ class ExtensionScopeService
 
             // TOUS les clients actifs de la clé sont traités, pas seulement
             // celui qu'affiche la fiche : une installation antérieure mal
-            // nettoyée peut en avoir laissé un second (patron `remove()` 56.2),
+            // nettoyée peut en avoir laissé un second (patron `remove()`),
             // et un fantôme qui continuerait de servir `groups` viderait la
             // révocation de son sens.
             $changed = false;
@@ -165,8 +163,7 @@ class ExtensionScopeService
 
             if (! $changed) {
                 // Déjà révoqué : l'écran de l'admin était périmé. C'est une
-                // information, pas un acte — donc zéro ligne d'audit (patron
-                // review 54.2 #2).
+                // information, pas un acte — donc zéro ligne d'audit.
                 return ['changed' => false, 'status' => self::STATUS_NOT_GRANTED];
             }
 

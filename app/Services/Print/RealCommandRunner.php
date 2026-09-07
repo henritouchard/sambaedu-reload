@@ -7,7 +7,7 @@ namespace App\Services\Print;
 use App\Services\Print\Contracts\CommandRunner;
 
 /**
- * Story 6.1 — Implémentation réelle de CommandRunner via proc_open.
+ * Implémentation réelle de CommandRunner via proc_open.
  *
  * Capture stdout et stderr séparément (vs `exec()` qui mélange ou redirige).
  * Le `returnCode` est renvoyé exactement comme par le shell.
@@ -18,7 +18,7 @@ class RealCommandRunner implements CommandRunner
      * {@inheritdoc}
      *
      * Préfixe systématiquement `LC_ALL=C` pour que la sortie de `lpstat` et autres
-     * commandes CUPS soit en anglais indépendamment de la locale de la VM (Story 6.1 fix #14).
+     * commandes CUPS soit en anglais, indépendamment de la locale de la machine.
      */
     public function run(string $command): array
     {

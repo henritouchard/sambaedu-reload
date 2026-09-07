@@ -25,10 +25,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 34.3 — Tests Unit `DirectoryTemplateService::materialize` (T2/T4, AC2).
+ * Tests Unit `DirectoryTemplateService::materialize`.
  *
  * Process::fake() : AUCUN accès FS réel. Les 4 recettes sont seedées depuis la DB
- * (Q3 option B — la recette est LUE en base, pas un enum en dur).
+ * (la recette est LUE en base, pas un enum en dur).
  */
 class DirectoryTemplateServiceTest extends TestCase
 {
@@ -70,10 +70,6 @@ class DirectoryTemplateServiceTest extends TestCase
         return DirectoryTemplate::where('key', $key)->firstOrFail();
     }
 
-    // =========================================================================
-    // Review 62.4 #1 — une recette NON MIGRÉE est refusée, et elle est refusée ICI
-    // =========================================================================
-
     #[Test]
     public function materializing_a_recipe_still_on_the_old_access_vocabulary_is_refused_loudly(): void
     {
@@ -82,8 +78,8 @@ class DirectoryTemplateServiceTest extends TestCase
         // restée sur l'ancien vocabulaire (`access`) — restauration d'une
         // sauvegarde antérieure à la migration sans la rejouer, écriture SQL
         // directe — se matérialisait donc SANS erreur, en transformant un rôle en
-        // ÉCRITURE en rôle en LECTURE. Silencieusement : exactement ce que la
-        // story dit traquer, et ce que son runbook promet bruyant.
+        // ÉCRITURE en rôle en LECTURE. Silencieusement : exactement ce qu'on
+        // traque, et ce qu'on veut bruyant.
         $direction = UserGroup::create(['name' => 'direction', 'type' => 'equipe']);
         $classe = UserGroup::create(['name' => '6eA', 'type' => 'classe']);
 
@@ -143,10 +139,6 @@ class DirectoryTemplateServiceTest extends TestCase
         }
     }
 
-    // =========================================================================
-    // Matérialisation par template — assignations + access corrects
-    // =========================================================================
-
     #[Test]
     public function direction_to_all_grants_source_rw_and_destinataires_ro(): void
     {
@@ -173,11 +165,11 @@ class DirectoryTemplateServiceTest extends TestCase
     }
 
     /**
-     * Story 60.5 — « profs → élèves » a changé de FLUX, parce qu'elle avait cessé
+     * « profs → élèves » a changé de FLUX, parce qu'elle avait cessé
      * de fonctionner.
      *
      * Elle demandait un groupe de type « équipe » pour son rôle enseignant. Ce type
-     * n'est plus produit depuis le repliement 4.13 : le sélecteur était vide, et la
+     * n'est plus produit depuis le repliement : le sélecteur était vide, et la
      * recette était impossible à matérialiser — pendant cinq semaines, sans que
      * rien ne le dise. L'équipe enseignante est désormais un RÔLE SUR L'ARÊTE du
      * groupe classe, et la recette se résout à partir d'UN seul groupe.
@@ -291,7 +283,7 @@ class DirectoryTemplateServiceTest extends TestCase
     }
 
     /**
-     * Story 60.4 — appelée depuis un écran, la matérialisation ENFILE la pose des
+     * Appelée depuis un écran, la matérialisation ENFILE la pose des
      * droits et le DIT. Aucune écriture n'a lieu dans le cycle de la requête, et le
      * résultat n'affirme pas un provisionnement accompli qui ne l'est pas.
      */
@@ -311,10 +303,6 @@ class DirectoryTemplateServiceTest extends TestCase
         Queue::assertPushed(ReconcileNetworkShareJob::class);
         Process::assertNotRan(fn ($p): bool => str_contains($p->command, 'mkdir'));
     }
-
-    // =========================================================================
-    // Validation AVANT écriture + collision (rollback)
-    // =========================================================================
 
     #[Test]
     public function reserved_letter_is_refused_before_any_write(): void
@@ -387,10 +375,6 @@ class DirectoryTemplateServiceTest extends TestCase
         $this->assertDatabaseMissing('network_shares', ['directory_name' => 'collision']);
     }
 
-    // =========================================================================
-    // Cardinalité / typage des cibles
-    // =========================================================================
-
     #[Test]
     public function cardinality_one_requires_exactly_one_target(): void
     {
@@ -443,10 +427,6 @@ class DirectoryTemplateServiceTest extends TestCase
             'roles' => ['group' => [999999]], // inexistant
         ]);
     }
-
-    // =========================================================================
-    // Invariant WG-montage-seul — aucune recette ne grant un parc
-    // =========================================================================
 
     #[Test]
     public function no_seeded_recipe_grants_a_workstation_group(): void

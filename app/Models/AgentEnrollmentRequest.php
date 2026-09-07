@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 25.3 — Demande d'enrôlement porte 2 (poste migré sans ticket, FR16).
+ * Demande d'enrôlement porte 2 (poste migré sans ticket).
  *
  * Une ligne = une demande d'un poste migré qui rejoue son
  * `POST /v1/agent/enrollment` sans ticket. Le faisceau de preuves

@@ -19,9 +19,6 @@ use Livewire\Wireable;
  */
 class User implements Wireable
 {
-    // ============================================
-    // CONSTANTES POUR USERACCOUNTCONTROL
-    // ============================================
     public const UAC_ACTIVE = 512;
     public const UAC_DISABLED = 514;
 
@@ -51,19 +48,10 @@ class User implements Wireable
         public readonly bool $isActiveUser = true,    // Utilisateur actif (pas dans corbeille)
         public readonly bool $isTrash = false,        // Utilisateur dans la corbeille
 
-        // ============================================
-        // SYNCHRO AD — story 14.4
-        // ============================================
         // Timestamp du dernier changement de mot de passe effectif (depuis pwdLastSet AD).
-        // NULL = jamais changé ou pwdLastSet == 0 (filtre « mdp par défaut » D3/D7).
-        // Additive, défaut null pour ne pas casser les consumers existants (Tâche 4.1).
+        // NULL = jamais changé ou pwdLastSet == 0 (filtre « mdp par défaut »).
         public readonly ?Carbon $passwordChangedAt = null,
 
-        // ============================================
-        // IDENTIFIANTS EXTERNES (données techniques)
-        // Ces champs proviennent de systèmes externes (ENT, AAF, Siecle, etc.)
-        // et peuvent ne pas être présents pour tous les utilisateurs
-        // ============================================
         public readonly ?string $objectGuid = null,   // GUID Active Directory (format brut)
         public readonly ?string $objectGuidDisplay = null, // GUID AD formaté pour affichage
         public readonly ?string $idEnt = null,        // Identifiant ENT
@@ -73,10 +61,6 @@ class User implements Wireable
         public readonly ?string $idNc = null,         // Identifiant NC
     ) {
     }
-
-    // ============================================
-    // MÉTHODES DE VÉRIFICATION DU STATUT COMPTE
-    // ============================================
 
     /**
      * Vérifie si le compte est actif (useraccountcontrol = 512)
@@ -102,27 +86,6 @@ class User implements Wireable
     {
         return $this->pwdLastSet === '0' || $this->pwdLastSet === 0;
     }
-
-    // ============================================
-    // RÔLE
-    //
-    // Story 49.2 (FR-R3) — les prédicats scolaires `isAdmin()`, `isEleve()`,
-    // `isProf()`, `isAdministratif()` et `determineRole()` ont été SUPPRIMÉS.
-    // Ils dérivaient une catégorie de `memberOf`/`dn` LDAP, sur un DTO qui est
-    // aujourd'hui hydraté aussi bien depuis SQL (`UserService::getByLoginFromSql`)
-    // que depuis l'annuaire : selon la source, le même objet répondait
-    // différemment à la même question.
-    //
-    // À la place, selon ce que l'appelant veut vraiment :
-    //  - un DROIT      → `can('…')` / `hasRole(…)` sur `App\Models\User` ;
-    //  - une APPARTENANCE → `isMemberOf()` ci-dessous, ou `userGroups()` en SQL ;
-    //  - une CATÉGORIE d'affichage (type-OU) → la propriété `role`, normalisée
-    //    au site d'affichage.
-    //
-    // La détermination du rôle à la synchronisation reste, elle, du ressort de
-    // la frontière AD→SQL ({@see \App\LdapModels\LdapUser::extractRole()}), qui
-    // est autonome et n'a jamais dépendu de ces méthodes.
-    // ============================================
 
     /**
      * Vérifie si l'utilisateur est externe (rattaché à un autre établissement)
@@ -315,7 +278,7 @@ class User implements Wireable
             'isActiveUser' => $this->isActiveUser,
             'isTrash' => $this->isTrash,
 
-            // Story 14.4 (post-review #11) — round-trip Livewire de passwordChangedAt.
+            // Round-trip Livewire de passwordChangedAt.
             // Sérialisation ISO8601 (Carbon natif), parsing miroir dans fromLivewire().
             'passwordChangedAt' => $this->passwordChangedAt?->toIso8601String(),
 
@@ -368,7 +331,7 @@ class User implements Wireable
             role: $value['role'] ?? 'autre',
             isActiveUser: $value['isActiveUser'] ?? true,
             isTrash: $value['isTrash'] ?? false,
-            // Story 14.4 (post-review #11) — parsing miroir de toArray() ISO8601.
+            // Parsing miroir de toArray ISO8601.
             passwordChangedAt: !empty($value['passwordChangedAt']) ? Carbon::parse($value['passwordChangedAt']) : null,
             // Identifiants externes
             objectGuid: $value['objectGuid'] ?? null,

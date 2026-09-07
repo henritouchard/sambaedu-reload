@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Enums;
 
 /**
- * Story 3.4 — D1 / AC1.2.
- *
  * Whitelist stricte des variantes desktop Linux acceptées par
  * `/ipxe/linux/preseed`.
  *
@@ -14,7 +12,7 @@ namespace App\Ipxe\Enums;
  * variantes autorisées. Toute valeur reçue côté `IpxeLinuxPreseedController`
  * est validée via {@see self::fromString()}.
  *
- * **7 cases stricts en 3.4** :
+ * **7 cases stricts** :
  *
  *  - `Base`     — Debian sans desktop (serveur léger).
  *  - `Gnome`    — Debian + GNOME (défaut menu).

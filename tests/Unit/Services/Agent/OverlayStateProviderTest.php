@@ -19,13 +19,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `OverlayStateProvider` — Story 23.4 (AC4) + Story 24.4 (AC2 :
- * enrichissement `identity`).
+ * Tests Unit `OverlayStateProvider`, enrichissement `identity` compris.
  *
- * Étiquette maille par signal (décision n° 8), exclusion des signaux expirés
- * et des signaux user quand la compilation est machine-only, payload v1
- * (décision 23.4 n° 7 : signaux POSTÉS uniquement, jamais d'alerte dérivée),
- * candidat synthétique `identity` (décision 24.4 n° 4 : contexte user
+ * Étiquette maille par signal, exclusion des signaux expirés et des signaux user
+ * quand la compilation est machine-only, payload v1 (signaux POSTÉS uniquement,
+ * jamais d'alerte dérivée), candidat synthétique `identity` (contexte user
  * uniquement, room = WG physique, déterminisme préservé).
  */
 class OverlayStateProviderTest extends TestCase
@@ -46,7 +44,7 @@ class OverlayStateProviderTest extends TestCase
     {
         parent::setUp();
         // Projection Postgres-pure : aucune synchro AD à déclencher (host sans
-        // LDAP, iso NFR7). Pattern aligné sur ShortcutsStateProviderTest (27.1).
+        // LDAP). Pattern aligné sur ShortcutsStateProviderTest.
         \App\Observers\WorkstationGroupObserver::disableSync();
         \App\Observers\UserGroupUserPivotObserver::disableSync();
 
@@ -167,12 +165,12 @@ class OverlayStateProviderTest extends TestCase
         self::assertSame('broadcast', $candidates->first()->payload['title']);
     }
 
-    // ── Story 24.4 — candidat synthétique `identity` (décision n° 4) ─────
+    // — candidat synthétique `identity`
 
     #[Test]
     public function user_context_yields_identity_candidate_with_login_and_fullname_only(): void
     {
-        // Story 27.10 (D1) : `room` est RETIRÉ de l'item identity session — la
+        // `room` est RETIRÉ de l'item identity session — la
         // salle est désormais émise en portée MACHINE (OverlayMachineStateProvider).
         $this->user->update(['fullname' => 'Marie Dupont']);
 
@@ -194,7 +192,7 @@ class OverlayStateProviderTest extends TestCase
         // `room` n'est plus une clé de l'item identity (source unique = machine).
         self::assertArrayNotHasKey('room', $identity->payload);
         // sourceId 0 : l'identité sort en tête de l'union aggregate (ordre
-        // stable par sourceId asc, décision 23.4 n° 9).
+        // stable par sourceId asc).
         self::assertSame(0, $identity->sourceId);
     }
 
@@ -228,7 +226,7 @@ class OverlayStateProviderTest extends TestCase
     #[Test]
     public function identity_payload_carries_no_float_and_is_deterministic_across_compilations(): void
     {
-        // Déterminisme exigé par l'ETag (23.5) : deux compilations du même
+        // Déterminisme exigé par l'ETag : deux compilations du même
         // état à des instants différents → même hash d'état.
         $this->signal(['title' => 'stable']);
         $compiler = app(\App\Services\Agent\StateCompiler::class);
@@ -249,8 +247,8 @@ class OverlayStateProviderTest extends TestCase
     }
 
     /**
-     * Candidats SIGNAUX seulement (l'identity 24.4 est testée à part) — les
-     * assertions 23.4 d'origine restent vraies sur cette projection.
+     * Candidats SIGNAUX seulement (l'identity est testée à part) — les
+     * assertions d'origine restent vraies sur cette projection.
      *
      * @param  \Illuminate\Support\Collection<int, StateCandidate>  $candidates
      * @return \Illuminate\Support\Collection<int, StateCandidate>

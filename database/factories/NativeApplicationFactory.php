@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /**
  * @extends Factory<NativeApplication>
  *
- * Story 27.11 — applications natives curées de test (built-ins Win32).
+ * Applications natives curées de test (built-ins Win32).
  */
 class NativeApplicationFactory extends Factory
 {

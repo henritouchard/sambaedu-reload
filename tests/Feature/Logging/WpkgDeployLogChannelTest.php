@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.1 / AC1.1 — vérifie la configuration du channel `wpkg-deploy`.
+ * Vérifie la configuration du channel `wpkg-deploy`.
  */
 class WpkgDeployLogChannelTest extends TestCase
 {

@@ -7,11 +7,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 34.1 — pivot POLYMORPHE d'assignation des répertoires réseau.
+ * Pivot POLYMORPHE d'assignation des répertoires réseau.
  *
  * Calqué sur `shortcut_assignables` (2026_02_09) MAIS 100 % pivot SQL (aucune
  * colonne JSON `ad_*`) : les cibles `User | UserGroup | WorkstationGroup` sont
- * toutes des modèles SQL réels (NFR7, critère Keycloak — zéro AD/LdapRecord).
+ * toutes des modèles SQL réels — zéro AD/LdapRecord.
  *
  *  - `access` (string `ro|rw`, défaut `ro`) : porte le niveau d'accès POSIX
  *    dérivé (rx vs rwx) pour les assignations `User`/`UserGroup`. Une

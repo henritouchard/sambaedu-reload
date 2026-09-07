@@ -8,7 +8,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 62.1 — onglet « Rôles » de /admin/settings/groups : LE CATALOGUE.
+ * Onglet « Rôles » de /admin/settings/groups : LE CATALOGUE.
  *
  * Un rôle = une CLÉ immuable ⇔ un LIBELLÉ modifiable, plus un rang d'affichage.
  * La clé est ce qui est stocké sur l'arête d'appartenance et visé par les
@@ -25,7 +25,7 @@ use Livewire\Component;
  * écrites en littéral dans le code de SE5.
  *
  * Sécurité : `server.admin` au `mount()` ET à chaque écriture (double garde,
- * patron des pages settings). Q4 = A — aucune permission Spatie nouvelle.
+ * patron des pages settings). Aucune permission Spatie nouvelle.
  */
 new class extends Component {
     use WithToasts;
@@ -33,7 +33,6 @@ new class extends Component {
     /** @var array<int, array<string, mixed>> */
     public array $rows = [];
 
-    // --- Modale création / édition ------------------------------------------
     public bool $isModalOpen = false;
 
     public bool $isEditing = false;
@@ -49,7 +48,6 @@ new class extends Component {
 
     public string $label = '';
 
-    // --- Modale de suppression ----------------------------------------------
     public bool $isDeleteOpen = false;
 
     #[Locked]
@@ -180,7 +178,7 @@ new class extends Component {
                 'sort_order' => ((int) GroupRole::max('sort_order')) + 1,
             ]);
         } catch (\Illuminate\Database\QueryException $e) {
-            // Review 62.1 #3 — le contrôle d'unicité ci-dessus est un
+            // Le contrôle d'unicité ci-dessus est un
             // check-then-act : deux soumissions concurrentes du même libellé
             // (double-clic, deux onglets) le passent toutes les deux et se
             // disputent la contrainte unique en base. Sans ce catch dédié, la
@@ -204,7 +202,6 @@ new class extends Component {
         $this->loadRows();
     }
 
-    // --- Ordre d'affichage ---------------------------------------------------
 
     public function moveUp(int $id): void
     {
@@ -255,7 +252,6 @@ new class extends Component {
         $this->loadRows();
     }
 
-    // --- Suppression ---------------------------------------------------------
 
     public function confirmDelete(int $id): void
     {
@@ -370,7 +366,7 @@ new class extends Component {
                 <td class="text-sm">
                     <span class="badge badge-sm badge-outline">{{ $row['usage']['edges'] }} appartenance{{ $row['usage']['edges'] > 1 ? 's' : '' }}</span>
                     <span class="badge badge-sm badge-outline">{{ $row['usage']['templates'] }} recette{{ $row['usage']['templates'] > 1 ? 's' : '' }}</span>
-                    {{-- Story 62.3 — plus un usage observé sur les arêtes, mais le
+                    {{-- Plus un usage observé sur les arêtes, mais le
                          nombre de types qui DÉCLARENT ce rôle. --}}
                     <span class="badge badge-sm badge-outline">déclaré par {{ $row['usage']['group_types'] }} type{{ $row['usage']['group_types'] > 1 ? 's' : '' }}</span>
                 </td>

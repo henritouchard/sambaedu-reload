@@ -309,7 +309,7 @@ class ShortcutsService
                 // `windows_icon` reste le NOM NU (legacy + UI — INCHANGÉ).
                 $shortcutData['windows_icon'] = $iconPath;
 
-                // Story 27.7 (AC1) : content-adressage de l'icône uploadée vers
+                // Content-adressage de l'icône uploadée vers
                 // le dossier servi par Apache + persistance filename/checksum sur
                 // le raccourci DB s'il existe (le provider lit la DB). Le `.ico`
                 // legacy name-addressed (`<name>.ico`) vient d'être produit par
@@ -326,7 +326,7 @@ class ShortcutsService
     /**
      * Content-adresse l'icône uploadée `<name>.ico` et persiste
      * `icon_asset`/`icon_checksum` sur le raccourci DB correspondant (résolu par
-     * nom nu — la même clé que `windows_icon`). Story 27.7, AC1.
+     * nom nu — la même clé que `windows_icon`)..
      *
      * Idempotent + fail-soft : source absente / pas de raccourci DA encore
      * importé → no-op silencieux (le backfill artisan rattrape).
@@ -398,9 +398,8 @@ class ShortcutsService
     /**
      * Importe les raccourcis Wine depuis le scan du dossier Wine partagé.
      *
-     * Story 16.3c — AC1.4, AC2.2.
      *
-     * Story 38.4 : port NATIF de `get_wine_shortcuts` ({@see scanWineShortcuts})
+     * Port NATIF de `get_wine_shortcuts` ({@see scanWineShortcuts})
      * — scanne `/home/{se4install_name}/Bureau/*.desktop`, parse les containers
      * Wine et copie les icônes dans `/etc/sambaedu/applications/shortcuts/`,
      * sans plus AUCUN `require` du legacy `/var/www/sambaedu`.
@@ -408,7 +407,7 @@ class ShortcutsService
      * Merge dans `/etc/sambaedu/applications/shortcuts/shortcuts.json` :
      * - Lecture JSON existant (gracieux si fichier absent)
      * - `array_merge` iso-legacy `gpo/wine.php:67`
-     * - Atomic write : `flock(LOCK_EX)` + tmp + rename (parité Story 15.1
+     * - Atomic write : `flock(LOCK_EX)` + tmp + rename (parité
      *   `AtomicFileWriter`, anti-corruption si 2 admins lancent simultanément)
      *
      * Retour : nombre de raccourcis Wine ajoutés (= `count($newShortcuts)`).
@@ -418,8 +417,8 @@ class ShortcutsService
      * @return int Nombre de raccourcis Wine ajoutés au merge.
      * @throws \RuntimeException Si l'atomic write échoue après lock acquis.
      *
-     * Story 38.4 — `get_wine_shortcuts` porté nativement ({@see scanWineShortcuts}),
-     * l'ancien `@todo Story 16.4` est soldé.
+     * `get_wine_shortcuts` porté nativement ({@see scanWineShortcuts}),
+     * L'ancien `@todo` est soldé.
      */
     public function importWineShortcuts(string $application): int
     {
@@ -453,7 +452,7 @@ class ShortcutsService
 
     /**
      * Récupère les raccourcis Wine — port natif de `get_wine_shortcuts`
-     * (Story 38.4, ex-`@todo Story 16.4`). Plus AUCUN `require` legacy.
+     * (ex-`@todo`). Plus AUCUN `require` legacy.
      *
      * Un hook test reste supporté : le binding container
      * `legacy.get_wine_shortcuts` (utilisé par les tests pour injecter un jeu
@@ -609,11 +608,11 @@ class ShortcutsService
      * Merge atomique `$newShortcuts` dans `$this->shortcutsFile` avec `flock`.
      *
      * Iso-legacy merge `array_merge($shortcuts, get_wine_shortcuts(...))`.
-     * Atomic write iso pattern Story 15.1 :
+     * Atomic write iso pattern :
      *   1. Acquire `flock(LOCK_EX)` sur le fichier
      *   2. Lire le contenu actuel
      *   3. Écrire le merge dans `<filename>.tmp.<pid>`
-     *   4. `rename()` atomique tmp → final
+     *  4. `rename()` atomique tmp → final
      *   5. Release lock
      *
      * @param array<int, array<string, mixed>> $newShortcuts

@@ -24,7 +24,7 @@
 <div class="flex flex-col flex-1 min-h-0 gap-4 overflow-y-auto">
 
     {{-- ================================================================ --}}
-    {{-- SECTION 1 — GROUPES PORTEURS (Story 49.1 AC7) --}}
+    {{-- SECTION 1 — GROUPES PORTEURS --}}
     {{-- ================================================================ --}}
     <div class="card bg-base-100 border border-base-300 shadow-sm shrink-0">
         <div class="card-body p-0">
@@ -133,7 +133,7 @@
     </div>
 
     {{-- ================================================================ --}}
-    {{-- SECTION 2 — PROFILS NON PORTÉS (D7) --}}
+    {{-- SECTION 2 — PROFILS NON PORTÉS --}}
     {{-- ================================================================ --}}
     <div class="card bg-base-100 border border-base-300 shadow-sm shrink-0">
         <div class="card-body p-0">

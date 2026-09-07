@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.3 — AC9.2 / T6.6.
+ * T6.6.
  *
  * Tests Feature des routes natives `GET|POST /ipxe/enrollment/parc-add` et
  * `GET|POST /ipxe/enrollment/parc-remove`.
@@ -72,7 +72,7 @@ class IpxeEnrollmentParcEndpointTest extends TestCase
             'workstation_group_id' => $parc->id,
         ]);
 
-        // F13 (review 3.3) : MachineBootLog peuplé pour le flow parc-add (success).
+        // F13 (review) : MachineBootLog peuplé pour le flow parc-add (success).
         self::assertDatabaseHas('machine_boot_logs', [
             'workstation_id' => $ws->id,
             'action' => 'ipxe_parc_add',
@@ -112,7 +112,7 @@ class IpxeEnrollmentParcEndpointTest extends TestCase
             'workstation_group_id' => $parc->id,
         ]);
 
-        // F13 (review 3.3) : MachineBootLog peuplé pour le flow parc-remove (success).
+        // F13 (review) : MachineBootLog peuplé pour le flow parc-remove (success).
         self::assertDatabaseHas('machine_boot_logs', [
             'workstation_id' => $ws->id,
             'action' => 'ipxe_parc_remove',
@@ -141,7 +141,7 @@ class IpxeEnrollmentParcEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringContainsString("ERREUR la machine n'a pas ete ajoutee", $body);
 
-        // F13 (review 3.3) : aucun MachineBootLog créé sur invalid_group_id.
+        // F13 (review) : aucun MachineBootLog créé sur invalid_group_id.
         self::assertDatabaseMissing('machine_boot_logs', [
             'workstation_id' => $ws->id,
             'action' => 'ipxe_parc_add',

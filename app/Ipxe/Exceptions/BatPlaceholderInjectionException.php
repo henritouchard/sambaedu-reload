@@ -7,8 +7,6 @@ namespace App\Ipxe\Exceptions;
 use RuntimeException;
 
 /**
- * Story 3.8 — D9 / AC8.2.
- *
  * Exception levée par {@see \App\Ipxe\Support\WindowsXmlPlaceholders::sanitizeBatPlaceholder()}
  * quand un input dynamique contient un caractère d'injection cmd.exe interdit :
  *

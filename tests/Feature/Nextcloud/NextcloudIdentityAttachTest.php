@@ -16,16 +16,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.2 — AC7 : LE RATTACHEMENT EXPLICITE D'IDENTITÉ.
+ * LE RATTACHEMENT EXPLICITE D'IDENTITÉ.
  *
- * ---------------------------------------------------------------------------
  * **LE TEST PIVOT EST LE REFUS** ({@see self::an_unconfirmed_identity_is_never_written()}).
- * La revue 61.1 a fermé le scénario `p.durand` / `p.durand-martin` : une identité
+ * La revue a fermé le scénario `p.durand` / `p.durand-martin` : une identité
  * non confirmée écrite en base fait que le prochain changement de mot de passe AD
  * écrase le mot de passe du compte d'une AUTRE personne, journalisé comme un
  * succès. Qu'un humain ait tapé l'identifiant n'y change rien — une faute de frappe
  * produit exactement le même défaut.
- * ---------------------------------------------------------------------------
  */
 class NextcloudIdentityAttachTest extends TestCase
 {
@@ -67,10 +65,6 @@ class NextcloudIdentityAttachTest extends TestCase
     {
         return ['ocs' => ['meta' => ['status' => 'ok', 'statuscode' => $code, 'message' => 'OK'], 'data' => $data]];
     }
-
-    // =====================================================================
-    // La sonde directe auprès de l'instance
-    // =====================================================================
 
     #[Test]
     public function a_confirmed_identity_is_written_to_the_cache_column(): void
@@ -131,17 +125,6 @@ class NextcloudIdentityAttachTest extends TestCase
 
         self::assertSame('P.Durand', User::query()->where('login', 'p.durand')->value('nextcloud_user_id'));
     }
-
-    // =====================================================================
-    // CORRECTION DE REVUE #2 — UNE IDENTITÉ NEXTCLOUD N'EST PORTÉE QUE PAR UN
-    // SEUL UTILISATEUR SE5
-    //
-    // `link()` vérifiait que l'identité EXISTE à distance, jamais qu'elle est
-    // LIBRE. Deux logins SE5 pointant le même compte Nextcloud, et la
-    // propagation de mot de passe de l'un écrase le compte de l'autre — c'est
-    // exactement le scénario que la correction #2 de la revue 61.1 avait fermé,
-    // rouvert par la porte « geste d'admin vérifié ».
-    // =====================================================================
 
     #[Test]
     public function an_identity_already_held_by_another_user_is_refused_by_naming_the_holder(): void
@@ -252,10 +235,6 @@ class NextcloudIdentityAttachTest extends TestCase
         $other->saveQuietly();
     }
 
-    // =====================================================================
-    // Idempotence, détachement, cas limites
-    // =====================================================================
-
     /** Rejouer le même rattachement n'écrit rien et ne parle même pas à l'instance. */
     #[Test]
     public function relinking_the_same_identity_is_a_no_op_without_any_call(): void
@@ -332,10 +311,6 @@ class NextcloudIdentityAttachTest extends TestCase
         self::assertStringContainsString('Accès Nextcloud', $result->message);
         Http::assertNothingSent();
     }
-
-    // =====================================================================
-    // La commande artisan — le même geste, sans écran
-    // =====================================================================
 
     #[Test]
     public function the_command_reports_the_current_state_without_any_call(): void

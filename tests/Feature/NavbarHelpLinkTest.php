@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature — Bouton d'aide dans la navbar (Story 52.8, AC1/AC2/AC3).
+ * Tests Feature — Bouton d'aide dans la navbar.
  *
  * Stratégie (calquée sur tests/Feature/Gpo/GpoBackLinkComponentTest.php) : rendu
  * du composant `<x-organisms.navbar />` en isolation via Blade::render(), sans
@@ -45,10 +45,6 @@ class NavbarHelpLinkTest extends TestCase
         return Blade::render('<x-organisms.navbar />');
     }
 
-    // =========================================================================
-    // AC1/AC2 — Scénario 1 : l'index publié existe → le bouton d'aide est rendu
-    // =========================================================================
-
     #[Test]
     public function it_renders_help_link_when_doc_index_file_exists(): void
     {
@@ -64,11 +60,6 @@ class NavbarHelpLinkTest extends TestCase
         $this->assertStringContainsString('rel="noopener"', $html);
         $this->assertStringContainsString('fa-circle-question', $html);
     }
-
-    // =========================================================================
-    // AC2/AC3 — Scénario 2 : l'index publié est absent → pas de lien mort,
-    // le reste de la navbar (ex. Notifications) reste intact
-    // =========================================================================
 
     #[Test]
     public function it_does_not_render_help_link_when_doc_index_file_is_absent(): void

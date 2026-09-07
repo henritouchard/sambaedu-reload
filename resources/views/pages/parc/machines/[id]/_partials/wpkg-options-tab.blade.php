@@ -4,7 +4,7 @@
     pilotés par $this->wpkgOptionsState (array<string,bool>).
 --}}
 @php
-    // Story 29.1 — Périmètre d'autorisation WPKG = salle physique du poste,
+    // Périmètre d'autorisation WPKG = salle physique du poste,
     // résolu UNE fois (l'accessor requête sinon à chaque @cannot dans la boucle
     // d'options, N+1). null (poste nomade) → fallback droit global.
     $wpkgScope = $wpkgScope ?? $this->workstation?->physicalRoom;

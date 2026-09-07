@@ -10,27 +10,28 @@ use App\Services\Agent\Providers\AudienceTokens;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 36.4 (D5) — Validation PRÉDICTIVE des règles d'accès aux dossiers.
+ * Validation PRÉDICTIVE des règles d'accès aux dossiers.
  *
  * Service de **PURE LECTURE** (Postgres), calque de
  * {@see \App\Services\Filesystem\NetworkShareValidator} : il PRÉDIT, AVANT
  * émission, deux avertissements NON bloquants — il n'écrit RIEN, n'émet AUCUN
- * candidat, n'introduit AUCUNE précédence (D2 reste confiné au `StateCompiler`).
+ * candidat, n'introduit AUCUNE précédence — celle-ci reste confinée au
+ * `StateCompiler`.
  *
  *  - **Recouvrement de capacité** ({@see capabilityOverlaps()}) : la règle porte
  *    la MÊME identité `{path|trustee|ace_type}` qu'une entrée `aces[]` d'une
  *    capacité `windows/fs_acl` ACTIVE. Ce n'est PAS une erreur (la collision est
- *    arbitrée par le compilateur, maille/récence — D1) mais un AVERTISSEMENT
+ *    arbitrée par le compilateur, maille puis récence) mais un AVERTISSEMENT
  *    nommant la capacité. Les trustees d'une capacité sont résolus STATIQUEMENT :
  *    littéral verbatim, CHAQUE valeur d'une map, jeton `@…` → map fermée
  *    {@see AudienceTokens::TOKENS} (pas de requête d'existence — c'est un
  *    avertissement, pas une émission).
  *  - **Groupe sans correspondance AD** ({@see missingAdDn()}) : le trustee sera
- *    dérivé du `name` folded (piège #4/D9) → résolution LSA potentiellement
+ *    dérivé du `name` folded → résolution LSA potentiellement
  *    impossible au poste. Avertissement à la création.
  *
- * Une collision règle↔règle sur la même identité n'est PAS un warning (même
- * provider, arbitrée par le compilateur — D1).
+ * Une collision règle↔règle sur la même identité n'est PAS un warning : elles
+ * viennent du même provider et le compilateur les arbitre.
  */
 class FolderAccessRuleValidator
 {
@@ -82,7 +83,7 @@ class FolderAccessRuleValidator
 
     /**
      * `true` si le groupe n'a AUCUN `ad_dn` (le trustee sera dérivé du `name`
-     * folded — piège #4/D9). Avertissement non bloquant à la création.
+     * folded). Avertissement non bloquant à la création.
      */
     public function missingAdDn(int $userGroupId): bool
     {
@@ -94,10 +95,6 @@ class FolderAccessRuleValidator
 
         return $adDn === null || trim((string) $adDn) === '';
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     /**
      * Identité normalisée `{path|trustee|ace_type}` (minuscules) — MÊME clé que

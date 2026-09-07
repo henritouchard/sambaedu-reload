@@ -11,15 +11,15 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `printers` (Story 27.2) — connexion à une
+// Câblage Windows du handler `printers` — connexion à une
 // imprimante réseau partagée via l'API Win32 winspool EN GO NATIF (PAS de
-// shell-out PowerShell/printui, iso décision 27.1 n° 7) : AddPrinterConnection /
+// shell-out PowerShell/printui) : AddPrinterConnection /
 // DeletePrinterConnection / SetDefaultPrinter / EnumPrinters. Zéro dépendance
 // ajoutée (winspool.drv via golang.org/x/sys/windows lazy DLL, comme le reste
 // de l'agent câble Win32 sans cgo).
 //
 // Exécuté par le COMPAGNON (droits user) : les connexions imprimante sont
-// per-user (PRINTER_CONNECTIONS). Le MARQUEUR de périmètre (décision n° 8) est
+// per-user (PRINTER_CONNECTIONS). Le MARQUEUR de périmètre est
 // IMPLICITE : une connexion gérée est un partage `\\<serveur>\<nom>` dont le
 // serveur correspond au serveur SambaEdu résolu (`<se4fs>`). On ne liste / ne
 // désinstalle QUE les connexions vers CE serveur — jamais une imprimante locale

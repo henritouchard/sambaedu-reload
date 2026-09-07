@@ -22,7 +22,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — la FICHE d'un partage d'ARBRE.
+ * La FICHE d'un partage d'ARBRE.
  *
  * Trois choses y arrivent, et chacune répond à une question que l'arbre a rendue
  * pressante : où ce partage vit-il vraiment, quels dossiers sont suspendus, et —
@@ -88,10 +88,6 @@ class ClassTreeShareDetailTest extends TestCase
         return $u;
     }
 
-    // =========================================================================
-    // AC5 — le partage d'arbre EST un partage ordinaire, avec son chemin réel
-    // =========================================================================
-
     #[Test]
     public function the_sheet_shows_the_origin_and_the_real_server_location(): void
     {
@@ -111,10 +107,6 @@ class ClassTreeShareDetailTest extends TestCase
         Livewire::test('pages::admin.shares.index')
             ->assertSee('Classe_3emeA');
     }
-
-    // =========================================================================
-    // AC7 — l'activation est une donnée d'instance
-    // =========================================================================
 
     #[Test]
     public function the_activable_nodes_of_the_recipe_are_listed_with_their_state(): void
@@ -199,10 +191,6 @@ class ClassTreeShareDetailTest extends TestCase
 
         $this->assertSame([], $this->share->fresh()->nodeActivation());
     }
-
-    // =========================================================================
-    // T6 — le dernier rapport, PAR NŒUD
-    // =========================================================================
 
     #[Test]
     public function the_queued_reconciliation_shows_a_pending_report_for_every_node(): void

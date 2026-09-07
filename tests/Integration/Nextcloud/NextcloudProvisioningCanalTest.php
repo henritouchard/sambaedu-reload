@@ -15,12 +15,12 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 61.1 — LE CANAL D'ÉCRITURE DES MONTAGES, CONTRE L'INSTANCE RÉELLE.
+ * LE CANAL D'ÉCRITURE DES MONTAGES, CONTRE L'INSTANCE RÉELLE.
  *
  * **Ce que ce test prouve, et lui seul** : que l'endpoint d'administration des
  * montages globaux (`index.php/apps/files_external/globalstorages`) est
  * franchissable en authentification basic par app password — c'est-à-dire sans
- * session ni jeton de requête. C'était le seul pari de la story : `files_external`
+ * session ni jeton de requête. C'était le seul pari : `files_external`
  * n'expose pas d'API OCS d'écriture, et l'exemption anti-CSRF des routes
  * `index.php` dépend des annotations du contrôleur. Les doubles de test ne
  * prouvent rien là-dessus : ils rejouent ce qu'on croit.
@@ -29,9 +29,8 @@ use PHPUnit\Framework\TestCase;
  * transcription reste vraie : l'idempotence par signature (aucun doublon au
  * rejeu), le `102` à la recréation d'un compte, la résolution d'identité, la mise
  * à jour de mot de passe — et la normalisation du point de montage par l'instance
- * (elle ajoute un slash initial), qui est le piège d'idempotence de la story.
+ * (elle ajoute un slash initial), qui est le piège d'idempotence.
  *
- * ---------------------------------------------------------------------------
  * **SKIPPÉ PAR DÉFAUT**, et jamais en intégration continue. Il exige les trois
  * variables `NC_SPIKE_URL`, `NC_SPIKE_ADMIN`, `NC_SPIKE_PASSWORD`, et il est hors
  * de la suite par défaut (`phpunit.integration.xml`).
@@ -55,7 +54,6 @@ use PHPUnit\Framework\TestCase;
  * le client et ses objets de configuration sont du PHP pur au-dessus du client
  * HTTP du framework. Seule la façade `Http` doit être amorcée, ce que fait
  * {@see self::setUp()}.
- * ---------------------------------------------------------------------------
  */
 class NextcloudProvisioningCanalTest extends TestCase
 {
@@ -120,14 +118,12 @@ class NextcloudProvisioningCanalTest extends TestCase
         $client = $this->client;
         self::assertNotNull($client);
 
-        // --- la sonde : instance, privilège, app ------------------------------
         $probe = $client->probe();
         self::assertTrue(
             $probe->isOk(),
             'la sonde doit être verte — sinon le prérequis d\'instance n\'est pas rempli : ' . $probe->message,
         );
 
-        // --- LE CANAL D'ÉCRITURE ---------------------------------------------
         $definition = new ExternalStorageDefinition($this->mountPoint, '192.0.2.1', 'partages');
 
         $created = $client->createGlobalStorage($definition);
@@ -147,7 +143,6 @@ class NextcloudProvisioningCanalTest extends TestCase
         self::assertTrue(is_int($id) || is_string($id), 'la création doit rendre l\'identifiant du montage');
         $this->createdStorageIds[] = $id;
 
-        // --- L'INSTANCE NORMALISE CE QU'ON LUI ENVOIE ------------------------
         // C'est le piège d'idempotence : elle relit le point de montage avec un
         // slash initial. La signature canonique doit s'en accommoder, sans quoi
         // chaque passage « mettrait à jour » le même montage.
@@ -163,7 +158,6 @@ class NextcloudProvisioningCanalTest extends TestCase
             . 'mettrait à jour à chaque passage',
         );
 
-        // --- REJEU : aucun doublon -------------------------------------------
         $replay = $client->createGlobalStorage($definition);
         $replayId = $replay->value('id');
         if (! $replay->isFailure() && (is_int($replayId) || is_string($replayId))) {
@@ -183,7 +177,6 @@ class NextcloudProvisioningCanalTest extends TestCase
             'le montage doit rester présent après rejeu',
         );
 
-        // --- LES COMPTES : création puis 102 ---------------------------------
         $create = $client->createUser($this->login, 'Se5Canal2026!x');
         self::assertFalse($create->isFailure(), 'création de compte : ' . $create->message);
         self::assertFalse($create->alreadyConforming, 'le compte d\'épreuve ne devait pas exister');
@@ -193,7 +186,6 @@ class NextcloudProvisioningCanalTest extends TestCase
         self::assertTrue($again->alreadyConforming);
         self::assertSame(102, $again->ocsStatusCode, 'la sémantique « existe déjà » du sondage 60.0');
 
-        // --- LA RÉSOLUTION D'IDENTITÉ ----------------------------------------
         $direct = $client->getUser($this->login);
         self::assertFalse($direct->isFailure());
         self::assertSame($this->login, $direct->value('id'));
@@ -206,16 +198,14 @@ class NextcloudProvisioningCanalTest extends TestCase
             'l\'autocomplétion doit retrouver le compte',
         );
 
-        // …et l'absence est SILENCIEUSE côté API (mesure du sondage 60.0).
+        // …et l'absence est SILENCIEUSE côté API (mesure du sondage).
         $absent = $client->autocompleteUser('zz-inexistant-' . $this->login);
         self::assertFalse($absent->isFailure());
         self::assertSame([], $absent->value('matches', []));
 
-        // --- LA MISE À JOUR DE MOT DE PASSE ----------------------------------
         $password = $client->setUserPassword($this->login, 'Se5Canal2026!y');
         self::assertFalse($password->isFailure(), 'mise à jour du mot de passe : ' . $password->message);
 
-        // --- Nettoyage du compte d'épreuve -----------------------------------
         // Volontairement PAS une méthode du client : SE5 ne supprime pas de
         // comptes Nextcloud, et ce n'est pas à un test d'ouvrir cette porte.
         $this->deleteProbeUser();

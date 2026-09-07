@@ -10,30 +10,30 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 49.3 — passe nocturne de réconciliation des DÉPARTS.
+ * Passe nocturne de réconciliation des DÉPARTS.
  *
  * Un balayage AD complet, puis : tout compte actif `source='ad'` absent de ce
  * balayage est désactivé et détaché de ses groupes (le volet rôles suit, porté
- * par 49.1). Sans elle, Postgres ne serait un miroir fidèle que des ENTRÉES —
- * et la bascule runtime 49.2 exposerait « le compte parti garde ses droits ».
+ * par). Sans elle, Postgres ne serait un miroir fidèle que des ENTRÉES
+ * et la bascule runtime exposerait « le compte parti garde ses droits ».
  *
- * **Commande DÉDIÉE, et non une option de `users:sync-from-ad` (D1).** La
+ * **Commande DÉDIÉE, et non une option de `users:sync-from-ad`.** La
  * sémantique de `--mode=full` reste ainsi INCHANGÉE : un full manuel (QA,
  * `import:sync-from-ad`) n'a JAMAIS d'effet de désactivation. La garde
  * anti-masse devient au passage explicite et testable, et l'opération
  * multi-instance est une commande — jamais une procédure manuelle à rejouer.
  *
- * **Un seul balayage, partagé (D2).** Hors dry-run, la commande appelle
+ * **Un seul balayage, partagé.** Hors dry-run, la commande appelle
  * `UserSyncService::importFromAd()` : la même passe traite les entrées et les
  * retours, et rend les identifiants présents dans ses stats. En `--dry-run`,
  * elle passe par `fetchPresence()` — même chemin interne, zéro écriture.
  *
- * **Codes de sortie (D10)** :
+ * **Codes de sortie** :
  *  - `0` : passe exécutée (y compris « rien à faire ») ;
  *  - `1` : erreurs par-utilisateur — la passe a tourné, une partie a échoué ;
  *  - `2` : GARDE DÉCLENCHÉE, no-op total, intervention humaine requise.
  *
- * Le balayage en échec relève du `2` et non du `1` : AC3 le range explicitement
+ * Le balayage en échec relève du `2` et non du `1` : le range explicitement
  * parmi les conditions d'abandon de la garde, et c'est le code qui porte le
  * bon message pour l'orchestration — « rien n'a été fait, va voir l'annuaire ».
  */
@@ -110,7 +110,7 @@ class ReconcileUserDepartures extends Command
             if ($dryRun) {
                 $fetch = $userSyncService->fetchPresence($logger, $scope);
             } else {
-                // La passe départs court APRÈS le commit de l'import (D9) :
+                // La passe départs court APRÈS le commit de l'import :
                 // `importUsersFromAd` enveloppe tous ses upserts dans UNE
                 // transaction ; y imbriquer les désactivations ferait qu'une
                 // erreur d'upsert avorterait des départs déjà décidés.

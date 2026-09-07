@@ -5,23 +5,23 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.12 (AC5) — seed du LOT ISO de capacités + migration des 3 réglages
- * 27.3ter vers le modèle capability-first.
+ * Seed du LOT ISO de capacités + migration des 3 réglages
+ * vers le modèle capability-first.
  *
  * IDEMPOTENT : `updateOrInsert` par `key` pour la capacité, puis `updateOrInsert`
  * par `(capability_id, os, mechanism)` pour la projection registry (rejouable,
  * zéro doublon). Source autoritaire des valeurs = inventaire GPO décodé
  * (`project_legacy_gpo_registry_inventory`, templates `se4_*` JSON sur la VM).
  *
- * Modèle de la `spec` (D5) : `{ "keys": [ {hive, path, name, type, value}, … ] }`
+ * Modèle de la `spec` : `{ "keys": [ {hive, path, name, type, value}, … ] }`
  * où `value` est SOIT un littéral (toujours émis) SOIT une MAP valeur-capacité →
  * donnée (`{"on":0,"off":1}` ; clé absente ⇒ clé non émise = cesser de gérer).
  *
- * MIGRATION DES 3 EXISTANTS (27.3ter → 27.12) :
+ * MIGRATION DES 3 EXISTANTS :
  *   - `show_file_extensions` (HideFileExt HKCU) : défaut `on` (= afficher, valeur 0) ;
  *   - `show_hidden_files`    (Hidden HKCU)      : défaut `on` (= afficher, valeur 1) ;
  *   - `uac_enabled`          (EnableLUA HKLM)   : défaut `on` (= UAC ACTIVÉ, valeur 1,
- *     posture sûre 27.3ter D6), warning conservé. (L'ancien `disable_uac` est
+ *  posture sûre), warning conservé. (L'ancien `disable_uac` est
  *     reformulé positivement : « UAC activé » avec défaut on.)
  *
  * EXCLUS du lot (pièges n°6/n°7) : `windows_telemetry_off` (verbe legacy `**del.`
@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Schema;
  * est sur la VM, INACCESSIBLE depuis le worktree, et AUCUNE copie locale n'existe
  * dans le repo. Les clés ci-dessous sont une transcription PARTIELLE des clés
  * Windows Update / AU canoniques (sûres) ; le bundle complet (~34 clés) est À
- * COMPLÉTER par Henri depuis la source — cf. Dev Agent Record de la story.
+ * COMPLÉTER depuis la source.
  */
 return new class extends Migration
 {
@@ -58,7 +58,7 @@ return new class extends Migration
         ], JSON_UNESCAPED_UNICODE);
 
         // Capacité on-only HONNÊTE : pas de valeur registre « off » possible sans le
-        // verbe `delete` (exclu MVP, piège n°6). On n'expose donc PAS d'« off »
+        // verbe `delete`, non implémenté par le handler. On n'expose donc PAS d'« off »
         // trompeur — le seul geste est « géré » (ou « Retirer » l'override = défaut).
         $optionsManagedOnly = json_encode([
             ['value' => 'on', 'label' => 'Géré'],
@@ -75,7 +75,7 @@ return new class extends Migration
         $wuPath = 'SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate';
         $auPath = 'SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU';
 
-        // ── LOT ISO ─────────────────────────────────────────────────────────
+        // LOT ISO
         // Chaque capacité = [meta, projection registry windows (spec.keys)].
         $lot = [
             [
@@ -144,7 +144,7 @@ return new class extends Migration
                 'warning' => null,
                 // on-only : géré seulement si `on` ; « ne plus gérer » = retirer les clés
                 // (verbe `delete`, hors MVP) → pas de valeur `off`. Transcription PARTIELLE
-                // des clés Windows Update / AU canoniques — bundle complet à compléter (Henri).
+                // des clés Windows Update / AU canoniques — bundle complet à compléter.
                 'keys' => [
                     ['hive' => 'HKLM', 'path' => $auPath, 'name' => 'NoAutoUpdate', 'type' => 'REG_DWORD', 'value' => ['on' => 0]],
                     ['hive' => 'HKLM', 'path' => $auPath, 'name' => 'AUOptions', 'type' => 'REG_DWORD', 'value' => ['on' => 4]],

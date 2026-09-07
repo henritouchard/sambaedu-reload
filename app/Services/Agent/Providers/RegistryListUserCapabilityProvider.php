@@ -8,7 +8,7 @@ use App\Enums\StateScope;
 use App\Models\CapabilityProjection;
 
 /**
- * Story 35.2 — provider `registry_list` de la ruche UTILISATEUR (HKCU).
+ * Provider `registry_list` de la ruche UTILISATEUR (HKCU).
  *
  * `scope()=Session` : les conteneurs sont réconciliés par le COMPAGNON de
  * session (ruche HKCU de l'utilisateur connecté ; les clés lues par l'Explorer

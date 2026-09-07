@@ -10,8 +10,7 @@ use ReflectionClass;
 use Tests\TestCase;
 
 /**
- * Tests Unit `SambaEduConfig::set` — Story 16.3b (correctifs post-review
- * 2026-05-12, décision Henri option A complète).
+ * Tests Unit `SambaEduConfig::set`.
  *
  * Le service écrit dans `/etc/sambaedu/sambaedu.conf` (chemin codé en dur,
  * const `MAIN_CONFIG_FILE`). Pour tester sans toucher au filesystem système,

@@ -14,7 +14,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC2.3 / D10 / AC7.1.
+ * D10 /.
  *
  * Tests `WorkstationJwtRefreshService` :
  *

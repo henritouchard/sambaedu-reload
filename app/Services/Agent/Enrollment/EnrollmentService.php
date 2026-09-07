@@ -11,35 +11,35 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 23.3 — Enrôlement porte 1 : le token naît à l'install iPXE (FR16).
+ * Enrôlement porte 1 : le token naît à l'install iPXE.
  *
  * Cycle du ticket d'enrôlement one-time :
  *
- *  1. {@see openTicket()} à la génération de l'unattend.xml (l'admin est déjà
- *     authentifié au menu iPXE — story 4.10) : 64 hex aléatoires, seul le
+ *  1. {@see openTicket()} à la génération de l'unattend.xml, où l'admin est
+ *     déjà authentifié au menu iPXE : 64 hex aléatoires, seul le
  *     SHA-256 est persisté (`agent_enroll_ticket_hash` + expiry TTL
  *     `config('agent.enroll_ticket_ttl_minutes')`), le clair est interpolé
  *     dans l'unattend uniquement. Si le poste était déjà enrôlé
- *     (réinstallation), son token est révoqué immédiatement (AC2 — le clone
+ * (réinstallation), son token est révoqué immédiatement (le clone
  *     éventuel meurt au début de la réinstall, pas à la fin).
  *  2. {@see redeem()} au premier logon du poste (`POST /api/v1/agent/enrollment`) :
  *     résolution par hash du ticket — le ticket EST l'identité, uuid/mac ne
  *     servent jamais à l'autorisation (spoofables sur le LAN) — consommation
  *     atomique, puis naissance du token via
- *     {@see TokenRotationService::issueFor()}.
+ *  {@see TokenRotationService::issueFor()}.
  *
- * Conventions iso 23.2 : jamais de ticket/token en clair persisté ni loggé ;
+ * Conventions iso : jamais de ticket/token en clair persisté ni loggé ;
  * transitions loggées channel `agent`, actions `agent.enroll.*`, contexte
  * `workstation_id`. Flux SQL-only — aucune dépendance annuaire (critère
- * Keycloak, AC7).
+ * Keycloak).
  *
- * Story 25.3 — Porte 2 (poste migré sans ticket, FR16) : la branche d'échec de
+ * Porte 2 (poste migré sans ticket) : la branche d'échec de
  * {@see redeem()} (jadis un 403 sec) accueille désormais une **demande
  * d'enrôlement** ({@see AgentEnrollmentRequest}). Le poste reste 403 (indistinct,
  * sans oracle) ; l'admin approuve d'un clic dans l'UI (ou une campagne bornée
  * auto-approuve un poste connu concordant), et c'est le **prochain redeem()**
  * du poste (faisceau re-présenté) qui matérialise `issueFor()` et renvoie le
- * token — le token ne transite jamais par l'UI (décision n° 4). Le flux ticket
+ * token — le token ne transite jamais par l'UI. Le flux ticket
  * (porte 1) est strictement inchangé.
  */
 class EnrollmentService
@@ -54,7 +54,7 @@ class EnrollmentService
     /**
      * Émet un ticket d'enrôlement one-time pour le poste (génération de
      * l'unattend.xml). Une re-génération (re-fetch WinPE) écrase simplement
-     * le ticket précédent — pas d'erreur (AC1).
+     * le ticket précédent — pas d'erreur.
      *
      * @return string le ticket en clair (64 hex) — à interpoler dans
      *                l'unattend uniquement, jamais persisté, jamais loggé.
@@ -63,11 +63,11 @@ class EnrollmentService
     {
         $ticket = bin2hex(random_bytes(32));
 
-        // Transaction (review 23.3) : révocation + écriture du ticket sont
+        // Transaction : révocation + écriture du ticket sont
         // atomiques — un échec entre les deux laisserait le poste sans token
         // NI ticket utilisable.
         $revoked = DB::transaction(function () use ($workstation, $ticket): bool {
-            // AC2 — réinstall = événement de révocation (FR14) : révoquer au
+            // Réinstall = événement de révocation : révoquer au
             // début de la réinstall ferme la fenêtre où un clone de l'ancien
             // token vivrait pendant que le disque est formaté.
             $revoked = $workstation->agent_token_hash !== null;
@@ -101,8 +101,8 @@ class EnrollmentService
      * `POST /api/v1/agent/enrollment`).
      *
      * Résolution par hash du ticket exclusivement — uuid/mac/hostname de
-     * `$identity` ne servent qu'au log de cohérence (AC3) et au choix
-     * 409/403 en cas d'échec (AC4), jamais à l'autorisation.
+     * `$identity` ne servent qu'au log de cohérence et au choix
+     * 409/403 en cas d'échec, jamais à l'autorisation.
      *
      * @param array{uuid?: string|null, mac?: string|null, hostname?: string|null} $identity
      */
@@ -152,20 +152,20 @@ class EnrollmentService
     }
 
     /**
-     * Échec d'échange du ticket — point d'accueil de la porte 2 (Story 25.3).
+     * Échec d'échange du ticket — point d'accueil de la porte 2.
      *
      * Ordre figé (anti-usurpation + sans-oracle) :
      *
-     *  1. **Conflit** (AC4 / piège n° 4) : un poste identifiable par le faisceau
+     * 1. **Conflit** : un poste identifiable par le faisceau
      *     est déjà enrôlé → 409, son token reste intact, AUCUNE demande pending
      *     n'est créée (ce n'est pas un poste migré qui rejoint, c'est un
      *     clone/ré-enrôlement potentiel).
-     *  2. **Demande approuvée concordante** (AC2/AC3, décision n° 4) : si une
+     * 2. **Demande approuvée concordante** : si une
      *     demande `approved` existe pour ce faisceau ET que la concordance tient
-     *     toujours (poste connu, non enrôlé, hostname cohérent) → `issueFor()`,
+     *  toujours (poste connu, non enrôlé, hostname cohérent) → `issueFor()`,
      *     consommation de la demande (statut terminal) → 200 token. C'est ici que
      *     le token naît, jamais dans l'UI.
-     *  3. **Sinon** (AC1) : enregistrer/rafraîchir une demande (idempotence
+     * 3. **Sinon** : enregistrer/rafraîchir une demande (idempotence
      *     `updateOrCreate` sur la clé du faisceau), rapprocher, auto-approuver si
      *     campagne active ET concordance ET candidat unique — sinon `pending`.
      *
@@ -179,9 +179,9 @@ class EnrollmentService
     {
         // (1) Conflit : un poste DÉJÀ ENRÔLÉ partage l'ancre MAC → 409, jamais de
         // demande pending (clone / ré-enrôlement potentiel, pas un poste migré
-        // qui rejoint). Review #M2/#M3 : conflit fondé sur la SEULE MAC (ancre) —
+        // qui rejoint). Le conflit est fondé sur la SEULE MAC (ancre) —
         // l'uuid (preuve faible/spoofable) ne sert jamais d'oracle de présence
-        // (AC6, sans-oracle) — ET sur l'EXISTENCE d'un enrôlé partageant la MAC
+        // — ET sur l'EXISTENCE d'un enrôlé partageant la MAC
         // (`exists()`, pas `.first()`) : un clone enrôlé sous MAC partagée est
         // toujours détecté quel que soit l'ordre des lignes en base.
         $mac = MacAddressNormalizer::normalize((string) ($identity['mac'] ?? ''));
@@ -205,7 +205,7 @@ class EnrollmentService
             if ($workstation !== null
                 && ! $workstation->isAgentEnrolled()
                 && $this->matcher->isConcordant($workstation, $identity)) {
-                // Claim atomique (review #1, miroir porte 1) : la consommation de
+                // Claim atomique, miroir de la porte 1 : la consommation de
                 // la demande EST le verrou. Un DELETE conditionnel sur `approved`
                 // garantit qu'un seul redeem concurrent gagne et émet le token —
                 // le perdant retombe sur `notAllowed()` (403 sans oracle), jamais
@@ -232,7 +232,7 @@ class EnrollmentService
 
         // (3) Enregistrer/rafraîchir la demande + auto-approbation éventuelle.
         // Une demande `rejected` n'est PAS ré-ouverte par un re-POST (anti-bruit,
-        // décision n° 2 — l'admin garde la main pour re-armer).
+        // l'admin garde la main pour re-armer).
         if ($request === null || $request->status === AgentEnrollmentRequest::STATUS_PENDING) {
             $this->recordRequest($reason, $identity, $request);
         } else {
@@ -241,7 +241,7 @@ class EnrollmentService
             // ré-ouvrir ni ré-approuver.
             $request->forceFill(['last_seen_at' => now()])->save();
 
-            // (review #M4) Une demande `approved` qui se re-présente sans se
+            // Une demande `approved` qui se re-présente sans se
             // matérialiser (poste devenu enrôlé entre-temps, hostname divergent,
             // ou cible nulle) est un angle mort : elle est invisible (hors scope
             // pending) et le poste reste 403 indéfiniment. On le signale en
@@ -265,7 +265,7 @@ class EnrollmentService
     }
 
     /**
-     * Crée ou rafraîchit la demande pending (idempotence — décision n° 2) puis,
+     * Crée ou rafraîchit la demande pending (idempotente) puis,
      * si campagne active ET concordance ET candidat unique, l'auto-approuve.
      *
      * @param array{uuid?: string|null, mac?: string|null, hostname?: string|null} $identity
@@ -315,7 +315,7 @@ class EnrollmentService
 
         // Auto-approbation : campagne active ET concordance ET candidat unique.
         // L'anti-usurpation ne se débraye JAMAIS — toute divergence/conflit/inconnu
-        // reste manuel même campagne ON (piège n° 3/4, invariant verrouillé).
+        // reste manuel même campagne ON : cet invariant est verrouillé.
         if ($request->status !== AgentEnrollmentRequest::STATUS_PENDING) {
             return;
         }
@@ -339,8 +339,8 @@ class EnrollmentService
     }
 
     /**
-     * Approbation un-clic depuis l'UI (AC2) : arme la demande. Le token naîtra
-     * au prochain `redeem()` du poste (décision n° 4) — il ne transite pas ici.
+     * Approbation un-clic depuis l'UI : arme la demande. Le token naîtra
+     * au prochain `redeem()` du poste — il ne transite pas ici.
      *
      * Le `$target` permet à l'admin de fixer le poste cible quand le faisceau
      * n'a pas rapproché de candidat unique (demande manuelle d'un poste
@@ -348,10 +348,10 @@ class EnrollmentService
      */
     public function approveManually(AgentEnrollmentRequest $request, ?int $resolvedBy, ?Workstation $target = null): void
     {
-        // (review #2) Garde de statut : seule une demande `pending` s'approuve.
-        // Défense en profondeur — l'UI filtre déjà via `->pending()`, mais une
-        // demande déjà résolue ne doit pas être ré-armée silencieusement (AC4 :
-        // re-armer est un acte explicite, pas un effet de bord d'un re-appel).
+        // Garde de statut : seule une demande `pending` s'approuve. Défense en
+        // profondeur — l'UI filtre déjà via `->pending()`, mais une demande déjà
+        // résolue ne doit pas être ré-armée silencieusement : re-armer est un
+        // acte explicite, pas un effet de bord d'un re-appel.
         if ($request->status !== AgentEnrollmentRequest::STATUS_PENDING) {
             return;
         }
@@ -374,13 +374,13 @@ class EnrollmentService
     }
 
     /**
-     * Rejet manuel d'une demande douteuse (AC4) : le poste reste hors système.
-     * Un re-POST ne ré-ouvre pas la demande (décision n° 2). Log distinct du
+     * Rejet manuel d'une demande douteuse : le poste reste hors système.
+     * Un re-POST ne ré-ouvre pas la demande. Log distinct du
      * rejet technique porte 1 par `reason = manual_reject`.
      */
     public function rejectManually(AgentEnrollmentRequest $request, ?int $resolvedBy): void
     {
-        // (review #2) Garde de statut : seule une demande `pending` se rejette
+        // Garde de statut : seule une demande `pending` se rejette
         // (idempotence ; pas de double rejet ni de rejet d'une demande approuvée).
         if ($request->status !== AgentEnrollmentRequest::STATUS_PENDING) {
             return;
@@ -439,7 +439,7 @@ class EnrollmentService
     }
 
     /**
-     * Log de cohérence (AC3) : uuid/mac/hostname reçus confrontés à la fiche.
+     * Log de cohérence : uuid/mac/hostname reçus confrontés à la fiche.
      * Warning sans blocage — la fiche peut être en avance sur le poste en
      * cours d'install (rename programmé, MAC remplacée).
      */
@@ -475,7 +475,7 @@ class EnrollmentService
 
     /**
      * TTL plancher 1 minute : une valeur 0/négative (fat-finger env) rendrait
-     * tout ticket mort-né (iso plancher rotation 23.2).
+     * tout ticket mort-né (iso plancher rotation).
      */
     private function ttlMinutes(): int
     {
@@ -484,7 +484,7 @@ class EnrollmentService
 
     /**
      * Log channel `agent`, action namespacée — jamais de ticket/token en
-     * clair ni de hash (iso-convention 23.2).
+     * clair ni de hash (iso-convention).
      *
      * @param array<string,mixed> $context
      */

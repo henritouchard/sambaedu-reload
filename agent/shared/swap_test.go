@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// AC3 (anti-brique) RÉELLEMENT testée sur Linux (#6/M6) : le cœur
+// Séquence de swap (anti-brique) RÉELLEMENT testée sur Linux : le cœur
 // copie-atomique→re-hash→rename→rollback vit dans shared.PerformSwap, opérant
 // sur des chemins injectés. Les renames POSIX se comportent comme Windows pour
 // ce besoin. triggerRestart est un stub : on vérifie qu'il est appelé APRÈS un
@@ -35,7 +35,7 @@ func readFile(t *testing.T, path string) []byte {
 	return b
 }
 
-// ── Swap nominal : fichiers permutés + triggerRestart appelé ──────────────────
+// Swap nominal : fichiers permutés + triggerRestart appelé
 
 func TestPerformSwapNominal(t *testing.T) {
 	dir := t.TempDir()
@@ -66,7 +66,7 @@ func TestPerformSwapNominal(t *testing.T) {
 	}
 }
 
-// ── Rollback : la dépose du .new échoue (.new = répertoire) → ancien intact ────
+// Rollback : la dépose du .new échoue (.new = répertoire) → ancien intact
 // On force un échec à l'étape « dépose .new -> agent.exe » en créant agent.exe
 // déjà occupé par... non : on force plutôt l'échec du rename (c) en rendant la
 // cible un RÉPERTOIRE non vide après le rename (b) — impossible à orchestrer
@@ -94,9 +94,9 @@ func TestPerformSwapStagedMissingNoMutation(t *testing.T) {
 	}
 }
 
-// ── Rollback M2 : le .new mis en place a un hash DIVERGENT → abort, intact ─────
+// Rollback : le .new mis en place a un hash DIVERGENT → abort, intact.
 // Le binaire stagé est corrompu vis-à-vis du hash manifest : la re-vérification
-// (M2) du .new à sa position finale doit échouer AVANT toute étape destructive,
+// du .new à sa position finale doit échouer AVANT toute étape destructive,
 // laisser l'ancien binaire en place et NE PAS appeler triggerRestart.
 func TestPerformSwapNewHashMismatchRollsBack(t *testing.T) {
 	dir := t.TempDir()
@@ -128,7 +128,7 @@ func TestPerformSwapNewHashMismatchRollsBack(t *testing.T) {
 	}
 }
 
-// ── Rollback : échec du rename final (c) → ancien binaire restauré en place ────
+// Rollback : échec du rename final (c) → ancien binaire restauré en place
 // On force un échec DÉTERMINISTE du rename final (.new -> agent.exe) via le hook
 // renameForSwap (l'échec de (c) est rare en prod — même volume, après un (b)
 // réussi — donc non provoquable de façon portable autrement). Le rollback
@@ -172,7 +172,7 @@ func TestPerformSwapRenameFailureRollsBack(t *testing.T) {
 	}
 }
 
-// ── Copie cross-volume simulée : atomicCopyFile crée le tmp À CÔTÉ de dst ──────
+// Copie cross-volume simulée : atomicCopyFile crée le tmp À CÔTÉ de dst
 // On ne peut pas monter deux volumes en test, mais on vérifie l'invariant clé :
 // le fichier temporaire est créé dans le répertoire de dst (donc le même volume
 // que dst), garantissant un rename final intra-volume.

@@ -7,7 +7,7 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.4 / AC4.0 — Applications WPKG attachées/détachées directement à un poste
+ * Applications WPKG attachées/détachées directement à un poste
  * (pivot `application_workstation`).
  *
  * Émetteur : `App\Services\AppProfile\AppProfileService::add/removeApplicationsToWorkstation`.

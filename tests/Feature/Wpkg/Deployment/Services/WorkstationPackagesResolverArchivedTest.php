@@ -15,16 +15,15 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.3 / D8 — Le `WorkstationPackagesResolver` doit ignorer les
- * postes / groupes / profils marqués `archived_at`.
+ * Le `WorkstationPackagesResolver` doit ignorer les postes / groupes /
+ * profils marqués `archived_at`.
  *
- * Filtre acté pendant T1 (cf. audit T0 §5, R-T0.3) : l'archivage logique
- * introduit par 15.3 AC3.4 doit produire un comportement « fantôme » côté
- * pipeline déploiement — sans casser les pivots ni supprimer la row, le
- * resolver retourne 0 package.
+ * L'archivage logique produit un comportement « fantôme » côté pipeline de
+ * déploiement : sans casser les pivots ni supprimer la row, le resolver
+ * retourne 0 package.
  *
  * Pas de test de non-régression sur les cas non archivés : couverts par
- * `ProfilesXmlControllerTest` (15.2).
+ * `ProfilesXmlControllerTest`.
  */
 class WorkstationPackagesResolverArchivedTest extends TestCase
 {
@@ -111,9 +110,9 @@ class WorkstationPackagesResolverArchivedTest extends TestCase
     }
 
     /**
-     * Story 4.11 / AC4 — un déploiement WPKG porté par une SALLE physique
+     * Un déploiement WPKG porté par une SALLE physique
      * (groupe `is_physical = true`, désormais dans le pivot global) doit se
-     * résoudre pour les postes de cette salle. Avant 4.11, la salle vivait
+     * résoudre pour les postes de cette salle. Avant, la salle vivait
      * dans la FK `physical_room_id` et était invisible du resolver (qui lit
      * `groups()`).
      */

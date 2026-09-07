@@ -10,9 +10,6 @@ use App\Services\AppCustomization\Thunderbird\ThunderbirdPolicyAdapter;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Tests unit — enum AppKind (AC 1).
- */
 class AppKindTest extends TestCase
 {
     #[Test]

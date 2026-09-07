@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature de la boucle agent squelette — Story 24.2 (AC7).
+ * Tests Feature de la boucle agent squelette.
  *
  * Simule, CÔTÉ SERVEUR uniquement (jamais de test Windows ici), la séquence
  * exacte qu'exécute `agent/windows/SambaEduAgent.ps1` : GET /state (ETag) →
@@ -28,8 +28,8 @@ use Tests\TestCase;
  *
  * Invariants couverts : enveloppe v1 brute + ETag quoté, 304 sans corps,
  * rapport vide valide (counts à zéro, rien d'écrit, check-in stampé),
- * rotation D5 (X-Agent-New-Token sur GET 200/304 ET POST 200, nouveau token
- * immédiatement utilisable), defer 24.1 #8 (FQDN → warning identity_mismatch
+ * rotation du jeton (X-Agent-New-Token sur GET 200/304 ET POST 200, nouveau token
+ * immédiatement utilisable), FQDN déclaré (→ warning identity_mismatch
  * mais 200 — la règle hostname COURT existe pour éviter ce spam), quarantaine
  * 403 = check-in léger possible. La matrice fine de chaque endpoint vit dans
  * `StateEndpointTest` / `ReportEndpointTest` — ici, l'ENCHAÎNEMENT.
@@ -98,7 +98,7 @@ final class AgentSkeletonE2eTest extends TestCase
         ];
     }
 
-    /** Décale l'échéance de rotation D5 du poste (pattern ReportEndpointTest). */
+    /** Décale l'échéance de rotation du jeton du poste (pattern ReportEndpointTest). */
     private function makeRotationDue(Workstation $ws): void
     {
         $ws->refresh();
@@ -107,7 +107,7 @@ final class AgentSkeletonE2eTest extends TestCase
     }
 
     /**
-     * Capture les logs du channel `agent` (pattern 23.5/24.1 — mock étendu
+     * Capture les logs du channel `agent` (pattern — mock étendu
      * debug/info/warning/error/critical).
      *
      * @return \ArrayObject<int, array{0:string,1:string,2:array<string,mixed>}>
@@ -139,7 +139,7 @@ final class AgentSkeletonE2eTest extends TestCase
         ));
     }
 
-    // ── Étape 1 de la boucle — GET /state : 200 + ETag ───────────────────
+    // Étape 1 de la boucle — GET /state : 200 + ETag
 
     #[Test]
     public function first_cycle_gets_the_raw_v1_envelope_with_a_quoted_etag(): void
@@ -165,7 +165,7 @@ final class AgentSkeletonE2eTest extends TestCase
         self::assertMatchesRegularExpression('/^"[0-9a-f]{64}"$/', (string) $etag);
     }
 
-    // ── Étape 2 — re-call avec If-None-Match : 304 ───────────────────────
+    // Étape 2 — re-call avec If-None-Match : 304
 
     #[Test]
     public function second_cycle_with_cached_etag_gets_304_without_body(): void
@@ -181,7 +181,7 @@ final class AgentSkeletonE2eTest extends TestCase
         self::assertSame($etag, $response->headers->get('ETag'));
     }
 
-    // ── Étape 3 — POST /report items:[] : 200 {success: true} ────────────
+    // Étape 3 — POST /report items:[] : 200 {success: true}
 
     #[Test]
     public function skeleton_empty_report_returns_200_with_zero_counts_and_writes_no_state(): void
@@ -196,7 +196,7 @@ final class AgentSkeletonE2eTest extends TestCase
             'counts' => ['compliant' => 0, 'drift' => 0, 'error' => 0],
         ]);
         // Aucun handler = aucune ligne d'état — mais la boucle est FERMÉE :
-        // le check-in (signal de vie AC8) est stampé par le middleware.
+        // Le check-in (signal de vie) est stampé par le middleware.
         self::assertSame(0, AgentResourceState::query()->count());
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
@@ -217,7 +217,7 @@ final class AgentSkeletonE2eTest extends TestCase
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
 
-    // ── Rotation D5 — X-Agent-New-Token sur GET state ET POST report ─────
+    // Rotation du jeton — X-Agent-New-Token sur GET state ET POST report
 
     #[Test]
     public function due_rotation_surfaces_on_get_state_and_the_new_token_runs_the_next_cycle(): void
@@ -238,7 +238,7 @@ final class AgentSkeletonE2eTest extends TestCase
     #[Test]
     public function due_rotation_survives_a_304_check_in(): void
     {
-        // Invariant D5 vu de la boucle : le cycle nominal du squelette est
+        // Le cycle nominal du squelette est
         // souvent un 304 — la rotation doit y survivre, sinon un poste à
         // l'état stable ne rotaterait jamais.
         [$ws, $token] = $this->enrolledWorkstation();
@@ -267,7 +267,7 @@ final class AgentSkeletonE2eTest extends TestCase
         $this->postReport($new, $this->skeletonReport($ws))->assertOk();
     }
 
-    // ── Defer 24.1 #8 — hostname COURT obligatoire ────────────────────────
+    // Hostname COURT obligatoire
 
     #[Test]
     public function short_hostname_report_emits_no_identity_mismatch_warning(): void
@@ -285,7 +285,7 @@ final class AgentSkeletonE2eTest extends TestCase
     #[Test]
     public function fqdn_hostname_report_is_accepted_but_logs_identity_mismatch_warning(): void
     {
-        // Comportement 24.1 vérifié côté boucle : un agent qui enverrait le
+        // Comportement vérifié côté boucle : un agent qui enverrait le
         // FQDN serait accepté (identité = token) mais spammerait ce warning à
         // CHAQUE rapport — d'où le contrat hostname court (agent-skeleton.md).
         [$ws, $token] = $this->enrolledWorkstation();
@@ -301,14 +301,14 @@ final class AgentSkeletonE2eTest extends TestCase
         self::assertSame($fqdn, $mismatch[0][2]['declared_hostname']);
     }
 
-    // ── Quarantaine — check-ins légers (AC4 vu du serveur) ───────────────
+    // Quarantaine — check-ins légers ( vu du serveur)
 
     #[Test]
     public function quarantined_workstation_gets_403_on_state_but_its_light_checkin_is_recorded(): void
     {
         // Vue serveur du mode « check-ins légers » : le GET /state d'un poste
         // en quarantaine répond 403 AGENT_QUARANTINED mais STAMPE le check-in
-        // (FR15 : le poste reste visible — c'est ce qui permet à l'admin de
+        // (le poste reste visible — c'est ce qui permet à l'admin de
         // lever la quarantaine en confiance).
         $ws = Workstation::factory()->create();
         $token = $this->service->issueFor($ws);
@@ -341,13 +341,13 @@ final class AgentSkeletonE2eTest extends TestCase
         self::assertSame(0, AgentResourceState::query()->count());
     }
 
-    // ── Arrêt sur 401 — jamais de re-enrôlement automatique ──────────────
+    // Arrêt sur 401 — jamais de re-enrôlement automatique
 
     #[Test]
     public function revoked_token_gets_401_invalid_the_agent_stop_condition(): void
     {
         // Le 401 que l'agent traite comme irrécupérable (arrêt + log local,
-        // re-enrôlement MANUEL) : format du middleware 23.2, intouché.
+        // re-enrôlement MANUEL) : format du middleware, intouché.
         Workstation::factory()->create();
 
         $this->getState(str_repeat('f', 64))

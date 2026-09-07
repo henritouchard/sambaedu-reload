@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Support;
 
 /**
- * Story 3.4 — D5 / AC1.3.
- *
  * Catalogue des placeholders `###_<KEY>_###` injectés dans les fragments
  * preseed Linux + sanitization defense-in-depth.
  *
@@ -17,9 +15,8 @@ namespace App\Ipxe\Support;
  * preseed ou n'injecte une ligne `kernel http://evil` dans le firmware
  * iPXE en aval.
  *
- * **Source des placeholders** : audit T0.4 des 16 fragments `linux/*.cfg`
- * copiés depuis `sambaedu/ipxe/linux/`. Liste maintenue à jour avec la
- * story 3.4 § D5.
+ * **Source des placeholders** : les 16 fragments `linux/*.cfg` copiés depuis
+ * `sambaedu/ipxe/linux/`.
  *
  * **Anti-pattern** :
  *  - ❌ Ne PAS exposer le mapping `placeholder → valeur secrète` dans les
@@ -44,7 +41,7 @@ final class PreseedPlaceholders
      * `LinuxPreseedService::generate()` (lecture du modèle Workstation).
      *
      * @return array<string, string>  Mapping `placeholder_key (uppercase
-     *                                 SANS `###_..._###`) → chemin config()`.
+     *  SANS `###_..._###`) → chemin config()`.
      */
     public static function catalog(): array
     {
@@ -55,7 +52,6 @@ final class PreseedPlaceholders
             'LINUX_INTERFACE' => 'sambaedu.linux.interface',
             'LINUX_USER' => 'sambaedu.linux.user',
             'LINUX_USER_PASSWD' => 'sambaedu.linux.user_passwd', // SECRET
-            // Version Debian.
             'VERSION_DEBIAN' => 'sambaedu.linux.version_debian',
             // Identité du domaine + AD.
             'DOMAIN' => 'sambaedu.domain',

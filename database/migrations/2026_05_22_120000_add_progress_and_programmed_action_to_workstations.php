@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 3.8 — D12 / D-A10 / AC7.1.
+ * D12 / D-A10 /.
  *
  * Ajoute 2 colonnes à `workstations` pour piloter la state machine post-OOBE
  * Windows (port natif de `legacy/modules/ipxe/Win10/action.php` set_action +

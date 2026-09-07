@@ -7,9 +7,9 @@ use App\Policies\Traits\RegistersGates;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Story 7.2 (AC5) — Policy pour les configurations DHCP (Epic 1bis-16 backlog).
+ * Policy pour les configurations DHCP (-16 backlog).
  *
- * Décision produit (0.8) : `server.admin` suffit — aucun bit DHCP dédié en
+ * Décision produit : `server.admin` suffit — aucun bit DHCP dédié en
  * legacy, la page `sambaedu/dhcp/index.php` est déjà gardée par
  * `SE_SERVER_ADMIN`.
  *

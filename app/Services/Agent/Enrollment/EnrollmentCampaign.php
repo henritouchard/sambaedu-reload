@@ -8,7 +8,7 @@ use App\Models\SystemSetting;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 25.3 — Mode campagne d'enrôlement porte 2 (décision n° 6, FR16).
+ * Mode campagne d'enrôlement porte 2.
  *
  * Réglage admin BORNÉ DANS LE TEMPS et DÉSACTIVABLE, stocké dans
  * `system_settings` (pattern K/V existant) plutôt qu'en `.env` figé : l'admin
@@ -16,8 +16,8 @@ use Illuminate\Support\Carbon;
  *
  * La campagne est active ssi une échéance `agent_enroll_campaign_until` est
  * persistée ET dans le futur. Une borne dépassée = retour au manuel PAR
- * CONSTRUCTION (vérifié à chaque `redeem()`, aucune tâche planifiée requise
- * pour la sécurité — piège n° 9, AC3).
+ * CONSTRUCTION : l'échéance est relue à chaque `redeem()`, aucune tâche
+ * planifiée n'est requise pour refermer la campagne.
  *
  * Même campagne active, l'auto-approbation reste conditionnée à la concordance
  * du faisceau avec un poste connu non enrôlé (anti-usurpation jamais débrayé —

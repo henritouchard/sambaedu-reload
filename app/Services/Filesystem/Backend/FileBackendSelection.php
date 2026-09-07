@@ -11,7 +11,7 @@ use App\Services\OpenCloud\OpenCloudConnectionConfig;
 use InvalidArgumentException;
 
 /**
- * Story 61.3 — CE QUI EST POSABLE, ET POURQUOI ÇA NE L'EST PAS.
+ * CE QUI EST POSABLE, ET POURQUOI ÇA NE L'EST PAS.
  *
  * Le vocabulaire dit ce qui EXISTE ; le registre dit ce qui RÉPOND ; ce service dit
  * ce qu'un administrateur peut CHOISIR ici et maintenant. Les trois sont
@@ -24,7 +24,7 @@ use InvalidArgumentException;
  * pour les déclins ; on la tient ici aussi : proposer puis refuser est exactement le
  * défaut du signal accepté sans destinataire.
  *
- * **Il n'y a PLUS DE MODE à lire.** La story 61.2 avait deux positions côté
+ * **Il n'y a PLUS DE MODE à lire.** La avait deux positions côté
  * Nextcloud (instance administrée, compte porteur délégué) ; le mode délégué a été
  * supprimé le 2026-08-08. La configuration qui ne permet pas un compte
  * administrateur est déjà refusée à la SAISIE, et un second contrôle ici ferait
@@ -79,7 +79,7 @@ final class FileBackendSelection
             // Une capacité allumée sur une connexion vide fait naître un partage
             // dont AUCUNE réconciliation ne peut aboutir : le backend refusera
             // fail-closed à chaque passage, sur un objet qu'il est désormais
-            // interdit de migrer (D9). Le rattrapage tardif au provisionnement est
+            // interdit de migrer. Le rattrapage tardif au provisionnement est
             // correct, mais il arrive après la seule décision irréversible.
             FileBackendName::OpenCloud => $this->openCloudRefusal(),
 

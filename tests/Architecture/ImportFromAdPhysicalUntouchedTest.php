@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
 /**
- * Story 38.7 / AC9.3 + T7 — la règle d'import SÉLECTIF (« ne créer un groupe que
+ * + T7 — la règle d'import SÉLECTIF (« ne créer un groupe que
  * si le parc legacy porte des applications ») s'applique au SEUL import LOGIQUE
  * (`importLogicalGroupsFromAd`, étape 5). L'import PHYSIQUE des salles
  * (`importFromAd`, étape 4, `OU=Computers`) NE DOIT PAS être concerné : une salle
@@ -18,7 +18,7 @@ use ReflectionMethod;
  *
  * `importFromAd()` lit l'AD réel sans seam de test : l'exécuter hors annuaire est
  * impossible en HÔTE, et l'instrumenter juste pour prouver un négatif toucherait
- * le chemin physique que la story protège. On prouve donc l'invariant par
+ * le chemin physique qu'on protège. On prouve donc l'invariant par
  * CARACTÉRISATION du code source de la méthode (patron d'architecture maison, cf.
  * {@see LegacyCronRetirementTest}) : le corps de `importFromAd()` ne câble AUCUN
  * artefact de la règle sélective (lecteur legacy mutualisé, table
@@ -44,7 +44,7 @@ class ImportFromAdPhysicalUntouchedTest extends TestCase
     {
         $body = $this->methodSource('importFromAd');
 
-        // Aucun artefact de la règle sélective (AC9.3) ne doit apparaître dans
+        // Aucun artefact de la règle sélective ne doit apparaître dans
         // l'import physique. Si l'un d'eux y entre un jour, ce test rouge signale
         // que la règle a fui vers le chemin des salles.
         self::assertStringNotContainsString(

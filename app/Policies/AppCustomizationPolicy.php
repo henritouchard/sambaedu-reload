@@ -9,11 +9,11 @@ use App\Policies\Traits\RegistersGates;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Policy pour la personnalisation applicative (story 4.8).
+ * Policy pour la personnalisation applicative.
  *
  * Toutes les méthodes gardent `app.customize`. Des permissions granulaires
  * `app.customize.firefox` / `app.customize.thunderbird` peuvent être
- * ajoutées en follow-up (AC 11).
+ * ajoutées plus tard.
  */
 class AppCustomizationPolicy
 {

@@ -8,7 +8,7 @@ use App\Auth\V1\Http\Middleware\EnsureLanIp;
 use App\Auth\V1\Http\Middleware\EnsureRefreshToken;
 use App\Auth\V1\Http\Middleware\EnsureSecureApiHeaders;
 use App\Auth\V1\Http\Middleware\EnsureWorkstationJwt;
-// Story 16.13bis — InjectBootstrapFragment supprimé : logique fragment
+// InjectBootstrapFragment supprimé : logique fragment
 // portée par App\Auth\V1\Migration\Http\Controllers\MigrationController.
 use App\Auth\V1\Http\Middleware\RequireBootstrapToken;
 use App\Auth\V1\Jwt\WorkstationJwtIssuer;
@@ -26,7 +26,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Story 16.10 — AC6.2.
  *
  * Service Provider du module Auth V1.
  *
@@ -92,9 +91,9 @@ class AuthV1ServiceProvider extends ServiceProvider
         $router->aliasMiddleware('auth.v1.refresh', EnsureRefreshToken::class);
         $router->aliasMiddleware('auth.v1.secure-headers', EnsureSecureApiHeaders::class);
 
-        // Story 16.11 — alias pour le LAN whitelist.
+        // Alias pour le LAN whitelist.
         $router->aliasMiddleware('auth.v1.lan-only', EnsureLanIp::class);
-        // Story 16.13bis — alias `inject.bootstrap-fragment` supprimé
+        // Alias `inject.bootstrap-fragment` supprimé
         // (middleware InjectBootstrapFragment retiré). La logique de
         // fragment est portée par App\Auth\V1\Migration\Http\Controllers\MigrationController.
 

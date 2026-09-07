@@ -7,9 +7,9 @@ namespace App\Services\Filesystem\Backend\Posix;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 60.4 — les GESTES SYSTÈME, descendus tels quels.
+ * Les GESTES SYSTÈME, descendus tels quels.
  *
- * Ce sont les helpers privés du provisionnement 34.1, déplacés sans réécriture :
+ * Ce sont les helpers privés du provisionnement, déplacés sans réécriture :
  * même commandes, mêmes options, même ordre. Les rassembler dans une classe
  * dédiée n'ajoute aucune capacité — c'est ce qui rend le jeu de commandes émis
  * ÉNUMÉRABLE par un test, et donc la promesse « aucune commande nouvelle »
@@ -18,13 +18,12 @@ use Illuminate\Support\Facades\Process;
  * **Le jeu est fermé** : `mkdir`, `setfacl`, `getfacl`, `chown`, `chgrp`, `chmod`,
  * `mv` — tous déjà couverts par la liste blanche d'élévation de privilège — plus
  * `getent`, en LECTURE SEULE et SANS élévation. Cette dernière est l'addition de la
- * story 60.4 ; elle est exigée par la vérification d'existence d'un groupe avant
+ * elle est exigée par la vérification d'existence d'un groupe avant
  * écriture, elle est déjà en service ailleurs dans le dépôt pour le même besoin, et
  * un test énumère les binaires effectivement émis pour que l'addition reste
  * visible.
  *
- * ---------------------------------------------------------------------------
- * **Story 62.4 — UNE SEULE ADDITION, `find`, ET ELLE EST DÉCLARÉE.**
+ * **UNE SEULE ADDITION, `find`, ET ELLE EST DÉCLARÉE.**
  *
  * Les quatre verbes rendent exprimables deux gestes que la pose récursive
  * uniforme ne sait pas faire :
@@ -45,23 +44,22 @@ use Illuminate\Support\Facades\Process;
  * deux gestes n'existent que pour des combinaisons de verbes qu'AUCUNE recette ne
  * porte aujourd'hui (la migration ne produit que « lire » seul et les quatre
  * verbes). Ils sont donc INATTEIGNABLES en l'état, et le resteront jusqu'à l'écran
- * de composition (story 62.6). D'ici là, `find` doit entrer dans la liste blanche
+ * de composition. D'ici là, `find` doit entrer dans la liste blanche
  * d'élévation des instances — sans quoi le premier octroi composé échouera, mais
  * BRUYAMMENT : le nœud rapportera l'échec avec sa cause, il ne posera pas un droit
  * approximatif. Le point est porté au runbook.
  *
- * ---------------------------------------------------------------------------
- * **Story 62.5 — AUCUNE addition.** Le couloir d'accès dérivé se pose avec la
+ * **AUCUNE addition.** Le couloir d'accès dérivé se pose avec la
  * commande de pose déjà présente, simplement privée de sa descente
  * ({@see applyAclToHead()}). Un geste de plus, zéro binaire de plus : la liste
- * blanche d'élévation des instances n'a rien à apprendre de cette story.
+ * blanche d'élévation des instances n'a rien de nouveau à apprendre.
  *
  * **Triple garde conservée** : chaque chemin passe par {@see PosixPathGuard} chez
  * l'appelant, chaque argument par l'échappement d'argument ici, chaque commande
  * par la liste blanche côté système. Aucun chemin n'est construit par
  * concaténation non validée.
  *
- * **Review 62.4 #2 — l'alternative écartée, et ce que `find` change VRAIMENT à la
+ * **L'alternative écartée, et ce que `find` change VRAIMENT à la
  * surface privilégiée.** L'autre voie était de parcourir l'arbre côté PHP et
  * d'appeler l'outil dossier par dossier : elle évitait un binaire de plus, au prix
  * de N élévations au lieu d'une, sur des arbres de classe qui comptent des
@@ -73,12 +71,12 @@ use Illuminate\Support\Facades\Process;
  * avec `-exec` autorise, en soi, l'exécution de n'importe quoi en root. Mais la
  * liste blanche de ce chemin porte DÉJÀ `chmod` et `chown` — dont `chmod 4755` sur
  * un interpréteur suffit à la même fin. L'identité de service est donc déjà
- * équivalente-root par construction, ce qui est la doctrine tranchée en 56.2
- * (« option A », non rouverte hors d'un chantier sécurité explicite). `find`
+ * équivalente-root par construction, ce qui est la doctrine tranchée du projet
+ * et n'est pas rouvert hors d'un chantier sécurité explicite. `find`
  * n'ouvre donc AUCUNE capacité nouvelle ; il rend seulement plus visible une
  * propriété qui existait avant lui. Ce constat n'est pas une permission de
  * relâcher les gardes ci-dessus : il dit seulement que le débat sur cette ligne se
- * tient au niveau de l'identité de service, pas au niveau de cette story.
+ * tient au niveau de l'identité de service, pas au niveau de ce fichier.
  */
 final class PosixExecutor
 {
@@ -117,7 +115,7 @@ final class PosixExecutor
      * jetait la seule information qui aurait dit POURQUOI la relecture échoue, et
      * le contrat exige désormais qu'un échec de relecture nomme sa cause.
      *
-     * **Story 62.4 — `-c` a DISPARU, et c'est la seule façon de voir la restriction
+     * **`-c` a DISPARU, et c'est la seule façon de voir la restriction
      * de suppression.** Cette option supprimait l'EN-TÊTE, et l'en-tête est le seul
      * endroit où l'outil dit les drapeaux du dossier. Sans elle, la restriction
      * était invisible à la relecture : elle se serait reposée à chaque passage
@@ -132,7 +130,7 @@ final class PosixExecutor
     }
 
     /**
-     * Pose d'une entrée sur les DOSSIERS SEULEMENT (pose différenciée, story 62.4).
+     * Pose d'une entrée sur les DOSSIERS SEULEMENT (pose différenciée).
      *
      * Non récursive côté outil : c'est la sélection qui parcourt l'arbre. Les
      * miroirs d'héritage n'ont de sens que sur un dossier, et c'est bien ici
@@ -148,7 +146,7 @@ final class PosixExecutor
     }
 
     /**
-     * Pose d'une entrée sur les FICHIERS SEULEMENT (pose différenciée, story 62.4).
+     * Pose d'une entrée sur les FICHIERS SEULEMENT (pose différenciée).
      *
      * Ne reçoit JAMAIS de miroir d'héritage : un fichier ne peut pas en porter, et
      * l'outil refuserait la commande entière.
@@ -164,7 +162,7 @@ final class PosixExecutor
 
     /**
      * Pose la restriction de suppression au propriétaire sur tous les DOSSIERS de
-     * l'arbre (story 62.4) — le geste qui approche « déposer sans effacer ».
+     * L'arbre — le geste qui approche « déposer sans effacer ».
      */
     public function restrictDeletionToOwner(string $path): PosixCommandOutcome
     {
@@ -190,7 +188,7 @@ final class PosixExecutor
     }
 
     /**
-     * Story 62.5 — pose d'une entrée sur le répertoire de TÊTE SEUL, sans descente.
+     * Pose d'une entrée sur le répertoire de TÊTE SEUL, sans descente.
      *
      * **Aucun binaire nouveau, et c'est le point.** C'est la même commande que la
      * pose récursive, PRIVÉE de son option de descente. Les deux autres poses
@@ -206,12 +204,12 @@ final class PosixExecutor
      */
     public function applyAclToHead(string $path, string $acl): PosixCommandOutcome
     {
-        // Review 62.5 #3 — `-n` : ne PAS recalculer le masque de droits effectifs.
+        // `-n` : ne PAS recalculer le masque de droits effectifs.
         //
         // Poser une entrée nommée déclenche par défaut ce recalcul, qui est l'union
         // des classes de groupe : une entrée ajoutée peut donc REMONTER le masque et
         // élargir les droits EFFECTIFS d'entrées déjà en place. Un couloir n'a le
-        // droit de rien élargir — c'est la promesse même de cette story.
+        // droit de rien élargir — c'est la promesse même du couloir.
         //
         // Cela ne cassait rien aujourd'hui, mais pour une raison EXTERNE à ce
         // chemin : le socle pose toujours le groupe d'administration à `rwx`, ce qui

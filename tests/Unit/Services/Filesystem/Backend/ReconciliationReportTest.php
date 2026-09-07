@@ -16,9 +16,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.3 — LES INVARIANTS DE CONSTRUCTION D'UN RAPPORT, éprouvés par l'échec.
+ * LES INVARIANTS DE CONSTRUCTION D'UN RAPPORT, éprouvés par l'échec.
  *
- * La fuite mesurée en ouverture d'epic est un SILENCE : une instruction acceptée,
+ * La fuite mesurée en ouverture est un SILENCE : une instruction acceptée,
  * sans effet, sur un nœud dont le rapport ne parlait pas. Une convention « pense à
  * couvrir tous les nœuds » se viole sans bruit ; une fabrique qui refuse de
  * construire, non. Ce fichier vérifie que le refus a bien lieu.
@@ -33,10 +33,6 @@ class ReconciliationReportTest extends TestCase
             new PlanNode('_travail', 'Travail', PlanNodeNature::Partagee, [], true, 4096),
         ]);
     }
-
-    // =========================================================================
-    // Complétude
-    // =========================================================================
 
     #[Test]
     public function a_report_covering_exactly_the_plan_nodes_is_valid(): void
@@ -108,10 +104,6 @@ class ReconciliationReportTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // Périmètre du plafond
-    // =========================================================================
-
     #[Test]
     public function the_capped_scope_covers_only_the_nodes_that_carry_a_ceiling(): void
     {
@@ -151,10 +143,6 @@ class ReconciliationReportTest extends TestCase
             NodeReconciliation::nonImplemente('_profs', 'x'),
         ]);
     }
-
-    // =========================================================================
-    // `detail` obligatoire — AU CONSTRUCTEUR
-    // =========================================================================
 
     /**
      * @return list<array{0:FileBackendOutcome}>
@@ -208,10 +196,6 @@ class ReconciliationReportTest extends TestCase
         NodeReconciliation::conforme('/var/quelque-chose');
     }
 
-    // =========================================================================
-    // Agrégats DÉRIVÉS — et aucun booléen global
-    // =========================================================================
-
     #[Test]
     public function the_aggregates_are_views_derived_from_the_entries(): void
     {
@@ -251,7 +235,7 @@ class ReconciliationReportTest extends TestCase
      * par aucun constructeur : il restaure les propriétés directement, `readonly`
      * comprises. Sans cette garde, un rapport « tout vert » omettant le dossier
      * privé des enseignants redevenait fabricable par ce chemin, et l'affirmation
-     * la plus forte de cette story était fausse hors du chemin heureux.
+     * la plus forte du rapport était fausse hors du chemin heureux.
      *
      * La réconciliation asynchrone annoncée pour la suite est exactement le cas qui
      * l'aurait emprunté sans le dire : une file de traitement sérialise sa charge.

@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 38.6 — Rollback de l'extinction à blanc, en une commande.
+ * Rollback de l'extinction à blanc, en une commande.
  *
  * Symétrique inverse de `se4:unplug` : `mv .off → legacy` puis
  * `a2ensite sambaedu-legacy` + reload. Le reload est INCONDITIONNEL (cf.

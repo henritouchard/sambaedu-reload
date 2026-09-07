@@ -15,23 +15,21 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 3.1 — AC1.1 / AC6.1 / AC8.3 / T1.8 / T6.2.
- *
  * Garde-fou architectural du namespace `App\Ipxe\*` :
  *
  *  1. Tous les fichiers du namespace existent dans `app/Ipxe/`.
  *  2. **Pas d'import de `LdapRecord\*`** — la résolution se fait
- *     EXCLUSIVEMENT via PostgreSQL (architecture.md §"Modèle de Données —
+ *  EXCLUSIVEMENT via PostgreSQL (architecture.md §"Modèle de Données
  *     Source de Vérité").
  *  3. **Pas d'inclusion `legacy/*`** depuis `app/Ipxe/*` — frontière legacy
- *     stricte (parité 16.10/16.11/16.12).
+ *  stricte (parité).
  *  4. **Pas d'appel `search_machine()` / `get_action()` legacy** — la
  *     résolution machine est portée par {@see \App\Ipxe\Services\WorkstationLocator}.
  *  5. **Pas d'appel `exec()` / `shell_exec()`** — pas d'exécution de
- *     binaire externe nécessaire en 3.1 (la résolution UEFI vs legacy se
+ *  binaire externe nécessaire (la résolution UEFI vs legacy se
  *     fait côté iPXE via `iseq ${platform} efi`).
  *  6. **La route `/ipxe/boot` est déclarée AVANT le catchall legacy**
- *     dans `routes/web.php`. Test critique pour la cohabitation 3.1 /
+ *  dans `routes/web.php`. Test critique pour la cohabitation /
  *     legacy proxy.
  */
 class IpxeNamespaceTest extends TestCase
@@ -170,7 +168,6 @@ class IpxeNamespaceTest extends TestCase
         foreach ($finder as $file) {
             $stripped = $this->stripComments($file->getContents());
 
-            // require/include de legacy/*
             if (preg_match('/(?:require|include)(?:_once)?\s*\(?[\'"][^\'"]*legacy\//i', $stripped) === 1) {
                 $violations[] = sprintf('%s include legacy/*', $file->getRelativePathname());
             }
@@ -233,15 +230,12 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.1 — AC6.1 / T6.2.
-     *
      * Vérifie que la route native `/ipxe/boot` est déclarée AVANT la route
-     * catchall `{path}` dans `routes/web.php`. Sinon le catchall capture
-     * tout et la route native est inaccessible (D2 critique).
+     * catchall `{path}` dans `routes/web.php`. Sinon le catchall capture tout
+     * et la route native devient inaccessible.
      *
-     * Pattern lecture textuelle iso 16.11 DO-5 (parsing AST trop complexe
-     * pour les routes — heuristique simple sur la position des
-     * occurrences).
+     * La lecture est textuelle et non par AST : on ne compare que la position
+     * des occurrences dans le fichier.
      */
     #[Test]
     public function ipxe_boot_route_is_declared_before_catchall(): void
@@ -287,13 +281,11 @@ class IpxeNamespaceTest extends TestCase
             'La route /ipxe/boot doit référencer App\\Ipxe\\Http\\Controllers\\IpxeBootController',
         );
 
-        // Fix review #6 — vérification individuelle middleware par route.
-        //
-        // L'ancienne assertion `assertMatchesRegularExpression('/auth\.v1\.lan-only/')`
-        // se contentait d'une occurrence anywhere : un commit futur retirant
-        // le middleware de l'alias `/ipxe/boot.ipxe` aurait laissé le test
-        // vert tant que l'autre route le portait. On vérifie maintenant la
-        // présence dans le BLOC déclaratif de chaque route (split par `;`).
+        // Le middleware est vérifié route par route, dans le BLOC déclaratif de
+        // chacune (découpé sur `;`). Une regex cherchant `auth.v1.lan-only`
+        // n'importe où dans le fichier resterait verte si le middleware
+        // disparaissait de l'alias `/ipxe/boot.ipxe` tant que l'autre route le
+        // porte encore.
         $statements = explode(';', $content);
         $ipxeStatements = array_values(array_filter(
             $statements,
@@ -324,11 +316,11 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.2 — AC6.1 / AC8.3 — extension du garde-fou architectural
+     * Extension du garde-fou architectural
      * ------------------------------------------------------------------ */
 
     /**
-     * Vérifie que les 3 routes natives 3.2 (`/ipxe/admin`,
+     * Vérifie que les 3 routes natives (`/ipxe/admin`,
      * `/ipxe/maintenance`, `/ipxe/action/{action}`) sont déclarées AVANT le
      * catchall legacy `{path}` dans `routes/web.php`. Si elles sont après,
      * le catchall capture les requêtes et les routes natives deviennent
@@ -372,7 +364,7 @@ class IpxeNamespaceTest extends TestCase
             );
         }
 
-        // Vérification middleware par route : chaque déclaration 3.2 doit
+        // Vérification middleware par route : chaque déclaration doit
         // porter `auth.v1.lan-only`.
         $statements = explode(';', $content);
         $ipxeStatements = array_values(array_filter(
@@ -399,7 +391,7 @@ class IpxeNamespaceTest extends TestCase
         }
 
         // Filtre regex sur `{action}` (rejette caractères dangereux).
-        // Story 3.7 : le filtre autorise les chiffres (clonezilla_save_sda1_sda2,
+        // Le filtre autorise les chiffres (clonezilla_save_sda1_sda2,
         // clonezilla_restore_sda2_sda1, memtest86plus) → [a-z0-9_]+.
         self::assertMatchesRegularExpression(
             "/->where\(\s*['\"]action['\"]\s*,\s*['\"]\[a-z0-9_\]\+['\"]/",
@@ -439,8 +431,7 @@ class IpxeNamespaceTest extends TestCase
     #[Test]
     public function ipxe_admin_action_enum_has_exactly_nineteen_cases_in_story_3_5(): void
     {
-        // D9 — Story 3.2 — élargir si nouvelle action (3.4 / 3.5 / 3.7).
-        // Story 3.7 : whitelist élargie à 25 cases (+6 clonezilla/diagnostic).
+        // Élargir ce compte si une nouvelle action est ajoutée à la whitelist.
         $cases = \App\Ipxe\Enums\IpxeAdminAction::cases();
         self::assertCount(
             25,
@@ -482,11 +473,11 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.3 — AC9.3 / AC8.1 — extension du garde-fou architectural
+     * Extension du garde-fou architectural
      * ------------------------------------------------------------------ */
 
     /**
-     * Vérifie que les 5 routes natives 3.3 (`/ipxe/enrollment/{name,byod,room,
+     * Vérifie que les 5 routes natives (`/ipxe/enrollment/{name,byod,room,
      * parc-add,parc-remove}`) sont déclarées AVANT le catchall legacy.
      */
     #[Test]
@@ -526,8 +517,8 @@ class IpxeNamespaceTest extends TestCase
             );
         }
 
-        // Vérification middleware : chaque route 3.3 doit porter
-        // `auth.v1.lan-only` (D3).
+        // Vérification middleware : chaque route doit porter
+        // `auth.v1.lan-only`.
         $statements = explode(';', $content);
         $ipxeStatements = array_values(array_filter(
             $statements,
@@ -591,16 +582,16 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.3 — Re-validation : aucun fichier du namespace App\Ipxe 3.3
+     * Re-validation : aucun fichier du namespace App\Ipxe
      * n'importe `LdapRecord\*`. L'accès AD doit passer exclusivement par
-     * `App\Ldap\AdMachineManager` (D5 / D14).
+     * `App\Ldap\AdMachineManager`.
      */
     #[Test]
     public function ipxe_3_3_files_do_not_import_ldap_record(): void
     {
         // Hérite du check global `it_does_not_import_ldap_record_in_ipxe_namespace`
-        // qui scanne tout app/Ipxe (donc nos 5 controllers + services 3.3 inclus).
-        // Re-test explicite pour traçabilité 3.3 dans le rapport phpunit.
+        // qui scanne tout app/Ipxe (donc nos 5 controllers + services inclus).
+        // Re-test explicite pour traçabilité dans le rapport phpunit.
         $files = [
             __DIR__ . '/../../app/Ipxe/Services/WorkstationEnrollmentService.php',
             __DIR__ . '/../../app/Ipxe/Services/IpxeEnrollmentOrchestrator.php',
@@ -619,11 +610,11 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.4 — AC8.1 / AC7.4 / T7.5 — extension du garde-fou
+     * T7.5 — extension du garde-fou
      * ------------------------------------------------------------------ */
 
     /**
-     * Vérifie que les 4 routes natives 3.4 (`/ipxe/installation-linux`,
+     * Vérifie que les 4 routes natives (`/ipxe/installation-linux`,
      * `/ipxe/linux/{preseed,action,autorun}`) sont déclarées AVANT le
      * catchall legacy.
      */
@@ -663,8 +654,8 @@ class IpxeNamespaceTest extends TestCase
             );
         }
 
-        // Vérification middleware : chaque route 3.4 doit porter
-        // `auth.v1.lan-only` (D3).
+        // Vérification middleware : chaque route doit porter
+        // `auth.v1.lan-only`.
         $statements = explode(';', $content);
         $ipxeStatements = array_values(array_filter(
             $statements,
@@ -720,13 +711,12 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.4 — AC7.4 — Tous les templates Blade `resources/views/ipxe/`
+     * Tous les templates Blade `resources/views/ipxe/`
      * respectent les conventions ASCII strict + pas de balises PHP +
      * newline final.
      *
-     * Post-review #M6 — scan dynamique via `Finder` au lieu d'une liste
-     * hardcodée. Tout nouveau template ajouté sous `resources/views/ipxe/`
-     * est automatiquement couvert par ce test.
+     * Le scan est dynamique (`Finder`) et non adossé à une liste : tout nouveau
+     * template ajouté sous `resources/views/ipxe/` est couvert d'office.
      */
     #[Test]
     public function story_3_4_templates_are_ascii_strict_and_no_php(): void
@@ -772,11 +762,11 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC8.1 / AC9.3 — extension du garde-fou
+     * Extension du garde-fou
      * ------------------------------------------------------------------ */
 
     /**
-     * Vérifie que les 6 routes natives 3.5 (`/ipxe/installation-windows`,
+     * Vérifie que les 6 routes natives (`/ipxe/installation-windows`,
      * `/ipxe/windows/{install.bat,unattend.xml,diskpart.txt,sysprep.xml,action}`)
      * sont déclarées AVANT le catchall legacy.
      */
@@ -818,8 +808,8 @@ class IpxeNamespaceTest extends TestCase
             );
         }
 
-        // Vérification middleware : chaque route 3.5 doit porter
-        // `auth.v1.lan-only` (D3).
+        // Vérification middleware : chaque route doit porter
+        // `auth.v1.lan-only`.
         $statements = explode(';', $content);
         $ipxeStatements = array_values(array_filter(
             $statements,
@@ -880,16 +870,15 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.6 — AC7.1 — extension du garde-fou architectural
-     * ------------------------------------------------------------------
+     * Extension du garde-fou architectural
      *
-     * Sous-namespace `App\Ipxe\Iso\*` strict — frontière D1 vs firmware
-     * iPXE 3.1-3.5 (`App\Ipxe\Services\*`).
+     * Sous-namespace `App\Ipxe\Iso\*` strict — frontière avec les services
+     * firmware iPXE (`App\Ipxe\Services\*`).
      */
 
     /**
-     * Story 3.6 — Vérifie que les classes ISO Windows vivent bien sous
-     * `App\Ipxe\Iso\*` (sous-namespace dédié — frontière D1).
+     * Vérifie que les classes ISO Windows vivent bien sous
+     * `App\Ipxe\Iso\*`, le sous-namespace dédié.
      */
     #[Test]
     public function it_lists_all_ipxe_3_6_iso_classes_under_correct_sub_namespace(): void
@@ -919,12 +908,12 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.10 — AC6.4 — Injection pilotes NIC boot.wim WinPE.
+     * Injection pilotes NIC boot.wim WinPE.
      * ------------------------------------------------------------------ */
 
     /**
-     * Story 3.10 — Les services/exceptions/commande 3.10 vivent au bon
-     * emplacement (sous-namespace `App\Ipxe\Iso\*` cohérent avec 3.6 ;
+     * Les services/exceptions/commande vivent au bon
+     * emplacement (sous-namespace `App\Ipxe\Iso\*` cohérent avec ;
      * commande sous `App\Console\Commands` plat), et les exceptions portent
      * le suffixe `Exception` + étendent `RuntimeException` (cohérence avec
      * `WindowsIsoExtractionException`).
@@ -966,10 +955,9 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.10 — `WindowsInstallBatBuilder` reste INCHANGÉ (D2 / AC3.3) :
-     * le drvload n'y est PAS préfixé (point unique = nicload.cmd injecté dans
-     * le wim). Garde-fou anti-régression : aucune référence drvload/nicload
-     * dans le builder iso-legacy.
+     * `WindowsInstallBatBuilder` n'a rien à voir avec le chargement de pilotes :
+     * le point unique est `nicload.cmd`, injecté dans le wim. Aucune référence
+     * `drvload` ou `nicload` ne doit apparaître dans le builder.
      */
     #[Test]
     public function it_ensures_windows_install_bat_builder_has_no_drvload_concern(): void
@@ -987,7 +975,7 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.10 — AC3.1/AC3.2 — `nicload.cmd` et `winpeshl.ini` sont en CRLF
+     * `nicload.cmd` et `winpeshl.ini` sont en CRLF
      * STRICT (WinPE rejette silencieusement les `.cmd` en LF), winpeshl chaîne
      * `nicload.cmd` AVANT `install.bat`.
      */
@@ -1017,7 +1005,7 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.6 — Vérifie que le Job 3.6 implémente `ShouldQueue`.
+     * Vérifie que le Job implémente `ShouldQueue`.
      */
     #[Test]
     public function it_ensures_download_windows_iso_job_implements_should_queue(): void
@@ -1033,9 +1021,9 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.6 — Vérifie que les classes 3.6 sous `App\Ipxe\Iso\*` ne
+     * Vérifie que les classes sous `App\Ipxe\Iso\*` ne
      * dépendent PAS de `App\Ipxe\Services\IpxeMenuRenderer` ni d'autres
-     * services firmware iPXE 3.1-3.5 (frontière D1).
+     * services firmware iPXE.
      */
     #[Test]
     public function it_ensures_iso_namespace_does_not_depend_on_ipxe_firmware_services(): void
@@ -1111,7 +1099,7 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.6 — Vérifie que la route admin `/admin/ipxe/iso-windows` est
+     * Vérifie que la route admin `/admin/ipxe/iso-windows` est
      * déclarée dans `routes/web.php` sous le groupe `admin` avec les
      * middlewares stricts `sambaedu.auth + sambaedu.admin + can:server.admin`.
      */
@@ -1149,7 +1137,7 @@ class IpxeNamespaceTest extends TestCase
         // 3) Elle est dans le groupe `admin` (parité sync-from-ad / settings).
         // On vérifie que le contenu autour mentionne `prefix('admin')` ET
         // `sambaedu.auth + sambaedu.admin`.
-        // Story 20.4 — l'ouverture du groupe admin peut désormais porter des
+        // L'ouverture du groupe admin peut désormais porter des
         // middlewares additionnels après `sambaedu.admin` (ex. `federated.audit`).
         // On vérifie la PROPRIÉTÉ de sécurité (prefix admin + auth + admin) sans
         // épingler la fin exacte de la liste de middlewares.
@@ -1170,12 +1158,8 @@ class IpxeNamespaceTest extends TestCase
         );
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.7 — AC9.1-9.4 / D12 — Garde-fous architecturaux.
-     * ------------------------------------------------------------------ */
-
     /**
-     * Story 3.7 — AC9.1 — Vérifie que la route `/ipxe/clonezilla-menu`
+     * Vérifie que la route `/ipxe/clonezilla-menu`
      * est déclarée AVANT le catchall legacy `{path}` dans `routes/web.php`.
      */
     #[Test]
@@ -1223,7 +1207,7 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.7 — AC9.2 — Vérifie que les 6 nouveaux templates Blade
+     * Vérifie que les 6 nouveaux templates Blade
      * d'actions existent sous `resources/views/ipxe/actions/`.
      */
     #[Test]
@@ -1258,9 +1242,10 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.7 — AC9.3 / D2 — Vérifie que `factory_reset.blade.php` et
-     * `clonezilla_restore_sda2_sda1.blade.php` ont la MÊME cmdline kernel
-     * (parité iso-legacy — ce test doit échouer si future divergence justifiée).
+     * Vérifie que `factory_reset.blade.php` et
+     * `clonezilla_restore_sda2_sda1.blade.php` ont la MÊME cmdline kernel : les
+     * deux actions restaurent la même image par le même chemin. Une divergence
+     * doit faire tomber ce test avant d'être admise.
      */
     #[Test]
     public function it_ensures_factory_reset_and_clonezilla_restore_have_same_kernel_cmdline(): void
@@ -1294,12 +1279,12 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.7 — AC9.4 / D6 — Vérifie qu'aucun des 6 nouveaux templates
-     * Blade `actions/*.blade.php` n'injecte de variable user (`$mac`, `$uuid`,
-     * `$workstationName`, `$ip`) dans une ligne `kernel ` ou `initrd `.
-     * (Prévention iPXE injection — RCE poste potentiel).
+     * Vérifie qu'aucun template Blade `actions/*.blade.php` n'injecte de
+     * variable venant du poste (`$mac`, `$uuid`, `$workstationName`, `$ip`)
+     * dans une ligne `kernel ` ou `initrd `. Une telle injection donnerait au
+     * poste la main sur la cmdline du noyau qu'il va démarrer.
      *
-     * Post-review #11 (2026-05-22) — regex renforcée pour matcher :
+     * La regex couvre deux formes :
      *  - sigil PHP brut : `$mac`, `$ uuid` (espaces optionnels).
      *  - sigil Blade : `{{ $mac }}`, `{{$mac}}`, `{!! $mac !!}`,
      *    `{{ Str::lower($mac) }}` (variable user passée via expression Blade).
@@ -1359,12 +1344,10 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Post-review #11 (2026-05-22) — Test du test (auto-validation regex).
-     *
-     * On vérifie que la regex `$userVarPattern` matche bien les patterns Blade
-     * et PHP avant de s'appuyer sur elle dans le test précédent. Sinon, le
-     * test `it_ensures_no_user_variable_in_action_kernel_lines` serait un
-     * faux positif vert (cf. review #11).
+     * Le test du test : on vérifie que `$userVarPattern` matche bien les formes
+     * Blade et PHP avant de s'appuyer sur elle. Sans cela,
+     * `it_ensures_no_user_variable_in_action_kernel_lines` passerait au vert en
+     * ne détectant rien.
      */
     #[Test]
     public function it_validates_user_variable_regex_matches_blade_and_php_sigils(): void
@@ -1403,13 +1386,9 @@ class IpxeNamespaceTest extends TestCase
         }
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.8 — AC10.1-10.4 / D15 — Tests architecture post-OOBE.
-     * ------------------------------------------------------------------ */
-
     /**
-     * Story 3.8 — AC10.1 / D15 — Enum WindowsInstallStep doit lister
-     * exactement 8 cases (Winpe + Oobe + 6 nouveaux post-OOBE).
+     * L'enum WindowsInstallStep liste exactement 8 cases : Winpe, Oobe et les
+     * 6 étapes post-OOBE.
      */
     #[Test]
     public function it_ensures_windows_install_step_enum_has_8_cases(): void
@@ -1432,8 +1411,8 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.8 — AC10.2 / D15 — Vérifie les 6 templates Blade cmd exist
-     * sous `resources/views/ipxe/windows/cmd/`.
+     * Les 6 templates Blade cmd existent sous
+     * `resources/views/ipxe/windows/cmd/`.
      */
     #[Test]
     public function it_ensures_6_cmd_blade_templates_exist_in_windows_cmd_namespace(): void
@@ -1450,8 +1429,9 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.8 — AC10.3 / D15 — Vérifie qu'aucun template Blade cmd ne
-     * contient `{!! $... !!}` (interpolation non-échappée = vecteur RCE).
+     * Aucun template Blade cmd ne contient `{!! $... !!}` : une interpolation
+     * non échappée dans un .cmd exécuté en SYSTEM est un vecteur d'exécution
+     * de code.
      */
     #[Test]
     public function it_ensures_no_unescaped_interpolation_in_cmd_templates(): void
@@ -1479,7 +1459,7 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.8 — AC10.4 / D15 — Vérifie que `WindowsActionCmdBuilder` invoke
+     * `WindowsActionCmdBuilder` invoque
      * `sanitizeBatPlaceholder` dans son code (defense in depth — assurance
      * qu'aucun input dynamique ne traverse au Blade sans sanitize).
      *
@@ -1517,7 +1497,7 @@ class IpxeNamespaceTest extends TestCase
     }
 
     /**
-     * Story 3.8 — AC7.4 / T1.3 — Vérifie que la migration 3.8 déclare les
+     * T1.3 — Vérifie que la migration déclare les
      * 2 nouvelles colonnes `progress` et `programmed_action` sur `workstations`.
      *
      * Test statique (lecture du fichier migration) — l'extension `TestCase`

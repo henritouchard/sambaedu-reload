@@ -7,19 +7,17 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 61.2, correction de revue #2 — UNE IDENTITÉ NEXTCLOUD N'EST PORTÉE QUE PAR
- * UN SEUL UTILISATEUR SE5.
+ * UNE IDENTITÉ NEXTCLOUD N'EST PORTÉE QUE PAR UN SEUL UTILISATEUR SE5.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE CET INDEX FERME.** `users.nextcloud_user_id` est un cache de résolution
- * (61.1). Rien n'empêchait deux logins SE5 de porter la même valeur — ni le
+ * . Rien n'empêchait deux logins SE5 de porter la même valeur — ni le
  * rattachement explicite (qui vérifiait l'EXISTENCE distante de l'identité, jamais
  * qu'elle fût LIBRE), ni la résolution automatique. Or
  * {@see \App\Services\Nextcloud\NextcloudUserProvisioner::propagatePassword()} écrit
  * le mot de passe AD sur le compte désigné par cette colonne : deux porteurs, et le
  * changement de mot de passe de l'un écrase le compte de l'autre — silencieusement,
- * journalisé comme un succès. C'est exactement le défaut que la correction #2 de la
- * revue 61.1 avait fermé côté adoption automatique.
+ * journalisé comme un succès. C'est exactement le défaut déjà fermé côté adoption
+ * automatique.
  *
  * **LA DÉFENSE PRINCIPALE EST APPLICATIVE, PAS ICI.** Les deux points d'écriture du
  * cache ({@see \App\Services\Nextcloud\NextcloudIdentityLinker::link()} et
@@ -36,7 +34,6 @@ use Illuminate\Support\Facades\Schema;
  * comme distincts dans un index unique. C'est indispensable : l'écrasante majorité
  * des utilisateurs n'a aucune identité Nextcloud en cache, et un partiel serait une
  * complication sans objet. Un test l'épingle.
- * ---------------------------------------------------------------------------
  */
 return new class extends Migration
 {

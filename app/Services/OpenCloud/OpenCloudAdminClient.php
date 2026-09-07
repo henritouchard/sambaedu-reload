@@ -16,7 +16,7 @@ namespace App\Services\OpenCloud;
  *
  * La séparation n'est pas cosmétique : le jour où l'écran voudrait « juste créer
  * un petit espace pour tester », il aurait un second écrivain sur une zone dont
- * le backend est l'autorité — et le garde-fou d'epic (« une seule autorité
+ * le backend est l'autorité — et le garde-fou (« une seule autorité
  * d'écriture par zone ») serait franchi par l'écran des réglages.
  */
 final class OpenCloudAdminClient

@@ -17,8 +17,7 @@ use Tests\TestCase;
  * LA PAGE DE CONNEXION NEXTCLOUD — ce qu'elle écrit, et surtout ce qu'elle
  * N'ÉCRIT PAS.
  *
- * ---------------------------------------------------------------------------
- * **RECADRAGE DE LA STORY 63.3.** Ce fichier éprouvait les trois interrupteurs
+ * **RECADRAGE DE LA.** Ce fichier éprouvait les trois interrupteurs
  * `home` / `shares` / `nextcloud` de l'onglet « Personnels et partagés ». Ces
  * interrupteurs n'existent plus : ils sont DÉRIVÉS des emplacements et du cloud
  * actif, décidés sur l'onglet « Emplacements et cloud » et projetés sur
@@ -28,7 +27,6 @@ use Tests\TestCase;
  *  - ICI, sur les réglages de connexion, avec l'invariant renforcé : cette page
  *    ne touche JAMAIS aux quatre booléens ;
  *  - dans {@see FileLocationsMirrorTest}, sur les emplacements eux-mêmes.
- * ---------------------------------------------------------------------------
  */
 class FilePolicySettingsTest extends TestCase
 {
@@ -70,7 +68,7 @@ class FilePolicySettingsTest extends TestCase
      * **L'INVARIANT CENTRAL DU DÉMÉNAGEMENT** : chaque réglage de connexion
      * persiste seul, et les QUATRE booléens — dérivés des emplacements — ne
      * bougent pas d'un pouce. Une page de connexion qui en écrirait un
-     * ouvrirait un second chemin de décision, celui-là même que la story ferme.
+     * ouvrirait un second chemin de décision, celui-là même qu'on ferme ici.
      */
     #[Test]
     public function saving_the_connection_never_writes_any_of_the_four_capabilities(): void
@@ -107,7 +105,7 @@ class FilePolicySettingsTest extends TestCase
 
     /**
      * L'icône du raccourci-portail est publiée à l'ENREGISTREMENT, sans aucune
-     * case ni aucune condition (Story 63.2 : le raccourci suit le cloud actif,
+     * case ni aucune condition ( : le raccourci suit le cloud actif,
      * la case a disparu). Sans cette publication, le `.lnk` porterait l'icône de
      * `rundll32.exe` sur tous les bureaux de l'établissement.
      */
@@ -130,7 +128,7 @@ class FilePolicySettingsTest extends TestCase
     }
 
     /**
-     * `nextcloud_desktop_shortcut` n'a plus de lecteur (Story 63.2) mais reste
+     * `nextcloud_desktop_shortcut` n'a plus de lecteur mais reste
      * PERSISTÉE : la retirer casserait le payload de `files.policy`. Un
      * enregistrement depuis cet écran, qui ne la nomme plus, ne doit donc pas
      * l'effacer.
@@ -154,7 +152,7 @@ class FilePolicySettingsTest extends TestCase
     }
 
     /**
-     * Même règle pour la clé neuve du chemin d'accès (Story 63.3) : cet écran ne
+     * Même règle pour la clé neuve du chemin d'accès : cet écran ne
      * la nomme pas, il ne doit donc jamais la faire retomber sur son défaut.
      */
     #[Test]

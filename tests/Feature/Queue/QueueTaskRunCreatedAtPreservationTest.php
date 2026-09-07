@@ -15,11 +15,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.9 — Test de régression : `Queue::before` (AppServiceProvider) ne
+ * Test de régression : `Queue::before` (AppServiceProvider) ne
  * réécrit PAS `created_at` sur un retry (chemin UPDATE — même task_uuid), et
  * le pose correctement lors du premier passage (chemin INSERT).
  *
- * Patron : iso-story 29.7 (préservation `created_at` pivot `capability_assignments`).
+ * Patron : iso.
  * Approche : fire `JobProcessing` directement via event() — Queue::before() enregistre
  * son listener sur l'event dispatcher ($app['events']->listen(JobProcessing::class, …)).
  * Pas besoin de dispatcher un vrai job.
@@ -34,7 +34,7 @@ class QueueTaskRunCreatedAtPreservationTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // Helpers
 
     private function makeJobMock(string $uuid, string $displayName = 'TestJob'): Job
     {
@@ -60,12 +60,12 @@ class QueueTaskRunCreatedAtPreservationTest extends TestCase
         event(new JobProcessed('sync', $this->makeJobMock($uuid, $displayName)));
     }
 
-    // ── Tests ────────────────────────────────────────────────────────────────
+    // Tests
 
     #[Test]
     public function inserting_a_new_queue_task_run_sets_created_at(): void
     {
-        // AC#2 — chemin INSERT : created_at et updated_at doivent être posés (non nuls).
+        // Chemin INSERT : created_at et updated_at doivent être posés (non nuls).
         $uuid = 'test-insert-' . uniqid();
 
         $this->fireBeforeHandler($uuid, 'MyJob');
@@ -75,7 +75,7 @@ class QueueTaskRunCreatedAtPreservationTest extends TestCase
         self::assertNotNull($row, 'La ligne doit exister après l\'INSERT');
         self::assertNotNull($row->created_at, 'INSERT : created_at doit être posé (non nul)');
         self::assertNotNull($row->updated_at, 'INSERT : updated_at doit être posé (non nul)');
-        // AC#2 — created_at ≈ now() (pas seulement non-nul) et = updated_at à la création.
+        // created_at ≈ now() (pas seulement non-nul) et = updated_at à la création.
         // Comparaison via Carbon (robuste cross-driver : SQLite vs PG, microsecondes).
         self::assertTrue(
             Carbon::parse($row->created_at)->diffInSeconds(now()) <= 5,
@@ -93,10 +93,10 @@ class QueueTaskRunCreatedAtPreservationTest extends TestCase
     #[Test]
     public function re_dispatching_a_task_uuid_preserves_original_created_at(): void
     {
-        // AC#1 & #4 (cœur) — chemin UPDATE (retry / re-dispatch du même task_uuid).
+        // Chemin UPDATE (retry / re-dispatch du même task_uuid).
         // Technique : figer created_at dans le PASSÉ avant le second passage ;
         // si updateOrInsert réécrit created_at à now(), l'assertion échoue.
-        // Iso-patron story 29.7 (CapabilitiesOverrideAuditTest::re_editing_an_override…).
+        // Iso-patron (CapabilitiesOverrideAuditTest::re_editing_an_override…).
         $uuid = 'test-update-' . uniqid();
 
         // 1 — Premier passage (INSERT).
@@ -146,7 +146,7 @@ class QueueTaskRunCreatedAtPreservationTest extends TestCase
     #[Test]
     public function after_handler_inserting_a_fresh_run_sets_created_at(): void
     {
-        // AC#3 / #7 — course rare : si `before` n'a pas tourné, l'INSERT par
+        // Course rare : si `before` n'a pas tourné, l'INSERT par
         // `after` doit lui aussi poser `created_at` (closure iso-`before`),
         // jamais une ligne `created_at = NULL`.
         $uuid = 'test-after-' . uniqid();

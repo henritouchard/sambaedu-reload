@@ -7,8 +7,6 @@ namespace App\Ipxe\Exceptions;
 use RuntimeException;
 
 /**
- * Story 3.4 — T2.2 / AC2.1.
- *
  * Exception levée par {@see \App\Ipxe\Services\LinuxPreseedService::generate()}
  * en cas d'échec de l'assemblage du preseed :
  *

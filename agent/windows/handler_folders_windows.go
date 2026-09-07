@@ -10,7 +10,7 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `folders` (Story 58.1, contrat §7.12) — redirection
+// Câblage Windows du handler `folders` (contrat §7.12) — redirection
 // des dossiers shell (`User Shell Folders`). Exécuté par le COMPAGNON (droits
 // user) : la clé vit dans HKCU, et la cible réseau doit être atteinte avec
 // l'identité de l'utilisateur (le service SYSTEM n'a pas ses tickets Kerberos).
@@ -90,7 +90,6 @@ func (o *folderOps) EnsureDir(value string) error {
 	return os.MkdirAll(expandWindowsEnv(value), 0o755)
 }
 
-// --- Accès rapide (Quick Access / « Accueil ») -------------------------------
 //
 // POURQUOI PowerShell ICI, alors que le handler `shortcuts` proscrit le
 // shell-out (il crée les `.lnk` en COM natif). Deux raisons, et elles ne valent

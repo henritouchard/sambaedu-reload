@@ -14,7 +14,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC4.1 / AC4.2 / T4.2.
+ * T4.2.
  *
  * Tests unitaires de l'orchestrateur `IpxeService::handleBoot()`.
  *
@@ -78,8 +78,8 @@ class IpxeServiceTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('item --key 0 exit', $body);
-        // Le menu inconnu propose l'item admin (key 1 login) depuis la story
-        // 4.10 (parité boot.php:82 — l'admin reste accessible aux machines non
+        // Le menu inconnu propose l'item admin (key 1 login, parité
+        // boot.php:82 — l'admin reste accessible aux machines non
         // enrôlées). Il se distingue du menu `known` par l'item de boot disque
         // en `key 0 exit` (le menu known utilise `key 3 default`).
         self::assertStringNotContainsString('item --key 3 default', $body);
@@ -207,7 +207,6 @@ class IpxeServiceTest extends TestCase
         $log = MachineBootLog::query()->first();
         self::assertNotNull($log);
         self::assertSame($ws->id, $log->workstation_id);
-        // machine_name lowercased iso D5.
         self::assertSame('pc-salle-101', $log->machine_name);
         self::assertSame('ipxe_boot', $log->action);
     }
@@ -266,7 +265,7 @@ class IpxeServiceTest extends TestCase
             'status' => 'active',
         ]);
 
-        // Story 3.1 — AC4.2 : placeholder qui retourne TOUJOURS null.
+        // Placeholder qui retourne TOUJOURS null.
         self::assertNull($this->service->resolveProgrammedAction($ws));
     }
 }

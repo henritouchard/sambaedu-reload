@@ -9,13 +9,12 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Recadrage du 2026-08-08 — LE MODE « INSTANCE NON ADMINISTRÉE » EST SUPPRIMÉ.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI.** Mesuré contre une instance réelle, un compte Nextcloud ORDINAIRE
  * refuse de créer un dossier d'équipe (OCS 403 dans un corps HTTP 200), refuse de
  * créer un groupe, et son partage visant un groupe échoue. Sans dossier d'équipe,
  * pas de clôture — donc pas de cloisonnement, qui est le problème que tout le plan
  * de fichiers existe pour résoudre. SE5 exige désormais un compte administrateur,
- * et le mode délégué livré par la story 61.2 a été retiré du code.
+ * et le mode délégué livré par la a été retiré du code.
  *
  * **CE QUE CETTE MIGRATION NETTOIE, ET POURQUOI ELLE EXISTE.** Le code ne lit plus
  * ni le credential porteur ni les deux clés de réglage : les laisser ne casserait
@@ -26,7 +25,6 @@ use Illuminate\Support\Facades\Schema;
  * **IRRÉVERSIBLE, et c'est assumé** : `down()` ne restaure rien. Un secret effacé ne
  * se reconstitue pas, et le mode qui le consommait n'existe plus — le « rétablir »
  * demanderait de reculer sur la décision, pas de rejouer une migration.
- * ---------------------------------------------------------------------------
  */
 return new class extends Migration
 {

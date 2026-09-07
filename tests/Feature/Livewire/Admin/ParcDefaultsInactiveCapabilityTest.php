@@ -14,11 +14,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 35.5 (review #2) — garde `is_active` sur l'onglet « Registre / capacités »
+ * Garde `is_active` sur l'onglet « Registre / capacités »
  * de /admin/settings/parc-defaults.
  *
  * `photo_viewer_restored` est la PREMIÈRE capacité seedée `is_active=false`
- * (gate d'honnêteté 35.5) : avant elle, le trou « éditer le défaut d'une
+ * (gate d'honnêteté) : avant elle, le trou « éditer le défaut d'une
  * capacité inactive » était théorique. Le provider ignore les capacités
  * inactives (`where('is_active', true)`) → poser un défaut serait un réglage
  * silencieusement sans effet. `openEdit`/`saveDefault` refusent désormais

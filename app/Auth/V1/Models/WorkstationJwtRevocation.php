@@ -13,14 +13,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 16.10 — AC3.2.
  *
  * Modèle Eloquent pour la table `workstation_jwt_revocations`.
  *
  *  - `id`  UUID v4 généré par `HasUuids`.
  *  - `jti` = claim JWT révoqué (unique).
  *  - Scope `active()` = `expires_at > now()` (cf. note migration : les
- *    entrées dont `expires_at < now()` peuvent être purgées).
+ *  entrées dont `expires_at < now()` peuvent être purgées).
  *
  * @property string $id
  * @property string $jti

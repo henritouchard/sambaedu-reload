@@ -13,20 +13,18 @@ use Spatie\Permission\PermissionRegistrar;
 /**
  * Seeder pour les permissions et rôles SambaEdu
  *
- * ============================================================================
- * Story 7.2 : seed idempotent NON-DESTRUCTIF.
- * ============================================================================
+ * Seed idempotent NON-DESTRUCTIF.
  *
- * Règles d'or (AC1) :
- *  - Les permissions de `SambaPermission::cases()` (21 depuis Story 5.2
- *    avec l'ajout de `share.manage` ; précédemment 20 depuis Story 7.3 avec
+ * Règles d'or :
+ * - Les permissions de `SambaPermission::cases` (21 depuis
+ * avec l'ajout de `share.manage` ; précédemment 20 depuis avec
  *    `computer.remote.rdp`) sont créées via `Permission::findOrCreate`
  *    (idempotent, aucune perte si elles existent).
  *  - Les 9 rôles de `SambaRole::cases()` sont créés via `Role::firstOrCreate`.
  *    Leurs permissions sont resynchronisées via `syncPermissions(...)`
  *    UNIQUEMENT si le rôle vient d'être créé (`wasRecentlyCreated === true`)
  *    OU si on invoque le seeder avec le flag `--force` (param de la méthode
- *    `run()`).
+ *  `run()`).
  *  - Les profils custom (créés par l'UI `rights-management` → onglet Profils,
  *    ou rapatriés de la branche LDAP `rights_rdn`) sont **ignorés par ce
  *    seeder**. Ils ne sont ni supprimés ni ré-écrits.
@@ -68,9 +66,6 @@ class PermissionSeeder extends Seeder
             'roles_custom_preserved' => 0,
         ];
 
-        // ---------------------------------------------------------------------
-        // 1. Permissions — `findOrCreate` idempotent.
-        // ---------------------------------------------------------------------
         foreach (SambaPermission::cases() as $perm) {
             $before = Permission::where('name', $perm->value)
                 ->where('guard_name', 'web')
@@ -81,9 +76,6 @@ class PermissionSeeder extends Seeder
             }
         }
 
-        // ---------------------------------------------------------------------
-        // 2. Rôles seedés — `firstOrCreate` + syncPermissions conditionnel.
-        // ---------------------------------------------------------------------
         foreach (SambaRole::cases() as $sambaRole) {
             $role = Role::firstOrCreate(
                 ['name' => $sambaRole->value, 'guard_name' => 'web']
@@ -104,9 +96,6 @@ class PermissionSeeder extends Seeder
             }
         }
 
-        // ---------------------------------------------------------------------
-        // 3. Rôles custom — comptage only (aucune action).
-        // ---------------------------------------------------------------------
         $stats['roles_custom_preserved'] = Role::where('guard_name', 'web')
             ->whereNotIn(
                 'name',
@@ -122,9 +111,6 @@ class PermissionSeeder extends Seeder
         return $stats;
     }
 
-    /**
-     * Retourne le mapping bitmask → permission
-     */
     public static function getBitmaskMapping(): array
     {
         return SambaPermission::bitmaskMapping();

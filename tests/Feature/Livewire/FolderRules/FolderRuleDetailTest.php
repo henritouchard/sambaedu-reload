@@ -16,7 +16,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC4/AC5) — page détail : toggle actif/inactif, suppression refusée
+ * Page détail : toggle actif/inactif, suppression refusée
  * si active / autorisée si inactive, assignation de parcs, 403 sans permission.
  */
 class FolderRuleDetailTest extends TestCase

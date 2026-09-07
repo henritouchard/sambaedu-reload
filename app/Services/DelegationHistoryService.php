@@ -23,7 +23,7 @@ use Throwable;
  *
  * Échec d'écriture audit : un échec est loggué en `error` mais n'annule pas
  * l'opération métier — le service n'a pas à faire foirer un grant réussi.
- * L'AC5 exige un log d'erreur + toast admin : le log est fait ici, le toast
+ * L' exige un log d'erreur + toast admin : le log est fait ici, le toast
  * est la responsabilité du caller Livewire (qui catch l'exception).
  */
 class DelegationHistoryService
@@ -69,7 +69,7 @@ class DelegationHistoryService
                 'context' => !empty($context) ? $context : null,
             ]);
         } catch (Throwable $e) {
-            // AC5 : un échec d'écriture audit ne doit pas faire passer l'op
+            // Un échec d'écriture audit ne doit pas faire passer l'op
             // en silence. On log ici en error — le caller (service ou composant
             // Livewire) décide s'il remonte un toast admin.
             Log::error('[DelegationHistoryService] Échec persistance historique', [

@@ -9,18 +9,18 @@ use Livewire\Component;
  * /admin/settings/files — « Gestion des fichiers » (page HÔTE à onglets).
  *
  * Regroupe en trois onglets :
- *   - « Emplacements et cloud » (63.3) : OÙ VIVENT LES FICHIERS — le cloud actif
+ *  - « Emplacements et cloud » : OÙ VIVENT LES FICHIERS — le cloud actif
  *     de l'instance (choix exclusif, avec sa page de connexion), l'emplacement
  *     de l'espace personnel, celui de l'espace partagé, et les réglages qui en
  *     dépendent ({@see \App\Services\Filesystem\FileLocationService}).
  *   - « Lecteurs réseaux » : la gestion des partages réseau gérés (liste, création,
  *     assignation) — composant embarqué `pages::admin.shares.index`. Le détail
  *     d'un partage reste une sous-page (`/admin/shares/{id}`).
- *   - « Profils itinérants » (1bis.18f/26.3) : exclusions `ExcludeProfileDirs`,
+ *   - « Profils itinérants » : exclusions `ExcludeProfileDirs`,
  *     statistiques roaming et purge des orphelins.
  *
  * ⚠️ **Les onglets « Personnels et partagés » et « OpenCloud » ONT DISPARU**
- * (63.3). Ils portaient quatre interrupteurs indépendants qui disaient ce qui
+ * . Ils portaient quatre interrupteurs indépendants qui disaient ce qui
  * était allumé sans jamais dire où vivent les fichiers, et leurs deux blocs de
  * connexion sont maintenant révélés par le choix de cloud du premier onglet.
  * Leurs clés retombent sur le défaut comme n'importe quelle clé inconnue.
@@ -30,10 +30,9 @@ use Livewire\Component;
  * existe : l'UI était injoignable (l'URL retombait silencieusement sur le 1er onglet).
  * La redirection nommée reste stable, elle pointe enfin sur du réel.
  *
- * ⚠️ **Pas d'onglet « Quotas & FS »** (décision Henri 2026-08-05). Sa grille de
- * « quotas par défaut par profil » n'appliquait rien à personne : elle écrivait une
- * clé de réglage que la résolution ne lisait pas. La story 63.4 a soldé le partial
- * orphelin : le plafond par défaut est devenu un réglage d'INSTANCE (une ligne par
+ * ⚠️ **Pas d'onglet « Quotas & FS »**. Sa grille de « quotas par défaut par
+ * profil » n'appliquait rien à personne : elle écrivait une clé de réglage que
+ * la résolution ne lisait pas. Le partial orphelin a été soldé : le plafond par défaut est devenu un réglage d'INSTANCE (une ligne par
  * partition, écrite là où la résolution lit), et il vit — avec la période de grâce
  * et la corbeille des répertoires personnels — en deux cartes du bloc « Réglages »
  * de l'onglet des emplacements.

@@ -20,15 +20,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.4 — LES DEUX FAÇONS DE DÉCLINER, ALIGNÉES CÔTE À CÔTE.
+ * LES DEUX FAÇONS DE DÉCLINER, ALIGNÉES CÔTE À CÔTE.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI CE FICHIER EXISTE.**
  *
  * « Limite du modèle » et « dette de notre code » se disent tous les deux
  * « le backend n'a rien fait », et les écraser l'un sur l'autre est la
- * simplification la plus tentante du dépôt — assez tentante pour avoir coûté DEUX
- * corrections d'Henri en 60.3 et 60.4. Elles ne veulent pourtant pas dire la même
+ * simplification la plus tentante du dépôt. Elles ne veulent pourtant pas dire la même
  * chose, elles n'appartiennent pas au même propriétaire, elles n'ont pas la même
  * durée de vie, et une future interface ne les rend PAS de la même façon :
  *
@@ -37,7 +35,7 @@ use Tests\TestCase;
  *  | `non_exprimable`  | le MODÈLE n'a pas le concept          | le backend   | permanent  | masque|
  *  | `non_implemente`  | le mécanisme existe, SE5 ne le pilote pas | notre code | temporaire | grise |
  *
- * Jusqu'à cette story, le serveur de fichiers historique ne produisait QUE le
+ * Longtemps, le serveur de fichiers historique n'a produit QUE le
  * second — au point que son docblock affirmait ne jamais produire le premier. Les
  * quatre verbes ont fait naître de vraies limites de modèle : les deux coexistent
  * désormais dans le même backend, sur le même passage, et c'est exactement là que
@@ -93,14 +91,14 @@ class PosixDeclineKindsTest extends TestCase
         // --- DETTE : le rôle d'arête « encadrant » d'un groupe hors du trio
         //     d'annuaire. Le mécanisme EXISTE (l'annuaire le fait pour les
         //     classes) ; SE5 ne le projette pas ailleurs. C'est notre code qui
-        //     manque, et la story qui le comblerait est datée (62.7).
+        //     manque, et ce comblement est daté.
         $projet = UserGroup::create(['name' => 'ProjetX', 'type' => 'projet']);
         $debt = $this->provision('dette', [
             new PlanGrant('@role', PlanSubject::group((int) $projet->id, 'manager'), PlanGrant::VERBS),
         ]);
 
         // --- LIMITE DE MODÈLE : supprimer sans créer. Les deux verbes passent par
-        //     le même levier ; aucune story ne le changera, c'est le mécanisme.
+        //     le même levier ; rien ne le changera, c'est le mécanisme.
         $classe = UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
         $limit = $this->provision('limite', [
             new PlanGrant('classe', PlanSubject::group((int) $classe->id), [
@@ -117,7 +115,7 @@ class PosixDeclineKindsTest extends TestCase
         self::assertFalse($limit->outcome->isImplementationDebt());
 
         // Les deux EXIGENT un détail, et les deux le portent : un déclin sans
-        // raison est exactement le silence que l'epic supprime.
+        // raison est exactement le silence qu'on supprime.
         self::assertNotSame('', trim((string) $debt->detail));
         self::assertNotSame('', trim((string) $limit->detail));
         self::assertNotSame($debt->detail, $limit->detail);
@@ -125,7 +123,7 @@ class PosixDeclineKindsTest extends TestCase
 
     /**
      * LA PRÉCÉDENCE, exercée avec un VRAI `non_exprimable` — ce que le test
-     * composite de 60.4 ne pouvait pas faire, puisque le backend n'en produisait
+     * composite ne pouvait pas faire, puisque le backend n'en produisait
      * aucun.
      *
      * Un nœud portant À LA FOIS une dette de projection et une limite de modèle
@@ -183,7 +181,7 @@ class PosixDeclineKindsTest extends TestCase
     }
 
     /**
-     * Story 62.4 — LE SORT DES RAPPORTS DÉJÀ EN CACHE, tranché et VÉRIFIÉ.
+     * LE SORT DES RAPPORTS DÉJÀ EN CACHE, tranché et VÉRIFIÉ.
      *
      * Le dernier rapport de réconciliation voyage en TABLEAU sous une clé de cache
      * à durée courte. Si ce tableau portait un vocabulaire d'accès, un vieux

@@ -9,13 +9,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.3 — AC1.1 / T1.2.
+ * T1.2.
  *
  * Tests unitaires du sanitizer hostname iPXE :
  *
- *  - {@see IpxeHostnameSanitizer::sanitize()}      — port iso-legacy `q2a()`.
+ *  - {@see IpxeHostnameSanitizer::sanitize()} — port iso-legacy `q2a()`.
  *  - {@see IpxeHostnameSanitizer::applyHostnameSuffix()} — port iso-legacy
- *    `add_hostname_suffix()` (`ldap.inc.php:380-394`).
+ *  `add_hostname_suffix()` (`ldap.inc.php:380-394`).
  *  - {@see IpxeHostnameSanitizer::isValidHostname()} — regex anti-injection.
  *  - {@see IpxeHostnameSanitizer::isSpecialServerName()} — détection
  *    serveurs internes SE4FS/SE4AD (parité `enregistrement.php:39`).
@@ -155,24 +155,24 @@ class IpxeHostnameSanitizerTest extends TestCase
     public function it_rejects_empty_and_oversize_hostname(): void
     {
         self::assertFalse($this->sanitizer->isValidHostname(''));
-        // Q4 (review 3.3) : cap relevé à 32 pour couvrir applyHostnameSuffix
-        // avec suffix legacy_ldap. 33 chars → trop long.
+        // Le cap est à 32 caractères, de quoi loger un nom suivi d'un suffixe
+        // legacy_ldap ; 33 est donc trop long.
         self::assertFalse($this->sanitizer->isValidHostname(str_repeat('a', 33)));
     }
 
     #[Test]
     public function it_accepts_hostname_up_to_32_chars(): void
     {
-        // Q4 (review 3.3) : cap NetBIOS de 15 trop strict — un nom 16-32 chars
-        // doit passer (couverture suffixes legacy_ldap longs).
+        // Le cap NetBIOS de 15 serait trop strict : un nom de 16 à 32 caractères
+        // doit passer, sans quoi les suffixes legacy_ldap longs sont refusés.
         self::assertTrue($this->sanitizer->isValidHostname(str_repeat('a', 16)));
         self::assertTrue($this->sanitizer->isValidHostname(str_repeat('a', 32)));
     }
 
     /**
-     * Q4 (review 3.3) — non-régression : un suffix legacy_ldap long appliqué
-     * via applyHostnameSuffix() produit un nom > 15 chars qui DOIT rester
-     * valide pour isValidHostname (sinon enrollment échoue silencieusement).
+     * Un suffixe legacy_ldap long appliqué par `applyHostnameSuffix()` produit
+     * un nom de plus de 15 caractères, qui DOIT rester valide pour
+     * `isValidHostname()` : sinon l'enrôlement échoue en silence.
      */
     #[Test]
     public function it_validates_hostname_produced_by_apply_suffix_with_long_legacy_suffix(): void

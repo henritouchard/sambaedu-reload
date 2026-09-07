@@ -10,7 +10,7 @@ use Tests\TestCase;
 /**
  * Test Feature : le catchall charge le bootstrap pour un module dans legacy/modules/.
  *
- * AC6 — Given une requête arrive sur une route non Livewire,
+ * Given une requête arrive sur une route non Livewire,
  *       when le path correspond à un module dans legacy/modules/,
  *       then le LegacyCatchallController charge legacy/bootstrap.php
  *       avant d'exécuter le module.
@@ -83,9 +83,6 @@ class LegacyBootstrapCatchallTest extends TestCase
         rmdir($dir);
     }
 
-    /**
-     * AC6 — Un module dans legacy/modules/ est exécuté via le bootstrap.
-     */
     public function test_module_in_legacy_modules_is_executed_via_bootstrap(): void
     {
         // Créer un fichier PHP de test dans legacy/modules/
@@ -107,7 +104,7 @@ class LegacyBootstrapCatchallTest extends TestCase
     }
 
     /**
-     * AC6 — Un fichier PHP direct dans legacy/modules/ est exécuté.
+     * Un fichier PHP direct dans legacy/modules/ est exécuté.
      */
     public function test_php_file_in_legacy_modules_is_executed(): void
     {
@@ -123,7 +120,7 @@ class LegacyBootstrapCatchallTest extends TestCase
     }
 
     /**
-     * AC6 — Le bootstrap rend app() disponible dans le module.
+     * Le bootstrap rend app disponible dans le module.
      */
     public function test_bootstrap_provides_laravel_context_to_module(): void
     {

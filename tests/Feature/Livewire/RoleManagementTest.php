@@ -15,9 +15,9 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests Feature — gestion des profils dans /app/rights-management (Story 7.2, AC3).
+ * Tests Feature — gestion des profils dans /app/rights-management.
  *
- * Architecture post-refonte 7.2 (commit 9ef7627) : la modale inline a été
+ * Architecture post-refonte (commit 9ef7627) : la modale inline a été
  * remplacée par 3 composants Livewire SFC distincts :
  *  - `pages::rights-management.index`              → liste + bulk delete
  *  - `pages::rights-management.profiles.new`       → création
@@ -89,7 +89,7 @@ class RoleManagementTest extends TestCase
         $component = Livewire::test($this->indexPage())
             ->call('loadProfiles');
 
-        // Story 49.1 — `profilesList` a été scindé : la liste historique est
+        // `profilesList` a été scindé : la liste historique est
         // désormais `unattachedProfilesList` (profils portés par AUCUN groupe).
         // Aucun groupe porteur n'existe dans ce test : tous les profils y sont.
         $profiles = $component->get('unattachedProfilesList');
@@ -163,7 +163,7 @@ class RoleManagementTest extends TestCase
     }
 
     /**
-     * Review 7.2 #M3 — L'édition des permissions des rôles seedés est
+     * L'édition des permissions des rôles seedés est
      * interdite (garde-fou serveur + UI disabled). Le test vérifie que la
      * tentative abort 403 et que les permissions restent inchangées.
      */
@@ -274,7 +274,7 @@ class RoleManagementTest extends TestCase
     }
 
     /**
-     * Review 7.2 #7 — `save()` invalide le cache Spatie : après ajout d'une
+     * `save` invalide le cache Spatie : après ajout d'une
      * permission au rôle custom, un `$user->can()` sur un fresh model reflète
      * l'ajout à la requête suivante (pas de cache stale).
      */

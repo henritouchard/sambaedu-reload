@@ -12,8 +12,6 @@ use Livewire\Component;
 /**
  * Molecule Livewire SFC — carte de personnalisation par AppKind.
  *
- * Story 4.8 — Task 4.3 (AC 7).
- *
  * Props :
  *   - `appKind`  : AppKind enum value ('firefox', 'thunderbird')
  *   - `scopeType` : null (défaut étab) | FQN (User / UserGroup / WorkstationGroup)

@@ -23,9 +23,7 @@ use Illuminate\Support\Facades\Queue;
  *
  * Ce test vérifie que Laravel crée correctement une OU dans OU=Computers.
  *
- * =============================================================================
  * OPÉRATION: Création de l'OU dans OU=Computers
- * =============================================================================
  * DN: OU={nom},OU=Computers,DC=sambaedu,DC=org
  *
  * Attributs écrits:
@@ -51,7 +49,7 @@ class WorkstationGroupCreateTest extends TestCase
         $this->dnHelper = app(LdapDnHelper::class);
         $this->config = app(SambaEduConfig::class);
 
-        // Story 38.7 — test d'intégration AD réel : se skippe hors annuaire (HÔTE).
+        // Test d'intégration AD réel : se skippe hors annuaire (HÔTE).
         $this->skipUnlessAdReachable();
 
         // Les observers restent actifs pour tester le comportement normal
@@ -184,7 +182,7 @@ class WorkstationGroupCreateTest extends TestCase
     }
 
     /**
-     * Story 38.7 — Création d'un groupe avec `app_profile_name` rempli : l'Observer
+     * Création d'un groupe avec `app_profile_name` rempli : l'Observer
      * ne crée PLUS d'AppProfile ni de lien pivot, et aucun CN n'est écrit dans
      * OU=Parcs (conteneur en lecture seule). Seule l'OU sous OU=Computers est créée.
      */
@@ -212,7 +210,7 @@ class WorkstationGroupCreateTest extends TestCase
             return $job->workstationGroupId === $workstationGroup->id && $job->action === 'create';
         });
 
-        // Aucune création automatique d'AppProfile ni de lien pivot (AC8).
+        // Aucune création automatique d'AppProfile ni de lien pivot.
         $this->assertNull(AppProfile::where('name', $groupName)->first(), 'Aucun AppProfile ne doit être créé automatiquement (38.7).');
         $this->assertFalse($workstationGroup->appProfiles()->exists(), 'Aucun lien pivot ne doit être posé.');
 
@@ -221,7 +219,7 @@ class WorkstationGroupCreateTest extends TestCase
         $this->assertTrue($resultGroup['success'], 'Création OU doit réussir: ' . ($resultGroup['error'] ?? ''));
         $this->assertOuExistsInComputers($groupName);
 
-        // …mais AUCUN CN n'est écrit dans OU=Parcs (lecture seule — 38.7).
+        // …mais AUCUN CN n'est écrit dans OU=Parcs (lecture seule).
         $this->assertCnNotExistsInParcs($groupName);
     }
 
@@ -243,7 +241,7 @@ class WorkstationGroupCreateTest extends TestCase
     }
 
     /**
-     * Story 38.7 — vérifie qu'AUCUN CN n'existe dans OU=Parcs (lecture seule).
+     * Vérifie qu'AUCUN CN n'existe dans OU=Parcs (lecture seule).
      */
     private function assertCnNotExistsInParcs(string $name): void
     {
@@ -281,8 +279,8 @@ class WorkstationGroupCreateTest extends TestCase
     private function cleanupProfile(string $name): void
     {
         try {
-            // Story 38.7 — plus de service d'écriture AD : suppression directe du
-            // CN résiduel s'il en subsiste un (créé avant 38.7).
+            // Plus de service d'écriture AD : suppression directe du
+            // CN résiduel s'il en subsiste un (créé avant).
             DeviceGroupTagModel::in($this->dnHelper->parcs())
                 ->where('cn', '=', $name)
                 ->first()?->delete();

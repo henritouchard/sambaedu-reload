@@ -11,14 +11,12 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.4 — AC5.4 / D15.
- *
  * Controller du endpoint `GET|POST /ipxe/linux/autorun` — **stub minimal**.
  *
  * **Décision D15** : le legacy `linux/autorun.php` construit un script bash
  * complet qui boucle pour exécuter des scripts post-install lus depuis l'AD
  * (`get_action($config, $uuid)`). Ce mécanisme n'est plus pertinent en SE5
- * (Epic 17 `script_assignments` est l'alternative).
+ * ( `script_assignments` est l'alternative).
  *
  * **Implémentation stub** :
  *   #!/bin/bash
@@ -29,7 +27,7 @@ use Illuminate\Support\Facades\Log;
  * un `exit 0` immédiat, la boucle se termine sans action (= comportement
  * dégradé acceptable Phase 2).
  *
- * Si Henri arbitre besoin du flow complet → ouvrir story Phase 3 dédiée.
+ * Le flow complet reste à ouvrir en Phase 3 si le besoin est arbitré.
  */
 class IpxeLinuxAutorunController extends Controller
 {
@@ -45,8 +43,8 @@ class IpxeLinuxAutorunController extends Controller
         $name = (string) $request->input('name', '');
         $ip = (string) ($request->ip() ?? '');
 
-        // Résolution best-effort pour audit (D4 — poste inconnu → réponse
-        // 200 stub + log warning).
+        // Résolution best-effort pour l'audit : un poste inconnu reçoit quand
+        // même le stub 200, seule la trace change.
         $workstation = $this->locator->locate($mac, $uuid, '');
 
         Log::channel($this->channel())->info('ipxe.linux.autorun.served', [

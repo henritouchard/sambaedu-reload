@@ -13,30 +13,30 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 30.3 — Réconciliation « désir d'état » des groupes imposés par le contrat
+ * Réconciliation « désir d'état » des groupes imposés par le contrat
  * amont (controlHub).
  *
  * Garantit que, pour chaque groupe imposé du contrat amont **actif** :
  *  - s'il est absent → il est CRÉÉ via le chemin parc existant
- *    ({@see WorkstationGroupService::createGroup()} → observer) avec son label réservé,
+ *  ({@see WorkstationGroupService::createGroup()} → observer) avec son label réservé,
  *    le flag `managed_by_control_hub` et le verrou de suppression
  *    `locked = control_hub`. Sa nature suit `is_physical` du contrat (logique par
  *    défaut : un parc physique déclenche seul une écriture AD) ;
  *  - s'il existe déjà → il est CONFIRMÉ de façon idempotente par écriture **ciblée**
- *    (jamais via `updateGroup()` qui throw sur `isLocked()`), sans doublon (résolution
+ *  (jamais via `updateGroup()` qui throw sur `isLocked()`), sans doublon (résolution
  *    par nom), sans écraser un verrou de plus forte priorité (ex. `root`).
  *
  * Les WorkstationGroup précédemment imposés mais **plus** listés par le contrat actif
- * voient leur verrou amont LEVÉ (sans suppression — la rupture totale du lien relève
- * d'Epic 32).
+ * voient leur verrou amont LEVÉ, sans suppression — la rupture totale du lien relève
+ * de {@see ControlHubContractSeveranceService}.
  *
- * Invariants (mémoires projet / PRD) :
- *  - NFR3 — standalone : sans contrat amont actif, `reconcile()` est un no-op total ;
+ * Invariants :
+ *  - standalone : sans contrat amont actif, `reconcile()` est un no-op total ;
  *    aucune autre table n'est lue.
- *  - NFR4 — idempotence : un `save()` n'est émis que si un champ a effectivement changé
+ *  - idempotence : un `save()` n'est émis que si un champ a effectivement changé
  *    (`isDirty()`), pour ne pas réveiller l'observer `updated()` (dispatch AD parasite).
- *  - R3 — vocabulaire : terme prohibé proscrit ; vocabulaire « amont » / `ControlHub*` /
- *    `imposed` / `label`. [Source: prd-contrat-manage-se5.md#R3]
+ *  - vocabulaire : terme prohibé proscrit ; vocabulaire « amont » / `ControlHub*` /
+ *    `imposed` / `label`.
  */
 class ImposedWorkstationGroupReconciler
 {
@@ -54,7 +54,7 @@ class ImposedWorkstationGroupReconciler
     {
         $result = new ImposedGroupReconciliationResult();
 
-        // NFR3 — Standalone : sans contrat amont actif, no-op total. On ne lit
+        // Standalone : sans contrat amont actif, no-op total. On ne lit
         // AUCUNE autre table (ni WorkstationGroup, ni les groupes imposés).
         $contract = ControlHubContract::active();
         if ($contract === null) {
@@ -113,7 +113,7 @@ class ImposedWorkstationGroupReconciler
             }
         }
 
-        // AC #6 — Levée du verrou des groupes non-imposés par le contrat actif.
+        // Levée du verrou des groupes non-imposés par le contrat actif.
         $this->releaseDeImposedGroups($imposedNames, $result);
 
         Log::info('[ImposedWorkstationGroupReconciler] Réconciliation terminée', [
@@ -172,7 +172,7 @@ class ImposedWorkstationGroupReconciler
      *
      * N'utilise PAS {@see WorkstationGroupService::updateGroup()} (qui throw sur
      * `isLocked()`). N'écrit (`save()`) que si un champ a changé (`isDirty()`), pour
-     * préserver l'idempotence (NFR4) et ne pas réveiller l'observer `updated()`.
+     * préserver l'idempotence et ne pas réveiller l'observer `updated()`.
      */
     private function confirmImposedGroup(
         WorkstationGroup $group,
@@ -201,7 +201,7 @@ class ImposedWorkstationGroupReconciler
         }
 
         if (! $group->isDirty()) {
-            // No-op idempotent : rien à écrire (préserve AC #3, évite l'observer updated()).
+            // No-op idempotent : rien à écrire, l'observer updated() n'est pas réveillé.
             return;
         }
 
@@ -216,12 +216,12 @@ class ImposedWorkstationGroupReconciler
     }
 
     /**
-     * AC #6 — Lève le verrou amont des WorkstationGroup non listés par le contrat actif.
+     * Lève le verrou amont des WorkstationGroup non listés par le contrat actif.
      *
      * Pour chaque groupe marqué `managed_by_control_hub` ou verrouillé `control_hub`
      * dont le nom n'est PLUS imposé : `locked = null` **uniquement** s'il valait
      * `control_hub` (un `root` est préservé), `managed_by_control_hub = false`.
-     * Ne supprime jamais le groupe (rupture totale du lien = Epic 32).
+     * Ne supprime jamais le groupe.
      *
      * @param array<int, string> $imposedNames Noms imposés par le contrat actif.
      */

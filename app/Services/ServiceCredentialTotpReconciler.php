@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
  * suivi est PAR COMPTE (l'échec de l'un ne masque ni ne bloque les autres).
  *
  * @see \App\Services\ServiceCredentials  (source de vérité chiffrée + calcul TOTP)
- * @see \App\Services\UserService::changePasswordInAd()  (write AD réutilisé)
+ * @see \App\Services\UserService::changePasswordInAd() (write AD réutilisé)
  */
 class ServiceCredentialTotpReconciler
 {

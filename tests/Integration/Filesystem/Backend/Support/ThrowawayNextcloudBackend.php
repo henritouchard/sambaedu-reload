@@ -18,10 +18,10 @@ use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 60.3 — SQUELETTE JETABLE : un adaptateur distant écrit CONTRE L'INTERFACE
+ * SQUELETTE JETABLE : un adaptateur distant écrit CONTRE L'INTERFACE
  * RÉELLE, pour vérifier que les signatures sont IMPLÉMENTABLES.
  *
- * **Pourquoi il existe.** Le sondage d'ouverture d'epic a validé des CONCEPTS, en
+ * **Pourquoi il existe.** Le sondage d'ouverture a validé des CONCEPTS, en
  * lignes de commande. Il n'a jamais prouvé qu'une classe PHP pouvait honorer ces
  * cinq signatures contre une instance réelle — et le backend d'aperçu ne le prouve
  * pas non plus, puisque n'exécutant rien il satisferait n'importe quel contrat.
@@ -30,7 +30,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * **Il est JETABLE.** Il n'est ni enregistré au conteneur, ni sélectionnable par
  * une valeur de colonne, ni atteignable depuis l'interface — et il ne PEUT pas
  * l'être : le vocabulaire de noms de backend n'a aucune case pour lui, ce qu'un
- * test épingle. Le vrai adaptateur est l'affaire de l'Epic 61 ; celui-ci ne sera
+ * test épingle. Le vrai adaptateur reste à écrire ; celui-ci ne sera
  * pas repris, il sera relu puis remplacé.
  *
  * **Périmètre : le cas ÉTROIT du sondage, rien de plus.** Créer les nœuds, poser
@@ -63,10 +63,6 @@ final class ThrowawayNextcloudBackend implements FileBackend
     {
         return FileBackendName::Preview;
     }
-
-    // =========================================================================
-    // provision
-    // =========================================================================
 
     public function provision(FilePlan $plan): ReconciliationReport
     {
@@ -171,10 +167,6 @@ final class ThrowawayNextcloudBackend implements FileBackend
         return array_keys($unclosable);
     }
 
-    // =========================================================================
-    // deprovision
-    // =========================================================================
-
     public function deprovision(FilePlan $plan): ReconciliationReport
     {
         $entries = [];
@@ -195,10 +187,6 @@ final class ThrowawayNextcloudBackend implements FileBackend
 
         return ReconciliationReport::covering($this->name(), $plan, $entries);
     }
-
-    // =========================================================================
-    // inspect — BALAYAGE, racine comprise
-    // =========================================================================
 
     /**
      * Un appel PAR NŒUD. C'est le piège mesuré : une lecture unique du sous-arbre
@@ -241,10 +229,6 @@ final class ThrowawayNextcloudBackend implements FileBackend
         return InspectionReport::covering($this->name(), $plan, $observations);
     }
 
-    // =========================================================================
-    // quota — déclin PERMANENT
-    // =========================================================================
-
     public function quota(FilePlan $plan): ReconciliationReport
     {
         return ReconciliationReport::coveringCapped(
@@ -260,10 +244,6 @@ final class ThrowawayNextcloudBackend implements FileBackend
             ),
         );
     }
-
-    // =========================================================================
-    // Administration du décor (hors contrat — utilitaires du test)
-    // =========================================================================
 
     /** Crée un groupe distant. Un groupe existant est une idempotence, pas un échec. */
     public function ensureGroup(string $name): void
@@ -294,10 +274,6 @@ final class ThrowawayNextcloudBackend implements FileBackend
         $this->dav('DELETE', $path);
     }
 
-    // =========================================================================
-    // Transport
-    // =========================================================================
-
     private function remotePathOf(FilePlan $plan, string $nodePath): string
     {
         return $nodePath === PlanNode::ROOT_PATH
@@ -307,7 +283,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
 
     /**
      * Les QUATRE BITS NATIFS de ce plan de fichiers, et c'est le point de la
-     * préfiguration (story 62.4).
+     * préfiguration.
      *
      * Le vocabulaire de verbes du plan n'est pas une invention de SE5 : ce backend
      * porte EXACTEMENT la même découpe, bit à bit, avec les mêmes frontières —
@@ -315,7 +291,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
      * en est une seconde, en supprimer un troisième. La traduction est donc une
      * SOMME, pas une interprétation : aucune dégradation, aucun déclin à déclarer,
      * aucune limite de modèle. C'est la démonstration que la découpe tombe juste
-     * pour l'Epic 61.
+     * pour l'.
      *
      * (Le bit de repartage n'est pas dans le vocabulaire du plan : SE5 ne le
      * gouverne pas, et l'accorder serait un droit que personne n'a écrit.)
@@ -351,7 +327,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
             'permissions' => $permissions,
         ]);
 
-        // Rejeu d'un octroi identique : MESURÉ pendant cette story — succès avec
+        // Rejeu d'un octroi identique : MESURÉ — succès avec
         // le MÊME identifiant, exactement comme au sondage. Aucune branche
         // spéciale n'est donc nécessaire ici, et il n'y en a pas : une branche
         // qui n'a jamais été atteinte est une garantie qu'on croit tenir.
@@ -469,7 +445,7 @@ final class ThrowawayNextcloudBackend implements FileBackend
         return ['status' => $status, 'body' => (string) $raw];
     }
 
-    /** Story 60.5 — emplacement d'affichage : ce double n'écrit sur aucun disque. */
+    /** Emplacement d'affichage : ce double n'écrit sur aucun disque. */
     public function location(FilePlan $plan): ?string
     {
         return null;

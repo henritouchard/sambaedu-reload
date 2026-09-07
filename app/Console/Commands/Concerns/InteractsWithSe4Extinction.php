@@ -11,14 +11,14 @@ use Illuminate\Support\Facades\Process;
 use Throwable;
 
 /**
- * Story 38.6 — Logique partagée des commandes d'extinction `se4:*`.
+ * Logique partagée des commandes d'extinction `se4:*`.
  *
  * Regroupe l'état de la bascule (vhost legacy, dossiers), le rapport
  * d'observation sur `legacy_catchall_logs` et le verdict GO/NO-GO.
  * Le critère GO ne compte que les hits du canal client legacy : `source`
  * non-tombstone sur un endpoint `.php` sous un répertoire racine du legacy
  * (allowlist ci-dessous). Les hits `source='tombstone'` sont des réponses
- * natives inertes (38.2) et ne bloquent pas ; le reste (404 de navigation
+ * natives inertes et ne bloquent pas ; le reste (404 de navigation
  * SE5, sondes de scanners type /wp-login.php) est du bruit — listé dans le
  * rapport pour contrôle humain, mais hors verdict.
  */
@@ -38,7 +38,7 @@ trait InteractsWithSe4Extinction
     ];
 
     /**
-     * Scorie `.env` post-38.2 : la clé config a été supprimée, la ligne ne
+     * Scorie `.env` postérieur : la clé config a été supprimée, la ligne ne
      * doit plus exister sur les instances (trompeuse).
      */
     private const LEGACY_ENV_SCORIE_KEY = 'LEGACY_CONFIG_CHANNEL_ENABLED';
@@ -158,7 +158,7 @@ trait InteractsWithSe4Extinction
     /**
      * Directives du vhost SER qui pointent ENCORE dans l'arbre legacy.
      *
-     * C'est le garde-fou qui manquait : jusqu'à la Story 38.1 le vhost SER
+     * C'est le garde-fou qui manquait : jusqu'à la le vhost SER
      * portait `Alias /ipxe <legacy>/ipxe`. Sur une instance dont le vhost date
      * d'avant, déplacer le FS legacy fait disparaître la cible de l'Alias ET le
      * bloc `<Directory>` qui portait le `FallbackResource /index.php` : ce ne
@@ -355,7 +355,7 @@ trait InteractsWithSe4Extinction
             '  vhost SER pointant dans le legacy : %s',
             $vhostLegacyDirectives === []
                 ? 'aucune directive'
-                : count($vhostLegacyDirectives) . ' — vhost antérieur à la Story 38.1',
+                : count($vhostLegacyDirectives) . ' — vhost non regénéré depuis la bascule des chemins',
         ));
 
         foreach ($vhostLegacyDirectives as $directive) {

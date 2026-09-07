@@ -11,7 +11,7 @@ use SplFileInfo;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 15.5 / AC1.3 + T10 — Rotation des archives brutes des rapports WPKG.
+ * + T10 — Rotation des archives brutes des rapports WPKG.
  *
  * Supprime les fichiers `.txt` du dossier `config('sambaedu.wpkg.reports_archive')`
  * dont le `mtime` est antérieur à `now - --days` (90 jours par défaut).

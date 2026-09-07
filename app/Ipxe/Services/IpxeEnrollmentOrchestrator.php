@@ -15,18 +15,16 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.3 — D5 / AC7.1.
- *
  * Orchestre les 5 endpoints `/ipxe/enrollment/*` :
  *
  *  1. Extrait `mac`/`uuid`/`product`/`ip`/`platform` du `Request`.
  *  2. Gère le handshake (MAC ou UUID vide → render préambule).
  *  3. Délègue au {@see WorkstationEnrollmentService} + au
  *     {@see IpxeEnrollmentMenuBuilder} + au {@see IpxeMenuRenderer}.
- *  4. Wrap try/catch + headers iso D10 (text/plain, no-store, noindex)
- *     iso 3.1/3.2.
+ *  4. Wrap try/catch + headers (text/plain, no-store, noindex) identiques aux
+ *     orchestrateurs iPXE voisins.
  *
- * **Séparation** : ne touche pas à `IpxeService` (3.1/3.2 — menus
+ * **Séparation** : ne touche pas à `IpxeService` (menus
  * boot/admin/maintenance/action). Le cycle de vie enrollment est distinct.
  */
 final class IpxeEnrollmentOrchestrator
@@ -42,12 +40,10 @@ final class IpxeEnrollmentOrchestrator
     }
 
     /**
-     * Story 4.10 — Helper d'autorisation iPXE iso `IpxeService::guard()`.
+     * Helper d'autorisation iPXE iso `IpxeService::guard`.
      *
-     * Décision Henri 2026-05-28 : pas d'exception pour `enrollment/name`
-     * (création initiale) — tout endpoint enrollment exige auth + permission
-     * `computer.install`. Le mass-enrollment bot est hors scope (process
-     * admin manuel pour rentrée scolaire).
+     * Pas d'exception pour `enrollment/name` (création initiale) : tout endpoint
+     * enrollment exige auth + permission `computer.install`.
      */
     private function guard(Request $request, string $context): ?Response
     {
@@ -92,7 +88,7 @@ final class IpxeEnrollmentOrchestrator
             );
         }
 
-        // Story 4.10 — Auth obligatoire (cf. IpxeService::guard).
+        // Auth obligatoire (cf. IpxeService::guard).
         if (($denied = $this->guard($request, 'name')) !== null) {
             return $denied;
         }
@@ -158,7 +154,7 @@ final class IpxeEnrollmentOrchestrator
     }
 
     /**
-     * Flow `/ipxe/enrollment/byod` (stub 3.3 — extension 3.4).
+     * Flow `/ipxe/enrollment/byod` (stub — extension).
      */
     public function handleByod(Request $request): Response
     {
@@ -179,7 +175,7 @@ final class IpxeEnrollmentOrchestrator
             );
         }
 
-        // Story 4.10 — Auth obligatoire.
+        // Auth obligatoire.
         if (($denied = $this->guard($request, 'byod')) !== null) {
             return $denied;
         }
@@ -196,9 +192,9 @@ final class IpxeEnrollmentOrchestrator
             $serverBaseUrl,
         );
 
-        // Q1 (review 3.3) : iso-legacy `enregistrement_byod.php:72-81` — un poste
-        // déjà connu en AD ne doit pas pouvoir BYOD. Rejet "acces refuse" + chain
-        // boot. Log audit dédié pour suivre les tentatives.
+        // Iso-legacy `enregistrement_byod.php:72-81` : un poste déjà connu en AD
+        // ne doit pas pouvoir BYOD. Rejet « acces refuse » + chain boot, avec un
+        // log d'audit dédié pour suivre les tentatives.
         if ($existing !== null) {
             $this->enrollmentService->logByodDenied($mac, $uuid, $ip);
 
@@ -223,7 +219,7 @@ final class IpxeEnrollmentOrchestrator
 
         $this->enrollmentService->logByodEnrollment($newName, $mac, $uuid, $ip);
 
-        // Opus-1 / Q2 (review 3.3) : sanitize + validation isValidHostname pour bloquer
+        // Sanitize + validation isValidHostname pour bloquer
         // toute injection iPXE (newline → kernel http://evil) côté affichage Blade.
         $sanitized = $this->hostnameSanitizer->sanitize($newName);
         if (! $this->hostnameSanitizer->isValidHostname($sanitized)) {
@@ -267,7 +263,7 @@ final class IpxeEnrollmentOrchestrator
             );
         }
 
-        // Story 4.10 — Auth obligatoire.
+        // Auth obligatoire.
         if (($denied = $this->guard($request, 'room')) !== null) {
             return $denied;
         }
@@ -350,7 +346,7 @@ final class IpxeEnrollmentOrchestrator
             );
         }
 
-        // Story 4.10 — Auth obligatoire (parc-add / parc-remove).
+        // Auth obligatoire (parc-add / parc-remove).
         if (($denied = $this->guard($request, $endpoint)) !== null) {
             return $denied;
         }
@@ -409,7 +405,7 @@ final class IpxeEnrollmentOrchestrator
      */
     private function extractCommonParams(Request $request): array
     {
-        // F10 (review 3.3) : normalisation MAC iso 3.1/3.2 (cohérence + défense en profondeur).
+        // Normalisation MAC (cohérence + défense en profondeur).
         $rawMac = (string) $request->input('mac', '');
         $mac = $rawMac !== '' ? (MacAddressNormalizer::normalize($rawMac) ?? $rawMac) : '';
 
@@ -479,9 +475,9 @@ final class IpxeEnrollmentOrchestrator
 
     /**
      * Wrap un rendu Blade dans un try/catch — un firmware iPXE doit toujours
-     * recevoir text/plain (parité 3.1/3.2 `safeRender`).
+     * recevoir text/plain (parité `safeRender`).
      *
-     * @param  callable():string  $render
+     * @param callable():string $render
      */
     private function safeRender(
         callable $render,

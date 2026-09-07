@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `StateHasher` — Story 23.1 AC2 (FR7).
+ * Tests Unit `StateHasher`.
  *
  * Algorithme de hash unique et déterministe : SHA-256 sur JSON canonicalisé
  * (clés triées récursivement, `generated_at` exclu, item hashé sans sa propre
@@ -77,7 +77,7 @@ class StateHasherTest extends TestCase
     #[Test]
     public function hash_state_excludes_volatile_ttl_seconds(): void
     {
-        // Story 43.3 (AC3, D6) — jumeau du test generated_at ci-dessus :
+        // Jumeau du test generated_at ci-dessus :
         // `ttl_seconds` dépend désormais du contexte (bascule sensible ou
         // non, AgentTtlResolver) mais reste volatil vis-à-vis du hash.
         $a = $this->sampleState();
@@ -157,10 +157,10 @@ class StateHasherTest extends TestCase
         );
     }
 
-    // ── Champ `ensure` (Story 35.1) : entre dans la canonicalisation ──────
+    // Champ `ensure` : entre dans la canonicalisation
     // AUCUNE modification du StateHasher : la canonicalisation générique
     // (sortRecursive + JSON compact) intègre naturellement tout champ nouveau
-    // du payload. Ces tests le PROUVENT (AC1) — jumeaux des tests Go
+    // du payload. Ces tests le PROUVENT — jumeaux des tests Go
     // (hasher_test.go::TestHashItemEnsureField*).
 
     #[Test]
@@ -181,7 +181,7 @@ class StateHasherTest extends TestCase
         );
     }
 
-    // ── Payload `fs_acl` (Story 36.1) : ensure ET trustee entrent dans le hash ─
+    // ── Payload `fs_acl` : ensure ET trustee entrent dans le hash ─
     // AUCUNE modification du StateHasher : la canonicalisation générique intègre
     // le payload 6 clés. Jumeaux des tests Go (hasher_test.go).
 
@@ -222,7 +222,7 @@ class StateHasherTest extends TestCase
         );
     }
 
-    // ── Payload `firewall` (Story 36.2) : ensure/rule_id + clés optionnelles ──
+    // Payload `firewall` : ensure/rule_id + clés optionnelles
     // AUCUNE modification du StateHasher : la canonicalisation générique intègre
     // le payload (6 clés + optionnelles). Jumeaux des tests Go (hasher_test.go).
 
@@ -273,7 +273,7 @@ class StateHasherTest extends TestCase
         );
     }
 
-    // ── Payload `privilege` (Story 35.6) : accounts ET privilege au hash ──────
+    // Payload `privilege` : accounts ET privilege au hash
     // AUCUNE modification du StateHasher : la canonicalisation générique intègre
     // le payload 2 clés (`accounts` = liste ORDONNÉE — le provider la TRIE pour
     // la byte-identité, la canonicalisation NE trie PAS les listes §4). Jumeaux
@@ -319,7 +319,7 @@ class StateHasherTest extends TestCase
         );
     }
 
-    // ── Champ `writer` (Story 35.7) : entre dans la canonicalisation ──────
+    // Champ `writer` : entre dans la canonicalisation
     // AUCUNE modification du StateHasher : la canonicalisation générique
     // intègre naturellement le champ additif `writer` (appliqué par le service
     // SYSTEM dans HKU\<SID> — trees HKCU\…\Policies\* non écrivables par le
@@ -348,7 +348,7 @@ class StateHasherTest extends TestCase
             'deux items qui ne diffèrent que par `writer` doivent avoir des hashes distincts',
         );
         // Hash figé de l'item golden marqué (flag DisallowRun, writer: system)
-        // — jumeau Go, test croisé NFR13.
+        // — le jumeau Go doit porter la même valeur.
         $this->assertSame(
             'a19a1be2cf3670be2b0eafb85371af3c1d79e5f20bfab3d8d5ed93e9f9cfd93e',
             $this->hasher->hashItem($marked),
@@ -376,18 +376,17 @@ class StateHasherTest extends TestCase
             $this->hasher->hashItem($marked),
             'deux conteneurs qui ne diffèrent que par `writer` doivent avoir des hashes distincts',
         );
-        // Hash figé du conteneur golden marqué — jumeau Go, test croisé NFR13.
+        // Hash figé du conteneur golden marqué — le jumeau Go porte la même valeur.
         $this->assertSame(
             '8bcf6507d5a8e9180df24f482bfc074b40551673d0f1199ed5b8bc8d86ef41ca',
             $this->hasher->hashItem($marked),
         );
     }
 
-    // Champ `refresh` (Story 43.2) — Story 35.7 review #1 : les 2 seuls items
-    // `refresh` du golden ont été ré-affectés au marqueur `writer` (exclusion
-    // refresh⊥writer, piège #6) → le champ a disparu du golden. Ce test dédié
-    // restaure la couverture de hash cross-language NFR13 sur ce champ de PROD
-    // sans réintroduire d'item au golden. Jumeau Go (hasher_test.go::TestHashItemRefresh*).
+    // Champ `refresh` : aucun item du golden ne le porte, `refresh` et `writer`
+    // s'excluant et les items concernés portant `writer`. Ce test dédié couvre
+    // donc le hash cross-language de ce champ de PROD sans réintroduire d'item
+    // au golden. Jumeau Go (hasher_test.go::TestHashItemRefresh*).
     #[Test]
     public function refresh_field_changes_the_item_hash(): void
     {
@@ -410,8 +409,8 @@ class StateHasherTest extends TestCase
             $this->hasher->hashItem($marked),
             'deux items qui ne diffèrent que par `refresh` doivent avoir des hashes distincts',
         );
-        // Hash figé de l'item porteur de `refresh: shell_notify` — jumeau Go,
-        // test croisé NFR13 (canonicalisation générique du champ additif).
+        // Hash figé de l'item porteur de `refresh: shell_notify` — le jumeau Go
+        // porte la même valeur (canonicalisation générique du champ additif).
         $this->assertSame(
             '8d81f541d4fe267ecf6763edf09635bdba0d33d2e59e0662c1312f800e66fbdd',
             $this->hasher->hashItem($marked),
@@ -421,10 +420,9 @@ class StateHasherTest extends TestCase
     #[Test]
     public function write_item_without_ensure_keeps_its_pre_story_hash(): void
     {
-        // Non-régression byte-identité (piège n°1, Story 35.1) : un item
-        // d'écriture 5 clés SANS `ensure` garde EXACTEMENT son hash d'avant la
-        // story (hash historique de l'item registry HKCU du golden, inchangé
-        // depuis 27.3).
+        // Non-régression byte-identité : un item
+        // d'écriture 5 clés SANS `ensure` garde EXACTEMENT son hash antérieur
+        // (hash historique de l'item registry HKCU du golden).
         $hash = $this->hasher->hashItem([
             'type' => 'registry',
             'semantics' => 'exclusive',

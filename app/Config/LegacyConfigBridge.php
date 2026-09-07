@@ -158,7 +158,7 @@ class LegacyConfigBridge
         return [];
     }
 
-    // Story 49.2 (FR-R3) — `isEleve()` / `isProf()` supprimés : shims legacy
+    // `isEleve` / `isProf` supprimés : shims legacy
     // `@deprecated` sans aucun appelant, qui rechargeaient toute la config
     // legacy pour interroger l'annuaire. Le rôle se lit en Postgres.
 
@@ -182,7 +182,7 @@ class LegacyConfigBridge
     /**
      * Charge les shims de configuration nécessaires.
      *
-     * Story 38.4 (AC2) — les fichiers sont désormais les **shims IN-REPO**
+     * Les fichiers sont désormais les **shims IN-REPO**
      * (`legacy/config.inc.php`, `legacy/ldap.inc.php`) qui définissent
      * nativement `get_config`, `search_user`, `have_right`, `list_rights`… —
      * plus AUCUN chemin `/var/www/sambaedu`. Le bridge reste `@deprecated`,

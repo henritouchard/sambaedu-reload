@@ -13,14 +13,14 @@ use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 /**
- * Story 15.4 / AC5 — Service de gestion des overrides options `.ini` per-poste.
+ * Service de gestion des overrides options `.ini` per-poste.
  *
  * Ne stocke que les overrides (parité legacy `poste_maintenance_options.php`).
  * Toute valeur retombée à `false` (défaut) entraîne la suppression de la ligne BDD.
  *
  * Dispatch `WorkstationOptionsChanged` post-commit → listener
  * `RegenerateWorkstationIniOnOptionsChanged` régénère le `<hostname>.ini`
- * via `WorkstationIniGenerator` + `AtomicFileWriter` (15.1/15.2).
+ * via `WorkstationIniGenerator` + `AtomicFileWriter`.
  */
 final class WorkstationOptionsService
 {

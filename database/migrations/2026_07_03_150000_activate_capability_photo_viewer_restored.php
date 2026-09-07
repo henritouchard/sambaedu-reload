@@ -5,15 +5,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 35.5 (flip d'activation, intégration ultradev vague 2) — lève le GATE
+ * Lève le GATE
  * D'HONNÊTETÉ posé par le seed `2026_07_03_130000` : la capacité
  * `photo_viewer_restored` était seedée `is_active = false` parce que l'agent
  * rejetait `name: ""` (valeur par défaut d'une clé — les 2 commandes open/print
- * de la visionneuse). La Story 35.2 a livré et PROUVÉ le support (`parseRegistrySpec`
+ * de la visionneuse). La a livré et PROUVÉ le support (`parseRegistrySpec`
  * accepte `name` présent-et-vide, Ops Windows Get/Set/DeleteValue("") = default
  * value, tests Go dédiés, agent 2.4.0) → le gate n'a plus de raison d'être.
  *
- * Fait AUSSI ce que le seed exigeait de sa migration de flip (review 35.5 #3) :
+ * Fait AUSSI ce que le seed annonçait pour sa migration de flip :
  * réécrit `description` pour retirer la phrase « Inactive tant que… » — sinon le
  * tooltip UI mentirait après activation.
  *

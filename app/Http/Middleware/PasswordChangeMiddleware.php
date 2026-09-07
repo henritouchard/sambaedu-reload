@@ -30,7 +30,6 @@ class PasswordChangeMiddleware
                 ->with('toast_error', 'Accès non autorisé');
         }
 
-        // Valider le token
         $tokenData = $this->authService->validatePasswordChangeToken($token);
         
         if (!$tokenData) {

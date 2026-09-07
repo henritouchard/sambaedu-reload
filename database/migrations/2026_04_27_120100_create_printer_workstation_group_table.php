@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 6.1 — Pivot N:N imprimante ↔ parc (`WorkstationGroup`).
+ * Pivot N:N imprimante ↔ parc (`WorkstationGroup`).
  *
  * Cascade DELETE depuis `printers` (suppression imprimante = retrait des
  * rattachements) et depuis `workstation_groups` (suppression parc = retrait

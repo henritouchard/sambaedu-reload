@@ -8,12 +8,12 @@ use App\Models\Pivot\UserGroupUserPivot;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 42.1 — Backfill DÉTERMINISTE et IDEMPOTENT de la colonne d'arête
+ * Backfill DÉTERMINISTE et IDEMPOTENT de la colonne d'arête
  * `user_group_user.role` depuis l'existant (`is_head_teacher` + `users.role`).
  *
  * Chaque arête préexistante reçoit exactement un rôle du vocabulaire borné
  * {@see UserGroupUserPivot::roles()} selon la précédence `owner > manager > member` :
- *  - `owner`   si `is_head_teacher = true` (le professeur principal — 4.14) ;
+ *  - `owner` si `is_head_teacher = true` (le professeur principal) ;
  *  - `manager` sinon si le user a `users.role = 'prof'` (professeur membre) ;
  *  - `member`  sinon (élève, admin, autre, null).
  *
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  * cross-driver, SANS aucune dépendance LDAP/service :
  *
  * - la dérivation `manager` lit la COLONNE `users.role` via une sous-requête
- *   (jointure/`whereExists`), JAMAIS `User::isProf()` qui ferait un round-trip
+ *  (jointure/`whereExists`), JAMAIS `User::isProf()` qui ferait un round-trip
  *   LDAP PAR user (`project_isprof_iseleve_ldap_first_cost`) ;
  * - la dérivation `owner` compare `is_head_teacher` via le query builder
  *   (`where('is_head_teacher', true)`), JAMAIS en SQL brut `= true` — SQLite

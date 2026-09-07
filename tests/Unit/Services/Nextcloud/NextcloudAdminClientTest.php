@@ -16,12 +16,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.1 — le client Nextcloud, éprouvé SANS RÉSEAU.
+ * Le client Nextcloud, éprouvé SANS RÉSEAU.
  *
  * Les fakes transcrivent des sémantiques MESURÉES, ils n'en inventent aucune :
  * enveloppe OCS `{ocs:{meta:{status,statuscode},data}}` (production SE4),
- * statuscode `102` « existe déjà » (spike 60.0), autocomplétion silencieuse en
- * l'absence (spike 60.0), refus nets `401/403/404`.
+ * statuscode `102` « existe déjà » (spike), autocomplétion silencieuse en
+ * l'absence (spike), refus nets `401/403/404`.
  */
 class NextcloudAdminClientTest extends TestCase
 {
@@ -45,10 +45,6 @@ class NextcloudAdminClientTest extends TestCase
             'data' => $data,
         ]];
     }
-
-    // =====================================================================
-    // AC1 / AC2 — normalisation, en-têtes, secret
-    // =====================================================================
 
     #[Test]
     public function the_base_url_tolerates_a_trailing_slash_and_never_doubles_it(): void
@@ -86,7 +82,7 @@ class NextcloudAdminClientTest extends TestCase
             self::fail('une configuration vide doit être refusée');
         } catch (NextcloudConfigurationException $e) {
             // TROIS éléments de connexion, pas quatre : l'hôte SMB n'en est pas
-            // un (revue #1) — il n'est jamais nommé comme un manque.
+            // un : il n'est jamais nommé comme un manque.
             self::assertCount(3, $e->missing);
             self::assertStringContainsString('l\'URL du serveur Nextcloud', $e->getMessage());
             self::assertStringContainsString('l\'identifiant du compte admin', $e->getMessage());
@@ -96,7 +92,7 @@ class NextcloudAdminClientTest extends TestCase
     }
 
     /**
-     * Revue #1 — L'HÔTE SMB NE BLOQUE PAS LA CONNEXION.
+     * L'HÔTE SMB NE BLOQUE PAS LA CONNEXION.
      *
      * L'écran le déclare `nullable` et sans astérisque ; le laisser vide est donc
      * un geste que l'interface INVITE à faire. Tant qu'il faisait échouer la
@@ -164,10 +160,6 @@ class NextcloudAdminClientTest extends TestCase
         }
     }
 
-    // =====================================================================
-    // AC1 / AC9 — les trois diagnostics de la sonde
-    // =====================================================================
-
     #[Test]
     public function the_probe_reports_an_unreachable_instance(): void
     {
@@ -215,7 +207,7 @@ class NextcloudAdminClientTest extends TestCase
     }
 
     /**
-     * Le scénario de la RÈGLE D'ARRÊT de l'AC10 : le canal d'écriture refusé pour
+     * Le scénario de la RÈGLE D'ARRÊT : le canal d'écriture refusé pour
      * cause de protection anti-CSRF sur route `index.php`. Il doit être NOMMÉ,
      * avec son code — c'est ce qui permet d'escalader sur des faits.
      */
@@ -255,10 +247,6 @@ class NextcloudAdminClientTest extends TestCase
         self::assertTrue($probe->reachable);
         self::assertSame(NextcloudFailure::Privilege, $probe->failure);
     }
-
-    // =====================================================================
-    // AC2 — les sémantiques OCS traduites
-    // =====================================================================
 
     #[Test]
     public function creating_a_user_that_already_exists_is_conforming_never_a_failure(): void
@@ -328,10 +316,6 @@ class NextcloudAdminClientTest extends TestCase
         self::assertSame(NextcloudFailure::Injoignable, $this->client()->getUser('alice')->failure);
     }
 
-    // =====================================================================
-    // AC6 — la résolution d'identité
-    // =====================================================================
-
     #[Test]
     public function autocomplete_returns_only_user_matches(): void
     {
@@ -370,10 +354,6 @@ class NextcloudAdminClientTest extends TestCase
                 && $r['key'] === 'password';
         });
     }
-
-    // =====================================================================
-    // AC3 — les montages
-    // =====================================================================
 
     /**
      * Corps en `application/x-www-form-urlencoded` — la forme MESURÉE le

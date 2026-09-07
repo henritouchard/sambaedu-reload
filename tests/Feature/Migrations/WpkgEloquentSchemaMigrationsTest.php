@@ -10,16 +10,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.3 / AC2.1, AC5.1 — Migrations volet 2 :
+ * Migrations volet 2 :
  * - `add_archived_at_to_workstations_and_groups` (workstations + workstation_groups)
  * - `add_archived_at_and_ad_dn_to_app_profiles` (app_profiles, incluant ad_dn)
  *
  * Vérifie : up + down + up (idempotence), présence des colonnes
  * (`archived_at` partout, `ad_dn` sur `app_profiles`).
  *
- * **Décision post-review (Q1, 2026-05-06)** : la colonne `last_seen_at`
- * a été retirée du scope des migrations 15.3 — pas de besoin métier
- * (cf. doc review §Q1 et migrations).
+ * La colonne `last_seen_at` a été retirée du scope de ces migrations : aucun
+ * besoin métier ne la justifiait.
  */
 class WpkgEloquentSchemaMigrationsTest extends TestCase
 {
@@ -60,7 +59,7 @@ class WpkgEloquentSchemaMigrationsTest extends TestCase
 
     /**
      * Crée les tables baseline minimales avant de jouer les migrations
-     * 15.3 (les vraies migrations cibles ajoutent des colonnes — il faut
+     * (les vraies migrations cibles ajoutent des colonnes — il faut
      * que les tables existent au préalable). Schéma symboliquement aligné
      * sur la baseline 2026_01_30 + ad_guid 2026_02_06 sans rejouer toute
      * la chaîne legacy (cf. WpkgWorkstationOptionsMigrationTest).

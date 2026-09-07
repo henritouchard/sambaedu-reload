@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Epic 27 — Projection d'une capacité : COMMENT une intention se matérialise sur
+ * Projection d'une capacité : COMMENT une intention se matérialise sur
  * un OS donné, via un MÉCANISME donné (= le `type` du contrat desired-state).
  *
  * Une capacité a 1..N projections. Le compilateur sélectionne celles dont l'`os`
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Schema;
  *    `value` est SOIT un littéral (toujours émis quand la capacité s'applique),
  *    SOIT une MAP valeur-capacité → donnée-registre (ex. {"on":0,"off":1}).
  *    Une clé de capacité absente de la map ⇒ la clé n'est PAS émise (= cesser de
- *    gérer, piège n°5). La donnée est ensuite COERCÉE par `type` au payload
+ *    gérer). La donnée est ensuite COERCÉE par `type` au payload
  *    (DWORD/QWORD→int, MULTI_SZ→liste de chaînes, SZ/EXPAND_SZ→chaîne ; zéro float),
  *    comme en 27.3.
  *  - firewall (slice B) : { "value": { "on": { action, allow }, … } }.

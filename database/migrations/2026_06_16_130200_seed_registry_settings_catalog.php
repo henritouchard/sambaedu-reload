@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3 — Set initial du catalogue (D-Q1, 3 réglages choisis parmi les GPO
+ * Set initial du catalogue (3 réglages choisis parmi les GPO
  * SambaEdu, tous vérifiables sans infra). IDEMPOTENT : `updateOrInsert` par `key`
  * (rejouable, zéro doublon). Le catalogue grossit ensuite par DATA (zéro release
  * agent — payoff de la couture générique).

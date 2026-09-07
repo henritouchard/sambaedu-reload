@@ -12,15 +12,15 @@ use Illuminate\Support\Facades\Cache;
  * Implémentation Cache (Laravel) du contexte AppCustomization.
  *
  * Lit `Cache::store('app_context')->get("apps.$id")` — clé posée par
- * `CacheAppContextWriter` (Story 16.15) iso-legacy `applications.inc.php`
+ * `CacheAppContextWriter` iso-legacy `applications.inc.php`
  * (TTL 1800s). La garantie d'interop legacy (`prefix => ''` + driver `apc`)
  * vit côté `config/cache.php` et `CacheAppContextWriter` — voir ces deux endroits.
  *
- * Story 16.15 — migration cache APCu vers la facade Laravel (AC2). Dégradation
+ * Migration cache APCu vers la facade Laravel. Dégradation
  * gracieuse si store indisponible : `findById` retourne `null`, le controller
  * retournera 404.
  *
- * @see \App\Services\AppCustomization\CacheAppContextWriter Écrivain (Story 16.15).
+ * @see \App\Services\AppCustomization\CacheAppContextWriter Écrivain.
  * @legacy-port path="sambaedu/includes/applications.inc.php:998 (cache read — historiquement apcu)"
  */
 class CacheAppContextRepository implements AppContextRepository

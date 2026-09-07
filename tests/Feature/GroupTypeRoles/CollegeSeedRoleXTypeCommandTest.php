@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.3 — LA COMMANDE qui installe le profil scolaire.
+ * LA COMMANDE qui installe le profil scolaire.
  *
  * Elle a repris les sept déclarations que la migration posait, et le contenu de
  * cette reprise est épinglé ICI, exhaustivement, `null` compris. Les deux
@@ -31,9 +31,8 @@ use Tests\TestCase;
  * Le second objet du fichier est le CONTRAT D'ÉCRITURE, qui n'existait nulle part
  * avant : additive par défaut, écrasante seulement sous `--resync`. Le seeder
  * supprimé faisait l'inverse — il resynchronisait sans rien demander — pendant que
- * la migration promettait de ne jamais réécrire un libellé local (contradiction
- * relevée en review 62.3 #2). Il n'y a plus qu'un geste, et il ne réécrit rien sans
- * qu'on le lui demande.
+ * la migration promettait de ne jamais réécrire un libellé local. Il n'y a plus
+ * qu'un geste, et il ne réécrit rien sans qu'on le lui demande.
  */
 class CollegeSeedRoleXTypeCommandTest extends TestCase
 {
@@ -73,10 +72,6 @@ class CollegeSeedRoleXTypeCommandTest extends TestCase
             ->all();
     }
 
-    // =========================================================================
-    // Ce que la commande POSE
-    // =========================================================================
-
     /** LES SEPT LIGNES, exhaustivement, avec leurs libellés — et leurs `null`. */
     #[Test]
     public function it_lays_the_seven_school_declarations_on_an_empty_table(): void
@@ -99,7 +94,7 @@ class CollegeSeedRoleXTypeCommandTest extends TestCase
 
     /**
      * `owner` n'est déclaré QUE sur `classe` : c'est la donnée qui dit ce que la
-     * garde D3 dit en littéral dans les écrans.
+     * garde du professeur principal dit en littéral dans les écrans.
      */
     #[Test]
     public function owner_is_declared_on_the_class_type_and_nowhere_else(): void
@@ -154,10 +149,6 @@ class CollegeSeedRoleXTypeCommandTest extends TestCase
         $this->assertStringContainsString('n\'y sera plus proposé', $output);
         $this->assertStringContainsString('Types de groupes', $output);
     }
-
-    // =========================================================================
-    // Idempotence, et le contrat ADDITIF
-    // =========================================================================
 
     #[Test]
     public function replaying_it_creates_no_duplicate(): void
@@ -220,10 +211,6 @@ class CollegeSeedRoleXTypeCommandTest extends TestCase
         $this->assertSame('Parrain', RoleCatalog::label('projet', 'tuteur'));
     }
 
-    // =========================================================================
-    // `--resync` : le SEUL chemin qui écrase
-    // =========================================================================
-
     #[Test]
     public function resync_realigns_an_edited_label_on_the_reference(): void
     {
@@ -278,10 +265,6 @@ class CollegeSeedRoleXTypeCommandTest extends TestCase
 
         $this->assertSame(7, DB::table('group_type_roles')->count());
     }
-
-    // =========================================================================
-    // Le refus propre
-    // =========================================================================
 
     /**
      * Migration non jouée : refus MÉTIER, code de sortie non nul, et la commande à

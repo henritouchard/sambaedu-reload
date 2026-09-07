@@ -7,7 +7,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 16.10 — AC3.1.
  *
  * Table `workstation_refresh_tokens` : stocke les refresh tokens émis aux
  * postes lors de l'enrôlement (`POST /api/v1/agent/enroll`) et lors des
@@ -15,9 +14,9 @@ use Illuminate\Support\Facades\Schema;
  *
  * Conventions importantes :
  *
- *  - **Pas de FK** vers `workstations.uuid` (dev notes story) : un poste
+ *  - **Pas de FK** vers `workstations.uuid` : un poste
  *    peut s'enrôler avant d'apparaître dans la table `workstations`
- *    Eloquent (cas 16.11 auto-bootstrap). On stocke `workstation_uuid` libre
+ *  Eloquent (cas auto-bootstrap). On stocke `workstation_uuid` libre
  *    + index (uuid) — pas de contrainte référentielle.
  *  - **Seul le hash sha256 est stocké** (`refresh_token_hash`, 64 chars hex).
  *    Le token clear n'apparaît jamais en DB ni dans les logs.
@@ -43,7 +42,7 @@ return new class extends Migration
             // Primary UUID v4 généré côté Laravel (cf. Model::booted).
             $table->uuid('id')->primary();
 
-            // Workstation cible — pas de FK (cf. Dev Notes story 16.10).
+            // Workstation cible — pas de FK (cf. Dev Notes).
             $table->uuid('workstation_uuid')->index();
 
             // Hash sha256 du token clear (64 chars hex, unique).

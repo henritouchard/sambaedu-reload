@@ -9,28 +9,28 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 5.2 — Service bas niveau d'encapsulation des appels `setfacl` / `getfacl`.
+ * Service bas niveau d'encapsulation des appels `setfacl` / `getfacl`.
  *
  * Décalque fidèle des fonctions du legacy `sambaedu/includes/partages.inc.php` :
- *  - `set_acls()`        (l. 27-43)  → {@see setAcls()}
- *  - `add_acl()`         (l. 128-142) → {@see addAcl()}
- *  - `remove_acl()`      (l. 72-85)   → {@see removeAcl()}
- *  - `check_acls()`      (l. 14-25)   → {@see checkAcls()}
- *  - `get_facl()`        (l. 87-118)  → {@see getFacl()}
+ *  - `set_acls()` (l. 27-43) → {@see setAcls()}
+ *  - `add_acl()` (l. 128-142) → {@see addAcl()}
+ *  - `remove_acl()` (l. 72-85) → {@see removeAcl()}
+ *  - `check_acls()` (l. 14-25) → {@see checkAcls()}
+ *  - `get_facl()` (l. 87-118) → {@see getFacl()}
  *
- * Sécurité (cf. Story 5.2 AC 12) — triple garde anti-injection :
- *   1. {@see validatePath()} : regex stricte sur path absolu sous `$classesRoot`,
+ * Sécurité — triple garde anti-injection :
+ *  1. {@see validatePath()} : regex stricte sur path absolu sous `$classesRoot`,
  *      borne profondeur ≤ 3 niveaux, refuse `..`, espaces, backticks, `;`, `|`,
  *      `$`, `\\`, points-points (cohérent legacy `partages.inc.php` qui utilise
  *      `escapeshellarg` partiellement et laisse des trous d'injection).
  *   2. `escapeshellarg` sur tous les arguments shell (path + chaque ACL).
  *   3. Whitelist sudo (à entretenir côté VM via `/etc/sudoers.d/sambaedu`,
- *      cf. story §[PROD] : `www-data ALL=(root) NOPASSWD: /usr/bin/setfacl,
+ *      en prod : `www-data ALL=(root) NOPASSWD: /usr/bin/setfacl,
  *      /usr/bin/getfacl, /bin/mkdir, /bin/mv, /bin/chown, /bin/chgrp`).
  *
  * Pattern Laravel `Process` facade plutôt qu'`exec()` direct (HomeDirService
  * 5.1a) : permet `Process::fake()` dans les tests sans toucher au filesystem
- * réel (D12=A — story §Testing Strategy).
+ * réel.
  *
  * Convention path racine (D13=A) : property statique `$classesRoot` overridable
  * en tests, cohérent `TrashPurgeCommand::$trashDir` 5.1d. Hardcodé par défaut
@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\Process;
  *
  * Fail-soft : aucune exception propagée — toutes les méthodes retournent
  * `bool` (ou `array|false` pour {@see getFacl()}) et émettent `Log::error`
- * avec le préfixe `'AclService: '` (cohérent `HomeDirService:` 5.1a).
+ * avec le préfixe `'AclService: '` (cohérent `HomeDirService:`).
  */
 class AclService
 {
@@ -55,7 +55,7 @@ class AclService
      * Profondeur maximale autorisée sous {@see classesRoot()} pour les paths
      * passés à `setfacl`/`getfacl`. La structure légitime est :
      *   `Classes/Classe_<nom>` (1) / `Classe_<nom>/_travail|_profs|_echange|<eleve>` (2)
-     *   / `<eleve>/Archives` (3 : pattern legacy `cree_rep` D3).
+     *   / `<eleve>/Archives` (3 : pattern legacy `cree_rep`).
      *
      * Au-delà : refus.
      */
@@ -125,10 +125,9 @@ class AclService
      * passé en argument. Décalque `partages.inc.php::set_acls()` (l. 27-43)
      * en sécurisant les arguments via `escapeshellarg`.
      *
-     * Idempotent : un second appel avec le même set produit le même résultat
-     * (cf. Story 5.2 AC 3).
+     * Idempotent : un second appel avec le même set produit le même résultat.
      *
-     * @param string   $path    Path absolu sous {@see classesRoot()}.
+     * @param string $path Path absolu sous {@see classesRoot()}.
      * @param string[] $acls    Liste de chaînes ACL (ex: `'user::rwx'`,
      *                          `'group:Classe_6a:rx'`, `'default:user::rwx'`).
      * @param bool     $recurse Si `true`, applique `-R` (récursif).
@@ -145,7 +144,7 @@ class AclService
         // décalque legacy `partages.inc.php` l. 372/492/498/506. Sans `-P`,
         // un attaquant qui plante un symlink dans un dossier élève peut
         // faire poser des ACLs sur n'importe quel chemin (régression sécurité
-        // vs legacy). Cf. review 5.2 #3.
+        // vs legacy).
         $option = $recurse ? '-R -P' : '';
         $escaped = escapeshellarg($path);
 

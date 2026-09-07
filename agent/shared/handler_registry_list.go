@@ -10,17 +10,17 @@ import (
 )
 
 // Handler `registry_list` (exclusive PAR CLÉ-CONTENEUR / scope machine|session)
-// — Story 35.2, contrat §7.6. Logique PURE, OS-agnostique (accès registre
+// — contrat §7.6. Logique PURE, OS-agnostique (accès registre
 // injectés via RegistryOps) → testée sur l'hôte ; agent/windows n'apporte que
 // l'op ValueNames.
 //
-// D3 — l'agent POSSÈDE la clé-conteneur : dans la clé `{hive, path}`, les
+// L'agent POSSÈDE la clé-conteneur : dans la clé `{hive, path}`, les
 // valeurs dont le nom est composé UNIQUEMENT de chiffres (`^[0-9]+$`) sont à
 // lui. Le canon est `"1".."N"` (strconv.Itoa, comparaison de chaînes STRICTE :
 // `"01"`, `"007"` sont HORS canon → supprimées). Réconciliation :
 //   - écrire les valeurs nommées `1..N` dans l'ORDRE de `values`
 //     (Kind = entry_type, création de clé au besoin) ;
-//   - supprimer toute AUTRE valeur au nom numérique (socle Delete 35.1) ;
+//  - supprimer toute AUTRE valeur au nom numérique (socle Delete) ;
 //   - ne JAMAIS toucher une valeur à nom NON numérique de la même clé ;
 //   - ne JAMAIS supprimer la clé-conteneur elle-même (même à liste vide — des
 //     valeurs voisines non gérées peuvent y vivre).
@@ -35,27 +35,27 @@ import (
 // EFFORT MAXIMAL par conteneur ET entre conteneurs (iso RegistryHandler.Apply) :
 // une clé/valeur en échec n'empêche pas les autres de converger — la première
 // erreur est remontée à la FIN (le moteur n'a qu'un verdict par type, grain
-// 27.8 : UN statut pour le type `registry_list`, dual-scope fusionné par
+// UN statut pour le type `registry_list`, dual-scope fusionné par
 // MergeReportItemsByType).
 //
 // Un changement EFFECTIF (écriture OU suppression) sur un conteneur HKCU
-// ACCUMULE le besoin de rafraîchissement (échelle Story 43.1 — plancher
+// ACCUMULE le besoin de rafraîchissement (échelle — plancher
 // shell_notify escaladé par le hint `refresh`, même gate que `registry` : zéro
 // changement = zéro geste) ; le geste est exécuté par le COMPAGNON en fin de
 // RunPass (RefreshRequester). NB : `DisallowRun` est lu par l'Explorer au
-// LOGON SUIVANT sans geste fort (mémoire projet) — d'où l'échelle : la 43.2
-// posera le hint adapté par capacité.
+// LOGON SUIVANT sans geste fort — d'où l'échelle : le serveur
+// pose le hint adapté par capacité.
 
 // RegistryListSpec : une clé-conteneur cible (un item du payload
 // `registry_list`, contrat §7.6 — 4 clés émises par le serveur, + le hint
-// optionnel `refresh` de 43.2 ; le parsing reste indulgent, piège n° 1).
+// optionnel `refresh` ; le parsing reste indulgent).
 type RegistryListSpec struct {
 	Hive      string   // "HKLM" | "HKCU"
 	Path      string   // clé-conteneur sous la ruche
 	EntryType string   // "REG_SZ" | "REG_EXPAND_SZ" (borné par le contrat)
 	Values    []string // liste ORDONNÉE ; vide = purge des entrées numérotées
-	// Refresh : hint OPTIONNEL `refresh` du payload (Story 43.1) — lecture
-	// indulgente (D3) : absent/vide/inconnu = RefreshNone. Escalade le
+	// Refresh : hint OPTIONNEL `refresh` du payload — lecture
+	// indulgente : absent/vide/inconnu = RefreshNone. Escalade le
 	// plancher shell_notify des changements HKCU effectifs, jamais l'inverse.
 	Refresh RefreshLevel
 }
@@ -89,10 +89,10 @@ type RegistryListHandler struct {
 	Log *Logger
 
 	// refreshWanted : besoin de rafraîchissement accumulé pendant l'Apply de
-	// la passe courante (Story 43.1, iso RegistryHandler) — max(plancher
+	// la passe courante (iso RegistryHandler) — max(plancher
 	// shell_notify, hint) par changement HKCU effectif. Par instance,
 	// mono-thread ; jamais alimenté ni consommé côté MachineEngine SYSTEM
-	// (gate isUserHive, piège n° 2).
+	// (gate isUserHive).
 	refreshWanted RefreshLevel
 }
 
@@ -109,7 +109,7 @@ func (h *RegistryListHandler) TakeRefreshRequest() RefreshLevel {
 // cible. Le serveur garantit déjà un conteneur unique par identité (exclusive
 // par clé au compilateur) ; défense : la DERNIÈRE occurrence fait foi, ordre
 // de sortie trié (logs/erreurs stables — iso desiredSpecs de registry).
-// logHints (review 43.1 #3) : trace du hint inconnu depuis le chemin Test
+// logHints : trace du hint inconnu depuis le chemin Test
 // SEULEMENT — une ligne par passe et par item (Apply re-parse les mêmes items).
 func (h *RegistryListHandler) desiredListSpecs(items []StateItem, logHints bool) ([]RegistryListSpec, error) {
 	byIdentity := map[string]RegistryListSpec{}
@@ -210,9 +210,9 @@ func (h *RegistryListHandler) Apply(items []StateItem) error {
 		}
 	}
 	// Changement HKCU EFFECTIF → accumuler le besoin de rafraîchissement
-	// (Story 43.1) : plancher shell_notify escaladé par le hint de l'item.
+	// plancher shell_notify escaladé par le hint de l'item.
 	// Même gate qu'avant (zéro op = zéro geste) ; le geste est exécuté par le
-	// compagnon en fin de RunPass — plus d'émission inline (piège n° 5).
+	// compagnon en fin de RunPass — plus d'émission inline.
 	recordRefresh := func(spec RegistryListSpec) {
 		if isUserHive(spec.Hive) {
 			h.refreshWanted = maxRefreshLevel(h.refreshWanted,
@@ -247,7 +247,7 @@ func (h *RegistryListHandler) Apply(items []StateItem) error {
 			}
 			// Réutilise RegistryOps.Write via un RegistrySpec (création de clé
 			// au besoin) — une valeur canon de Kind exotique (REG_UNSUPPORTED)
-			// échoue Equal → réécrite au entry_type cible (review 35.1 #1).
+			// échoue Equal → réécrite au entry_type cible.
 			if err := h.Ops.Write(RegistrySpec{Hive: spec.Hive, Path: spec.Path, Name: name, Value: target}); err != nil {
 				logError(h.Log, "Écriture de %s!%s en échec : %v", spec.identity(), name, err)
 				recordErr(fmt.Errorf("écriture de %s!%s : %w", spec.identity(), name, err))
@@ -285,8 +285,8 @@ func (h *RegistryListHandler) Apply(items []StateItem) error {
 
 // parseRegistryListSpec : extrait un RegistryListSpec d'un payload §7.6 brut.
 // Enveloppe invalide (false → {status: error} pour le type) si : hive/path
-// vides ou absents, entry_type absent ou hors {REG_SZ, REG_EXPAND_SZ}
-// (piège n°14), values absent ou non liste-de-chaînes. `values: []` est VALIDE
+// vides ou absents, entry_type absent ou hors {REG_SZ, REG_EXPAND_SZ},
+// values absent ou non liste-de-chaînes. `values: []` est VALIDE
 // (purge). Jamais de champ `name` dans ce payload (4 clés exactement — les
 // noms 1..N sont DÉRIVÉS de l'ordre de values, pas transportés).
 func parseRegistryListSpec(raw any) (RegistryListSpec, bool) {
@@ -323,9 +323,9 @@ func parseRegistryListSpec(raw any) (RegistryListSpec, bool) {
 		values = append(values, s)
 	}
 
-	// Hint `refresh` OPTIONNEL (Story 43.1) — lecture INDULGENTE (D3, piège
-	// n° 1 : le « 4 clés exactement » du contrat décrit l'ÉMISSION serveur,
-	// pas une règle de parsing) : absent/vide/non-string/inconnu ⇒ RefreshNone.
+	// Hint `refresh` OPTIONNEL — lecture INDULGENTE (le « 4 clés exactement »
+	// du contrat décrit l'ÉMISSION serveur, pas une règle de parsing) :
+	// absent/vide/non-string/inconnu ⇒ RefreshNone.
 	refreshHint, _ := payload["refresh"].(string)
 
 	return RegistryListSpec{Hive: hive, Path: path, EntryType: entryType, Values: values, Refresh: ParseRefreshLevel(refreshHint)}, true

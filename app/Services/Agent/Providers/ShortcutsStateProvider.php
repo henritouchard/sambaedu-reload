@@ -24,60 +24,60 @@ use App\Services\Shortcuts\PortalShortcutIcon;
 use Illuminate\Support\Collection;
 
 /**
- * Type `shortcuts` (contrat §7, identifiant DÉJÀ figé — NFR12) — projection en
- * lecture seule des règles de raccourcis (`shortcuts` × `shortcut_assignables`)
- * vers des candidats d'état (Story 27.1, AC1/AC2/AC3).
+ * Type `shortcuts` (contrat §7, identifiant figé) — projection en lecture
+ * seule des règles de raccourcis (`shortcuts` × `shortcut_assignables`) vers
+ * des candidats d'état.
  *
  * **Le fix définitif du Bug C** : le chemin du bureau cible n'est plus une
  * branche figée dans un `.cmd` legacy (pansement réseau `4e5a152`) mais une
- * donnée du domaine — résolue CÔTÉ SERVEUR (décision n° 3) via le
- * {@see WorkstationEnvironmentResolver} (26.1) : bureau RÉSEAU si le parc est
+ * donnée du domaine — résolue CÔTÉ SERVEUR via le
+ * {@see WorkstationEnvironmentResolver} : bureau RÉSEAU si le parc est
  * `shared_local`, bureau LOCAL si `personal_local`/`nomade`. L'agent reste
  * bête : il pose le `.lnk` au `desktop_path` reçu (tokens `<se4fs>`/`<user>`
  * substitués localement).
  *
- * **Story 63.2** : ce chemin ne dépend PLUS que du parc. Le bureau réseau vit
+ * Ce chemin ne dépend PLUS que du parc. Le bureau réseau vit
  * dans le home SMB, et ce partage-là est toujours là pour l'agent même quand
  * l'espace perso de l'utilisateur a déménagé au cloud — le provider ne lit donc
  * aucun réglage pour résoudre le Bureau ({@see DesktopPathResolver::pathFor()}).
  *
- * **Story 27.21 (arbitrage option A)** : le serveur émet EN PLUS la liste des
- * emplacements Bureau à BALAYER ({@see self::desktopSweepPathsFor()}, champ
+ * **Le serveur pilote aussi le BALAYAGE** : il émet EN PLUS la liste des
+ * emplacements Bureau à balayer ({@see self::desktopSweepPathsFor()}, champ
  * `desktop_sweep_paths`). POSE et BALAYAGE sont deux notions distinctes :
  * l'agent pose au seul `desktop_path`, mais il ne nettoie QUE les emplacements
  * que le serveur lui nomme — il n'en invente aucun. Sans cela, un poste
  * perdir/nomade balayait le Bureau réseau, emplacement PARTAGÉ entre tous les
  * postes de l'utilisateur, et y supprimait les `.lnk` d'un poste de classe.
  *
- * **Lecture Postgres PURE** (NFR7, critère Keycloak) : l'ancien canal legacy
- * (supprimé en 27.14) lisait `ad_users`/`ad_user_groups` (CN AD) via
+ * **Lecture Postgres PURE** (critère Keycloak) : l'ancien canal legacy
+ * (supprimé) lisait `ad_users`/`ad_user_groups` (CN AD) via
  * `whereJsonContains` + cache APCu — INTERDIT ici. Ce provider ne
  * touche JAMAIS l'AD : il lit le pivot polymorphe `shortcut_assignables`
- * (WorkstationGroup + Workstation + UserGroup + User — ciblage MVP pivot SQL,
- * décision n° 8) restreint aux ids déjà résolus du {@see TargetContext}. Les
- * colonnes `ad_users`/`ad_user_groups` ne sont PAS lues (hors-scope, NFR7).
+ * (WorkstationGroup + Workstation + UserGroup + User — ciblage par pivot SQL)
+ * restreint aux ids déjà résolus du {@see TargetContext}. Les colonnes
+ * `ad_users`/`ad_user_groups` ne sont PAS lues.
  *
- * **Sémantique `aggregate`** (union, décision n° 4) : un poste reçoit l'union
+ * **Sémantique `aggregate`** (union) : un poste reçoit l'union
  * des raccourcis de toutes ses mailles. Le provider étiquette ses candidats
  * BRUTS (peut produire des doublons quand un même raccourci est assigné au parc
  * ET au poste) — zéro précédence, zéro tri, zéro dédup : la dédup par contenu
- * vit dans le `StateCompiler` SEUL (D2).
+ * vit dans le `StateCompiler` SEUL.
  *
- * **Scope `machine_user`** (décision n° 1) : le set de raccourcis dépend du
+ * **Scope `machine_user`** : le set de raccourcis dépend du
  * user, mais le CHEMIN du bureau dépend du POSTE (`WorkstationEnvironment`) —
  * le calcul est un croisement (poste, user), compilé par couple.
  *
- * Payload v1 (décision n° 6) : `{name, target, args, icon, place, desktop_path,
+ * Payload v1 : `{name, target, args, icon, place, desktop_path,
  * desktop_sweep_paths}` — `desktop_path` présent uniquement si `place=desktop` ;
- * `desktop_sweep_paths` (liste, Story 27.21) sur TOUS les items. Pas de float (§4.1).
- * Story 27.7 (AC2) : payload étendu de `{icon_asset, icon_checksum}` quand
+ * `desktop_sweep_paths` (liste) sur TOUS les items. Pas de float (§4.1).
+ * Payload étendu de `{icon_asset, icon_checksum}` quand
  * l'icône est un NOM NU uploadé content-addressed (champs ajoutés,
  * forward-compatible — l'agent dérive l'URL statique).
  *
  * **UN candidat n'a PAS de ligne source : le raccourci vers le portail web**
  * ({@see self::portalCandidate()}). Il naît du PLAN DE FICHIERS
  * ({@see \App\Services\Filesystem\FileLocationService::current()}) — un cloud
- * actif ET au moins un des deux espaces servi par lui —, pas d'une
+ * actif ET au moins un des deux espaces servi par lui, pas d'une
  * assignation, parce que ce qu'il rend visible n'est pas une règle
  * d'établissement mais une conséquence technique : un espace servi par un cloud
  * n'a AUCUN chemin SMB, donc aucune lettre de lecteur ({@see DrivesStateProvider}
@@ -100,7 +100,7 @@ final class ShortcutsStateProvider implements StateProvider
 
     public function __construct(
         private readonly WorkstationEnvironmentResolver $environmentResolver,
-        // Story 58.1 — le mapping environnement→chemin du Bureau a QUITTÉ ce
+        // Le mapping environnement→chemin du Bureau a QUITTÉ ce
         // provider pour {@see DesktopPathResolver} : il est désormais partagé
         // avec {@see ShellFoldersStateProvider}, qui fait porter à l'agent la
         // REDIRECTION du shell vers ce même chemin. Deux mappings jumeaux, c'est
@@ -133,7 +133,7 @@ final class ShortcutsStateProvider implements StateProvider
      * Un couple (raccourci actif × assignation applicable au contexte) = un
      * candidat. Le `desktop_path` est résolu UNE fois pour le poste (donnée
      * machine) puis injecté dans chaque candidat `place=desktop` (le set
-     * dépend du user, le chemin du poste — décision n° 1/n° 3).
+     * dépend du user, le chemin du poste).
      *
      * @return Collection<int, StateCandidate>
      */
@@ -144,7 +144,7 @@ final class ShortcutsStateProvider implements StateProvider
         // L'environnement du parc est résolu UNE SEULE FOIS ici : il gouverne à
         // la fois l'emplacement de POSE (`desktop_path`) et les emplacements de
         // BALAYAGE (`desktop_sweep_paths`) — deux notions distinctes, une seule
-        // résolution (contrainte de réutilisation 27.21 : ne jamais interroger
+        // résolution (contrainte de réutilisation : ne jamais interroger
         // le WorkstationEnvironmentResolver deux fois pour le même contexte).
         $environment = $this->environmentResolver->resolveForGroupIds($wgIds);
 
@@ -280,7 +280,7 @@ final class ShortcutsStateProvider implements StateProvider
      * modification. Le champ ne sert qu'au conflit intra-maille des sémantiques
      * `single`, jamais ici.
      *
-     * **Story 63.2 — la SOURCE change, le reste ne bouge pas d'un octet.** Le
+     * **la SOURCE change, le reste ne bouge pas d'un octet.** Le
      * raccourci naissait de trois conditions du réglage global `files.policy`
      * (capacité Nextcloud, case « poser le raccourci », URL). Il naît désormais
      * du **plan de fichiers** : un cloud actif, ET au moins un des deux espaces
@@ -376,7 +376,7 @@ final class ShortcutsStateProvider implements StateProvider
         );
     }
 
-    // Story 58.1 — `desktopPathFor()` et `desktopSweepPathsFor()` ont été
+    // `desktopPathFor` et `desktopSweepPathsFor` ont été
     // DÉPLACÉS dans {@see DesktopPathResolver} (le raisonnement complet y est
     // conservé mot pour mot). Motif : un SECOND consommateur en a besoin —
     // ShellFoldersStateProvider, qui fait porter à l'agent la redirection
@@ -385,37 +385,36 @@ final class ShortcutsStateProvider implements StateProvider
     // regarde pas : c'est la panne de juillet 2026. Ne rien réintroduire ici.
 
     /**
-     * Payload v1 (décision n° 6, étendu Story 27.7). `desktop_path` présent
+     * Payload v1. `desktop_path` présent
      * UNIQUEMENT pour `place=desktop`. `target` = la cible (exe/URL), `args` =
      * arguments, `icon` = chemin d'icône (windows_icon prioritaire, fallback
      * icon_path). Toujours des strings (jamais de float, §4.1).
      *
-     * **Story 27.7 — distinction chemin réel / reste (AC2, piège n° 3).**
+     * **Distinction chemin réel / reste.**
      * Le champ `icon` peut valoir un CHEMIN réel (`firefox.exe,0`,
      * `%APPDATA%\x.ico` — posé tel quel, il prime), le NOM NU d'une icône
      * UPLOADÉE (`Calculatrice` — le `.ico` réel vit côté serveur), ou RIEN.
      * Seul le chemin réel est reconnu ({@see isRealIconPath()}, regex legacy
      * `#[\\/.,%]#` conservée) ; dans les deux autres cas, un asset content-
      * addressed en base (`icon_asset` non null) est émis en `{icon_asset,
-     * icon_checksum}` (PAS d'URL, décision n° 4 — l'agent dérive l'URL) à CÔTÉ
+     * icon_checksum}` (PAS d'URL — l'agent la dérive) à CÔTÉ
      * de `icon` (champs ajoutés, forward-compatible). L'agent préfère l'asset
      * local content-addressed ; faute d'asset téléchargé il retombe gracieusement
      * (pas de « feuille blanche », jamais une icône cassée). Sans asset
      * backfillé (`icon_asset` null) → `icon` brut seul (ancien comportement,
      * jamais un asset cassé).
      *
-     * **Story 27.21 — `desktop_sweep_paths` (champ additif, §9).** Contrairement
+     * **`desktop_sweep_paths` (champ additif, §9).** Contrairement
      * à `desktop_path` (présent seulement pour `place=desktop`), ce champ est
      * émis sur TOUS les items du type. Ce n'est pas une propriété du raccourci
      * mais une donnée de CONTEXTE (le poste) : l'agent doit connaître les
      * Bureaux à balayer MÊME quand plus aucune règle `place=desktop` n'existe —
      * sinon un Bureau vidé de ses règles ne serait plus jamais nettoyé et
-     * garderait ses `.lnk` gérés orphelins à vie (leçon de la review #2 de
-     * 27.1). LIMITE (préexistante, niveau moteur) : ne tient que tant qu'il
+     * garderait ses `.lnk` gérés orphelins à vie. LIMITE (préexistante, niveau moteur) : ne tient que tant qu'il
      * reste AU MOINS UN item `shortcuts` ; si la DERNIÈRE règle disparaît, aucun
      * item n'est émis, le handler n'est jamais convoqué et un `.lnk` résiduel
-     * reste orphelin — hors périmètre 27.21 (cf. Points ouverts de la story).
-     * Un agent ANTÉRIEUR À 27.21 (≤ 2.13.0) ignore le champ inconnu sans erreur
+     * reste orphelin : ce cas n'est pas couvert.
+     * Un agent ≤ 2.13.0 ignore le champ inconnu sans erreur
      * (§9, forward-compatible) et conserve son balayage local. La 2.14.0
      * (balayage réseau inconditionnel) est répudiée, jamais publiée.
      *
@@ -436,7 +435,7 @@ final class ShortcutsStateProvider implements StateProvider
 
         // Icône UPLOADÉE (nom nu) backfillée en asset content-addressed : on
         // ajoute les champs asset. Lecture de colonnes pures (zéro hash/I/O au
-        // render — invariant perf, piège n° 2).
+        // render — invariant de performance).
         if (! $this->isRealIconPath($icon)
             && $row->icon_asset !== null && $row->icon_asset !== ''
             && $row->icon_checksum !== null && $row->icon_checksum !== ''
@@ -460,7 +459,7 @@ final class ShortcutsStateProvider implements StateProvider
      * Détecte un CHEMIN d'icône réel — regex iso-legacy conservée : un séparateur
      * de chemin ou d'index (`\ / . , %`) ⇒ l'administrateur a désigné un fichier
      * précis sur le poste (`firefox.exe,0`, `%APPDATA%\x.ico`), qui prime sur
-     * tout asset servi par SE5. Story 27.7, AC2.
+     * tout asset servi par SE5..
      *
      * Tout le reste — nom nu d'icône uploadée (`Calculatrice`) comme chaîne VIDE
      * — laisse l'asset content-addressed s'appliquer. Le vide est le cas des
@@ -476,10 +475,10 @@ final class ShortcutsStateProvider implements StateProvider
     }
 
     /**
-     * Étiquetage assignable → maille (décision n° 8). La distinction
-     * physique/logique d'un WorkstationGroup se fait par les listes du contexte
-     * (la requête a déjà restreint aux groupes du poste) — étiquetage, pas
-     * précédence (D2 = compilateur).
+     * Étiquetage assignable → maille. La distinction physique/logique d'un
+     * WorkstationGroup se fait par les listes du contexte (la requête a déjà
+     * restreint aux groupes du poste) — étiquetage, pas précédence : celle-ci
+     * reste au compilateur.
      */
     private function mailleFor(Shortcut $row, TargetContext $ctx): StateMaille
     {

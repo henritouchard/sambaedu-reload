@@ -10,7 +10,7 @@ use RuntimeException;
 /**
  * Écriture directe des attributs LDAP d'un Group Policy Container (GPC).
  *
- * Story 38.4 (AC1/AC2) — port natif de `modify_ad($config, $cn, 'gpo', $attrs)`
+ * Port natif de `modify_ad($config, $cn, 'gpo', $attrs)`
  * (legacy `gpo.inc.php:1032` / `ldap.inc.php` `_shim_gpo_modify_replace`).
  * Utilisé par {@see NativeGpoPublisher} (pose `versionNumber` +
  * `gPCMachineExtensionNames`, SANS quoi le startup.cmd ne s'exécute jamais) et

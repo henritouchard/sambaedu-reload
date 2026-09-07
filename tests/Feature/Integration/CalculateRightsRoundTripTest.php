@@ -24,7 +24,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests d'intégration Story 7.3 — round-trip identité bitmask.
+ * Tests d'intégration — round-trip identité bitmask.
  *
  * Vérifie que pour chaque profil seedé + profil custom + délégations scopées,
  * le bitmask produit par `RightsService::calculateRights()` **après** migration
@@ -104,24 +104,18 @@ class CalculateRightsRoundTripTest extends TestCase
         return $bitmask & ~LegacyRight::ComputerView->value;
     }
 
-    // ================================================================
-    // Round-trip profils seedés (matrice §5.3)
-    // ================================================================
-
     /**
      * Sémantique d'assertion par profil :
      *  - 'equality'  : le bitmask Spatie produit doit être STRICTEMENT EGAL au bitmask legacy
      *                  (modulo ComputerView). C'est le cas attendu pour les profils où la
-     *                  matrice §5.3 prescrit un mapping 1:1 sans bit ajouté/retiré.
+     *                  matrice prescrit un mapping 1:1 sans bit ajouté/retiré.
      *  - 'subset'    : le bitmask Spatie peut être plus large (bits ajoutés intentionnellement,
      *                  ex. WpkgAssign 0x1000 dans ComputerAdmin) ou plus étroit (ex. ServerAdmin
      *                  0x8000 exclu de ComputerAdmin par modélisation plus granulaire).
      *                  L'assertion vérifie seulement que les bits legacy attendus sont présents.
      *
-     * Review #3 : avant cette refonte, TOUS les profils étaient en subset, ce qui masquait
-     * le bug d'escalade #1 (password_is_admin → UserAdmin 0xFF au lieu de 0x01). On bascule
-     * en equality stricte par défaut, et on skip explicitement password_is_admin tant que
-     * Henri n'a pas tranché #1.
+     * L'égalité stricte est le mode par défaut : un mode subset généralisé masquerait
+     * une escalade (password_is_admin → UserAdmin 0xFF au lieu de 0x01).
      *
      * @return list<array{0:string, 1:int, 2:string, 3:string}>
      */
@@ -146,7 +140,7 @@ class CalculateRightsRoundTripTest extends TestCase
     ): void {
         $user = $this->createUser('user-' . strtolower(str_replace('_', '-', $ldapGroupCn)));
 
-        // Review #1 (décision Henri 2026-04-25) : `password_is_admin` n'attribue
+        // `password_is_admin` n'attribue
         // PAS le rôle Spatie `UserAdmin`. Au lieu de cela, la migration pose la
         // permission directe `user.password.init`. Le data provider conserve
         // l'entrée pour vérifier le bitmask attendu (0x01 strict, anti-escalade)
@@ -191,7 +185,7 @@ class CalculateRightsRoundTripTest extends TestCase
             // Egalité stricte : le bitmask Spatie produit doit être EXACTEMENT
             // celui attendu — aucun bit en plus, aucun bit en moins (modulo
             // ComputerView et ServerAdmin déjà strippés). C'est cette assertion
-            // qui aurait détecté le bug #1 (password_is_admin → 0xFF au lieu de 0x01).
+            // qui détecte une escalade (password_is_admin → 0xFF au lieu de 0x01).
             $actualBits = $this->stripComputerView($spatieSourceBitmask) & ~LegacyRight::ServerAdmin->value;
             $this->assertSame(
                 $expectedBits,
@@ -209,7 +203,7 @@ class CalculateRightsRoundTripTest extends TestCase
 
         // Mode 'subset' : tolère que le bitmask Spatie soit plus large (ex.
         // ComputerAdmin embarque WpkgAssign 0x1000 absent du legacy 0xEF00,
-        // décision modélisation matrice §5.2). On vérifie seulement que tous
+        // décision de modélisation). On vérifie seulement que tous
         // les bits attendus sont présents.
         $this->assertSame(
             $expectedBits,
@@ -222,10 +216,6 @@ class CalculateRightsRoundTripTest extends TestCase
             )
         );
     }
-
-    // ================================================================
-    // Délégation positive scopée : round-trip
-    // ================================================================
 
     #[Test]
     public function round_trip_positive_scoped_delegation_adds_permission_to_bitmask(): void
@@ -243,7 +233,7 @@ class CalculateRightsRoundTripTest extends TestCase
             rightsMembersFetcher: fn () => [],
             delegationsFetcher: fn () => [
                 [
-                    // Story 7.3 — format CN legacy réel : `manage` → computer.elevate.
+                    // Format CN legacy réel : `manage` → computer.elevate.
                     'cn'      => 'manage_parc-roundtrip-pos',
                     'members' => [$user->dn],
                 ],
@@ -258,10 +248,6 @@ class CalculateRightsRoundTripTest extends TestCase
         $with = $this->rightsService->calculateRightsForUser($user->fresh(), $wg);
         $this->assertSame(LegacyRight::ComputerElevate->value, $with);
     }
-
-    // ================================================================
-    // Délégation négative scopée : round-trip AND-NOT
-    // ================================================================
 
     #[Test]
     public function round_trip_negative_scoped_delegation_removes_permission_and_not(): void
@@ -281,7 +267,7 @@ class CalculateRightsRoundTripTest extends TestCase
             rightsMembersFetcher: fn () => [],
             delegationsFetcher: fn () => [
                 [
-                    // Story 7.3 — format CN legacy réel : `no_manage` → négative
+                    // Format CN legacy réel : `no_manage` → négative
                     // sur `computer.elevate` (0x400). Le legacy ne supporte pas
                     // un négatif spécifique sur `install`, le mapping `level →
                     // permission` est figé à manage/view/rdp (cf. `LEGACY_DELEGATION_LEVELS`).
@@ -300,10 +286,6 @@ class CalculateRightsRoundTripTest extends TestCase
         $this->assertSame(0, $with & LegacyRight::ComputerElevate->value);
     }
 
-    // ================================================================
-    // Profil custom avec bitmask composite
-    // ================================================================
-
     #[Test]
     public function round_trip_custom_profile_composite_bitmask(): void
     {
@@ -313,7 +295,7 @@ class CalculateRightsRoundTripTest extends TestCase
             | LegacyRight::ComputerView->value
             | LegacyRight::ComputerControl->value;
 
-        // Simule le rôle custom créé par 7.2 (importCustomProfilesFromAd).
+        // Simule le rôle custom créé par (importCustomProfilesFromAd).
         $customRole = Role::firstOrCreate(['name' => 'custom_0x302', 'guard_name' => 'web']);
         $customRole->syncPermissions([
             SambaPermission::UserRead->value,

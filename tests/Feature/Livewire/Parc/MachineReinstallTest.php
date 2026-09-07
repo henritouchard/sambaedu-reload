@@ -16,7 +16,7 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Tests Livewire fiche machine (AC2/3/8/9/11).
+ * Tests Livewire fiche machine (3/8/9/11).
  */
 class MachineReinstallTest extends TestCase
 {

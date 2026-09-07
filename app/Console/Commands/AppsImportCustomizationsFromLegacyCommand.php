@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
  * Importe les fichiers legacy `/etc/sambaedu/applications/{firefox,thunderbird}/*.json`
  * vers la table `app_customizations`.
  *
- * Story 4.8 — AC 12. Idempotent (updateOrCreate sur clé composite).
+ * Idempotent (updateOrCreate sur clé composite).
  *
  * Conventions de nom fichier :
  *   - `default.json` / `custom.json`     → scope global (NULL/NULL, is_default=true)

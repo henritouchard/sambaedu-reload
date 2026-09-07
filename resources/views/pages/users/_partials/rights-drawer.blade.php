@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Drawer "Gérer les droits" : Rôles + Permissions globales non-scopées.
  *
- * Story 7.1.bis : le tab Délégations a été extrait dans la modale
+ * .bis : le tab Délégations a été extrait dans la modale
  * `pages/users/_partials/delegation-modal.blade.php` (UX état→action qui
  * nécessitait un format plus large + un flux séquentiel distinct).
  */
@@ -51,12 +51,12 @@ new class extends Component {
 
     private function loadAvailableData(): void
     {
-        // Story 7.2 — la source des rôles est la table Spatie (et non plus
+        // La source des rôles est la table Spatie (et non plus
         // l'enum statique SambaRole) pour inclure les profils customs créés
         // depuis /app/rights-management ou rapatriés via la sync AD. Sans ça,
         // un profil custom existait en base mais n'apparaissait pas ici, donc
         // ne pouvait pas être assigné.
-        // Story 49.1 (AC8) — l'état « porté » est DÉRIVÉ en lecture (jointure
+        // L'état « porté » est DÉRIVÉ en lecture (jointure
         // `user_groups.rights_profile_id` → `roles`), aucune colonne ajoutée
         // sur `model_has_roles`, aucune persistance.
         $carriers = app(GroupRightsProfileService::class)->carriersByRoleId();
@@ -74,7 +74,7 @@ new class extends Component {
                     'permissions_count' => $r->permissions->count(),
                     'permissions' => $r->permissions->pluck('name')->toArray(),
                     // Groupes portant ce profil — non vide ⇒ rôle NON attribuable
-                    // et NON décochable ici (AC8).
+                    // et NON décochable ici.
                     'carried_by' => $carriers[(int) $r->id] ?? [],
                 ];
             })
@@ -107,7 +107,7 @@ new class extends Component {
     #[On('open-rights-drawer')]
     public function open(array $users = []): void
     {
-        // Story 7.1 — Review #5b : guard serveur sur l'ouverture du drawer.
+        // Guard serveur sur l'ouverture du drawer.
         // Empêche un user non-admin de déclencher le drawer via `Livewire.dispatch`.
         abort_unless(Gate::allows('user.assign.right'), 403);
 
@@ -139,13 +139,9 @@ new class extends Component {
         $this->activeTab = $tab;
     }
 
-    // ========================================================================
-    // ACTIONS : Rôles
-    // ========================================================================
-
     public function applyRoles(): void
     {
-        // Story 7.1 — Review #5b : guard serveur — bloque tout appel Livewire forgé.
+        // Guard serveur — bloque tout appel Livewire forgé.
         abort_unless(Gate::allows('user.assign.right'), 403);
 
         if (empty($this->selectedUsers)) {
@@ -158,7 +154,7 @@ new class extends Component {
             return;
         }
 
-        // Story 49.1 (AC8 / D8) — garde SERVEUR : un profil porté par au moins
+        // Garde SERVEUR : un profil porté par au moins
         // un groupe n'est ni attribuable ni décochable ici, quel que soit le
         // payload reçu. Le `disabled` de l'UI seul serait du théâtre : un
         // payload Livewire forgé écrirait, et la réconciliation (≤ 5 min de
@@ -228,10 +224,6 @@ new class extends Component {
         $this->processing = false;
     }
 
-    // ========================================================================
-    // ACTIONS : Permissions
-    // ========================================================================
-
     public function togglePermission(string $permissionName): void
     {
         if (in_array($permissionName, $this->selectedPermissions)) {
@@ -243,7 +235,7 @@ new class extends Component {
 
     public function applyPermissions(): void
     {
-        // Story 7.1 — Review #5b : guard serveur.
+        // Guard serveur.
         abort_unless(Gate::allows('user.assign.right'), 403);
 
         if (empty($this->selectedUsers)) {
@@ -308,19 +300,15 @@ new class extends Component {
         $this->processing = false;
     }
 
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
-
     /**
      * Résout l'utilisateur Eloquent d'un login sélectionné.
      *
-     * Story 7.1 — Review #A : le besoin d'origine était d'empêcher la création
+     * Review #A : le besoin d'origine était d'empêcher la création
      * d'un EloquentUser FANTÔME quand un admin injecte un login arbitraire dans
      * `selectedUsers`. Il était couvert par une vérification annuaire suivie
      * d'une création de ligne minimale.
      *
-     * Story 49.2 — le fallback annuaire est SUPPRIMÉ, et le besoin d'origine est
+     * Le fallback annuaire est SUPPRIMÉ, et le besoin d'origine est
      * mieux servi : plus aucune ligne n'est fabriquée ici, donc plus aucun
      * fantôme possible, et plus d'aller-retour LDAP au clic. Postgres est la
      * vérité pour l'existence d'un compte côté SE5.
@@ -369,7 +357,7 @@ new class extends Component {
     }
 
     /**
-     * Story 7.1.bis — état tri-state par permission pour les users sélectionnés.
+     * .bis — état tri-state par permission pour les users sélectionnés.
      *
      * Pour chaque permission, décompte parmi `$selectedUsers` :
      *   - direct : l'user l'a assignée directement (revokable)
@@ -443,7 +431,7 @@ new class extends Component {
     }
 
     /**
-     * Story 49.1 (AC8) — noms des groupes portant un profil donné, relus EN
+     * Noms des groupes portant un profil donné, relus EN
      * BASE au moment du geste (pas depuis l'état Livewire, qui pourrait être
      * forgé ou périmé).
      *
@@ -463,9 +451,9 @@ new class extends Component {
     }
 
     /**
-     * Story 7.1.bis — compte le nombre d'users sélectionnés ayant chaque rôle.
+     * .bis — compte le nombre d'users sélectionnés ayant chaque rôle.
      *
-     * Story 49.1 (AC8) — enrichi de `carried_by` : les groupes portant ce
+     * Enrichi de `carried_by` : les groupes portant ce
      * profil. Non vide ⇒ contrôle désactivé + raison affichée.
      *
      * @return array<string, array{state:string, has:int, total:int, carried_by:string[]}>
@@ -483,7 +471,7 @@ new class extends Component {
             ->get()
             ->keyBy('login');
 
-        // Story 7.2 — itère sur tous les rôles Spatie connus, pas seulement
+        // Itère sur tous les rôles Spatie connus, pas seulement
         // les rôles seedés ; sinon les profils customs apparaissent toujours
         // avec un badge "Aucun" même quand un user les porte.
         $roleNames = array_column($this->availableRoles, 'name');
@@ -539,7 +527,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                {{-- Story 7.1 : feedback via WithToasts (ToastMagic) — plus de bloc HTML local --}}
+                {{-- Feedback via WithToasts (ToastMagic) — plus de bloc HTML local --}}
 
                 {{-- Tabs --}}
                 <div role="tablist" class="tabs tabs-bordered px-4 pt-2 shrink-0">
@@ -575,7 +563,7 @@ new class extends Component {
                         @foreach ($availableRoles as $role)
                             @php
                                 $rState = $this->roleStates[$role['name']] ?? ['state' => 'none', 'has' => 0, 'total' => count($selectedUsers), 'carried_by' => $role['carried_by'] ?? []];
-                                // Story 49.1 (AC8) — profil PORTÉ par un groupe :
+                                // Profil PORTÉ par un groupe :
                                 // ni attribuable ni décochable ici (le geste est
                                 // l'ajout au groupe).
                                 $carriedBy = $role['carried_by'] ?? [];

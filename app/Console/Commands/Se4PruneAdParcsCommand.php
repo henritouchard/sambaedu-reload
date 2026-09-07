@@ -13,11 +13,12 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 38.7 — Purge PRÉVISIONNELLE des `CN` hérités de `OU=Parcs`.
+ * Purge PRÉVISIONNELLE des `CN` hérités de `OU=Parcs`.
  *
  * `OU=Parcs` est devenu un conteneur en LECTURE SEULE : SE5 n'y écrit plus rien
  * (ni parcs logiques, ni miroir CN des salles, ni profils applicatifs). Les `CN`
- * qui y subsistent — hérités de SE4 ou créés par SE5 avant cette story — n'ont
+ * qui y subsistent — hérités de SE4 ou créés par SE5 avant ce passage en lecture
+ * seule — n'ont
  * plus aucun lecteur SE5. Cette commande permet, LE MOMENT VENU, de les retirer.
  *
  * Elle rejoint la famille `se4:*` et RÉUTILISE {@see InteractsWithSe4Extinction}
@@ -31,10 +32,10 @@ use Illuminate\Support\Facades\Log;
  *
  * Deux exclusions, journalisées NOMMÉMENT (jamais silencieuses) :
  *   - tout `CN` homonyme d'un `app_profiles.name` : collision documentée (un
- *     parc logique et un profil applicatif homonymes sont LE MÊME objet AD) —
+ *  parc logique et un profil applicatif homonymes sont LE MÊME objet AD)
  *     purger détruirait le groupe AD du profil. Conceptuellement « sans objet »
  *     puisque SE5 ne crée plus de représentation AD des profils, mais des objets
- *     de collision antérieurs à 38.7 peuvent subsister : on protège quand même ;
+ *  de collision antérieurs peuvent subsister : on protège quand même ;
  *   - tout `CN` homonyme d'un groupe PHYSIQUE : le miroir de salle est vivant
  *     (même si SE5 ne l'écrit plus, l'`OU` correspondante l'est).
  *
@@ -144,7 +145,7 @@ class Se4PruneAdParcsCommand extends Command
             return self::SUCCESS;
         }
 
-        // ── Chemin d'action (--confirm) : gardes root + extinction ───────────
+        // Chemin d'action (--confirm) : gardes root + extinction
         if (! $this->ensureRoot()) {
             return self::FAILURE;
         }

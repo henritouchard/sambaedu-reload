@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.5 (NFR5) — Modèle d'audit append-only des overrides de capacité.
+ * Modèle d'audit append-only des overrides de capacité.
  *
  * Couvre : la fabrique `log()` écrit tous les champs + un `created_at` ;
  * append-only (UPDATE → LogicException, calque DelegationHistory) ; FKs

@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 34.x — Ajoute une `description` libre au lecteur réseau géré.
+ * .x — Ajoute une `description` libre au lecteur réseau géré.
  *
  * Champ purement informatif (admin) : affiché dans la liste `app/shares` pour
  * documenter l'usage d'un répertoire. Nullable, sans impact provisioning/ACL ni

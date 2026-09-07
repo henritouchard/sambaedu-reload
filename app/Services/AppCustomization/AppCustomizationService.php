@@ -17,8 +17,6 @@ use Illuminate\Support\Facades\Log;
 /**
  * Service principal — résolution hiérarchique + persistence + export FS.
  *
- * Story 4.8 — AC 4, 12, 13.
- *
  * Chaîne de résolution (priorité croissante, dernier match gagne) :
  *   1. Template système (FS via adapter::getTemplate)
  *   2. Auto : injection proxy/DNS/popups (in-memory via adapter::applyAuto)

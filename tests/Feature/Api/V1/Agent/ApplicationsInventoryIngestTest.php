@@ -14,13 +14,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.5 — AC4 : ingestion de l'inventaire PAR APP (champ additif
+ * Ingestion de l'inventaire PAR APP (champ additif
  * `inventory` sur l'item `applications` du rapport agent → serveur).
  *
  * Vérifie : upsert des lignes `agent_application_inventory` (clé
  * `(workstation_id, app_id)`) EN PLUS de la ligne d'état par type (inchangée),
  * nettoyage level-triggered des apps absentes du rapport, et que le VERDICT du
- * type reste PAR TYPE (grain 27.8 intact — l'inventaire est une donnée, pas un
+ * type reste PAR TYPE (grain intact — l'inventaire est une donnée, pas un
  * verdict).
  */
 final class ApplicationsInventoryIngestTest extends TestCase
@@ -109,7 +109,7 @@ final class ApplicationsInventoryIngestTest extends TestCase
         self::assertNotNull($firefox);
         self::assertSame('compliant', $firefox->status->value);
 
-        // UNE seule ligne d'état PAR TYPE (verdict par type, grain 27.8 intact).
+        // UNE seule ligne d'état PAR TYPE (verdict par type, grain intact).
         $states = AgentResourceState::query()->where('workstation_id', $ws->id)->get();
         self::assertCount(1, $states);
         self::assertSame('applications', $states[0]->type);

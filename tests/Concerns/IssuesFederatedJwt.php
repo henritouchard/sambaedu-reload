@@ -12,14 +12,14 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
- * Story 20.1 — helper de tests pour l'auth fédérée.
+ * Helper de tests pour l'auth fédérée.
  *
  * Calqué sur {@see IssuesWorkstationJwt}. Fournit :
  *
  *  - `configureFederatedAuth()` : pointe `config('federated_auth')` vers les
  *    fixtures RS256 `tests/fixtures/auth-v1/*.pem` (réutilisées — même algo),
  *    fixe `expected_iss`/`expected_aud`/`expected_tier`, cache replay en
- *    `array`. À appeler dans `setUp()`.
+ *  `array`. À appeler dans `setUp()`.
  *  - `issueFederatedJwt(array $overrides = [])` : émet un JWT fédéré signé.
  *  - `signFederatedJwt(array $payload, string $alg, ?string $key, ?string $kid)`
  *    : variante bas-niveau pour forger des jetons d'attaque (alg:none, HS256).
@@ -33,7 +33,7 @@ trait IssuesFederatedJwt
 
     protected string $federatedTestAud = 'se5-instance-test';
 
-    // Story 39.3 — IdP « du handshake » : paire RS256 DÉDIÉE, DISTINCTE des
+    // IdP « du handshake » : paire RS256 DÉDIÉE, DISTINCTE des
     // fixtures `tests/fixtures/auth-v1/*.pem` (celles-ci servent le chemin
     // CONFIG). Une paire distincte prouve, sans ambiguïté, qu'un JWT accepté
     // via le bridge DB tient à la clé stockée en base (`controlhub_connection`)
@@ -191,7 +191,7 @@ trait IssuesFederatedJwt
                 $table->string('email')->nullable();
                 $table->boolean('is_active')->default(true);
                 $table->timestamp('last_login_at')->nullable();
-                // Story 20.2 — colonnes de cycle de vie / rétention RGPD.
+                // Colonnes de cycle de vie / rétention RGPD.
                 $table->timestamp('anonymized_at')->nullable();
                 $table->string('deactivated_reason')->nullable();
                 $table->string('deleted_reason')->nullable();
@@ -200,7 +200,7 @@ trait IssuesFederatedJwt
             });
         }
 
-        // Story 20.4 — journal d'audit dénormalisé des actions externes.
+        // Journal d'audit dénormalisé des actions externes.
         if (! Schema::hasTable('external_action_audit_logs')) {
             Schema::create('external_action_audit_logs', function (Blueprint $table): void {
                 $table->id();
@@ -227,7 +227,7 @@ trait IssuesFederatedJwt
             });
         }
 
-        // Story 39.3 — table de connexion controlHub (IdP fédéré du handshake).
+        // Table de connexion controlHub (IdP fédéré du handshake).
         // PRÉREQUIS BLOQUANT : `FederatedJwtVerifier` appelle désormais
         // `ControlHubConnection::current()` dans `buildKeyMap()`/`expectedIss()`.
         // Sans cette table, TOUTES les suites fédérées (qui bâtissent leur
@@ -315,7 +315,7 @@ trait IssuesFederatedJwt
     }
 
     /**
-     * Story 39.3 — génère (paresseusement) la paire RS256 dédiée à l'IdP « du
+     * Génère (paresseusement) la paire RS256 dédiée à l'IdP « du
      * handshake » et la mémorise sur l'instance de test. Distincte des fixtures
      * `auth-v1` : c'est ce qui rend les tests du bridge discriminants.
      */
@@ -342,7 +342,7 @@ trait IssuesFederatedJwt
     }
 
     /**
-     * Story 39.3 — seed une `ControlHubConnection` active portant l'IdP fédéré
+     * Seed une `ControlHubConnection` active portant l'IdP fédéré
      * reçu au handshake (clé publique PEM en clair + kid + iss). Réutilise le
      * vrai chemin d'écriture `ControlHubConnection::createOrUpdate()`.
      *
@@ -366,7 +366,7 @@ trait IssuesFederatedJwt
     }
 
     /**
-     * Story 39.3 — émet un JWT signé par la clé PRIVÉE de l'IdP « du handshake »
+     * Émet un JWT signé par la clé PRIVÉE de l'IdP « du handshake »
      * (celle dont la publique est stockée en base par `seedFederatedIdpConnection`).
      * `iss`/`kid` défaut = ceux de la connexion ; `aud` = uuid d'instance passé
      * (= `config('controlHub.se4fs.instance_id')` côté vérificateur).

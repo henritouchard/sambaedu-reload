@@ -5,18 +5,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3ter — migration de DONNÉES (idempotente) : posture par défaut SÛRE
- * (D6) + warnings au déclenchement (D7) + `options` des réglages à choix fermé.
+ * Migration de DONNÉES (idempotente) : posture par défaut SÛRE, warnings au
+ * déclenchement et `options` des réglages à choix fermé.
  *
- * IMPORTANT (D1 — diffusion Broadcast) : `registry_settings.value` est désormais
+ * IMPORTANT (diffusion Broadcast) : `registry_settings.value` est désormais
  * la valeur par défaut APPLIQUÉE À TOUTE LA FLOTTE. La posture seedée doit donc
  * être la posture SÛRE, pas « la valeur qu'on voudrait sur un labo » :
  *   - `disable_uac` (EnableLUA) : défaut 0→1 (UAC ACTIVÉ). Diffuser 0 partout =
  *     trou de sécurité + casse menu Démarrer/Paramètres Win10/11 + redémarrage
  *     requis. « Désactiver l'UAC » devient un OVERRIDE de parc délibéré.
- *   - `show_file_extensions` (HideFileExt) : défaut 0 (afficher les extensions —
+ *  - `show_file_extensions` (HideFileExt) : défaut 0 (afficher les extensions
  *     inchangé, inoffensif).
- *   - `show_hidden_files` (Hidden) : défaut 1 (afficher les fichiers cachés —
+ *  - `show_hidden_files` (Hidden) : défaut 1 (afficher les fichiers cachés
  *     inchangé, choix admin acceptable flotte-large).
  *
  * Idempotent : `where('key', …)->update()` ciblé, rejouable. `down()` réversible
@@ -64,7 +64,7 @@ return new class extends Migration
             'options' => $hasOptions ? $afficherFichiers : null,
         ], $hasOptions, $hasWarning, $now);
 
-        // EnableLUA — D6 : défaut bascule 0→1 (posture sûre). D7 : warning.
+        // EnableLUA — défaut basculé de 0 à 1 (posture sûre), plus un warning.
         // options Activé (1) / Désactivé (0).
         $this->updateRow('disable_uac', [
             'value' => '1',
@@ -83,7 +83,7 @@ return new class extends Migration
         $hasWarning = Schema::hasColumn('registry_settings', 'warning');
         $now = now();
 
-        // EnableLUA — restaure la posture 27.3 (value=0), vide options/warning.
+        // EnableLUA — restaure la posture (value=0), vide options/warning.
         $this->updateRow('disable_uac', [
             'value' => '0',
             'options' => null,
@@ -100,7 +100,7 @@ return new class extends Migration
     /**
      * Update idempotent ciblé par `key` : ne touche que les colonnes existantes
      * (gardes Schema::hasColumn → no-op si la migration de colonnes n'est pas
-     * jouée). Ne crée jamais de ligne (les réglages sont seedés en 27.3).
+     * jouée). Ne crée jamais de ligne (les réglages sont seedés).
      *
      * @param  array<string,mixed>  $values
      */

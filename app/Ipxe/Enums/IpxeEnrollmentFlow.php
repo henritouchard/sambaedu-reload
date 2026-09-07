@@ -5,16 +5,14 @@ declare(strict_types=1);
 namespace App\Ipxe\Enums;
 
 /**
- * Story 3.3 — T1.5.
- *
  * Enum des 5 flows d'enrollment iPXE — utilisé comme :
  *
  *  - libellé pour le logging structuré channel `ipxe` (`ipxe.enrollment.<flow>.*`)
  *  - clé d'identification pour la dispatch éventuelle d'erreurs cross-flow
  *
  * **Anti-pattern** : ne PAS l'utiliser pour dispatcher les 5 routes via un
- * controller unique (`/ipxe/enrollment/{flow}`) — la story 3.3 D2 prescrit
- * 5 controllers fins explicites (les params diffèrent : `new_name`, `room`,
+ * controller unique (`/ipxe/enrollment/{flow}`) — chaque flow a son controller
+ * explicite, les paramètres différant d'un flow à l'autre (`new_name`, `room`,
  * `parc`).
  */
 enum IpxeEnrollmentFlow: string
@@ -26,8 +24,8 @@ enum IpxeEnrollmentFlow: string
     case ParcRemove = 'parc_remove';
 
     /**
-     * Retourne la valeur stockée dans `MachineBootLog.action` (parité D12 —
-     * ≤16 chars, varchar(20) sans CHECK).
+     * Retourne la valeur stockée dans `MachineBootLog.action` (≤ 16 chars,
+     * colonne varchar(20) sans CHECK).
      */
     public function machineBootLogAction(): string
     {

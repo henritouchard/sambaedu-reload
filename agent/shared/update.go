@@ -10,48 +10,48 @@ import (
 	"regexp"
 )
 
-// Auto-update de l'agent (Story 25.2) — LE chemin le plus testé (NFR8).
+// Auto-update de l'agent.
 //
-// L'agent consomme le manifest 25.1 (`GET /api/v1/agent/release`, figé) : il
+// L'agent consomme le manifest (`GET /api/v1/agent/release`, figé) : il
 // détecte au check-in qu'une version DIFFÉRENTE de `shared.Version` est
 // annoncée pour ce poste (résolution par ring côté serveur), télécharge le
-// binaire via l'`url` ABSOLUE du manifest (verbatim — jamais reconstruite,
-// décision amont n° 2), VÉRIFIE le SHA-256 du corps AVANT d'écrire puis la
+// binaire via l'`url` ABSOLUE du manifest (verbatim — jamais reconstruite),
+// VÉRIFIE le SHA-256 du corps AVANT d'écrire puis la
 // SIGNATURE Authenticode du fichier stagé AVANT de swapper, et se remplace par
 // un swap atomique anti-brique (copie-atomique→re-hash→rename→rollback, cœur
-// dans shared/swap.go) PUIS provoque sa propre SORTIE NON-GRACIEUSE (os.Exit≠0,
-// Option A) pour que la recovery SCM relance le binaire vN+1. Un échec ne
+// dans shared/swap.go) PUIS provoque sa propre SORTIE NON-GRACIEUSE (os.Exit≠0)
+// pour que la recovery SCM relance le binaire vN+1. Un échec ne
 // brique JAMAIS le poste et ne casse jamais le
 // cycle machine (iso `SyncWallpaperAssets`) : l'agent en place reste
 // fonctionnel, l'échec est rapporté (item `agent_update`), retry au prochain
 // check-in (cadence `ttl_seconds`).
 //
-// SÉMANTIQUE DE COMPARAISON (piège n° 11) : le manifest dit autoritairement
+// SÉMANTIQUE DE COMPARAISON : le manifest dit autoritairement
 // « voici la version que ce poste DOIT avoir » (le serveur a déjà tranché par
 // la résolution de ring). L'agent applique `manifest.version != shared.Version`
 // — ÉGALITÉ STRICTE, PAS d'ordre semver : même un downgrade volontaire (rollback
 // décidé serveur) est appliqué. Le serveur est l'autorité, l'agent obéit.
 
-// manifestFilenamePattern : le filename servi par 25.1 (décision amont) — le
+// manifestFilenamePattern : forme STRICTE du filename servi — le
 // download n'écrit JAMAIS sous un nom non validé (un staging dir reste un
 // fichier disque, anti-traversal iso wallpaper). Le serveur impose ce pattern
-// strict au download (25.1 AC4) ; l'agent re-valide ce qu'il extrait de l'url.
+// strict au download ; l'agent re-valide ce qu'il extrait de l'url.
 var manifestFilenamePattern = regexp.MustCompile(`^sambaedu-agent-[0-9A-Za-z.+~_-]+\.exe$`)
 
-// releaseManifest : la réponse manifest décodée (wrapper SE5, décision amont
-// n° 9 — golden tests/Fixtures/Agent/release-manifest.v1.json).
+// releaseManifest : la réponse manifest décodée (wrapper SE5 —
+// golden tests/Fixtures/Agent/release-manifest.v1.json).
 type releaseManifest struct {
 	Version string
 	Hash    string
 	URL     string
 }
 
-// SelfUpdate : tentative d'auto-update en fin de cycle machine (décision n° 1).
+// SelfUpdate : tentative d'auto-update en fin de cycle machine.
 //
 // Appelée au même point que `SyncWallpaperAssets` (après portée machine, sous
 // garde `!quarantined`, avant le `POST /report` du cycle pour que l'item
 // `agent_update` d'un échec rejoigne le rapport). UN SEUL download par cycle
-// (piège n° 9) : pas de retry intra-cycle. Un échec pose `pendingUpdateError`
+// par cycle : pas de retry intra-cycle. Un échec pose `pendingUpdateError`
 // (rapporté) et rend la main — jamais de panique propagée (l'appelant a un
 // recover, mais on est défensif iso le reste de l'agent).
 func (a *Agent) SelfUpdate(cfg Config) {
@@ -84,10 +84,10 @@ func (a *Agent) SelfUpdate(cfg Config) {
 		return
 	}
 
-	// 2. Comparaison ÉGALITÉ STRICTE (piège n° 11) : version cible == courante
-	// → rien à faire (no-op, zéro download). Couvre l'anti-boucle (piège n° 9 :
+	// 2. Comparaison ÉGALITÉ STRICTE : version cible == courante
+	// → rien à faire (no-op, zéro download). Couvre l'anti-boucle :
 	// un update appliqué fait passer shared.Version à la version cible au
-	// prochain démarrage → plus de divergence).
+	// prochain démarrage → plus de divergence.
 	if manifest.Version == Version {
 		a.Log.Debugf("Auto-update : version cible %s == version courante, rien à faire.", manifest.Version)
 
@@ -96,7 +96,7 @@ func (a *Agent) SelfUpdate(cfg Config) {
 	a.Log.Infof("Auto-update : version cible %s annoncée (courante %s) — téléchargement.", manifest.Version, Version)
 
 	// 3. Filename extrait de l'url ABSOLUE (dernier segment, percent-décodé) —
-	// jamais reconstruit (décision n° 6). Re-validé contre le pattern strict
+	// jamais reconstruit. Re-validé contre le pattern strict
 	// (le staging écrit ce nom sur disque).
 	filename, err := releaseFilenameFromURL(manifest.URL)
 	if err != nil {
@@ -107,7 +107,7 @@ func (a *Agent) SelfUpdate(cfg Config) {
 	}
 
 	// 4. Staging sous ProgramData\…\update\ (ACL SYSTEM) — Program Files n'est
-	// PAS encore touché (décision n° 5). Préparé AVANT le download : on a besoin
+	// PAS encore touché. Préparé AVANT le download : on a besoin
 	// du stagedPath pour le court-circuit « déjà stagé ».
 	if err := a.Store.EnsureUpdateDir(a.UpdateACL); err != nil {
 		a.pendingUpdateError = fmt.Sprintf("préparation du répertoire de staging : %v", err)
@@ -129,7 +129,7 @@ func (a *Agent) SelfUpdate(cfg Config) {
 
 	if !staged {
 		// 6. Download du binaire via l'url manifest VERBATIM (Client, bearer +
-		// rotation D5). Corps borné 16 Mio (piège n° 4) : un binaire >16 Mio
+		// rotation de token). Corps borné 16 Mio : un binaire >16 Mio
 		// serait tronqué → SHA-256 divergent → rejeté (fail-safe correct).
 		body, ok := a.downloadReleaseBinary(manifest.URL, filename)
 		if !ok {
@@ -179,16 +179,16 @@ func (a *Agent) SelfUpdate(cfg Config) {
 	}
 	a.Log.Infof("Auto-update : signature Authenticode du binaire %s valide.", manifest.Version)
 
-	// 9. Swap atomique anti-brique + sortie non-gracieuse (Option A, décision
-	// review 25.2). SwapAndRestart (côté windows/) délègue à shared.PerformSwap :
-	// copie-atomique→re-hash du .new (M2)→rename→rollback, PUIS — sur succès
+	// 9. Swap atomique anti-brique + sortie non-gracieuse.
+	// SwapAndRestart (côté windows/) délègue à shared.PerformSwap :
+	// copie-atomique→re-hash du .new→rename→rollback, PUIS — sur succès
 	// UNIQUEMENT — os.Exit(≠0) pour que la recovery SCM relance le binaire vN+1.
 	// On passe manifest.Hash : le binaire RÉELLEMENT mis en place est re-vérifié
 	// à sa position finale, pas seulement au staging.
 	//
 	// Si SwapAndRestart RETOURNE (avec ou sans erreur), c'est que le swap a
-	// ÉCHOUÉ sans briquer (rollback fait, ancien binaire en place — anti-brique
-	// AC3) : sur succès, os.Exit a déjà tué le process et ce code n'est jamais
+	// ÉCHOUÉ sans briquer (rollback fait, ancien binaire en place — anti-brique) :
+	// sur succès, os.Exit a déjà tué le process et ce code n'est jamais
 	// atteint. On rapporte donc toujours l'échec quand on revient ici.
 	if err := a.SwapAndRestart(stagedPath, manifest.Version, manifest.Hash); err != nil {
 		a.pendingUpdateError = fmt.Sprintf("swap de l'agent en échec (ancien binaire préservé) : %v", err)
@@ -201,7 +201,7 @@ func (a *Agent) SelfUpdate(cfg Config) {
 	// appelle os.Exit AVANT de rendre la main. Si on arrive ici sans erreur,
 	// c'est un stub de test (triggerRestart no-op) ou une plateforme sans
 	// os.Exit câblé. La PREUVE de succès reste la nouvelle `agent_version`
-	// rapportée par l'image vN+1 (AC4) — aucun item de succès posé.
+	// rapportée par l'image vN+1 — aucun item de succès posé.
 	a.Log.Infof("Auto-update : version %s installée, sortie pour relance par la recovery SCM.", manifest.Version)
 }
 
@@ -230,7 +230,7 @@ func (a *Agent) fetchReleaseManifest(cfg Config) (releaseManifest, bool) {
 		return manifest, true
 	case 404:
 		// no_release : aucune release applicable (poste sans ring ET aucune
-		// stable) = RIEN À FAIRE (décision amont n° 7, piège n° 10). Pas une
+		// stable) = RIEN À FAIRE. Pas une
 		// erreur, pas un log d'erreur.
 		a.Log.Debugf("Auto-update : GET /release -> 404 no_release, aucune release applicable.")
 
@@ -242,7 +242,7 @@ func (a *Agent) fetchReleaseManifest(cfg Config) (releaseManifest, bool) {
 
 		return releaseManifest{}, false
 	case 403:
-		// M4 (Option 1) : un 403 sur le canal RELEASE ne met PAS le poste en
+		// Un 403 sur le canal RELEASE ne met PAS le poste en
 		// quarantaine GLOBALE — il SAUTE seulement l'update. La quarantaine
 		// globale (qui supprime aussi le POST /report) reste réservée au 403 du
 		// canal principal /state (loop.go). Le poste continue son cycle normal et
@@ -276,7 +276,7 @@ func (a *Agent) downloadReleaseBinary(manifestURL, filename string) ([]byte, boo
 
 		return nil, false
 	case 403:
-		// M4 (Option 1) : 403 sur le download du binaire (canal release) = update
+		// Un 403 sur le download du binaire (canal release) = update
 		// sauté, PAS de quarantaine globale (cf. fetchReleaseManifest). Le report
 		// du cycle part normalement.
 		a.pendingUpdateError = fmt.Sprintf("GET du binaire %s -> 403 (canal release refusé) : update sauté ce cycle", filename)
@@ -297,8 +297,8 @@ func (a *Agent) downloadReleaseBinary(manifestURL, filename string) ([]byte, boo
 	}
 }
 
-// parseReleaseManifest décode le wrapper SE5 `{success, version, hash, url}`
-// (décision amont n° 9). Champs vides = manifest inexploitable (on ne tente
+// parseReleaseManifest décode le wrapper SE5 `{success, version, hash, url}`.
+// Champs vides = manifest inexploitable (on ne tente
 // rien : un hash ou une url vide ne doit jamais mener à un download/swap).
 func parseReleaseManifest(raw []byte) (releaseManifest, error) {
 	v, err := DecodeJSON(raw)
@@ -310,7 +310,7 @@ func parseReleaseManifest(raw []byte) (releaseManifest, error) {
 		return releaseManifest{}, fmt.Errorf("manifest : objet JSON attendu, obtenu %T", v)
 	}
 
-	// Wrapper SE5 (contrat 25.1) : `success` AUTORITAIRE. Absent ou != true =
+	// Wrapper SE5 (contrat) : `success` AUTORITAIRE. Absent ou != true =
 	// le serveur n'affirme PAS une release valide → on ne tente rien (un manifest
 	// d'erreur a un corps `{success:false,…}` qu'on ne doit jamais traiter comme
 	// une cible d'update).
@@ -333,7 +333,7 @@ func parseReleaseManifest(raw []byte) (releaseManifest, error) {
 
 // releaseFilenameFromURL extrait et VALIDE le filename depuis l'url ABSOLUE du
 // manifest (dernier segment du path, percent-décodé). L'url est autoritaire
-// (décision amont n° 2) — on ne reconstruit jamais le chemin, on le LIT. Le
+// — on ne reconstruit jamais le chemin, on le LIT. Le
 // pattern strict garde contre tout nom hostile (un staging dir reste un
 // fichier disque).
 func releaseFilenameFromURL(rawURL string) (string, error) {
@@ -351,7 +351,7 @@ func releaseFilenameFromURL(rawURL string) (string, error) {
 }
 
 // drainUpdateReportItems : retourne l'item de rapport `agent_update` d'un échec
-// d'auto-update du cycle (décision n° 7), puis vide l'état pending (un échec se
+// d'auto-update du cycle, puis vide l'état pending (un échec se
 // rapporte UNE fois). Vide → aucun item. Appelé par RunCycle juste avant
 // BuildReport. `agent_update` n'est PAS un type de ressource desired-state (pas
 // de provider serveur) : c'est un CANAL DE SIGNALEMENT d'échec côté agent — à

@@ -13,7 +13,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
- * Story 62.2 — UNE LIGNE DU CATALOGUE DE TYPES DE GROUPES : une clé immuable, un
+ * UNE LIGNE DU CATALOGUE DE TYPES DE GROUPES : une clé immuable, un
  * libellé modifiable, une icône, un rang d'affichage.
  *
  * La clé est ce qui est STOCKÉ dans `user_groups.type`, ce que les recettes de
@@ -73,14 +73,14 @@ class GroupType extends Model
      *
      *  - `classe`, `equipe`, `cours`, `projet`, `matiere`, `matiere_classe`,
      *    `role`, `function`, `custom` sont les valeurs de retour de
-     *    `UserGroupService::detectTypeFromAdGroupName()` : le prochain balayage AD
+     *  `UserGroupService::detectTypeFromAdGroupName()` : le prochain balayage AD
      *    les réécrit, qu'elles soient au catalogue ou non ;
      *  - `custom` est le défaut de `validateData()` et des deux formulaires ;
      *  - `classe` et `equipe` sortent du fold des groupes legacy
      *    ({@see \App\Actions\Groups\MergeLegacyUserGroups}) et gardent des
      *    comportements métier entiers (professeur principal, partage de classe) ;
      *  - cinq d'entre elles pilotent `GroupNameNormalizer::TYPE_PREFIXES` et
-     *    `UserGroupService::mapTypeToLdap()`.
+     *  `UserGroupService::mapTypeToLdap()`.
      *
      * Les supprimer ne casserait aucune contrainte : ça casserait du code.
      *
@@ -115,10 +115,10 @@ class GroupType extends Model
     }
 
     /**
-     * Story 62.3 — la suppression d'un type EMPORTE ses déclarations de rôles.
+     * La suppression d'un type EMPORTE ses déclarations de rôles.
      *
      * **Et ce n'est PAS une cascade au sens des refus.** La distinction est celle
-     * qui structure tout l'epic : `deletionRefusal()` protège des données MÉTIER
+     * qui structure tout le modèle : `deletionRefusal()` protège des données MÉTIER
      * que la suppression réécrirait silencieusement — l'appartenance de gens
      * réels, l'accrochage d'une arborescence. Les déclarations, elles, sont des
      * ATTRIBUTS du type, au même titre que son icône ou son rang d'affichage :
@@ -162,11 +162,11 @@ class GroupType extends Model
     /**
      * Le format d'une clé se contrôle à la SAISIE, pas à la relecture.
      *
-     * Review 62.2 #1 — cette garde s'appliquait à CHAQUE `save()`, alors que
-     * {@see assertKeyIsImmutable()} juste en dessous ne s'applique qu'à une clé
-     * modifiée. L'asymétrie était fatale : la migration de reprise insère
+     * La garde ne s'applique QU'À une clé modifiée, comme
+     * {@see assertKeyIsImmutable()} juste en dessous. L'appliquer à chaque `save`
+     * serait fatal : la migration de reprise insère
      * délibérément les clés DÉCOUVERTES à leur valeur EXACTE, sans normalisation —
-     * c'est tout l'objet de l'AC1, et `Custom` en est l'exemple épinglé. Or aucune
+     * c'est tout l'objet du catalogue, et `Custom` en est l'exemple épinglé. Or aucune
      * de ces lignes ne respecte le slug. Elles devenaient donc **injouables** :
      * renommer le seul libellé de `Custom` levait une exception non interceptée
      * (la branche création a un `try/catch`, pas la branche édition), et surtout
@@ -174,9 +174,8 @@ class GroupType extends Model
      * la liste — une seule ligne héritée non-slug cassait donc le réordonnancement
      * du catalogue ENTIER.
      *
-     * On garde donc exactement ce que l'AC visait — refuser une clé mal formée
-     * qu'un humain vient de saisir — sans refuser un héritage qu'on s'est
-     * justement interdit de renommer.
+     * On refuse donc une clé mal formée qu'un humain vient de saisir, sans
+     * refuser un héritage qu'on s'est justement interdit de renommer.
      */
     private function assertKeyIsWellFormed(): void
     {
@@ -225,7 +224,7 @@ class GroupType extends Model
     }
 
     /**
-     * Story 62.2 — les USAGES d'une clé de type, comptés à la demande.
+     * Les USAGES d'une clé de type, comptés à la demande.
      *
      *  - `groups`    : groupes d'utilisateurs qui PORTENT cette valeur ;
      *  - `templates` : recettes de répertoire ACCROCHÉES à ce type (arbres et
@@ -264,7 +263,7 @@ class GroupType extends Model
      * Recettes accrochées à ce type — comparaison INSENSIBLE À LA CASSE.
      *
      * L'asymétrie avec `countGroups()` est voulue : `attached_group_type` EST
-     * normalisé en minuscules à l'écriture depuis la story 60.5, et
+     * normalisé en minuscules à l'écriture, et
      * `DirectoryTemplate::attachedTo()` compare déjà en `LOWER()`. On compte donc
      * comme la résolution apparie — sinon une recette accrochée compterait pour
      * zéro et la suppression du type passerait.
@@ -284,7 +283,7 @@ class GroupType extends Model
      * Ce que les recettes disent de ce type, pour l'écran.
      *
      * **L'invariant vivant n'est PAS « au plus une recette par type ».** L'index
-     * unique posé en 60.2 a été délibérément RELÂCHÉ en 60.5
+     * unique posé a été délibérément RELÂCHÉ
      * (`2026_08_05_110000_relax_attached_group_type_uniqueness`) : l'accrochage y
      * est devenu une propriété d'ÉLIGIBILITÉ que plusieurs recettes peuvent
      * porter sur le même type. Ce qui survit, tenu par la garde applicative
@@ -316,7 +315,7 @@ class GroupType extends Model
     }
 
     /**
-     * Story 62.2 — le REFUS de suppression, nommé, ou `null` si la suppression est
+     * Le REFUS de suppression, nommé, ou `null` si la suppression est
      * légitime.
      *
      * Deux motifs, deux messages, et JAMAIS de cascade : supprimer un type porté

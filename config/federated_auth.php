@@ -259,7 +259,7 @@ return [
             'app.user.show',
             'app.users.groups.edit',
             'app.users.*',
-            // Story 55.1 — `/oidc/authorize` est un GET qui ÉMET une identité
+            // `/oidc/authorize` est un GET qui ÉMET une identité
             // (code d'autorisation puis id_token) au nom de l'acteur connecté.
             // Sans cette entrée, `federated.audit` déclaré sur la route est un
             // NO-OP silencieux (les GET ne sont audités que par allowlist), et

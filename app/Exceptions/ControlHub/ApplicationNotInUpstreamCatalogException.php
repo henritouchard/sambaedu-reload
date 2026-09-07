@@ -7,25 +7,21 @@ namespace App\Exceptions\ControlHub;
 use RuntimeException;
 
 /**
- * Story 31.1 — Levée lorsqu'un refnum tente d'installer/assigner une application
+ * Levée lorsqu'un refnum tente d'installer/assigner une application
  * **hors du catalogue applicatif faisant autorité** d'un contrat amont controlHub
- * actif (FR5). L'opération est REFUSÉE en couche service ({@see \App\Services\AppProfile\AppProfileService})
+ * actif. L'opération est REFUSÉE en couche service ({@see \App\Services\AppProfile\AppProfileService})
  * AVANT toute écriture pivot.
  *
  * Defense-in-depth : la consultation ({@see \App\Models\Application::scopeInUpstreamCatalog})
  * retire déjà les apps hors catalogue des listes proposées ; cette exception est
  * le filet de sécurité contre un payload Livewire forgé visant un `application_id`
- * hors catalogue (D3 — deux couches symétriques à 29.1).
+ * hors catalogue : les deux couches sont symétriques.
  *
  * Le message est en français et **affichable** (repris tel quel en toast via
  * {@see \App\Components\Traits\WithToasts}). Il nomme explicitement les `app_id`
- * refusés. [Story 31.1 AC #2 / FR8]
+ * refusés.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » dans le nom de l'exception ni dans ses
- *    messages. Vocabulaire imposé : « amont » / `Upstream` / `ControlHub*`.
- *    [Source: prd-contrat-manage-se5.md#R3]
- *
- * Patron : {@see UpstreamLockCollisionException} (30.5) + `InvalidUpstreamContractException` (28.2).
+ * Patron : {@see UpstreamLockCollisionException} + `InvalidUpstreamContractException`.
  */
 final class ApplicationNotInUpstreamCatalogException extends RuntimeException
 {

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — T1.7.
+ * T1.7.
  *
  * Tests garde-fou sur l'asset projet `resources/ipxe/windows/unattend.xml`.
  *
@@ -47,8 +47,8 @@ class WindowsTemplateAssetTest extends TestCase
         $content = (string) file_get_contents($this->templatePath());
         self::assertStringContainsString('###_SE4FS_NAME_###', $content);
         self::assertStringContainsString('###_NAME_###', $content);
-        // Fix 2026-06-04 — uuid/mac requis dans le curl OOBE (résolution
-        // UUID/MAC du controller /ipxe/windows/action).
+        // uuid/mac sont requis dans le curl OOBE : le controller
+        // /ipxe/windows/action ne résout le poste que par eux.
         self::assertStringContainsString('###_UUID_###', $content);
         self::assertStringContainsString('###_MAC_###', $content);
     }

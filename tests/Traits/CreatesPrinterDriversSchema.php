@@ -8,17 +8,17 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 6.2 — Crée la table `printer_drivers` en SQLite mémoire pour les
+ * Crée la table `printer_drivers` en SQLite mémoire pour les
  * tests Feature / Unit.
  *
  * À utiliser AVEC `CreatesPermissionSchema` (pose `users`) ET
  * `CreatesPrintersSchema` (pose `printers` — FK CASCADE dépendante).
  *
- * Décalque `CreatesPrintersSchema` (Story 6.1) : PK composite via
+ * Décalque `CreatesPrintersSchema` : PK composite via
  * `Blueprint::primary([...])`. La FK `printer_cups_name` → `printers.cups_name`
  * est volontairement non-déclarée en SQLite mémoire (PRAGMA foreign_keys par
  * défaut = OFF), donc CASCADE n'est pas testé ici — couverture via
- * migration prod + runbook E2E (cohérent décision 6.1 « tests cascade
+ * migration prod + runbook E2E (cohérent décision « tests cascade
  * pivot non joués SQLite »).
  */
 trait CreatesPrinterDriversSchema

@@ -23,7 +23,7 @@ use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
 
 /**
- * Tests unitaires de UserService::bulkResetPasswords (story 2.6).
+ * Tests unitaires de UserService::bulkResetPasswords.
  *
  * Couvre :
  *   - refus permission

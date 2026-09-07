@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Écriture atomique `tmp + rename` d'un fichier partagé.
  *
- * Story 15.1 (consolidation Story 4.8). Pattern issu de `feedback_atomic_write`
+ * (consolidation). Pattern issu de `feedback_atomic_write`
  * — les clients legacy / Windows lisent les fichiers de policies et de
  * déploiement (firefox/thunderbird policies, hosts.xml, profiles.xml, .ini)
  * en concurrence ; on veut éviter toute lecture partielle.
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  *     n'est plus atomique) ;
  *   - suffixe `pid` + bytes aléatoires : évite les collisions multi-process
  *     (FPM workers) ET intra-process (plusieurs writes concurrents) ;
- *   - `fsync()` sur le descripteur tmp avant rename : garantit que les blocs
+ *  - `fsync()` sur le descripteur tmp avant rename : garantit que les blocs
  *     sont sur disque avant que `rename(2)` rende le fichier visible.
  */
 final class AtomicFileWriter

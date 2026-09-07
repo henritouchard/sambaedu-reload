@@ -12,16 +12,16 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Story 39.4 — Canal ④ : job ASYNCHRONE de pull d'un binaire imposé par le contrat amont
+ * Canal ④ : job ASYNCHRONE de pull d'un binaire imposé par le contrat amont
  * (controlHub). Dispatché APRÈS le commit de l'ingestion (jamais un téléchargement synchrone dans
- * la requête HTTP d'ingestion 39.1 — le pull ne doit jamais bloquer/dégrader le canal ①).
+ * la requête HTTP d'ingestion — le pull ne doit jamais bloquer/dégrader le canal ①).
  *
  * Thin wrapper `ShouldQueue` (patron structurel {@see \App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob} :
  * `tries=1`, un échec est terminal) — toute la logique (téléchargement via `Http`, vérification
  * sha256 serveur, précédence locale, matérialisation content-addressée / par-clé) vit dans
  * {@see \App\Services\ControlHub\ArtifactPullService} (testabilité).
  *
- * ⚠️ L'URL signée voyage EN ARGUMENT du job (jamais en colonne DB — AC5 : les URL sont régénérées à
+ * ⚠️ L'URL signée voyage EN ARGUMENT du job (jamais en colonne DB : les URL sont régénérées à
  * chaque émission ; l'identité stable est le checksum). Le téléchargement passe par
  * `Illuminate\Support\Facades\Http` (artefacts petits — wallpapers/outils, pas d'ISO multi-Go →
  * pas de `Process`/`curl` shell).

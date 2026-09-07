@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.1 (AC7, AR1) — `php artisan ext:sources:sync {key?}`.
+ * `php artisan ext:sources:sync {key?}`.
  *
  * La commande n'a AUCUNE logique de synchro propre : elle appelle le même
  * service que le bouton « Actualiser » de l'UI. Ce qui est testé ici, c'est
@@ -93,7 +93,6 @@ class ExtensionSourcesSyncCommandTest extends TestCase
             ->create(array_merge(['key' => $key], $overrides));
     }
 
-    // ─────────────────────────────────────────────────────────────────────
 
     #[Test]
     public function it_synchronizes_a_single_source_by_key(): void

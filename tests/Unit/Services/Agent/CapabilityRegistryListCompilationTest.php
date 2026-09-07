@@ -26,8 +26,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 35.2 (AC2) — compilation BOUT-EN-BOUT capacité → conteneurs
- * `registry_list` via le `StateCompiler` INTOUCHÉ (D2 — piège n°2).
+ * Compilation BOUT-EN-BOUT capacité → conteneurs
+ * `registry_list` via le `StateCompiler`, que ce mécanisme ne modifie pas.
  *
  * Prouve que `exclusiveKey() = {hive|path}` (2 segments) suffit : la maille la
  * plus spécifique gagne la clé-conteneur ENTIÈRE (la liste de l'override
@@ -82,7 +82,7 @@ class CapabilityRegistryListCompilationTest extends TestCase
 
     private function compiler(): StateCompiler
     {
-        // Compilateur RÉEL non modifié (D2) + les seuls providers list.
+        // Compilateur RÉEL non modifié + les seuls providers list.
         return new StateCompiler(new StateHasher, [
             new RegistryListMachineCapabilityProvider,
             new RegistryListUserCapabilityProvider,
@@ -104,7 +104,7 @@ class CapabilityRegistryListCompilationTest extends TestCase
     public function parc_override_replaces_the_entire_broadcast_list_never_a_union(): void
     {
         // Broadcast ['a','b'] battu par override de parc ['c'] → la cible du
-        // conteneur est ['c'], PAS ['a','b','c'] (piège n°2 : la maille la plus
+        // conteneur est ['c'], PAS ['a','b','c'] (la maille la plus
         // spécifique gagne le conteneur ENTIER).
         $cap = $this->makeListCapability('list_cap', 'on', [
             ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a', 'b'], 'alt' => ['c']]],
@@ -217,7 +217,7 @@ class CapabilityRegistryListCompilationTest extends TestCase
         );
     }
 
-    // ── Story 43.2 (AC3) — hint `refresh` bout-en-bout (mécanisme registry_list) ─
+    // ── — hint `refresh` bout-en-bout (mécanisme registry_list) ─
 
     #[Test]
     public function compiled_state_carries_the_refresh_hint_on_the_session_container_but_never_on_the_machine_one(): void
@@ -256,7 +256,7 @@ class CapabilityRegistryListCompilationTest extends TestCase
     #[Test]
     public function state_compiler_source_is_untouched_by_the_story(): void
     {
-        // Garde-fou D2 (piège n°2) : zéro référence registry_list dans le
+        // Garde-fou : zéro référence registry_list dans le
         // compilateur — le mécanisme passe ENTIÈREMENT par exclusiveKey().
         $src = (string) file_get_contents(app_path('Services/Agent/StateCompiler.php'));
         self::assertStringNotContainsString('registry_list', $src);

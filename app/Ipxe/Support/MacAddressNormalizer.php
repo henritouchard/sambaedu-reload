@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Support;
 
 /**
- * Story 3.1 — D4 / AC2.2.
- *
  * Normalise une adresse MAC vers le format canonique
  * `xx:xx:xx:xx:xx:xx` (12 hex chars en lowercase + 5 séparateurs `:`),
  * en acceptant les variantes legacy :

@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Résolution wallpaper / lockscreen — reproduit les 7 niveaux legacy.
  *
- * Story 4.7 — AC 4. Refonte bibliothèque (2026-06) : la résolution se fait
+ * Depuis la refonte de la bibliothèque, la résolution se fait
  * **exclusivement** via les assignations DB (owner → asset). Le fallback
  * historique par convention de nom de fichier (`<type>@<name>.jpg`) a été
  * supprimé — il produisait des « wallpapers fantômes » (fichier sur disque
@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Log;
  *   6. user
  *   7. /home/<user>/Photos/wallpaper.jpg (perso_wallpaper activé — fichier
  *      personnel hors bibliothèque)
- *   Override — quota hard-over → WallpaperResolution::quotaOverride()
+ *  Override — quota hard-over → WallpaperResolution::quotaOverride()
  *
  * Lockscreen : niveaux 1→3 uniquement (fidèle `make_lockscreen`).
  *

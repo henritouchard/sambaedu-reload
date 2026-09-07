@@ -7,11 +7,10 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.5 — AC5.7 / AC5.1.
  *
  * Validation du body de `GET|POST /ipxe/installation-windows`.
  *
- * **Whitelist permissive** : pattern iso 3.1 `IpxeBootRequest` — un poste
+ * **Whitelist permissive** : pattern iso `IpxeBootRequest` — un poste
  * peut poster avec MAC/UUID vides (handshake). La validation stricte se
  * fait en aval côté service.
  *

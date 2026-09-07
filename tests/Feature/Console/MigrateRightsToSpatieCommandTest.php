@@ -20,7 +20,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests de la commande artisan `sambaedu:migrate-rights-to-spatie` (Story 7.3).
+ * Tests de la commande artisan `sambaedu:migrate-rights-to-spatie`.
  *
  * Couverture :
  *  - Dry-run : rapport affiché, aucune écriture DB.
@@ -114,10 +114,6 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         });
     }
 
-    // ================================================================
-    // Dry-run
-    // ================================================================
-
     #[Test]
     public function dry_run_prints_report_without_writing_to_db(): void
     {
@@ -134,10 +130,6 @@ class MigrateRightsToSpatieCommandTest extends TestCase
 
         $this->assertSame(0, $admin->fresh()->roles()->count(), 'Dry-run ne doit créer aucune assignation');
     }
-
-    // ================================================================
-    // Run effectif + idempotence
-    // ================================================================
 
     #[Test]
     public function run_effective_creates_role_assignments(): void
@@ -173,10 +165,6 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         $this->assertSame(1, $admin->fresh()->roles()->count(), 'Aucun doublon après 3 runs');
     }
 
-    // ================================================================
-    // Bug Annu_is_admin
-    // ================================================================
-
     #[Test]
     public function it_applies_user_admin_fallback_for_annu_is_admin_without_info_and_logs_warning(): void
     {
@@ -208,10 +196,6 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         $this->assertNotEmpty($annuWarnings, 'Un warning Annu_is_admin doit être loggé');
     }
 
-    // ================================================================
-    // Délégations scopées positives + négatives
-    // ================================================================
-
     #[Test]
     public function positive_scoped_delegation_is_created_on_run(): void
     {
@@ -225,7 +209,7 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         $this->bindMigrationServiceMock([
             'delegations' => [
                 [
-                    // Story 7.3 — format CN legacy réel `manage_<parc>` → computer.elevate.
+                    // Format CN legacy réel `manage_<parc>` → computer.elevate.
                     'cn'      => 'manage_salle-cmd-a',
                     'members' => [$user->dn, 'CN=salle-cmd-a,OU=Parcs,DC=test'],
                 ],
@@ -255,7 +239,7 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         $this->bindMigrationServiceMock([
             'delegations' => [
                 [
-                    // Story 7.3 — format CN legacy réel `no_<level>_<parc>`.
+                    // Format CN legacy réel `no_<level>_<parc>`.
                     // `no_manage` → négative sur `computer.elevate` (0x400).
                     'cn'      => 'no_manage_salle-cmd-b',
                     'members' => [$user->dn, 'CN=salle-cmd-b,OU=Parcs,DC=test'],
@@ -272,10 +256,6 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         ]);
     }
 
-    // ================================================================
-    // Cas non mappables dans le rapport
-    // ================================================================
-
     #[Test]
     public function unmappable_user_is_reported_not_crashed(): void
     {
@@ -287,10 +267,6 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         $this->artisan('sambaedu:migrate-rights-to-spatie')
             ->assertExitCode(0);
     }
-
-    // ================================================================
-    // Dry-run : aucune écriture même pour délégations
-    // ================================================================
 
     #[Test]
     public function dry_run_does_not_create_delegation(): void
@@ -305,7 +281,7 @@ class MigrateRightsToSpatieCommandTest extends TestCase
         $this->bindMigrationServiceMock([
             'delegations' => [
                 [
-                    // Story 7.3 — format CN legacy réel `manage_<parc>`.
+                    // Format CN legacy réel `manage_<parc>`.
                     'cn'      => 'manage_salle-dry',
                     'members' => [$user->dn],
                 ],

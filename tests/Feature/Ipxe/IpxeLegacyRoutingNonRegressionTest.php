@@ -12,7 +12,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC6.2 / T6.3.
+ * T6.3.
  *
  * Tests de non-régression : les routes legacy `/ipxe/*` (admin.php,
  * installation-linux.php, etc.) doivent **continuer** d'être servies par
@@ -39,7 +39,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         if (! Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
-                // Story 38.2 — colonnes additives (observabilité tombstones).
+                // Colonnes additives (observabilité tombstones).
                 $table->string('source', 16)->default('catchall')->index();
                 $table->string('method', 10);
                 $table->string('path', 2048);
@@ -124,8 +124,8 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.2 — AC6.2 / T6.6 — non-régression catchall pour les routes
-     * 3.3-3.7 + court-circuit pour les routes natives 3.2.
+     * T6.6 — non-régression catchall pour les routes
+     * + court-circuit pour les routes natives.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -190,7 +190,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.3 — AC8.2 / T6.7 — non-régression catchall pour les 5
+     * T6.7 — non-régression catchall pour les 5
      * routes legacy `.php` + court-circuit pour les 5 routes natives 3.3.
      * ------------------------------------------------------------------ */
 
@@ -267,7 +267,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.4 — AC8.2 / T7.6 — non-régression catchall pour les
+     * T7.6 — non-régression catchall pour les
      * routes legacy `.php` + court-circuit pour les 4 routes natives 3.4.
      * ------------------------------------------------------------------ */
 
@@ -301,8 +301,8 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     public function it_still_serves_ipxe_installation_windows_php_via_catchall(): void
     {
         // L'URL legacy avec `.php` (`installation-windows.php`) reste servie
-        // par le catchall après 3.5 (clean-up = 3.7). Seule la version sans
-        // `.php` (route native 3.5) court-circuite le catchall.
+        // par le catchall après (clean-up =). Seule la version sans
+        // `.php` (route native) court-circuite le catchall.
         $this->get('/ipxe/installation-windows.php');
 
         $found = \App\Models\LegacyCatchallLog::query()
@@ -317,7 +317,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC8.2 — non-régression catchall sur les 6 routes natives
+     * Non-régression catchall sur les 6 routes natives
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -363,7 +363,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     public function it_still_serves_ipxe_win10_repair_bat_php_via_catchall(): void
     {
         // Le legacy `Win10/repair.bat.php` continue d'être servi par catchall
-        // (utilisé par action winpe réparation 3.2 — non touché 3.5).
+        // (utilisé par action winpe réparation — non touché).
         $this->get('/ipxe/Win10/repair.bat.php');
 
         $found = \App\Models\LegacyCatchallLog::query()
@@ -390,7 +390,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.6 — AC7.2 — non-régression catchall pour `/ipxe/Win10/win_iso.php`
+     * Non-régression catchall pour `/ipxe/Win10/win_iso.php`
      * legacy + court-circuit pour `/admin/ipxe/iso-windows` native.
      * ------------------------------------------------------------------ */
 
@@ -398,7 +398,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     public function it_still_serves_legacy_win_iso_php_via_catchall(): void
     {
         // Le legacy `Win10/win_iso.php` continue d'être servi par catchall
-        // jusqu'à Story 3.7 cleanup (3.6 livre la page admin web SE5 native
+        // jusqu'à cleanup (la page admin web SE5 native est livrée
         // sous `/admin/ipxe/iso-windows` mais ne RETIRE pas la route legacy).
         $this->get('/ipxe/Win10/win_iso.php');
 
@@ -435,14 +435,14 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.7 — D10 / AC7.1 / AC7.2 — cleanup final catchall Epic 3.
-     * Les routes iPXE legacy migreees 3.1-3.7 retournent 410 Gone.
+     * D10 / — cleanup final catchall.
+     * Les routes iPXE legacy migrées retournent 410 Gone.
      * ------------------------------------------------------------------ */
 
     #[Test]
     public function it_serves_ipxe_clonezilla_menu_natively_not_via_catchall(): void
     {
-        // La route native /ipxe/clonezilla-menu (3.7) ne doit pas passer par le catchall.
+        // La route native /ipxe/clonezilla-menu ne doit pas passer par le catchall.
         $countBefore = \App\Models\LegacyCatchallLog::query()->count();
 
         $this->get('/ipxe/clonezilla-menu');
@@ -457,7 +457,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     #[Test]
     public function it_blocks_ipxe_clonezilla_menu_php_with_410_gone(): void
     {
-        // AC7.2 — Q-1 Henri = 410 Gone + corps iPXE pour les routes legacy migreees.
+        // 410 Gone + corps iPXE pour les routes legacy migreees.
         // block_migrated_routes=true (defaut) doit intercepter ces requetes.
         Config::set('sambaedu.block_migrated_routes', true);
 
@@ -501,7 +501,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         $response = $this->get('/ipxe/hdt.php');
 
         self::assertSame(410, $response->status());
-        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        // Cohérence de couverture du body iPXE avec les autres tests de blocage.
         self::assertStringContainsString('#!ipxe', (string) $response->getContent());
     }
 
@@ -513,7 +513,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         $response = $this->get('/ipxe/memtest86plus.php');
 
         self::assertSame(410, $response->status());
-        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        // Cohérence de couverture du body iPXE avec les autres tests de blocage.
         self::assertStringContainsString('#!ipxe', (string) $response->getContent());
     }
 
@@ -536,7 +536,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         $response = $this->get('/ipxe/maintenance.php');
 
         self::assertSame(410, $response->status());
-        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        // Cohérence de couverture du body iPXE avec les autres tests de blocage.
         self::assertStringContainsString('#!ipxe', (string) $response->getContent());
     }
 
@@ -548,7 +548,7 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         $response = $this->get('/ipxe/actions/clonezilla_live.php');
 
         self::assertSame(410, $response->status());
-        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        // Cohérence de couverture du body iPXE avec les autres tests de blocage.
         self::assertStringContainsString('#!ipxe', (string) $response->getContent());
     }
 }

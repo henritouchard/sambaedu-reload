@@ -7,7 +7,7 @@ namespace App\Exceptions;
 use RuntimeException;
 
 /**
- * Story 56.2 — Refus de CONTRAT du moteur d'installation
+ * Refus de CONTRAT du moteur d'installation
  * ({@see \App\Services\Extensions\ExtensionInstallService}).
  *
  * ⚠️ Distinction à ne pas perdre de vue en review : cette exception porte les
@@ -17,7 +17,7 @@ use RuntimeException;
  * portent sur une extension RÉSOLUE (type, source, signature, borne de taille,
  * échec d'étape) ne lèvent PAS : ils sont journalisés en
  * `ExtensionAuditLog::ACTION_INSTALL_FAILED` et retournés à l'appelant sous
- * forme de tableau plat (NFR15) — un échec d'installation est un fait
+ * forme de tableau plat — un échec d'installation est un fait
  * observable, pas un bug de programmation.
  *
  * Le message est destiné à l'OPÉRATEUR : il dit ce qui a été refusé et ce qu'il
@@ -27,7 +27,7 @@ use RuntimeException;
 final class ExtensionInstallException extends RuntimeException
 {
     /**
-     * Story 56.3 — Catégorie STABLE du refus, distincte du message.
+     * Catégorie STABLE du refus, distincte du message.
      *
      * Le message est écrit pour un opérateur devant un terminal : il est long,
      * il cite les sources en conflit, il donne la commande à taper. Ce n'est
@@ -37,7 +37,7 @@ final class ExtensionInstallException extends RuntimeException
      * {@see \App\Models\ExtensionInstallRun::errorLabel()} en fait une phrase.
      *
      * Ajout strictement ADDITIF : la construction reste privée, les messages
-     * 56.2 sont inchangés.
+     * existants sont inchangés.
      */
     public readonly string $category;
 
@@ -60,7 +60,7 @@ final class ExtensionInstallException extends RuntimeException
 
     /**
      * Plusieurs sources publient cette clé (collision TOLÉRÉE au catalogue,
-     * décision 56.1) : l'opérateur doit dire laquelle il installe. On refuse
+     * décision) : l'opérateur doit dire laquelle il installe. On refuse
      * plutôt que de choisir — installer le paquet d'une source non voulue est
      * exactement ce que la chaîne de confiance sert à empêcher.
      *
@@ -87,7 +87,7 @@ final class ExtensionInstallException extends RuntimeException
     /**
      * Une installation (ou une désinstallation) est déjà en cours.
      *
-     * Le verrou est GLOBAL et non par-clé (décision 56.2 #2) : les
+     * Le verrou est GLOBAL et non par-clé : les
      * installations sont des actes d'administration rares, et un verrou unique
      * rend l'allocation de port et l'unicité des clés triviales, sans course.
      */
@@ -103,15 +103,15 @@ final class ExtensionInstallException extends RuntimeException
     /**
      * `ext:remove` sur une extension de type `link`.
      *
-     * Le volet `link` de FR10 est DÉJÀ livré (Story 54.2, bouton
+     * Le retrait d'une extension `link` est DÉJÀ livré ailleurs (bouton
      * « Désinstaller » de la bibliothèque et de la fiche). Le dupliquer ici
-     * créerait deux chemins d'audit pour le même acte (décision 56.2 #4).
+     * créerait deux chemins d'audit pour le même acte.
      */
     public static function linkNotSupported(string $key): self
     {
         return new self(
             "« {$key} » est une extension de type « lien » : elle n'installe aucun composant système. "
-            .'Désinstallez-la depuis la bibliothèque (/admin/extensions) — c\'est le cycle de la Story 54.2.',
+            .'Désinstallez-la depuis la bibliothèque (/admin/extensions).',
             \App\Models\ExtensionInstallRun::ERROR_LINK_NOT_SUPPORTED,
         );
     }

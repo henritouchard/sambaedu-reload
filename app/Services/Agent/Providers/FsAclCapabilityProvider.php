@@ -9,21 +9,21 @@ use App\Models\CapabilityProjection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 36.1 — provider `fs_acl` CAPABILITY-FIRST, portée **Machine** (le
+ * Provider `fs_acl` CAPABILITY-FIRST, portée **Machine** (le
  * service SYSTEM est le SEUL acteur des ACE NTFS ; le compagnon n'a pas les
  * droits, et le type n'existe pas côté session).
  *
- * Premier mécanisme HORS-REGISTRE (doctrine Epic 36 : « mécanisme = code payé
+ * Premier mécanisme HORS-REGISTRE (doctrine : « mécanisme = code payé
  * une fois, capacité = donnée »). Il EXPANSE une capacité → items de contrat
  * CONCRETS `{path, trustee, ace_type, rights, applies_to, ensure}` (6 clés,
  * strings — §7.7), exactement comme {@see AbstractRegistryListCapabilityProvider}
  * SURCHARGE l'interpréteur `expand()` du provider abstrait sans toucher
- * `StateCompiler` (D2). Il réutilise TOUTE la mécanique capacité de
+ * `StateCompiler`. Il réutilise TOUTE la mécanique capacité de
  * {@see AbstractCapabilityStateProvider} : Broadcast (défaut diffusé) + overrides
  * par maille, `resolveKeyValue()` (map/littéral), `UNMANAGED`, lecture Postgres
- * pure (NFR7 — la résolution SID est côté POSTE, LSA).
+ * pure — la résolution SID est côté POSTE, via LSA.
  *
- * **Jetons d'audience (Q1).** Un `trustee` peut être un jeton `@eleves|@profs|
+ * **Jetons d'audience.** Un `trustee` peut être un jeton `@eleves|@profs|
  * @personnels` résolu par {@see AudienceTokens} (enum FERMÉ en dur + existence
  * dans `user_groups`) ou un littéral verbatim (`Domain Users`). Jeton
  * irrésoluble ⇒ entrée NON émise + log warning (JAMAIS de payload avec un jeton
@@ -31,16 +31,16 @@ use Illuminate\Support\Facades\Log;
  *
  * **`exclusiveKey() = {path|trustee|ace_type}` minuscules** (3 segments) : la
  * maille la plus spécifique gagne CETTE ACE ; deux ACE d'identités distinctes
- * (mêmes `path`, trustees différents) COEXISTENT (cumul assumé, piège #2). La
+ * (mêmes `path`, trustees différents) COEXISTENT (cumul assumé). La
  * précédence par maille se joue sur identité ÉGALE via le compilateur INTOUCHÉ.
  *
- * **Pas de ciblage par utilisateur (piège #10).** `scope() = Machine` ⇒ le
+ * **Pas de ciblage par utilisateur.** `scope() = Machine` ⇒ le
  * service SYSTEM fetch sans `?user` (`userGroupIds = []`) : un override
  * UserGroup/User d'une capacité `fs_acl` est SANS EFFET. « Quel utilisateur est
  * bridé » = le `trustee` DANS le payload, « quels postes » = les assignations
  * parc/salle/poste/broadcast.
  *
- * **`hive()` non applicable** (piège #14) : `expand()` est surchargé
+ * **`hive()` non applicable** : `expand()` est surchargé
  * intégralement — `hive()`/`handlesHive()` (mécanique de filtrage par ruche
  * registre) ne sont JAMAIS consultés ici.
  */
@@ -66,7 +66,7 @@ final class FsAclCapabilityProvider extends AbstractCapabilityStateProvider
 
     /**
      * Non applicable au mécanisme `fs_acl` — `expand()` est surchargé
-     * intégralement, `handlesHive()` n'est JAMAIS appelé (piège #14). Implémentée
+     * intégralement, `handlesHive()` n'est JAMAIS appelé. Implémentée
      * pour satisfaire le contrat de la classe abstraite (registre-specific).
      */
     protected function hive(): string
@@ -78,7 +78,7 @@ final class FsAclCapabilityProvider extends AbstractCapabilityStateProvider
      * Identité d'une ACE gérée exclusive : `{path|trustee|ace_type}` minuscules
      * (3 segments). NTFS/Windows sont insensibles à la casse sur les chemins →
      * normalisation minuscules pour la STABILITÉ de la sélection (déterministe,
-     * ETag 23.5).
+     * ETag).
      */
     public function exclusiveKey(array $payload): string
     {
@@ -93,18 +93,18 @@ final class FsAclCapabilityProvider extends AbstractCapabilityStateProvider
      * Interpréteur de `spec` du mécanisme `fs_acl`. La projection porte
      * `spec = { "aces": [ {path, trustee, ace_type, rights, applies_to,
      * ensure?}, … ] }`. Pour CHAQUE entrée :
-     *   - `ace_type`/`rights`/`applies_to` sont des enums FIXES (mots métier) —
+     *  - `ace_type`/`rights`/`applies_to` sont des enums FIXES (mots métier)
      *     hors domaine ⇒ entrée NON émise (défensif ; le guard refuse déjà en
      *     amont) ;
      *   - `trustee` et `ensure` sont chacun littéral OU map valeur-capacité,
-     *     résolus par {@see resolveKeyValue()} : clé de map absente ⇒ UNMANAGED
+     *  résolus par {@see resolveKeyValue()} : clé de map absente ⇒ UNMANAGED
      *     ⇒ entrée non émise ; forme assoc inattendue ⇒ non émise défensif
-     *     (jamais d'exception au render) ; `ensure` défaut `present` (piège #13,
-     *     TOUJOURS émis au payload) ;
+     *     (jamais d'exception au render) ; `ensure` défaut `present`, TOUJOURS
+     *     émis au payload ;
      *   - un `trustee` commençant par `@` est résolu par {@see AudienceTokens}
      *     (jeton irrésoluble ⇒ non émis + warning), un littéral part verbatim.
      * Le payload résultant est CONCRET : EXACTEMENT 6 clés strings, zéro float,
-     * jamais d'id de capacité (invariant 27.12).
+     * jamais d'id de capacité (invariant).
      *
      * @return list<array<string,string>> un payload 6 clés par ACE émise
      */
@@ -147,7 +147,7 @@ final class FsAclCapabilityProvider extends AbstractCapabilityStateProvider
                 continue;
             }
 
-            // Jeton d'audience → nom conventionnel (Q1). Irrésoluble ⇒ non émis
+            // Jeton d'audience → nom conventionnel. Irrésoluble ⇒ non émis
             // + warning (JAMAIS de payload avec un jeton brut).
             $trustee = $this->audienceTokens()->resolve($trusteeRaw);
             if ($trustee === null) {
@@ -161,7 +161,7 @@ final class FsAclCapabilityProvider extends AbstractCapabilityStateProvider
             }
 
             // Résolution ensure (littéral OU map ; défaut `present`, TOUJOURS
-            // émis — piège #13).
+            // émis).
             $ensure = $this->resolveEnsure($ace['ensure'] ?? null, $capabilityValue);
             if ($ensure === null) {
                 continue; // UNMANAGED / forme inattendue / enum hors domaine ⇒ non émis.

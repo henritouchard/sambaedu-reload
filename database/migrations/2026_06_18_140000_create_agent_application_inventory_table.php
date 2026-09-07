@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.5 (2026-06-18) — AC4 : inventaire PAR POSTE des applications WPKG
+ * Inventaire PAR POSTE des applications WPKG
  * rapporté par l'agent (champ additif `inventory` sur l'item `applications` du
  * rapport, {@see \App\Services\Agent\Reporting\ReportIngestService}).
  *
@@ -16,11 +16,10 @@ use Illuminate\Support\Facades\Schema;
  * sièges = lignes `status ∈ {compliant, drift}` (toutes deux = installé ;
  * `error` = non installé).
  *
- * **Donnée ADDITIVE sous la ligne d'état par type** (Décision D1 — grain 27.8
- * intact) : le VERDICT de conformité du type `applications` reste UN statut par
+ * **Donnée ADDITIVE sous la ligne d'état par type**, grain intact : le VERDICT de conformité du type `applications` reste UN statut par
  * (poste, type) dans `agent_resource_states` (worst-status, circule dans
  * `ConformityService` + l'UI conformité SANS modification). Cette table N'EST
- * PAS une réintroduction du grain `item × poste` du débat 27.8 : c'est une
+ * PAS une réintroduction du grain `item × poste` du débat : c'est une
  * DONNÉE (l'inventaire), pas un verdict.
  *
  * **Idempotence stricte** : `Schema::hasTable()` avant création (iso

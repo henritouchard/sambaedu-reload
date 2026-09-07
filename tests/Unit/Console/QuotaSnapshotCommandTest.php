@@ -16,15 +16,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unit de la commande `quota:snapshot` (story 5.1b — AC 8).
+ * Tests unit de la commande `quota:snapshot`.
  *
  * Couvre :
  *   1. parsing ligne valide sans overflow
  *   2. parsing ligne over-soft (suffixe *) + grace period
  *   3. skip des lignes malformées (header, vides)
- *   4. fail-soft partition non-XFS (D3)
+ *   4. fail-soft partition non-XFS
  *   5. batch UPDATE des users
- *   6. préservation du snapshot pour user absent du rapport (D2)
+ *   6. préservation du snapshot pour user absent du rapport
  *
  * Les tests utilisent `Process::fake()` pour simuler l'output de `xfs_quota`
  * sans dépendre du binaire sur l'hôte CI.

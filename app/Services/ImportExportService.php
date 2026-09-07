@@ -11,7 +11,6 @@ class ImportExportService
 
     public function __construct()
     {
-        // Récupération de la config legacy
         $this->config = $this->getLegacyConfig();
     }
 

@@ -12,13 +12,13 @@ use Illuminate\Support\Facades\Log;
 /**
  * Miniatures wallpaper pour l'UI admin Livewire.
  *
- * Story 27.14 — les méthodes `legacyOut()` (ex-`gpo/wallpaper_out.php`) et
+ * Les méthodes `legacyOut` (ex-`gpo/wallpaper_out.php`) et
  * `apiV1()` (ex-`/api/v1/workstation-config/wallpaper`) ont été supprimées
  * avec le canal de config legacy. Le wallpaper du poste est désormais résolu
  * par le canal agent (`WallpaperStateProvider` → `WallpaperResolver`, qui
  * survit) ; l'info dynamique (badges/cartouches) passe par l'overlay. Ce
  * controller ne sert plus que les miniatures admin :
- * - `thumbnail(Wallpaper)` : miniature PNG d'un wallpaper en base (AC 8).
+ * - `thumbnail(Wallpaper)` : miniature PNG d'un wallpaper en base.
  * - `assetThumbnail(WallpaperAsset)` : miniature d'un asset de bibliothèque.
  */
 class WallpaperController extends Controller

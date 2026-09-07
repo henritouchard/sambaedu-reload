@@ -37,13 +37,12 @@ class OverlayService
      * Kind réservé au cartouche d'identité synthétique émis par le serveur
      * (`OverlayStateProvider`) : un signal posté avec ce kind serait avalé en
      * silence côté poste (le handler garde le premier bloc identity — le vrai).
-     * Review 24.4 #2.
      */
     public const KIND_RESERVED_IDENTITY = 'identity';
 
     /**
      * Kind réservé au cartouche `machine` synthétique émis par le serveur en
-     * portée MACHINE (`OverlayMachineStateProvider`, Story 27.10 — la salle).
+     * portée MACHINE (`OverlayMachineStateProvider` — la salle).
      * Comme `identity`, un signal posté avec ce kind serait avalé en silence
      * côté poste (le compose extrait `room` du seul item machine, jamais d'une
      * alerte). On le reclasse donc en `notice`.
@@ -132,7 +131,7 @@ class OverlayService
             ? $severity
             : OverlayAlert::SEVERITY_INFO;
 
-        // Kind réservé reclassé (review 24.4 #2) : le message reste visible
+        // Kind réservé reclassé : le message reste visible
         // comme alerte au lieu de disparaître en silence côté poste.
         if ($kind === self::KIND_RESERVED_IDENTITY || $kind === self::KIND_RESERVED_MACHINE) {
             $kind = 'notice';

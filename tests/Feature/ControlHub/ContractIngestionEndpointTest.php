@@ -17,19 +17,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 39.1 (FR-A1 + NFR-A1..A3) — Endpoint HTTP de RÉCEPTION du contrat amont
+ * Endpoint HTTP de RÉCEPTION du contrat amont
  * (canal ① du lien managé), `POST /api/v1/controlhub/contract`.
  *
  * Câblage pur : le contrôleur délègue à `ControlHubContractIngestionService::
- * ingest()` (Epics 28/33, déjà testé unitairement dans
+ * ingest()` (déjà testé unitairement dans
  * `ControlHubContractIngestionTest`/`ControlHubContractSchemaVersionTest`/
  * `UnsupportedSchemaVersionRejectionTest`). Cette suite prouve la ROUTE : 200
- * nominal (résumé complet), no-op idempotent (AC #4), 422 sur les deux
- * exceptions de domaine (AC #5, état inchangé), 403 auth (AC #6, patron
+ * nominal (résumé complet), no-op idempotent, 422 sur les deux exceptions de
+ * domaine (état inchangé), 403 sans en-tête d'autorisation (patron
  * `ContractSeveranceChannelsTest`).
  *
- * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. ⚠️ GARDE-FOU R3 : aucun
- * « central » ; vocabulaire « amont » / `ControlHub*`.
+ * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. ⚠️ RÈGLE DE NOMMAGE :
+ * aucun identifiant ni message livré ne contient « central » ; le vocabulaire
+ * est « amont » / `ControlHub*`.
  */
 class ContractIngestionEndpointTest extends TestCase
 {
@@ -90,7 +91,7 @@ class ContractIngestionEndpointTest extends TestCase
         return $this->withHeaders($headers)->postJson('/api/v1/controlhub/contract', $payload);
     }
 
-    // ── 200 nominal ─────────────────────────────────────────────────────────
+    // 200 nominal
 
     #[Test]
     public function a_conformant_payload_is_ingested_and_returns_the_full_summary(): void
@@ -117,8 +118,6 @@ class ContractIngestionEndpointTest extends TestCase
 
         Event::assertDispatchedTimes(ControlHubContractChanged::class, 1);
     }
-
-    // ── No-op idempotent (NFR-A2 / AC #4) ──────────────────────────────────
 
     #[Test]
     public function an_identical_second_post_is_a_noop_and_does_not_redispatch_the_event(): void
@@ -147,8 +146,6 @@ class ContractIngestionEndpointTest extends TestCase
         Event::assertDispatchedTimes(ControlHubContractChanged::class, 1);
     }
 
-    // ── 422 version non supportée (AC #5) ──────────────────────────────────
-
     #[Test]
     public function an_unsupported_schema_version_is_rejected_with_422_and_writes_nothing(): void
     {
@@ -164,8 +161,6 @@ class ContractIngestionEndpointTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_items', 0);
         Event::assertNotDispatched(ControlHubContractChanged::class);
     }
-
-    // ── 422 contenu hors domaine (AC #5) ────────────────────────────────────
 
     #[Test]
     public function an_out_of_domain_payload_is_rejected_with_422_and_writes_nothing(): void
@@ -186,8 +181,6 @@ class ContractIngestionEndpointTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_items', 0);
         Event::assertNotDispatched(ControlHubContractChanged::class);
     }
-
-    // ── 422 corps illisible / non-contrat (review opus #1, NFR-A3) ──────────
 
     /**
      * Un corps AUTHENTIFIÉ sans aucune clé d'enveloppe (`{}`, tronqué, scalaire)
@@ -244,8 +237,6 @@ class ContractIngestionEndpointTest extends TestCase
         $this->assertDatabaseCount('controlhub_contracts', 1);
     }
 
-    // ── 403 auth (AC #6) ────────────────────────────────────────────────────
-
     #[Test]
     public function a_request_without_an_authorization_header_is_forbidden(): void
     {
@@ -264,7 +255,7 @@ class ContractIngestionEndpointTest extends TestCase
         $this->assertDatabaseCount('controlhub_contracts', 0);
     }
 
-    // ── Credential normalisé E10 — token de handshake (dual-accept) ───────────
+    // Credential normalisé E10 — token de handshake (dual-accept)
 
     /**
      * E10 — le credential négocié au handshake (`se4fs_api_token` frappé par

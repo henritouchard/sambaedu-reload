@@ -6,15 +6,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 7.1 — Historique (audit trail) des délégations.
+ * Historique (audit trail) des délégations.
  *
  * Table append-only : uniquement un `created_at`, pas d'`updated_at`.
  * Les FK sont en `ON DELETE SET NULL` pour garder la ligne d'audit lisible
  * même si l'acteur, la cible ou le WorkstationGroup sont supprimés après coup.
  * Le `permission_name` est stocké en string (pas FK) car une permission peut
- * être renommée/supprimée (Story 7.2 — profils dynamiques).
+ * Être renommée/supprimée (profils dynamiques).
  *
- * Décision produit 2026-04-23 : pas d'observer cascade_delete — les lignes
+ * Pas d'observer cascade_delete : les lignes
  * `delegations` supprimées par cascade FK ne sont pas tracées ici (suivi
  * métier uniquement, pas de tracé technique).
  */
@@ -76,11 +76,11 @@ return new class extends Migration {
             $table->index('created_at');
         });
 
-        // TODO Story 7.2 : en Postgres prod, ajouter un trigger BEFORE UPDATE
+        // TODO : en Postgres prod, ajouter un trigger BEFORE UPDATE
         // qui lève une exception pour hardening append-only côté DB. Le guard
         // applicatif (DelegationHistory::save()) protège uniquement les
         // ->save() / ->update() via Eloquent — DB::table()->update() passe
-        // outre. Cf. review #6 Story 7.1.
+        // outre.
     }
 
     public function down(): void

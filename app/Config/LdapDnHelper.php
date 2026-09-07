@@ -247,7 +247,7 @@ class LdapDnHelper
         return $this->ldap()->adminRdn . ',' . $this->ldap()->baseDn;
     }
 
-    // === Méthodes statiques pour utilisation directe dans les modèles ===
+    // Méthodes statiques pour utilisation directe dans les modèles
 
     /**
      * Accès statique au DN de base

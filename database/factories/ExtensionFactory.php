@@ -12,7 +12,7 @@ use App\Models\ExtensionSource;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 54.1 — Fabrique d'extensions du registre.
+ * Fabrique d'extensions du registre.
  *
  * Le `manifest` généré est COHÉRENT avec les colonnes dénormalisées : c'est
  * l'invariant que produit la synchro réelle
@@ -98,7 +98,7 @@ class ExtensionFactory extends Factory
     }
 
     /**
-     * Story 56.2 — Extension de type `app`.
+     * Extension de type `app`.
      *
      * `entry_url` vaut EXACTEMENT `/ext/<key>` : c'est la règle AR3 du
      * validateur, et la fabrique doit produire ce que la synchro réelle
@@ -116,7 +116,7 @@ class ExtensionFactory extends Factory
     }
 
     /**
-     * Story 56.2 — Bloc `install` du manifest (paquet `deb` + sha256).
+     * Bloc `install` du manifest (paquet `deb` + sha256).
      *
      * Le sha256 par défaut est un hexadécimal arbitraire : les tests qui
      * vérifient réellement le hash passent le leur (`hash('sha256', $octets)`).
@@ -139,7 +139,7 @@ class ExtensionFactory extends Factory
     }
 
     /**
-     * Story 56.2 — `app` déjà INSTALLÉE (état posé par
+     * `app` déjà INSTALLÉE (état posé par
      * {@see \App\Services\Extensions\ExtensionLifecycleService::markAppInstalled()}).
      */
     public function installed(int $port, string $version = '1.0.0', ?string $sha256 = null): static
@@ -147,7 +147,7 @@ class ExtensionFactory extends Factory
         return $this->state(fn (): array => [
             'status' => ExtensionStatus::Integrated,
             'installed_version' => $version,
-            // Story 56.3 — gage de rollback : une `app` réellement installée
+            // Gage de rollback : une `app` réellement installée
             // porte TOUJOURS le sha256 du `.deb` posé. Une fabrique qui le
             // laisserait vide produirait un état que le moteur refuse de
             // mettre à jour, et les tests d'update ne prouveraient rien.
@@ -158,7 +158,7 @@ class ExtensionFactory extends Factory
     }
 
     /**
-     * Story 56.3 — `app` installée dont la SOURCE publie une autre version :
+     * `app` installée dont la SOURCE publie une autre version :
      * l'écart `version ≠ installed_version` EST la détection de mise à jour.
      */
     public function withUpdateAvailable(string $publishedVersion = '2.0.0', string $installedVersion = '1.0.0'): static
@@ -176,16 +176,15 @@ class ExtensionFactory extends Factory
     }
 
     /**
-     * Story 56.5 — État de santé OBSERVÉ « le backend répond ».
+     * État de santé OBSERVÉ « le backend répond ».
      *
      * ⚠️ Les colonnes `health_*` sont HORS `$fillable` (un manifest hostile ne
      * doit pas pouvoir se déclarer sain) — et pourtant `state()` suffit :
      * `Factory::make()` instancie le modèle dans un `Model::unguarded()`
      * (`vendor/laravel/framework/.../Factories/Factory.php`), exactement comme
-     * pour `status` (54.2) et `installed_*` (56.2). On garde donc le patron
-     * `installed()` de 56.2 plutôt qu'un `afterCreating` + `save()` : une
-     * fabrique qui divergerait des précédents du même fichier serait un piège
-     * pour la prochaine story.
+     * pour `status` et `installed_*`. On garde donc le patron
+     * `installed()` plutôt qu'un `afterCreating` + `save()` : une fabrique qui
+     * divergerait des précédentes du même fichier serait un piège.
      *
      * À combiner avec `->app()->installed($port)` : sonder une extension sans
      * port n'aurait aucun sens (`isHealthMonitored()` le refuse).
@@ -199,7 +198,7 @@ class ExtensionFactory extends Factory
     }
 
     /**
-     * Story 56.5 — État de santé OBSERVÉ « le backend ne répond pas », avec son
+     * État de santé OBSERVÉ « le backend ne répond pas », avec son
      * incident.
      *
      * `$checkedAt` permet de fabriquer un état PÉRIMÉ (`now()->subHour()`) :

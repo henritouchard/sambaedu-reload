@@ -18,7 +18,6 @@ use App\Services\Filesystem\ShareService;
  * produit, et pour la même raison : au-dessus de la ligne, personne n'a besoin de
  * savoir ce qu'est un identifiant de compte distant.
  *
- * ---------------------------------------------------------------------------
  * **L'IDENTITÉ D'UN COMPTE VIENT DU CACHE, ET DE RIEN D'AUTRE.**
  *
  * `users.opencloud_user_id` est la SEULE source. Pas d'autocomplétion, pas de
@@ -41,7 +40,6 @@ use App\Services\Filesystem\ShareService;
  * porteur d'une garde d'unicité en base. Aucun code de ce backend ne référence un
  * claim ni le vocabulaire de la fédération, et un test d'architecture l'épingle.
  *
- * ---------------------------------------------------------------------------
  * **LES GROUPES SONT FABRIQUÉS PAR SE5, DONC LEUR NOM EST CALCULÉ, JAMAIS LU.**
  *
  * Forme canonique : `se5_<nom court>` pour un sujet de groupe nu, et
@@ -75,10 +73,6 @@ final class OpenCloudSubjectProjector
     public const GROUP_PREFIX = 'se5_';
 
     public function __construct(private readonly ShareService $shareService) {}
-
-    // =========================================================================
-    // Projection AVANT (sujet de plan → principal distant)
-    // =========================================================================
 
     /**
      * Le nom de groupe distant d'un sujet de type groupe, ou `null` s'il n'est pas
@@ -210,10 +204,6 @@ final class OpenCloudSubjectProjector
 
         return ['members' => $members, 'missing' => $missing];
     }
-
-    // =========================================================================
-    // Projection INVERSE (principal distant → sujet de plan)
-    // =========================================================================
 
     /**
      * TOUS les sujets que le plan exprime : ceux de ses octrois, et ceux que ses

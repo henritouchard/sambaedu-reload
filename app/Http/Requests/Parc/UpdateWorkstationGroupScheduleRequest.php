@@ -9,11 +9,11 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 4-4 (v0.2 D7) — Validation de mise à jour partielle d'un schedule.
+ * Validation de mise à jour partielle d'un schedule.
  *
  * Même règles conditionnelles que Store, mais tous les champs sont optionnels
  * (`sometimes`). Le service lève DomainException si le schedule est un
- * one-shot terminé (AC23).
+ * one-shot terminé.
  */
 class UpdateWorkstationGroupScheduleRequest extends FormRequest
 {

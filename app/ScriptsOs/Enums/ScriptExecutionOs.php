@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\ScriptsOs\Enums;
 
 /**
- * Story 16.12 — D1 / D2.
- *
  * OS du poste qui exécute le script. Détermine la variante de wrapper rendu
  * par `WrapperScriptRenderer` (`.cmd` Windows vs `.sh` Linux).
  */

@@ -9,11 +9,11 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 55.1 — garde-fous architecturaux du fournisseur OIDC.
+ * Garde-fous architecturaux du fournisseur OIDC.
  *
- * Calque de {@see FederatedRouteTest} (Story 20.1), pour les mêmes raisons :
+ * Calque de {@see FederatedRouteTest}, pour les mêmes raisons :
  *
- *  1. Les 5 routes OIDC (4 en 55.1 + `/oidc/userinfo` en 55.2) sont déclarées
+ *  1. Les 5 routes OIDC (4 + `/oidc/userinfo`) sont déclarées
  *     AVANT le catchall legacy `{path}`. En
  *     dessous, le catchall les proxifierait vers le vhost legacy (mort) et
  *     AUCUN client OIDC ne pourrait découvrir SE5.
@@ -24,7 +24,7 @@ use Symfony\Component\Finder\Finder;
  *  3. Frontière crypto : seul `OidcIdTokenIssuer` importe `Firebase\JWT` dans
  *     `app/Auth/Oidc` — la dépendance ne doit fuir ni dans les contrôleurs, ni
  *     dans les services, ni dans les modèles.
- *  4. `routes/api.php` reste INTACT : le périmètre 55.1 est entièrement en
+ *  4. `routes/api.php` reste INTACT : le périmètre est entièrement en
  *     `routes/web.php` (piège connu du projet : le test d'architecture de
  *     `api.php` n'inspecte qu'une fenêtre de ~1500 caractères).
  */
@@ -61,7 +61,6 @@ class OidcRoutesTest extends TestCase
             'jwks' => "@Route::get\s*\([^;]*?['\"]/oidc/jwks['\"]@",
             'authorize' => "@Route::get\s*\([^;]*?['\"]/oidc/authorize['\"]@",
             'token' => "@Route::post\s*\([^;]*?['\"]/oidc/token['\"]@",
-            // Story 55.2 — 5ᵉ route.
             'userinfo' => "@Route::match\s*\([^;]*?['\"]/oidc/userinfo['\"]@",
         ];
 
@@ -93,7 +92,7 @@ class OidcRoutesTest extends TestCase
     }
 
     /**
-     * Story 55.2 — `/oidc/userinfo` expose GET **et** POST, et RIEN d'autre.
+     * `/oidc/userinfo` expose GET **et** POST, et RIEN d'autre.
      *
      * Les deux méthodes sont imposées par OIDC Core §5.3.1. En revanche
      * `Route::any` ouvrirait PUT/DELETE/PATCH sur un endpoint de lecture — une
@@ -147,8 +146,8 @@ class OidcRoutesTest extends TestCase
         // porte `federated.audit`.
         self::assertStringContainsString('federated.audit', $declaration);
 
-        // ⚠️ Correctif review 55.1 (#1) : déclarer `federated.audit` NE SUFFIT
-        // PAS. `AuditExternalAction` n'audite les GET que si le NOM de la route
+        // ⚠️ Déclarer `federated.audit` NE SUFFIT PAS :
+        // `AuditExternalAction` n'audite les GET que si le NOM de la route
         // figure dans `federated_auth.audit.sensitive_get_routes` — sans quoi le
         // middleware est un no-op SILENCIEUX.
         //
@@ -168,7 +167,7 @@ class OidcRoutesTest extends TestCase
 
         $finder = (new Finder())->files()->in($namespaceDir)->name('*.php');
 
-        // Story 55.2 : ni `OidcClaimsResolver`, ni `OidcAccessTokenValidator`,
+        // Ni `OidcClaimsResolver`, ni `OidcAccessTokenValidator`,
         // ni `UserinfoController` n'importent quoi que ce soit de crypto — la
         // frontière est INCHANGÉE malgré trois fichiers de plus.
         $allowed = ['OidcIdTokenIssuer.php'];
@@ -203,9 +202,9 @@ class OidcRoutesTest extends TestCase
 
         $content = (string) file_get_contents($apiRoutes);
 
-        // Le périmètre 55.1 est entièrement en `routes/web.php`. Si une story
-        // future devait exposer de l'OIDC en API, son bloc devrait être placé
-        // APRÈS le groupe 16.12 (fenêtre d'inspection de `ScriptsOsNamespaceTest`).
+        // L'OIDC est entièrement en `routes/web.php`. Si l'on devait un jour en
+        // exposer en API, son bloc devrait être placé APRÈS le dernier groupe
+        // (fenêtre d'inspection de `ScriptsOsNamespaceTest`).
         self::assertStringNotContainsString('/oidc/', $content);
         self::assertStringNotContainsString('Auth\\Oidc', $content);
     }

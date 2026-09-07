@@ -8,19 +8,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.15 — AC8.
+ * Fige la frontière entre les fichiers migrés sur `Cache::store()` et les deux
+ * qui doivent garder des appels `apcu_*` directs.
  *
- * Tests architecture invariance pour la migration APCu → Cache::store() sur
- * les 5 fichiers du scope (D9 Story 16.15).
- *
- * Garantit :
- *  1. Zéro appel `apcu_*` dans les 5 fichiers migrés (AC8.2).
- *  2. `ApcuCheck.php` conserve toujours ses appels `apcu_*` directs
- *     (hors-scope intentionnel — anti-régression frontière D11, AC8.3).
- *  3. `LegacyBootstrapTokenValidator.php` conserve toujours ses appels
- *     `apcu_*` directs (hors-scope intentionnel — D11, AC8.4).
- *
- * Pattern iso `MigrationModuleArchitectureTest` (Story 16.13bis).
+ * Le cache applicatif passe par l'abstraction Laravel : les fichiers listés dans
+ * `scopeFiles()` ne doivent plus appeler `apcu_*` du tout. Deux fichiers font
+ * exception et sont vérifiés en sens inverse, parce que les abstraire les
+ * casserait : `ApcuCheck` est la sonde de diagnostic d'APCu lui-même, et
+ * `LegacyBootstrapTokenValidator` lit une entrée écrite par le PHP-FPM legacy
+ * dans le segment APCu partagé.
  */
 final class CacheAbstractionArchitectureTest extends TestCase
 {
@@ -36,7 +32,7 @@ final class CacheAbstractionArchitectureTest extends TestCase
             'app/Services/AppCustomization/CacheAppContextWriter.php',
             'app/Services/AppCustomization/Contracts/AppContextWriter.php',
             'app/Services/Wallpaper/CacheWallpaperContextRepository.php',
-            // Story 27.14 — `ApplicationsScriptsController`, `ApplicationScriptsGenerator`
+            // `ApplicationsScriptsController`, `ApplicationScriptsGenerator`
             // et `ApplicationScriptsAssembler` (canal de génération de scripts
             // applications legacy) ont été supprimés ; retirés du scope.
             'app/Providers/AppCustomizationServiceProvider.php',
@@ -45,10 +41,10 @@ final class CacheAbstractionArchitectureTest extends TestCase
     }
 
     /**
-     * AC8.2 — Aucun appel `apcu_*` dans les 5 fichiers migrés.
+     * Aucun appel `apcu_*` dans les 5 fichiers migrés.
      *
-     * La regex est intentionnellement stricte : elle interdit `apcu_*` même
-     * dans les commentaires (pollution conceptuelle — cf. Dev Notes piège #4).
+     * Le scan porte sur le texte brut du fichier : `apcu_*` est proscrit jusque
+     * dans les commentaires.
      */
     #[Test]
     public function no_apcu_calls_in_migrated_files(): void
@@ -72,10 +68,10 @@ final class CacheAbstractionArchitectureTest extends TestCase
     }
 
     /**
-     * AC8.2bis — Aucun import / référence symbolique `Apcu*` orpheline dans le scope migré.
+     * Aucune référence symbolique `Apcu*` orpheline dans le scope migré.
      *
      * Si une régression future réintroduit `use App\Services\AppCustomization\ApcuAppContextWriter;`
-     * ou une mention de classe `Apcu*` dans un provider, ce test casse (Story 16.15 review #2).
+     * ou une mention de classe `Apcu*` dans un provider, ce test casse.
      */
     #[Test]
     public function no_apcu_class_references_in_migrated_files(): void
@@ -93,11 +89,10 @@ final class CacheAbstractionArchitectureTest extends TestCase
     }
 
     /**
-     * AC8.3 — `ApcuCheck.php` conserve TOUJOURS ses appels `apcu_*` directs.
+     * `ApcuCheck.php` conserve TOUJOURS ses appels `apcu_*` directs.
      *
-     * Garde-fou anti-régression : ce fichier est hors-scope (probe diagnostique
-     * spécifique APCu — D11 Story 16.15). Si quelqu'un l'abstrait par erreur,
-     * ce test casse.
+     * Ce fichier est la sonde de diagnostic d'APCu : l'abstraire lui retirerait
+     * ce qu'il mesure. Si quelqu'un le migre par erreur, ce test casse.
      */
     #[Test]
     public function apcu_check_still_uses_direct_apcu(): void
@@ -119,10 +114,11 @@ final class CacheAbstractionArchitectureTest extends TestCase
     }
 
     /**
-     * AC8.4 — `LegacyBootstrapTokenValidator.php` conserve TOUJOURS ses appels `apcu_*`.
+     * `LegacyBootstrapTokenValidator.php` conserve TOUJOURS ses appels `apcu_*`.
      *
-     * Garde-fou : ce fichier lit `apcu_fetch('apps.'.$token)` pour interop PHP-FPM
-     * legacy (D11 Story 16.15). L'abstraction Cache casserait l'interop.
+     * Ce fichier lit `apcu_fetch('apps.'.$token)`, une entrée écrite par le
+     * PHP-FPM legacy dans le segment APCu partagé. Passer par l'abstraction
+     * Cache casserait cette interopérabilité.
      */
     #[Test]
     public function legacy_bootstrap_validator_still_uses_direct_apcu(): void

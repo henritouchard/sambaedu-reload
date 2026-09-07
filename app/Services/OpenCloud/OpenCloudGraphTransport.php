@@ -19,7 +19,6 @@ use Illuminate\Support\Facades\Http;
  * l'épingle, et un autre épingle la LISTE de ces méthodes : une surface fermée
  * ne s'élargit pas par distraction.
  *
- * ---------------------------------------------------------------------------
  * **LES QUATRE SÉMANTIQUES MESURÉES QUE CETTE CLASSE NORMALISE** (2026-08-13) :
  *
  *  1. **Deux versions d'API COHABITENT.** `drives`, `users` et `groups` vivent en
@@ -33,17 +32,17 @@ use Illuminate\Support\Facades\Http;
  *     de l'autre produit (où un `200` enveloppait un refus) : ici un code d'échec
  *     enveloppe un état conforme. Le prendre pour un échec ferait rapporter rouge
  *     une zone parfaitement provisionnée, et le rejeu ne convergerait jamais.
- *     {@see call()} le normalise, sur demande explicite de l'appelant — jamais par
+ *  {@see call()} le normalise, sur demande explicite de l'appelant — jamais par
  *     défaut, parce que « déjà existant » n'est pas conforme pour tout le monde.
  *     **Le STATUT seul ne conclut rien** : la normalisation exige le statut ET le
  *     code applicatif. Idem pour le `404` du point 1, dont le jumeau
  *     `404 page not found` a un corps en texte brut et ne porte AUCUN code.
  *  3. **Un corps de liste a DEUX formes.** Une enveloppe `{"value":[…]}` pour les
  *     espaces, comptes, groupes et permissions ; un **TABLEAU NU** pour les
- *     définitions de rôles. {@see OpenCloudResult::entries()} les réconcilie.
+ *  définitions de rôles. {@see OpenCloudResult::entries()} les réconcilie.
  *  4bis. **Un geste manque à Graph** : créer un dossier. Il passe par le protocole
  *     d'édition distante, dont les codes se lisent autrement — d'où
- *     {@see sendRaw()}, où le verbe et la lecture de ses codes sont DÉCLARÉS par
+ *  {@see sendRaw()}, où le verbe et la lecture de ses codes sont DÉCLARÉS par
  *     l'appelant plutôt que nommés ici (voir son docblock : la création
  *     d'arborescence distante appartient aux seuls namespaces de backend).
  *  4. **Le refus est TYPÉ.** Les erreurs portent `error.code`
@@ -51,7 +50,6 @@ use Illuminate\Support\Facades\Http;
  *     `nameAlreadyExists`) et `error.message`. Le message d'un
  *     `role not applicable to this resource` est reconnu à part : c'est un défaut
  *     de TRADUCTION côté SE5, pas une panne côté instance.
- * ---------------------------------------------------------------------------
  *
  * **Le secret ne sort par aucun canal.** Il n'entre que dans l'en-tête
  * d'autorisation posé par {@see pending()} ; aucun message construit ici ne le
@@ -122,7 +120,6 @@ final class OpenCloudGraphTransport
     /**
      * L'appel dont la réponse se lit AU CODE DE TRANSPORT, et lui seul.
      *
-     * ---------------------------------------------------------------------------
      * **POURQUOI CE PASSAGE EST GÉNÉRIQUE PLUTÔT QUE NOMMÉ.** Un geste manque à
      * l'API Graph : créer un dossier. Il se fait par le protocole d'édition
      * distante, dont les codes ne veulent pas dire ce qu'ils ont l'air de dire —
@@ -135,7 +132,6 @@ final class OpenCloudGraphTransport
      * donc DÉCLARÉ par l'appelant, avec la lecture qu'il attend de ses codes, et
      * le nom du geste reste là où il doit vivre : sous la ligne de contrat, chez
      * le seul écrivain légitime des zones.
-     * ---------------------------------------------------------------------------
      *
      * @param  list<int>  $conforming  codes qui signifient « c'était déjà fait »
      * @param  list<int>  $absent  codes qui signifient « la cible manque »
@@ -194,10 +190,6 @@ final class OpenCloudGraphTransport
             $status,
         );
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     /**
      * @param  array<string, mixed>|null  $payload

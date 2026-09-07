@@ -10,21 +10,20 @@ import (
 
 // FROZEN_STATE_HASH — hash d'état figé du golden file state.v1.json, dupliqué
 // depuis tests/Unit/Services/Agent/ContractV1Test.php:33 (le hash est FIGÉ
-// par le contrat : la duplication de la constante est admise, story 24.5).
-// Bumpé SCIEMMENT par la Story 27.1 (payload `shortcuts` v1 réel — évolution
+// par le contrat : la duplication de la constante est admise).
+// Bumpé SCIEMMENT (payload `shortcuts` v1 réel — évolution
 // mineure §9) : ce test croisé prouve que le hasher Go suit le StateHasher PHP
-// sur le nouveau payload (NFR13).
+// sur le nouveau payload.
 // Re-bumpé SCIEMMENT (mode debug du poste, §9) : ajout du champ d'enveloppe
 // `debug` (bool) au golden — champ forward-compatible inclus dans le hash.
-// Re-bumpé SCIEMMENT par la Story 27.2 (§9) : ajout des items `printers` +
+// Re-bumpé SCIEMMENT (§9) : ajout des items `printers` +
 // `drives` (portée session, payloads v1 réels) au golden — ce test croisé
-// prouve que le hasher Go suit le StateHasher PHP sur les nouveaux payloads
-// (NFR13).
-// Re-bumpé SCIEMMENT par la Story 27.7 (§9) : le payload `shortcuts` gagne
+// prouve que le hasher Go suit le StateHasher PHP sur les nouveaux payloads.
+// Re-bumpé SCIEMMENT (§9) : le payload `shortcuts` gagne
 // `{icon_asset, icon_checksum}` (icône UPLOADÉE content-addressed) — champs
 // ajoutés, forward-compatible. Ce test croisé prouve que le hasher Go suit le
-// StateHasher PHP sur le payload étendu (NFR13).
-// Re-bumpé SCIEMMENT par la Story 27.8 (§9) : la clé `mode` est RETIRÉE de
+// StateHasher PHP sur le payload étendu.
+// Re-bumpé SCIEMMENT (§9) : la clé `mode` est RETIRÉE de
 // chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
 // convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
 // d'état changent. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
@@ -33,46 +32,46 @@ import (
 // login de session ; `<login>` n'était jamais substitué côté agent → UNC
 // littéral, lecteurs non montés). Le hash du drive item ET le hash d'état
 // changent. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-// Re-bumpé SCIEMMENT par la Story 27.10 (§9) : la SALLE passe de la portée
+// Re-bumpé SCIEMMENT (§9) : la SALLE passe de la portée
 // session (item identity) à la portée MACHINE — nouvel item overlay
 // `{kind:"machine", room}` (préchargement poste+salle au logon) ; l'item
 // identity session perd `room`.
-// Re-bumpé SCIEMMENT par la Story 27.3 (§9) : ajout d'UN item `registry`
+// Re-bumpé SCIEMMENT (§9) : ajout d'UN item `registry`
 // (portée session, payload v1 réel `{hive, path, name, type, value}` owné par
 // les providers registry) au golden — type DÉJÀ figé §7, payload ajouté =
 // forward-compatible, pas un major.
-// Rebase 27.3 sur main (27.10 inclus) : le golden combine désormais l'item
+// Le golden combine désormais l'item
 // overlay machine-scope (room) ET l'item registry session → 7 items, hash
 // d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-// Re-bumpé SCIEMMENT par la Story 27.3bis (§9) : ajout d'UN item `associations`
+// Re-bumpé SCIEMMENT (§9) : ajout d'UN item `associations`
 // (portée session, payload v1 réel `{identifier, progid, type}` owné par
 // AssociationsStateProvider) au golden — type DÉJÀ figé §7, payload ajouté =
 // forward-compatible, pas un major. Le hash UserChoice n'est JAMAIS au payload
 // (calculé agent-side). 8 items, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
 // côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-// Re-bumpé SCIEMMENT par la Story 27.4 (§9) : ajout d'UN item `app_config`
+// Re-bumpé SCIEMMENT (§9) : ajout d'UN item `app_config`
 // (aggregate, payload v1 réel `{app_kind, policies}` owné par
 // AppConfigStateProvider) au golden — type DÉJÀ figé §7, payload ajouté =
 // forward-compatible, pas un major. Les policies sont CONCRÈTES (jamais un id de
 // scope), sans float (§4.1). 9 items, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
-// côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+// côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé).
 //
-// Correctif post-review 2026-06-17 (review #1) : l'item `app_config` passe de la
+// Correctif : l'item `app_config` passe de la
 // portée `session` à la portée `machine` (`policies.json` machine-wide,
 // admin-write, écrit par le service SYSTEM ; résolu PAR PARC niveaux 1-4). Le
 // déplacement de portée RECALCULE le hash d'état (machine = 2, session = 6) ;
-// bumpé à l'IDENTIQUE côté PHP (test croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 27.5 (§9) : ajout d'UN item `applications`
+// bumpé à l'IDENTIQUE côté PHP (test croisé).
+// Re-bumpé SCIEMMENT (§9) : ajout d'UN item `applications`
 // (aggregate, portée MACHINE) — payload v1 réel `{app_id, name}` owné par
 // ApplicationsStateProvider (projection de l'ensemble cible WPKG). Type DÉJÀ figé
 // §7, payload ajouté = forward-compatible. machine = 3, 10 items au total, hash
 // d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-// Re-bumpé (lecteurs réseau natifs, décision Henri 2026-06-29) : DrivesStateProvider
+// Re-bumpé (lecteurs réseau natifs) : DrivesStateProvider
 // émet le jeu standard FIXE {K: home `\\<se4fs>\users\<user>\`, H: classes
 // `\\<se4fs>\classes\`} au lieu d'un lecteur de classe sur K:. Le golden passe d'UN
 // à DEUX items drives (11 items au total) → hash item drives ET hash d'état
 // recalculés. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-// Re-bumpé SCIEMMENT par la Story 35.1 (§9) : champ additif `ensure ∈
+// Re-bumpé SCIEMMENT (§9) : champ additif `ensure ∈
 // present|absent` sur les items `registry` — le golden gagne UN item de
 // SUPPRESSION en portée MACHINE (payload 4 clés `{hive, path, name,
 // ensure:"absent"}`, clé DNSClient\EnableMulticast de `llmnr_disabled`, ni
@@ -81,9 +80,9 @@ import (
 // `ensure:"present"` explicite) → forward-compatible, pas un major.
 // `report.v1.json` INCHANGÉ (les items de rapport ne portent aucun payload).
 // machine = 4, 12 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
-// côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 35.2 (§9) : NOUVEAU type `registry_list`
-// (D1, listes registre à sous-valeurs indexées `\1..\N`) — le golden gagne UN
+// côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé).
+// Re-bumpé SCIEMMENT (§9) : NOUVEAU type `registry_list`
+// (listes registre à sous-valeurs indexées `\1..\N`) — le golden gagne UN
 // item en portée MACHINE (conteneur Forcelist Chrome de `pix_extension_forced`,
 // payload EXACTEMENT 4 clés `{hive, path, entry_type, values}`, `values` =
 // liste ORDONNÉE de chaînes — jamais triée par la canonicalisation §4). Type
@@ -92,8 +91,8 @@ import (
 // de release 2.4.0 obligatoire. `report.v1.json` INCHANGÉ (les items de rapport
 // ne portent aucun payload). machine = 5, 13 items au total, hash d'état
 // RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH —
-// test croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 36.1 (§9) : NOUVEAU type `fs_acl` (D1,
+// test croisé).
+// Re-bumpé SCIEMMENT (§9) : NOUVEAU type `fs_acl` (
 // mécanisme HORS-REGISTRE — ACE NTFS gérées, chirurgie DACL, portée MACHINE) —
 // le golden gagne UN item en portée MACHINE (`deny list_folder folder_only` sur
 // `C:\Program Files` pour le trustee `Eleves`, payload EXACTEMENT 6 clés
@@ -102,8 +101,8 @@ import (
 // = forward-compatible, pas un major : un agent ≤ 2.5.0 IGNORE le type EN
 // SILENCE (§8, aucun statut au rapport) → publication de release 2.6.0
 // obligatoire. `report.v1.json` INCHANGÉ. machine = 6, 14 items au total, hash
-// d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (test croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 36.2 (§9) : NOUVEAU type `firewall` (D1,
+// d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (test croisé).
+// Re-bumpé SCIEMMENT (§9) : NOUVEAU type `firewall` (
 // mécanisme HORS-REGISTRE — règles pare-feu possédées par groupe, portée
 // MACHINE) — le golden gagne UN item en portée MACHINE (`internet-block` :
 // `out block internet any present`, payload EXACTEMENT 6 clés `{rule_id,
@@ -113,8 +112,8 @@ import (
 // (§8, aucun statut au rapport) → publication de release 2.7.0 obligatoire
 // (livre AUSSI la 2.6.0 fs_acl). `report.v1.json` INCHANGÉ. machine = 7, 15
 // items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (test
-// croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 35.6 (§9) : NOUVEAU type `privilege` (D1,
+// croisé).
+// Re-bumpé SCIEMMENT (§9) : NOUVEAU type `privilege` (
 // mécanisme HORS-REGISTRE — droits de logon LSA `SeDeny*` gérés,
 // réconciliation de CONTENEUR sans store : le privilège EST le conteneur,
 // titulaires énumérables, portée MACHINE) — le golden gagne UN item en portée
@@ -126,21 +125,21 @@ import (
 // publication de release 2.8.0 obligatoire (livre AUSSI les 2.6.0 fs_acl et
 // 2.7.0 firewall jamais publiées). `report.v1.json` INCHANGÉ. machine = 8, 16
 // items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
-// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 38.3 (§9) : NOUVEAU type `legacy_cleanup`
-// (D1, nettoyage des crochets legacy SE4 — suppression idempotente par SCAN
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé).
+// Re-bumpé SCIEMMENT (§9) : NOUVEAU type `legacy_cleanup`
+// (nettoyage des crochets legacy SE4 — suppression idempotente par SCAN
 // sans store du catalogue d'artefacts legacy LOCAUX versionné DANS l'agent,
 // portée MACHINE) — le golden gagne UN item en portée MACHINE (payload
 // EXACTEMENT 1 clé `{mozilla: "vanilla"}` — enum FERMÉ 1 valeur, décision
-// Q5-a VANILLA). Type AJOUTÉ (ResourceTypes additive) = forward-compatible,
+// mode VANILLA). Type AJOUTÉ (ResourceTypes additive) = forward-compatible,
 // pas un major : un agent ≤ 2.8.0 IGNORE le type EN SILENCE (§8, aucun statut
 // au rapport) → publication de release 2.9.0 obligatoire (livre AUSSI les
 // 2.6.0/2.7.0/2.8.0 jamais publiées). `report.v1.json` INCHANGÉ. machine = 9,
 // 17 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
-// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-// Re-bumpé SCIEMMENT par la Story 43.3 (ttl_seconds volatil, §9) : le champ
-// `ttl_seconds` de l'enveloppe entre désormais dans `volatileStateKeys` (AC3,
-// D6) — il dépend du CONTEXTE compilé (bascule sensible ou non, cf.
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé).
+// Re-bumpé SCIEMMENT (ttl_seconds volatil, §9) : le champ
+// `ttl_seconds` de l'enveloppe entre désormais dans `volatileStateKeys`
+// — il dépend du CONTEXTE compilé (bascule sensible ou non, cf.
 // app/Services/Agent/AgentTtlResolver.php côté PHP) et un changement de TTL
 // seul ne doit pas invalider l'ETag. Le golden `state.v1.json` est INCHANGÉ
 // (le champ reste dans l'enveloppe, seulement exclu du hash) : seule
@@ -148,22 +147,22 @@ import (
 // à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH). AUCUN bump de
 // `agent/shared/version.go` : `HashState` Go n'a AUCUN appelant runtime (seul
 // ce test l'appelle ; l'agent stocke l'ETag verbatim et ne recalcule jamais
-// le hash d'état) — voir Dev Agent Record de la story 43.3.
-// Re-bumpé SCIEMMENT par la Story 43.2 (hint `refresh` au payload session,
+// le hash d'état).
+// Re-bumpé SCIEMMENT (hint `refresh` au payload session,
 // §7.1/§7.6, §9) : champ additif OPTIONNEL `refresh` (vocabulaire fermé
 // shell_notify|policy_broadcast|explorer_restart), consommé côté agent par
-// le mécanisme 43.1 (`payload["refresh"]`, déjà mergé) — (a) l'item session
+// le mécanisme (`payload["refresh"]`, déjà mergé) — (a) l'item session
 // `registry` existant (HideFileExt) gagne `"refresh": "shell_notify"` ; (b)
 // AJOUT d'UN item session `registry_list` (conteneur
 // `…\Policies\Explorer\DisallowRun`, `"refresh": "policy_broadcast"`). Champ
-// additif + type DÉJÀ figé (registry_list existe depuis 35.2) =
+// additif + type `registry_list` DÉJÀ figé =
 // forward-compatible, pas un major : un agent ≤ 2.9.0 ignore le champ
 // inconnu SANS ERREUR. session = 8, 18 items au total, hash d'état RECALCULÉ.
 // Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test
-// croisé NFR13). AUCUN bump de `agent/shared/version.go` : SEUL ce fichier de
+// croisé). AUCUN bump de `agent/shared/version.go` : SEUL ce fichier de
 // TEST bouge côté agent/ (le mécanisme 2.10.0 qui lit le hint est déjà livré
-// par la 43.1 mergée) — voir Dev Agent Record de la story 43.2.
-// Re-bumpé SCIEMMENT par la Story 35.7 (champ `writer` au payload session,
+// par le mécanisme de rafraîchissement).
+// Re-bumpé SCIEMMENT (champ `writer` au payload session,
 // §7.1/§7.6, §9) : champ additif OPTIONNEL `writer` (enum fermé, seule valeur
 // publiée "system") — l'item est appliqué par le SERVICE SYSTEM dans
 // `HKU\<SID>` de la session du contexte, JAMAIS par le compagnon (trees
@@ -174,36 +173,36 @@ import (
 // `writer: "system"` (forme réelle émise post-retrofit 2026_07_13_100000) ;
 // (b) l'item `registry_list` session (conteneur `…\Policies\Explorer\
 // DisallowRun`) gagne `writer: "system"`. Les deux PERDENT leur hint
-// `refresh` (exclusion mutuelle refresh/writer, piège n°6 : `refresh` n'est
+// `refresh` (exclusion mutuelle refresh/writer : `refresh` n'est
 // émis QUE sur les items appliqués par le compagnon). Champ additif =
 // forward-compatible, pas un major : un binaire ≤ 2.11.x IGNORE le marqueur
 // EN SILENCE (compagnon : « Accès refusé » statu quo ; service : rien
 // d'appliqué) → PUBLIER la release 2.12.0 AVANT le retrofit. `report.v1.json`
 // INCHANGÉ. Hash d'état RECALCULÉ, bumpé à l'IDENTIQUE côté PHP
-// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-// Story 36.5 : +1 item `app_profile` (redirection profil Firefox → home réseau,
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé).
+// +1 item `app_profile` (redirection profil Firefox → home réseau,
 // aggregate, §7.11) en portée SESSION → hash d'état RECALCULÉ, bumpé à
-// l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-// Story 27.21 (arbitrage « option A » de la review) : l'item `shortcuts`
+// l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé).
+// L'item `shortcuts`
 // (machine_user) gagne le champ additif `desktop_sweep_paths` — la LISTE des
 // Bureaux à BALAYER, nommée par le SERVEUR (notion distincte de `desktop_path`,
 // où l'agent POSE). Nombre d'items INCHANGÉ (19), hash d'item et hash d'état
 // RECALCULÉS, bumpés à l'IDENTIQUE côté PHP
-// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-// Story 58.1 : +1 item `folders` (REDIRECTION du dossier shell Bureau vers
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé).
+// +1 item `folders` (REDIRECTION du dossier shell Bureau vers
 // `User Shell Folders`, exclusive, §7.12) en portée MACHINE_USER → 20 items,
 // hash d'état RECALCULÉ, bumpé à l'IDENTIQUE côté PHP
-// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13). Le golden illustre
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé). Le golden illustre
 // le MÊME chemin que l'item `shortcuts` voisin : POSER les `.lnk` et REDIRIGER
 // le shell sont deux moitiés d'un même geste, résolues une seule fois côté
 // serveur. Les voir diverger ici signalerait le retour de la panne de juillet
 // 2026 (raccourcis posés dans un dossier que le shell ne regarde pas).
-// Amendement 58.1 : le payload `folders` gagne `quick_access` (champ additif
+// Amendement : le payload `folders` gagne `quick_access` (champ additif
 // §9, absent = `unmanaged`) — l'entrée d'Accès rapide suit la redirection.
 // Hash d'item et hash d'état RECALCULÉS, bumpés à l'IDENTIQUE côté PHP.
 const frozenStateHash = "8940e34ff63824c37bad3b2e22d9151016d1661f90a099cc6736977690ac4e7e"
 
-// goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
+// goldenFile lit un golden file canonique EN PLACE (un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
 func goldenFile(t *testing.T, name string) []byte {
 	t.Helper()
@@ -238,8 +237,6 @@ func mustGet(t *testing.T, o *OrderedMap, key string) any {
 
 	return v
 }
-
-// --- Tests croisés golden files (AC3, NFR13) --------------------------------
 
 func TestHashStateGoldenMatchesFrozenHash(t *testing.T) {
 	state := decodeMap(t, goldenFile(t, "state.v1.json"))
@@ -278,7 +275,7 @@ func TestHashStateExcludesVolatileGeneratedAt(t *testing.T) {
 }
 
 // TestHashStateExcludesVolatileTtlSeconds — jumeau du test ci-dessus pour
-// `ttl_seconds` (Story 43.3, AC3) : le TTL dépend désormais du contexte
+// `ttl_seconds` : le TTL dépend désormais du contexte
 // compilé (bascule sensible ou non) mais reste volatil — muter ou supprimer
 // la clé ne doit PAS changer le hash d'état figé.
 func TestHashStateExcludesVolatileTtlSeconds(t *testing.T) {
@@ -352,11 +349,9 @@ func TestHashItemExcludesItsOwnHashKey(t *testing.T) {
 	}
 }
 
-// --- Champ `ensure` (Story 35.1) : entre dans la canonicalisation ------------
-//
 // AUCUNE modification du hasher : la canonicalisation générique (tri récursif
 // + JSON compact) intègre naturellement tout champ nouveau du payload. Ces
-// tests le PROUVENT (AC1) — jumeaux des tests PHP (StateHasherTest).
+// tests le PROUVENT — jumeaux des tests PHP (StateHasherTest).
 func TestHashItemEnsureFieldChangesTheHash(t *testing.T) {
 	withEnsure := decodeMap(t, []byte(`{"type":"registry","semantics":"exclusive","payload":{"hive":"HKLM","path":"SOFTWARE\\P","name":"N","ensure":"absent"}}`))
 	withoutEnsure := decodeMap(t, []byte(`{"type":"registry","semantics":"exclusive","payload":{"hive":"HKLM","path":"SOFTWARE\\P","name":"N"}}`))
@@ -374,8 +369,6 @@ func TestHashItemEnsureFieldChangesTheHash(t *testing.T) {
 	}
 }
 
-// --- Champ `writer` (Story 35.7) : entre dans la canonicalisation ------------
-//
 // AUCUNE modification du hasher : la canonicalisation générique intègre
 // naturellement le champ additif `writer` (appliqué par le service SYSTEM
 // dans HKU\<SID> — trees HKCU\…\Policies\* non écrivables par le compagnon).
@@ -390,7 +383,7 @@ func TestHashItemWriterFieldChangesTheHash(t *testing.T) {
 		t.Errorf("deux items registry qui ne diffèrent que par `writer` doivent avoir des hashes DISTINCTS (got %s)", hBase)
 	}
 	// L'item golden marqué (flag DisallowRun, writer: system) porte bien le
-	// hash figé du golden — test croisé NFR13 avec le StateHasher PHP.
+	// hash figé du golden — test croisé avec le StateHasher PHP.
 	if hMarked != "a19a1be2cf3670be2b0eafb85371af3c1d79e5f20bfab3d8d5ed93e9f9cfd93e" {
 		t.Errorf("hash de l'item registry writer golden divergent du StateHasher PHP : got %s", hMarked)
 	}
@@ -406,18 +399,16 @@ func TestHashItemWriterFieldChangesTheRegistryListHash(t *testing.T) {
 		t.Errorf("deux conteneurs registry_list qui ne diffèrent que par `writer` doivent avoir des hashes DISTINCTS (got %s)", hBase)
 	}
 	// Le conteneur golden marqué porte bien le hash figé du golden — test
-	// croisé NFR13 avec le StateHasher PHP.
+	// croisé avec le StateHasher PHP.
 	if hMarked != "8bcf6507d5a8e9180df24f482bfc074b40551673d0f1199ed5b8bc8d86ef41ca" {
 		t.Errorf("hash du conteneur registry_list writer golden divergent du StateHasher PHP : got %s", hMarked)
 	}
 }
 
-// --- Champ `refresh` (Story 43.2) : couverture de hash cross-language ---------
-//
-// Story 35.7 review #1 : les 2 seuls items `refresh` du golden ont été
-// ré-affectés au marqueur `writer` (exclusion mutuelle refresh⊥writer, piège
-// #6) — le champ `refresh` a donc disparu du golden. Ce test dédié restaure
-// l'invariant NFR13 sur ce champ de PROD (echelle de rafraîchissement 43.1)
+// Les 2 seuls items `refresh` du golden ont été
+// ré-affectés au marqueur `writer` (exclusion mutuelle refresh⊥writer)
+// — le champ `refresh` a donc disparu du golden. Ce test dédié restaure
+// l'invariant de hash croisé sur ce champ de PROD (echelle de rafraîchissement)
 // sans réintroduire d'item au golden. Jumeau PHP (StateHasherTest::refresh_*).
 func TestHashItemRefreshFieldChangesTheHash(t *testing.T) {
 	base := `{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced","name":"HideFileExt","type":"REG_DWORD","value":0}}`
@@ -429,14 +420,12 @@ func TestHashItemRefreshFieldChangesTheHash(t *testing.T) {
 		t.Errorf("deux items registry qui ne diffèrent que par `refresh` doivent avoir des hashes DISTINCTS (got %s)", hBase)
 	}
 	// Hash figé de l'item porteur de `refresh: shell_notify` — test croisé
-	// NFR13 avec le StateHasher PHP (canonicalisation générique du champ additif).
+	// avec le StateHasher PHP (canonicalisation générique du champ additif).
 	if hMarked != "8d81f541d4fe267ecf6763edf09635bdba0d33d2e59e0662c1312f800e66fbdd" {
 		t.Errorf("hash de l'item registry refresh divergent du StateHasher PHP : got %s", hMarked)
 	}
 }
 
-// --- Champ `fs_acl` (Story 36.1) : ensure ET trustee entrent dans le hash ----
-//
 // AUCUNE modification du hasher : la canonicalisation générique intègre
 // naturellement le payload 6 clés. Jumeaux des tests PHP (StateHasherTest).
 func TestHashItemFsAclEnsureAndTrusteeChangeTheHash(t *testing.T) {
@@ -468,8 +457,6 @@ func TestHashItemFsAclEnsureAndTrusteeChangeTheHash(t *testing.T) {
 	}
 }
 
-// --- Payload `firewall` (Story 36.2) : ensure/rule_id + clés optionnelles -----
-//
 // AUCUNE modification du hasher : la canonicalisation générique intègre
 // naturellement le payload (6 clés + optionnelles). Jumeaux des tests PHP.
 func TestHashItemFirewallCanonicalization(t *testing.T) {
@@ -499,8 +486,6 @@ func TestHashItemFirewallCanonicalization(t *testing.T) {
 	}
 }
 
-// --- Payload `privilege` (Story 35.6) : accounts ET privilege entrent au hash --
-//
 // AUCUNE modification du hasher : la canonicalisation générique intègre
 // naturellement le payload 2 clés (`accounts` = liste ORDONNÉE — le provider la
 // TRIE pour la byte-identité, la canonicalisation NE trie PAS les listes §4).
@@ -544,9 +529,9 @@ func fwHashOf(t *testing.T, raw string) string {
 }
 
 func TestHashItemWriteItemWithoutEnsureKeepsPreStoryHash(t *testing.T) {
-	// Non-régression byte-identité (piège n°1) : un item d'écriture 5 clés SANS
-	// `ensure` garde EXACTEMENT son hash d'avant la story 35.1 (valeur figée =
-	// hash historique de l'item registry HKCU du golden, inchangé depuis 27.3).
+	// Non-régression byte-identité : un item d'écriture 5 clés SANS
+	// `ensure` garde EXACTEMENT son hash d'avant la (valeur figée =
+	// hash historique de l'item registry HKCU du golden, inchangé depuis).
 	item := decodeMap(t, []byte(`{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced","name":"HideFileExt","type":"REG_DWORD","value":0}}`))
 
 	got, err := HashItem(item)
@@ -558,8 +543,6 @@ func TestHashItemWriteItemWithoutEnsureKeepsPreStoryHash(t *testing.T) {
 	}
 }
 
-// --- Tests croisés PHP réels (cas tordus) ------------------------------------
-//
 // Les hashes attendus ont été calculés le 2026-06-12 avec le StateHasher PHP
 // RÉEL (app/Services/Agent/StateHasher.php) sur la VM :
 //
@@ -605,7 +588,7 @@ func TestHashItemCrossValidatedAgainstPhp(t *testing.T) {
 			want:   "8fa56f9773c551d6e2f716ca1963debc150edbef243368119e48310d06aa49ef",
 		},
 		{
-			// Review 24.5 #1 — 11 clés "0".."10" DANS L'ORDRE du document :
+			// 11 clés "0".."10" DANS L'ORDRE du document :
 			// array_is_list vrai au décodage ⇒ LISTE (jamais triée), alors
 			// que le tri octet placerait "10" avant "2".
 			// {"payload":{"0":"a",…,"9":"j","10":"k"}}
@@ -614,7 +597,7 @@ func TestHashItemCrossValidatedAgainstPhp(t *testing.T) {
 			want:   "8854cf4d516ff0a5cfa9b2af266ece83d298bc014cdcfca14864c86a7a166de0",
 		},
 		{
-			// Review 24.5 #1 (contre-cas) — mêmes 11 clés mais HORS ordre
+			// Contre-cas — mêmes 11 clés mais HORS ordre
 			// ("1" en tête) : array_is_list faux ⇒ ksort SORT_STRING ⇒ les
 			// clés triées ("0","1","10","2",…) ne retombent PAS sur la
 			// séquence ⇒ OBJET. La sémantique dépend de l'ordre du document.
@@ -662,8 +645,6 @@ func TestHashItemCrossValidatedAgainstPhp(t *testing.T) {
 	}
 }
 
-// --- Forme canonique exacte (lisibilité des invariants) ----------------------
-
 func TestCanonicalizeProducesPhpCanonicalForm(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -690,14 +671,14 @@ func TestCanonicalizeProducesPhpCanonicalForm(t *testing.T) {
 			wantHex: "7b227061796c6f6164223a5b2261222c2262225d7d",
 		},
 		{
-			// Review 24.5 #1 — {"payload":{"0":"a",…,"10":"k"}} (ordre doc)
+			// {"payload":{"0":"a",…,"10":"k"}} (ordre doc)
 			// → {"payload":["a",…,"k"]} (canonHex PHP réel, VM 2026-06-12)
 			name:    "eleven_keys_in_order_encode_as_list",
 			srcHex:  "7b227061796c6f6164223a7b2230223a2261222c2231223a2262222c2232223a2263222c2233223a2264222c2234223a2265222c2235223a2266222c2236223a2267222c2237223a2268222c2238223a2269222c2239223a226a222c223130223a226b227d7d",
 			wantHex: "7b227061796c6f6164223a5b2261222c2262222c2263222c2264222c2265222c2266222c2267222c2268222c2269222c226a222c226b225d7d",
 		},
 		{
-			// Review 24.5 #1 (contre-cas) — mêmes clés hors ordre ("1" en
+			// Contre-cas — mêmes clés hors ordre ("1" en
 			// tête) → OBJET trié octet : {"0":"a","1":"b","10":"k","2":…}
 			name:    "eleven_keys_out_of_order_encode_as_object",
 			srcHex:  "7b227061796c6f6164223a7b2231223a2262222c2230223a2261222c2232223a2263222c2233223a2264222c2234223a2265222c2235223a2266222c2236223a2267222c2237223a2268222c2238223a2269222c2239223a226a222c223130223a226b227d7d",
@@ -751,7 +732,7 @@ func TestCanonicalizeRejectsInvalidUtf8(t *testing.T) {
 
 func TestCanonicalizeRejectsUnsupportedTypes(t *testing.T) {
 	// map[string]any interdite : l'ordre du document est perdu, or la
-	// sémantique liste/objet PHP en dépend (review 24.5 #1) — une seule voie
+	// sémantique liste/objet PHP en dépend — une seule voie
 	// d'entrée (DecodeJSONOrdered) évite tout hash silencieusement faux.
 	if _, err := Canonicalize(map[string]any{"x": json.Number("1")}); err == nil {
 		t.Error("map[string]any : erreur attendue (décoder via DecodeJSONOrdered)")

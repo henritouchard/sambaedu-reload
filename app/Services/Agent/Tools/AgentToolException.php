@@ -7,8 +7,8 @@ namespace App\Services\Agent\Tools;
 use RuntimeException;
 
 /**
- * Story 25.6 — Refus métier d'une opération sur le catalogue d'outils agent
- * (AC2, pattern {@see \App\Services\Agent\Releases\ReleaseOperationException}).
+ * Refus métier d'une opération sur le catalogue d'outils agent
+ * (pattern {@see \App\Services\Agent\Releases\ReleaseOperationException}).
  *
  * Levée par {@see AgentToolService} : upload refusé (extension/MIME non
  * conforme, taille hors borne, version/filename malformés, structure ZIP

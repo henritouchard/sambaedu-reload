@@ -5,11 +5,9 @@ import (
 	"testing"
 )
 
-// Tests du handler `firewall` (Story 36.2, contrat §7.8) — fake FirewallOps en
+// Tests du handler `firewall` (contrat §7.8) — fake FirewallOps en
 // mémoire, portant AUSSI des règles HORS groupe pour prouver qu'elles ne sont
-// JAMAIS touchées (D4).
-
-// --- Fake FirewallOps ---------------------------------------------------------
+// JAMAIS touchées.
 
 type fakeFirewallOps struct {
 	rules   []FwRule // toutes les règles du poste (groupe + hors groupe)
@@ -81,8 +79,6 @@ func (f *fakeFirewallOps) groupCount() int {
 	return n
 }
 
-// --- Helpers ------------------------------------------------------------------
-
 func fwItem(ruleID, direction, action, scope, protocol, ensure string, addrs, ports []string) StateItem {
 	payload := map[string]any{
 		"rule_id":      ruleID,
@@ -116,8 +112,6 @@ func internetBlock() StateItem {
 }
 
 const internetBlockName = FirewallRuleGroup + ": internet-block"
-
-// --- (a) pose + relecture conforme + 2e Apply zéro op -------------------------
 
 func TestFirewallApplyThenIdempotent(t *testing.T) {
 	ops := newFakeFirewallOps()
@@ -185,12 +179,10 @@ func TestFirewallThroughEngineStrictRedrift(t *testing.T) {
 	}
 }
 
-// --- (c) règle étrangère injectée dans le groupe ⇒ supprimée ------------------
-
 func TestFirewallStrayInGroupRemoved(t *testing.T) {
 	ops := newFakeFirewallOps()
 	// Règle étrangère mais ÉTIQUETÉE de notre groupe (le groupe nous appartient
-	// EN ENTIER, D4) → doit être supprimée.
+	// EN ENTIER) → doit être supprimée.
 	ops.rules = append(ops.rules, FwRule{Name: FirewallRuleGroup + ": stray", Grouping: FirewallRuleGroup, Direction: "in", Action: "allow", Protocol: "tcp", Enabled: true})
 	h := &FirewallHandler{Ops: ops}
 	items := []StateItem{internetBlock()}
@@ -211,8 +203,6 @@ func TestFirewallStrayInGroupRemoved(t *testing.T) {
 		t.Fatalf("exactement 1 règle du groupe attendue, obtenu %d", ops.groupCount())
 	}
 }
-
-// --- (d) bascule present→absent même rule_id ⇒ groupe vidé, compliant ---------
 
 func TestFirewallPresentToAbsentEmptiesGroup(t *testing.T) {
 	ops := newFakeFirewallOps()
@@ -240,8 +230,6 @@ func TestFirewallPresentToAbsentEmptiesGroup(t *testing.T) {
 	}
 }
 
-// --- (e) désir effectif vide (que des absent) ⇒ groupe vidé -------------------
-
 func TestFirewallAllAbsentEmptiesGroup(t *testing.T) {
 	ops := newFakeFirewallOps()
 	// Deux règles gérées préexistantes dans le groupe.
@@ -262,8 +250,6 @@ func TestFirewallAllAbsentEmptiesGroup(t *testing.T) {
 		t.Fatalf("désir 100%% absent ⇒ groupe vidé, obtenu %d", ops.groupCount())
 	}
 }
-
-// --- (f) règle non conforme ⇒ Remove+Add (recréation) ------------------------
 
 func TestFirewallNonCompliantRuleRecreated(t *testing.T) {
 	ops := newFakeFirewallOps()
@@ -288,8 +274,6 @@ func TestFirewallNonCompliantRuleRecreated(t *testing.T) {
 		t.Fatalf("après recréation : conforme attendu (ok=%v err=%v)", ok, err)
 	}
 }
-
-// --- (g) règles HORS groupe JAMAIS touchées ----------------------------------
 
 func TestFirewallNeverTouchesRulesOutsideGroup(t *testing.T) {
 	ops := newFakeFirewallOps()
@@ -316,8 +300,6 @@ func TestFirewallNeverTouchesRulesOutsideGroup(t *testing.T) {
 	}
 }
 
-// --- (h) traduction internet = chaîne EXACTE figée (IPv4 plages + IPv6) -------
-
 func TestFirewallInternetTranslationIsFrozen(t *testing.T) {
 	got := internetRemoteAddresses()
 	want := []string{
@@ -337,7 +319,7 @@ func TestFirewallInternetTranslationIsFrozen(t *testing.T) {
 			t.Errorf("plage internet[%d] : got %q, want %q", i, got[i], want[i])
 		}
 	}
-	// SÛRETÉ Q3 : aucune plage internet ne chevauche une plage protégée.
+	// SÛRETÉ : aucune plage internet ne chevauche une plage protégée.
 	for _, spec := range []FirewallSpec{{RuleID: "x", Direction: "out", Action: "block", RemoteScope: "internet", Protocol: "any", Ensure: "present"}} {
 		if v := firewallItemViolation(spec); v != "" {
 			t.Errorf("un block internet ne doit JAMAIS être refusé (Q3) : %s", v)
@@ -345,16 +327,14 @@ func TestFirewallInternetTranslationIsFrozen(t *testing.T) {
 	}
 }
 
-// --- (i) refus Q3 : block explicit couvrant une plage protégée ---------------
-
 func TestFirewallQ3RefusalInTestAndApply(t *testing.T) {
 	forbidden := []string{
-		"192.168.0.0/16",  // RFC1918 littéral
-		"192.160.0.0/12",  // CIDR englobant sans écrire 192.168
-		"0.0.0.0/0",       // /0 v4
-		"::/0",            // /0 v6
-		"10.0.0.5",        // hôte RFC1918
-		"fc00::/7",        // ULA v6
+		"192.168.0.0/16", // RFC1918 littéral
+		"192.160.0.0/12", // CIDR englobant sans écrire 192.168
+		"0.0.0.0/0",      // /0 v4
+		"::/0",           // /0 v6
+		"10.0.0.5",       // hôte RFC1918
+		"fc00::/7",       // ULA v6
 	}
 	for _, addr := range forbidden {
 		spec := FirewallSpec{RuleID: "rogue", Direction: "out", Action: "block", RemoteScope: "explicit", Protocol: "any", RemoteAddresses: []string{addr}, Ensure: "present"}
@@ -393,14 +373,12 @@ func TestFirewallQ3RefusalInTestAndApply(t *testing.T) {
 }
 
 func TestFirewallBlockPublicExplicitAllowed(t *testing.T) {
-	// block explicit sur des adresses PUBLIQUES = échappatoire assumée (Q3).
+	// block explicit sur des adresses PUBLIQUES = échappatoire assumée.
 	spec := FirewallSpec{RuleID: "block-proxy", Direction: "out", Action: "block", RemoteScope: "explicit", Protocol: "any", RemoteAddresses: []string{"8.8.8.8", "203.0.113.0/24"}, Ensure: "present"}
 	if v := firewallItemViolation(spec); v != "" {
 		t.Errorf("block explicit sur des adresses publiques doit être AUTORISÉ : %s", v)
 	}
 }
-
-// --- (j) adresse non parsable ⇒ erreur d'item --------------------------------
 
 func TestFirewallUnparsableAddressIsItemError(t *testing.T) {
 	spec := FirewallSpec{RuleID: "bad", Direction: "out", Action: "block", RemoteScope: "explicit", Protocol: "any", RemoteAddresses: []string{"LocalSubnet"}, Ensure: "present"}
@@ -420,8 +398,6 @@ func TestFirewallUnparsableAddressIsItemError(t *testing.T) {
 		t.Fatalf("l'item valide aurait dû converger (effort maximal)")
 	}
 }
-
-// --- (k) payload invalide ⇒ error pour le type -------------------------------
 
 func TestFirewallInvalidPayloadIsError(t *testing.T) {
 	h := &FirewallHandler{Ops: newFakeFirewallOps()}
@@ -454,8 +430,6 @@ func TestFirewallInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- (k bis) rule_id hors slug ⇒ error pour le type (corr. review #4) ---------
-
 // Défense en profondeur SYMÉTRIQUE : l'agent valide `rule_id` contre le MÊME
 // slug que le serveur (FirewallAuthoringGuard::RULE_ID). Un rule_id malformé qui
 // atteindrait l'agent produit une erreur d'enveloppe (jamais un nom de règle
@@ -463,11 +437,11 @@ func TestFirewallInvalidPayloadIsError(t *testing.T) {
 func TestFirewallRuleIDSlugRejected(t *testing.T) {
 	h := &FirewallHandler{Ops: newFakeFirewallOps()}
 	badIDs := []string{
-		"UPPER",              // majuscules interdites
-		"has space",          // espace interdit
-		"-leading-dash",      // ne peut pas commencer par un tiret
-		"emoji💥",             // hors [a-z0-9_-]
-		"trailing/slash",     // slash interdit
+		"UPPER",                 // majuscules interdites
+		"has space",             // espace interdit
+		"-leading-dash",         // ne peut pas commencer par un tiret
+		"emoji💥",                // hors [a-z0-9_-]
+		"trailing/slash",        // slash interdit
 		strings.Repeat("a", 65), // > 64 caractères
 	}
 	for _, id := range badIDs {
@@ -488,8 +462,6 @@ func TestFirewallRuleIDSlugRejected(t *testing.T) {
 		t.Fatalf("un rule_id slug valide doit être accepté")
 	}
 }
-
-// --- (l) normalisation d'écho : CIDR vs masque pointé ⇒ compliant ------------
 
 func TestFirewallEchoNormalizationNoDriftLoop(t *testing.T) {
 	ops := newFakeFirewallOps()
@@ -523,8 +495,6 @@ func TestFirewallEchoNormalizationNoDriftLoop(t *testing.T) {
 		t.Fatalf("état stable ⇒ zéro op (addCnt=%d rmCnt=%d)", ops.addCnt, ops.rmCnt)
 	}
 }
-
-// --- (m) dédoublonnage rule_id (dernière occurrence) -------------------------
 
 func TestFirewallDedupByRuleID(t *testing.T) {
 	ops := newFakeFirewallOps()

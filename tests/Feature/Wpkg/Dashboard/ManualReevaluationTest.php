@@ -17,7 +17,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC4.4 + AC6.4 — Tests Feature « Forcer une re-évaluation ».
+ * + — Tests Feature « Forcer une re-évaluation ».
  *
  * Couvre :
  *   - Event dispatché → cache packages purgé.

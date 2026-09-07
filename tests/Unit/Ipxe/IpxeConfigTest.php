@@ -8,10 +8,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC7.1 / T1.7.
- *
- * Tests unitaires du fichier `config/ipxe.php` (D11) — vérifie les valeurs
- * par défaut chargées via le `IpxeServiceProvider::register()`.
+ * Tests unitaires de `config/ipxe.php` : les valeurs par défaut chargées par
+ * `IpxeServiceProvider::register()`.
  */
 class IpxeConfigTest extends TestCase
 {
@@ -60,7 +58,7 @@ class IpxeConfigTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.2 — AC9.1 / T1.4 — sections admin / maintenance / actions
+     * T1.4 — sections admin / maintenance / actions
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -104,7 +102,7 @@ class IpxeConfigTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.3 — AC10.1 / T2.2 — section enrollment
+     * T2.2 — section enrollment
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -132,7 +130,7 @@ class IpxeConfigTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.4 — AC9.4 / T7.7 — section linux
+     * T7.7 — section linux
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -189,7 +187,7 @@ class IpxeConfigTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC9.1 / AC9.4 — section windows.
+     * Section windows.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -237,13 +235,10 @@ class IpxeConfigTest extends TestCase
     }
 
     /**
-     * Post-review #M8 — défense en profondeur sur `ipxe.linux.kernel_paths.nird`.
-     *
-     * `IpxeActionResolver::resolveNird()` lit cette clé avec un fallback
-     * inline `/nird/casper/vmlinuz`. Si la clé est retirée par mégarde,
-     * l'install Nird casse silencieusement (le fallback masque). On gèle
-     * la présence + la cohérence (chemin absolu, et clés `debian`/`ubuntu`
-     * également définies).
+     * `IpxeActionResolver::resolveNird()` lit `ipxe.linux.kernel_paths.nird` avec
+     * un repli inline sur `/nird/casper/vmlinuz`. Ce repli masquerait le retrait
+     * de la clé, et l'installation Nird casserait sans un mot : on gèle donc ici
+     * sa présence et sa cohérence, ainsi que celles de `debian` et `ubuntu`.
      */
     #[Test]
     public function it_defines_nird_kernel_paths(): void
@@ -260,7 +255,7 @@ class IpxeConfigTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.6 — AC6.2 / AC6.3 — section iso_management + windows_iso
+     * Section iso_management + windows_iso
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -312,14 +307,9 @@ class IpxeConfigTest extends TestCase
         self::assertNull(config('sambaedu.windows_iso.sudoers_user'), 'clé legacy retirée');
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.7 — AC6.1 / AC6.2 / T5.3 — sections clonezilla + tools.
-     * ------------------------------------------------------------------ */
-
     #[Test]
     public function it_loads_clonezilla_config_section(): void
     {
-        // AC6.1 — section clonezilla (3 cles D8).
         self::assertTrue(filter_var(config('ipxe.clonezilla.enabled'), FILTER_VALIDATE_BOOL));
         self::assertSame(10000, (int) config('ipxe.clonezilla.menu_timeout_ms'));
         self::assertSame('/ipxe/png/clonezilla.png', config('ipxe.clonezilla.background_png'));
@@ -328,7 +318,7 @@ class IpxeConfigTest extends TestCase
     #[Test]
     public function it_loads_gparted_tools_config_section(): void
     {
-        // AC6.2 — section tools.gparted.
+        // Section tools.gparted.
         self::assertTrue(filter_var(config('ipxe.tools.gparted.enabled'), FILTER_VALIDATE_BOOL));
         self::assertStringStartsWith('/bin/gparted/', (string) config('ipxe.tools.gparted.kernel_path'));
         self::assertStringStartsWith('/bin/gparted/', (string) config('ipxe.tools.gparted.initrd_path'));
@@ -337,7 +327,7 @@ class IpxeConfigTest extends TestCase
     #[Test]
     public function it_loads_hdt_tools_config_section(): void
     {
-        // AC6.2 — section tools.hdt.
+        // Section tools.hdt.
         self::assertTrue(filter_var(config('ipxe.tools.hdt.enabled'), FILTER_VALIDATE_BOOL));
         self::assertSame('/bin/pxelinux.0', config('ipxe.tools.hdt.pxelinux0_path'));
     }
@@ -345,13 +335,13 @@ class IpxeConfigTest extends TestCase
     #[Test]
     public function it_loads_memtest86plus_tools_config_section(): void
     {
-        // AC6.2 — section tools.memtest86plus.
+        // Section tools.memtest86plus.
         self::assertTrue(filter_var(config('ipxe.tools.memtest86plus.enabled'), FILTER_VALIDATE_BOOL));
         self::assertSame('/bin/pxelinux.0', config('ipxe.tools.memtest86plus.pxelinux0_path'));
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.8 — AC9.1 / AC9.3 — section windows.post_install (D13).
+     * Section windows.post_install.
      * ------------------------------------------------------------------ */
 
     #[Test]

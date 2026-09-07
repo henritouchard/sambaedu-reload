@@ -22,7 +22,7 @@ class PackagesXmlService
     }
 
     /**
-     * Story 27.19 — Nom DNS/NetBIOS du serveur SE5, utilisé pour construire les
+     * Nom DNS/NetBIOS du serveur SE5, utilisé pour construire les
      * URLs HTTP de livraison des payloads (`http://<se4fs>/wpkg/files/...`). Source
      * = conf serveur (`sambaedu.se4fs_name`, iso `packages_xml_out.php` / cf.
      * {@see \App\Wpkg\Deployment\Services\WpkgBundleGenerator} qui substitue la même
@@ -61,7 +61,7 @@ class PackagesXmlService
                     continue;
                 }
 
-                // Story 27.6 (Bug B) — IMPORTER LES <package> INTERNES, jamais le wrapper.
+                // IMPORTER LES <package> INTERNES, jamais le wrapper.
                 // Un recipe `$app->xml` est soit un document complet
                 // `<packages><package/>…</packages>` (racine wrapper, cas courant des
                 // dépôts SE4), soit un `<package/>` direct (recipes minimalistes).
@@ -91,7 +91,7 @@ class PackagesXmlService
                     continue;
                 }
 
-                // Story 27.19 — LIVRAISON FULL HTTP des payloads. Auparavant on
+                // LIVRAISON FULL HTTP des payloads. Auparavant on
                 // strippait TOUS les <download> : le poste devait recopier le binaire
                 // depuis le partage SMB %SOFTWARE% (débranché en SE5) → install en
                 // échec silencieux. Désormais on RÉÉCRIT chirurgicalement les recettes
@@ -139,10 +139,10 @@ class PackagesXmlService
     }
 
     /**
-     * Story 27.19 — Réécrit CHIRURGICALEMENT un <package> importé pour la livraison
+     * Réécrit CHIRURGICALEMENT un <package> importé pour la livraison
      * FULL HTTP des payloads, en place dans le DOM cible.
      *
-     * Invariant central (AC6) : on ne transforme QUE les recettes qui dépendent du
+     * Invariant central : on ne transforme QUE les recettes qui dépendent du
      * partage SMB legacy %SOFTWARE% (marqueur = un <install cmd> référençant
      * %SOFTWARE%). Les recettes sans %SOFTWARE% ne sont pas touchées (leur
      * <download> est strippé comme avant — inerte sans config.xml côté poste).
@@ -159,7 +159,7 @@ class PackagesXmlService
      *  - `saveto`/`sha256sum`/`md5sum` retirés (non lus par le moteur — cf. Dev Notes).
      * Et chaque <install cmd> voit `%SOFTWARE%` réécrit en `%TEMP%` (même sous-chemin).
      *
-     * Le <check> n'est JAMAIS touché (idempotence — AC8).
+     * Le <check> n'est JAMAIS touché (idempotence —).
      */
     private function transformPackageForHttpDelivery(\DOMElement $package): void
     {
@@ -219,12 +219,12 @@ class PackagesXmlService
                 continue;
             }
 
-            // Story 27.19 (review #3) — l'alias Apache /wpkg/files ne sert QUE
+            // L'alias Apache /wpkg/files ne sert QUE
             // l'arbre `.../install/packages`. Un `saveto` hors `packages/`
             // (ex. `softwares/...`, `wpkg/packages/...`, déposés verbatim par
             // PackageInstallerService/LegacyWpkgImporter) n'est PAS atteignable par
             // l'alias → l'URL réécrite renverrait un 404 silencieux (exactement la
-            // classe de bug que cette story corrige). On strippe + on logue, pour
+            // classe de bug corrigée ici). On strippe + on logue, pour
             // échouer de façon DIAGNOSTICABLE plutôt que de produire une URL morte.
             if (! str_starts_with($saveto, 'packages/')) {
                 Log::warning('[AppStore] payload stagé hors arbre /wpkg/files (non livrable HTTP), <download> retiré', [
@@ -242,7 +242,7 @@ class PackagesXmlService
         // 4. Réécrire le préfixe du payload stagé → %TEMP% dans les <install cmd>
         //    (uniquement si la recette dépend d'un payload stagé — sinon rien à faire).
         if ($dependsOnStagedPayload) {
-            // Garde-fou cohérence (review #1/#3) : si la recette dépend d'un payload
+            // Garde-fou de cohérence : si la recette dépend d'un payload
             // stagé mais qu'aucun payload n'a été réécrit en HTTP (tous strippés : sans
             // saveto, hors `packages/`, ou archive extraite serveur), l'install
             // réécrit en %TEMP% n'aura aucune source → échec silencieux sur le poste.
@@ -260,7 +260,7 @@ class PackagesXmlService
             }
         }
 
-        // 5. Purge du payload dans %TEMP% APRÈS install réussie (review #M2). Une
+        // 5. Purge du payload dans %TEMP% APRÈS install réussie. Une
         //    <install> de suppression APPENDUE en fin de package : le moteur exécute
         //    les <install> dans l'ordre du document et AVORTE le package dès qu'une
         //    commande renvoie un code ≠ 0 (wpkg-se4.js:5886). La purge ne s'exécute
@@ -342,7 +342,7 @@ class PackagesXmlService
      * Retire le préfixe `packages/` d'un saveto normalisé (l'alias Apache mappe ce
      * dossier sur sa racine). Les appelants GARANTISSENT que le saveto commence par
      * `packages/` (un saveto hors de cet arbre n'est pas servable par l'alias et est
-     * écarté en amont, cf. {@see transformPackageForHttpDelivery} review #3) ; le
+     * écarté en amont, cf. {@see transformPackageForHttpDelivery}) ; le
      * fallback `return $saveto` n'est donc qu'une sécurité défensive.
      */
     private function stripPackagesPrefix(string $saveto): string

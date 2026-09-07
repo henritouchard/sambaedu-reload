@@ -20,10 +20,10 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Support\RecordingBackend;
 
 /**
- * Story 60.4 — LA CHARGE UTILE DU TRAITEMENT ENFILÉ.
+ * LA CHARGE UTILE DU TRAITEMENT ENFILÉ.
  *
  * Ce que ces tests tiennent : des identifiants, rien d'autre — et la
- * démonstration que la garde de la story 60.3 échoue BRUYAMMENT le jour où
+ * démonstration que la garde de la échoue BRUYAMMENT le jour où
  * quelqu'un y glisserait un rapport ou un plan.
  */
 class ReconcileNetworkShareJobTest extends TestCase
@@ -88,7 +88,7 @@ class ReconcileNetworkShareJobTest extends TestCase
     }
 
     /**
-     * MÉTA-TEST — la garde de la story 60.3 est bien celle qui protège cette file.
+     * MÉTA-TEST — la garde de la est bien celle qui protège cette file.
      *
      * Le jour où quelqu'un mettra un rapport dans une charge utile, il ne verra pas
      * un test rouge quelque part : la sérialisation ÉCHOUERA, au point exact du

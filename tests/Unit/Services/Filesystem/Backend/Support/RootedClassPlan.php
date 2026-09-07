@@ -12,15 +12,15 @@ use App\Services\Filesystem\Plan\PlanResolver;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 60.3 — LE PLAN CLASSE, RACINE COMPRISE.
+ * LE PLAN CLASSE, RACINE COMPRISE.
  *
- * Le décor de recette des stories 60.1/60.2 est réutilisé TEL QUEL et résolu par
+ * Le décor de recette `ClassTreeRecipe` est réutilisé TEL QUEL et résolu par
  * le résolveur RÉEL : ce qui est éprouvé ici est donc un plan authentique, pas une
  * maquette. Une seule chose lui est ajoutée : le nœud RACINE.
  *
  * **Pourquoi la racine est construite à la main.** Le vocabulaire de recette
- * n'accepte pas encore « . » comme chemin de nœud écrit — c'est un legs nommé à la
- * story 60.5, celle qui exprimera les droits de la racine du partage classe.
+ * n'accepte pas encore « . » comme chemin de nœud écrit : exprimer les droits de
+ * la racine du partage classe reste à faire.
  * Or la racine est indispensable ICI : sans octroi posé plus haut, il n'y a pas
  * d'ancêtre, donc pas de propagation, donc rien à éprouver du mode de rupture
  * mesuré. On ajoute donc le nœud que la recette ne sait pas encore dire, avec les

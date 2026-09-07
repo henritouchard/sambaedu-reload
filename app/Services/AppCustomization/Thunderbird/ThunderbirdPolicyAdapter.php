@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Adapter Thunderbird — parité `tb_import_policy` legacy.
  *
- * Story 4.8 — AC 6. Reproduit `sambaedu/includes/firefox.inc.php` L201-249
+ * Reproduit `sambaedu/includes/firefox.inc.php` L201-249
  * (fonction `tb_import_policy`). Différences Firefox :
  *   - Pas de `PopupBlocking` (Thunderbird n'a pas de notion de popup browser).
  *   - `HTTPProxy` préfixé `http://` (fidèle L233).

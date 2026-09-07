@@ -39,7 +39,7 @@ func TestReadTokenValidatesFormat(t *testing.T) {
 		t.Error("hex majuscule : erreur attendue (contrat = 64 hex minuscule)")
 	}
 
-	// Newline parasite trimée (iso-24.2).
+	// Newline parasite trimée.
 	writeToken(t, s, validToken+"\n")
 	got, err := s.ReadToken()
 	if err != nil || got != validToken {
@@ -110,7 +110,7 @@ func TestEnsureLayoutCreatesEmptyAppliedState(t *testing.T) {
 		t.Fatalf("EnsureLayout : %v", err)
 	}
 
-	// applied-state.json créé VIDE — infra du mode `default` (gap 1) pour 24.6.
+	// applied-state.json créé VIDE — infra du mode `default`.
 	raw, err := os.ReadFile(s.AppliedStatePath())
 	if err != nil || string(raw) != "{}" {
 		t.Errorf("applied-state.json : got %q, %v (attendu {})", raw, err)
@@ -157,7 +157,7 @@ func TestReadConfig(t *testing.T) {
 		t.Errorf("interval_seconds : got %d", cfg.IntervalSeconds)
 	}
 
-	// interval absent ou invalide → défaut 3600 (D7).
+	// interval absent ou invalide → défaut 3600.
 	write(`{"server_url":"http://se5"}`)
 	cfg, _ = s.ReadConfig()
 	if cfg.IntervalSeconds != DefaultIntervalSeconds {

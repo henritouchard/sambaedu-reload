@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `WinePrefixScanner` — Story 16.3c AC6.2.
+ * Tests Unit `WinePrefixScanner` —.
  */
 class WinePrefixScannerTest extends TestCase
 {

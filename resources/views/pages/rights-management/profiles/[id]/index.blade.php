@@ -29,7 +29,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
     public int $roleId = 0;
 
     /**
-     * Story 49.1 (AC6) — groupes qui PORTENT ce profil. Non vide ⇒ suppression
+     * Groupes qui PORTENT ce profil. Non vide ⇒ suppression
      * refusée : la suppression silencieuse d'un profil porté retirerait des
      * droits à tout un parc.
      *
@@ -100,7 +100,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
     }
 
     /**
-     * Story 49.1 (AC6) — groupes portant ce profil. Information affichée sur la
+     * Groupes portant ce profil. Information affichée sur la
      * page (avec lien vers l'onglet Profils) et base de la garde de suppression.
      */
     public function loadCarrierGroups(): void
@@ -183,7 +183,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
     {
         abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
 
-        // Story 49.1 (AC6) — garde « profil PORTÉ », AVANT la garde seedé. Le
+        // Garde « profil PORTÉ », AVANT la garde seedé. Le
         // message NOMME les groupes porteurs : sans ça, la suppression
         // retirerait silencieusement des droits à tout un parc. La FK
         // `restrictOnDelete` fait filet au niveau DB pour les chemins hors UI.
@@ -262,7 +262,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
         'usersCount' => $usersCount,
     ])
 
-    {{-- Story 49.1 (AC6/AC7) — groupes PORTANT ce profil : l'appartenance à
+    {{-- Groupes PORTANT ce profil : l'appartenance à
          l'un d'eux attribue ce profil, et tant qu'il en existe un, le profil
          n'est pas supprimable. --}}
     @if (!empty($carrierGroups))

@@ -14,9 +14,6 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        // =====================================================================
-        // QUOTA_RULES - Règles de quotas
-        // =====================================================================
         Schema::create('quota_rules', function (Blueprint $table) {
             $table->id();
             
@@ -46,9 +43,6 @@ return new class extends Migration {
             $table->index('is_active');
         });
 
-        // =====================================================================
-        // QUOTA_AUDIT_LOGS - Historique des modifications
-        // =====================================================================
         Schema::create('quota_audit_logs', function (Blueprint $table) {
             $table->id();
             
@@ -78,7 +72,6 @@ return new class extends Migration {
             
             $table->timestamp('created_at')->useCurrent();
             
-            // Index
             $table->index('quota_rule_id');
             $table->index('action');
             $table->index('performed_by');
@@ -86,16 +79,12 @@ return new class extends Migration {
             $table->index('created_at');
         });
 
-        // =====================================================================
-        // QUOTA_SETTINGS - Paramètres globaux des quotas
-        // =====================================================================
         Schema::create('quota_settings', function (Blueprint $table) {
             $table->id();
             
             // Partition concernée
             $table->string('partition', 50)->unique()->comment('/home ou /var/sambaedu');
             
-            // Période de grâce en jours
             $table->unsignedSmallInteger('grace_period_days')->default(7)->comment('Période de grâce en jours');
             
             // Dépassement temporaire autorisé par défaut (en %)

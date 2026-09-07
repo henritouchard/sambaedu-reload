@@ -13,14 +13,13 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 60.4 — RÉCONCILIATION ENFILÉE d'un répertoire réseau géré.
+ * RÉCONCILIATION ENFILÉE d'un répertoire réseau géré.
  *
  * **Pourquoi enfiler.** La pose des droits est quadratique en nombre d'entrées
  * nominatives (mesuré : 0,32 s à 200, 7,16 s à 1 000, 63 s à 3 000). Dans le cycle
  * d'une requête d'écran, elle fait attendre l'administrateur sans rien lui
  * apprendre.
  *
- * ---------------------------------------------------------------------------
  * **LA CHARGE UTILE EST FAITE D'IDENTIFIANTS, ET DE RIEN D'AUTRE.**
  *
  * Deux raisons, et elles sont indépendantes :

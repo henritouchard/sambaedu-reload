@@ -15,7 +15,6 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC5, AC7.2.
  */
 class WorkstationOptionsServiceTest extends TestCase
 {

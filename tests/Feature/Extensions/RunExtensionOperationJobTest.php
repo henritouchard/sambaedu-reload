@@ -25,7 +25,7 @@ use Tests\Support\FakeExtensionHelperRunner;
 use Tests\TestCase;
 
 /**
- * Story 56.3 (AC2, AC5) — Le Job de fond : il exécute le MÊME moteur que la CLI
+ * Le Job de fond : il exécute le MÊME moteur que la CLI
  * et rapporte l'avancement dans `extension_install_runs`.
  *
  * `handle()` est appelé DIRECTEMENT (jamais via la file) : `phpunit.xml` force
@@ -174,10 +174,6 @@ class RunExtensionOperationJobTest extends TestCase
             ->handle($this->app->make(ExtensionInstallService::class));
     }
 
-    // =====================================================================
-    // AC2 — chemin nominal
-    // =====================================================================
-
     #[Test]
     public function a_successful_install_walks_the_run_from_pending_to_success(): void
     {
@@ -315,8 +311,8 @@ class RunExtensionOperationJobTest extends TestCase
         self::assertSame(ExtensionInstallRun::STATUS_SUCCESS, $second->status);
         self::assertSame('', $second->error);
 
-        // Review 56.3 #3 — succès, mais succès SANS acte : l'écran doit
-        // pouvoir le dire (AC5 exige un toast info, pas « terminée »).
+        // Succès, mais succès SANS acte : l'écran doit pouvoir le dire — un
+        // toast info, pas « opération terminée ».
         self::assertFalse($second->changed, 'un no-op ne doit pas se raconter comme un acte accompli');
     }
 
@@ -334,10 +330,6 @@ class RunExtensionOperationJobTest extends TestCase
         self::assertSame(ExtensionInstallRun::STATUS_SUCCESS, $run->status);
         self::assertTrue($run->changed);
     }
-
-    // =====================================================================
-    // AC2/AC5 — les trois chemins d'erreur, aucun oublié
-    // =====================================================================
 
     #[Test]
     public function an_engine_refusal_returned_as_an_error_ends_the_run_as_failed(): void

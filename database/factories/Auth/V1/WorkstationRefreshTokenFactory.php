@@ -10,7 +10,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.10 — AC3.3.
  *
  * Factory pour `WorkstationRefreshToken`. Génère des fixtures valides pour
  * les tests :

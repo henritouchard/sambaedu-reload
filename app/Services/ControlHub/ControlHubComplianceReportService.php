@@ -18,14 +18,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 39.2 (canal ③) — Émetteur de conformité SE5 → autorité amont (controlHub).
+ * Émetteur de conformité SE5 → autorité amont (controlHub).
  *
  * PREMIER émetteur SE5 → amont du lien managé : construit et POST un rapport de
  * conformité **état-intégral** (`se5-contract-compliance/v1`) décrivant l'état
  * d'application de chaque item du contrat amont reçu (doctrine full-state, jamais
  * un delta). Ce service LIT l'état résolu (`controlhub_contracts` /
- * `controlhub_contract_items`, Epics 28-33) + les signaux d'override locaux
- * (`capability_assignments`, Epic 27/29).
+ * `controlhub_contract_items`) + les signaux d'override locaux
+ * (`capability_assignments`).
  *
  * Il ne juge pas lui-même de l'application : le verdict est rendu à la réception,
  * par ceux qui ont essayé de poser l'item — `pull_status` pour le tirage du binaire,
@@ -44,7 +44,7 @@ use Illuminate\Support\Facades\Log;
  * BMAD controlHub, PAS un fix silencieux ici.
  *
  * ⚠️ GARDE-FOU R3 : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
- * `ControlHub*`. [Source: prd-contrat-manage-se5.md#R3]
+ * `ControlHub*`.
  */
 final class ControlHubComplianceReportService
 {
@@ -59,8 +59,8 @@ final class ControlHubComplianceReportService
 
     /**
      * Construit l'enveloppe de conformité état-intégral, ou `null` s'il n'y a AUCUN
-     * contrat amont actif (standalone OU lien `severed` — NFR-A1 : aucune émission
-     * parasite). `items: []` (contrat actif mais 0 item non-`absent`) est un
+     * contrat amont actif (standalone OU lien `severed`) : aucune émission
+     * parasite. `items: []` (contrat actif mais 0 item non-`absent`) est un
      * résultat VALIDE, pas un cas d'annulation.
      *
      * @return array<string,mixed>|null
@@ -70,7 +70,7 @@ final class ControlHubComplianceReportService
         $contract = ControlHubContract::active();
 
         if ($contract === null) {
-            return null; // NFR-A1 : pas de contrat actif → pas de rapport.
+            return null; // Pas de contrat actif → pas de rapport.
         }
 
         // Horodatage unique du rapport : `reported_at` (garde de fraîcheur amont) et
@@ -97,7 +97,7 @@ final class ControlHubComplianceReportService
     }
 
     /**
-     * Construit puis émet le rapport vers l'amont (HTTPS, Bearer). Gardes (NFR-A1) :
+     * Construit puis émet le rapport vers l'amont (HTTPS, Bearer). Gardes :
      * aucun appel `ControlHubApiClient` si pas de contrat actif, pas de connexion
      * valide, ou pas de token. Le token n'apparaît JAMAIS dans un log.
      *
@@ -176,7 +176,7 @@ final class ControlHubComplianceReportService
             'type' => $item->type,
             'key' => $item->key,
             'target_type' => $this->targetType($item)->value,
-            // `target_label` est TOUJOURS une chaîne ('' pour instance) — jamais null (NFR4).
+            // `target_label` est TOUJOURS une chaîne ('' pour instance) — jamais null.
             'target_label' => (string) ($item->target_label ?? ''),
             'status' => $status,
             'detail' => $detail,
@@ -192,7 +192,7 @@ final class ControlHubComplianceReportService
      *   2. le réconciliateur d'assignations a rendu un verdict → il fait foi ;
      *   3. sinon, politique d'origine : `locked` → `applied` ; `permissive` +
      *      `registry` + instance → `overridden` s'il existe un override local actif ;
-     *      tout autre `permissive` → `applied` (aucun mécanisme d'override câblé —
+     *  tout autre `permissive` → `applied` (aucun mécanisme d'override câblé
      *      pas de faux `overridden`).
      *
      * Le pull passe AVANT le verdict d'application parce qu'il en est la cause : un
@@ -234,7 +234,7 @@ final class ControlHubComplianceReportService
             $detail = $this->overrideDetail((string) $item->key);
 
             if ($detail !== null) {
-                return ['overridden', $detail]; // override permissif local (FR24).
+                return ['overridden', $detail]; // override permissif local.
             }
         }
 
@@ -297,7 +297,7 @@ final class ControlHubComplianceReportService
             return null;
         }
 
-        // Review 39.2 #3 — ordre DÉTERMINISTE : sans `ORDER BY`, `first()` dépend de
+        // Ordre DÉTERMINISTE : sans `ORDER BY`, `first` dépend de
         // l'ordre physique de la table → le `detail` (donc un rapport état-intégral
         // censé être reproductible) pourrait varier d'un cycle à l'autre sans qu'aucun
         // état métier ne change, et une ligne non-`WorkstationGroup` « gagnante »

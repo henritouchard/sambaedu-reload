@@ -22,10 +22,10 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.2 / AC4.2 — Listener générique d'invalidation du cache packages.
+ * Listener générique d'invalidation du cache packages.
  *
  * Routing par `instanceof` du payload event. Toujours **ciblé par hostname**
- * (jamais de flush global — décision conception 15.2).
+ * (jamais de flush global — décision conception).
  */
 final class InvalidateWorkstationPackagesCache
 {
@@ -44,14 +44,14 @@ final class InvalidateWorkstationPackagesCache
                 => $this->hostnamesForWorkstationGroup($event->workstationGroupId),
             $event instanceof AppProfileApplicationChanged
                 => $this->hostnamesForAppProfile($event->appProfileId),
-            // Story 15.4 / AC4.0 — variantes pluriel + assignations directes parc/poste.
+            // Variantes pluriel + assignations directes parc/poste.
             $event instanceof AppProfileApplicationsChanged
                 => $this->hostnamesForAppProfile($event->appProfileId),
             $event instanceof WorkstationGroupApplicationsChanged
                 => $this->hostnamesForWorkstationGroup($event->workstationGroupId),
             $event instanceof WorkstationApplicationsChanged
                 => $this->hostnamesForWorkstation($event->workstationId),
-            // Story 15.5 / AC4.4 — re-évaluation manuelle depuis le dashboard.
+            // Re-évaluation manuelle depuis le dashboard.
             $event instanceof WorkstationManualReevaluationRequested
                 => $this->hostnamesForWorkstation($event->workstationId),
             default => [],

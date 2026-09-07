@@ -21,12 +21,10 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Tests unitaires du service WorkstationGroupScheduleService (story 4-4).
+ * Tests unitaires du service WorkstationGroupScheduleService.
  *
- * 23 tests : 13 AC13 + 10 AC25 (mode one-shot D7).
- *
- * On utilise DatabaseTransactions + createTablesIfNeeded() (pattern 4.2/4.3)
- * pour cohabiter SQLite (tests) et Postgres (prod). Les CHECK contraintes pgsql
+ * On utilise DatabaseTransactions + createTablesIfNeeded() pour cohabiter
+ * SQLite (tests) et Postgres (prod). Les CHECK contraintes pgsql
  * ne sont pas testées ici — elles sont défenses en profondeur testées en E2E VM.
  */
 class WorkstationGroupScheduleServiceTest extends TestCase
@@ -184,10 +182,6 @@ class WorkstationGroupScheduleServiceTest extends TestCase
 
         return [$group, $machines];
     }
-
-    // ========================================
-    // AC13 — CRUD + executeDue récurrent
-    // ========================================
 
     public function test_create_schedule_persists_all_fields_with_defaults(): void
     {
@@ -357,7 +351,7 @@ class WorkstationGroupScheduleServiceTest extends TestCase
     public function test_execute_due_respects_timezone_in_winter(): void
     {
         // 2026-01-12 = lundi, UTC+1 (heure d'hiver) → 08:30 Paris = 07:30 UTC.
-        // Complément au test été pour couvrir les deux bascules DST (AC11).
+        // Complément au test été pour couvrir les deux bascules DST.
         Carbon::setTestNow(Carbon::parse('2026-01-12 07:30:00', 'UTC'));
 
         [$group] = $this->makeGroupWithMachines(1);
@@ -375,7 +369,7 @@ class WorkstationGroupScheduleServiceTest extends TestCase
 
         [$group, $machines] = $this->makeGroupWithMachines(3);
 
-        // Simulate une task déjà active sur M2 (AC8)
+        // Simulate une task déjà active sur M2
         MachinePowerActionTask::create([
             'workstation_id' => $machines[1]->id,
             'action' => 'wake',
@@ -419,7 +413,7 @@ class WorkstationGroupScheduleServiceTest extends TestCase
 
     public function test_execute_due_resolves_machines_at_tick_time_not_creation_time(): void
     {
-        // Liveness D2 : on crée un schedule, puis on ajoute une machine au
+        // Liveness : on crée un schedule, puis on ajoute une machine au
         // groupe, puis on tick → la nouvelle machine DOIT être traitée.
         Carbon::setTestNow(Carbon::parse('2026-04-27 08:30:00', 'Europe/Paris'));
 
@@ -441,10 +435,6 @@ class WorkstationGroupScheduleServiceTest extends TestCase
         $this->assertEquals(2, $result['total_tasks_dispatched'], 'Le scheduler doit relire le groupe au tick');
         Queue::assertPushed(DispatchMachinePowerActionJob::class, 2);
     }
-
-    // ========================================
-    // AC25 — One-shot (D7)
-    // ========================================
 
     public function test_create_one_shot_persists_run_at_and_nullifies_recurring_fields(): void
     {
@@ -478,14 +468,14 @@ class WorkstationGroupScheduleServiceTest extends TestCase
     {
         [$group] = $this->makeGroupWithMachines(1);
 
-        // Action non supportée (D5 — whitelist wake/shutdown)
+        // Action non supportée (whitelist wake/shutdown)
         $this->expectException(\InvalidArgumentException::class);
         $this->service->createRecurring($group->id, 'shutdown-force', [1], '08:00');
     }
 
     public function test_create_validates_mode_exclusivity_at_service_level(): void
     {
-        // AC20 — défense en profondeur côté service (la CHECK constraint pgsql
+        // Défense en profondeur côté service (la CHECK constraint pgsql
         // protège en prod ; SQLite ne la supporte pas, on valide via le service).
         [$group] = $this->makeGroupWithMachines(1);
 

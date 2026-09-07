@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Auth\V1\Support;
 
 /**
- * Story 16.10 — D8.
- *
  * Catalogue des codes d'erreur retournés par les middlewares et services
  * d'auth v1 (format réponse `{error, message, code}`).
  *
@@ -18,7 +16,6 @@ namespace App\Auth\V1\Support;
  */
 final class JwtErrorCodes
 {
-    // --- JWT (access token) ---
     public const JWT_MISSING = 'jwt.missing';
     public const JWT_MALFORMED = 'jwt.malformed';
     public const JWT_SIGNATURE_INVALID = 'jwt.signature_invalid';
@@ -27,15 +24,12 @@ final class JwtErrorCodes
     public const JWT_WRONG_TIER = 'jwt.wrong_tier';
     public const JWT_UNKNOWN_WORKSTATION = 'jwt.unknown_workstation';
 
-    // --- Bootstrap token (transitoire md5/APCu legacy) ---
     public const BOOTSTRAP_TOKEN_MISSING = 'bootstrap_token.missing';
     public const BOOTSTRAP_TOKEN_INVALID = 'bootstrap_token.invalid';
 
-    // --- Bootstrap durci 16.11 (couple token↔UUID + LAN whitelist) ---
     public const BOOTSTRAP_TOKEN_UUID_MISMATCH = 'bootstrap_token.uuid_mismatch';
     public const BOOTSTRAP_NOT_LAN = 'bootstrap.not_lan';
 
-    // --- Refresh token (DB) ---
     public const REFRESH_MISSING = 'refresh.missing';
     public const REFRESH_INVALID = 'refresh.invalid';
     public const REFRESH_EXPIRED = 'refresh.expired';

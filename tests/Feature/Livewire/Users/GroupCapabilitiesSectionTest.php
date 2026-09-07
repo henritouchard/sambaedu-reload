@@ -25,7 +25,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 35.4 — Section « Capacités » de la page d'un GROUPE D'UTILISATEURS
+ * Section « Capacités » de la page d'un GROUPE D'UTILISATEURS
  * (override de capacité par UserGroup). Transposition disciplinée des tests de la
  * surface parc (`CapabilitiesOverrideAuditTest` / `CapabilitiesTabCustomizeScopingTest`)
  * à la maille UserGroup.
@@ -33,7 +33,7 @@ use Tests\TestCase;
  * Couvre : listing (assignabilité HKCU + « Suit le défaut »), pose/édition/retrait,
  * préservation `created_at`, validation (options + warning), gel `overrides_locked`,
  * audit `capability_override_audit_logs`, scoping (403 sans droit global + refus du
- * délégué par-salle, anti-piège 29.1) et figement `#[Locked]`.
+ * délégué par-salle, anti-piège) et figement `#[Locked]`.
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase` (comme la surface parc : les
  * tables `capabilities`/`capability_projections`/`capability_assignments` +
@@ -75,7 +75,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function componentPath(): string
     {
@@ -127,7 +127,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         ]);
     }
 
-    // ── AC1 — listing : assignabilité HKCU + « Suit le défaut » ────────────
+    // — listing : assignabilité HKCU + « Suit le défaut »
 
     #[Test]
     public function it_lists_assignable_hkcu_capabilities_with_follows_default(): void
@@ -163,7 +163,7 @@ class GroupCapabilitiesSectionTest extends TestCase
             ->assertSee('remove-override-'.$cap->id, escape: false);
     }
 
-    // ── AC1 — pose d'un override ───────────────────────────────────────────
+    // — pose d'un override
 
     #[Test]
     public function it_saves_a_new_override_on_the_user_group(): void
@@ -186,7 +186,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         ]);
     }
 
-    // ── AC1 / 29.7 — édition : valeur mise à jour, created_at préservé ─────
+    // — édition : valeur mise à jour, created_at préservé
 
     #[Test]
     public function it_updates_an_override_and_preserves_created_at(): void
@@ -222,7 +222,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         self::assertGreaterThan($frozenUpdatedAt, $row->updated_at, 'UPDATE fait avancer updated_at');
     }
 
-    // ── AC1 — retrait : pivot supprimé + pas de trace fantôme ─────────────
+    // — retrait : pivot supprimé + pas de trace fantôme
 
     #[Test]
     public function it_removes_an_override_and_returns_to_default(): void
@@ -255,7 +255,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         self::assertSame(0, CapabilityOverrideAuditLog::query()->count(), 'aucun acte → aucune trace fantôme');
     }
 
-    // ── AC1 — validation serveur ───────────────────────────────────────────
+    // — validation serveur
 
     #[Test]
     public function it_rejects_a_value_outside_the_options(): void
@@ -316,7 +316,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         ]);
     }
 
-    // ── AC2 — overrides_locked ─────────────────────────────────────────────
+    // — overrides_locked
 
     #[Test]
     public function it_refuses_a_new_override_on_a_frozen_capability(): void
@@ -363,7 +363,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         ]);
     }
 
-    // ── AC3 — audit create / update / delete ───────────────────────────────
+    // — audit create / update / delete
 
     #[Test]
     public function saving_a_new_override_logs_a_create_event(): void
@@ -455,7 +455,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         ]);
     }
 
-    // ── AC4 — scoping : gate instance-wide, pas de fuite délégation ────────
+    // — scoping : gate instance-wide, pas de fuite délégation
 
     #[Test]
     public function it_forbids_a_user_without_global_customize(): void
@@ -471,7 +471,7 @@ class GroupCapabilitiesSectionTest extends TestCase
     #[Test]
     public function it_forbids_a_room_scoped_delegate_only(): void
     {
-        // Anti-piège 29.1 (inversé) : un refnum ne détenant `app.customize` QUE par
+        // Anti-piège (inversé) : un refnum ne détenant `app.customize` QUE par
         // délégation scopée sur une salle (aucun droit GLOBAL) est REFUSÉ — la
         // délégation par-salle ne fuite pas sur les groupes d'utilisateurs.
         $salle = WorkstationGroup::factory()->create(['is_physical' => true]);
@@ -499,7 +499,7 @@ class GroupCapabilitiesSectionTest extends TestCase
             ->set('groupId', $other->id);
     }
 
-    // ── Review 35.4 #1 (piège #6) — l'assignabilité HKCU est re-validée SERVEUR ─
+    // L'assignabilité HKCU est re-validée côté SERVEUR.
 
     #[Test]
     public function machine_only_capability_cannot_receive_an_override_via_direct_livewire_calls(): void
@@ -525,7 +525,7 @@ class GroupCapabilitiesSectionTest extends TestCase
         ]);
     }
 
-    // ── Review 35.4 #3 — bi-projection : ≥1 clé HKCU parmi plusieurs suffit ─
+    // Bi-projection : ≥1 clé HKCU parmi plusieurs suffit.
 
     #[Test]
     public function mixed_hive_capability_is_listed_as_assignable(): void
@@ -546,8 +546,6 @@ class GroupCapabilitiesSectionTest extends TestCase
         Livewire::test($this->componentPath(), ['groupId' => $group->id])
             ->assertSee('Mixed hives');
     }
-
-    // ── Review 35.4 #2 / AC5.4 — verrou amont refusé à l'écriture (29.2) ────
 
     #[Test]
     public function save_override_is_blocked_by_an_upstream_lock(): void

@@ -18,12 +18,11 @@ use Tests\Traits\CreatesDhcpSchema;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 8.3 — Tests Feature CRUD des sous-réseaux (VLAN) via l'onglet Livewire
+ * Tests Feature CRUD des sous-réseaux (VLAN) via l'onglet Livewire
  * `network/dhcp/index` (tab `subnets`).
  *
  * Couvre : création / édition / suppression + gates `manage-dhcp` + mode
- * dégradé (toast warning, réservation SQL conservée — miroir `DhcpDegradedMode`
- * de la 8.1).
+ * dégradé (toast warning, réservation SQL conservée — miroir `DhcpDegradedMode`).
  */
 class DhcpSubnetsCrudTest extends TestCase
 {
@@ -191,7 +190,7 @@ class DhcpSubnetsCrudTest extends TestCase
             ->call('saveSubnet')
             ->assertDispatched('toastMagic', status: 'warning');
 
-        // AC5 : le sous-réseau est persisté même si le reload a échoué.
+        // Le sous-réseau est persisté même si le reload a échoué.
         $this->assertDatabaseHas('dhcp_subnets', ['vlan_id' => 20, 'network' => '192.168.20.0/24']);
     }
 }

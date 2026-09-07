@@ -12,7 +12,7 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Story 62.3 — LE PROFIL SCOLAIRE s'INSTALLE : « Élève », « Enseignant »,
+ * LE PROFIL SCOLAIRE s'INSTALLE : « Élève », « Enseignant »,
  * « Professeur principal », « Porteur », « Référent ».
  *
  * **Pourquoi une commande, et pas la migration.** Ces sept lignes étaient posées
@@ -23,7 +23,8 @@ use Throwable;
  *     le catalogue à un type SANS déclaration, et SEULEMENT les rôles déclarés à un
  *     type qui en a. Poser ces lignes FERME `classe`, `projet` et `equipe` et laisse
  *     ouverts tous les autres types. C'est iso aujourd'hui — trois rôles au
- *     catalogue, et la règle D3 bloque déjà `owner` hors classe — mais au premier
+ *     catalogue, et {@see GroupTypeRole::assertOwnerStaysOnClasse()} bloque déjà
+ *     `owner` hors classe — mais au premier
  *     rôle personnalisé créé par un administrateur, celui-ci serait attribuable
  *     partout SAUF dans les trois types les plus utilisés. Fermer un type est une
  *     décision ; une migration ne la prend pas à la place de personne ;
@@ -76,7 +77,7 @@ final class CollegeSeedRoleXTypeCommand extends Command
      * Les SEPT déclarations du profil scolaire.
      *
      * Valeurs IDENTIQUES à celles que la migration posait — c'est ce qui rend la
-     * parité d'affichage des stories 62.1/62.3 restaurable d'un geste, et ce que
+     * parité d'affichage restaurable d'un geste, et ce que
      * les suites de parité installent désormais explicitement dans leur `setUp()`.
      *
      * Les deux `label` à `null` ne sont pas un oubli : `projet`×`member` et
@@ -86,7 +87,7 @@ final class CollegeSeedRoleXTypeCommand extends Command
      * déclaration.
      *
      * `owner` n'est déclaré QUE sur `classe` : c'est la donnée qui dit ce que la
-     * garde D3 (« professeur principal ⇒ classe ») dit en littéral dans les écrans,
+     * garde « professeur principal ⇒ classe » dit en littéral dans les écrans,
      * et {@see GroupTypeRole::assertOwnerStaysOnClasse()} refuserait l'inverse.
      *
      * @var list<array{group_type_key: string, group_role_key: string, label: ?string}>
@@ -227,10 +228,8 @@ final class CollegeSeedRoleXTypeCommand extends Command
 
         if (! $resync) {
             // ADDITIVE : le libellé local fait foi. C'est le contrat de la
-            // commande, et la contradiction que la review 62.3 #2 relevait entre
-            // la migration (« on ne réécrit jamais un libellé local ») et le
-            // seeder (qui le réécrivait) est close ici — il n'y a plus qu'un
-            // geste, et il ne réécrit rien sans qu'on le lui demande.
+            // commande — un libellé modifié depuis l'onglet « Types de groupes »
+            // n'est jamais réécrit sans `--resync`.
             return [sprintf('laissée en place (« %s »)', $this->render($local)), 'kept'];
         }
 

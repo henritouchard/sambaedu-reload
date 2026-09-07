@@ -10,17 +10,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 28.1 — Label imposé d'un contrat amont (controlHub).
+ * Label imposé d'un contrat amont (controlHub).
  *
  * Un label représente une étiquette déclarée par l'autorité amont avec son mode :
  * - `free`     : l'admin local peut étiqueter librement des postes avec ce label.
  * - `reserved` : le label est réservé à l'autorité amont (typiquement porté par un groupe imposé).
  *
  * Ce modèle est un modèle de **réception** — il ne génère aucune logique.
- * - Mapping label → WorkstationGroup local → Epic 30.
+ * - Mapping label → WorkstationGroup local →.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » dans ce modèle.
- * Préfixe imposé : `ControlHubContract*`. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ Convention de nommage : aucun mot « central » dans ce modèle.
+ * Préfixe imposé : `ControlHubContract*`.
  *
  * @property int $id
  * @property int $controlhub_contract_id

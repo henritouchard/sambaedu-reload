@@ -12,11 +12,11 @@ use Tests\TestCase;
 /**
  * Tests unitaires — résolution/validation des templates GPO par
  * `GpoTemplateRegistry` (classe SURVIVANTE après l'extinction du canal legacy,
- * story 27.14 : elle pilote `isPublishable('se4_agent_bootstrap')` dont dépend
- * la GPO-dispatcher bootstrap 25.4).
+ * elle pilote `isPublishable('se4_agent_bootstrap')` dont dépend
+ * la GPO-dispatcher bootstrap).
  *
  * Couverture rapatriée depuis l'ex-`GpoDetailPublishTest` (supprimé avec la
- * publication étage-2 legacy en 27.14) : ces 5 cas négatifs/limites testent le
+ * publication étage-2 legacy) : ces 5 cas négatifs/limites testent le
  * comportement GÉNÉRIQUE du registre (forme répertoire vs archive, section CSE
  * obligatoire, préfixe autorisé, GPT.INI obligatoire) — non couverts par
  * `Se4AgentBootstrapTemplateTest` qui ne valide que le bootstrap concret réel.
@@ -104,7 +104,7 @@ class GpoTemplateRegistryTest extends TestCase
     }
 
     /**
-     * Story 27.16 — le nouveau préfixe SE5 `se_` reconnaît `SE_agent_bootstrap`
+     * Le nouveau préfixe SE5 `se_` reconnaît `SE_agent_bootstrap`
      * (matching `mb_strtolower`) SANS dégrader la reconnaissance des templates
      * legacy `se4_`/`etab_` (non-régression), ET sans chevaucher `se4_` :
      * `se4_wpkg` lowercasé commence par `se4`, jamais par `se_`.
@@ -122,7 +122,7 @@ class GpoTemplateRegistryTest extends TestCase
         $this->assertTrue($registry->isPublishable('etab_custom'), 'etab_ doit rester reconnu (non-régression)');
     }
 
-    /** Story 27.16 — `se_` ne capture pas un nom hors préfixe (`session_x`). */
+    /** `se_` ne capture pas un nom hors préfixe (`session_x`). */
     #[Test]
     public function registry_se_prefix_does_not_capture_unrelated_names(): void
     {

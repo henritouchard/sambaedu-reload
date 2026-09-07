@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 16.11 — AC6.1.
  *
  * Modèle Eloquent pour la table `workstations_migration_status`.
  *
@@ -21,8 +20,8 @@ use Illuminate\Support\Carbon;
  * considéré comme **déjà migré** — `MigrationController::serveFragment`
  * renvoie un fragment-noop).
  *
- * Story 16.13bis : à l'origine cette table servait au middleware
- * `InjectBootstrapFragment` (16.11). Le middleware a été supprimé, la
+ * À l'origine cette table servait au middleware
+ * `InjectBootstrapFragment`. Le middleware a été supprimé, la
  * logique est désormais portée par le contrôleur dédié `MigrationController`.
  *
  * Conventions :
@@ -36,7 +35,7 @@ use Illuminate\Support\Carbon;
  *    explicite pour préserver l'API si Phase 3+ introduit des états
  *    intermédiaires.
  *  - Override `newFactory()` pour pointer la factory sous sous-namespace
- *    `Database\Factories\Auth\V1` (parité 16.10 `WorkstationRefreshToken`).
+ *  `Database\Factories\Auth\V1` (parité `WorkstationRefreshToken`).
  *
  * @property int $id
  * @property string $workstation_uuid

@@ -10,7 +10,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC5.4 / D15 / T6.3.
+ * D15 / T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/linux/autorun` (stub).
  */
@@ -61,7 +61,7 @@ class IpxeLinuxAutorunEndpointTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Post-review #M7 — Spoofing du paramètre `name`.
+     * Spoofing du paramètre `name`.
      *
      * Le controller préfère `$workstation->name` (DB) sur `name` payload
      * pour empêcher un attaquant LAN d'injecter un nom usurpé dans le script

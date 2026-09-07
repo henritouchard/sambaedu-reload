@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ControlHub\Data;
 
 /**
- * Story 51.1 — DTO de résultat de la réconciliation du dépôt IMPOSÉ par le contrat
+ * DTO de résultat de la réconciliation du dépôt IMPOSÉ par le contrat
  * amont (controlHub).
  *
  * Retourné par {@see \App\Services\ControlHub\ImposedDepotReconciler::reconcile()}.
@@ -21,12 +21,12 @@ namespace App\Services\ControlHub\Data;
  *  - `duplicatesRemoved` : doublons d'`app_id` DÉTRUITS en cascade car le même `app_id`
  *    était déjà représenté sur le dépôt imposé (miroir/dépôt redondant) — le re-pointage
  *    aurait violé l'unicité, la ligne redondante est purgée pour libérer son dépôt
- *    d'origine (AC7 — review 51.1 #5, décision Henri).
- *  - `failed`        : opérations en exception (résilience par app/dépôt — AC11).
+ *    d'origine.
+ *  - `failed`        : opérations en exception (la résilience est par app et par dépôt).
  *  - `errors`        : messages d'échec (la boucle n'abandonne jamais).
  *
  * ⚠️ GARDE-FOU R3 : vocabulaire « imposé » / « amont » / `Imposed` / `Upstream`
- * exclusivement, terme prohibé proscrit. [Source: prd-contrat-manage-se5.md#R3]
+ * exclusivement, terme prohibé proscrit.
  */
 class ImposedDepotReconciliationResult
 {

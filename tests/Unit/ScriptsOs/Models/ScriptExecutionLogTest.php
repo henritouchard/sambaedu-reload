@@ -15,7 +15,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.12 — AC1.2 (≥10 cas).
+ * (≥10 cas).
  */
 class ScriptExecutionLogTest extends TestCase
 {

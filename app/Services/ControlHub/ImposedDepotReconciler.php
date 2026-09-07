@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 51.1 — Réconciliation « désir d'état » du dépôt IMPOSÉ par le contrat amont
- * (controlHub) : bascule EXCLUSIVE du canal dépôts (D2).
+ * Réconciliation « désir d'état » du dépôt IMPOSÉ par le contrat amont
+ * (controlHub) : bascule EXCLUSIVE du canal dépôts.
  *
  * Quand un contrat amont **actif** porte un catalogue applicatif NON vide, ce service :
  *  1. MATÉRIALISE un dépôt imposé unique (`is_imposed`, `is_primary`) — projection
@@ -30,27 +30,27 @@ use Throwable;
  *     catalogue) via {@see AppStoreService::deleteApplication()} (RÉUTILISÉ, jamais dupliqué) ;
  *  4. SUPPRIME réellement les anciens dépôts non imposés (`Depot::delete()`).
  *
- * **L'ordre transfert → désinstallation → suppression est un INVARIANT** (piège #1) :
+ * **L'ordre transfert → désinstallation → suppression est un INVARIANT** :
  * `applications.depot_id` est en `onDelete('cascade')` — supprimer un dépôt AVANT le
  * transfert détruirait en cascade des apps encore installées ET leurs pivots, sans la
  * cascade propre (fichiers, regen, invalidation cache).
  *
- * Patron STRUCTUREL {@see ImposedWorkstationGroupReconciler} (30.3) :
- *  - court-circuit NFR3 (sans contrat actif → no-op total ; catalogue vide → no-op
- *    bascule, cf. AC9 — le verrou d'AJOUT, lui, suit le lien et vit dans le SFC/DepotSyncService) ;
- *  - DTO résultat avec compteurs ; try/catch résilient par app/dépôt (AC11) ;
+ * Patron STRUCTUREL {@see ImposedWorkstationGroupReconciler} :
+ *  - court-circuit standalone (sans contrat actif → no-op total ; catalogue vide → no-op
+ *    bascule — le verrou d'AJOUT, lui, suit le lien et vit dans le SFC/DepotSyncService) ;
+ *  - DTO résultat avec compteurs ; try/catch résilient par app/dépôt ;
  *  - commande jumelle {@see \App\Console\Commands\ReconcileImposedDepot} pour re-jeu.
  *
- * ⚠️ Apps `depot_id IS NULL` INTOUCHÉES (piège #4) : matérialisées amont
- * (`managed_by_control_hub`, 31.3) ET apps locales sans dépôt — le filtre est
+ * ⚠️ Apps `depot_id IS NULL` INTOUCHÉES : matérialisées amont
+ * (`managed_by_control_hub`) ET apps locales sans dépôt — le filtre est
  * « `depot_id` ∈ dépôts NON imposés », jamais « `app_id` ∉ catalogue » seul.
  *
  * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « imposé » / « amont » /
- * `Imposed` / `Upstream`. [Source: prd-contrat-manage-se5.md#R3]
+ * `Imposed` / `Upstream`.
  */
 class ImposedDepotReconciler
 {
-    /** Nom canonique unique du dépôt imposé (une seule définition — AC4). */
+    /** Nom canonique unique du dépôt imposé. */
     public const IMPOSED_DEPOT_NAME = 'ControlHub';
 
     /** URL du dépôt imposé : marqueur non joignable (jamais synchronisé en HTTP). */
@@ -70,7 +70,7 @@ class ImposedDepotReconciler
     {
         $result = new ImposedDepotReconciliationResult();
 
-        // NFR3 — Standalone : sans contrat amont actif, no-op TOTAL (≤ 1 requête
+        // Standalone : sans contrat amont actif, no-op TOTAL (≤ 1 requête
         // controlhub_contracts). Aucune autre table lue, aucun dépôt touché.
         $contract = ControlHubContract::active();
         if ($contract === null) {
@@ -79,18 +79,18 @@ class ImposedDepotReconciler
 
         $catalogApps = $contract->catalogApps()->get();
 
-        // AC9 — Catalogue VIDE = PAS de bascule (sémantique D1 de 31.1 : « l'autorité
+        // Catalogue VIDE = PAS de bascule (« l'autorité
         // n'a pas encore défini de catalogue » ≠ « catalogue vide autoritaire »). AUCUNE
         // matérialisation, AUCUN transfert, AUCUNE désinstallation, AUCUNE suppression.
-        // Seul le verrou d'AJOUT (AC8, suit le lien) reste actif — hors de ce service.
+        // Seul le verrou d'AJOUT (suit le lien) reste actif — hors de ce service.
         if ($catalogApps->isEmpty()) {
             return $result;
         }
 
-        // ── Piège #1 : ORDRE INVARIANT transfert → désinstallation → suppression. ──
+        // ORDRE INVARIANT : transfert → désinstallation → suppression.
 
-        // Étape 0 — Matérialisation du dépôt imposé (point d'entrée unique — AC4).
-        // Voie bascule = catalogue NON vide (garde AC9 ci-dessus) → promotion is_primary.
+        // Étape 0 — Matérialisation du dépôt imposé (point d'entrée unique).
+        // Voie bascule = catalogue NON vide (garde ci-dessus) → promotion is_primary.
         $imposedDepot = self::getOrCreateImposedDepot(promote: true);
 
         // Étape 0bis — Projection JSON du catalogue → depot_applications (upsert + purge,
@@ -105,7 +105,7 @@ class ImposedDepotReconciler
         $this->uninstallOutOfCatalogApplications($imposedDepot, $catalogAppIds, $result);
 
         // Étape 3 — SUPPRESSION des anciens dépôts non imposés (après transfert +
-        // désinstall ; un dépôt encore référencé — app en échec — est CONSERVÉ, AC11).
+        // désinstall ; un dépôt encore référencé — app en échec — est CONSERVÉ).
         $this->deleteObsoleteDepots($imposedDepot, $result);
 
         Log::info('[ImposedDepotReconciler] Réconciliation du dépôt imposé terminée', [
@@ -140,7 +140,7 @@ class ImposedDepotReconciler
 
         // Réparation / promotion idempotente (le dépôt a pu être créé par un chemin
         // antérieur sans les flags canoniques). La promotion `is_primary` n'est appliquée
-        // QUE sur la voie bascule (`$promote`), jamais depuis WGSync (fenêtre AC9).
+        // QUE sur la voie bascule (`$promote`), jamais depuis WGSync (fenêtre).
         $attributes = ['url' => self::IMPOSED_DEPOT_URL, 'is_imposed' => true, 'is_active' => true];
         if ($promote) {
             $attributes['is_primary'] = true;
@@ -154,7 +154,7 @@ class ImposedDepotReconciler
     }
 
     /**
-     * AC4 — Projette `controlhub_contract_catalog_apps` → `depot_applications` du dépôt
+     * Projette `controlhub_contract_catalog_apps` → `depot_applications` du dépôt
      * imposé (upsert par clé `(depot_id, app_id)`, branche `stable`) PUIS purge les
      * entrées absentes du catalogue. Transposition table→table du patron
      * {@see \App\Services\AppStore\DepotSyncService::parseAndUpsertApplications()} —
@@ -173,7 +173,7 @@ class ImposedDepotReconciler
             $appId = (string) $catalogApp->app_key;
 
             // Champs de contenu (hors `last_checked_at`, volatil) : servent au diff
-            // d'idempotence (AC11 : re-jeu sur état convergé = compteurs à zéro, aucune
+            // D'idempotence ( : re-jeu sur état convergé = compteurs à zéro, aucune
             // écriture — le patron ImposedWorkstationGroupReconciler garde sur isDirty).
             $data = [
                 'name' => ($catalogApp->display_name !== null && $catalogApp->display_name !== '')
@@ -195,7 +195,7 @@ class ImposedDepotReconciler
             if ($existing !== null) {
                 $existing->fill($data);
 
-                // AC11 — no-op strict : aucun contenu modifié ⇒ aucune écriture, aucun
+                // No-op strict : aucun contenu modifié ⇒ aucune écriture, aucun
                 // compteur (le seul `last_checked_at` ne compte pas comme un changement).
                 if ($existing->isDirty()) {
                     $existing->last_checked_at = now();
@@ -216,7 +216,7 @@ class ImposedDepotReconciler
 
         // Purge des depot_applications du dépôt imposé absentes du catalogue (miroir de
         // la purge DepotSyncService, mais table→table). Le catalogue étant non vide
-        // (garde AC9 en amont), $seenAppIds n'est jamais vide.
+        // (garde en amont), $seenAppIds n'est jamais vide.
         $toPurge = DepotApplication::query()
             ->where('depot_id', $imposedDepot->id)
             ->whereNotIn('app_id', $seenAppIds)
@@ -230,16 +230,16 @@ class ImposedDepotReconciler
     }
 
     /**
-     * AC5 — TRANSFERT des apps communes : toute `Application` dont `depot_id` pointe un
+     * TRANSFERT des apps communes : toute `Application` dont `depot_id` pointe un
      * dépôt NON imposé ET dont `app_id` ∈ catalogue amont voit son `depot_id` re-pointé
      * sur le dépôt imposé. RIEN d'autre ne change (status, installed_version, fichiers,
-     * pivots profils/parcs/postes intacts). Pas de réalignement de recette (report 32.1).
+     * pivots profils/parcs/postes intacts). Pas de réalignement de recette (report).
      *
      * ⚠️ Piège d'unicité `unique(depot_id, app_id)` : si une app du MÊME `app_id` existe
      * déjà sur le dépôt imposé (doublon inter-dépôts — dépôt miroir/redondant), le
      * re-pointage violerait la contrainte. Le doublon étant REDONDANT (l'app est déjà
      * représentée sur le dépôt imposé via la 1ʳᵉ ligne), il est DÉTRUIT en cascade
-     * (review 51.1 #5, décision Henri) afin de libérer son dépôt d'origine (AC7). NB : le
+     * afin de libérer son dépôt d'origine. NB : le
      * re-jeu convergé ne repasse jamais ici (les apps déjà sur le dépôt imposé sont
      * exclues par la requête ci-dessous), donc ce chemin est PUREMENT le cas doublon.
      *
@@ -251,7 +251,7 @@ class ImposedDepotReconciler
         ImposedDepotReconciliationResult $result,
     ): void {
         // Apps sur un dépôt NON imposé (donc depot_id NON NULL : les apps depot_id NULL
-        // sont INTOUCHÉES — piège #4) ET dans le catalogue amont.
+        // sont INTOUCHÉES) ET dans le catalogue amont.
         $commonApps = Application::query()
             ->whereNotNull('depot_id')
             ->where('depot_id', '!=', $imposedDepot->id)
@@ -263,7 +263,7 @@ class ImposedDepotReconciler
                 // Doublon inter-dépôts : le même app_id est déjà représenté sur le dépôt
                 // imposé (miroir/dépôt redondant). Le re-pointage violerait l'unicité →
                 // on DÉTRUIT le doublon redondant (cascade propre + invalidation cache) au
-                // lieu de le laisser bloquer la suppression de son dépôt (review 51.1 #5).
+                // lieu de le laisser bloquer la suppression de son dépôt.
                 $collision = Application::query()
                     ->where('depot_id', $imposedDepot->id)
                     ->where('app_id', $app->app_id)
@@ -294,24 +294,24 @@ class ImposedDepotReconciler
     }
 
     /**
-     * AC6 (+ convergence stricte D2, review 51.1 #4) — DÉSINSTALLATION en cascade des apps
+     * DÉSINSTALLATION en cascade des apps
      * hors-catalogue (opération DESTRUCTIVE de masse). Toute `Application` dont `app_id` ∉
      * catalogue amont ET dont `depot_id` est NON NULL → {@see AppStoreService::deleteApplication()}
      * (RÉUTILISÉ) — Y COMPRIS si elle est portée par le dépôt IMPOSÉ.
      *
-     * ⚠️ Convergence stricte (décision Henri) : une app transférée sur le dépôt imposé à
-     * une version antérieure du catalogue, puis RETIRÉE du catalogue, doit être
-     * désinstallée — pas seulement voir sa `depot_application` purgée. La lettre initiale
-     * d'AC6 (« dépôt NON imposé ») laissait ces apps installées à jamais ; D2 (« le parc
-     * converge STRICTEMENT vers ce que l'autorité autorise ») exige leur retrait. Les apps
-     * du catalogue (transférées à l'étape 1) portent un `app_id` ∈ catalogue → EXCLUES ici.
+     * ⚠️ Convergence stricte : une app transférée sur le dépôt imposé à une version
+     * antérieure du catalogue, puis RETIRÉE du catalogue, doit être désinstallée — pas
+     * seulement voir sa `depot_application` purgée. Ne cibler que les dépôts NON imposés
+     * laisserait ces apps installées à jamais, alors que le parc doit converger
+     * STRICTEMENT vers ce que l'autorité autorise. Les apps du catalogue (transférées à
+     * l'étape 1) portent un `app_id` ∈ catalogue → EXCLUES ici.
      *
-     * ⚠️ Piège #4 : `whereNotNull('depot_id')` exclut les apps `depot_id NULL`
+     * ⚠️ `whereNotNull('depot_id')` exclut les apps `depot_id NULL`
      * (matérialisées amont `managed_by_control_hub` + locales sans dépôt) — INTOUCHÉES.
      *
-     * ⚠️ Piège #2 (cache par-poste) : voir {@see self::purgeApplication()}.
+     * ⚠️ Invalidation du cache par-poste : voir {@see self::purgeApplication()}.
      *
-     * Résilience par app (AC11) : une désinstallation en échec n'interrompt NI les autres
+     * Résilience par app : une désinstallation en échec n'interrompt NI les autres
      * apps NI la suite (compteur `failed`) — et son dépôt d'origine sera CONSERVÉ (l'app
      * reste référencée, cf. {@see self::deleteObsoleteDepots()}).
      *
@@ -353,11 +353,11 @@ class ImposedDepotReconciler
     }
 
     /**
-     * AC7 + AC11 — SUPPRESSION réelle (`Depot::delete()`, pas le soft `is_active=false`
+     * SUPPRESSION réelle (`Depot::delete`, pas le soft `is_active=false`
      * de l'UI) des dépôts NON imposés, APRÈS transfert + désinstallation. Un dépôt
      * encore RÉFÉRENCÉ par une `Application` (désinstallation en échec) est CONSERVÉ :
      * le supprimer déclencherait la cascade FK `onDelete('cascade')` qui détruirait l'app
-     * en échec et ses pivots sans la cascade propre (piège #1 + AC11).
+     * en échec et ses pivots sans la cascade propre.
      *
      * Les `depot_applications` des anciens dépôts partent par leur propre cascade FK.
      */
@@ -372,7 +372,7 @@ class ImposedDepotReconciler
 
         foreach ($obsoleteDepots as $depot) {
             try {
-                // AC11 — dépôt encore référencé (app en échec de désinstall) ⇒ conservé.
+                // Dépôt encore référencé (app en échec de désinstall) ⇒ conservé.
                 $stillReferenced = Application::query()->where('depot_id', $depot->id)->exists();
                 if ($stillReferenced) {
                     Log::warning('[ImposedDepotReconciler] Dépôt non imposé conservé (encore référencé par une app)', [
@@ -402,15 +402,15 @@ class ImposedDepotReconciler
 
     /**
      * Désinstallation en cascade CANONIQUE d'une `Application` + invalidation du cache
-     * par-poste (piège #2). RÉUTILISE {@see AppStoreService::deleteApplication()} (fichiers
+     * par-poste. RÉUTILISE {@see AppStoreService::deleteApplication()} (fichiers
      * + 6 familles de pivots/enregistrements + delete + regen packages.xml/bundle).
      *
      * ⚠️ Les hostnames affectés sont collectés AVANT le detach Eloquent (qui n'émet PAS
      * `WorkstationGroupApplicationsChanged` → pas d'invalidation automatique), puis leurs
      * entrées de cache sont oubliées (mécanique {@see \App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache}).
      *
-     * Partagé par la désinstallation hors-catalogue (AC6) ET la destruction d'un doublon
-     * inter-dépôts (review 51.1 #5). Propage toute exception au caller (résilience AC11).
+     * Partagé par la désinstallation hors-catalogue ET la destruction d'un doublon
+     * inter-dépôts. Propage toute exception au caller (résilience).
      *
      * @return int Nombre de postes dont le cache a été invalidé.
      */
@@ -430,14 +430,14 @@ class ImposedDepotReconciler
     /**
      * Postes affectés par une désinstallation d'app : union des postes atteints par
      * TOUTES les voies que {@see WorkstationPackagesResolver} agrège et que
-     * {@see AppStoreService::deleteApplication()} détache (piège #2) :
+     * {@see AppStoreService::deleteApplication()} détache :
      *  - assignation DIRECTE poste (`application_workstation`) ;
      *  - assignation DIRECTE parc (`application_workstation_group`) ;
      *  - assignation via PROFIL applicatif (`app_profile_application`) — un profil pointe
      *    des postes ET des parcs (`groups.appProfiles.applications` dans le resolver).
      *    ⚠️ Oublier cette voie laisserait un `profiles.xml` caché listant l'app supprimée
-     *    jusqu'à expiration du cache (CACHE_TTL) sur les postes servis UNIQUEMENT par profil
-     *    (review 51.1 #1).
+     *    jusqu'à expiration du cache (CACHE_TTL) sur les postes servis UNIQUEMENT par
+     *    profil.
      *
      * Collecté AVANT le detach. Mécanique alignée sur
      * {@see \App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache::hostnamesForAppProfile()}.

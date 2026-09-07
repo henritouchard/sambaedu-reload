@@ -20,13 +20,13 @@ use Tests\Support\FakeExtensionHelperRunner;
 use Tests\TestCase;
 
 /**
- * Story 56.2 (AC2/AC3/AC5) — Les deux façades CLI du moteur.
+ * Les deux façades CLI du moteur.
  *
  * Ce qu'on vérifie ici n'est PAS le moteur (couvert par
  * {@see ExtensionInstallServiceTest}) mais le contrat de la commande : codes de
  * sortie, `--source`, no-op signalé en succès, et surtout **aucun secret dans
  * la sortie** — l'historique d'un terminal et les journaux d'exploitation sont
- * deux endroits où un `client_secret` ne doit jamais atterrir (NFR3).
+ * deux endroits où un `client_secret` ne doit jamais atterrir.
  */
 class ExtensionInstallCommandsTest extends TestCase
 {
@@ -117,10 +117,6 @@ class ExtensionInstallCommandsTest extends TestCase
         return $extension;
     }
 
-    // =====================================================================
-    // ext:install
-    // =====================================================================
-
     #[Test]
     public function install_succeeds_and_reports_every_step(): void
     {
@@ -206,10 +202,6 @@ class ExtensionInstallCommandsTest extends TestCase
             ->expectsOutputToContain('bibliothèque')
             ->assertExitCode(1);
     }
-
-    // =====================================================================
-    // ext:remove
-    // =====================================================================
 
     #[Test]
     public function remove_succeeds_after_an_install(): void

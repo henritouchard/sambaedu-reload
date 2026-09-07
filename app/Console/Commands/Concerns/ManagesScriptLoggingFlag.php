@@ -10,19 +10,19 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 17.5 — Helper d'écriture du flag `SAMBAEDU_SCRIPTS_LOGGING_ENABLED`
+ * Helper d'écriture du flag `SAMBAEDU_SCRIPTS_LOGGING_ENABLED`
  * dans le fichier `.env`.
  *
  * Mutualisé entre `winscript-logs:enable` et `winscript-logs:disable`.
  *
- * Décisions SM (D1, D2, D5) :
- *  - D1 : la seule source mutable du flag est le `.env` (l'Assembler 17.2 lit
- *    `config('sambaedu.scripts.logging.enabled')` ← `env('SAMBAEDU_SCRIPTS_LOGGING_ENABLED')`).
- *  - D2 : écriture **non destructive** ancrée ligne par ligne via
+ * Contraintes tenues ici :
+ *  - la seule source mutable du flag est le `.env` (l'Assembler lit
+ *    `config('sambaedu.scripts.logging.enabled')` ← `env('SAMBAEDU_SCRIPTS_LOGGING_ENABLED')`) ;
+ *  - écriture **non destructive** ancrée ligne par ligne via
  *    `preg_replace('/^SAMBAEDU_SCRIPTS_LOGGING_ENABLED=.*$/m', …)`.
  *    Si la variable est absente, elle est appendée proprement à la fin du
- *    fichier (gestion du `\n` final). Les autres lignes sont préservées byte-pour-byte.
- *  - D5 : le chemin `.env` est **injectable** (`$envPathOverride`) pour que les
+ *    fichier (gestion du `\n` final). Les autres lignes sont préservées byte-pour-byte ;
+ *  - le chemin `.env` est **injectable** (`$envPathOverride`) pour que les
  *    tests pointent vers un fichier de fixture temporaire — JAMAIS le `.env` réel.
  */
 trait ManagesScriptLoggingFlag
@@ -73,7 +73,7 @@ trait ManagesScriptLoggingFlag
 
         // `[^\r\n]*` (et non `.*$`) borne le match à la valeur SANS consommer le
         // terminateur de ligne (`\n` ou `\r\n`) : il est donc préservé
-        // byte-pour-byte, y compris sur un `.env` en CRLF (AC2.2).
+        // byte-pour-byte, y compris sur un `.env` en CRLF.
         $pattern = '/^'.preg_quote(self::ENV_KEY, '/').'=[^\r\n]*/m';
 
         if (preg_match($pattern, $contents)) {
@@ -107,7 +107,7 @@ trait ManagesScriptLoggingFlag
 
     /**
      * Lit l'état effectif du flag via la config (source de vérité partagée
-     * avec l'Assembler 17.2). Clé exacte : `sambaedu.scripts.logging.enabled`.
+     * avec l'Assembler). Clé exacte : `sambaedu.scripts.logging.enabled`.
      */
     protected function loggingFlagEnabled(): bool
     {
@@ -115,9 +115,9 @@ trait ManagesScriptLoggingFlag
     }
 
     /**
-     * Invalide le cache de configuration en best-effort (D3/D4) afin que la
-     * prochaine lecture de config relise la valeur `.env`. Ne relance PAS
-     * `config:cache` (laissé à l'opérateur — D4).
+     * Invalide le cache de configuration en best-effort afin que la prochaine
+     * lecture de config relise la valeur `.env`. Ne relance PAS `config:cache`,
+     * laissé à l'opérateur.
      *
      * @return bool true si un cache config était présent et a été vidé.
      */

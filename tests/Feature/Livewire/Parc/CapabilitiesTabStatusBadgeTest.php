@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.4 (AC #1, #2, #3, #4, #6) — Tri-état (verrouillé/permissif/local) sur
+ * Tri-état (verrouillé/permissif/local) sur
  * l'onglet « Options / Capacités » d'un WorkstationGroup.
  *
  * Couvre :
@@ -28,18 +28,11 @@ use Tests\TestCase;
  *     « Votre override s'applique à ce parc » (permissive) ;
  *   - Badge « Local » (data-testid upstream-local) sans contrainte amont — contrat actif ;
  *   - Badge permissif dans le picker (picker-permissive) ;
- *   - Standalone (aucun contrat) → AUCUN badge (NFR3 AC #6) ;
- *   - Contrat severed → AUCUN badge (AC #6, même traitement que standalone).
+ *   - Standalone (aucun contrat) → AUCUN badge ;
+ *   - Contrat severed → AUCUN badge, même traitement que standalone.
  *
- * Corrections post-review :
- *   - #2 : assertions sur le tooltip permissif (relaxabilité + assertDontSee 'valeur amont') ;
- *   - #3 : badges gatés sur hasActiveContract() — standalone = zéro badge, y compris Local ;
- *   - #6 : cas severed ajouté ;
- *   - #7 : compteur de requêtes items (zero en standalone, NFR3 au point d'usage réel) ;
- *   - #9 : assertSee génériques remplacés par assertSeeHtml contextuels.
- *
- * Non-régression 29.2 : badge locked + masquage (asserté ici en parallèle).
- * Non-régression 29.3 : les capacités permissives RESTENT addables.
+ * Non-régression : badge locked + masquage (asserté ici en parallèle).
+ * Non-régression : les capacités permissives RESTENT addables.
  */
 class CapabilitiesTabStatusBadgeTest extends TestCase
 {
@@ -132,7 +125,7 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
         ]);
     }
 
-    // ── Badges dans la table des overrides ────────────────────────────────────
+    // Badges dans la table des overrides
 
     #[Test]
     public function locked_capability_in_overrides_renders_locked_badge_and_hides_buttons(): void
@@ -144,11 +137,11 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // AC #1 — badge verrouillé présent (non-régression 29.2).
+        // Badge verrouillé présent (non-régression).
         $component->assertSeeHtml('data-testid="upstream-locked-'.$cap->id.'"');
-        // #9 : assertSeeHtml contextuel (évite faux-positifs sur "Verrouillé" ailleurs).
+        // assertSeeHtml contextuel : évite les faux positifs sur « Verrouillé » ailleurs.
         $component->assertSeeHtml('</i> Verrouillé');
-        // Boutons masqués (29.2 : « Imposé par contrat amont »).
+        // Boutons masqués : « Imposé par contrat amont ».
         $component->assertSeeHtml('Imposé par contrat amont');
         $component->assertDontSeeHtml('data-testid="edit-override-'.$cap->id.'"');
         $component->assertDontSeeHtml('data-testid="remove-override-'.$cap->id.'"');
@@ -167,17 +160,17 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // AC #2 — badge permissif « Modifiable » présent.
+        // Badge permissif « Modifiable » présent.
         $component->assertSeeHtml('data-testid="upstream-permissive-'.$cap->id.'"');
-        // #9 : assertSeeHtml contextuel (évite faux-positifs sur "Modifiable" ailleurs).
+        // assertSeeHtml contextuel : évite les faux positifs sur « Modifiable » ailleurs.
         $component->assertSeeHtml('</i> Modifiable');
-        // #2 : vérité du libellé permissif — tooltip dit la RELAXABILITÉ, pas « valeur amont s'applique ».
+        // Le tooltip permissif dit la RELAXABILITÉ, pas « valeur amont s'applique ».
         $component->assertSee('votre réglage local prévaut');
         $component->assertDontSee('valeur amont');
-        // Boutons actifs (un permissif n'est pas bloqué — 29.3 / FR4).
+        // Boutons actifs : un permissif n'est pas bloqué.
         $component->assertSeeHtml('data-testid="edit-override-'.$cap->id.'"');
         $component->assertSeeHtml('data-testid="remove-override-'.$cap->id.'"');
-        // Explication FR8 : « Votre override s'applique à ce parc ».
+        // Explication : « Votre override s'applique à ce parc ».
         $component->assertSeeHtml('data-testid="upstream-permissive-note-'.$cap->id.'"');
         $component->assertSeeHtml("Votre override s'applique à ce parc");
         // Pas de badge verrouillé ni local.
@@ -188,8 +181,8 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
     #[Test]
     public function local_capability_in_overrides_with_active_contract_renders_local_badge(): void
     {
-        // AC #3 — contrat actif sans item pour cette capacité → statut Local.
-        // #3 : le badge « Local » n'est visible QUE si un contrat est actif.
+        // Contrat actif sans item pour cette capacité → statut Local. Le badge
+        // « Local » n'est visible QUE si un contrat est actif.
         $this->actAsCustomizer();
         $cap = $this->capabilityWithKey('show_extensions', 'HKCU', 'Software\\Ext', 'ShowExt');
         $this->addOverride($cap);
@@ -198,9 +191,9 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // AC #3 — marqueur local visible (contrat actif mais pas d'item pour cette capacité).
+        // Marqueur local visible (contrat actif mais pas d'item pour cette capacité).
         $component->assertSeeHtml('data-testid="upstream-local-'.$cap->id.'"');
-        // #9 : assertSeeHtml contextuel.
+        // assertSeeHtml contextuel.
         $component->assertSeeHtml('</i> Local');
         // Boutons actifs.
         $component->assertSeeHtml('data-testid="edit-override-'.$cap->id.'"');
@@ -213,8 +206,8 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
     #[Test]
     public function standalone_no_contract_renders_no_upstream_badges(): void
     {
-        // #3 — en standalone (aucun contrat actif), AUCUN badge n'est rendu
-        // (pas même « Local ») → UI byte-identique à 27.12 (NFR3 AC #6).
+        // En standalone (aucun contrat actif), AUCUN badge n'est rendu
+        // (pas même « Local ») → UI byte-identique.
         $this->actAsCustomizer();
         $cap = $this->capabilityWithKey('uac_enabled', 'HKLM', 'Software\\UAC', 'EnableLUA');
         $this->addOverride($cap);
@@ -222,19 +215,17 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // AC #6 — aucun badge amont (UI identique à 27.12).
+        // Aucun badge amont (UI identique).
         $component->assertDontSeeHtml('upstream-locked-');
         $component->assertDontSeeHtml('upstream-permissive-');
-        // #3 : badge « Local » absent en standalone (zéro badge).
+        // Badge « Local » absent en standalone (zéro badge).
         $component->assertDontSeeHtml('upstream-local-');
     }
-
-    // ── Cas severed (#6) ───────────────────────────────────────────────────────
 
     #[Test]
     public function severed_contract_renders_no_upstream_badges(): void
     {
-        // AC #6 / #3 — contrat severed = lien coupé → traité comme standalone.
+        // Contrat severed = lien coupé → traité comme standalone.
         // AUCUN badge rendu (pas même « Local »).
         $this->actAsCustomizer();
         $cap = $this->capabilityWithKey('severed_cap', 'HKCU', 'Software\\Sev', 'SevVal');
@@ -253,17 +244,15 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
         $component->assertDontSeeHtml('upstream-local-');
     }
 
-    // ── Compteur de requêtes NFR3 (#7) ────────────────────────────────────────
-
     #[Test]
     public function standalone_no_contract_emits_zero_items_queries_on_render(): void
     {
-        // #7 — NFR3 au point d'usage réel (rendu Livewire) : en standalone,
-        // AUCUNE requête controlhub_contract_items ne doit être émise.
+        // Au point d'usage réel (le rendu Livewire) : en standalone, AUCUNE
+        // requête controlhub_contract_items ne doit être émise.
         $this->actAsCustomizer();
         $cap = $this->capabilityWithKey('qry_count_cap', 'HKCU', 'Software\\QC', 'QCVal');
         $this->addOverride($cap);
-        // Aucun contrat actif → court-circuit NFR3.
+        // Aucun contrat actif → court-circuit.
 
         DB::flushQueryLog();
         DB::enableQueryLog();
@@ -275,7 +264,7 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
         self::assertSame(0, $itemQueries, 'aucune requête controlhub_contract_items en standalone (NFR3 au rendu Livewire)');
     }
 
-    // ── Badge dans le picker d'ajout ───────────────────────────────────────────
+    // Badge dans le picker d'ajout
 
     #[Test]
     public function permissive_capability_in_picker_shows_modifiable_badge(): void
@@ -287,7 +276,7 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // La capacité est addable (non-régression 29.3 : permissif ≠ verrou).
+        // La capacité est addable (non-régression : permissif ≠ verrou).
         $addableIds = array_column($component->instance()->addableCapabilities(), 'id');
         self::assertContains($cap->id, $addableIds, 'capacité permissive reste addable');
 
@@ -304,19 +293,19 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // Non-régression 29.2 : capacité verrouillée absente du picker.
+        // Non-régression : capacité verrouillée absente du picker.
         $addableIds = array_column($component->instance()->addableCapabilities(), 'id');
         self::assertNotContains($cap->id, $addableIds, 'capacité verrouillée absente du picker');
         $component->assertDontSeeHtml('data-testid="picker-permissive-'.$cap->id.'"');
     }
 
-    // ── Précédence verrouillé > permissif ─────────────────────────────────────
+    // Précédence verrouillé > permissif
 
     #[Test]
     public function locked_badge_takes_precedence_over_permissive_for_multi_key_capability(): void
     {
         // Une capacité avec deux clés : l'une verrouillée, l'autre permissive.
-        // → statut = 'locked' (AC #4). Un seul badge rendu.
+        // → statut = 'locked'. Un seul badge rendu.
         $this->actAsCustomizer();
         $cap = Capability::factory()->create(['key' => 'multi_key_cap', 'default_value' => 'on']);
         CapabilityProjection::factory()->for($cap)->keys([
@@ -337,7 +326,7 @@ class CapabilitiesTabStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id]);
 
-        // Badge verrouillé présent, badge permissif absent (précédence AC #4).
+        // Badge verrouillé présent, badge permissif absent (précédence).
         $component->assertSeeHtml('data-testid="upstream-locked-'.$cap->id.'"');
         $component->assertDontSeeHtml('data-testid="upstream-permissive-'.$cap->id.'"');
         $component->assertDontSeeHtml('data-testid="upstream-local-'.$cap->id.'"');

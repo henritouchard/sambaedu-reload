@@ -10,10 +10,10 @@ use App\Exceptions\Filesystem\InvalidBackendReportException;
 use App\Services\Filesystem\Plan\FilePlan;
 
 /**
- * Story 60.3 — INSTANTANÉ de ce qu'un backend a fait, nœud par nœud.
+ * INSTANTANÉ de ce qu'un backend a fait, nœud par nœud.
  *
  * **Il n'y a pas de booléen global, et ce n'est pas un oubli.** Le sondage
- * d'ouverture d'epic a mesuré une réussite qui n'en était pas une : l'instruction
+ * d'ouverture a mesuré une réussite qui n'en était pas une : l'instruction
  * de retrait sur le dossier privé des enseignants est acceptée `200 OK`, n'a aucun
  * effet, et la relecture rend ensuite un accès là où on demandait zéro. Un rapport
  * qui agrège en « ça a marché » redit exactement ce mensonge. Les agrégats
@@ -70,12 +70,12 @@ final class ReconciliationReport
      * `unserialize()` ne passe par aucun constructeur : il restaure les propriétés
      * directement, `readonly` comprises. Un rapport « tout vert » qui omettrait le
      * nœud privé des enseignants redeviendrait donc fabricable par ce chemin, et
-     * l'affirmation la plus forte de cette story serait fausse hors du chemin
+     * l'affirmation la plus forte de ce rapport serait fausse hors du chemin
      * heureux.
      *
      * On ferme la porte plutôt que de la documenter : une garantie qui ne vit que
-     * dans un commentaire est la signature de défaut que cet epic rencontre à
-     * chaque story. L'échec est bruyant et arrive au point exact du mésusage.
+     * dans un commentaire est une signature de défaut récurrente. L'échec est
+     * bruyant et arrive au point exact du mésusage.
      *
      * **Le format de transport est {@see toArray()}.** Un rapport se reconstruit en
      * repassant par une fabrique, avec son plan — c'est-à-dire en refaisant
@@ -214,10 +214,6 @@ final class ReconciliationReport
 
         return $ordered;
     }
-
-    // =========================================================================
-    // Vues DÉRIVÉES — jamais des faits primaires
-    // =========================================================================
 
     /** @return list<NodeReconciliation> */
     public function withOutcome(FileBackendOutcome $outcome): array

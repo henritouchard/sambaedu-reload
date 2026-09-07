@@ -6,8 +6,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Handler `overlay` (aggregate / strict / session) — Story 24.6, portage de
-// handlers/Overlay.ps1 (24.4). OS-agnostique par injection (chemin per-user,
+// Handler `overlay` (aggregate / strict / session), portage de
+// handlers/Overlay.ps1. OS-agnostique par injection (chemin per-user,
 // COMPUTERNAME, détection Rainmeter) : la composition ET le handler complet
 // sont testés sur l'hôte ; agent/windows ne fait que le câbler.
 //
@@ -15,13 +15,13 @@ import (
 //     cible ? Comparaison de CONTENU après normalisation NFC (le serveur
 //     émet NFC mais un fichier réécrit par un autre outil Windows peut être
 //     NFD ; le document porte fullname/room accentués). x/text/unicode/norm
-//     est la dépendance annoncée par 24.5 « le moment venu » — justifiée au
+//     est la dépendance annoncée par « le moment venu » — justifiée au
 //     README (même niveau de confiance que x/sys).
 //   - apply : écriture ATOMIQUE (tmp PID + rename) du document composé,
 //     UTF-8 sans BOM, sous %LOCALAPPDATA%. Mode `strict` (constante
 //     provider) : toute divergence est réécrite — le moteur rapporte `drift`.
 //
-// Rainmeter ABSENT du poste (amendement Henri 2026-06-12) : comportement
+// Rainmeter ABSENT du poste : comportement
 // gracieux — le handler compose et écrit quand même overlay.json (la
 // ressource config EST convergée → statut machine d'états normal, JAMAIS
 // `error` du seul fait de l'absence) + log info. Installer une application

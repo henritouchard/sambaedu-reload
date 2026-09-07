@@ -17,8 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC1) — schéma `folder_access_rules` + pivot polymorphe (calque
- * Epic 34). Domaines validés APPLICATIVEMENT (constantes du guard).
+ * Schéma `folder_access_rules` + pivot polymorphe. Domaines validés APPLICATIVEMENT (constantes du guard).
  */
 class FolderAccessRulesSchemaTest extends TestCase
 {

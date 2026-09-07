@@ -9,7 +9,7 @@ use App\Services\Agent\Tools\AgentToolService;
 use Illuminate\Console\Command;
 
 /**
- * Story 27.17 — Enregistre les OUTILS AGENT OBLIGATOIRES embarqués dans le dépôt.
+ * Enregistre les OUTILS AGENT OBLIGATOIRES embarqués dans le dépôt.
  *
  * Aujourd'hui : le portable Rainmeter `resources/agent/tools/sambaedu-rainmeter-*.zip`.
  * Appelée par le provisioning serveur (`install.sh`/`update.sh`) pour garantir

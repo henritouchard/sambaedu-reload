@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
- * Story 62.2 — LE POINT DE LECTURE UNIQUE du catalogue de types de groupes.
+ * LE POINT DE LECTURE UNIQUE du catalogue de types de groupes.
  *
  * Il remplace les `match` de libellés recopiés — et DIVERGENTS — que portaient la
  * fiche groupe, la fiche utilisateur et le tiroir de sélection : trois écrans, trois
@@ -22,7 +22,7 @@ use Throwable;
  * d'accrochage. Une requête par appel serait un coût absurde pour une donnée qui
  * change une fois par trimestre. La mémo est vidée par les hooks `saved`/`deleted`
  * du modèle, par `Queue::before` (un worker enchaîne les jobs sans réinitialiser les
- * statiques — leçon de la review 62.1), et dans le `setUp()` des tests, parce qu'un
+ * statiques — leçon de la review), et dans le `setUp()` des tests, parce qu'un
  * rollback de transaction ne dispatche aucun événement Eloquent.
  *
  * **Le PLANCHER n'est pas une politesse, c'est un invariant.** La lecture rend
@@ -150,7 +150,7 @@ final class GroupTypeCatalog
      *    donnée, pas un type nommable) ;
      *  - `other_group` → « Autre » (jeton LDAP, voir {@see self::UNKNOWN_LABEL}) ;
      *  - toute autre valeur inconnue → `ucfirst`, exactement ce que rendaient les
-     *    `match` locaux remplacés par cette story. La parité d'écran prime.
+     *    `match` locaux que cette classe remplace. La parité d'écran prime.
      */
     public static function label(?string $type): string
     {
@@ -209,7 +209,7 @@ final class GroupTypeCatalog
      *
      * C'est la question que pose la garde d'accrochage de
      * {@see \App\Models\DirectoryTemplate}, et l'accrochage est normalisé en
-     * minuscules à l'écriture depuis la story 60.5 tandis que `user_groups.type`,
+     * minuscules à l'écriture depuis la tandis que `user_groups.type`,
      * lui, ne l'a jamais été : un catalogue contenant `Classe` (valeur découverte)
      * doit reconnaître un accrochage à `classe`. Comparer strictement ici
      * refuserait un accrochage qui s'apparie parfaitement.
@@ -294,7 +294,7 @@ final class GroupTypeCatalog
         } catch (Throwable $e) {
             // Pas de connexion (test unitaire nu), schéma absent, migration en
             // cours : le plancher tient. On JOURNALISE la dégradation — patron
-            // établi en review 62.1 : sans ce journal, une vraie panne de base en
+            // établi en review : sans ce journal, une vraie panne de base en
             // production (bascule de réplique, pool épuisé, droits révoqués)
             // empruntait exactement le même chemin qu'une base non migrée, et les
             // types administrés disparaissaient du vocabulaire sans une ligne de

@@ -12,10 +12,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `EnrollmentService` — Story 23.3 (AC1-AC4).
+ * Tests Unit `EnrollmentService`.
  *
  * Ticket d'enrôlement one-time : format, hachage, révocation à la
- * réinstallation (AC2), écrasement à la re-génération, consommation au
+ * réinstallation, écrasement à la re-génération, consommation au
  * redeem, résultats d'échec typés (conflit 409 / refus 403).
  */
 class EnrollmentServiceTest extends TestCase
@@ -31,11 +31,11 @@ class EnrollmentServiceTest extends TestCase
         parent::setUp();
         $this->tokens = app(TokenRotationService::class);
         // Résolu via le container : EnrollmentService a gagné des dépendances en
-        // 25.3 (rapprochement faisceau + campagne) — le binding reste la source.
+        // Rapprochement faisceau + campagne : le binding reste la source.
         $this->service = app(EnrollmentService::class);
     }
 
-    // ── openTicket (AC1, AC2) ───────────────────────────────────────────
+    // openTicket
 
     #[Test]
     public function open_ticket_returns_64_hex_and_stores_only_its_sha256_with_expiry(): void
@@ -72,7 +72,7 @@ class EnrollmentServiceTest extends TestCase
     #[Test]
     public function open_ticket_revokes_existing_token_immediately_on_reinstall(): void
     {
-        // AC2 — réinstall = révocation au DÉBUT de la réinstall : le clone
+        // Réinstall = révocation au DÉBUT de la réinstall : le clone
         // éventuel de l'ancien token meurt pendant que le disque se formate.
         $ws = Workstation::factory()->create();
         $this->tokens->issueFor($ws);
@@ -90,7 +90,7 @@ class EnrollmentServiceTest extends TestCase
     #[Test]
     public function reopening_ticket_simply_replaces_previous_one(): void
     {
-        // AC1 — re-fetch WinPE : écrasement, pas d'erreur.
+        // Re-fetch WinPE : écrasement, pas d'erreur.
         $ws = Workstation::factory()->create();
         $first = $this->service->openTicket($ws);
 
@@ -115,7 +115,7 @@ class EnrollmentServiceTest extends TestCase
         self::assertTrue($this->service->redeem($ticket)->enrolled);
     }
 
-    // ── redeem (AC3) ─────────────────────────────────────────────────────
+    // redeem
 
     #[Test]
     public function redeem_consumes_ticket_and_issues_token_hashed_in_db(): void
@@ -154,7 +154,7 @@ class EnrollmentServiceTest extends TestCase
         self::assertNull($other->refresh()->agent_token_hash);
     }
 
-    // ── redeem — échecs typés (AC4) ──────────────────────────────────────
+    // redeem — échecs typés
 
     #[Test]
     public function redeem_with_replayed_ticket_is_not_allowed(): void
@@ -199,9 +199,9 @@ class EnrollmentServiceTest extends TestCase
     #[Test]
     public function invalid_ticket_with_uuid_only_of_enrolled_workstation_is_not_a_conflict(): void
     {
-        // Review #M3 (sans-oracle, AC6) : l'uuid SEUL (preuve faible/spoofable)
-        // ne déclenche JAMAIS de 409 — sinon le 409≠403 serait un oracle de
-        // présence. Le conflit se fonde désormais sur la SEULE MAC (ancre, cf.
+        // L'uuid SEUL (preuve faible, spoofable) ne déclenche JAMAIS de 409 :
+        // sinon la distinction 409≠403 serait un oracle de présence. Le conflit
+        // se fonde sur la SEULE MAC (ancre, cf.
         // test `..._by_mac_is_conflict`). Sans MAC concordante : 403 indistinct,
         // le token du poste enrôlé reste intact (rien n'est écrasé).
         $ws = Workstation::factory()->create();
@@ -231,7 +231,7 @@ class EnrollmentServiceTest extends TestCase
     {
         $ws = Workstation::factory()->create();
 
-        // Poste connu mais non enrôlé → 403 (futur accueil porte 2, 25.3).
+        // Poste connu mais non enrôlé → 403 (futur accueil porte 2).
         $known = $this->service->redeem('', ['uuid' => $ws->uuid]);
         // Poste inconnu → 403 indistinct.
         $unknown = $this->service->redeem('', ['uuid' => '99999999-9999-9999-9999-999999999999']);

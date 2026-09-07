@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace App\Services\Agent;
 
 /**
- * Algorithme de hash **unique et déterministe** du contrat agent (FR7).
+ * Algorithme de hash **unique et déterministe** du contrat agent.
  *
  * SHA-256 sur une forme JSON **canonicalisée** : clés des tableaux associatifs
  * triées alphabétiquement et **récursivement**, UTF-8, sans espaces. Deux
  * compilations du même état à des instants différents produisent le même hash
  * (le champ volatil `generated_at` est exclu avant le hash).
  *
- * Source unique (AC2) : ce hash sert l'ETag de `GET /api/v1/agent/state`
- * (story 23.5) ET la comparaison des rapports (`POST /report`, story 24.1).
+ * Source unique : ce hash sert l'ETag de `GET /api/v1/agent/state`
+ * ET la comparaison des rapports (`POST /report`).
  * **Jamais** de `md5`/`hash('sha256', …)` ad hoc ailleurs dans le canal agent.
  *
  * Le hash est **opaque** : l'agent compare des chaînes, il ne le recalcule
@@ -26,13 +26,13 @@ final class StateHasher
      * l'autre sans changer le sens de la cible). Single point of truth : tout
      * nouveau champ volatil s'ajoute ici.
      *
-     * `ttl_seconds` ajouté par la Story 43.3 (AC3, D6) : le TTL dépend
+     * `ttl_seconds` : le TTL dépend
      * désormais du CONTEXTE (bascule sensible ou non — {@see AgentTtlResolver}),
      * mais reste une cadence de poll CONSEILLÉE, pas une donnée sémantique de
      * la cible — un changement de TTL seul (sans changement d'items) ne doit
      * pas invalider l'ETag. Miroir Go OBLIGATOIRE :
      * `agent/shared/hasher.go::volatileStateKeys` doit porter EXACTEMENT la
-     * même liste (piège n°2, contrat gelé des deux côtés).
+     * même liste : le contrat est gelé des deux côtés.
      *
      * @var list<string>
      */
@@ -40,7 +40,7 @@ final class StateHasher
 
     /**
      * Hash d'un état cible complet (enveloppe). `generated_at` et
-     * `ttl_seconds` sont exclus (Story 43.3), de sorte que seuls des
+     * `ttl_seconds` sont exclus, de sorte que seuls des
      * changements sémantiques modifient le hash.
      *
      * @param  array<string,mixed>  $state

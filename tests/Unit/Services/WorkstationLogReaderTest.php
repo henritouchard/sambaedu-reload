@@ -51,10 +51,6 @@ class WorkstationLogReaderTest extends TestCase
         parent::tearDown();
     }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
-
     private function makeWorkstation(string|null $logPath): Workstation
     {
         $ws = new Workstation();
@@ -69,10 +65,6 @@ class WorkstationLogReaderTest extends TestCase
         file_put_contents($path, $content);
         return $path;
     }
-
-    // ------------------------------------------------------------------
-    // Encodage CP850 (cas principal)
-    // ------------------------------------------------------------------
 
     public function test_reads_cp850_file_with_accents(): void
     {
@@ -93,10 +85,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertStringContainsString('à la fin', $result->content);
     }
 
-    // ------------------------------------------------------------------
-    // Encodage UTF-8 simple (pas de BOM)
-    // ------------------------------------------------------------------
-
     public function test_reads_utf8_file(): void
     {
         $content = "2026-04-14 10:32:15, INFO   : Installation terminée avec succès\n";
@@ -113,10 +101,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertStringContainsString('Installation termin', $result->content);
     }
 
-    // ------------------------------------------------------------------
-    // BOM UTF-16LE
-    // ------------------------------------------------------------------
-
     public function test_reads_utf16le_bom_file(): void
     {
         $utf16le = "\xFF\xFE" . mb_convert_encoding("Log WPKG\nInstallation OK\n", 'UTF-16LE', 'UTF-8');
@@ -130,10 +114,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertStringContainsString('Log WPKG', $result->content);
         $this->assertStringContainsString('Installation OK', $result->content);
     }
-
-    // ------------------------------------------------------------------
-    // Strip BOM UTF-8
-    // ------------------------------------------------------------------
 
     public function test_strips_utf8_bom(): void
     {
@@ -149,10 +129,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertStringContainsString('Log UTF-8 avec BOM', $result->content);
     }
 
-    // ------------------------------------------------------------------
-    // log_path null → missing
-    // ------------------------------------------------------------------
-
     public function test_null_log_path_returns_missing(): void
     {
         $ws = $this->makeWorkstation(null);
@@ -162,10 +138,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertNull($result->content);
     }
 
-    // ------------------------------------------------------------------
-    // Fichier absent → missing
-    // ------------------------------------------------------------------
-
     public function test_missing_file_returns_missing(): void
     {
         $ws = $this->makeWorkstation('NONEXISTENT.log');
@@ -174,10 +146,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertTrue($result->missing);
         $this->assertNull($result->content);
     }
-
-    // ------------------------------------------------------------------
-    // Suffixe non-.log → missing
-    // ------------------------------------------------------------------
 
     public function test_non_log_extension_returns_missing(): void
     {
@@ -189,10 +157,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertTrue($result->missing);
     }
 
-    // ------------------------------------------------------------------
-    // Path traversal → missing (basename() neutralise)
-    // ------------------------------------------------------------------
-
     public function test_path_traversal_returns_missing(): void
     {
         // basename('../../etc/passwd') = 'passwd' → suffixe .log absent → missing
@@ -201,10 +165,6 @@ class WorkstationLogReaderTest extends TestCase
 
         $this->assertTrue($result->missing);
     }
-
-    // ------------------------------------------------------------------
-    // Regex : caractères hors [A-Za-z0-9._-] rejetés (correction #4)
-    // ------------------------------------------------------------------
 
     #[Test]
     public function it_rejects_basename_with_internal_traversal(): void
@@ -226,10 +186,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertTrue($result->missing);
     }
 
-    // ------------------------------------------------------------------
-    // Null byte dans log_path → missing
-    // ------------------------------------------------------------------
-
     public function test_null_byte_in_log_path_returns_missing(): void
     {
         $ws = $this->makeWorkstation("PC06\0evil.log");
@@ -237,10 +193,6 @@ class WorkstationLogReaderTest extends TestCase
 
         $this->assertTrue($result->missing);
     }
-
-    // ------------------------------------------------------------------
-    // reports_inbox vide → missing + Log::warning
-    // ------------------------------------------------------------------
 
     public function test_empty_reports_inbox_returns_missing_with_warning(): void
     {
@@ -256,10 +208,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertTrue($result->missing);
     }
 
-    // ------------------------------------------------------------------
-    // reports_inbox = '/' → missing + Log::warning
-    // ------------------------------------------------------------------
-
     public function test_root_reports_inbox_returns_missing_with_warning(): void
     {
         Config::set('sambaedu.wpkg.reports_inbox', '/');
@@ -273,10 +221,6 @@ class WorkstationLogReaderTest extends TestCase
 
         $this->assertTrue($result->missing);
     }
-
-    // ------------------------------------------------------------------
-    // Fichier > 256 KB → truncated=true, contenu ≤ 256 KB + footer
-    // ------------------------------------------------------------------
 
     public function test_large_file_is_truncated(): void
     {
@@ -295,11 +239,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertStringEndsWith("… (tronqué à 256 KB)\n", $result->content);
         $this->assertLessThanOrEqual(256 * 1024 + 100, strlen($result->content));
     }
-
-    // ------------------------------------------------------------------
-    // Cache : prouve le cache HIT (mtime inchangé → contenu stale renvoyé)
-    // (correction #6 — remplace test_cache_returns_same_content_on_second_read)
-    // ------------------------------------------------------------------
 
     #[Test]
     public function it_caches_content_and_returns_stale_when_mtime_unchanged(): void
@@ -322,10 +261,6 @@ class WorkstationLogReaderTest extends TestCase
         $this->assertStringNotContainsString('updated content', $result2->content);
     }
 
-    // ------------------------------------------------------------------
-    // Cache invalidé si mtime change
-    // ------------------------------------------------------------------
-
     public function test_cache_invalidated_when_file_changes(): void
     {
         $path = $this->writeLogFile('PC11.log', "Version 1\n");
@@ -344,10 +279,6 @@ class WorkstationLogReaderTest extends TestCase
         $result2 = $this->reader->read($ws);
         $this->assertStringContainsString('Version 2', $result2->content ?? '');
     }
-
-    // ------------------------------------------------------------------
-    // Guard CP850 : aucune exception sur bytes inconnus (correction #7)
-    // ------------------------------------------------------------------
 
     #[Test]
     public function it_does_not_throw_when_decoding_fails(): void

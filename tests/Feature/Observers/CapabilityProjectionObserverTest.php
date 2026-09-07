@@ -14,9 +14,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.1 (corr. review #2b) — wiring SERVEUR du garde-fou d'authoring
- * `fs_acl` : l'observer {@see CapabilityProjectionObserver} rend la décision Q2
- * RÉELLE (avant cet observer, {@see \App\Services\Agent\Providers\FsAclAuthoringGuard}
+ * Wiring SERVEUR du garde-fou d'authoring
+ * `fs_acl` : l'observer {@see CapabilityProjectionObserver} rend le refus RÉEL
+ * (avant cet observer, {@see \App\Services\Agent\Providers\FsAclAuthoringGuard}
  * n'avait AUCUN appelant hors tests).
  *
  * L'observer est enregistré hors environnement de test dans
@@ -52,7 +52,7 @@ class CapabilityProjectionObserverTest extends TestCase
 
         $this->expectException(FsAclAuthoringException::class);
 
-        // Combo interdit Q2 : deny à héritage descendant sur C:\Windows.
+        // Combo interdit : deny à héritage descendant sur C:\Windows.
         CapabilityProjection::create([
             'capability_id' => $cap->id,
             'os' => 'windows',
@@ -99,8 +99,6 @@ class CapabilityProjectionObserverTest extends TestCase
     #[Test]
     public function it_refuses_a_deny_on_a_builtin_authority_trustee(): void
     {
-        // Corr. review #4 : un deny sur `BUILTIN\Backup Operators` passait le
-        // guard avant l'alignement des principals — désormais refusé.
         $cap = Capability::factory()->create(['key' => 'rogue_builtin', 'warning' => 'w']);
 
         $this->expectException(FsAclAuthoringException::class);
@@ -172,7 +170,7 @@ class CapabilityProjectionObserverTest extends TestCase
         self::assertTrue($projection->exists, 'une projection registry ne passe jamais par le guard fs_acl');
     }
 
-    // ── Story 36.2 — dispatch par mécanisme : firewall (Q3) ────────────────
+    // — dispatch par mécanisme : firewall
 
     #[Test]
     public function it_refuses_to_persist_a_q3_firewall_projection_covering_the_lan(): void
@@ -181,7 +179,7 @@ class CapabilityProjectionObserverTest extends TestCase
 
         $this->expectException(FirewallAuthoringException::class);
 
-        // Combo interdit Q3 : block explicit couvrant RFC1918.
+        // Combo interdit : block explicit couvrant RFC1918.
         CapabilityProjection::create([
             'capability_id' => $cap->id,
             'os' => 'windows',
@@ -259,7 +257,7 @@ class CapabilityProjectionObserverTest extends TestCase
         ]);
     }
 
-    // ── Story 36.5 — dispatch par mécanisme : app_profile (piège n°1) ──────
+    // — dispatch par mécanisme : app_profile
 
     #[Test]
     public function it_refuses_to_persist_an_app_profile_projection_on_sambaedu_radical(): void
@@ -268,7 +266,7 @@ class CapabilityProjectionObserverTest extends TestCase
 
         $this->expectException(\App\Exceptions\AppProfileAuthoringException::class);
 
-        // piège n°1 (AC4) : un nom bâti sur sambaedu collisionnerait avec
+        // Un nom bâti sur sambaedu collisionnerait avec
         // legacy_cleanup (referencesSambaeduProfile) — refusé à la persistance.
         CapabilityProjection::create([
             'capability_id' => $cap->id,

@@ -42,10 +42,6 @@ class Delegation extends Model implements Wireable
         'expires_at' => 'datetime',
     ];
 
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
-
     /**
      * L'utilisateur bénéficiaire de la délégation
      */
@@ -77,10 +73,6 @@ class Delegation extends Model implements Wireable
     {
         return $this->belongsTo(User::class, 'granted_by');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     /**
      * Délégations positives (accorder un droit)
@@ -135,10 +127,6 @@ class Delegation extends Model implements Wireable
         });
     }
 
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
-
     /**
      * Vérifie si la délégation est expirée
      */
@@ -154,10 +142,6 @@ class Delegation extends Model implements Wireable
     {
         return !$this->isExpired();
     }
-
-    // ========================================================================
-    // WIREABLE (Livewire)
-    // ========================================================================
 
     public function toLivewire(): array
     {

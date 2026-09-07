@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.7 — AC1 (icône uploadée content-addressed, sous-décision A).
+ * (icône uploadée content-addressed, sous-décision A).
  *
  * Greffe deux colonnes sur `shortcuts` pour porter l'asset content-addressed
  * de l'icône UPLOADÉE (≠ chemin d'icône réel `firefox.exe,0` qui reste dans
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Schema;
  *    AVANT écriture locale.
  *  - PAS de default SQL : null distingue « pas d'asset » d'une valeur vide.
  *    Pas de backfill dans la migration (commande artisan dédiée,
- *    `shortcuts:backfill-icons` — fail-soft, rollback-safe, AC5).
+ * `shortcuts:backfill-icons` — fail-soft, rollback-safe).
  *  - Type varchar simple (pas d'enum Postgres) → compatible SQLite des tests
  *    sans branche driver (project_sqlite_tests_no_varchar_enforcement).
  *  - Strings sur le modèle (pas de cast spécial), iso `mode` 27.1.

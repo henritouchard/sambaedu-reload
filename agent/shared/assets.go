@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-// Sync des assets wallpaper côté SYSTEM (Story 24.6 — portage de
-// Sync-WallpaperAssets 24.4). Les handlers de scope `session` tournent dans
-// le COMPAGNON (droits user, ni réseau ni token — partition 24.3) : le
+// Sync des assets wallpaper côté SYSTEM (portage de
+// Sync-WallpaperAssets). Les handlers de scope `session` tournent dans
+// le COMPAGNON (droits user, ni réseau ni token — partition) : le
 // service SYSTEM pré-télécharge donc les assets référencés par les états en
 // cache vers assets\<filename> (lisible user, ACL Users:R à la création).
 //
-// TRANSPORT STATIQUE (calque Story 27.7, iso icon_assets.go) : le fond d'écran
+// TRANSPORT STATIQUE (calque, iso icon_assets.go) : le fond d'écran
 // est servi EN DIRECT par Apache via l'Alias `/assets/wallpaper/<sha256>.<ext>`
 // — un GET HTTP SIMPLE (PAS le Client token'd) qui ne traverse plus PHP-FPM
 // (images de plusieurs centaines de Ko à plusieurs Mo). Un asset de la biblio
@@ -24,7 +24,7 @@ import (
 // serait du sur-engineering. La route Laravel token'd `agent.v1.assets.wallpaper`
 // reste vivante le temps du rollout (postes en ancien agent), retrait ultérieur.
 //
-// Décision 24.4 n° 2 (figée) : PAS de champ `url` au payload — l'agent DÉRIVE
+// PAS de champ `url` au payload — l'agent DÉRIVE
 // l'URL depuis server_url + le chemin statique connu (WallpaperRoute).
 //
 //   - content-addressed : un fichier présent porte déjà le bon contenu (son
@@ -33,7 +33,7 @@ import (
 //     divergent n'entre JAMAIS dans le cache (log + retry au prochain
 //     passage) ;
 //   - 404 (asset retiré de la biblio entre compilation et download) = log,
-//     l'état suivant ne le référencera plus ; pas de purge (iso-24.4, noté) ;
+//     l'état suivant ne le référencera plus ; pas de purge (noté) ;
 //   - réseau / status inattendu = log + skip, retry au prochain passage ;
 //   - le corps de réponse est borné à 16 Mio (LimitReader) : un asset au-delà
 //     serait tronqué → checksum divergent → jamais écrit, warning à chaque
@@ -41,7 +41,7 @@ import (
 //     des ISO).
 
 // WallpaperRoute : chemin statique de l'Alias Apache (`/assets/wallpaper/`).
-// FIGÉ côté agent — l'URL est dérivée, jamais reçue (décision 24.4 n° 2).
+// FIGÉ côté agent — l'URL est dérivée du nom de fichier, jamais reçue du serveur.
 const WallpaperRoute = "/assets/wallpaper/"
 
 // wallpaperAssetMaxBytes : borne du corps téléchargé — la biblio sert des
@@ -186,7 +186,7 @@ func (a *Agent) SyncWallpaperAssets(cfg Config) {
 }
 
 // getStatic : GET HTTP SIMPLE (PAS le Client token'd) vers un Alias Apache
-// statique, mutualisé par SyncWallpaperAssets et SyncShortcutIcons (Story 27.7).
+// statique, mutualisé par SyncWallpaperAssets et SyncShortcutIcons.
 // Réutilise le *http.Client sous-jacent (timeout/transport) sans la couche
 // token/rotation. Corps borné (LimitReader). Retourne (corps, status, err).
 func (a *Agent) getStatic(url string, maxBytes int64) ([]byte, int, error) {

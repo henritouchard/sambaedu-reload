@@ -155,10 +155,6 @@ class GrantRenderingAlignmentTest extends TestCase
         }
     }
 
-    // =========================================================================
-    // Décor
-    // =========================================================================
-
     /**
      * Les combinaisons NON VIDES des quatre verbes. L'octroi vide est exclu : ce
      * n'est pas une combinaison, c'est une suspension, et elle a ses épreuves.

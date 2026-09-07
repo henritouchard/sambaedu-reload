@@ -17,8 +17,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.12 — AC1.2 / D2.
- *
  * Modèle Eloquent pour la table `script_execution_logs`. Représente une
  * exécution unitaire d'un script côté poste (Windows ou Linux), traçée
  * via le wrapper rendu par `WrapperScriptRenderer` puis POST sur
@@ -28,7 +26,7 @@ use Illuminate\Support\Str;
  *
  *  - **UUID pk** : `id` généré côté Laravel via `Str::uuid()->toString()`
  *    dans l'event `creating` (portabilité SQLite testing — pas de
- *    dépendance `gen_random_uuid()` pgsql).
+ *  dépendance `gen_random_uuid()` pgsql).
  *  - **Casts enums** : sérialisation/désérialisation transparente
  *    via `protected $casts = ['action' => ScriptExecutionAction::class, ...]`.
  *  - **Mutators UTF-8 safe** : `setStdoutExcerptAttribute` /
@@ -36,7 +34,7 @@ use Illuminate\Support\Str;
  *    + marqueur `[...truncated]`. **PAS** `substr` qui peut casser UTF-8.
  *  - **8 scopes** pour requêtes filtrées (UI Livewire + stats service).
  *  - Factory sous le sous-namespace `Database\Factories\ScriptsOs\`
- *    (pattern iso 16.10 / 16.11).
+ *  (pattern).
  *
  * @property string $id
  * @property string $workstation_uuid
@@ -121,10 +119,6 @@ class ScriptExecutionLog extends Model
         });
     }
 
-    // -------------------------------------------------------------------------
-    // Mutators UTF-8 safe — truncate stdout/stderr à 8192 bytes max
-    // -------------------------------------------------------------------------
-
     /**
      * Truncate UTF-8 safe à 8192 bytes max. Appendu `\n[...truncated]\n`
      * (≤ 16 bytes) → on découpe à `EXCERPT_MAX_BYTES - strlen(marker)`
@@ -166,7 +160,7 @@ class ScriptExecutionLog extends Model
     }
 
     /**
-     * Normalisation lowercase iso 16.11 (workstation_uuid stocké lowercase).
+     * Normalisation lowercase iso (workstation_uuid stocké lowercase).
      */
     public function setWorkstationUuidAttribute(?string $value): void
     {
@@ -174,10 +168,6 @@ class ScriptExecutionLog extends Model
             ? null
             : strtolower($value);
     }
-
-    // -------------------------------------------------------------------------
-    // Scopes (D2 — 8 scopes pour UI Livewire + stats service)
-    // -------------------------------------------------------------------------
 
     /**
      * @param Builder<self> $query

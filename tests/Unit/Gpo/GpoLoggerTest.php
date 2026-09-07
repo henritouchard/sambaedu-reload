@@ -13,10 +13,10 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Tests unitaires {@see GpoLogger} et {@see GpoActionLog} (Story 16.1 / AC1.4).
+ * Tests unitaires {@see GpoLogger} et {@see GpoActionLog}.
  *
  * Capture les écritures sur le channel `gpo` via un fake LogManager pour
- * vérifier que les conventions de logging Epic 16 sont respectées :
+ * vérifier que les conventions de logging sont respectées :
  *
  * - chaque action émet au minimum `start` + `success` (ou `failure`)
  * - `operation_id` auto-généré (UUID v4) et propagé sur tous les logs

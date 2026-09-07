@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Suivi d'état d'une action power dispatchée en asynchrone (story 4-2, review #1/#2).
+ * Suivi d'état d'une action power dispatchée en asynchrone.
  *
  * Utilisé par :
  *  - le composant Livewire MachineShow (pages/parc/machines/[id]/index.blade.php)
@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *  - le job App\Jobs\DispatchMachinePowerActionJob qui transitionne l'état
  *    queued → dispatched → running → completed|failed ;
  *  - l'audit trail (les lignes sont conservées indéfiniment, elles ne sont pas
- *    purgées automatiquement — à faire dans une story de maintenance dédiée).
+ *    purgées automatiquement — une purge reste à écrire).
  *
  * Pour `action = 'restart'`, la colonne `restart_phase` porte la machine à états :
  *  - 'waiting-down' (valeur initiale) : on attend que la machine cesse de répondre

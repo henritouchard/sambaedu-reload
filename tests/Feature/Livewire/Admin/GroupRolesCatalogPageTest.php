@@ -21,11 +21,11 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.1 — /admin/settings/groups et son onglet « Rôles ».
+ * Admin/settings/groups et son onglet « Rôles ».
  *
- * Couvre AC9 (page hôte, onglet, liste + usages, modales, double garde) et AC10
- * (route + accès). `server.admin` SEUL — Q4 = A, aucune permission Spatie
- * nouvelle.
+ * Couvre la page hôte, l'onglet, la liste et ses usages, les modales, la double
+ * garde, la route et l'accès. `server.admin` SEUL : aucune permission Spatie
+ * nouvelle ne garde cet écran.
  */
 class GroupRolesCatalogPageTest extends TestCase
 {
@@ -62,10 +62,6 @@ class GroupRolesCatalogPageTest extends TestCase
         Gate::before(fn ($user, string $ability) => in_array($ability, $abilities, true) ? true : null);
     }
 
-    // =========================================================================
-    // AC10 — la route, l'accès
-    // =========================================================================
-
     #[Test]
     public function the_route_exists_and_is_named(): void
     {
@@ -73,7 +69,7 @@ class GroupRolesCatalogPageTest extends TestCase
     }
 
     /**
-     * AC10 — la route porte `can:server.admin`, et LUI SEUL (Q4 = A). Le statut
+     * La route porte `can:server.admin`, et LUI SEUL. Le statut
      * rendu à un non-admin dépend de la chaîne de middlewares du groupe
      * `/admin/*` (qui redirige avant d'arriver à la gate) : ce qui se vérifie
      * ici, c'est la déclaration — l'effet au montage est épinglé juste en dessous.
@@ -109,10 +105,6 @@ class GroupRolesCatalogPageTest extends TestCase
             ->assertSee('Groupes &amp; droits', false);
     }
 
-    // =========================================================================
-    // AC9 — la page hôte et son onglet unique
-    // =========================================================================
-
     #[Test]
     public function the_host_page_opens_on_the_roles_tab(): void
     {
@@ -134,7 +126,7 @@ class GroupRolesCatalogPageTest extends TestCase
             ->assertOk()
             ->assertSet('tab', 'roles');
 
-        // Story 62.2 — l'onglet `types` EXISTE désormais : ce qui doit retomber
+        // L'onglet `types` EXISTE désormais : ce qui doit retomber
         // sur `roles`, c'est un jeton qui n'est dans aucune des deux listes.
         Livewire::test(self::PAGE)->call('setTab', 'arborescences')->assertSet('tab', 'roles');
     }
@@ -142,8 +134,8 @@ class GroupRolesCatalogPageTest extends TestCase
     /**
      * PIÈGE NOMMÉ : pas d'onglet fantôme.
      *
-     * Story 62.2 — « Types de groupes » a cessé d'être une story future : son
-     * onglet est RENDU, donc il s'annonce. « Arborescences » (62.6), elle, ne
+     * « Types de groupes » n'est plus à venir : son onglet est RENDU, donc il
+     * s'annonce. « Arborescences », elle, ne
      * s'annonce toujours pas. La règle n'a pas changé, seul l'inventaire de ce
      * qui existe a changé.
      */
@@ -184,7 +176,7 @@ class GroupRolesCatalogPageTest extends TestCase
         $this->assertSame(['member', 'manager', 'owner'], array_column($rows, 'key'));
         $this->assertSame(['Membre', 'Gestionnaire', 'Propriétaire'], array_column($rows, 'label'));
         $this->assertSame(1, $rows[1]['usage']['edges']);
-        // Story 62.3 — MISE À JOUR D'INVENTAIRE : la colonne « types » comptait les
+        // MISE À JOUR D'INVENTAIRE : la colonne « types » comptait les
         // types OBSERVÉS sur les arêtes (1 : la classe fabriquée juste au-dessus) ;
         // elle compte désormais les types qui DÉCLARENT le rôle. `manager` est
         // déclaré par `classe`, `projet` et `equipe` — trois des sept lignes du
@@ -196,10 +188,6 @@ class GroupRolesCatalogPageTest extends TestCase
         // la donnée, l'admin doit pouvoir le lire.
         $component->assertSee('manager');
     }
-
-    // =========================================================================
-    // AC2 — création : clé dérivée, prévisualisée, figée
-    // =========================================================================
 
     #[Test]
     public function creating_a_role_derives_and_freezes_its_key(): void
@@ -274,10 +262,6 @@ class GroupRolesCatalogPageTest extends TestCase
         $this->assertSame(3, GroupRole::count());
     }
 
-    // =========================================================================
-    // AC2 — édition : le libellé seul
-    // =========================================================================
-
     #[Test]
     public function editing_changes_the_label_and_never_the_key(): void
     {
@@ -297,10 +281,6 @@ class GroupRolesCatalogPageTest extends TestCase
         $this->assertSame('manager', $manager->key);
         $this->assertSame('Encadrant', $manager->label);
     }
-
-    // =========================================================================
-    // AC2 — réordonnancement
-    // =========================================================================
 
     #[Test]
     public function the_display_order_is_reorderable_up_and_down(): void
@@ -329,10 +309,6 @@ class GroupRolesCatalogPageTest extends TestCase
 
         $this->assertSame(['member', 'manager', 'owner'], array_column($component->get('rows'), 'key'));
     }
-
-    // =========================================================================
-    // AC7 — suppression : refus nommé, jamais de cascade
-    // =========================================================================
 
     #[Test]
     public function deleting_a_historical_role_is_refused_without_any_write(): void
@@ -385,10 +361,6 @@ class GroupRolesCatalogPageTest extends TestCase
 
         $this->assertFalse(GroupRole::where('key', 'tuteur')->exists());
     }
-
-    // =========================================================================
-    // AC9 — double garde serveur : chaque écriture re-vérifie
-    // =========================================================================
 
     #[Test]
     public function every_write_re_checks_server_admin(): void

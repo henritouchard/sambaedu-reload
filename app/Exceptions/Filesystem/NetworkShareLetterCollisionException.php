@@ -7,13 +7,13 @@ namespace App\Exceptions\Filesystem;
 use RuntimeException;
 
 /**
- * Story 34.2 (piège #3 de 34.1, finding M1) — levée lorsqu'attribuer une lettre
+ * Levée lorsqu'attribuer une lettre
  * EXPLICITE à un répertoire réseau INTRODUIRAIT une collision : un AUTRE
  * répertoire DISTINCT vise déjà la MÊME lettre pour une audience qui se recouvre
  * (au moins une maille commune — user / groupe / parc — résolvant les deux). Le
  * type `drives` étant `aggregate`, deux payloads `{letter, unc, label}` DIFFÉRENTS
  * réclamant la même lettre produisent un comportement indéfini côté agent : c'est
- * une erreur d'authoring que 34.1 a délibérément déléguée à la validation
+ * une erreur d'authoring que a délibérément déléguée à la validation
  * prédictive 34.2. L'opération est REFUSÉE avant écriture/provision.
  *
  * Le message est en français et **affichable** tel quel en toast (via

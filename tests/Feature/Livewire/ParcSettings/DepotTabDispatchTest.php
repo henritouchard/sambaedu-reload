@@ -22,7 +22,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesAppStoreSchema;
 
 /**
- * Story 8.2.7 (AC1, AC2, AC3, AC6, AC9) — Dispatch non-bloquant du tab Dépôt.
+ * Dispatch non-bloquant du tab Dépôt.
  *
  * Vérifie que `installFromDepot()` DISPATCHE un InstallApplicationJob par app
  * (et n'exécute PAS l'installation en synchrone : l'Application ne passe pas
@@ -47,7 +47,7 @@ class DepotTabDispatchTest extends TestCase
         parent::setUp();
         $this->createAppStoreSchema();
 
-        // Story 51.1 — le SFC depot-tab lit ControlHubContract::active() (computed
+        // Le SFC depot-tab lit ControlHubContract::active (computed
         // isManaged) à chaque rendu : la table doit exister. Vide par défaut ⇒
         // standalone (comportement inchangé).
         Schema::create('controlhub_contracts', function (Blueprint $table): void {
@@ -74,7 +74,7 @@ class DepotTabDispatchTest extends TestCase
     }
 
     /**
-     * Story 51.1 — Table minimale `controlhub_contracts` + contrat actif (le schéma
+     * Table minimale `controlhub_contracts` + contrat actif (le schéma
      * AppStore minimal ne la crée pas). Suffit à `ControlHubContract::active()`.
      */
     private function activateUpstreamContract(): void
@@ -112,7 +112,7 @@ class DepotTabDispatchTest extends TestCase
     }
 
     /* =================================================================
-     * AC1, AC9 — dispatch non-bloquant
+     * Dispatch non-bloquant
      * ================================================================= */
 
     #[Test]
@@ -152,7 +152,7 @@ class DepotTabDispatchTest extends TestCase
     }
 
     /* =================================================================
-     * AC3 — toast « arrière-plan » + reset sélection
+     * Toast « arrière-plan » + reset sélection
      * ================================================================= */
 
     #[Test]
@@ -176,7 +176,7 @@ class DepotTabDispatchTest extends TestCase
     }
 
     /* =================================================================
-     * AC2 — initiated_by passé au Job = login courant
+     * Initiated_by passé au Job = login courant
      * ================================================================= */
 
     #[Test]
@@ -212,11 +212,11 @@ class DepotTabDispatchTest extends TestCase
     }
 
     /* =================================================================
-     * AC6 — panneau de progression (activeInstallations)
+     * Panneau de progression (activeInstallations)
      * ================================================================= */
 
     /* =================================================================
-     * Story 51.1 (AC8) — verrouillage sous contrat amont actif
+     * Verrouillage sous contrat amont actif
      * ================================================================= */
 
     #[Test]
@@ -267,7 +267,7 @@ class DepotTabDispatchTest extends TestCase
     #[Test]
     public function after_severance_the_imposed_depot_becomes_manageable_again(): void
     {
-        // Review 51.1 #2 (AC10) — À la rupture du lien (release passif), le dépôt imposé
+        // À la rupture du lien (release passif), le dépôt imposé
         // « redevient gérable » : la garde de refus suit `isManaged()` (le LIEN), pas le
         // seul flag `is_imposed` (qui reste true à jamais, l'état étant figé). SANS contrat
         // actif, l'admin doit pouvoir le désactiver.

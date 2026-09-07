@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.1 — la résolution : (recette + appartenances) → plan.
+ * La résolution : (recette + appartenances) → plan.
  *
  * Aucune base, aucun faux processus, aucun disque : c'est le dividende de la
  * ligne de coupe. Si un jour ces tests ont besoin d'un `Process::fake()`, c'est
@@ -39,10 +39,6 @@ class PlanResolverTest extends TestCase
     {
         return array_map(static fn ($n): string => $n->path, $plan->nodes);
     }
-
-    // =========================================================================
-    // Substitution : vocabulaire FERMÉ
-    // =========================================================================
 
     #[Test]
     public function the_root_is_relative_and_the_bare_name_avoids_the_double_prefix(): void
@@ -95,10 +91,6 @@ class PlanResolverTest extends TestCase
         $this->resolver->resolve($template, $this->classTreeContext());
     }
 
-    // =========================================================================
-    // Les quatre natures
-    // =========================================================================
-
     #[Test]
     public function the_four_natures_are_all_carried_into_the_plan(): void
     {
@@ -134,10 +126,6 @@ class PlanResolverTest extends TestCase
         $this->assertSame(2147483648, $plan->node('bmartin')->plafond);
         $this->assertNull($plan->node('_travail')->plafond);
     }
-
-    // =========================================================================
-    // Expansion par membre
-    // =========================================================================
 
     #[Test]
     public function a_per_member_node_yields_one_node_per_member_carrying_the_targeted_edge_role(): void
@@ -209,10 +197,6 @@ class PlanResolverTest extends TestCase
         $this->resolver->resolve($this->classTreeTemplate(), $context);
     }
 
-    // =========================================================================
-    // Activable : suspendre n'est ni supprimer, ni omettre
-    // =========================================================================
-
     #[Test]
     public function an_inactive_node_stays_in_the_plan_with_its_suspendable_grants_suspended(): void
     {
@@ -271,10 +255,6 @@ class PlanResolverTest extends TestCase
         $this->assertTrue($plan->node('_travail')->active);
         $this->assertNotNull($plan->node('_profs'));
     }
-
-    // =========================================================================
-    // AC9 — la clôture, et sa distinction d'avec les deux autres états
-    // =========================================================================
 
     #[Test]
     public function a_node_without_any_grant_for_a_role_carries_that_role_in_its_closure(): void
@@ -420,10 +400,6 @@ class PlanResolverTest extends TestCase
         $this->assertContains('classe', $plan->node('_profs')->closure);
     }
 
-    // =========================================================================
-    // Octrois d'audience : forme abstraite, jamais une énumération
-    // =========================================================================
-
     #[Test]
     public function an_audience_grant_names_the_group_not_its_members(): void
     {
@@ -469,18 +445,14 @@ class PlanResolverTest extends TestCase
         new PlanSubject(PlanSubject::TYPE_USER, 0);
     }
 
-    // =========================================================================
-    // Aucun deny exprimable
-    // =========================================================================
-
     /**
-     * Story 62.4 — L'ÉPINGLE RETOURNÉE : le vocabulaire n'est plus « les deux
+     * L'ÉPINGLE RETOURNÉE : le vocabulaire n'est plus « les deux
      * niveaux positifs », c'est « les quatre verbes positifs ».
      *
      * Ce qui NE change pas, et qui est tout l'objet du test : il reste impossible
      * d'écrire une interdiction. Ni « aucun », ni un refus, ni un mode système, ni
-     * une liste vide — cette dernière étant le seul ajout de la story à la liste
-     * des refus, parce qu'un octroi qui ne donne rien serait indiscernable d'une
+     * une liste vide — cette dernière étant le dernier ajout à la liste des
+     * refus, parce qu'un octroi qui ne donne rien serait indiscernable d'une
      * suspension appliquée.
      */
     #[Test]
@@ -500,8 +472,8 @@ class PlanResolverTest extends TestCase
     }
 
     /**
-     * Story 62.4 — les verbes sont un ENSEMBLE ORDONNÉ CANONIQUEMENT, et c'est ce
-     * qui fait tenir le déterminisme octet pour octet de la story 60.1 : deux
+     * Les verbes sont un ENSEMBLE ORDONNÉ CANONIQUEMENT, et c'est ce
+     * qui fait tenir le déterminisme octet pour octet : deux
      * saisies du même octroi, dans deux ordres, se sérialisent identiquement.
      */
     #[Test]
@@ -523,10 +495,6 @@ class PlanResolverTest extends TestCase
 
         new PlanGrant('equipe', PlanSubject::group(1), PlanGrant::VERBS, suspendable: false, suspended: true);
     }
-
-    // =========================================================================
-    // Contexte : entrées mal formées
-    // =========================================================================
 
     #[Test]
     public function a_member_with_an_unknown_edge_role_is_refused_at_the_door(): void
@@ -573,10 +541,6 @@ class PlanResolverTest extends TestCase
         $this->assertSame('Classe_3emeA', $context->groupName);
         $this->assertSame([], $context->members);
     }
-
-    // =========================================================================
-    // Story 60.2 — le nommage de chemin des mailles « matière × classe »
-    // =========================================================================
 
     private function matiereTemplate(string $pattern): DirectoryTemplate
     {
@@ -632,7 +596,7 @@ class PlanResolverTest extends TestCase
     #[Test]
     public function the_bare_name_of_a_matiere_classe_group_still_fails_explicitly(): void
     {
-        // Comportement 60.1 CONSERVÉ : le « @ » n'est pas un segment sûr, donc
+        // Comportement CONSERVÉ : le « @ » n'est pas un segment sûr, donc
         // `{group.bare_name}` n'est pas fourni pour ce type — et un placeholder
         // non fourni fait échouer la résolution, jamais silencieusement.
         $this->expectException(PlanResolutionException::class);
@@ -687,10 +651,6 @@ class PlanResolverTest extends TestCase
 
         $this->assertSame('Matieres/Math', $plan->rootPath);
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     /** @return list<PlanGrant> */
     private function grantsForRole(\App\Services\Filesystem\Plan\PlanNode $node, string $roleKey): array

@@ -9,15 +9,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC1.2 / T1.3.
- * Story 3.8 — AC1.1-1.4 / T2.5 — étendu à 8 cases (port complet post-OOBE).
+ * T1.3.
+ * T2.5 — étendu à 8 cases (port complet post-OOBE).
  *
  * Tests unitaires de la whitelist enum {@see WindowsInstallStep}.
  */
 class WindowsInstallStepTest extends TestCase
 {
     /**
-     * Story 3.8 — AC1.1 — 8 cases au total (Winpe + Oobe + 6 nouveaux).
+     * 8 cases au total (Winpe + Oobe + 6 nouveaux).
      */
     #[Test]
     public function it_lists_exactly_eight_cases(): void
@@ -33,7 +33,7 @@ class WindowsInstallStepTest extends TestCase
     }
 
     /**
-     * Story 3.8 — AC1.3 — fromString accepte les 6 nouveaux cases.
+     * FromString accepte les 6 nouveaux cases.
      */
     #[Test]
     public function it_resolves_six_new_post_oobe_steps(): void
@@ -51,7 +51,7 @@ class WindowsInstallStepTest extends TestCase
     {
         self::assertSame(WindowsInstallStep::Winpe, WindowsInstallStep::fromString('WINPE'));
         self::assertSame(WindowsInstallStep::Oobe, WindowsInstallStep::fromString('Oobe'));
-        // Story 3.8 — casse mixte sur les 6 nouveaux cases.
+        // Casse mixte sur les 6 nouveaux cases.
         self::assertSame(WindowsInstallStep::Sysprep, WindowsInstallStep::fromString('SysPrep'));
         self::assertSame(WindowsInstallStep::Nosysprep, WindowsInstallStep::fromString('NOSYSPREP'));
         self::assertSame(WindowsInstallStep::Join, WindowsInstallStep::fromString('Join'));
@@ -81,7 +81,7 @@ class WindowsInstallStepTest extends TestCase
     }
 
     /**
-     * Story 3.8 — AC1.3 — strip whitespace safe avant tryFrom.
+     * Strip whitespace safe avant tryFrom.
      */
     #[Test]
     public function it_strips_whitespace_before_resolution(): void

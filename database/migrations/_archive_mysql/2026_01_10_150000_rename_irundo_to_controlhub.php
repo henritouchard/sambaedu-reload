@@ -11,7 +11,6 @@ return new class extends Migration {
      */
     public function up(): void
     {
-        // 1. Renommer la table irundo_tasks -> controlhub_tasks
         if (Schema::hasTable('irundo_tasks') && !Schema::hasTable('controlhub_tasks')) {
             Schema::rename('irundo_tasks', 'controlhub_tasks');
         }
@@ -36,7 +35,6 @@ return new class extends Migration {
             });
         }
 
-        // 2. Renommer la table controlhub_tasks -> irundo_tasks
         if (Schema::hasTable('controlhub_tasks') && !Schema::hasTable('irundo_tasks')) {
             Schema::rename('controlhub_tasks', 'irundo_tasks');
         }

@@ -7,7 +7,6 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.5 — AC5.7 / AC5.4.
  *
  * Validation du body de `GET|POST /ipxe/windows/diskpart.txt`.
  *

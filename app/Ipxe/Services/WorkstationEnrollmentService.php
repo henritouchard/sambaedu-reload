@@ -17,19 +17,17 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.3 — D5 / AC2.1-AC2.8.
- *
  * Orchestrateur d'enrollment machine — coordonne PostgreSQL
  * (modèle `Workstation` + pivot `workstation_group_workstation`) et AD
  * (via {@see AdMachineManager} — création / `netbootGUID` / rename / groupes).
  *
  * **Périmètre** : 5 méthodes publiques (1 par flow iPXE) :
  *
- *  - {@see enrollName()}         — flow `/ipxe/enrollment/name`.
- *  - {@see logByodEnrollment()}  — flow `/ipxe/enrollment/byod` (audit-only).
- *  - {@see assignRoom()}         — flow `/ipxe/enrollment/room`.
- *  - {@see attachGroup()}        — flow `/ipxe/enrollment/parc-add`.
- *  - {@see detachGroup()}        — flow `/ipxe/enrollment/parc-remove`.
+ *  - {@see enrollName()} — flow `/ipxe/enrollment/name`.
+ *  - {@see logByodEnrollment()} — flow `/ipxe/enrollment/byod` (audit-only).
+ *  - {@see assignRoom()} — flow `/ipxe/enrollment/room`.
+ *  - {@see attachGroup()} — flow `/ipxe/enrollment/parc-add`.
+ *  - {@see detachGroup()} — flow `/ipxe/enrollment/parc-remove`.
  *
  * **Pattern try/catch obligatoire** sur chaque méthode publique : un firmware
  * iPXE doit toujours recevoir un menu (pas une 500). Les exceptions sont
@@ -39,10 +37,10 @@ use Throwable;
  * **Anti-pattern** :
  *
  *  - Pas d'appel `LdapRecord` direct — passage exclusif via `AdMachineManager`
- *    (parité 16.7 + architecture `App\Ipxe`).
+ *  (parité + architecture `App\Ipxe`).
  *  - Pas de modification de schéma `workstations` — `updateOrCreate`/`save`
- *    sur attributs existants Epic 4.
- *  - Pas de transaction DB+AD atomique (best-effort iso pattern 4.1/4.2 — si
+ * sur attributs existants.
+ *  - Pas de transaction DB+AD atomique (best-effort iso pattern — si
  *    AD échoue après DB, log warning + status `AD_ERROR`).
  */
 final class WorkstationEnrollmentService
@@ -54,8 +52,6 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.1-AC2.4.
-     *
      * Coordonne l'enrollment "nommage" d'un poste — gère les 4 cas iso-legacy
      * `enregistrement.php:22-148` :
      *
@@ -100,8 +96,8 @@ final class WorkstationEnrollmentService
 
             // 2) Validation regex stricte anti-injection (post-sanitize).
             if (! $this->sanitizer->isValidHostname($sanitized)) {
-                // F7 (review 3.3) : event renommé `rejected_invalid` (vs `name_taken`)
-                // pour distinguer côté SIEM concurrentiel légitime vs injection.
+                // Event `rejected_invalid` distinct de `name_taken` : côté SIEM,
+                // un conflit de nom légitime ne se confond pas avec une injection.
                 $this->log('ipxe.enrollment.name.rejected_invalid', [
                     'action_type' => 'ipxe.enrollment.name.rejected_invalid',
                     'reason' => 'invalid_hostname',
@@ -160,8 +156,7 @@ final class WorkstationEnrollmentService
 
             // 6) Cas 1 — création neuve (UUID inconnu).
             //
-            // Décision design #1b (Henri 2026-06-01, remplace #1a) : ordre
-            // « AD d'abord, PG ensuite ». On crée+enregistre le compte machine
+            // Ordre « AD d'abord, PG ensuite ». On crée+enregistre le compte machine
             // AD AVANT toute écriture Postgres ; si l'AD échoue on REJETTE
             // (return adError) sans rien persister en PG — évite la divergence
             // « poste fantôme en base sans compte AD » (cf. incident poste 46).
@@ -241,18 +236,15 @@ final class WorkstationEnrollmentService
 
             // 7) Cas 3 — renommage (UUID connu, nouveau nom libre).
             //
-            // Story 4.9 : le rename AD est désormais piloté par l'observer
+            // Le rename AD est désormais piloté par l'observer
             // {@see \App\Observers\WorkstationObserver} qui dispatch async
             // {@see \App\Jobs\AdSync\WorkstationAdSyncJob::rename()} (modrdn
             // LDAP, préserve objectGUID + netbootGUID).
             //
-            // D7 : registerHardware post-rename supprimé — modrdn LDAP
-            // préserve netbootGUID (validé VM 2026-05-28).
-            //
-            // Auto-fix #6 (review 4.9) : suppression de `$oldName` mort et
-            // de son `unset()`. Le rename AD est délégué à l'observer/job —
-            // le résultat réel n'est connu qu'après exécution async, donc on
-            // log `ad_result='dispatched'` (vs `'success'` mensonger).
+            // Pas de registerHardware après le rename : modrdn LDAP préserve
+            // déjà le netbootGUID. Le rename AD étant délégué à l'observer/job,
+            // son résultat réel n'est connu qu'après exécution asynchrone — d'où
+            // `ad_result='dispatched'` plutôt qu'un `'success'` mensonger.
             $current->name = $sanitized;
             if ($mac !== '' && $current->mac !== $mac) {
                 $current->mac = $mac;
@@ -290,9 +282,7 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.8.
-     *
-     * Flow BYOD simplifié — audit-only en 3.3 :
+     * Flow BYOD simplifié — audit-only :
      *
      *  - **PAS** de création Workstation (BYOD = appareil élève, pas du parc).
      *  - **PAS** d'appel AD.
@@ -301,13 +291,14 @@ final class WorkstationEnrollmentService
      *  - Log info `ipxe.enrollment.byod.logged`.
      *
      * Le flow complet BYOD (chain vers `/ipxe/installation-linux`) est déféré
-     * à la story 3.4 — 3.3 livre un stub qui chain vers `/ipxe/admin` pour
+     * À la — livre un stub qui chain vers `/ipxe/admin` pour
      * boucler le menu.
      */
     public function logByodEnrollment(string $rawName, string $mac, string $uuid, string $ip): void
     {
         try {
-            // Opus-1 (review 3.3) : validation isValidHostname obligatoire pour bloquer newline injection iPXE.
+            // Validation isValidHostname obligatoire : bloque l'injection de
+            // newline dans le rendu iPXE.
             $sanitized = $this->sanitizer->sanitize($rawName);
             if (! $this->sanitizer->isValidHostname($sanitized)) {
                 $this->log('ipxe.enrollment.byod.rejected_invalid', [
@@ -360,7 +351,7 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Q1 (review 3.3) — iso-legacy `enregistrement_byod.php:72-81`.
+     * Iso-legacy `enregistrement_byod.php:72-81`.
      *
      * Log audit : un poste connu en AD a tenté un POST /ipxe/enrollment/byod.
      * Pas de side-effect DB (pas de MachineBootLog) — c'est un rejet pur,
@@ -377,11 +368,9 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.5 / AC2.6 ; Story 4.11 — AC5/AC7.
-     *
      * Affecte un poste à une salle physique (`WorkstationGroup::is_physical = true`).
      *
-     * Story 4.11 — l'écriture passe désormais par le point unique
+     * L'écriture passe désormais par le point unique
      * {@see \App\Services\Parc\WorkstationGroupService::assignMachineToPhysicalRoom()}
      * (swap transactionnel sur le pivot global + dispatch du déplacement OU AD
      * `WorkstationMembershipAdSyncJob::move`). Plus d'écriture directe sur le
@@ -399,7 +388,7 @@ final class WorkstationEnrollmentService
             $room = WorkstationGroup::query()
                 ->where('id', $roomId)
                 ->where('is_physical', true)
-                // F9 (review 3.3) : cohérence avec builder (item non-actif invisible côté iPXE).
+                // Cohérence avec le builder : un item non actif est invisible côté iPXE.
                 ->where('is_active', true)
                 ->whereNull('archived_at')
                 ->first();
@@ -456,16 +445,16 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.7 (amendée post-merge 2026-05-20).
+     * (amendée post-merge 2026-05-20).
      *
      * Attache un poste à un parc logique (`WorkstationGroup::is_physical = false`).
      * Délègue à {@see Workstation::attachGroups()}.
      *
-     * **Note archi (décision Epic 4 antérieure à 3.3)** : l'appartenance machine→
+     * **Note archi (décision antérieure)** : l'appartenance machine→
      * groupe logique (parc) est désormais gérée **uniquement en SQL** —
      * {@see \App\Jobs\AdSync\WorkstationMembershipAdSyncJob} ne supporte plus
      * d'action `add`/`remove` (seul `move` salle subsiste). Le texte original
-     * d'AC2.7 mentionnant la sync AD via observer est donc obsolète : pas de
+     * D' mentionnant la sync AD via observer est donc obsolète : pas de
      * dispatch AD ici, le pivot `workstation_group_workstation` est la source de
      * vérité unique.
      */
@@ -475,7 +464,7 @@ final class WorkstationEnrollmentService
             $group = WorkstationGroup::query()
                 ->where('id', $groupId)
                 ->where('is_physical', false)
-                // F9 (review 3.3) : cohérence avec builder (item non-actif invisible côté iPXE).
+                // Cohérence avec le builder : un item non actif est invisible côté iPXE.
                 ->where('is_active', true)
                 ->whereNull('archived_at')
                 ->first();
@@ -523,7 +512,7 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.7 — symétrique de {@see attachGroup()}.
+     * Symétrique de {@see attachGroup}.
      *
      * Idem note archi : SQL only, pas de dispatch AD.
      */
@@ -533,7 +522,7 @@ final class WorkstationEnrollmentService
             $group = WorkstationGroup::query()
                 ->where('id', $groupId)
                 ->where('is_physical', false)
-                // F9 (review 3.3) : cohérence avec builder (item non-actif invisible côté iPXE).
+                // Cohérence avec le builder : un item non actif est invisible côté iPXE.
                 ->where('is_active', true)
                 ->whereNull('archived_at')
                 ->first();
@@ -551,7 +540,7 @@ final class WorkstationEnrollmentService
                 return false;
             }
 
-            // F11 (review 3.3) : vérifier appartenance avant détachement (parité legacy `enleveparc.php`).
+            // Vérifier l'appartenance avant détachement (parité legacy `enleveparc.php`).
             $ws->load('groups');
             if (! $ws->groups->contains('id', $groupId)) {
                 $this->log('ipxe.enrollment.parc.failure', [
@@ -596,7 +585,7 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Insert `MachineBootLog` best-effort (parité 3.1 / 3.2 — un échec ne
+     * Insert `MachineBootLog` best-effort (parité — un échec ne
      * doit jamais bloquer la réponse iPXE).
      */
     private function persistMachineBootLog(
@@ -628,7 +617,7 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Helper logging — émet un log structuré channel `ipxe` (parité 3.1/3.2).
+     * Helper logging — émet un log structuré channel `ipxe` (parité).
      *
      * @param  array<string,mixed>  $context
      * @param  'info'|'warning'|'error'  $level

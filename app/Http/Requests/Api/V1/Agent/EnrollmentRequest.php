@@ -7,11 +7,11 @@ namespace App\Http\Requests\Api\V1\Agent;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 23.3 — payload de `POST /api/v1/agent/enrollment`.
+ * Payload de `POST /api/v1/agent/enrollment`.
  *
  * `ticket` est volontairement `nullable` (pas `required`) : une demande SANS
- * ticket doit suivre le chemin métier 409/403 de l'AC4 (futur point d'accueil
- * de la porte 2 — Story 25.3), pas un 422 de validation. Seuls les types et
+ * ticket doit suivre le chemin métier 409/403 de l'enrôlement (point d'accueil
+ * de la porte 2), pas un 422 de validation. Seuls les types et
  * bornes sont validés ici ; l'autorisation est portée par le hash du ticket
  * dans {@see \App\Services\Agent\Enrollment\EnrollmentService::redeem()}.
  */

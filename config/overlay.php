@@ -7,8 +7,7 @@ declare(strict_types=1);
 | Configuration overlay poste (POC successeur bandeau wallpaper)
 |--------------------------------------------------------------------------
 | Contrat JSON consommé par l'overlay client (Rainmeter / Conky) via
-| `GET /api/v1/workstation-config/overlay`. Cf. spike
-| `_bmad-output/planning-artifacts/spike-wallpaper-overlay-tools-2026-06-09.md`.
+| `GET /api/v1/workstation-config/overlay`.
 |
 | ⚠️ Après modification de ce fichier sur la VM : `php artisan config:cache`
 | (+ chown www-admin) sinon les nouvelles clés ressortent null.

@@ -18,11 +18,11 @@ use Tests\Traits\CreatesPrinterDriversSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.2 — Tests Unit du modèle App\Models\PrinterDriver.
+ * Tests Unit du modèle App\Models\PrinterDriver.
  *
  * Couvre :
  *  - PK composite (`primaryKey = null`, `incrementing = false`) + helper
- *    `findByKey()`.
+ *  `findByKey()`.
  *  - Scopes `nonOrphan()` / `orphans()` / `forArchitecture()` / `bySource()`.
  *  - Relation `printer()` BelongsTo via `printer_cups_name`.
  *  - Relation `createdBy()` BelongsTo via `created_by_user_id`.
@@ -141,9 +141,8 @@ class PrinterDriverTest extends TestCase
     #[Test]
     public function scope_for_architecture_filters_correctly(): void
     {
-        // Fix #16 — scopeForArchitecture est défini mais n'avait aucun
-        // test. D5 6.2 ne supporte que x64 en pratique, mais le scope
-        // doit fonctionner pour le futur 6.2bis.
+        // Seul x64 est déployé en pratique, mais le scope doit rester correct
+        // pour les autres architectures.
         Printer::create(['cups_name' => 'imparch', 'orphan' => false]);
         PrinterDriver::create([
             'printer_cups_name' => 'imparch',

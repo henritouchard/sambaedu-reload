@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — T1.4 / AC1.3.
+ * T1.4 /.
  *
  * Tests du helper {@see WindowsXmlPlaceholders} :
  *  - Catalogue.
@@ -22,8 +22,8 @@ class WindowsXmlPlaceholdersTest extends TestCase
     /* ----------------------------- catalog ---------------------------- */
 
     /**
-     * Post-review code-review #7 : le catalog mappe UNIQUEMENT les
-     * placeholders config-based (lus via `config(...)`). Les placeholders
+     * Le catalog mappe UNIQUEMENT les placeholders lus en configuration
+     * (`config(...)`). Les placeholders
      * par-poste (`###_NAME_###`) sont gérés par
      * {@see WindowsUnattendBuilder} qui lit le modèle Workstation.
      *
@@ -183,9 +183,9 @@ class WindowsXmlPlaceholdersTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Post-review code-review #3 — sanitizeForTextContent.
+     * sanitizeForTextContent.
      *
-     * Variante de sanitize() destinée à `DOMNode::textContent =` qui escape
+     * Variante de sanitize() destinée à `DOMNode::textContent =`, qui échappe
      * déjà nativement les XML chars lors de la sérialisation. Appliquer
      * htmlspecialchars avant textContent provoque un double-escape.
      * ------------------------------------------------------------------ */
@@ -222,9 +222,9 @@ class WindowsXmlPlaceholdersTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.8 — D9 / AC8.1 / AC8.3 — sanitizeBatPlaceholder (0-trust).
+     * sanitizeBatPlaceholder, en confiance nulle.
      *
-     * Stratégie 0-trust : tout char d'injection cmd.exe lève
+     * Tout caractère d'injection cmd.exe lève
      * `BatPlaceholderInjectionException`. Couvre les vecteurs RCE poste
      * Windows en SYSTEM via les .cmd batch.
      * ------------------------------------------------------------------ */
@@ -257,7 +257,7 @@ class WindowsXmlPlaceholdersTest extends TestCase
     }
 
     /**
-     * Data provider : 10+ vecteurs d'injection cmd.exe (AC8.3).
+     * Data provider : 10+ vecteurs d'injection cmd.exe.
      *
      * @return array<string, array{string, string}>
      */

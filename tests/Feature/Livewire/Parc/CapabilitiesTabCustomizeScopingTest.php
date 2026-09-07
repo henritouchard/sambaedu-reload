@@ -21,29 +21,28 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 29.6 — Scoping de `app.customize` par WorkstationGroup sur l'onglet
+ * Scoping de `app.customize` par WorkstationGroup sur l'onglet
  * « Options / Capacités » (override de capacité par parc) + figement de `groupId`.
  *
  * Couvre :
- *  - AC #1 (décision d'autorisation, niveau guard) : un délégué POSITIF de A
+ *  - la décision d'autorisation au niveau du guard : un délégué POSITIF de A
  *    accède au composant monté `groupId=A` (mount OK), mais est REFUSÉ (403, sans
  *    écriture ni trace) sur `groupId=B`. La décision scopée du guard est aussi
  *    prouvée à l'unité (WorkstationGroupPolicyCustomizeTest) ;
- *  - AC #1/#3 (write-through bout-en-bout) avec l'acteur de la menace M4 : un
- *    refnum disposant du droit GLOBAL `app.customize` ET d'une exclusion NÉGATIVE
- *    sur B écrit sur A mais est refusé sur B (sans écriture ni trace) ;
- *  - AC #2 : admin global autorisé sur A et B (fallback préservé) ;
- *  - AC #6 : `groupId` `#[Locked]` → tampering client → CannotUpdateLockedPropertyException ;
- *  - non-régression 29.2 (verrou amont) : un acteur AUTORISÉ par périmètre reste
+ *  - le write-through bout-en-bout : un refnum disposant du droit GLOBAL
+ *    `app.customize` ET d'une exclusion NÉGATIVE sur B écrit sur A mais est refusé
+ *    sur B (sans écriture ni trace) ;
+ *  - admin global autorisé sur A et B (fallback préservé) ;
+ *  - `groupId` `#[Locked]` → tampering client → CannotUpdateLockedPropertyException ;
+ *  - non-régression (verrou amont) : un acteur AUTORISÉ par périmètre reste
  *    bloqué SERVEUR par `authorizeUpstream` sur une capacité verrouillée amont ;
- *  - non-régression 29.5 (audit) : une écriture autorisée trace acteur + périmètre.
+ *  - non-régression (audit) : une écriture autorisée trace acteur + périmètre.
  *
- * ✅ Story 29.8 — le plancher de droit GLOBAL `app.customize` a été RETIRÉ de
+ * Le plancher de droit GLOBAL `app.customize` ne figure PAS dans
  * `CapabilityPolicy::modify` (gate `modify-capability`). Un délégué POSITIF-seul
- * (délégation scopée sur SON parc, SANS droit global) peut désormais finaliser un
+ * (délégation scopée sur SON parc, SANS droit global) finalise donc un
  * write-through complet (openAdd/saveOverride, openEdit, removeOverride) sur SON
- * parc — l'habilitation AC#1 de 29.6 est enfin livrée (voir
- * `positive_delegate_can_complete_write_through_on_a` & co). Le verrou amont reste
+ * parc (voir `positive_delegate_can_complete_write_through_on_a` & co). Le verrou amont reste
  * le SEUL motif de refus serveur de ce gate
  * (`positive_delegate_is_still_blocked_by_upstream_lock`).
  *
@@ -100,8 +99,8 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
     }
 
     /**
-     * Acteur de la menace M4 : droit GLOBAL `app.customize` (passe le plancher
-     * `modify-capability` de 29.2) SCOPÉ par une exclusion NÉGATIVE sur B.
+     * Acteur du scénario d'usurpation : droit GLOBAL `app.customize` (passe le plancher
+     * `modify-capability`) SCOPÉ par une exclusion NÉGATIVE sur B.
      */
     private function scopedCustomizerDeniedOnB(string $login = 'refnum_scoped'): User
     {
@@ -137,14 +136,12 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
         return $cap;
     }
 
-    // ── AC #1 — décision d'autorisation scopée (niveau guard) ─────────────
-
     #[Test]
     public function positive_delegate_of_a_is_granted_access_on_a(): void
     {
-        // Avant 29.6, guardCustomize vérifiait `app.customize` GLOBALEMENT : un
+        // Avant, guardCustomize vérifiait `app.customize` GLOBALEMENT : un
         // délégué positif-seul aurait été refusé (403) même sur SA salle. Après
-        // 29.6, le guard scopé reconnaît la délégation → accès au composant de A.
+        // le guard scopé reconnaît la délégation → accès au composant de A.
         $this->positiveDelegateOfA();
 
         Livewire::test(self::COMPONENT, ['groupId' => $this->parcA->id])
@@ -163,8 +160,6 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
         $this->assertSame(0, DB::table('capability_assignments')->count(), 'aucune écriture hors-périmètre');
         $this->assertSame(0, CapabilityOverrideAuditLog::query()->count(), 'aucune trace d\'audit hors-périmètre');
     }
-
-    // ── AC #1/#3 — write-through scopé (acteur menace M4) ──────────────────
 
     #[Test]
     public function scoped_customizer_can_save_override_on_a(): void
@@ -188,9 +183,9 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
     #[Test]
     public function scoped_customizer_can_open_edit_on_a(): void
     {
-        // [review 29.6 P2] openEdit est listé par l'AC#1 parmi les mutations gardées :
-        // on prouve qu'il passe pour l'acteur autorisé sur SON parc (même guard scopé
-        // qu'openAdd, mais couverture explicite de la mutation).
+        // openEdit fait partie des mutations gardées : on prouve qu'il passe pour
+        // l'acteur autorisé sur SON parc (même guard scopé qu'openAdd, mais
+        // couverture explicite de la mutation).
         $this->scopedCustomizerDeniedOnB();
         $cap = $this->capabilityWithKey('show_clock', 'HKCU', 'Software\\Clock', 'Show');
 
@@ -239,8 +234,8 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
         $this->scopedCustomizerDeniedOnB();
 
         // Exclusion négative active sur B → guardCustomize 403 même avec le droit
-        // global (le scoped guard honore la négative, contrairement à l'ancien
-        // contrôle global aveugle — fix M4).
+        // global : le guard scopé honore la négative, là où un contrôle global
+        // aveugle laisserait passer.
         Livewire::test(self::COMPONENT, ['groupId' => $this->parcB->id])
             ->assertStatus(403);
 
@@ -248,16 +243,12 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
         $this->assertSame(0, CapabilityOverrideAuditLog::query()->count(), 'aucune trace d\'audit hors-périmètre');
     }
 
-    // ── Story 29.8 — write-through du délégué POSITIF-seul (habilitation AC#1) ─
-
     #[Test]
     public function positive_delegate_can_complete_write_through_on_a(): void
     {
-        // Story 29.8 AC#1 — AVANT le retrait du plancher de droit GLOBAL, ce test
-        // ÉCHOUAIT : le délégué positif-seul passait guardCustomize() (scopé) mais
-        // était rebloqué à l'écriture par le plancher `app.customize` de
-        // `modify-capability`. APRÈS retrait, l'écriture aboutit : l'habilitation
-        // promise par 29.6 est enfin livrée pour ce persona.
+        // Le délégué positif-seul passe guardCustomize() (scopé) ET l'écriture :
+        // aucun plancher de droit GLOBAL `app.customize` ne le rebloque dans
+        // `modify-capability`.
         $user = $this->positiveDelegateOfA();
         $cap = $this->capabilityWithKey('pos_write', 'HKCU', 'Software\\PW', 'V');
 
@@ -274,7 +265,7 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
             'value' => 'off',
         ]);
 
-        // Non-régression 29.5 — l'écriture du persona positif-seul est tracée (audit
+        // Non-régression — l'écriture du persona positif-seul est tracée (audit
         // append-only), dans la MÊME transaction que l'override.
         $this->assertDatabaseHas('capability_override_audit_logs', [
             'action' => 'create',
@@ -333,9 +324,9 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
     #[Test]
     public function positive_delegate_is_forbidden_on_b_without_write_or_audit_trace(): void
     {
-        // Story 29.8 AC#2 (non-régression sécurité M4) : le retrait du plancher
-        // n'ouvre AUCUN chemin hors-périmètre. Le délégué de A reste refusé DÈS le
-        // mount sur B (guardCustomize scopé), 0 écriture, 0 trace.
+        // L'absence de plancher de droit global n'ouvre AUCUN chemin
+        // hors-périmètre. Le délégué de A reste refusé DÈS le mount sur B
+        // (guardCustomize scopé), 0 écriture, 0 trace.
         $this->positiveDelegateOfA();
 
         Livewire::test(self::COMPONENT, ['groupId' => $this->parcB->id])
@@ -348,9 +339,9 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
     #[Test]
     public function positive_delegate_is_still_blocked_by_upstream_lock(): void
     {
-        // Story 29.8 AC#4 — le verrou amont mord toujours, MÊME sans plancher et
+        // Le verrou amont mord toujours, MÊME sans plancher de droit global et
         // MÊME pour un délégué scopé autorisé sur SON parc : authorizeUpstream
-        // (29.2) refuse → aucune écriture.
+        // refuse → aucune écriture.
         $this->positiveDelegateOfA();
         $cap = $this->capabilityWithKey('pos_locked', 'HKCU', 'Software\\PL', 'V');
         ControlHubContractItem::factory()->create([
@@ -373,8 +364,6 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
             'assignable_id' => $this->parcA->id,
         ]);
     }
-
-    // ── AC #2 — admin global : autorisé partout (fallback préservé) ────────
 
     #[Test]
     public function global_admin_can_save_override_on_a_and_b(): void
@@ -403,8 +392,6 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
         ]);
     }
 
-    // ── AC #6 — #[Locked] : tampering de groupId rejeté ───────────────────
-
     #[Test]
     public function tampering_group_id_throws_locked_property_exception(): void
     {
@@ -417,7 +404,7 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
             ->set('groupId', $this->parcB->id);
     }
 
-    // ── Non-régression 29.2 — verrou amont prévaut même pour un acteur autorisé ─
+    // ── Non-régression — verrou amont prévaut même pour un acteur autorisé ─
 
     #[Test]
     public function authorized_actor_is_still_blocked_by_upstream_lock(): void
@@ -436,14 +423,14 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
             ->set('formValue', 'off')
             ->call('saveOverride');
 
-        // Le scope autorise, mais authorizeUpstream (29.2) refuse → aucune écriture.
+        // Le scope autorise, mais authorizeUpstream refuse → aucune écriture.
         $this->assertDatabaseMissing('capability_assignments', [
             'capability_id' => $cap->id,
             'assignable_id' => $this->parcA->id,
         ]);
     }
 
-    // ── Non-régression 29.5 — audit tracé fidèlement sur écriture autorisée ─
+    // ── Non-régression — audit tracé fidèlement sur écriture autorisée ─
 
     #[Test]
     public function authorized_save_is_audited_with_actor_and_scope(): void

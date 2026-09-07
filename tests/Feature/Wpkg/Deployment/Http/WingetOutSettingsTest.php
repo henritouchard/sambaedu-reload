@@ -14,7 +14,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.6 / AC2.1 / AC2.4 / AC6.2 — Endpoint WingetOut piloté par SystemSetting.
+ * Endpoint WingetOut piloté par SystemSetting.
  *
  * Vérifie que :
  *   - DB override true → 200 même si env reste false (sans config:cache)
@@ -23,7 +23,6 @@ use Tests\TestCase;
  *   - Effet immédiat : modifier SystemSetting dans le même cycle → reflète immédiatement
  */
 #[Group('wpkg-deploy')]
-#[Group('story-15-6')]
 class WingetOutSettingsTest extends TestCase
 {
     use DatabaseTransactions;
@@ -47,8 +46,8 @@ class WingetOutSettingsTest extends TestCase
     }
 
     /**
-     * AC2.1 — DB override true > env false → 200 (winget activé depuis DB, env reste false).
-     * AC2.4 — Effet immédiat sans config:cache.
+     * DB override true > env false → 200 (winget activé depuis DB, env reste false).
+     * Effet immédiat sans config:cache.
      */
     #[Test]
     public function db_true_overrides_env_false_returns_200(): void
@@ -69,9 +68,6 @@ class WingetOutSettingsTest extends TestCase
         $response->assertStatus(200);
     }
 
-    /**
-     * AC2.1 — DB override false > env true → 400.
-     */
     #[Test]
     public function db_false_overrides_env_true_returns_400(): void
     {
@@ -88,7 +84,7 @@ class WingetOutSettingsTest extends TestCase
     }
 
     /**
-     * AC1.3 / Non-régression — Sans clé DB, comportement identique à l'existant (env false → 400).
+     * Non-régression — Sans clé DB, comportement identique à l'existant (env false → 400).
      */
     #[Test]
     public function no_db_key_falls_back_to_env_false_returns_400(): void

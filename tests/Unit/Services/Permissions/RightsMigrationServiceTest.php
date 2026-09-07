@@ -22,12 +22,12 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests unitaires du RightsMigrationService (Story 7.3).
+ * Tests unitaires du RightsMigrationService.
  *
  * Couvre :
  *  - Volet 1 : mapping user→rôle Spatie depuis les 5 profils seedés.
- *  - Bug Annu_is_admin fallback ignoré (matrice §8 #6).
- *  - Profils custom rapatriés en 7.2 → résolution par nom.
+ *  - Bug Annu_is_admin : fallback ignoré.
+ *  - Profils custom rapatriés → résolution par nom.
  *  - Volet 2 : délégations scopées positives + négatives + parse CN.
  *  - Idempotence (2e run = pas de doublon).
  *  - Cas non mappables (user introuvable, parc introuvable, perm introuvable).
@@ -65,10 +65,6 @@ class RightsMigrationServiceTest extends TestCase
         $this->dropPermissionSchema();
         parent::tearDown();
     }
-
-    // ================================================================
-    // Helpers
-    // ================================================================
 
     private function seedPermissionsAndRoles(): void
     {
@@ -132,10 +128,6 @@ class RightsMigrationServiceTest extends TestCase
         return fn (): array => $groups;
     }
 
-    // ================================================================
-    // Volet 1 — assignation user→rôle depuis rights_rdn
-    // ================================================================
-
     #[Test]
     public function it_assigns_super_admin_role_to_members_of_se3_is_admin(): void
     {
@@ -193,8 +185,8 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_handles_annu_is_admin_with_missing_info_as_user_admin_not_computer_admin(): void
     {
-        // Matrice §8 #6 : bug fallback annu/profiles.php:58 qui remappait
-        // Annu_is_admin sans info vers SE_COMPUTER_ADMIN. On NE reproduit PAS.
+        // Le legacy (annu/profiles.php:58) remappait Annu_is_admin sans info
+        // vers SE_COMPUTER_ADMIN. On NE reproduit PAS ce bug.
         $admin = $this->createUser('annuAdmin');
 
         $report = $this->service->migrate(
@@ -216,7 +208,7 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_logs_explicit_warning_message_when_annu_is_admin_lacks_info(): void
     {
-        // Review #7 : le bug fallback Annu_is_admin doit produire un log warning
+        // Le fallback Annu_is_admin ignoré doit produire un log warning
         // explicite avec le fragment "fallback buggé ignoré, assignation alignée
         // sur le seed d'origine". On capture les warnings via Log::spy() et on
         // vérifie le message exact attendu.
@@ -260,7 +252,6 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_grants_direct_user_password_init_for_password_is_admin_without_role_escalation(): void
     {
-        // Story 7.3 — review #1 (décision Henri 2026-04-25) :
         // `password_is_admin` (0x01) doit migrer vers la permission DIRECTE
         // `user.password.init` via `givePermissionTo`, PAS vers `SambaRole::UserAdmin`
         // (0xFF). Cela évite l'escalade : un user qui n'avait que le droit
@@ -329,7 +320,7 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_maps_custom_profile_to_role_by_name_when_created_in_db(): void
     {
-        // Profil custom déjà rapatrié en 7.2 : Role DB existe avec ce nom.
+        // Profil custom déjà rapatrié : Role DB existe avec ce nom.
         $customRole = Role::firstOrCreate(['name' => 'Animateur_CDI', 'guard_name' => 'web']);
         $customRole->syncPermissions([
             SambaPermission::UserRead->value,
@@ -350,7 +341,7 @@ class RightsMigrationServiceTest extends TestCase
         // Le user doit avoir le rôle custom EXACT (cas 3 du resolveRoleNameForProfile :
         // résolution par nom DB, PAS le fallback fromBitmask). C'est ce que le test
         // est censé valider — l'assertion `assertGreaterThan(0)` initiale était trop
-        // faible et passait pour la mauvaise raison (Review #6).
+        // faible et passait pour la mauvaise raison.
         $fresh = $user->fresh();
         $this->assertTrue(
             $fresh->hasRole('Animateur_CDI'),
@@ -415,14 +406,10 @@ class RightsMigrationServiceTest extends TestCase
         $this->assertSame(0, $admin->fresh()->roles()->count(), 'Dry-run ne doit écrire aucun rôle');
     }
 
-    // ================================================================
-    // Volet 2 — délégations scopées
-    // ================================================================
-
     #[Test]
     public function it_creates_positive_delegation_from_legacy_manage_cn(): void
     {
-        // Story 7.3 — review #10/#12 : format CN legacy réel `manage_<parc>` →
+        // Format CN legacy réel `manage_<parc>` →
         // permission Spatie `computer.elevate` (mapping `LEGACY_DELEGATION_LEVELS`).
         $user = $this->createUser('techpos');
         $wg = $this->createWorkstationGroup('salle-a12');
@@ -454,7 +441,7 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_parses_parc_name_with_underscores_correctly(): void
     {
-        // Story 7.3 — review #2/#10 : un parc nommé `salle_info_bat_A` ne doit
+        // Un parc nommé `salle_info_bat_A` ne doit
         // PAS être charcuté par le parsing : le regex strict capture le 3e
         // groupe en greedy sur tout ce qui suit le préfixe `<level>_`.
         $user = $this->createUser('techunderscore');
@@ -487,7 +474,7 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_creates_negative_delegation_from_no_prefixed_legacy_cn(): void
     {
-        // Story 7.3 — review #10 : préfixe `no_` correctement extrait par le
+        // Le préfixe `no_` est correctement extrait par le
         // regex `(no_)?(manage|view|rdp)_(.+)`. La permission Spatie cible est
         // celle mappée par le level (ici `manage` → `computer.elevate`).
         $user = $this->createUser('techneg');
@@ -520,8 +507,7 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_creates_rdp_delegation_with_dedicated_remote_rdp_permission(): void
     {
-        // Story 7.3 — review #10 (option C, décision Henri 2026-04-25) :
-        // le level `rdp` legacy est migré vers la permission Spatie dédiée
+        // Le level `rdp` legacy est migré vers la permission Spatie dédiée
         // `computer.remote.rdp` (et non `computer.control` malgré le partage
         // du bit 0x200 côté legacyRight()).
         $user = $this->createUser('techrdp');
@@ -579,7 +565,7 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_reports_unknown_legacy_cn_format_as_parse_error(): void
     {
-        // Story 7.3 — review #12 : un CN qui ne matche pas le regex
+        // Un CN qui ne matche pas le regex
         // `(no_)?(manage|view|rdp)_<parc>` est rapporté `delegation_parse_error`
         // avec un log warning, pas d'unmappable silencieux.
         $user = $this->createUser('tech4');
@@ -657,10 +643,9 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function it_logs_delegation_history_with_explicit_migration_source_context(): void
     {
-        // Story 7.3 — review #8 (décision Henri 2026-04-25) : les entrées
-        // `delegation_history` créées par la migration ont actor=null mais
+        // Les entrées `delegation_history` créées par la migration ont actor=null mais
         // le champ `context` JSONB embarque source='migration-7.3' +
-        // un message 'Migration legacy 7.3 - aucun acteur humain' pour
+        // un message 'Migration legacy - aucun acteur humain' pour
         // tracer qu'aucun humain n'est responsable de cette ligne.
         $user = $this->createUser('audit');
         $wg = $this->createWorkstationGroup('salle-audit');
@@ -699,15 +684,14 @@ class RightsMigrationServiceTest extends TestCase
     #[Test]
     public function rerun_does_not_overwrite_granted_by_of_manually_created_delegation(): void
     {
-        // Story 7.3 — review #11 (décision Henri 2026-04-25) : `firstOrCreate`
-        // au lieu de `updateOrCreate` pour préserver `granted_by` d'une
-        // délégation posée manuellement entre deux runs de migration. Sans
-        // ce correctif, le re-run écraserait l'acteur humain par null.
+        // `firstOrCreate` au lieu de `updateOrCreate` pour préserver `granted_by`
+        // d'une délégation posée manuellement entre deux runs de migration : sans
+        // quoi le re-run écraserait l'acteur humain par null.
         $henri = $this->createUser('henri-admin');
         $bob = $this->createUser('bob');
         $wg = $this->createWorkstationGroup('salle-manual');
 
-        // Étape 1 : Henri pose manuellement la délégation (avant le re-run).
+        // Étape 1 : `$henri` pose manuellement la délégation (avant le re-run).
         $this->permissionService->grantDelegation(
             $bob,
             SambaPermission::ComputerElevate->value,
@@ -736,7 +720,7 @@ class RightsMigrationServiceTest extends TestCase
             ]),
         );
 
-        // Étape 3 : `granted_by` doit toujours pointer sur Henri (pas null).
+        // Étape 3 : `granted_by` doit toujours pointer sur `$henri` (pas null).
         $afterMigration = $manual->fresh();
         $this->assertSame(
             $henri->id,

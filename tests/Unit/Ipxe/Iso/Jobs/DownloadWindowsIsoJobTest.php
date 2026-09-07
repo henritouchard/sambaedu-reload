@@ -19,7 +19,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesWindowsIsoSchema;
 
 /**
- * Story 3.6 — AC4.3-AC4.7 — Tests unitaires de DownloadWindowsIsoJob.
+ * Tests unitaires de DownloadWindowsIsoJob.
  *
  * Couvre :
  *  - Path nominal (pending → downloading → extracting → success).
@@ -111,9 +111,8 @@ class DownloadWindowsIsoJobTest extends TestCase
     #[Test]
     public function it_implements_should_queue_with_one_try_and_timeout(): void
     {
-        // Q1 Henri 2026-05-21 : timeout dynamique = download_timeout +
-        // extract_timeout + 300s marge globale. Avec les valeurs par défaut
-        // (7200 + 1800 + 300) = 9300s.
+        // Le timeout est dynamique : download_timeout + extract_timeout + 300 s
+        // de marge, soit 9300 s avec les valeurs par défaut (7200 + 1800 + 300).
         $job = new DownloadWindowsIsoJob(42);
         self::assertInstanceOf(ShouldQueue::class, $job);
         self::assertSame(1, $job->tries);
@@ -398,7 +397,7 @@ class DownloadWindowsIsoJobTest extends TestCase
     #[Test]
     public function it_skips_curl_for_reinject_source_and_extracts_directly(): void
     {
-        // Story 3.10 — ré-injection : l'ISO est déjà déployée/présente sur
+        // Ré-injection : l'ISO est déjà déployée/présente sur
         // disque. Le Job saute le curl et ré-extrait (fresh boot.wim + pack).
         $isoPath = '/tmp/sambaedu-test/iso/Win11_24H2.iso';
         @mkdir(dirname($isoPath), 0775, true);

@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Migration — table `app_customizations` (story 4.8).
+ * Migration — table `app_customizations`.
  *
- * Pattern polymorphe hérité de `wallpapers` (4.7) : `customizable_type` /
+ * Pattern polymorphe hérité de `wallpapers` : `customizable_type` /
  * `customizable_id` nullable pour représenter le scope "global établissement"
  * via `(NULL, NULL, is_default=true)`.
  *

@@ -24,19 +24,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 30.2 — Mapping refnum d'un label de contrat amont → WorkstationGroup.
+ * Mapping refnum d'un label de contrat amont → WorkstationGroup.
  *
- * Couvre les 10 AC :
- * - #1 migration (colonne controlhub_label présente)
- * - #2 assign d'un label free (groupe existant)
- * - #3 création d'un groupe portant un label free (page Livewire)
- * - #4 invariant « 1 label max » (2e label refusé / même label idempotent)
- * - #5 label reserved refusé, base inchangée
- * - #6 label inconnu / hors contrat actif refusé
- * - #7 détachement → null
- * - #8 Gate update-workstationGroup scopé (refus avant écriture)
- * - #9 UI Livewire (select free-only, save persiste, label hors contrat → toast)
- * - #10 standalone (sans contrat actif, comportement inchangé) + R3 (introspection)
+ * Couvre :
+ * - migration (colonne controlhub_label présente)
+ * - assign d'un label free (groupe existant)
+ * - création d'un groupe portant un label free (page Livewire)
+ * - invariant « 1 label max » (2e label refusé / même label idempotent)
+ * - label reserved refusé, base inchangée
+ * - label inconnu / hors contrat actif refusé
+ * - détachement → null
+ * - Gate update-workstationGroup scopé (refus avant écriture)
+ * - UI Livewire (select free-only, save persiste, label hors contrat → toast)
+ * - standalone (sans contrat actif, comportement inchangé)
+ * - règle de nommage : aucun identifiant livré ne contient « central »
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM.
  * ⚠️ Invariant « 1 max » testé PAR COMPORTEMENT (refus du 2e label), jamais par
@@ -95,15 +96,11 @@ class WorkstationGroupLabelTest extends TestCase
         return $user;
     }
 
-    // ── AC #1 — Migration ────────────────────────────────────────────────────
-
     #[Test]
     public function migration_adds_controlhub_label_column(): void
     {
         self::assertTrue(Schema::hasColumn('workstation_groups', 'controlhub_label'));
     }
-
-    // ── AC #2 — Assignation d'un label free (groupe existant) ─────────────────
 
     #[Test]
     public function assigns_a_free_label_to_an_existing_group(): void
@@ -129,8 +126,6 @@ class WorkstationGroupLabelTest extends TestCase
 
         self::assertSame([$a->id], $found);
     }
-
-    // ── AC #3 — Création d'un groupe portant un label free (page Livewire) ────
 
     #[Test]
     public function creates_a_group_carrying_a_free_label(): void
@@ -188,7 +183,7 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertNull(WorkstationGroup::where('display_name', 'parc-interdit')->first());
     }
 
-    // ── AC #4 — Invariant « 1 label max » + idempotence ──────────────────────
+    // Invariant « 1 label max » + idempotence
 
     #[Test]
     public function refuses_a_second_different_label_and_writes_nothing(): void
@@ -221,8 +216,6 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertSame('salle-info', $group->refresh()->controlhub_label);
     }
 
-    // ── AC #5 — Label reserved non attribuable ───────────────────────────────
-
     #[Test]
     public function refuses_a_reserved_label(): void
     {
@@ -239,8 +232,6 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertNull($group->refresh()->controlhub_label);
     }
 
-    // ── AC #6 — Label inconnu / hors contrat actif refusé ────────────────────
-
     #[Test]
     public function refuses_an_unknown_label(): void
     {
@@ -256,8 +247,6 @@ class WorkstationGroupLabelTest extends TestCase
         }
     }
 
-    // ── AC #7 — Détachement ──────────────────────────────────────────────────
-
     #[Test]
     public function detaches_a_label_back_to_null(): void
     {
@@ -272,8 +261,8 @@ class WorkstationGroupLabelTest extends TestCase
     #[Test]
     public function detaching_a_reserved_label_is_refused_by_service(): void
     {
-        // Review 30.2 finding #2 — un label réservé porté par un groupe (imposé,
-        // relève de 30.3) ne doit PAS pouvoir être détaché par le refnum, y compris
+        // Un label réservé porté par un groupe imposé ne doit PAS pouvoir être
+        // détaché par le refnum, y compris
         // via une requête Livewire forgée. Le garde-fou est au niveau SERVICE.
         $this->activeContractWithLabels(['direction' => ControlHubLabelMode::Reserved]);
         $group = WorkstationGroup::factory()->create(['controlhub_label' => 'direction']);
@@ -288,7 +277,7 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertSame('direction', $group->refresh()->controlhub_label);
     }
 
-    // ── AC #8 — Gate scopé (refus avant écriture) ────────────────────────────
+    // Gate scopé (refus avant écriture)
 
     #[Test]
     public function gate_refuses_assignment_for_unauthorized_user(): void
@@ -316,7 +305,7 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertNull($group->refresh()->controlhub_label);
     }
 
-    // ── AC #9 — UI Livewire (select free-only, save, toast d'erreur) ─────────
+    // UI Livewire (select free-only, save, toast d'erreur)
 
     #[Test]
     public function edit_page_lists_only_free_labels_and_saves(): void
@@ -355,7 +344,7 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertNull($group->refresh()->controlhub_label);
     }
 
-    // ── AC #10 — Standalone (sans contrat actif) + R3 ────────────────────────
+    // Standalone (sans contrat actif) + règle de nommage
 
     #[Test]
     public function standalone_without_active_contract_proposes_no_label(): void
@@ -386,13 +375,11 @@ class WorkstationGroupLabelTest extends TestCase
         $this->service()->assignLabel($group, 'salle-info');
     }
 
-    // ── Review 30.2 — régressions corrigées (findings #1/#2) ─────────────────
-
     #[Test]
     public function editing_a_group_holding_a_reserved_label_saves_other_fields_without_error(): void
     {
-        // Finding #1 — un groupe portant un label réservé (cas normal dès 30.3, ou
-        // via réconciliation 28.2 transformant un free porté en reserved). Éditer un
+        // Un groupe peut porter un label réservé (une réconciliation transforme
+        // un free déjà porté en reserved). Éditer un
         // AUTRE champ (le nom) ne doit PAS lever de fausse erreur : ré-affirmer le
         // label déjà porté est un no-op idempotent (vérifié EN PREMIER dans le service).
         $this->actingAsRefnum();
@@ -415,8 +402,8 @@ class WorkstationGroupLabelTest extends TestCase
     #[Test]
     public function editing_a_group_holding_a_dangling_label_saves_other_fields_without_error(): void
     {
-        // Finding #1 (variante dangling) — le label porté a disparu du contrat actif
-        // (prune réconciliation 28.2). Éditer le groupe reste possible : no-op idempotent.
+        // Variante dangling : le label porté a disparu du contrat actif
+        // (prune réconciliation). Éditer le groupe reste possible : no-op idempotent.
         $this->actingAsRefnum();
         $this->activeContractWithLabels(['salle-info' => ControlHubLabelMode::Free]);
         $group = WorkstationGroup::factory()->create(['controlhub_label' => 'label-disparu', 'name' => 'avant']);
@@ -434,7 +421,7 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertSame('label-disparu', $group->controlhub_label);
     }
 
-    // ── Le label posé ATTEINT le parc, sans attendre la réception suivante ───
+    // Le label posé ATTEINT le parc, sans attendre la réception suivante
 
     #[Test]
     public function assigning_a_label_immediately_applies_what_the_contract_destines_to_it(): void

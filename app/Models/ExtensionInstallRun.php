@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 56.3 — L'ÉTAT d'une opération d'extension `app` lancée depuis l'UI.
+ * L'ÉTAT d'une opération d'extension `app` lancée depuis l'UI.
  *
  * Une ligne par tentative (`install` / `update` / `remove`), écrite par
  * {@see \App\Services\Extensions\ExtensionOperationRunner} (création `pending`)
@@ -60,7 +60,7 @@ class ExtensionInstallRun extends Model
 
     protected $table = 'extension_install_runs';
 
-    // ── Opérations ──────────────────────────────────────────────────────────
+    // Opérations
     //
     // Vocabulaire défini UNE SEULE FOIS, dans le moteur (ce sont exactement ses
     // trois méthodes publiques) et réexposé ici parce que c'est la valeur
@@ -79,7 +79,7 @@ class ExtensionInstallRun extends Model
         self::OPERATION_REMOVE,
     ];
 
-    // ── Statuts ─────────────────────────────────────────────────────────────
+    // Statuts
     public const STATUS_PENDING = 'pending';
     public const STATUS_RUNNING = 'running';
     public const STATUS_SUCCESS = 'success';
@@ -128,9 +128,9 @@ class ExtensionInstallRun extends Model
         'requested_by_user_id' => 'integer',
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
-        // Review 56.3 #3 — distingue un succès qui a AGI d'un no-op sur écran
-        // périmé (AC5 : toast info, pas toast succès). Hors `$fillable` :
-        // écrit uniquement par le Job, à la clôture du run.
+        // Distingue un succès qui a AGI d'un no-op sur écran périmé (toast
+        // info, pas toast succès). Hors `$fillable` : écrit uniquement par le
+        // Job, à la clôture du run.
         'changed' => 'boolean',
     ];
 
@@ -138,10 +138,6 @@ class ExtensionInstallRun extends Model
     {
         return $this->belongsTo(Extension::class, 'extension_id');
     }
-
-    // ========================================================================
-    // État
-    // ========================================================================
 
     /** Le run n'a pas atteint son terminus (`pending` ou `running`). */
     public function isActive(): bool
@@ -178,10 +174,6 @@ class ExtensionInstallRun extends Model
     {
         return $query->whereIn('status', [self::STATUS_PENDING, self::STATUS_RUNNING]);
     }
-
-    // ========================================================================
-    // Libellés (affichage — jamais de logique métier)
-    // ========================================================================
 
     /** @return array<string, string> */
     public static function operationLabels(): array

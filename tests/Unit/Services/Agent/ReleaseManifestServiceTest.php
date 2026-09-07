@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ReleaseManifestService` — Story 25.1 (AC2, AC3).
+ * Tests Unit `ReleaseManifestService`.
  *
  * Règle de résolution complète : ring du poste → récence multi-rings
  * (+ warning `ring_conflict`) → fallback stable → null. URL absolue
@@ -174,9 +174,9 @@ class ReleaseManifestServiceTest extends TestCase
     #[Test]
     public function aligned_rings_on_the_same_release_do_not_warn(): void
     {
-        // Review 25.1 #5 : conflit = ambiguïté RÉELLE (releases distinctes).
+        // Un conflit signale une ambiguïté RÉELLE (releases distinctes).
         // Salle + parc alignés sur la même version = cas banal, zéro warning
-        // (sinon pollution du canal à chaque check-in, NFR4).
+        // (sinon le canal serait pollué à chaque check-in).
         $release = $this->release('2.1.2');
         $parc = WorkstationGroup::factory()->logical()->create();
         $salle = WorkstationGroup::factory()->create();

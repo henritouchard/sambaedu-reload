@@ -17,12 +17,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC1) / 54.2 (AC1-AC2) — page `/admin/extensions/{id}` : fiche
+ * Page `/admin/extensions/{id}` : fiche
  * d'une extension.
  *
  * Couvre : les champs issus du MANIFEST (version, description, scopes,
  * dépendances, cible, visibilité), le rendu PROPRE des listes vides, la 404 sur
- * identifiant inconnu, la garde `server.admin`, et depuis 54.2 les gestes
+ * identifiant inconnu, la garde `server.admin`, et depuis les gestes
  * « Intégrer » / « Désinstaller » dans `<x-slot:actions>`.
  */
 class ExtensionDetailPageTest extends TestCase
@@ -50,7 +50,7 @@ class ExtensionDetailPageTest extends TestCase
         Gate::before(fn ($user, string $ability) => in_array($ability, $abilities, true) ? true : null);
     }
 
-    // ── Sécurité ──────────────────────────────────────────────────────────
+    // Sécurité
 
     #[Test]
     public function mount_is_forbidden_without_server_admin(): void
@@ -78,7 +78,7 @@ class ExtensionDetailPageTest extends TestCase
         Livewire::test(self::PAGE, ['id' => 999_999])->assertNotFound();
     }
 
-    // ── AC1 — la fiche affiche ce que dit le manifest ─────────────────────
+    // — la fiche affiche ce que dit le manifest
 
     #[Test]
     public function displays_the_manifest_driven_fields(): void
@@ -155,7 +155,7 @@ class ExtensionDetailPageTest extends TestCase
             ->assertSee('Intégrée');
     }
 
-    // ── Story 54.2 — AC1 : bouton suit l'état ─────────────────────────────
+    // : bouton suit l'état
 
     #[Test]
     public function shows_the_integrate_action_for_an_available_link_extension(): void
@@ -193,7 +193,7 @@ class ExtensionDetailPageTest extends TestCase
             ->assertDontSeeHtml('uninstall-action');
     }
 
-    // ── AC1 — intégrer, direct, tracé ─────────────────────────────────────
+    // — intégrer, direct, tracé
 
     #[Test]
     public function integrate_mutates_reloads_and_dispatches_a_success_toast(): void
@@ -223,7 +223,7 @@ class ExtensionDetailPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC2 — flux de la modale de désinstallation ────────────────────────
+    // — flux de la modale de désinstallation
 
     #[Test]
     public function ask_uninstall_opens_the_confirmation_modal(): void
@@ -269,7 +269,7 @@ class ExtensionDetailPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC3 — fail-closed ───────────────────────────────────────────────
+    // — fail-closed
 
     #[Test]
     public function integrating_an_app_type_extension_is_refused_with_an_error_toast(): void
@@ -284,7 +284,7 @@ class ExtensionDetailPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC1/AC2 — defense-in-depth : garde révoquée APRÈS mount() ────────
+    // — defense-in-depth : garde révoquée APRÈS mount
 
     #[Test]
     public function integrate_is_forbidden_when_the_ability_is_revoked_after_mount(): void
@@ -325,9 +325,7 @@ class ExtensionDetailPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 56.1 — provenance sur la fiche (AC2) et 404 des masquées (AC3/AC4)
-    // ══════════════════════════════════════════════════════════════════════
+    // Provenance sur la fiche et 404 des masquées
 
     #[Test]
     public function a_third_party_extension_shows_a_provenance_warning_naming_the_host(): void

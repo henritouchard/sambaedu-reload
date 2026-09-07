@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.3 — AC1 : la table d'arête, et le fait qu'elle NAÎT VIDE.
+ * La table d'arête, et le fait qu'elle NAÎT VIDE.
  *
  * Ce fichier a changé d'objet. Il épinglait les sept déclarations de reprise que la
  * migration posait ; elles sont parties dans une commande d'administration
@@ -130,7 +130,7 @@ class GroupTypeRoleMigrationTest extends TestCase
 
     /**
      * Les libellés scolaires ne sont posés par PERSONNE tant que la commande n'a
-     * pas été lancée — corollaire multi-vertical de la story.
+     * pas été lancée — corollaire multi-vertical.
      */
     #[Test]
     public function a_migrated_database_speaks_no_school_vocabulary(): void

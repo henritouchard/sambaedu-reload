@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 3.1 — AC2.2 / T2.3.
+ * T2.3.
  *
  * Tests unitaires du normalizer MAC. ≥6 cas (variantes valides + invalides).
  */

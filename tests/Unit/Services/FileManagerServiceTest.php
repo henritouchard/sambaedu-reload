@@ -50,10 +50,6 @@ class FileManagerServiceTest extends TestCase
         rmdir($dir);
     }
 
-    // ========================================
-    // hashFile()
-    // ========================================
-
     #[Test]
     public function hash_file_returns_correct_sha256(): void
     {
@@ -95,10 +91,6 @@ class FileManagerServiceTest extends TestCase
 
         $this->service->hashFile('/nonexistent/file.txt');
     }
-
-    // ========================================
-    // downloadWithHash()
-    // ========================================
 
     #[Test]
     public function download_with_hash_succeeds_with_valid_hash(): void
@@ -240,10 +232,6 @@ class FileManagerServiceTest extends TestCase
         $this->assertFileDoesNotExist($targetPath);
     }
 
-    // ========================================
-    // extractTarGz()
-    // ========================================
-
     private function createTarGz(string $dir, string $filename, string $content): string
     {
         $archivePath = $dir . '/' . $filename;
@@ -296,10 +284,6 @@ class FileManagerServiceTest extends TestCase
 
         $this->assertDirectoryExists($targetDir);
     }
-
-    // ========================================
-    // extractZip()
-    // ========================================
 
     private function createZip(string $dir, string $filename, string $content): string
     {

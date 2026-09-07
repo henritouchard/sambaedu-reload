@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 60.3 — RÉSULTAT d'un backend SUR UN NŒUD. Enum fermée à sept états.
+ * RÉSULTAT d'un backend SUR UN NŒUD. Enum fermée à sept états.
  *
- * **Pourquoi par nœud et jamais globalement.** Le sondage d'ouverture d'epic a
+ * **Pourquoi par nœud et jamais globalement.** Le sondage d'ouverture a
  * mesuré, contre une instance réelle, un mode de rupture qui n'est pas un échec :
  * l'octroi posé sur un ancêtre PROPAGE au sous-arbre, l'instruction de retrait sur
  * le dossier privé des enseignants est acceptée `200 OK` **sans aucun effet**, et
@@ -26,10 +26,9 @@ namespace App\Enums;
  * règle d'architecture le tient
  * ({@see \Tests\Architecture\PlanNamespaceIsolationTest}).
  *
- * ---------------------------------------------------------------------------
  * **LES TROIS FAÇONS DE NE RIEN FAIRE — à ne jamais écraser l'une sur l'autre.**
  *
- * C'est la correction la plus importante de cette story (Henri, 2026-08-04), et
+ * C'est la correction la plus importante ici, et
  * c'est aussi la simplification la plus tentante : dire « pas supporté » dans les
  * trois cas. Ce serait écrire dans le code une affirmation FAUSSE.
  *
@@ -42,12 +41,12 @@ namespace App\Enums;
  * Exemples MESURÉS, pour que la nuance ne se perde pas :
  *  - `non_exprimable` — le plafond de zone chez un backend distant dont le quota
  *    est par utilisateur et non par dossier (mesuré : quota illimité rendu sur un
- *    compte élève). Aucune story ne le rendra possible ; l'administrateur doit
+ *    compte élève). Rien ne le rendra possible ; l'administrateur doit
  *    choisir un autre backend pour ce besoin.
  *  - `non_implemente` — le plafond de zone côté POSIX. Le système de fichiers SAIT
  *    plafonner une arborescence (quotas de projet, volume monté et vérifié). S'il
- *    ne plafonne pas, c'est que NOUS ne l'avons pas branché : la story qui le
- *    ferait est suspendue. Dire « non supporté » de POSIX serait une contre-vérité.
+ *    ne plafonne pas, c'est que NOUS ne l'avons pas branché, et ce branchement
+ *    est suspendu. Dire « non supporté » de POSIX serait une contre-vérité.
  *  - `non_execute` — le backend d'aperçu. Ni limite de modèle, ni dette de code :
  *    ne rien faire EST sa fonction.
  *
@@ -77,7 +76,7 @@ enum FileBackendOutcome: string
     /**
      * La réconciliation est engagée mais pas achevée (traitement asynchrone).
      * Ce n'est NI un succès NI un échec : c'est ce qu'un contrat de forme
-     * distante doit savoir dire au lieu de mentir dans un booléen (D2).
+     * distante doit savoir dire au lieu de mentir dans un booléen.
      */
     case EnAttente = 'en_attente';
 
@@ -123,7 +122,7 @@ enum FileBackendOutcome: string
      * `true` si l'état EXIGE un `detail` non vide. Vérifié AU CONSTRUCTEUR de
      * {@see \App\Services\Filesystem\Backend\NodeReconciliation}, pas en
      * convention : un échec sans cause et un déclin sans raison sont exactement
-     * les silences que cette story existe pour rendre impossibles.
+     * les silences que cette enum existe pour rendre impossibles.
      */
     public function requiresDetail(): bool
     {

@@ -7,13 +7,11 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.2 — AC2.2.
- *
  * Validation permissive du body de `GET|POST /ipxe/maintenance`. Règles iso
- * `IpxeBootRequest` (3.1).
+ * `IpxeBootRequest`.
  *
  * `authorize()` retourne `true` — l'auth est portée par le middleware
- * `auth.v1.lan-only` (D3).
+ * `auth.v1.lan-only`.
  */
 class IpxeMaintenanceRequest extends FormRequest
 {

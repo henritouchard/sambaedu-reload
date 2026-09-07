@@ -20,10 +20,6 @@ echo "╔═══════════════════════�
 echo "║  Comparaison Legacy vs Laravel - Suppression de parc/salle    ║\n";
 echo "╚════════════════════════════════════════════════════════════════╝\n\n";
 
-// ============================================================================
-// PHASE 1: Test Legacy - Suppression d'un parc
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 1: Test Legacy - Suppression d'un parc                   │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -81,10 +77,6 @@ if ($legacy_cn_deleted) {
 }
 
 echo "\n";
-
-// ============================================================================
-// PHASE 2: Test Legacy - Suppression d'une salle
-// ============================================================================
 
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 2: Test Legacy - Suppression d'une salle                 │\n";
@@ -162,10 +154,6 @@ if ($legacy_salle_ou_deleted) {
 
 echo "\n";
 
-// ============================================================================
-// PHASE 3: Test Laravel - Suppression d'un parc
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 3: Test Laravel - Suppression d'un parc                  │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -205,7 +193,7 @@ try {
         'is_active' => true,
     ]);
     
-    // Story 38.7 : OU=Parcs en lecture seule, plus d ecriture de CN (service supprime).
+    // OU=Parcs en lecture seule, plus d ecriture de CN (service supprime).
     $result = ['success' => true, 'guid' => null];
     
     if (!$result['success']) {
@@ -263,10 +251,6 @@ try {
 
 echo "\n";
 
-// ============================================================================
-// PHASE 4: Test Laravel - Suppression d'une salle
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 4: Test Laravel - Suppression d'une salle                │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -310,7 +294,7 @@ try {
             'is_active' => true,
         ]);
         
-        // Story 38.7 : plus d ecriture de CN dans OU=Parcs.
+        // Plus d ecriture de CN dans OU=Parcs.
         $resultCn = ['success' => true, 'guid' => null];
         
         if (!$resultCn['success']) {
@@ -394,10 +378,6 @@ WorkstationGroupObserver::enableSync();
 AppProfileObserver::enableSync();
 
 echo "\n";
-
-// ============================================================================
-// RÉSUMÉ FINAL
-// ============================================================================
 
 echo "╔════════════════════════════════════════════════════════════════╗\n";
 echo "║                      RÉSUMÉ DE LA COMPARAISON                  ║\n";

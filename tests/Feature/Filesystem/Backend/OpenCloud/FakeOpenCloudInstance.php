@@ -10,13 +10,12 @@ use Illuminate\Support\Facades\Http;
 /**
  * UNE INSTANCE OPENCLOUD EN MÉMOIRE, QUI REJOUE LES CORPS **MESURÉS**.
  *
- * ---------------------------------------------------------------------------
  * **CE DOUBLE NE DIT RIEN QU'UNE INSTANCE RÉELLE N'AIT DIT.**
  *
  * C'est le legs le plus cher du chantier voisin : *un double bâti sur les
  * intentions du code se valide lui-même*. Chaque forme rendue ici — la structure
  * des corps, les codes, et surtout les sémantiques CONTRE-INTUITIVES — vient du
- * relevé du 2026-08-13 consigné dans le dossier de la story, et non de ce que le
+ * relevé du 2026-08-13, et non de ce que le
  * backend espère recevoir :
  *
  *  - **deux créations d'espace du même nom rendent DEUX `201`** et produisent deux
@@ -35,7 +34,6 @@ use Illuminate\Support\Facades\Http;
  *  - **les deux versions d'API cohabitent** : les espaces en `v1.0`, les octrois
  *    d'items en `v1beta1`. Une route demandée sur la mauvaise version rend
  *    `404 page not found`, exactement comme l'instance réelle.
- * ---------------------------------------------------------------------------
  *
  * Il COMPTE aussi les écritures, parce que « second passage, zéro écriture » ne
  * se prouve pas autrement qu'en les comptant.
@@ -85,10 +83,6 @@ final class FakeOpenCloudInstance
     public array $breakdowns = [];
 
     private int $sequence = 0;
-
-    // =========================================================================
-    // Décor
-    // =========================================================================
 
     public function withUser(string $login): string
     {
@@ -177,10 +171,6 @@ final class FakeOpenCloudInstance
         return $out;
     }
 
-    // =========================================================================
-    // Le routeur
-    // =========================================================================
-
     public function install(): void
     {
         Http::fake(function (Request $request) {
@@ -211,7 +201,6 @@ final class FakeOpenCloudInstance
             }
         }
 
-        // --- La sonde -------------------------------------------------------
         if ($path === '/graph/v1.0/me') {
             return Http::response([
                 'displayName' => 'Admin',
@@ -222,13 +211,10 @@ final class FakeOpenCloudInstance
             ], 200);
         }
 
-        // --- Les dossiers, par le protocole d'édition distante ---------------
         if (str_starts_with($path, '/dav/spaces/')) {
             return $this->routeDav($method, substr($path, strlen('/dav/spaces/')));
         }
 
-
-        // --- L'annuaire -----------------------------------------------------
         if (str_starts_with($path, '/graph/v1.0/groups')) {
             return $this->routeGroups($method, substr($path, strlen('/graph/v1.0/groups')), $body);
         }
@@ -250,7 +236,6 @@ final class FakeOpenCloudInstance
             ))], 200);
         }
 
-        // --- Les espaces (v1.0) et les octrois (v1beta1) ---------------------
         if (str_starts_with($path, '/graph/v1.0/drives')) {
             return $this->routeSpaces($method, substr($path, strlen('/graph/v1.0/drives')), $body);
         }
@@ -565,10 +550,6 @@ final class FakeOpenCloudInstance
 
         return Http::response('404 page not found', 404);
     }
-
-    // =========================================================================
-    // Corps de réponse — la FORME MESURÉE, champs ajoutés compris
-    // =========================================================================
 
     /** @param array{id:string,name:string,description:string,quota:?int} $space */
     private function spaceBody(array $space): array

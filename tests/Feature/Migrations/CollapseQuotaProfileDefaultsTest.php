@@ -14,9 +14,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.4 — **LA BASCULE DES DÉFAUTS PAR PROFIL, ET CE QU'ELLE REFUSE DE FAIRE.**
+ * **LA BASCULE DES DÉFAUTS PAR PROFIL, ET CE QU'ELLE REFUSE DE FAIRE.**
  *
- * ---------------------------------------------------------------------------
  * Les propriétés épinglées ici correspondent chacune à une façon dont cette migration
  * pouvait mal tourner :
  *
@@ -37,7 +36,6 @@ use Tests\TestCase;
  *     cloud est un effet réel, et il doit être NOMMÉ ;
  *  6. **`down()` est un no-op assumé** — il est épinglé comme tel, parce que `up()`
  *     supprime des lignes réelles et que le seul filet est le journal d'audit.
- * ---------------------------------------------------------------------------
  */
 class CollapseQuotaProfileDefaultsTest extends TestCase
 {
@@ -179,10 +177,6 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
             ->first();
     }
 
-    // =========================================================================
-    // Cas 1 — la plus large, jamais la plus étroite
-    // =========================================================================
-
     /**
      * ⚠️ **PERSONNE NE PERD DE PLACE.** La valeur retenue est la PLUS LARGE des
      * quatre : ici l'ex-valeur administrative (2000/2400), pas l'ex-valeur élève.
@@ -248,14 +242,10 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
         $this->assertStringContainsString('règle de groupe', $new['reconstitution']);
     }
 
-    // =========================================================================
-    // Cas 2 — la seule intention jamais exprimée
-    // =========================================================================
-
     /**
      * **La grille saisie mais jamais appliquée est REPRISE**, et le cas est NOMMÉ.
      * La jeter laisserait l'instance « illimitée pour tout le monde » — l'état que
-     * cette story existe pour fermer. Là aussi, c'est la cellule LA PLUS LARGE qui
+     * cette migration ferme. Là aussi, c'est la cellule LA PLUS LARGE qui
      * est reprise : la règle « ne rétrécir aucun plafond » ne dépend pas de l'endroit
      * d'où vient la valeur.
      */
@@ -371,10 +361,6 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
         $this->assertSame(0, (int) $rule->quota_hard_mb, 'illimité est le plus large');
     }
 
-    // =========================================================================
-    // Cas 3 — rien à retenir
-    // =========================================================================
-
     #[Test]
     public function an_empty_instance_gets_no_default_at_all(): void
     {
@@ -402,10 +388,6 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
 
         $this->assertSame(0, DB::table('quota_rules')->count());
     }
-
-    // =========================================================================
-    // Les garanties transverses
-    // =========================================================================
 
     /**
      * **AUCUNE APPLICATION EN MASSE.** Une migration qui appliquerait un plafond qui
@@ -495,10 +477,6 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
         $this->assertDatabaseHas('system_settings', ['key' => 'quota.defaults']);
     }
 
-    // =========================================================================
-    // Le PLAN CLOUD — il n'attend aucun clic, et il doit être NOMMÉ
-    // =========================================================================
-
     /**
      * ⚠️ **PRENDRE LA GOUVERNANCE DES PLAFONDS CLOUD EST UN EFFET RÉEL.** SE5 ne
      * gouverne le plafond cloud d'un compte que s'il existe au moins une règle sur la
@@ -548,10 +526,6 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
         $this->assertArrayNotHasKey('plan_cloud', json_decode((string) $audit->new_values, true));
     }
 
-    // =========================================================================
-    // Le REGROUPEMENT, déposé pour l'écran
-    // =========================================================================
-
     /**
      * **ÉLARGIR N'EST PAS ANODIN NON PLUS.** Le regroupement est déposé, avec ses
      * valeurs LITTÉRALES, pour que la carte l'affiche tant que l'administrateur n'a
@@ -585,10 +559,6 @@ class CollapseQuotaProfileDefaultsTest extends TestCase
 
         $this->assertDatabaseMissing('system_settings', ['key' => 'quota.profils_regroupes']);
     }
-
-    // =========================================================================
-    // `down()` — un no-op ASSUMÉ, et épinglé comme tel
-    // =========================================================================
 
     /**
      * ⚠️ **`up()` SUPPRIME des règles réelles, et `down()` n'en rend AUCUNE.** C'est

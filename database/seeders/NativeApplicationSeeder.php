@@ -8,22 +8,22 @@ use App\Models\NativeApplication;
 use Illuminate\Database\Seeder;
 
 /**
- * Story 27.11 — Seeder du référentiel CURÉ des applications natives Win32
- * (D-Henri n°2). Source 2 du dropdown du composer d'associations.
+ * Seeder du référentiel CURÉ des applications natives Win32.
+ * Source 2 du dropdown du composer d'associations.
  *
  * Catalogue figé, curé MANUELLEMENT : les built-ins Windows dont le ProgId
  * canonique est connu et toujours présent. **UWP modernes EXCLUES** (ProgId
  * `AppX…` ingérables). Chaque entrée → le {@see \App\Services\Agent\Resolvers\AssociationResolver}
- * émet son `progid` avec `source=native`, toujours applicable (piège n°7).
+ * émet son `progid` avec `source=native`, toujours applicable.
  *
  * IDEMPOTENT : `updateOrCreate` par `key` déterministe (rejouable, zéro doublon),
  * câblé dans {@see DatabaseSeeder} (iso `FileAssociationSeeder`/`ShortcutSeeder`).
  *
  * Les `assoc_types` bornent le ProgId canonique à ses extensions DÉCLARÉES
- * (piège n°2 : un ProgId est par (app × type de contenu) — le Bloc-notes gère
+ * (un ProgId est propre à un couple app × type de contenu — le Bloc-notes gère
  * `.txt`, PAS `.png`). Le `executable` sert le fallback générique : le SERVEUR n'en
  * consomme que le BASENAME (`Applications\<exe>`) ; le chemin complet n'est ni transmis
- * au payload ni consommé par l'agent — le poste le re-résout (AC6/AC7).
+ * au payload ni consommé par l'agent — le poste le re-résout.
  */
 class NativeApplicationSeeder extends Seeder
 {
@@ -44,10 +44,10 @@ class NativeApplicationSeeder extends Seeder
         // `shell32.dll,ImageView_Fullscreen`) → exclue.
         //
         // Les apps absentes des Windows récents relèvent d'une DÉCISION DE CURATION
-        // PRODUIT (Henri), pas d'une règle technique. Tranché 2026-06-18 :
+        // PRODUIT, pas d'une règle technique :
         //  - Visionneuse de photos Windows : EXCLUE (exe `rundll32.exe` non fonctionnel
         //    en générique, désactivée depuis Win10 1607) ;
-        //  - WordPad : RETIRÉ (supprimé de Windows 11 24H2+ — décision Henri Q1).
+        //  - WordPad : RETIRÉ (supprimé de Windows 11 24H2+).
         // Reste donc des built-ins présents sur les Windows ciblés.
         return [
             [

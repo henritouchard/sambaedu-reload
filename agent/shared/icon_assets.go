@@ -8,19 +8,19 @@ import (
 	"strings"
 )
 
-// Sync des icônes UPLOADÉES de raccourcis content-addressed (Story 27.7) —
+// Sync des icônes UPLOADÉES de raccourcis content-addressed —
 // le pendant « icônes » de assets.go (wallpaper), MAIS sur un transport
-// DIFFÉRENT (décision n° 1, piège n° 6) :
+// DIFFÉRENT :
 //
 //   - wallpaper : Client token'd (GET /api/v1/agent/assets/wallpaper/…,
-//     rotation D5) — un fond peut être réservé à un parc ;
+//     avec rotation de token) — un fond peut être réservé à un parc ;
 //   - icônes    : GET HTTP SIMPLE (pas de token) sur un Alias Apache statique
-//     (/assets/shortcut-icons/<sha>.ico). Un `.ico` de raccourci est un blob
+//  (assets/shortcut-icons/<sha>.ico). Un `.ico` de raccourci est un blob
 //     public-safe ; le content-addressing + la vérif SHA-256 AVANT écriture
 //     SONT la garantie d'intégrité (un contenu divergent n'entre JAMAIS dans
 //     le cache). Le token serait du sur-engineering.
 //
-// Décision n° 4 (figée, iso 24.4) : PAS de champ `url` au payload —  l'agent
+// PAS de champ `url` au payload — l'agent
 // DÉRIVE l'URL depuis server_url + le chemin statique connu (ShortcutIconsRoute).
 //
 // Invariants partagés avec assets.go :
@@ -31,13 +31,13 @@ import (
 //   - le corps de réponse est borné (LimitReader) : un blob au-delà serait
 //     tronqué → checksum divergent → jamais écrit.
 //
-// Le download tourne en SYSTEM (sous-décision D, iso wallpaper) : un seul
+// Le download tourne en SYSTEM (iso wallpaper) : un seul
 // endroit touche le réseau, cache content-addressed prêt avant la passe
 // compagnon qui pose les `.lnk`.
 
 // ShortcutIconsRoute : chemin statique de l'Alias Apache (config serveur
 // shortcut_icons.route_path = 'assets/shortcut-icons'). FIGÉ côté agent —
-// l'URL est dérivée, jamais reçue (décision n° 4).
+// l'URL est dérivée, jamais reçue.
 const ShortcutIconsRoute = "/assets/shortcut-icons/"
 
 // shortcutIconMaxBytes : borne du corps téléchargé — une icône `.ico` pèse

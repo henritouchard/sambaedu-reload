@@ -5,21 +5,20 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.11 — Table NATIVE CURÉE des applications built-in Windows (D-Henri n°2,
- * D1 table dédiée admise).
+ * Table NATIVE CURÉE des applications built-in Windows.
  *
  * Source 2 du dropdown du composer (à côté de la table `applications` WPKG) : un
  * référentiel CURÉ MANUELLEMENT des programmes Win32 livrés avec Windows
  * (Bloc-notes, Paint, WordPad, Visionneuse de photos…) dont le ProgId canonique est
  * CONNU et TOUJOURS présent sur le poste → `source=native`, toujours applicable
  * (aucune dépendance de paquet WPKG). **UWP modernes EXCLUES** (ProgId `AppX…`
- * ingérables — piège n°7 : ne pas confondre « native curée » ProgId connu et
- * « générique » fabriqué `Applications\<exe>`).
+ * ingérables) — ne pas confondre « native curée », au ProgId connu, et le
+ * « générique » fabriqué `Applications\<exe>`.
  *
- * Colonnes (AC2) :
+ * Colonnes :
  *   - `key`         : clé technique unique (slug) — identité d'upsert idempotent ;
  *   - `label`       : libellé affichable dans le dropdown ;
- *   - `progid`      : ProgId canonique built-in (ex. `txtfile`, `Paint.Picture`) —
+ *  - `progid` : ProgId canonique built-in (ex. `txtfile`, `Paint.Picture`)
  *                     ce que le resolver émet en `source=native` ;
  *   - `executable`  : chemin/nom de l'exe runtime (ex. `%SystemRoot%\system32\notepad.exe`)
  *                     — fallback générique si jamais le built-in n'expose pas de
@@ -27,7 +26,7 @@ use Illuminate\Support\Facades\Schema;
  *   - `assoc_types` : JSON, liste des identifiants (extensions/protocoles) que ce
  *                     built-in sait gérer nativement (`['.txt']`, `['.bmp','.png']`…)
  *                     — borne le ProgId canonique à ses extensions déclarées
- *                     (piège n°2 : un ProgId est par (app × type de contenu)) ;
+ *                     (un ProgId est propre à un couple app × type de contenu) ;
  *   - `icon_url`    : optionnel (icône du dropdown ; null = icône générique UI).
  *
  * IDEMPOTENTE (`Schema::hasTable` garde) + `down()` symétrique.

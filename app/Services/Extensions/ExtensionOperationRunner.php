@@ -16,11 +16,10 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 56.3 (AC2, AC4, AC5) — L'ORCHESTRATEUR des opérations d'extension
+ * L'ORCHESTRATEUR des opérations d'extension
  * lancées depuis l'UI : il crée le run, met le Job en file, et il est le SEUL
  * lecteur des runs pour les deux pages admin.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI UNE TÂCHE DE FOND, ET CELLE-LÀ
  *
  *  Une installation `apt` dure des minutes : l'exécuter dans la requête web
@@ -37,17 +36,15 @@ use Throwable;
  *  les workers en place — créer une file dédiée imposerait une unité systemd
  *  de plus à provisionner et à surveiller, pour rien (même raisonnement que
  *  `config/ipxe.php` pour l'ISO).
- * ══════════════════════════════════════════════════════════════════════════
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CONCURRENCE : TROIS COUCHES, CHACUNE À SA PLACE
  *
  *  1. **UI** (confort) — les boutons sont désactivés tant qu'un run est actif.
  *     Évite la quasi-totalité des collisions, ne garantit rien.
  *  2. **Ici** (intégrité des runs) — verrou fichier COURT puis re-vérification
- *     `hasActiveRun()` dans la foulée : deux admins ne peuvent pas créer deux
+ *  `hasActiveRun()` dans la foulée : deux admins ne peuvent pas créer deux
  *     rows actives ni empiler deux Jobs.
- *  3. **Moteur 56.2** (vérité) — `extensions:install-engine`, 600 s. Si tout
+ *  3. **Moteur** (vérité) — `extensions:install-engine`, 600 s. Si tout
  *     le reste échouait, le second Job terminerait `failed` / `engine_busy`
  *     sans demi-installation.
  *
@@ -57,9 +54,8 @@ use Throwable;
  *  ⚠️ `Cache::store('file')->lock()` OBLIGATOIRE — le store par défaut du
  *  projet est APCu, qui n'implémente pas `lock()` (fiche mémoire). Un
  *  `Cache::lock()` serait un verrou qui ne verrouille rien.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * NFR15 — les méthodes de LECTURE rendent des tableaux plats : aucun Eloquent
+ * Les méthodes de LECTURE rendent des tableaux plats : aucun Eloquent
  * ne remonte dans un SFC Livewire, et la présentation des runs (libellés
  * d'étape, d'opération, de statut) vit ICI, pas dans les vues.
  */
@@ -82,10 +78,6 @@ class ExtensionOperationRunner
      * travail serait déclaré mort.
      */
     private const STALE_MARGIN_SECONDS = 300;
-
-    // =====================================================================
-    // Écriture
-    // =====================================================================
 
     /**
      * Ouvre une opération de fond : crée le run `pending` et met le Job en
@@ -168,10 +160,6 @@ class ExtensionOperationRunner
         }
     }
 
-    // =====================================================================
-    // Lecture (pages admin) — LE seul point de lecture des runs
-    // =====================================================================
-
     /**
      * Le run actif et NON interrompu de l'instance, s'il y en a un.
      *
@@ -212,8 +200,7 @@ class ExtensionOperationRunner
      * {@see self::hasActiveRun()}, la même méthode que celle qui décide, dans
      * {@see self::start()}, de refuser une seconde opération. Deux définitions
      * de « il y a un run actif » finiraient par diverger, et l'écran dirait
-     * alors le contraire de ce que le serveur applique — exactement le défaut
-     * relevé en review 56.1 #1.
+     * alors le contraire de ce que le serveur applique.
      *
      * @return array{active: array<string, mixed>|null, by_extension: array<int, array<string, mixed>>}
      */
@@ -299,9 +286,9 @@ class ExtensionOperationRunner
             'is_active' => $run->isActive() && ! $isStale,
             'is_stale' => $isStale,
             'is_failed' => (string) $run->status === ExtensionInstallRun::STATUS_FAILED,
-            // Review 56.3 #3 — un succès SANS acte (l'état demandé était déjà
-            // en place : écran périmé, autre admin passé avant) ne se raconte
-            // pas comme un acte accompli. AC5 : toast info, pas toast succès.
+            // Un succès SANS acte (l'état demandé était déjà en place : écran
+            // périmé, autre admin passé avant) ne se raconte pas comme un acte
+            // accompli — toast info, pas toast succès.
             'changed' => (bool) $run->changed,
             'current_step' => $currentStep,
             'current_step_label' => $labels[$currentStep] ?? $currentStep,
@@ -315,7 +302,7 @@ class ExtensionOperationRunner
 
     /**
      * Lecture DÉFENSIVE des runs : une table absente ou illisible ne doit pas
-     * rendre une 500 sur la bibliothèque (patron `loadExtensions()` 54.1).
+     * rendre une 500 sur la bibliothèque (patron `loadExtensions()`).
      *
      * @return array{active: array<string, mixed>|null, by_extension: array<int, array<string, mixed>>}
      */

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 )
 
-// EnrollOutcome : résultat de la demande d'enrôlement porte 2 (Story 25.4).
+// EnrollOutcome : résultat de la demande d'enrôlement porte 2.
 type EnrollOutcome int
 
 const (
@@ -12,7 +12,7 @@ const (
 	// côté serveur (indistinct, sans oracle). Le poste reste en check-ins
 	// légers et retentera à cadence normale, JAMAIS de backoff agressif
 	// (iso quarantaine). Couvre aussi le cas `rejected` : un poste rejeté
-	// boucle dans le vide (jamais ré-ouvert, 25.3 décision n° 2) — aucune
+	// boucle dans le vide (jamais ré-ouvert) — aucune
 	// escalade, aucun brick.
 	EnrollPending EnrollOutcome = iota
 	// EnrollApproved : 200 {token} — une demande approuvée concordante a été
@@ -30,9 +30,9 @@ const (
 
 // EnrollIdentity : faisceau d'identité de la demande porte 2. uuid/mac/hostname
 // ne servent jamais à l'autorisation (le serveur tranche), mais la MAC est
-// l'ancre fiable de rapprochement (25.3) : une demande sans MAC est non
-// auto-approuvable. N'envoyez JAMAIS une MAC inventée/vide en silence (piège
-// n° 5) — collectez-la réellement ou laissez-la vide (le serveur trace mais ne
+// l'ancre fiable de rapprochement : une demande sans MAC est non
+// auto-approuvable. N'envoyez JAMAIS une MAC inventée/vide en silence —
+// collectez-la réellement ou laissez-la vide (le serveur trace mais ne
 // rapproche pas).
 type EnrollIdentity struct {
 	UUID     string `json:"uuid"`
@@ -41,8 +41,7 @@ type EnrollIdentity struct {
 }
 
 // enrollResponseBody : corps JSON de la réponse d'enrôlement (porte 1 et porte
-// 2). Le token vit ici (`{success, token}`), JAMAIS dans l'en-tête de rotation
-// (piège n° 3).
+// 2). Le token vit ici (`{success, token}`), JAMAIS dans l'en-tête de rotation.
 type enrollResponseBody struct {
 	Success bool   `json:"success"`
 	Token   string `json:"token"`
@@ -50,9 +49,9 @@ type enrollResponseBody struct {
 
 // requestEnrollment poste la demande d'enrôlement porte 2 (`POST
 // /api/v1/agent/enrollment`, SANS bearer, ticket vide) et mappe la réponse
-// serveur vers un EnrollOutcome (Story 25.4, Fork 1 = B).
+// serveur vers un EnrollOutcome (Fork 1 = B).
 //
-// Mapping figé (contrat serveur 25.3) :
+// Mapping figé (contrat serveur) :
 //   - 200 {token} → EnrollApproved + token (le poste l'écrit + bascule
 //     convergence) ;
 //   - 403         → EnrollPending (check-ins légers, cadence normale) ;

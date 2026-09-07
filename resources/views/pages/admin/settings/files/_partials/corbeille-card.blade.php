@@ -10,10 +10,9 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 /**
- * Story 63.4 — LA CARTE « CORBEILLE DES RÉPERTOIRES PERSONNELS », dans le bloc
+ * LA CARTE « CORBEILLE DES RÉPERTOIRES PERSONNELS », dans le bloc
  * « Réglages » de l'onglet des emplacements.
  *
- * ---------------------------------------------------------------------------
  * **CE QU'ELLE EST VRAIMENT, ET POURQUOI LE LIBELLÉ COMPTE.** Ce n'est **pas**
  * une corbeille d'utilisateur. Ce que la corbeille contient, c'est le
  * RÉPERTOIRE PERSONNEL D'UN COMPTE DÉSACTIVÉ : il y est déplacé au moment de la
@@ -31,7 +30,6 @@ use Livewire\Component;
  * sur le serveur de fichiers, la carte le DIT et n'offre rien de plus : la
  * corbeille d'une instance cloud se règle dans l'instance, et préparer ici un
  * réglage qui n'existe pas serait une promesse sans répondant.
- * ---------------------------------------------------------------------------
  *
  * Composant enfant (nested) — double garde `server.admin` au montage ET à chaque
  * écriture, et **racine stable**.

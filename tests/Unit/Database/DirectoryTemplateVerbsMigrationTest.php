@@ -15,14 +15,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.4 — LA MIGRATION Q3, éprouvée sur une recette posée AUX DEUX FORMES.
+ * LA MIGRATION DES ACCÈS VERS LES VERBES, éprouvée sur une recette posée AUX
+ * DEUX FORMES.
  *
  * La migration s'est déjà jouée sur la base de test (c'est une migration du
  * dépôt) ; ce qui se teste ici, c'est son COMPORTEMENT sur une recette qu'on lui
  * remet délibérément à l'ancienne forme. On la ré-instancie donc et on la rejoue,
  * exactement comme elle s'exécuterait sur une instance en place.
  *
- * Le mappage Q3 est vérifié EXACTEMENT — ni verbe manquant, ni verbe ajouté —
+ * Le mappage est vérifié EXACTEMENT — ni verbe manquant, ni verbe ajouté —
  * parce que c'est là que se joue la promesse « aucune recette ne perd d'accès ».
  */
 class DirectoryTemplateVerbsMigrationTest extends TestCase
@@ -142,7 +143,7 @@ class DirectoryTemplateVerbsMigrationTest extends TestCase
         $id = $this->legacyRecipe();
         $this->migration()->up();
 
-        // On raffine une recette comme 62.6 permettra de le faire.
+        // On raffine une recette comme permettra de le faire.
         $specs = $this->specsOf($id);
         $specs['nodes'][0]['grants'][1]['verbs'] = [PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER];
         DB::table('directory_templates')->where('id', $id)->update([
@@ -163,10 +164,10 @@ class DirectoryTemplateVerbsMigrationTest extends TestCase
     }
 
     /**
-     * **AC8 — AUCUNE RECETTE SEEDÉE NE DEMANDE LA RESTRICTION DE SUPPRESSION.**
+     * **AUCUNE RECETTE SEEDÉE NE DEMANDE LA RESTRICTION DE SUPPRESSION.**
      *
      * C'est ce qui rend vraie la promesse « rien ne bouge sur une instance en
-     * place » : sous le mappage Q3, une recette porte soit « lire » seul, soit les
+     * place » : sous ce mappage, une recette porte soit « lire » seul, soit les
      * quatre verbes — jamais « créer sans supprimer », la seule combinaison qui
      * ferait poser un drapeau sur le disque. Un mappage plus fin, même bien
      * intentionné, ferait tomber ce test AVANT d'avoir modifié un seul dossier.
@@ -210,9 +211,9 @@ class DirectoryTemplateVerbsMigrationTest extends TestCase
     }
 
     /**
-     * Le mappage doit être celui de Q3, et rien d'autre. Un test qui se
-     * contenterait de vérifier « la clé a changé » passerait au vert avec un
-     * mappage inversé.
+     * Le mappage doit accorder exactement les verbes que l'ancien niveau d'accès
+     * donnait sur le disque, et rien d'autre. Un test qui se contenterait de
+     * vérifier « la clé a changé » passerait au vert avec un mappage inversé.
      */
     #[Test]
     public function no_recipe_loses_an_access_the_mapping_is_monotone(): void

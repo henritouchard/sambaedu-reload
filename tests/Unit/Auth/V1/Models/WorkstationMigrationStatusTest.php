@@ -11,9 +11,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.11 — AC6.1 / AC8.1.
- * Correction post-review #10 : bootstrap_token_used_md5 → bootstrap_token_hash_prefix.
- *
  * Tests modèle `WorkstationMigrationStatus`.
  */
 class WorkstationMigrationStatusTest extends TestCase

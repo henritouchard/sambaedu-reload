@@ -9,12 +9,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.2 — AC1.1 / T1.2.
- * Story 3.4 — AC1.1 — extension +9 cases install_*.
- * Story 3.5 — AC1.1 — extension +7 cases install_win*.
- *
- * Tests unitaires de la whitelist enum {@see IpxeAdminAction} (D9 — sécurité
- * critique : empêche l'exécution de scripts arbitraires).
+ * Tests unitaires de la whitelist {@see IpxeAdminAction}. C'est elle qui empêche
+ * un poste de demander l'exécution d'une action arbitraire : toute valeur hors
+ * de l'enum est refusée avant d'atteindre le rendu du menu.
  */
 class IpxeAdminActionTest extends TestCase
 {
@@ -125,7 +122,7 @@ class IpxeAdminActionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC1.1 — extension +7 cases install_win*.
+     * Extension +7 cases install_win*.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -198,7 +195,7 @@ class IpxeAdminActionTest extends TestCase
     #[Test]
     public function it_returns_null_linux_meta_for_install_win_cases(): void
     {
-        // Non-régression 3.4 : linuxMeta retourne null pour les nouveaux cases.
+        // Non-régression : linuxMeta retourne null pour les nouveaux cases.
         self::assertNull(IpxeAdminAction::InstallWin10->linuxMeta());
         self::assertNull(IpxeAdminAction::InstallWin10Debug->linuxMeta());
         self::assertNull(IpxeAdminAction::InstallWin11->linuxMeta());
@@ -225,7 +222,7 @@ class IpxeAdminActionTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.7 — AC1.1 / AC1.2 / AC1.3 / AC1.4 — extension +6 cases.
+     * Extension +6 cases.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -253,7 +250,7 @@ class IpxeAdminActionTest extends TestCase
     #[Test]
     public function it_returns_null_linux_and_windows_meta_for_3_7_cases(): void
     {
-        // AC1.4 — les 6 nouveaux cases 3.7 retournent null pour linuxMeta() et windowsMeta().
+        // Les 6 nouveaux cases retournent null pour linuxMeta et windowsMeta.
         $cases37 = [
             IpxeAdminAction::ClonezillaLive,
             IpxeAdminAction::ClonezillaSaveSda1Sda2,
@@ -272,7 +269,7 @@ class IpxeAdminActionTest extends TestCase
     #[Test]
     public function it_returns_correct_log_name_for_3_7_cases(): void
     {
-        // AC1.3 — logName() retourne la valeur snake_case de l'enum (pas de modif requise).
+        // LogName retourne la valeur snake_case de l'enum (pas de modif requise).
         self::assertSame('clonezilla_live', IpxeAdminAction::ClonezillaLive->logName());
         self::assertSame('gparted', IpxeAdminAction::Gparted->logName());
         self::assertSame('memtest86plus', IpxeAdminAction::Memtest86plus->logName());
@@ -281,7 +278,7 @@ class IpxeAdminActionTest extends TestCase
     #[Test]
     public function it_returns_distinct_boot_log_actions_for_3_7_cases(): void
     {
-        // D11 / AC8.1-8.4 — bootLogAction() retourne les valeurs distinctes pour l'audit.
+        // D11 / — bootLogAction retourne les valeurs distinctes pour l'audit.
         self::assertSame('ipxe_clonezilla', IpxeAdminAction::ClonezillaLive->bootLogAction());
         self::assertSame('ipxe_clonezilla', IpxeAdminAction::ClonezillaSaveSda1Sda2->bootLogAction());
         self::assertSame('ipxe_clonezilla', IpxeAdminAction::ClonezillaRestoreSda2Sda1->bootLogAction());
@@ -293,9 +290,9 @@ class IpxeAdminActionTest extends TestCase
     #[Test]
     public function it_returns_ipxe_action_boot_log_for_legacy_3_2_cases(): void
     {
-        // Non-régression : les 3 cases 3.2 (rescuecd/winpe/factory_reset) conservent
+        // Non-régression : les 3 cases (rescuecd/winpe/factory_reset) conservent
         // `'ipxe_action'` (compat historique — voir PHPDoc bootLogAction()).
-        // **D2 — divergence intentionnelle** : FactoryReset garde `ipxe_action`
+        // Divergence INTENTIONNELLE : FactoryReset garde `ipxe_action`
         // alors que ClonezillaRestoreSda2Sda1 prend `ipxe_clonezilla` malgré
         // une cmdline identique. Cf. doc IpxeAdminAction::bootLogAction().
         self::assertSame('ipxe_action', IpxeAdminAction::Rescuecd->bootLogAction());
@@ -304,8 +301,8 @@ class IpxeAdminActionTest extends TestCase
     }
 
     /**
-     * Post-review #7 — extension `bootLogAction()` aux cases install_* (3.4)
-     * pour audit fin. Le data provider couvre les 9 mappings + flag distro.
+     * Les 9 mappings `bootLogAction()` des cases install_* Linux, un par
+     * distribution, pour que l'audit distingue ce qui a été installé.
      *
      * @return array<string, array{0:IpxeAdminAction, 1:string}>
      */
@@ -334,8 +331,7 @@ class IpxeAdminActionTest extends TestCase
     }
 
     /**
-     * Post-review #7 — extension `bootLogAction()` aux cases install_win*
-     * (3.5) pour audit fin.
+     * Les mappings `bootLogAction()` des cases install_win*, un par édition.
      *
      * @return array<string, array{0:IpxeAdminAction, 1:string}>
      */
@@ -362,8 +358,6 @@ class IpxeAdminActionTest extends TestCase
     }
 
     /**
-     * Post-review #7 — garde-fou strict VARCHAR(20).
-     *
      * Toutes les valeurs retournées par `bootLogAction()` doivent tenir dans
      * `machine_boot_logs.action` (varchar(20)) — si un futur dev ajoute un
      * case install_* avec un label trop long, la migration silencieuse

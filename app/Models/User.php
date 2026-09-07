@@ -18,10 +18,10 @@ use Spatie\Permission\Traits\HasRoles;
 use Livewire\Wireable;
 
 /**
- * Modèle Eloquent User pour le système de droits SambaEdu 4.6
+ * Modèle Eloquent User pour le système de droits SambaEdu
  *
  * Unique représentation de l'utilisateur authentifié (l'ancien wrapper LDAP
- * `AuthUser` a été supprimé par la Story 49.2).
+ * `AuthUser` a été supprimé).
  * Utilise la table PostgreSQL 'users' comme miroir SQL des utilisateurs AD.
  * Porte le trait HasRoles de Spatie pour la gestion des permissions et rôles.
  *
@@ -30,7 +30,7 @@ use Livewire\Wireable;
  * - Phase B : Double-écriture, SQL prend le relais
  * - Phase C : SQL = source de vérité, AD = proxy Windows
  *
- * Depuis l'Epic 49, le RUNTIME est en phase C pour les rôles et la session :
+ * Depuis l', le RUNTIME est en phase C pour les rôles et la session :
  * plus aucune décision d'autorisation ni de session n'interroge l'annuaire
  * (les écritures de compte, elles, restent AD-first).
  *
@@ -43,7 +43,7 @@ use Livewire\Wireable;
  * @property string|null $email
  * @property string|null $dn
  * @property string|null $ad_guid
- * @property string|null $nextcloud_user_id  CACHE de résolution de l'identité Nextcloud (story 61.1) —
+ * @property string|null $nextcloud_user_id CACHE de résolution de l'identité Nextcloud
  *                                           PAS une autorité : la vérité est chez Nextcloud, la colonne
  *                                           est nullable et reconstructible par `nextcloud:provision`.
  *                                           Volontairement HORS `$fillable` : elle s'écrit nominativement
@@ -128,22 +128,18 @@ class User extends Authenticatable implements Wireable
         'ad_synced_at' => 'datetime',
         'pwd_reset_at' => 'datetime',
         // Timestamp du dernier changement de mdp effectif (depuis pwdLastSet AD).
-        // NULL = jamais changé ou pwdLastSet=0 (filtre « mdp par défaut » D3/D7 — story 14.4).
+        // NULL = jamais changé ou pwdLastSet=0 (filtre « mdp par défaut »).
         'password_changed_at' => 'datetime',
         'password' => 'hashed',
-        // Snapshot quota quotidien (story 5.1b) — structure documentée dans
+        // Snapshot quota quotidien — structure documentée dans
         // la migration `add_quota_snapshot_to_users_table` et dans la
         // commande `QuotaSnapshotCommand`.
         'quota_snapshot' => 'array',
-        // Snapshot taille du profil itinérant /home/profiles (story 26.3) —
+        // Snapshot taille du profil itinérant /home/profiles
         // alimenté par la commande `profiles:snapshot`. Structure documentée
         // dans la migration `add_profile_snapshot_to_users_table`.
         'profile_snapshot' => 'array',
     ];
-
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
 
     /**
      * Relation N:N avec les groupes d'utilisateurs
@@ -157,14 +153,14 @@ class User extends Authenticatable implements Wireable
             'user_group_id'
         )
             ->using(\App\Models\Pivot\UserGroupUserPivot::class)
-            // Story 42.1 — `withPivot('role')` : l'arête est désormais écrite ET
-            // lue des deux côtés (42.1 écrit via `User::groups()` dans UserService ;
-            // 42.2/42.3 liront de part et d'autre). Le D4 « minimal » de 4.14 est levé.
+            // `withPivot('role')` : l'arête est désormais écrite ET
+            // lue des deux côtés : l'écriture passe par `User::groups()` dans
+            // UserService, la lecture par les deux.
             ->withPivot('role');
     }
 
     /**
-     * Story 42.1 (review #1) — payload de sync pivot appliquant le rôle d'arête
+     * Payload de sync pivot appliquant le rôle d'arête
      * PAR DÉFAUT (dérivé du rôle GLOBAL `users.role`, jamais de round-trip
      * LDAP) aux arêtes NOUVELLES uniquement. Les ids déjà attachés sont
      * renvoyés SANS attribut : `sync()`/`syncWithoutDetaching()` ne réécrit
@@ -200,13 +196,13 @@ class User extends Authenticatable implements Wireable
     }
 
     /**
-     * Story 4.13 — Helper PARTAGÉ de résolution classe↔partage post-fold.
+     * Helper PARTAGÉ de résolution classe↔partage post-fold.
      *
-     * Depuis le fold de l'import (4.13), une classe est UNE seule ligne
+     * Depuis le fold de l'import, une classe est UNE seule ligne
      * `user_groups` au NOM NU (`3A`, `type='classe'`) : il n'existe plus de
      * distinction SQL `Equipe_`/`Classe_`. Le professeur ET l'élève sont
      * membres de la MÊME ligne nue ; la partition prof/élève vient de
-     * `User.role` (cohérent 4.12), pas du nom du groupe.
+     * `User.role` (cohérent), pas du nom du groupe.
      *
      * Retourne donc les NOMS NUS des classes (`type='classe'`) dont CET
      * utilisateur est membre — qu'il soit prof ou élève. Source de vérité
@@ -226,7 +222,7 @@ class User extends Authenticatable implements Wireable
     }
 
     /**
-     * Story 4.13 — Deux utilisateurs partagent une classe s'ils sont membres
+     * Deux utilisateurs partagent une classe s'ils sont membres
      * d'une même ligne `user_groups` (`type='classe'`, même nom nu).
      *
      * Utilisé par la Policy pour décider si un prof peut voir/reset un élève :
@@ -254,7 +250,7 @@ class User extends Authenticatable implements Wireable
     /**
      * Groupes d'utilisateurs (classes, équipes, etc.)
      *
-     * Story 5.2 (D5=A) — `->using(UserGroupUserPivot::class)` permet à
+     * `->using(UserGroupUserPivot::class)` permet à
      * `App\Observers\UserGroupUserPivotObserver` d'écouter les events
      * `created`/`deleted` sur les rows pivot. Aucune autre conséquence
      * fonctionnelle (le pivot ne porte ni timestamps ni colonnes additionnelles).
@@ -268,14 +264,14 @@ class User extends Authenticatable implements Wireable
             'user_group_id'
         )
             ->using(\App\Models\Pivot\UserGroupUserPivot::class)
-            // Story 42.1 — `withPivot('role')` : c'est la relation d'ÉCRITURE de
+            // `withPivot('role')` : c'est la relation d'ÉCRITURE de
             // l'arête à l'import users (`persistUserGroupsToSql`). Sans elle, le
             // rôle dérivé passé au sync/attach serait ignoré silencieusement.
             ->withPivot('role');
     }
 
     /**
-     * Story 34.1 — répertoires réseau assignés directement à cet utilisateur.
+     * Répertoires réseau assignés directement à cet utilisateur.
      * Maille `User` : la lettre s'affiche dans sa session ET l'ACL POSIX réelle
      * est dérivée (`user:<login>` rx/rwx selon `access`). Porte le pivot
      * `access`.
@@ -312,10 +308,6 @@ class User extends Authenticatable implements Wireable
         return $this->morphMany(Wallpaper::class, 'owner');
     }
 
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
-
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
@@ -349,14 +341,10 @@ class User extends Authenticatable implements Wireable
             ->whereRaw('LOWER(school_code) != LOWER(?)', [$currentSchoolCode]);
     }
 
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
-
     /**
      * Trouve un utilisateur par son login.
      *
-     * Story 4.10 (correctif review #14) — comparaison case-insensitive.
+     * Comparaison case-insensitive.
      * AD est case-insensitive sur sAMAccountName ; Postgres `=` est
      * case-sensitive. Sans `LOWER()`, un user POSTant `JDOE` ne matche pas
      * l'enregistrement `jdoe` → faux `permission_denied` lors d'un POST iPXE
@@ -374,26 +362,6 @@ class User extends Authenticatable implements Wireable
     {
         return $this->ad_synced_at !== null;
     }
-
-    // ========================================================================
-    // Helpers d'authentification
-    //
-    // Why: le guard web injecte directement l'Eloquent User (cf.
-    // `LdapUserProvider`). Ces accesseurs exposent l'identité du compte aux
-    // consommateurs (`auth()->user()->getLogin()`, …) sans résoudre un modèle
-    // à la main.
-    //
-    // Story 49.2 (FR-R3) — les prédicats scolaires LDAP-first
-    // (`isAdmin()`/`isProf()`/`isEleve()`/`getGroups()`) et toute la chaîne
-    // LDAP-lazy qui les portait (`getLdapUser()`, `ldapBusinessObject()`, le
-    // cache statique `$ldapCache`) ont été SUPPRIMÉS, pas réécrits : ils
-    // nommaient des catégories scolaires en dur et coûtaient un aller-retour
-    // annuaire par utilisateur. Selon ce que l'appelant voulait réellement, il
-    // lit désormais un DROIT (`can('…')` / `hasRole(…)`, matérialisés par 49.1),
-    // une APPARTENANCE (`userGroups()`), ou `users.role` quand il s'agit d'un
-    // comportement type-OU assumé (affichage). Aucun prédicat de remplacement
-    // n'a été introduit : ce serait reconduire le problème éteint ici.
-    // ========================================================================
 
     public function getLogin(): string
     {
@@ -428,7 +396,7 @@ class User extends Authenticatable implements Wireable
     }
 
     /**
-     * Story 54.3 — LA résolution canonique du rôle MÉTIER (`admin`/`prof`/
+     * LA résolution canonique du rôle MÉTIER (`admin`/`prof`/
      * `eleve`/`administratif`), 100 % Postgres, pensée pour un rendu
      * omniprésent (la navbar, sur les 156 pages du produit).
      *
@@ -437,12 +405,12 @@ class User extends Authenticatable implements Wireable
      * 1. **PAS `isProf()`/`isEleve()`/`isAdmin()`** : ces méthodes étaient
      *    **LDAP-first** (un aller-retour annuaire par login, avec un cache
      *    seulement *request-scoped*) — inacceptable dans une navbar rendue à
-     *    CHAQUE page vue, par CHAQUE utilisateur. Elles n'existent plus depuis
-     *    la Story 49.2 (FR-R3 : suppression, pas réécriture) ; ce docblock garde
-     *    la trace du raisonnement pour que le réflexe ne revienne pas.
+     *    CHAQUE page vue, par CHAQUE utilisateur. Elles n'existent plus ; ce
+     *    docblock garde la trace du raisonnement pour que le réflexe ne revienne
+     *    pas.
      * 2. **PAS `hasRole('prof')`/`hasRole('eleve')` (Spatie)** : ces rôles sont
-     *    désormais matérialisés par la Story 49.1 (le groupe porte le profil de
-     *    droits) et seraient donc fiables pour `prof`/`eleve`. Mais ils ne
+     *    matérialisés par le groupe qui porte le profil de droits, et seraient
+     *    donc fiables pour `prof`/`eleve`. Mais ils ne
      *    couvrent PAS `administratif`, qui n'a aucun rôle Spatie : la résolution
      *    ci-dessous doit rendre les quatre familles métier, `users.role` reste
      *    donc son entrée. Point d'attention si un jour `administratif` devient
@@ -450,7 +418,7 @@ class User extends Authenticatable implements Wireable
      * 3. **PAS `$this->role` brut sans normalisation** : la colonne `role` a
      *    TROIS écrivains au vocabulaire divergent — la sync AD→SQL
      *    (`UserSyncService.php:503-508`, singulier `eleve|prof|administratif`),
-     *    l'auto-provisioning au login (`LdapUserProvider`, `AuthController` —
+     *    l'auto-provisioning au login (`LdapUserProvider`, `AuthController`,
      *    **PLURIEL** `eleves|profs|administratifs`)
      *    et `UserService` (`administratifs → 'admin'`). Un prof connecté avant
      *    le prochain passage de sync porte `role='profs'` : un simple `===`
@@ -466,20 +434,20 @@ class User extends Authenticatable implements Wireable
      *
      * **Coût** : 0 LDAP, 0 SQL pour `users.role` (déjà hydraté en mémoire par
      * `Auth::login()` — le guard pose l'Eloquent), au plus 1 SELECT Spatie par
-     * requête HTTP (relation mise en cache par le registrar Spatie). NFR9 tenu.
+     * requête HTTP (relation mise en cache par le registrar Spatie).
      *
      * **Résultat = un ENSEMBLE, jamais un scalaire** : un prof délégué
      * `super-admin` renvoie `['prof', 'admin']` — il voit les deux familles
      * de tuiles du lanceur.
      *
-     * **Fraîcheur (mise à jour 49.3)** : la réconciliation nocturne des départs
+     * **Fraîcheur (mise à jour)** : la réconciliation nocturne des départs
      * désactive les comptes disparus et retire leurs appartenances ; le sursis
      * d'un `users.role` non rétrogradé se limite donc à l'intervalle entre deux
-     * passes, et n'a jamais valeur d'autorisation (FR14 : la tuile est un
-     * affichage, l'autorisation réelle reste côté extension).
+     * passes, et n'a jamais valeur d'autorisation : la tuile est un affichage,
+     * l'autorisation réelle reste côté extension.
      *
      * **Point de modification unique** : cette méthode est réutilisée par le
-     * claim `role` du SSO (Story 55.2) — un seul endroit à faire évoluer,
+     * claim `role` du SSO — un seul endroit à faire évoluer,
      * volontairement pas de classe résolveuse dédiée pour une seule méthode
      * nommée et testée (fiche « pas de sur-conçu »).
      *
@@ -514,10 +482,6 @@ class User extends Authenticatable implements Wireable
     {
         return (bool) $this->is_active;
     }
-
-    // ========================================================================
-    // Verrou du compte d'administration protégé
-    // ========================================================================
 
     /**
      * Ce compte est-il le compte d'administration protégé ?
@@ -640,10 +604,6 @@ class User extends Authenticatable implements Wireable
     {
         return $this->groups()->where('type', 'function')->first();
     }
-
-    // ========================================================================
-    // WIREABLE (Livewire)
-    // ========================================================================
 
     public function toLivewire(): array
     {

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 4.10 — Auth + permission centralisée pour les endpoints iPXE sensibles.
+ * Auth + permission centralisée pour les endpoints iPXE sensibles.
  *
  * **Régression sécurité critique** (2026-05-28) : `IpxeService::handleAdmin()`
  * et tous les endpoints sensibles (`maintenance`, `action/{action}`,
@@ -28,10 +28,10 @@ use Throwable;
  *   2. Décode le password (base64).
  *   3. Si les deux sont vides → `Outcome::MissingCredentials` (=
  *      pas d'auth tentée — caller décide quoi faire : 401-like).
- *   4. Sinon, appelle {@see AuthenticationService::validateAdCredentials()}
+ *  4. Sinon, appelle {@see AuthenticationService::validateAdCredentials()}
  *      qui fait le bind LDAP iso-legacy.
  *      KO → `Outcome::AuthFailed` + log warning `ipxe.<context>.auth_failed`.
- *   5. Si OK, charge le user Eloquent via `User::findByLogin()` puis vérifie
+ *  5. Si OK, charge le user Eloquent via `User::findByLogin()` puis vérifie
  *      `$user->can('computer.install')` (équivalent legacy `SE_COMPUTER_INSTALL`).
  *      KO → `Outcome::PermissionDenied` + log warning
  *      `ipxe.<context>.permission_denied`.
@@ -45,7 +45,7 @@ use Throwable;
  * ne dispatche d'event Auth Laravel. Un firmware iPXE n'a pas de cookie de
  * session — chaque endpoint re-poste username/password.
  */
-// Story 4.10 (correctif review #12) — `final` restauré. Les tests qui
+// `final` restauré. Les tests qui
 // veulent stubber l'auth implémentent l'interface {@see IpxeAuthorizes}
 // au lieu d'étendre cette classe (cf. `tests/Support/IpxeAuthTestHelper`).
 final class IpxeAuthService implements IpxeAuthorizes
@@ -159,7 +159,7 @@ final class IpxeAuthService implements IpxeAuthorizes
      * on retourne la chaîne brute (fallback — un firmware iPXE buggué
      * pourrait POSTer la valeur en clair).
      *
-     * Story 4.10 (correctif review #3) — durcissement : `base64_decode(strict=true)`
+     * Durcissement : `base64_decode(strict=true)`
      * ne retourne `false` QUE pour les caractères hors alphabet b64. Un mot
      * de passe composé uniquement de [A-Za-z0-9+/] comme `mypassword` est
      * « décodé » en binaire aléatoire sans déclencher le fallback raw, ce

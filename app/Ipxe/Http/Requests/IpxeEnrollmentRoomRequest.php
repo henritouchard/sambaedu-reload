@@ -7,7 +7,6 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.3 — AC7.2.
  *
  * Validation permissive du body de `GET|POST /ipxe/enrollment/room`.
  * Ajoute `room` (int positif) à la base iso `IpxeBootRequest`.

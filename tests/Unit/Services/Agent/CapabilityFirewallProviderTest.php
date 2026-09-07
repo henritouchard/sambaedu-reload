@@ -26,13 +26,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.2 — Tests Unit du provider `firewall` CAPABILITY-FIRST + du guard
- * d'authoring `FirewallAuthoringGuard` (Q3 — intersection MATHÉMATIQUE
- * d'intervalles IPv4/IPv6).
+ * Tests Unit du provider `firewall` CAPABILITY-FIRST + du guard
+ * d'authoring `FirewallAuthoringGuard`, qui refuse par intersection MATHÉMATIQUE
+ * d'intervalles IPv4/IPv6 tout `block` recouvrant le LAN.
  *
  * Le provider EXPANSE une capacité → items CONCRETS `{rule_id, direction,
  * action, remote_scope, protocol, ensure}` (+ conditionnels). Lecture Postgres
- * pure (NFR7). Invariant central 27.12 : jamais d'id/key de capacité au payload.
+ * pure. Invariant central : jamais d'id/key de capacité au payload.
  */
 class CapabilityFirewallProviderTest extends TestCase
 {
@@ -90,7 +90,7 @@ class CapabilityFirewallProviderTest extends TestCase
         return $cap;
     }
 
-    // ── Type / sémantique / portée ────────────────────────────────────────
+    // Type / sémantique / portée
 
     #[Test]
     public function provider_declares_firewall_exclusive_machine(): void
@@ -101,7 +101,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertSame(StateScope::Machine, $p->scope());
     }
 
-    // ── (a) Expansion : 6 clés strings, jamais d'id ───────────────────────
+    // (a) Expansion : 6 clés strings, jamais d'id
 
     #[Test]
     public function expansion_emits_six_string_keys_without_capability_id(): void
@@ -147,7 +147,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertSame(['443', '8080-8090'], $payload['ports']);
     }
 
-    // ── (b) Map ensure + sentinelle UNMANAGED + assoc inattendue ──────────
+    // (b) Map ensure + sentinelle UNMANAGED + assoc inattendue
 
     #[Test]
     public function unmanaged_sentinel_emits_nothing(): void
@@ -206,7 +206,7 @@ class CapabilityFirewallProviderTest extends TestCase
             'action' => 'block',
             'remote_scope' => 'internet',
             'protocol' => 'any',
-            // pas de clé `ensure` → défaut `present` (piège #2/#13).
+            // pas de clé `ensure` → défaut `present`.
         ]]);
 
         $items = $this->provider()->itemsFor($this->ctx());
@@ -214,7 +214,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertSame('present', $items->first()->payload['ensure']);
     }
 
-    // ── (c) Enums hors domaine / incohérences conditionnelles non émis ────
+    // (c) Enums hors domaine / incohérences conditionnelles non émis
 
     #[Test]
     public function out_of_domain_or_incoherent_entries_emit_nothing(): void
@@ -236,7 +236,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
-    // ── (d) exclusiveKey : rule_id minuscule (1 segment) ──────────────────
+    // (d) exclusiveKey : rule_id minuscule (1 segment)
 
     #[Test]
     public function exclusive_key_is_lowercase_rule_id(): void
@@ -246,7 +246,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertSame(0, substr_count($p->exclusiveKey(['rule_id' => 'a']), '|'), '1 segment');
     }
 
-    // ── (e) Provider Postgres pur (NFR7) ──────────────────────────────────
+    // (e) Provider Postgres pur
 
     #[Test]
     public function provider_source_has_no_ad_apcu_dependency(): void
@@ -269,7 +269,7 @@ class CapabilityFirewallProviderTest extends TestCase
         }
     }
 
-    // ── Guard d'authoring (AC3) — service PUR, sans DB ────────────────────
+    // Guard d'authoring — service PUR, sans DB
 
     private function guard(): FirewallAuthoringGuard
     {
@@ -309,7 +309,7 @@ class CapabilityFirewallProviderTest extends TestCase
     #[Test]
     public function guard_accepts_block_internet(): void
     {
-        // Usage nominal Q3 : block internet est SÛR par construction.
+        // Usage nominal : block internet est SÛR par construction.
         $v = $this->guardOne('ok', 'attention block', [$this->blockRule('internet')]);
         self::assertSame([], $v);
     }
@@ -327,7 +327,7 @@ class CapabilityFirewallProviderTest extends TestCase
     #[Test]
     public function guard_accepts_block_explicit_on_public_addresses(): void
     {
-        // Échappatoire assumée Q3 : adresses publiques uniquement.
+        // Échappatoire assumée : adresses publiques uniquement.
         $v = $this->guardOne('ok', 'w', [$this->blockRule('explicit', ['8.8.8.8', '203.0.113.0/24', '2001:4860:4860::8888'])]);
         self::assertSame([], $v);
     }
@@ -380,7 +380,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertNotEmpty($v, 'une projection avec un block sans warning non vide est refusée');
     }
 
-    // ── Garde-fou Q5 : `allow` ENTRANT ouvert sur Internet ⇒ warning exigé ──
+    // Garde-fou : `allow` ENTRANT ouvert sur Internet ⇒ warning exigé
 
     private function allowInRule(string $scope, array $addrs = []): array
     {
@@ -404,7 +404,7 @@ class CapabilityFirewallProviderTest extends TestCase
     {
         // internet + /0 explicite (v4 & v6) : « ouverts sur l'Internet » par
         // intervalle (chaque plage englobe /0) → warning EXIGÉ (absent = KO). Le
-        // critère est PAR PLAGE (iso le refus Q3 `block`, par adresse) : une plage
+        // critère est PAR PLAGE (iso le refus d'un `block`, par adresse) : une plage
         // qui englobe /0, jamais une union de plages plus étroites.
         $cases = [
             'internet' => $this->allowInRule('internet'),
@@ -439,9 +439,8 @@ class CapabilityFirewallProviderTest extends TestCase
     #[Test]
     public function guard_refuses_ensure_as_list(): void
     {
-        // corr. review #5 : un `ensure` en LISTE (ni littéral ni map) est une
-        // forme d'authoring malformée — REFUSÉE explicitement (auparavant passée
-        // en silence : aucune valeur validée).
+        // Un `ensure` en LISTE (ni littéral ni map) est une forme d'authoring
+        // malformée : elle est REFUSÉE explicitement, jamais ignorée en silence.
         $rule = [
             'rule_id' => 'r',
             'direction' => 'out',
@@ -459,7 +458,7 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertSame([], $this->guardOne('map', null, [array_merge($rule, ['ensure' => ['off' => 'present', 'on' => 'absent']])]));
     }
 
-    // ── Piège #10/#15 : override UserGroup sans effet (compile machine-only)
+    // ── Override UserGroup sans effet : la compilation est machine-only
 
     #[Test]
     public function user_group_override_never_reaches_a_firewall_item(): void

@@ -9,7 +9,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
- * Story 15.6 — Règle de validation d'une entrée IP/CIDR pour l'allowlist WPKG.
+ * Règle de validation d'une entrée IP/CIDR pour l'allowlist WPKG.
  *
  * L'allowlist IP est la frontière de sécurité primaire (endpoints non authentifiés,
  * auth iso-legacy). Cette règle applique une validation stricte :
@@ -20,8 +20,6 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *       IPv4 : préfixe `/N` avec N < 16 (ex. `10.0.0.0/8` rejeté)
  *       IPv6 : préfixe `/N` avec N < 32 (ex. `2001::/16` rejeté)
  *   - Syntaxe invalide → rejet.
- *
- * @see D3 story 15.6
  */
 final class SafeIpCidrRule implements ValidationRule
 {

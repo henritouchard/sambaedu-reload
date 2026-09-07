@@ -31,7 +31,6 @@ use Illuminate\Support\Facades\Cache;
  * l'identique : mêmes signatures, MÊME ORDRE D'EFFONDREMENT, lecture avant
  * écriture, verrou de passage, rapport couvrant exactement les nœuds du plan.
  *
- * ---------------------------------------------------------------------------
  * **LA CONVENTION DE PRÉCÉDENCE — le legs nommé du contrat, tenu ici aussi.**
  *
  *     `echec` > `non_exprimable` > `non_implemente` > `applique` > `conforme`
@@ -42,7 +41,6 @@ use Illuminate\Support\Facades\Cache;
  * n'y avait rien à faire ». `en_attente` ne sort JAMAIS d'ici : ce backend est
  * synchrone — c'est l'orchestrateur qui, au-dessus, dit « engagé, pas achevé ».
  *
- * ---------------------------------------------------------------------------
  * **L'ARCHITECTURE DE CLÔTURE : ON N'OUVRE PAS, PLUTÔT QUE DE REFERMER.**
  *
  * Relevé du 2026-08-13 contre l'instance réelle, en quatre points :
@@ -79,7 +77,6 @@ use Illuminate\Support\Facades\Cache;
  * plan, et non la seule racine : à la profondeur 2, la différence est un
  * cloisonnement affiché qui n'existe pas.
  *
- * ---------------------------------------------------------------------------
  * **L'ORDRE DES GESTES EST UN ORDRE DE SÛRETÉ, pas seulement de dépendance.**
  *
  *  1. adopter ou créer l'espace — **sur l'inventaire RELU**, jamais en créant à
@@ -96,11 +93,10 @@ use Illuminate\Support\Facades\Cache;
  *     élargit sans rien restreindre est le dernier : si la séquence s'interrompt,
  *     elle s'interrompt du côté fermé.
  *
- * ---------------------------------------------------------------------------
  * **L'IDEMPOTENCE EST VRAIE, ET ELLE SE JOUE SUR LE RELU.** Chaque écriture est
  * précédée d'une lecture, et la comparaison porte sur les valeurs RELUES en
- * IGNORANT les champs que le serveur ajoute ({@see ObservedPermission}). Cet epic
- * a rencontré le piège trois fois sur l'autre produit ; comparer l'envoyé au relu
+ * IGNORANT les champs que le serveur ajoute ({@see ObservedPermission}). Le piège
+ * s'est présenté trois fois sur l'autre produit ; comparer l'envoyé au relu
  * produirait une dérive permanente avec tous les doubles au vert.
  *
  * **AUCUN OUTIL EN LIGNE DE COMMANDE, AUCUN CONTENEUR.** Ce backend est 100 %
@@ -127,10 +123,6 @@ final class OpenCloudFileBackend implements FileBackend
     {
         return FileBackendName::OpenCloud;
     }
-
-    // =========================================================================
-    // provision
-    // =========================================================================
 
     public function provision(FilePlan $plan): ReconciliationReport
     {
@@ -180,7 +172,6 @@ final class OpenCloudFileBackend implements FileBackend
             }
         }
 
-        // --- 1. L'espace : ADOPTÉ sur l'inventaire RELU, créé sinon -----------
         $space = $this->resolveSpace($spaces, $plan->rootPath);
 
         if ($space['error'] !== null) {
@@ -194,7 +185,6 @@ final class OpenCloudFileBackend implements FileBackend
             $outcomes[PlanNode::ROOT_PATH][] = FileBackendOutcome::Applique;
         }
 
-        // --- 2. Les groupes, et le RETRAIT des appartenances périmées ---------
         //
         // **DEUX NATURES D'ÉCHEC, DEUX PORTÉES.** Un annuaire ILLISIBLE prive de
         // tout : sans index, aucun octroi de groupe n'est reprojetable et plus
@@ -249,7 +239,6 @@ final class OpenCloudFileBackend implements FileBackend
             }
         }
 
-        // --- 3. L'arborescence, un niveau à la fois --------------------------
         //
         // **LECTURE AVANT ÉCRITURE, ICI AUSSI.** On relit l'arborescence d'abord et
         // on ne crée QUE ce qui manque. S'en remettre à l'idempotence native (« un
@@ -307,7 +296,6 @@ final class OpenCloudFileBackend implements FileBackend
             }
         }
 
-        // --- 4 & 5. Les octrois : les nœuds d'abord, la RACINE en dernier ------
         $order = [...OpenCloudPlanProjection::creationOrder($plan), PlanNode::ROOT_PATH];
 
         foreach ($order as $path) {
@@ -328,7 +316,6 @@ final class OpenCloudFileBackend implements FileBackend
             );
         }
 
-        // --- 5bis. CONSTATER la clôture, une fois TOUT posé -------------------
         //
         // **La relecture vient APRÈS la pose, y compris celle de la racine.** La
         // vérifier au fil des nœuds la ferait porter sur un état incomplet — la
@@ -337,7 +324,6 @@ final class OpenCloudFileBackend implements FileBackend
         // cloisonnement affiché serait faux dès le passage suivant.
         $this->assertClosures($spaces, $spaceId, $items, $groupIndex, $projection, $plan, $outcomes, $details);
 
-        // --- 6. Les appartenances AJOUTÉES, en tout dernier -------------------
         foreach ($pendingAdditions as [$groupId, $userId, $name]) {
             $added = $directory->addUserToGroup($groupId, $userId);
             if ($added->isFailure()) {
@@ -397,8 +383,8 @@ final class OpenCloudFileBackend implements FileBackend
      * passage, dont le second serait invisible à l'usage tout en consommant du
      * disque. On lit, on adopte, et on ne crée que ce qui manque vraiment.
      *
-     * Un espace HOMONYME est donc le MÊME objet : c'est la doctrine d'adoption de
-     * l'epic, et elle vaut ici comme ailleurs.
+     * Un espace HOMONYME est donc le MÊME objet : c'est la doctrine d'adoption, et
+     * elle vaut ici comme ailleurs.
      *
      * @return array{id:string, created:bool, error:?string}
      */
@@ -581,7 +567,6 @@ final class OpenCloudFileBackend implements FileBackend
      * parent manque est simplement ABSENT de l'index, et l'appelant le constate au
      * lieu de fabriquer un identifiant.
      *
-     * ---------------------------------------------------------------------------
      * **UNE LECTURE QUI ÉCHOUE N'EST PAS UN DOSSIER QUI MANQUE — et confondre les
      * deux est un fail-OPEN.** Un `5xx` transitoire sur UNE requête suffirait
      * sinon à faire disparaître tout un sous-arbre de l'index ; la révocation en
@@ -589,7 +574,6 @@ final class OpenCloudFileBackend implements FileBackend
      * parfaitement intacts, et l'inspection le rendrait `absent` alors qu'on n'en
      * sait rien. Les échecs de lecture REMONTENT donc à l'appelant, qui décide en
      * fail-CLOSED.
-     * ---------------------------------------------------------------------------
      *
      * @param  list<string>|null  $failures  échecs de lecture, rendus à l'appelant
      * @return array<string, string>
@@ -692,7 +676,6 @@ final class OpenCloudFileBackend implements FileBackend
         $desired = $projection->desired[$node->path] ?? [];
         $touched = false;
 
-        // --- (a) RETIRER : ce que le plan ne veut plus, et qu'on a posé --------
         foreach ($observed as $key => $permission) {
             $wanted = $desired[$key] ?? null;
 
@@ -722,7 +705,6 @@ final class OpenCloudFileBackend implements FileBackend
             unset($observed[$key]);
         }
 
-        // --- (b) POSER : ce que le plan veut ---------------------------------
         foreach ($desired as $key => $verbs) {
             $principal = $projection->principals[$key] ?? null;
             if ($principal === null) {
@@ -813,7 +795,6 @@ final class OpenCloudFileBackend implements FileBackend
             }
         }
 
-        // --- (c) SIGNALER ce qui est là et que le plan ne décrit pas ----------
         $foreign = 0;
         $unmodelled = 0;
         foreach ($observed as $key => $permission) {
@@ -854,13 +835,12 @@ final class OpenCloudFileBackend implements FileBackend
      * ANCÊTRE propage à tout son sous-arbre, sans être nommé chez les descendants
      * et sans qu'on puisse le refermer.
      *
-     * ---------------------------------------------------------------------------
      * **LA PROPAGATION EST UNE PROPRIÉTÉ DE L'OCTROI SUR UN ITEM, PAS DE LA
      * RACINE.** Le relevé le dit dans sa propre colonne de preuve : un octroi posé
      * sur le seul `_travail` rend `207` sur `_travail` **et sur son enfant
      * `devoirs`**. Ne relire que la racine laisserait donc, dès la profondeur 2,
      * un nœud rendre `conforme` sur un cloisonnement qui n'existe pas — le seul
-     * résultat que l'AC5 déclare inacceptable. On relit donc les octrois de
+     * résultat que l' déclare inacceptable. On relit donc les octrois de
      * CHAQUE ancêtre présent au plan. Le coût est une lecture par ancêtre, et elle
      * est mutualisée entre les nœuds qui partagent le même ancêtre.
      *
@@ -873,7 +853,6 @@ final class OpenCloudFileBackend implements FileBackend
      * compté comme écart sur la racine elle-même, et le répéter sur chaque nœud
      * refermé ferait crier la garde sur 100 % des zones, ce qui reviendrait à ne
      * plus rien dire.
-     * ---------------------------------------------------------------------------
      *
      * @param  array<string, string>  $items
      * @param  array<string, string>  $groupIndex
@@ -1194,14 +1173,10 @@ final class OpenCloudFileBackend implements FileBackend
             : $spaces->deleteItemPermission($spaceId, $itemId, $permissionId);
     }
 
-    // =========================================================================
-    // deprovision
-    // =========================================================================
-
     /**
      * RÉVOQUE les octrois — SANS DÉTRUIRE NI L'ESPACE NI SON CONTENU.
      *
-     * **Aucun chemin de production ne supprime un espace** (D9, épinglé par test),
+     * **Aucun chemin de production ne supprime un espace** (épinglé par test),
      * et le client n'a même pas de méthode pour le faire. La séquence est : retirer
      * les octrois que SE5 a posés sur les nœuds du plan. L'espace reste, ses
      * données restent, et le compte d'administration y garde l'accès que
@@ -1353,10 +1328,6 @@ final class OpenCloudFileBackend implements FileBackend
                 'octrois retirés ; le dossier et son contenu restent (aucune donnée détruite).',
             );
     }
-
-    // =========================================================================
-    // inspect
-    // =========================================================================
 
     /**
      * RELIT l'état, nœud par nœud, RACINE COMPRISE, et le REPROJETTE en vocabulaire
@@ -1644,10 +1615,6 @@ final class OpenCloudFileBackend implements FileBackend
         return null;
     }
 
-    // =========================================================================
-    // quota
-    // =========================================================================
-
     /**
      * LE PLAFOND D'UNE ZONE, ET RIEN D'AUTRE.
      *
@@ -1659,7 +1626,7 @@ final class OpenCloudFileBackend implements FileBackend
      * `non_exprimable` — une limite du MODÈLE, permanente, pas une dette de notre
      * code. L'affichage MASQUE ce réglage là où il ne veut rien dire.
      *
-     * **Ce n'est PAS le quota d'une personne** (frontière D8) : budgéter un compte
+     * **Ce n'est PAS le quota d'une personne** : budgéter un compte
      * est l'affaire de l'annuaire, et ce backend n'a aucun chemin vers les
      * comptes — un test l'épingle des deux côtés.
      *
@@ -1766,10 +1733,6 @@ final class OpenCloudFileBackend implements FileBackend
         return $total > 0 ? $total : null;
     }
 
-    // =========================================================================
-    // location
-    // =========================================================================
-
     /**
      * OÙ ce plan vit, POUR AFFICHAGE.
      *
@@ -1787,10 +1750,6 @@ final class OpenCloudFileBackend implements FileBackend
 
         return sprintf('%s — espace de projet « %s »', $transport->baseUrl(), $plan->rootPath);
     }
-
-    // =========================================================================
-    // Effondrement et utilitaires
-    // =========================================================================
 
     /**
      * Le transport HTTP, ou l'exception de configuration à rendre telle quelle.

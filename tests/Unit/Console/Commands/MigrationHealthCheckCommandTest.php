@@ -13,7 +13,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.11 — AC7.1 / T7.3.
+ * T7.3.
  *
  * Tests commande `migration:health-check`.
  */

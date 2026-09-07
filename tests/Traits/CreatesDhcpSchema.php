@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 8.1 — Schémas SQLite mémoire pour les tests `dhcp_reservations`.
+ * Schémas SQLite mémoire pour les tests `dhcp_reservations`.
  *
  * Pattern aligné `CreatesPrintersSchema`. Pose la table `dhcp_reservations`
  * + dépendance minimale `workstations` (FK nullable cible) si elle n'existe
@@ -63,7 +63,7 @@ trait CreatesDhcpSchema
             $this->createdDhcpTables[] = 'dhcp_reservations';
         }
 
-        // Story 8.3 — sous-réseaux (VLAN).
+        // Sous-réseaux (VLAN).
         if (!Schema::hasTable('dhcp_subnets')) {
             Schema::create('dhcp_subnets', function (Blueprint $table) {
                 $table->id();

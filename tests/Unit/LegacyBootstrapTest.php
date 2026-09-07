@@ -19,7 +19,7 @@ class LegacyBootstrapTest extends TestCase
     }
 
     /**
-     * AC1 — Le bootstrap rend app() disponible.
+     * Le bootstrap rend app disponible.
      */
     public function test_bootstrap_makes_app_available(): void
     {
@@ -32,7 +32,7 @@ class LegacyBootstrapTest extends TestCase
     }
 
     /**
-     * AC1 — Le bootstrap rend config() disponible.
+     * Le bootstrap rend config disponible.
      */
     public function test_bootstrap_makes_config_available(): void
     {
@@ -43,7 +43,7 @@ class LegacyBootstrapTest extends TestCase
     }
 
     /**
-     * AC1 — Le bootstrap rend auth() disponible.
+     * Le bootstrap rend auth disponible.
      */
     public function test_bootstrap_makes_auth_available(): void
     {
@@ -54,7 +54,7 @@ class LegacyBootstrapTest extends TestCase
     }
 
     /**
-     * AC1 — Le bootstrap est idempotent (double require ne crashe pas).
+     * Le bootstrap est idempotent (double require ne crashe pas).
      */
     public function test_bootstrap_is_idempotent(): void
     {
@@ -66,7 +66,7 @@ class LegacyBootstrapTest extends TestCase
     }
 
     /**
-     * AC1 — Le bootstrap charge config.inc.php et ldap.inc.php.
+     * Le bootstrap charge config.inc.php et ldap.inc.php.
      */
     public function test_bootstrap_loads_config_and_ldap_shim(): void
     {

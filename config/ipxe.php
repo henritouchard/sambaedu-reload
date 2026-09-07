@@ -3,17 +3,17 @@
 declare(strict_types=1);
 
 /**
- * Story 3.1 — D11.
+ * D11.
  *
  * Configuration du domaine iPXE (boot réseau + déploiement OS).
  *
- * Pattern iso `config/auth_v1.php` (16.10) + `config/scriptsos.php` (16.12)
+ * Pattern iso `config/auth_v1.php` + `config/scriptsos.php`
  * + `config/parc.php` — un fichier de config par domaine fonctionnel,
  * override-able via `.env`.
  *
  * **Aucun secret** : pas de mot de passe ni de token signé ici (un firmware
  * iPXE ne porte pas de credentials — la sécurité est portée par le
- * middleware `auth.v1.lan-only` D3).
+ * middleware `auth.v1.lan-only`).
  */
 return [
     /*
@@ -126,7 +126,7 @@ return [
     | Timeout par défaut iso-legacy `sambaedu/ipxe/admin.php:14` (30s).
     */
     'admin' => [
-        // Story 4.10 — kill-switch retiré, default `true` désormais.
+        // Kill-switch retiré, default `true` désormais.
         // L'auth iPXE (validatePassword AD + permission Spatie
         // `computer.install`) est portée par `IpxeAuthService::authorize()`
         // côté serveur (cf. `IpxeService::handleAdmin()`). Le menu boot
@@ -184,7 +184,7 @@ return [
     | — pas de duplication ici.
     */
     'enrollment' => [
-        // Active la branche enrollment depuis le menu admin (3.3). Si false,
+        // Active la branche enrollment depuis le menu admin. Si false,
         // l'item `(n)` nommer / `(a)` salle / `(p)` parcs est masqué — utile
         // pour freezer une VM de tests en pré-prod.
         'enabled' => filter_var(env('IPXE_ENROLLMENT_ENABLED', true), FILTER_VALIDATE_BOOL),
@@ -238,7 +238,7 @@ return [
         // `[A-Za-z0-9._-]`). La valeur est injectée brute dans la cmdline
         // kernel iPXE `rootpass=...` — un espace ou un newline casserait le
         // parsing iPXE et rescuecd booterait sans mot de passe root sans
-        // erreur visible (fix review #4 / pertinence opus 1). Pas de
+        // erreur visible. Pas de
         // sanitisation côté code (doc only — la config admin est trusted
         // boundary).
         'se4install_passwd_config_key' => env('IPXE_SE4INSTALL_PASSWD_KEY', 'sambaedu.se4install_passwd'),
@@ -277,7 +277,7 @@ return [
     | `actions/{deb_*,ubuntu64,nird}.php`.
     */
     'linux' => [
-        // Active la branche Installation Linux depuis le menu admin (3.4).
+        // Active la branche Installation Linux depuis le menu admin.
         // Si false, l'item (l) Installation Linux est masqué dans /ipxe/admin.
         'enabled' => filter_var(env('IPXE_INSTALL_LINUX_ENABLED', true), FILTER_VALIDATE_BOOL),
 
@@ -360,7 +360,7 @@ return [
     | `Win10/sysprep.xml.php` (stub), `Win10/action.php` (partiel winpe/oobe).
     */
     'windows' => [
-        // Active la branche Installation Windows depuis le menu admin (3.5).
+        // Active la branche Installation Windows depuis le menu admin.
         // Si false, l'item (w) Installation Windows est masqué dans /ipxe/admin.
         'enabled' => filter_var(env('IPXE_INSTALL_WINDOWS_ENABLED', true), FILTER_VALIDATE_BOOL),
 
@@ -503,11 +503,10 @@ return [
         // ("Win11_24H2.iso") — écrit par install-win-iso.sh après extraction.
         'version_file_name' => env('IPXE_ISO_VERSION_FILE', 'version'),
 
-        // --- Story 3.10 — Injection pilotes NIC dans le boot.wim WinPE -------
         //
         // Pack de pilotes WinPE (NIC) injecté à CHAQUE extraction d'ISO dans le
         // `boot.wim` cible par {@see App\Ipxe\Iso\Services\WinpeDriverInjector}.
-        // Corrige la régression 3.6 (l'extraction écrase le boot.wim par le
+        // Corrige la régression (l'extraction écrase le boot.wim par le
         // stock Microsoft → toute injection one-shot DISM est perdue). L'idempo-
         // tence est garantie *par construction* : la copie fraîche du boot.wim
         // depuis l'ISO (cp -R) donne toujours un wim pristine avant injection.
@@ -528,7 +527,7 @@ return [
         // Plusieurs familles peuvent coexister (chacune injectée à
         // `\drivers\<famille>` dans le wim).
         //
-        // Prérequis système (provisioning, action Henri / one-shot-install) :
+        // Prérequis système (provisioning / one-shot-install) :
         //   - `wimtools` (fournit `wimlib-imagex`) — injection, en www-admin
         //     SANS sudo (le boot.wim lui appartient déjà après le chown de
         //     l'extraction).
@@ -587,7 +586,6 @@ return [
         // Nombre de rows historiques affichées dans la card "Historique".
         'history_limit' => (int) env('IPXE_ISO_HISTORY_LIMIT', 10),
 
-        // --- Dépôt manuel d'ISO (upload chunké) -----------------------------
         //
         // En plus du téléchargement par URL (curl serveur), l'admin peut
         // déposer une ISO depuis son navigateur. L'uploader découpe le fichier
@@ -671,20 +669,20 @@ return [
     |
     | Paramètres de la réinstallation armée depuis l'admin web
     | (`workstation_reinstall_requests`), consommée par
-    | IpxeService::resolveProgrammedAction() (garde anti-boucle D5) et par le
-    | tick `parc:reinstall-due` (throttle par vagues D11).
+    | IpxeService::resolveProgrammedAction() (garde anti-boucle) et par le
+    | tick `parc:reinstall-due` (throttle par vagues).
     */
     'reinstall' => [
-        // TTL (heures) d'une requête armée (garde anti-boucle D5). Au-delà, la
-        // requête passe `failed` et libère son slot de concurrence (D11).
+        // TTL (heures) d'une requête armée (garde anti-boucle). Au-delà, la
+        // requête passe `failed` et libère son slot de concurrence.
         'ttl_hours' => (int) env('IPXE_REINSTALL_TTL_HOURS', 6),
 
-        // Plafond de PXE boots servant l'install avant abandon (garde anti-boucle
-        // D5). Un poste qui échoue en boucle au chargement kernel/initrd ne doit
+        // Plafond de PXE boots servant l'install avant abandon (garde
+        // anti-boucle). Un poste qui échoue en boucle au chargement kernel/initrd ne doit
         // pas réinstaller indéfiniment.
         'max_boot_serves' => (int) env('IPXE_REINSTALL_MAX_BOOT_SERVES', 8),
 
-        // Plafond de concurrence du rollout (D11). Le tick ne déclenche le reboot
+        // Plafond de concurrence du rollout. Le tick ne déclenche le reboot
         // forcé que d'autant de postes dûs qu'il reste de slots libres
         // (max_concurrent − postes en cours). Borne le débit de reboots ET le
         // nombre de machines téléchargeant l'image simultanément. Ajustable selon

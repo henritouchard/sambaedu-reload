@@ -8,7 +8,7 @@ use App\Enums\StateScope;
 use App\Models\CapabilityProjection;
 
 /**
- * Story 35.2 — provider `registry_list` de la ruche MACHINE (HKLM).
+ * Provider `registry_list` de la ruche MACHINE (HKLM).
  *
  * `scope()=Machine` : les conteneurs sont réconciliés par le SERVICE SYSTEM
  * (le compagnon de session n'a pas les droits HKLM). Ce provider n'émet QUE

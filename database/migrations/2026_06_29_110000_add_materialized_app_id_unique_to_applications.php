@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 31.3 (review #A) — Garde-fou d'unicité pour la MATÉRIALISATION amont.
+ * Garde-fou d'unicité pour la MATÉRIALISATION amont.
  *
  * `AppStoreService::materializeFromSource()` insère une `Application` avec
  * `depot_id = null` (app poussée par le contrat amont, sans dépôt local). Or la seule
@@ -23,8 +23,7 @@ use Illuminate\Support\Facades\Schema;
  * `unique(depot_id, app_id)`) — donc aucun risque sur d'éventuels doublons d'`app_id`
  * historiques inter-dépôts. PostgreSQL et SQLite supportent tous deux les index partiels.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
- * [Source: prd-contrat-manage-se5.md#R3 ; _bmad-output/codeReviews/31-3.md #A]
+ * ⚠️ GARDE-FOU : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
  */
 return new class extends Migration
 {

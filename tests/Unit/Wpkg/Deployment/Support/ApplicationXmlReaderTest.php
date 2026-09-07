@@ -11,14 +11,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 17.6 / correctif post-review #2 — Tests Unit dédiés au helper
- * `ApplicationXmlReader`.
+ * Tests unitaires du helper `ApplicationXmlReader`.
  *
  * Couvre l'extraction XML pure (aucun accès DB) :
- *   - `aptPackageFor()` : noeud apt simple, multi-noeud (dernière occurrence
+ *  - `aptPackageFor()` : noeud apt simple, multi-noeud (dernière occurrence
  *     l'emporte, parité legacy `linux_out.php:30-34`), fallback strtolower(app_id).
- *   - `wingetEntriesFor()` : Id/Source/Version/Custom/Override, défaut Source,
- *     multi-package indépendant (#7 — pas de pollution inter-packages),
+ *  - `wingetEntriesFor()` : Id/Source/Version/Custom/Override, défaut Source,
+ *     multi-package indépendant (aucune pollution d'un package à l'autre),
  *     noeud non-winget ignoré.
  *   - parsing XML invalide (skip + log, pas de crash) et XML NULL/vide.
  *
@@ -55,7 +54,7 @@ class ApplicationXmlReaderTest extends TestCase
      * ---------------------------------------------------------------- */
 
     /**
-     * #2 — Noeud apt explicite : l'attribut `package` est retourné.
+     * Noeud apt explicite : l'attribut `package` est retourné.
      */
     #[Test]
     public function apt_package_for_returns_explicit_package(): void
@@ -66,7 +65,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — Multi-noeud apt : la DERNIÈRE occurrence l'emporte (parité legacy
+     * Multi-noeud apt : la DERNIÈRE occurrence l'emporte (parité legacy
      * `foreach` sans `break`, `linux_out.php:30-34`).
      */
     #[Test]
@@ -83,7 +82,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — Pas de noeud apt → fallback strtolower(app_id) (parité `:36-38`).
+     * Pas de noeud apt → fallback strtolower(app_id) (parité `:36-38`).
      */
     #[Test]
     public function apt_package_for_falls_back_to_lowercase_app_id(): void
@@ -94,7 +93,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — Noeud apt présent mais `package` vide → fallback strtolower(app_id).
+     * Noeud apt présent mais `package` vide → fallback strtolower(app_id).
      */
     #[Test]
     public function apt_package_for_falls_back_when_package_attr_empty(): void
@@ -105,7 +104,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — XML invalide → skip + log + fallback strtolower(app_id) (pas de crash).
+     * XML invalide → skip + log + fallback strtolower(app_id) (pas de crash).
      */
     #[Test]
     public function apt_package_for_invalid_xml_logs_and_falls_back(): void
@@ -119,7 +118,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — XML NULL / vide → fallback strtolower(app_id) sans log d'erreur
+     * XML NULL / vide → fallback strtolower(app_id) sans log d'erreur
      * (xml absent ≠ xml cassé : pas de warning).
      */
     #[Test]
@@ -137,7 +136,7 @@ class ApplicationXmlReaderTest extends TestCase
      * ---------------------------------------------------------------- */
 
     /**
-     * #2 — Entrée winget complète : Id, Source, Version, Custom, Override.
+     * Entrée winget complète : Id, Source, Version, Custom, Override.
      */
     #[Test]
     public function winget_entries_for_extracts_all_attributes(): void
@@ -158,7 +157,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — Source par défaut `winget` quand l'attribut source est absent ;
+     * Source par défaut `winget` quand l'attribut source est absent ;
      * Version/Custom/Override omis si vides.
      */
     #[Test]
@@ -178,7 +177,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 / #7 — Multi-package : chaque entrée est indépendante (`$app` réinitialisé
+     * Multi-package : chaque entrée est indépendante (`$app` réinitialisé
      * à chaque noeud — corrige la pollution inter-packages du legacy). La 2e
      * entrée ne doit PAS hériter du Version/Custom de la 1re.
      */
@@ -204,7 +203,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — Noeud `<windows>` non-winget (ex. type msi) ignoré.
+     * Noeud `<windows>` non-winget (ex. type msi) ignoré.
      */
     #[Test]
     public function winget_entries_for_ignores_non_winget_windows_nodes(): void
@@ -220,7 +219,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — XML invalide → skip + log + [] (pas de crash).
+     * XML invalide → skip + log + [] (pas de crash).
      */
     #[Test]
     public function winget_entries_for_invalid_xml_logs_and_returns_empty(): void
@@ -236,7 +235,7 @@ class ApplicationXmlReaderTest extends TestCase
     }
 
     /**
-     * #2 — XML NULL / vide → [] sans log d'erreur.
+     * XML NULL / vide → [] sans log d'erreur.
      */
     #[Test]
     public function winget_entries_for_null_or_empty_xml_returns_empty(): void

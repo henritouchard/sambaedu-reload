@@ -16,7 +16,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 /**
- * Service central de gestion des permissions SambaEdu 4.6
+ * Service central de gestion des permissions SambaEdu
  *
  * Orchestre les permissions Spatie (globales) et les délégations (scopées par WorkstationGroup).
  * Fournit la conversion bitmask ↔ permissions pour les besoins de compatibilité legacy.
@@ -24,7 +24,7 @@ use Spatie\Permission\Models\Role;
  * Règle de conception : toute logique métier (Policies, Blade, middleware) doit utiliser
  * uniquement les permissions Spatie ($user->can(...)) et jamais les colonnes ad_* ni le bitmask.
  *
- * Story 7.1 : toute mutation d'une délégation (grant / revoke / negate) écrit une
+ * Toute mutation d'une délégation (grant / revoke / negate) écrit une
  * entrée dans `delegation_history` via `DelegationHistoryService`. Les signatures
  * acceptent un `?User $actor = null` — fallback sur `auth()->user()` si null.
  * Le paramètre étant optionnel, les appelants existants restent compatibles.
@@ -32,13 +32,12 @@ use Spatie\Permission\Models\Role;
 class PermissionService
 {
     /**
-     * Story 7.1 — Review #4 (décision Henri 2026-04-23, Option B) :
-     *   L'écriture d'audit est best-effort. Si `log()` retourne null, on signale
-     *   cet échec à l'appelant via cette propriété, qui sert à afficher un toast
-     *   warning côté UI ("délégation appliquée mais traçabilité non enregistrée").
+     * L'écriture d'audit est best-effort. Si `log()` retourne null, on signale
+     * cet échec à l'appelant via cette propriété, qui sert à afficher un toast
+     * warning côté UI (« délégation appliquée mais traçabilité non enregistrée »).
      *
-     *   Le flag est réinitialisé à `false` au début de chaque mutation
-     *   (grantDelegation / revokeDelegation / negateDelegation).
+     * Le flag est réinitialisé à `false` au début de chaque mutation
+     * (grantDelegation / revokeDelegation / negateDelegation).
      */
     public bool $lastAuditFailed = false;
 
@@ -55,10 +54,6 @@ class PermissionService
     {
         return $this->historyService ?? app(DelegationHistoryService::class);
     }
-
-    // ========================================================================
-    // SYNCHRONISATION AD → SQL (DÉSACTIVÉE)
-    // ========================================================================
 
     /**
      * @deprecated Les droits web ne sont plus synchronisés depuis l'AD.
@@ -84,10 +79,6 @@ class PermissionService
         ]);
     }
 
-    // ========================================================================
-    // CONVERSION BITMASK ↔ PERMISSIONS
-    // ========================================================================
-
     /**
      * Convertit un bitmask legacy en liste de noms de permissions Spatie
      */
@@ -106,10 +97,6 @@ class PermissionService
         );
     }
 
-    // ========================================================================
-    // DÉLÉGATIONS
-    // ========================================================================
-
     /**
      * Accorde une délégation à un utilisateur sur un WorkstationGroup.
      *
@@ -118,7 +105,7 @@ class PermissionService
      * n'est créée QUE si `wasRecentlyCreated` est true — sinon on a déjà tracé
      * le grant initial lors du 1er appel.
      *
-     * Story 7.1 : le paramètre `$grantedBy` (déjà existant) sert de fallback si
+     * Le paramètre `$grantedBy` (déjà existant) sert de fallback si
      * `auth()->user()` est null (ex. appel depuis un Job sans contexte HTTP).
      */
     public function grantDelegation(
@@ -128,7 +115,7 @@ class PermissionService
         ?User $grantedBy = null,
         ?\DateTimeInterface $expiresAt = null
     ): Delegation {
-        // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
+        // Reset du flag audit à chaque mutation.
         $this->lastAuditFailed = false;
 
         $permission = Permission::findByName($permissionName, 'web');
@@ -153,7 +140,7 @@ class PermissionService
             'granted_by' => $grantedBy?->login,
         ]);
 
-        // AC5 / Tâche 2.4 : historique — uniquement si on vient de créer la ligne.
+        // historique — uniquement si on vient de créer la ligne.
         // `updateOrCreate` peut aussi mettre à jour `expires_at` ou `granted_by`
         // sur une ligne existante — dans ce cas on ne retrace pas un nouveau `grant`.
         if ($delegation->wasRecentlyCreated) {
@@ -167,7 +154,7 @@ class PermissionService
                 isNegative: false,
                 context: $this->buildContext(),
             );
-            // Story 7.1 — Review #4 : best-effort + signalisation. L'appelant
+            // Best-effort + signalisation. L'appelant
             // (drawer / rights-management) consulte $lastAuditFailed pour émettre
             // un toast warning quand la délégation est posée mais non tracée.
             $this->lastAuditFailed = ($historyEntry === null);
@@ -185,7 +172,7 @@ class PermissionService
     /**
      * Révoque une délégation (positive).
      *
-     * Story 7.1 : `$actor` est optionnel — fallback sur `auth()->user()`.
+     * `$actor` est optionnel — fallback sur `auth->user`.
      * L'historique `revoke` n'est créé que si une ligne a bien été supprimée
      * (sinon revoke sur néant = pas de trace à écrire).
      */
@@ -195,7 +182,7 @@ class PermissionService
         WorkstationGroup $group,
         ?User $actor = null
     ): bool {
-        // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
+        // Reset du flag audit à chaque mutation.
         $this->lastAuditFailed = false;
 
         $permission = Permission::findByName($permissionName, 'web');
@@ -239,7 +226,7 @@ class PermissionService
     /**
      * Lève une exclusion (supprime la ligne négative active).
      *
-     * Story 7.1.bis — pendant symétrique de `revokeDelegation` côté exclusions.
+     * .bis — pendant symétrique de `revokeDelegation` côté exclusions.
      * Trace `ACTION_REVOKE` avec `is_negative=true` pour que l'historique
      * distingue clairement un retrait de positive (is_negative=false) d'une
      * levée d'exclusion (is_negative=true).
@@ -298,8 +285,8 @@ class PermissionService
      * Idempotent via la même clé unique composite que `grantDelegation`.
      * Historique `negate` écrit uniquement lors de la création réelle.
      *
-     * Story 7.1 : `$actor` optionnel — fallback sur `auth()->user()`.
-     * Story 7.1.bis : `$expiresAt` optionnel pour les exclusions temporaires
+     * `$actor` optionnel — fallback sur `auth->user`.
+     * .bis : `$expiresAt` optionnel pour les exclusions temporaires
      * (suspension limitée dans le temps, examen, audit). Le scope `active()`
      * des négatives filtre déjà les lignes expirées.
      */
@@ -310,7 +297,7 @@ class PermissionService
         ?User $actor = null,
         ?\DateTimeInterface $expiresAt = null
     ): Delegation {
-        // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
+        // Reset du flag audit à chaque mutation.
         $this->lastAuditFailed = false;
 
         $permission = Permission::findByName($permissionName, 'web');
@@ -368,7 +355,7 @@ class PermissionService
     public function canOnWorkstationGroup(User $user, string $permissionName, WorkstationGroup $group): bool
     {
         // 1. Exclusion scopée active → refus immédiat (prévaut sur global).
-        // Story 7.1 — Review #3 : `.active()` pour qu'une négative expirée ne bloque plus.
+        // `.active` : une négative expirée ne bloque plus.
         $hasNegative = Delegation::where('user_id', $user->id)
             ->where('workstation_group_id', $group->id)
             ->forPermission($permissionName)
@@ -398,7 +385,7 @@ class PermissionService
      * Résume l'état courant d'un utilisateur pour une (permission, salle) donnée
      * et suggère l'action la plus probable attendue par l'admin.
      *
-     * Story 7.1.bis — pilote la nouvelle UX état→action du drawer Délégations.
+     * .bis — pilote la nouvelle UX état→action du drawer Délégations.
      *
      * Priorité des sources (la plus spécifique gagne) :
      *   1. Exclusion scopée active        → source=delegation_negative, action=lift_negative
@@ -502,7 +489,7 @@ class PermissionService
     public function getAuthorizedWorkstationGroups(User $user, string $permissionName): Collection
     {
         // Groupes exclus par une délégation négative active : filtrés dans tous les cas.
-        // Story 7.1 — Review #3 : ignorer les négatives expirées.
+        // Les négatives expirées sont ignorées.
         $negativeGroupIds = Delegation::forUser($user)
             ->forPermission($permissionName)
             ->negative()
@@ -531,13 +518,6 @@ class PermissionService
             ->get();
     }
 
-    // ========================================================================
-    // UTILITAIRES
-    // ========================================================================
-
-    /**
-     * Retourne le mapping bitmask → permission
-     */
     public static function getBitmaskMapping(): array
     {
         return SambaPermission::bitmaskMapping();
@@ -550,10 +530,6 @@ class PermissionService
     {
         return SambaPermission::fromSingleBitmask($bitmask)?->value;
     }
-
-    // ========================================================================
-    // Story 7.2 — Rapatriement profils LDAP custom (AC4)
-    // ========================================================================
 
     /**
      * Noms des 5 profils seedés à l'installation, qu'on NE rapatrie PAS depuis
@@ -583,7 +559,7 @@ class PermissionService
      * Rapatrie les profils custom de la branche LDAP `rights_rdn` vers la base
      * SER, sans écraser les profils existants.
      *
-     * Story 7.2 (AC4) — Non-destructif strict :
+     * Non-destructif strict :
      *  - Un profil seedé (cf. `SEEDED_PROFILE_NAMES`) : ignoré (géré par le seeder).
      *  - Un profil historique (cf. `HISTORIC_PROFILE_TO_ROLE`) : le rôle Spatie
      *    correspondant est créé via `firstOrCreate` si absent, sans re-sync
@@ -592,7 +568,7 @@ class PermissionService
      *    **seulement** si `wasRecentlyCreated` (première rencontre). Les
      *    profils custom déjà en base SER ne sont jamais modifiés.
      *  - Bug legacy fallback `Annu_is_admin` sans `info` → `SE_COMPUTER_ADMIN`
-     *    (cf. matrice §8 #6) : **ignoré**. On log `warning` + mapping forcé
+     *    : **ignoré**. On log `warning` + mapping forcé
      *    sur `user-admin` (seed d'origine 0xFF) si ce cas se présente.
      *
      * @return array{
@@ -637,7 +613,7 @@ class PermissionService
             return $stats;
         }
 
-        // Story 7.2 — Tests : on injecte un fetcher de profils mocké. Par défaut,
+        // Tests : on injecte un fetcher de profils mocké. Par défaut,
         // on utilise le shim AD réel via LdapRightGroup.
         $fetcher = $profilesFetcher ?? fn() => \App\LdapModels\LdapRightGroup::getAllRightsValues();
 
@@ -675,7 +651,7 @@ class PermissionService
                         }
                         $stats['historic_mapped']++;
                     } else {
-                        // Correction review 7.2 #9 — `password_can_reinit` mappe
+                        // `password_can_reinit` mappe
                         // vers `null` (délégation ciblée, pas un rôle Spatie
                         // unique). On log explicitement plutôt que d'ignorer
                         // silencieusement pour que l'admin puisse les repérer
@@ -695,7 +671,7 @@ class PermissionService
                     $bitmaskInt = (int) $info;
                     $perms = SambaPermission::fromBitmask($bitmaskInt);
 
-                    // Correction review 7.2 #2 — Convention matrice §11 :
+                    // Convention :
                     // `AppCustomize` partage le bit 0x800 avec `ComputerInstall`.
                     // On ne l'accorde à un profil custom QUE si le bitmask porte
                     // la totalité du composite `ComputerAdmin` (iso `gpo/firefox.php`

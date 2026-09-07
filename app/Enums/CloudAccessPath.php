@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 63.3 — PAR OÙ L'UTILISATEUR ATTEINT LE CLOUD.
+ * PAR OÙ L'UTILISATEUR ATTEINT LE CLOUD.
  *
  * Deux positions, et deux seulement : le navigateur, ou le client de
  * synchronisation posé sur le poste. Vocabulaire FERMÉ (même figure que
  * {@see ActiveCloud} et {@see FileBackendName}) : il n'existe littéralement
  * aucune valeur qui signifierait « les deux » ni « on verra ».
  *
- * **CE RÉGLAGE A UN EFFET SUR LE POSTE DEPUIS LA STORY 63.5.** En position
+ * **CE RÉGLAGE A UN EFFET SUR LE POSTE DEPUIS LA.** En position
  * {@see self::ClientNatif}, l'application DÉSIGNÉE comme client du cloud actif
  * entre dans l'ensemble cible des applications du poste
  * ({@see \App\Services\Agent\CloudSyncClient}), et WPKG l'installe. En position

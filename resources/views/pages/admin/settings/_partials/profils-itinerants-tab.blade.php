@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 /**
- * Story 1bis.18f — Onglet "Profils itinérants" de /admin/settings.
+ * .18f — Onglet "Profils itinérants" de /admin/settings.
  *
  * 2 sections :
  *   1. Exclusions du profil itinérant (`ExcludeProfileDirs`)
@@ -16,13 +16,13 @@ use Livewire\Component;
  *      utilisateur en modale.
  *
  * Sécurité :
- *   - Double guard `Gate::allows('server.admin')` à mount() ET en première
+ *  - Double guard `Gate::allows('server.admin')` à mount() ET en première
  *     ligne de chaque méthode publique (paranoïa payload Livewire forgé).
  *   - Validation regex anti path-traversal sur `newExclusion` côté UI
  *     (defense-in-depth — le service revalide aussi).
  *
  * Toasts : trait `WithToasts` — toastSuccess/toastError génériques (jamais
- * `$e->getMessage()` exposé — leçon 5.1b post-review #4).
+ * `$e->getMessage()` exposé).
  */
 new class extends Component {
     use WithToasts;
@@ -49,7 +49,7 @@ new class extends Component {
     public bool $gpoLoadFailed = false;
 
     /**
-     * Story 26.3 — Nombre de profils orphelins (dossiers /home/profiles sans
+     * Nombre de profils orphelins (dossiers /home/profiles sans
      * compte user). Lu UNIQUEMENT depuis le cache (SystemSetting profiles.orphans
      * alimenté par le job nocturne profiles:snapshot). ZÉRO scan FS au render.
      */
@@ -74,7 +74,7 @@ new class extends Component {
     }
 
     /**
-     * Story 26.3 — recharge le compteur d'orphelins depuis le cache (aucun FS).
+     * Recharge le compteur d'orphelins depuis le cache (aucun FS).
      */
     private function reloadOrphanCount(): void
     {
@@ -113,10 +113,6 @@ new class extends Component {
             $this->statsGlobal = [];
         }
     }
-
-    // =========================================================================
-    // EXCLUSIONS — CRUD
-    // =========================================================================
 
     public function addExclusion(): void
     {
@@ -198,7 +194,7 @@ new class extends Component {
     }
 
     /**
-     * Story 26.3 — Purge native des profils orphelins (réimplémentation de
+     * Purge native des profils orphelins (réimplémentation de
      * `ldap_cleaner.php?do=3` ; NE route JAMAIS vers le legacy).
      *
      * Double gate server.admin (mount + ici). La purge RE-VÉRIFIE l'absence de
@@ -240,10 +236,6 @@ new class extends Component {
             $this->toastError('Impossible de purger les profils orphelins.');
         }
     }
-
-    // =========================================================================
-    // MODALES
-    // =========================================================================
 
     public function openAddModal(): void
     {

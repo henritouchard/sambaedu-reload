@@ -12,7 +12,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — T7.3.
+ * T7.3.
  *
  * Tests commande Artisan `workstation:revoke <uuid>`.
  */

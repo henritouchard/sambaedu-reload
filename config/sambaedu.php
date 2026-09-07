@@ -57,8 +57,7 @@ return [
         '^annu2/annu\.php' => 'app/users',
         'parcs/show_parc.php' => 'app/parcs',
 
-        // ═══════════════════════════════════════════════════════════════════
-        //  Story 57.4 / AR12 — BBB LEGACY ÉTEINT
+        // AR12 — BBB LEGACY ÉTEINT
         //
         //  L'extension `sambaedu-ext-bbb` est le successeur intégral : chaque
         //  page a la sienne (`config` → /ext/bbb/admin/servers, `create`/`join`
@@ -67,58 +66,56 @@ return [
         //  lanceur.
         //
         //  ⚠️ CES DEUX ENTRÉES NE SONT PAS DÉCORATIVES. Le module local
-        //  `legacy/modules/bbb/` a été supprimé avec cette story ; sans elles,
+        //  `legacy/modules/bbb/` a été supprimé ; sans elles,
         //  le catchall passerait simplement à l'étape suivante — le proxy vers
         //  le système de fichiers SE4 (`/var/www/sambaedu/bbb/…`) — et
         //  RESSUSCITERAIT l'interface legacy d'origine, TLS désactivé et champs
-        //  cachés compris, sur toute instance que l'Epic 38 n'a pas encore
+        // cachés compris, sur toute instance que l' n'a pas encore
         //  débranchée. Les retirer rouvrirait ce chemin.
         //
         //  Patterns SANS slash de tête : c'est la forme `path` que manipule le
         //  catchall (préfixe UAI déjà retiré). Ne pas les « normaliser ».
-        // ═══════════════════════════════════════════════════════════════════
         '^bbb(/|$)' => '/',
         '^visio(/|$)' => '/',
-        // Story 38.2 — l'entrée `gpo/shortcuts_out\.php` => `noop:…` a été RETIRÉE :
+        // L'entrée `gpo/shortcuts_out\.php` => `noop:…` a été RETIRÉE :
         // le tombstone natif `/gpo/shortcuts_out.php` (route `legacy.tombstone.shortcuts`,
         // déclarée AVANT le catchall) la supersède. La convention `noop:` de
         // LegacyCatchallController reste disponible comme mécanisme générique.
-        // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
+        // On bloque uniquement la page d'index legacy.
         // Les pages d'édition (gpo-maj.php, gpo-export.php, etc.) restent
-        // accessibles pour la cohabitation jusqu'aux Stories 16.4/16.5.
-        // Story 16.9 — cible migrée vers `admin/settings/gpo` (l'UI vit
+        // accessibles pour la cohabitation.
+        // Cible migrée vers `admin/settings/gpo` (l'UI vit
         // désormais sous le groupe admin, cf. routes/web.php).
         '^gpo/gestion_gpo\.php$' => 'admin/settings/gpo',
-        // Story 16.3c — Wine UI native. La page `/gpo/wine.php` legacy est
+        // Wine UI native. La page `/gpo/wine.php` legacy est
         // remplacée par `/admin/settings/gpo/wine` (Livewire SFC + Job queue,
-        // renommée par Story 16.9). Redirect 302 (pattern iso 16.2 D5).
+        // renommée). Redirect 302.
         '^gpo/wine\.php(?:\?.*)?$' => 'admin/settings/gpo/wine',
 
-        // Story 3.7 — D10 — Cleanup final catchall Epic 3 (decis. Henri Q-1).
         // Convention `gone:<message>` : le firmware iPXE ne suit pas les 302,
         // on retourne 410 Gone + corps iPXE explicite (cf. LegacyCatchallController).
         // Les assets statiques (png/, bin/, Win10/sources/) restent accessibles
         // via direct_legacy_routes `^/ipxe/` — seules les routes .php migreees
-        // 3.1-3.7 sont bloquees ici.
+        // sont bloquees ici.
         //
-        // 3.1 — boot
+        // boot
         '^ipxe/boot\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/boot natif SE5',
-        // 3.2 — admin + maintenance
+        // admin + maintenance
         '^ipxe/admin\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/admin natif SE5',
         '^ipxe/maintenance\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/maintenance natif SE5',
-        // 3.3 — enrollment
+        // enrollment
         '^ipxe/enregistrement\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/name natif SE5',
         '^ipxe/enregistrement_byod\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/byod natif SE5',
         '^ipxe/salles\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/room natif SE5',
         '^ipxe/parcs\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/parc-add natif SE5',
         '^ipxe/enleveparc\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/parc-remove natif SE5',
-        // 3.4 — installation Linux
+        // installation Linux
         '^ipxe/installation-linux\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/installation-linux natif SE5',
-        // 3.5 — installation Windows
+        // installation Windows
         '^ipxe/installation-windows\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/installation-windows natif SE5',
-        // 3.6 — gestion ISO Windows
+        // gestion ISO Windows
         '^ipxe/Win10/win_iso\.php(?:\?.*)?$' => 'gone:utiliser /admin/ipxe/iso-windows natif SE5',
-        // 3.7 — clonezilla + outils diagnostic
+        // clonezilla + outils diagnostic
         '^ipxe/clonezilla_menu\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/clonezilla-menu natif SE5',
         '^ipxe/clonezilla\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_live natif SE5',
         '^ipxe/gparted\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/gparted natif SE5',
@@ -136,12 +133,12 @@ return [
         // format invalide) reçoit 410 Gone au lieu d'être proxiée vers le legacy.
         // Les actions valides ([a-z0-9_]+) matchent la route native AVANT le catchall.
         //
-        // **Pattern volontairement large (D10 cleanup strict — review 3.7 #2)** :
+        // **Pattern volontairement large** :
         // Toute URL `/ipxe/action/<x>` qui n'a pas matché la route native est
         // bloquée — il n'y a PAS de fallback vers le legacy `clonage.php` /
         // `action.php` (lesquels utilisent `?action=xyz`, donc path
         // `ipxe/action.php` non-matché par ce pattern). Les postes terrain
-        // doivent être à jour 16.11 — un poste vieux qui appellerait
+        // doivent être à jour — un poste vieux qui appellerait
         // `/ipxe/action/clonezilla_live/` (trailing slash) ou
         // `/ipxe/action/clonezilla_live;jsessionid=…` (suffixe firmware buggé)
         // tomberait sur ce catchall et recevrait 410. À valider en smoke avant
@@ -153,7 +150,7 @@ return [
         // explicite du canal : aucun n'est chaîné par le flow natif (vérifié — seul
         // `Win10/repair.bat.php` reste appelé par winpe.blade et N'EST PAS bloqué).
         //   - action.php / clonage.php : dispatchers `?action=` portés en natif
-        //     (/ipxe/action/{action}, IpxeActionController / IpxeWindowsActionController).
+        //  (ipxe/action/{action}, IpxeActionController / IpxeWindowsActionController).
         //   - ltsp.php / preboot.php / reservation.php : fonctionnalités non portées en SE5.
         '^ipxe/action\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/{action} natif SE5',
         '^ipxe/clonage\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_* natif SE5',
@@ -185,7 +182,7 @@ return [
 
     // Port HTTP du legacy SambaEdu (vhost séparé). Utilisé par le helper
     // `legacy_url()` pour construire les liens vers les pages legacy depuis
-    // les vues Laravel (cf. Story 16.9 — UI admin GPO sous /admin/settings/gpo).
+    // les vues Laravel (UI admin GPO sous /admin/settings/gpo).
     'legacy_port' => (int) env('SAMBAEDU_LEGACY_PORT', 8082),
 
     'trusted_proxies' => env('TRUSTED_PROXIES'),
@@ -294,7 +291,7 @@ return [
     // Fichier legacy des tokens TOTP (import one-shot via /sync-from-ad).
     'se4install_hashes_file' => env('SAMBAEDU_HASHES_FILE', '/etc/sambaedu/hashes'),
 
-    // Story 17.2 — AC1.2 — Variables nouvelles consommées par les scripts GPO
+    // Variables nouvelles consommées par les scripts GPO
     // applications. Iso-legacy `applications.inc.php` → `write_param()`.
 
     // URL du serveur GLPI Agent — consommée par `glpi/startup.linux`.
@@ -311,7 +308,7 @@ return [
     // Adresse réseau DHCP (forme simple) — consommée par
     // `firewall/startup.windows`. Iso-legacy `$config['dhcp_reseau']`.
     // Note: cas multi-VLAN (`dhcp_reseau_0`, `dhcp_reseau_1`) non géré ici
-    // (cf. décision Q-2 2026-05-21). Ticket Phase 3 si terrain remonte.
+    // — à traiter si le terrain le remonte.
     'dhcp_reseau' => env('SAMBAEDU_DHCP_RESEAU', ''),
 
     // Masque sous-réseau DHCP (forme simple) — consommée par
@@ -364,7 +361,7 @@ return [
         // User local Windows pour le mode `perso=1` (pc perso hors domaine) —
         // injecté dans l'autounattend (AutoLogon + LocalAccount). Mêmes
         // fallback/valeurs que Linux ({@see sambaedu.linux.user}) pour cohérence
-        // inter-OS : `?:` (et non le défaut d'env()) car une clé .env présente
+        // inter-OS : `?:` (et non le défaut d'env()) car une clé.env présente
         // mais vide renvoie '' → on bascule sur le fallback plutôt que de poser
         // un username vide qui bloquerait l'install. Iso-legacy `windows.inc.php:234`
         // chain `win_user ?? perso_user ?? linux_user`.
@@ -455,13 +452,13 @@ return [
         'reload_command' => env('DHCP_RELOAD_COMMAND', '/usr/share/sambaedu/sbin/make_dhcpd_conf.sh'),
         'service_name' => env('DHCP_SERVICE_NAME', 'isc-dhcp-server.service'),
 
-        // Story 8.3 — Fichier de paramètres des sous-réseaux/VLAN gérés. Rendu
+        // Fichier de paramètres des sous-réseaux/VLAN gérés. Rendu
         // atomiquement par `DhcpSubnetService::exportSubnetsFile()` (clés plates
         // `dhcp_reseau_<N>`, `dhcp_masque_<N>`, …) puis consommé par
         // `make_dhcpd_conf.sh` (boucle `config_dhcp_reseau_$i`). Vit dans
         // `sambaedu.conf.d/` : `config.inc.sh` charge TOUS les `*.conf` du
         // dossier → le fichier dédié est vu sans toucher au `dhcp.conf` legacy
-        // (décision D1). Overridable en test pour ne pas écrire dans `/etc`.
+        // Overridable en test pour ne pas écrire dans `/etc`.
         'subnets_file' => env('DHCP_SUBNETS_FILE', '/etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf'),
     ],
 
@@ -502,7 +499,7 @@ return [
         'legacy_packages_xml_path' => env('WPKG_LEGACY_PACKAGES_XML', '/var/sambaedu/unattended/install/wpkg/packages.xml'),
         'legacy_install_root'      => env('WPKG_LEGACY_INSTALL_ROOT', '/var/sambaedu/unattended/install'),
 
-        // Pipeline déploiement WPKG (Story 15.1) — chemins **en dur** : décision
+        // Pipeline déploiement WPKG — chemins **en dur** : décision
         // 2026-05-03, pas de variables d'env dédiées. Les ops modifient ce
         // fichier de config si une customisation par environnement est
         // nécessaire (cf. docs/wpkg-deploy/architecture.md § Migration .env).
@@ -517,24 +514,24 @@ return [
             explode(',', env('WPKG_ALLOWED_IPS', '127.0.0.1,::1'))
         ),
 
-        // Story 15.5 — Rétention des archives brutes des rapports (en jours).
+        // Rétention des archives brutes des rapports (en jours).
         // La commande `wpkg:reports:archive:rotate` (schedulée daily 03:45)
         // supprime les fichiers d'archive plus anciens que cette valeur.
         'reports_archive_retention_days' => (int) env('WPKG_REPORTS_ARCHIVE_RETENTION_DAYS', 90),
 
-        // Story 15.5 — Durée de validité d'un ancien secret après rotation
+        // Durée de validité d'un ancien secret après rotation
         // (chevauchement). Permet aux postes pas encore mis à jour de
         // continuer à pousser leurs rapports.
         'secret_rotation_overlap_days' => (int) env('WPKG_SECRET_ROTATION_OVERLAP_DAYS', 7),
 
-        // Story 17.6 / D6 — Flag d'activation de l'endpoint `/wpkg/winget_out.php`
+        // Flag d'activation de l'endpoint `/wpkg/winget_out.php`
         // (parité `$config['winget']` legacy, alimenté par
         // `/etc/sambaedu/sambaedu.conf.d/{clients,wpkg}.conf`). Si falsy →
         // `WingetOutController` retourne 400 (parité `winget_out.php:23-26`).
         // `linux_out` n'a PAS ce flag (toujours actif).
         'winget_enabled' => (bool) env('WPKG_WINGET_ENABLED', false),
 
-        // Story 17.6 / D5 — Chemins des catalogues winget add/remove (parité
+        // Chemins des catalogues winget add/remove (parité
         // legacy `winget_out.php:103,109,164,170`). Couche `/etc/` (surcharge
         // admin) + couche `/usr/share/` (défaut package). Configurables pour
         // les tests ; non-hardcodés dans le controller/service.
@@ -567,7 +564,7 @@ return [
         'bin_path' => '/usr/bin/samba-tool',
 
         // Chemin SYSVOL local (partage Samba). Utilisé pour lecture/écriture
-        // des fichiers .pol / .xml / .ini de policies (Stories 16.3, 16.4).
+        // des fichiers .pol / .xml / .ini de policies.
         'sysvol_path' => '/var/lib/samba/sysvol',
 
         // Répertoire des archives-template GPO livrées par le paquet Debian
@@ -580,7 +577,7 @@ return [
         // pour tests/CI ou installation atypique.
         'templates_dir' => env('GPO_TEMPLATES_DIR', '/usr/share/sambaedu/gpo/'),
 
-        // Story 38.4 — `policies_temp_path` (`/var/www/sambaedu/temp/policies`,
+        // `policies_temp_path` (`/var/www/sambaedu/temp/policies`,
         // config morte, 0 consommateur) SUPPRIMÉE avec la sortie des chemins FS
         // legacy du code serveur.
 
@@ -603,25 +600,25 @@ return [
         // Overridable via env GPO_KERB_OPTION.
         'kerb_option' => env('GPO_KERB_OPTION', '--use-kerberos=desired'),
 
-        // Story 27.14 — La sous-config `wpkg_sync` (template `se4_wpkg.zip`,
+        // La sous-config `wpkg_sync` (template `se4_wpkg.zip`,
         // bearer, locks) a été SUPPRIMÉE avec `WpkgGpoSynchronizer` : la GPO
-        // `se4_wpkg` n'est plus un transport actif (27.5 — l'agent déclenche
+        // `se4_wpkg` n'est plus un transport actif (l'agent déclenche
         // `wpkg-client.vbs`, plus la GPO). La livraison WPKG native (bundle
         // statique + agent) ne consomme aucune de ces clés.
 
-        // Story 27.14 — La sous-config `applications.substitutions.whitelist`
-        // (story 16.7/17.2/17.3) a été SUPPRIMÉE avec le canal de génération de
+        // La sous-config `applications.substitutions.whitelist`
+        // A été SUPPRIMÉE avec le canal de génération de
         // scripts applications legacy : elle n'était lue que par
         // `ApplicationScriptsAssembler::applySubstitutions()` (supprimé) et la
         // commande d'audit `gpo:applications:audit` (supprimée). La sous-config
-        // `applications_template` (template `se4_applications.zip`, story 17.3)
+        // `applications_template` (template `se4_applications.zip`)
         // est SUPPRIMÉE de même : le template de config GPO `se4_applications`
         // n'est plus audité ni publié (config legacy hors bootstrap). Les clés
         // métier (SE4FS_NAME, DOMAIN, etc.) restent disponibles directement sous
         // `config('sambaedu.*')` pour les autres consommateurs (WPKG bundle,
         // linux_out/winget_out).
 
-        // Story 16.3c — Sous-config Wine (UI admin + Job queue).
+        // Sous-config Wine (UI admin + Job queue).
         'wine' => [
             // Dossier de base scanné pour lister les conteneurs Wine partagés
             // (`wine-<application>` → option du `<select>` UI). Iso-legacy

@@ -57,7 +57,7 @@ class UserGroupService
 
         $this->guardReservedPrefixOnCreate($payload['name'], $payload['type']);
 
-        // Sélecteur SQL post-syncFromAd : depuis 4.13, les variantes de classe/
+        // Sélecteur SQL post-syncFromAd : depuis, les variantes de classe/
         // équipe foldent en UNE ligne au NOM NU. Le payload `name` est déjà nu
         // (garanti sans préfixe réservé par guardReservedPrefixOnCreate) ; pour
         // les autres types, c'est le CN brut résolu (Cours_X, Matiere_X@Y, …).
@@ -76,8 +76,8 @@ class UserGroupService
             ? array_values(array_unique(array_map('intval', $data['user_ids'])))
             : [];
 
-        // Story 4.15 — IDs des professeurs principaux (canal `head_teacher_ids`,
-        // projetés arête `role='owner'` depuis 42.2).
+        // IDs des professeurs principaux (canal `head_teacher_ids`,
+        // projetés arête `role='owner'` depuis).
         $headTeacherUserIds = !empty($data['head_teacher_ids']) && is_array($data['head_teacher_ids'])
             ? array_values(array_unique(array_map('intval', $data['head_teacher_ids'])))
             : [];
@@ -92,11 +92,11 @@ class UserGroupService
             throw new RuntimeException("Création AD impossible pour le groupe '{$payload['name']}'.");
         }
 
-        // Story 4.15 (D2) — l'écriture AD (incluant la 3ᵉ cible `PP_<base>`)
+        // L'écriture AD (incluant la 3ᵉ cible `PP_<base>`)
         // précède toujours `syncFromAd()` : le read-back re-pose alors l'arête
         // `role='owner'` depuis le `PP_<base>` qu'on vient d'écrire, donc le
         // pivot SQL converge sans clignotement. On force l'écriture dès qu'il
-        // y a des membres OU des PP à projeter. Story 42.2 (T2.3) — 5ᵉ param
+        // Y a des membres OU des PP à projeter. (T2.3) — 5ᵉ param
         // `[]` : le groupe n'existe pas encore en SQL, aucune arête à fournir
         // (l'override owner + le défaut dérivé couvrent tous les membres).
         if (count($selectedUserIds) > 0 || count($headTeacherUserIds) > 0) {
@@ -141,7 +141,7 @@ class UserGroupService
                 throw new RuntimeException("Renommage AD impossible pour le groupe '{$oldName}' -> '{$newName}'.");
             }
         } else {
-            // Story 4.15 (Q1/M1) — n'écrire la description AD que si elle a
+            // N'écrire la description AD que si elle a
             // RÉELLEMENT changé. Sans cette garde, un simple toggle PP (qui
             // renvoie display_name inchangé) déclenchait systématiquement un
             // write LDAP (et une RuntimeException possible) inutile.
@@ -160,7 +160,7 @@ class UserGroupService
             }
         }
 
-        // Story 4.15 — `head_teacher_ids` peut accompagner le payload (UI
+        // `head_teacher_ids` peut accompagner le payload (UI
         // « Professeur principal »). Quand il est présent sans `user_ids`
         // explicite, on dérive les membres courants depuis le pivot SQL pour
         // que le routage Equipe_/Classe_ + la 3ᵉ cible PP_ restent cohérents.
@@ -168,11 +168,11 @@ class UserGroupService
         $hasHeadTeacherIds = array_key_exists('head_teacher_ids', $data) && is_array($data['head_teacher_ids']);
 
         if ($hasUserIds || $hasHeadTeacherIds) {
-            // Story 42.2 (T2.1) — arêtes pivot lues en UNE requête (`role`,
-            // withPivot 42.1) : map `user_id => rôle d'arête` fournie à la
-            // résolution D2 de la projection. État volontairement PRÉ-update
+            // Arêtes pivot lues en UNE requête (`role`,
+            // withPivot) : map `user_id => rôle d'arête` fournie à la
+            // résolution de la projection. État volontairement PRÉ-update
             // (le pivot n'est réaligné que par le read-back APRÈS l'écriture
-            // AD — flux 4.15/D2 AD-first) : les nouveaux membres du payload
+            // AD — flux AD-first) : les nouveaux membres du payload
             // n'ont pas d'arête → défaut dérivé ; les membres retirés sont
             // absents de `$selectedUserIds` → sortis des 3 buckets par le diff.
             $edgeRolesByUserId = [];
@@ -184,7 +184,7 @@ class UserGroupService
                 ? array_values(array_unique(array_map('intval', $data['user_ids'])))
                 : array_keys($edgeRolesByUserId);
 
-            // Story 4.15 — distinction CLÉ ABSENTE vs `[]` EXPLICITE (INCHANGÉE
+            // Distinction CLÉ ABSENTE vs `[]` EXPLICITE (INCHANGÉE
             // sur le fond). La 3ᵉ cible `PP_<base>` est TOUJOURS resynchronisée
             // par `syncRoleAwareAdGroupMembers` ; sans précaution, tout appel
             // d'`updateGroup` qui omet `head_teacher_ids` (edit-form : retrait
@@ -194,7 +194,7 @@ class UserGroupService
             // une édition sans rapport. On préserve donc les PP existants en les
             // dérivant du pivot quand la clé est ABSENTE ; un `[]` EXPLICITE
             // (section « Professeur principal » qui retire tous les PP) reste un
-            // effacement volontaire. Story 42.2 (T2.2) — la dérivation lit le
+            // effacement volontaire. (T2.2) — la dérivation lit le
             // RÔLE d'arête (`role='owner'`), plus l'ancien flag d'arête 4.14.
             $headTeacherUserIds = $hasHeadTeacherIds
                 ? array_values(array_unique(array_map('intval', $data['head_teacher_ids'])))
@@ -204,7 +204,7 @@ class UserGroupService
                     ->map(static fn(mixed $id): int => (int) $id)
                     ->all();
 
-            // Story 4.15 (D2) — écrire l'AD (PP_ compris) AVANT `syncFromAd()`.
+            // Écrire l'AD (PP_ compris) AVANT `syncFromAd`.
             $this->syncRoleAwareAdGroupMembers(
                 $newName,
                 $payload['type'],
@@ -214,20 +214,20 @@ class UserGroupService
             );
         }
 
-        // 4.13 — lookup post-sync au NOM NU pour les classes/équipes foldées :
+        // lookup post-sync au NOM NU pour les classes/équipes foldées :
         // l'edit-form peut renvoyer le CN stocké (`Classe_3A`) alors que la ligne
         // foldée est persistée au nom nu (`3A`). Les autres types restent au CN.
-        // 4.16 — hissé AVANT syncFromAd pour servir à la fois de scope du read-back
-        // (anti-divergence D5) ET de clé de lookup post-sync.
+        // hissé AVANT syncFromAd pour servir à la fois de scope du read-back
+        // (anti-divergence) ET de clé de lookup post-sync.
         $lookupName = $this->resolveSqlLookupName($newName, $payload['type']);
 
-        // 4.16 — scoper le read-back au seul groupe édité (parité syncGroupsWithAd).
+        // scoper le read-back au seul groupe édité (parité syncGroupsWithAd).
         // La base nue (ex. `3A`) fait remonter les 3 variantes Classe_/Equipe_/PP_
         // via le filtre onlyGroupNames (l.335-368 : matche CN brut ET base nue),
-        // le fold 4.13 reste donc cohérent (1 ligne nue, union des membres, flag PP).
+        // le fold reste donc cohérent (1 ligne nue, union des membres, flag PP).
         // En mode scopé, le cleanup whereNotIn (l.433) ne tourne PAS :
         // aucune ligne hors scope n'est purgée (comportement voulu).
-        // D2 : on cible $newName (après rename, l'AD porte déjà le NOUVEAU CN).
+        // On cible $newName : après rename, l'AD porte déjà le NOUVEAU CN.
         $this->syncFromAd(onlyGroupNames: [$lookupName]);
 
         $updatedGroup = UserGroup::query()
@@ -256,11 +256,11 @@ class UserGroupService
             throw new RuntimeException("Suppression AD impossible pour le groupe '{$group->name}'.");
         }
 
-        // 4.16 — read-back global VOULU ici (NE PAS scoper).
+        // read-back global VOULU ici (NE PAS scoper).
         // La suppression AD retire le CN du lot ; en mode global, le cleanup
         // whereNotIn (l.433) puge la ligne SQL du groupe supprimé. Un scope sur le
         // groupe supprimé ne verrait aucun CN et ne purgerait RIEN → ligne fantôme.
-        // D3 (story 4.16) : deleteGroup reste délibérément en read-back global.
+        // deleteGroup reste délibérément en read-back global.
         $this->syncFromAd();
     }
 
@@ -357,8 +357,8 @@ class UserGroupService
             'skipped' => 0,
             'linked_users' => 0,
             'detached_users' => 0,
-            // 4.14/42.2 — arêtes dont SEUL l'attribut de pivot a changé (depuis
-            // 42.2 : bascule du rôle d'arête `role`, ex. owner↔manager sur
+            // arêtes dont SEUL l'attribut de pivot a changé (depuis
+            // bascule du rôle d'arête `role`, ex. owner↔manager sur
             // retrait/ajout PP), sans attach/detach. Renvoyé par
             // sync()['updated']. La CLÉ est un contrat de stats public
             // (retours, logs, UI) — ne pas la renommer.
@@ -384,7 +384,7 @@ class UserGroupService
                 $onlyGroupNames
             ));
 
-            // 4.13 — Les `name` SQL des classes/équipes sont désormais NUS
+            // Les `name` SQL des classes/équipes sont désormais NUS
             // (`3A`), mais les CN AD restent préfixés (`Classe_3A`/`Equipe_3A`/
             // `PP_3A`). `syncGroupsWithAd` passe les noms NUS persistés ; il faut
             // donc faire matcher chaque CN AD sur sa base nue AUTANT que sur le
@@ -413,14 +413,14 @@ class UserGroupService
             ));
         }
 
-        // 4.13 — Fold import : on replie les variantes AD d'une même base
+        // Fold import : on replie les variantes AD d'une même base
         // (Classe_X / Equipe_X / PP_X) en UNE seule projection SQL au nom nu
         // (X). On regroupe AVANT toute écriture pour faire un seul
         // users()->sync() par ligne avec l'UNION des membres des CN — sinon un
         // sync() par CN écraserait les membres déjà posés.
         $foldedGroups = $this->buildFoldedGroups($eligibleGroups);
 
-        // Correction review #6 — distinguer les deux compteurs. Avant 4.13 une
+        // Deux compteurs distincts. Avant le fold, une
         // classe = 3 CN = 3 lignes ; après fold, 3 CN → 1 ligne. Compter les CN
         // bruts comme « groupes détectés » est trompeur dans l'UI. On expose
         // donc explicitement les CN bruts (`total_cn_detected`) ET les lignes
@@ -439,14 +439,14 @@ class UserGroupService
         );
 
         UserGroupObserver::disableSync();
-        // Story 42.2 (D4/T3.3) — suspendre le resync AD de l'observer pivot
+        // Suspendre le resync AD de l'observer pivot
         // pendant le read-back : `projectFoldedGroup` fait un `sync()` associatif
-        // qui UPDATE des rôles en masse (read-back du trio AD — 42.4) — sans
+        // qui UPDATE des rôles en masse (read-back du trio AD) — sans
         // cette suspension, chaque flip déclencherait une reprojection LDAP par
         // arête (tempête d'I/O sur un import ~600 groupes), et écrire l'AD PENDANT
         // qu'on le lit est conceptuellement faux. Flag DÉDIÉ : la synchro FS
         // ShareService (`$syncEnabled`, events created/deleted) DOIT continuer
-        // à tourner au read-back (création des dossiers élèves — Story 5.2).
+        // À tourner au read-back (création des dossiers élèves —).
         UserGroupUserPivotObserver::disableAdResync();
 
         try {
@@ -486,13 +486,13 @@ class UserGroupService
                 }
 
                 if (count($onlyGroupNames) === 0) {
-                    // Story 49.1 (correction de review) — un groupe PORTEUR sur
+                    // Un groupe PORTEUR sur
                     // le point de disparaître emporte son profil hors de
                     // `carriedRoleIds()` : après le DELETE, la réconciliation
                     // générique prendrait ce profil pour une délégation
                     // manuelle et ne le retirerait JAMAIS de ses anciens
                     // membres, sur aucune passe. Même piège que le dernier
-                    // porteur (D4), même remède : on capture AVANT, on
+                    // porteur, même remède : on capture AVANT, on
                     // réconcilie APRÈS avec le profil rendu explicitement
                     // révocable. Le DELETE de masse ci-dessous n'émet aucun
                     // event (ni groupe, ni pivot) — rien d'autre ne rattrape ce
@@ -563,13 +563,13 @@ class UserGroupService
      * exception (violation de contrainte, conflit ad_guid…) n'avorte que cette
      * projection, jamais la transaction d'ensemble.
      *
-     * Story 42.4 — le RÔLE de chaque arête est reconstruit par READ-BACK du
-     * TRIO AD (D1 : `PP_` owner > `Equipe_` manager > `Classe_` member, tier MAX
-     * par user), avec préservation par SIGNAL MANQUANT (D3 : un rôle existant
+     * Le RÔLE de chaque arête est reconstruit par READ-BACK du
+     * TRIO AD (`PP_` owner > `Equipe_` manager > `Classe_` member, tier MAX
+     * par user), avec préservation par SIGNAL MANQUANT (un rôle existant
      * n'est rétrogradé que si le CN qui l'exprimerait est présent dans le fold)
-     * et dérivation heuristique conservée HORS trio (D5). Fail-soft intégral
-     * dans le savepoint (D6 : aucune exception nouvelle sur données sales).
-     * Ceci REMPLACE l'heuristique `users.role` de 42.1-AC7/42.2 pour les membres
+     * et dérivation heuristique conservée HORS trio. Fail-soft intégral
+     * dans le savepoint : aucune exception nouvelle sur données sales.
+     * Ceci REMPLACE l'ancienne heuristique `users.role` pour les membres
      * du trio et LÈVE la limite transitoire « l'import écrase un rôle édité ».
      *
      * @param array{name:string, cns:array<int,string>, ad_guid:?string, ad_dn:string, type:string, display_name:string} $folded
@@ -622,7 +622,7 @@ class UserGroupService
                 'ad_guid' => $adGuid,
                 // Un groupe importé ne porte AUCUN profil de droits : le lien
                 // est nullable et le reste jusqu'à ce qu'un administrateur en
-                // décide autrement (décision Henri, 2026-08-03 — cf. le
+                // décide autrement (cf. le
                 // docblock de la migration `..._add_rights_profile_to_...`).
                 // Une version antérieure posait ici un défaut `Profs`→`prof` /
                 // `Eleves`→`eleve` : c'était le dernier littéral scolaire câblé
@@ -668,10 +668,7 @@ class UserGroupService
             }
         }
 
-        // =====================================================================
-        // Story 42.4 — READ-BACK des rôles d'arête depuis le TRIO AD réel.
-        // =====================================================================
-        // D1 — Pour chaque membre de l'UNION des CN du groupe foldé (un seul
+        // Pour chaque membre de l'UNION des CN du groupe foldé (un seul
         // sync()), le rôle d'arête est dérivé du TIER MAX de ses CN
         // d'appartenance dans le trio legacy :
         //   `PP_` → owner (3)  >  `Equipe_` → manager (2)  >  `Classe_` → member (1).
@@ -679,17 +676,17 @@ class UserGroupService
         // (un user dans `Classe_3A` ET `Equipe_3A` → manager ; dans `Equipe_3A`
         // ET `PP_3A` → owner). Un membre présent dans un CN du trio ne consulte
         // PLUS `users.role` — l'AD est AUTORITAIRE. Ceci REMPLACE l'heuristique
-        // 42.1-AC7 (conservée « en l'état » par 42.2) et LÈVE la limite
-        // transitoire « l'import écrase un rôle édité » : l'import lit désormais
-        // ce que la projection 42.2 a réellement écrit dans l'AD (aller-retour
+        // historique et LÈVE la limite transitoire « l'import écrase un rôle
+        // édité » : l'import lit désormais
+        // ce que la projection a réellement écrit dans l'AD (aller-retour
         // projection→read-back→projection = no-op). `foldPrefixOf()` étant
         // insensible à la casse, `classe_3a`/`Classe_3A` dérivent le même tier ;
         // les espaces des bases (`Equipe_301 g1`) transitent sans traitement.
-        // D5 — un CN HORS trio (`foldPrefixOf() === null` : Cours_, Matiere_@,
+        // Un CN HORS trio (`foldPrefixOf() === null` : Cours_, Matiere_@,
         // custom) garde la dérivation par `users.role` (`defaultRoleForGlobalRole`) :
         // rien dans l'AD n'y porte de signal de rôle et sa projection n'a qu'une
         // cible. Aucune requête LDAP nouvelle : mêmes appels
-        // `resolveMemberUserIdsFromAdGroup` par CN qu'en 4.13/42.2.
+        // `resolveMemberUserIdsFromAdGroup` par CN.
         $tierOfPrefix = static fn (?string $prefix): int => match ($prefix) {
             'PP_' => 3,
             'Equipe_' => 2,
@@ -699,16 +696,16 @@ class UserGroupService
 
         $memberIds = [];
         $trioTierByUser = [];      // user_id => tier (1|2|3) — MAX sur les CN du trio
-        // D3 — présence des CN du trio dans le fold : un rôle SQL existant ne
+        // Présence des CN du trio dans le fold : un rôle SQL existant ne
         // peut être RÉTROGRADÉ que si le CN AD qui l'exprimerait est PRÉSENT.
         $hasEquipeCn = false;
         $hasPpCn = false;
-        // Review 42.4 #1 — la préservation D3 n'a de sens QUE pour un fold
+        // La préservation par signal manquant n'a de sens QUE pour un fold
         // porteur d'au moins un CN du trio : sur un fold standalone hors-trio
         // (Cours_, Matiere_@, custom — aucun CN Classe_/Equipe_/PP_ possible),
         // « CN absent » n'est pas un signal manquant, c'est la structure même
         // du fold — l'heuristique doit y RECALCULER un rôle frais à chaque
-        // import (AC4), jamais préserver un rôle stale.
+        // import, jamais préserver un rôle stale.
         $isTrioFold = false;
         foreach ($folded['cns'] as $cn) {
             $prefix = $this->foldPrefixOf($cn);
@@ -732,10 +729,10 @@ class UserGroupService
 
         $uniqueMemberIds = array_values(array_unique($memberIds));
 
-        // D5 — `users.role` n'est résolu QUE pour les membres HORS trio (une
+        // `users.role` n'est résolu QUE pour les membres HORS trio (une
         // seule requête pour l'union restante — pour un fold de classe elle
-        // disparaît entièrement). Jamais `isProf()` par membre (round-trip LDAP,
-        // `project_isprof_iseleve_ldap_first_cost`).
+        // disparaît entièrement). Jamais `isProf()` par membre : ce serait un
+        // round-trip LDAP par utilisateur.
         $heuristicIds = array_values(array_filter(
             $uniqueMemberIds,
             static fn (int $id): bool => !isset($trioTierByUser[$id])
@@ -746,21 +743,21 @@ class UserGroupService
                 ->whereIn('id', $heuristicIds)
                 ->pluck('role', 'id');
 
-        // D3 — arêtes EXISTANTES lues en UNE SEULE requête AVANT le sync()
-        // (jamais par membre — piège n°3). Groupe fraîchement créé : aucune
+        // Arêtes EXISTANTES lues en UNE SEULE requête AVANT le sync()
+        // (jamais par membre). Groupe fraîchement créé : aucune
         // arête → collection vide → aucune préservation (chemin naturel).
-        // Story 42.2 (T4.1) — le payload n'écrit QUE `role` : le miroir booléen
-        // 4.14 `is_head_teacher` reste retiré du chemin vivant (STALE jusqu'à la
-        // migration destructive post-42.4).
+        // Le payload n'écrit QUE `role` : le miroir booléen
+        // `is_head_teacher` reste retiré du chemin vivant (STALE jusqu'à la
+        // migration destructive postérieur).
         $existingRoles = DB::table('user_group_user')
             ->where('user_group_id', $group->id)
             ->pluck('role', 'user_id');
 
         $syncPayload = [];
         foreach ($uniqueMemberIds as $memberId) {
-            // Rôle DÉRIVÉ : D1 (tier du trio) sinon D5 (heuristique `users.role`).
+            // Rôle DÉRIVÉ : tier du trio, sinon heuristique `users.role`.
             // Toujours une constante de vocabulaire — jamais d'`assertValidRole`
-            // en levée dans le chemin d'import (fail-soft intégral, D6).
+            // en levée dans le chemin d'import (fail-soft intégral).
             if (isset($trioTierByUser[$memberId])) {
                 $role = match ($trioTierByUser[$memberId]) {
                     3 => UserGroupUserPivot::ROLE_OWNER,
@@ -773,7 +770,7 @@ class UserGroupService
                 );
             }
 
-            // D3 — préservation par SIGNAL MANQUANT. Un rôle SQL existant VALIDE
+            // Préservation par SIGNAL MANQUANT. Un rôle SQL existant VALIDE
             // ne peut être rétrogradé que si le CN AD qui l'exprimerait est
             // présent dans le fold. Composition :
             //  (a) dérivé `member` + PAS de CN `Equipe_` + existant ∈
@@ -783,8 +780,8 @@ class UserGroupService
             // Si le CN EST présent, l'AD est autoritaire : la rétrogradation est
             // un vrai changement (PP décoché, retrait d'équipe). Comparaisons
             // STRICTES aux constantes `ROLE_*` : une valeur existante hors
-            // vocabulaire (SQLite ne borne pas les varchar — NFR-S4) n'est
-            // JAMAIS préservée, le dérivé s'applique (aucune exception — D6).
+            // vocabulaire (SQLite ne borne pas les varchar) n'est
+            // JAMAIS préservée, le dérivé s'applique, sans exception.
             $existing = isset($existingRoles[$memberId]) ? (string) $existingRoles[$memberId] : null;
             if ($isTrioFold && $existing !== null && in_array($existing, UserGroupUserPivot::roles(), true)) {
                 if ($role === UserGroupUserPivot::ROLE_MEMBER
@@ -881,23 +878,23 @@ class UserGroupService
     /**
      * Préfixes des variantes AD d'une même classe (foldables ensemble).
      * Le CN canonique est toujours le premier disponible dans cet ordre
-     * (D2 : `Classe_` > `Equipe_` > `PP_`).
+     * (`Classe_` > `Equipe_` > `PP_`).
      *
      * @var array<int,string>
      */
     private const FOLD_PREFIXES = ['Classe_', 'Equipe_', 'PP_'];
 
     /**
-     * 4.13 — Replie les CN AD éligibles en projections SQL « nom nu ».
+     * Replie les CN AD éligibles en projections SQL « nom nu ».
      *
      * Pour les variantes de classe/équipe (`Classe_X`/`Equipe_X`/`PP_X`) d'une
      * même base `X`, produit UNE seule entrée au nom nu `X` avec :
-     * - `cns` : la liste des CN AD à unir pour les membres (T1.4) ;
-     * - `ad_guid`/`ad_dn` du CN canonique (D2 : `Classe_` > `Equipe_` > `PP_`) ;
-     * - `type = 'classe'` (D3) ;
+     * - `cns` : la liste des CN AD à unir pour les membres ;
+     * - `ad_guid`/`ad_dn` du CN canonique (`Classe_` > `Equipe_` > `PP_`) ;
+     * - `type = 'classe'` ;
      * - `display_name` = description du CN canonique (fallback nom nu).
      *
-     * Règle D1 (`Equipe_` orphelin) : un `Equipe_Y` ne fold avec sa base que si
+     * Règle de l'`Equipe_` orphelin : un `Equipe_Y` ne fold avec sa base que si
      * un `Classe_Y`/`PP_Y` est présent dans le lot OU si une ligne nue `Y` de
      * type classe/équipe préexiste en SQL. Sinon il reste sa propre projection
      * (nom nu `Y`, type `equipe`) — il ne fold jamais avec un `Cours_Y`.
@@ -947,10 +944,10 @@ class UserGroupService
             $foldable = $prefix !== null && $this->shouldFold($prefix, $baseKey, $foldAnchorBases);
 
             if (!$foldable) {
-                // Cas 1 — `Equipe_` orphelin (D1) : pas d'ancre Classe_/PP_ ni de
+                // Cas 1 — `Equipe_` orphelin : pas d'ancre Classe_/PP_ ni de
                 // ligne nue classe/équipe préexistante. Il ne fold pas avec un
                 // éventuel `Cours_Y`, mais devient quand même SA PROPRE ligne au
-                // NOM NU `Y` de type `equipe` (AC6) — pas le CN brut.
+                // NOM NU `Y` de type `equipe` — pas le CN brut.
                 if ($prefix === 'Equipe_') {
                     $standalone[] = [
                         'name' => $base,
@@ -993,7 +990,7 @@ class UserGroupService
         $result = [];
 
         foreach ($folds as $fold) {
-            // CN canonique = premier prefix disponible dans l'ordre D2.
+            // CN canonique = premier prefix disponible dans l'ordre de FOLD_PREFIXES.
             $canonical = null;
             foreach (self::FOLD_PREFIXES as $prefix) {
                 if (isset($fold['byPrefix'][$prefix])) {
@@ -1028,7 +1025,7 @@ class UserGroupService
      * minuscules (`classe_3a`/`equipe_3a`/`pp_3a`, majoritaires sur le parc) et
      * des CN SE5 canoniques (`Classe_3A`). On reconnaît le préfixe quelle que
      * soit la casse du CN, et on renvoie TOUJOURS la forme canonique (valeur de
-     * FOLD_PREFIXES, p. ex. `'PP_'`) pour que l'aval (canonique D2, détection de
+     * FOLD_PREFIXES, p. ex. `'PP_'`) pour que l'aval (choix du CN canonique, détection de
      * type, flag PP) raisonne sur une forme stable — jamais sur un extrait du CN.
      */
     private function foldPrefixOf(string $cn): ?string
@@ -1043,19 +1040,19 @@ class UserGroupService
     }
 
     /**
-     * D1 — Décide si une variante doit folder vers le nom nu de sa base.
+     * Décide si une variante doit folder vers le nom nu de sa base.
      *
      * `Classe_`/`PP_` foldent toujours. `Equipe_Y` ne fold que si la base `Y`
      * possède un `Classe_`/`PP_` dans le LOT AD COURANT (`$foldAnchorBases`) —
      * sinon il reste autonome (cas `Cours_Y` + `Equipe_Y` : pas d'ancre →
      * l'équipe du cours ne fold pas, elle devient sa propre ligne `equipe`).
      *
-     * Story 4.13 (correction review #4/#5) — la décision repose UNIQUEMENT sur
+     * La décision repose UNIQUEMENT sur
      * le lot AD courant. L'ancienne dépendance à l'état SQL (`EXISTS` sur la
      * ligne nue déjà persistée) était (a) NON IDEMPOTENTE — au 1er run un
      * `Equipe_Y` orphelin se persistait en `type='equipe'`, puis au 2e run ce
      * `EXISTS` matchait sa propre ligne et le faisait basculer en `type='classe'`
-     * (viole AC6) — et (b) une requête SQL par variante `Equipe_` (N requêtes).
+     * (viole) — et (b) une requête SQL par variante `Equipe_` (N requêtes).
      * Décider sur le seul lot AD corrige idempotence ET perf.
      *
      * @param array<string,bool> $foldAnchorBases bases (lower) avec un Classe_/PP_ dans le lot AD
@@ -1103,30 +1100,30 @@ class UserGroupService
     /**
      * Projette les membres SQL sélectionnés vers le(s) groupe(s) AD cible(s),
      * routés par le RÔLE D'ARÊTE `user_group_user.role` pour les groupes de
-     * classe/équipe (Story 42.2 — remplace la partition `isProf()` de 4.12).
+     * classe/équipe (remplace la partition `isProf`).
      *
-     * - `type ∈ {classe, equipe}` — buckets D1 :
+     * - `type ∈ {classe, equipe}` — buckets :
      *   `Equipe_<base>` = arêtes `manager` ∪ `owner` (un owner est un cas
      *   particulier de prof : il ne sort JAMAIS du bucket équipe — parité rwx
-     *   prof 4.12, orthogonalité 4.15 conservée) ; `Classe_<base>` = arêtes
+     *  prof, orthogonalité conservée) ; `Classe_<base>` = arêtes
      *   `member` ; `PP_<base>` = arêtes `owner`. Les 3 cibles sont TOUJOURS
      *   synchronisées (bucket vide → vidage par le diff idempotent fail-soft
-     *   de {@see syncAdGroupMembersByUserIds()}, pas de rémanence).
-     * - Résolution du rôle effectif (D2, dans cet ordre de précédence) :
+     *  de {@see syncAdGroupMembersByUserIds()}, pas de rémanence).
+     * - Résolution du rôle effectif, dans cet ordre de précédence :
      *   1. `owner` si l'id ∈ `$headTeacherUserIds ∩ $selectedUserIds` — le
-     *      paramètre PP reste AUTORITAIRE (canal de désignation 4.15) ;
+     *  paramètre PP reste AUTORITAIRE (canal de désignation) ;
      *   2. sinon rôle de l'ARÊTE (`$edgeRolesByUserId`) si elle existe — avec
      *      rétrogradation de projection `owner`→`manager` pour un ex-PP décoché
      *      (son arête dit encore `owner` jusqu'au read-back : il doit sortir de
      *      `PP_` mais rester dans `Equipe_`) ;
      *   3. sinon (membre du payload SANS arête — nouvel ajout, l'arête sera
      *      créée par le read-back) : défaut dérivé de `users.role` résolu EN
-     *      UNE SEULE requête pour tous les manquants (JAMAIS `isProf()` —
+     *  UNE SEULE requête pour tous les manquants (JAMAIS `isProf()`
      *      round-trip LDAP interdit).
-     *   Valeur d'arête HORS vocabulaire : fallback rôle dérivé + Log::warning —
+     *  Valeur d'arête HORS vocabulaire : fallback rôle dérivé + Log::warning
      *   la projection est fail-soft, pas d'exception.
      * - autres types (`cours`, `matiere`, `projet`, `custom`…) : une seule
-     *   cible résolue via {@see resolvePrimaryGroupName()} — comportement inchangé
+     *  cible résolue via {@see resolvePrimaryGroupName()} — comportement inchangé
      *   (le rôle d'arête n'y route rien).
      *
      * Le nom reçu peut être NU (`3A`, depuis `createGroup`) ou déjà le CN
@@ -1134,18 +1131,18 @@ class UserGroupService
      * renvoie `group->name`). Pour les classes/équipes on dérive donc la base
      * nue (suppression d'un éventuel préfixe `Classe_`/`Equipe_`/`PP_`) avant
      * de router — c'est exactement la dé-duplication de la résolution
-     * exigée par la story 4.12 (createGroup résolu vs updateGroup brut).
+     * exigée par la (createGroup résolu vs updateGroup brut).
      *
      * Bypass CN legacy préfixé d'un AUTRE type : un nom déjà préfixé par une
      * autre catégorie (`Matiere_*@*`, `Cours_*`, `Projet_*`, `Matiere_*`) n'est
      * jamais ré-expansé — on synchronise exactement ce groupe (1 SQL = 1 AD).
      *
      * @param array<int,int> $selectedUserIds
-     * @param array<int,int> $headTeacherUserIds Story 4.15 — canal de désignation
+     * @param array<int,int> $headTeacherUserIds — canal de désignation
      *        PP (`head_teacher_ids`), projeté vers `PP_<base>`. Intersecté
-     *        défensivement avec `$selectedUserIds` (un PP doit être membre —
+     *  défensivement avec `$selectedUserIds` (un PP doit être membre
      *        un id forgé hors membres est ignoré, sans exception).
-     * @param array<int,string> $edgeRolesByUserId Story 42.2 — map
+     * @param array<int,string> $edgeRolesByUserId — map
      *        `user_id => role` des arêtes pivot PRÉ-update (fournie par
      *        l'appelant ; `[]` depuis `createGroup` — le groupe n'existe pas
      *        encore en SQL, tous les membres passent par le défaut dérivé).
@@ -1175,9 +1172,9 @@ class UserGroupService
         // de classe/équipe déjà présent (CN primaire stocké en SQL).
         $baseName = $this->stripClasseLikePrefix($rawName);
 
-        // Garde-fou D1 (4.15, conservé) : un PP doit être membre du groupe —
+        // Garde-fou conservé : un PP doit être membre du groupe —
         // intersection avec `$selectedUserIds`, ordre/dédup préservés pour des
-        // assertions stables. `$ppIds` est LE bucket `PP_<base>` (D2.1 : le set
+        // assertions stables. `$ppIds` est LE bucket `PP_<base>` (le set
         // PP est autoritaire ; une arête `owner` HORS de ce set est rétrogradée
         // `manager` à la projection, jamais promue).
         $selectedSet = array_flip($selectedUserIds);
@@ -1187,13 +1184,13 @@ class UserGroupService
         )));
         $ppSet = array_flip($ppIds);
 
-        // D2.3 — défaut dérivé pour les ids sans arête (ou à l'arête invalide) :
-        // `users.role` résolu en UNE SEULE requête (jamais `isProf()` en boucle —
-        // `project_isprof_iseleve_ldap_first_cost`).
+        // Défaut dérivé pour les ids sans arête (ou à l'arête invalide) :
+        // `users.role` résolu en UNE SEULE requête, jamais `isProf()` en boucle,
+        // qui coûterait un round-trip LDAP par utilisateur.
         $idsNeedingDerivedRole = [];
         foreach ($selectedUserIds as $userId) {
             if (isset($ppSet[$userId])) {
-                continue; // D2.1 — owner autoritaire, pas de dérivation.
+                continue; // Owner autoritaire, pas de dérivation.
             }
             $edgeRole = $edgeRolesByUserId[$userId] ?? null;
             if ($edgeRole === null || !in_array($edgeRole, UserGroupUserPivot::roles(), true)) {
@@ -1207,21 +1204,21 @@ class UserGroupService
                 ->whereIn('id', $idsNeedingDerivedRole)
                 ->pluck('role', 'id');
 
-        // Buckets D1 — `Equipe_` = manager ∪ owner ; `Classe_` = member.
+        // Buckets — `Equipe_` = manager ∪ owner ; `Classe_` = member.
         $equipeIds = [];
         $classeIds = [];
 
         foreach ($selectedUserIds as $userId) {
-            // D2.1 — override PP autoritaire : owner → Equipe_ (ET PP_ via $ppIds).
+            // Override PP autoritaire : owner → Equipe_ (ET PP_ via $ppIds).
             if (isset($ppSet[$userId])) {
                 $equipeIds[] = $userId;
                 continue;
             }
 
-            // D2.2 — rôle de l'arête, fail-soft sur valeur hors vocabulaire.
+            // Rôle de l'arête, fail-soft sur valeur hors vocabulaire.
             $edgeRole = $edgeRolesByUserId[$userId] ?? null;
             if ($edgeRole === '') {
-                // Review 42.2 #2 — un `role` NULL SQL (attach brut hors
+                // Un `role` NULL SQL (attach brut hors
                 // écrivains dérivés) est casté '' par les appelants : c'est une
                 // arête ABSENTE (→ défaut dérivé), pas une valeur « hors
                 // vocabulaire » — pas de warning parasite à chaque projection.
@@ -1242,7 +1239,7 @@ class UserGroupService
                 $edgeRole = UserGroupUserPivot::ROLE_MANAGER;
             }
 
-            // D2.3 — défaut dérivé du rôle global pour les membres sans arête.
+            // Défaut dérivé du rôle global pour les membres sans arête.
             $effectiveRole = $edgeRole ?? UserGroupUserPivot::defaultRoleForGlobalRole(
                 $globalRolesById[$userId] ?? null
             );
@@ -1256,19 +1253,19 @@ class UserGroupService
 
         // Toujours synchroniser les TROIS cibles (même bucket vide) pour que le
         // retrait/bascule de rôle retire bien du groupe d'origine (pas de
-        // rémanence — parité 4.12/4.15 AC2).
+        // rémanence — parité).
         $this->syncAdGroupMembersByUserIds("Equipe_{$baseName}", $equipeIds);
         $this->syncAdGroupMembersByUserIds("Classe_{$baseName}", $classeIds);
         $this->syncAdGroupMembersByUserIds("PP_{$baseName}", $ppIds);
     }
 
     /**
-     * Story 42.2 (T3.2) — point d'entrée PUBLIC de reprojection AD d'un groupe
+     * Point d'entrée PUBLIC de reprojection AD d'un groupe
      * depuis l'état COURANT de ses arêtes pivot (membres, rôles, owners lus en
      * une requête). Délègue au chokepoint {@see syncRoleAwareAdGroupMembers()}
      * — aucun canal de projection parallèle. Consommé par l'observer pivot
      * (`UserGroupUserPivotObserver::updated`, resync sur changement de rôle) et
-     * réutilisable tel quel par 42.3 (édition du rôle en UI).
+     * réutilisable tel quel par (édition du rôle en UI).
      *
      * Les PP projetés (`PP_<base>`) sont dérivés des arêtes `role='owner'` : ici
      * l'arête EST la source (pas de payload `head_teacher_ids` en jeu). La
@@ -1306,7 +1303,7 @@ class UserGroupService
      * Ne concerne QUE les types classe/équipe : les types à CN préfixé légitime
      * (`matiere_classe` → `Matiere_…`) ne passent jamais par cette expansion.
      *
-     * 4.16 (Q2) — détection INSENSIBLE À LA CASSE, par cohérence avec le fold
+     * Détection INSENSIBLE À LA CASSE, par cohérence avec le fold
      * casse-insensible (`foldPrefixOf`/`stripClasseLikePrefix`). Sans ça, une
      * saisie minuscule `classe_x` échappait au garde-fou et partait en expansion
      * fantôme `Classe_classe_x` — exactement le CN cassé que ce garde-fou existe
@@ -1407,9 +1404,9 @@ class UserGroupService
     }
 
     /**
-     * 4.13 — Nom SQL attendu après `syncFromAd` pour le sélecteur post-sync.
+     * Nom SQL attendu après `syncFromAd` pour le sélecteur post-sync.
      *
-     * Pour les classes/équipes (foldées au nom nu depuis 4.13), c'est la base
+     * Pour les classes/équipes (foldées au nom nu depuis), c'est la base
      * nue (`Classe_3A`/`Equipe_3A`/`3A` → `3A`). Pour les autres types, c'est le
      * CN brut tel que stocké en SQL (`Cours_X`, `Matiere_X@Y`, …) — résolu via
      * {@see resolvePrimaryGroupName()} pour conserver le comportement existant.
@@ -1429,7 +1426,7 @@ class UserGroupService
     {
         $normalizedType = mb_strtolower(trim($type));
 
-        // Garde d'idempotence (4.16 Q2, généralisée post-42) : les types hors
+        // Garde d'idempotence, généralisée : les types hors
         // classe/équipe sont stockés en SQL avec leur CN PRÉFIXÉ (`Projet_X`,
         // `Cours_X`, …) — `updateGroup` repasse donc ici un nom déjà préfixé.
         // Sans la détection casse-insensible, on double-préfixait
@@ -1448,7 +1445,7 @@ class UserGroupService
     }
 
     /**
-     * Story 62.2 — LE POINT D'ÉTRANGLEMENT du vocabulaire de type.
+     * LE POINT D'ÉTRANGLEMENT du vocabulaire de type.
      *
      * **Pourquoi la garde vit ici et PAS sur le modèle `UserGroup`.** Elle a besoin
      * d'être franchie par tout ce qui vient d'un écran, et contournée par tout ce
@@ -1459,7 +1456,7 @@ class UserGroupService
      * étrangère sur la colonne — ferait échouer ces chemins-là, alors qu'ils n'ont
      * jamais été le problème. Le problème, c'est qu'un formulaire pouvait écrire
      * n'importe quelle chaîne de 50 caractères. C'est exactement la frontière que
-     * la story 42.1 a choisie pour le rôle d'arête, et pour les mêmes raisons.
+     * la a choisie pour le rôle d'arête, et pour les mêmes raisons.
      *
      * @return array{name:string, display_name:?string, type:string, ad_dn:?string}
      */

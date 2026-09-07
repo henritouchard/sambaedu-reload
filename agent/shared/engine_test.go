@@ -43,8 +43,6 @@ func (h *fakeHandler) Apply(items []StateItem) error {
 	return h.applyErr
 }
 
-// --- Machine d'états §5 (table-driven — STRICT inconditionnel, Story 27.8) ----------
-
 func TestResolveItemStatusSection5Verbatim(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -66,14 +64,12 @@ func TestResolveItemStatusSection5Verbatim(t *testing.T) {
 	}
 }
 
-// --- RunPass : machine d'états intégrée (premier passage / persistance) -------------
-
 func wallpaperItem(hash string) StateItem {
 	return StateItem{Type: "wallpaper", Semantics: "exclusive", Hash: hash}
 }
 
 func TestRunPassStrictLifecycle(t *testing.T) {
-	// Cycle de vie STRICT (Story 27.8) sur un type exclusive : premier passage
+	// Cycle de vie STRICT sur un type exclusive : premier passage
 	// drift → compliant → dérive (toujours réappliquée) → cible changée.
 	h := &fakeHandler{}
 	e := &Engine{Handlers: map[string]Handler{"wallpaper": h},
@@ -100,7 +96,7 @@ func TestRunPassStrictLifecycle(t *testing.T) {
 	}
 
 	// 3. Dérive (réel ≠ cible) MÊME quand dernier-appliqué = cible : STRICT →
-	//    drift + réapplique TOUJOURS (plus de drifted_allowed, Story 27.8).
+	// drift + réapplique TOUJOURS (plus de drifted_allowed).
 	h.compliant = false
 	items = e.RunPass([]StateItem{wallpaperItem("aaa")}, applied)
 	if items[0].Status != "drift" || h.applyCalls.Load() != 2 {
@@ -131,8 +127,6 @@ func TestRunPassFirstPassCompliantPersists(t *testing.T) {
 		t.Error("compliant au premier passage doit persister la cible")
 	}
 }
-
-// --- Isolation, ordre, dispatch ------------------------------------------------------
 
 func TestRunPassIsolationErrorContinues(t *testing.T) {
 	// Un handler en échec → error + detail pour CE type, la passe CONTINUE.
@@ -249,11 +243,9 @@ func TestRunPassExclusiveMultiItemsLastWins(t *testing.T) {
 	}
 }
 
-// --- Conventions de hash --------------------------------------------------------------
-
 func TestAggregateHashConvention(t *testing.T) {
 	// Empreinte d'agrégat = SHA-256 hex de la CONCATÉNATION des hashes
-	// opaques, dans l'ordre serveur — convention 24.4, à l'identique.
+	// opaques, dans l'ordre serveur — convention, à l'identique.
 	items := []StateItem{{Hash: "abc"}, {Hash: "def"}}
 	sum := sha256.Sum256([]byte("abcdef"))
 	want := hex.EncodeToString(sum[:])
@@ -305,8 +297,6 @@ func TestRunPassSemanticsDefaultsToExclusive(t *testing.T) {
 	}
 }
 
-// --- Détail d'erreur ------------------------------------------------------------------
-
 func TestErrorDetailBoundedAndNeverEmpty(t *testing.T) {
 	long := &fakeHandler{testErr: errors.New(strings.Repeat("é", 3000))}
 	e := &Engine{Handlers: map[string]Handler{"wallpaper": long}}
@@ -323,8 +313,6 @@ func TestErrorDetailBoundedAndNeverEmpty(t *testing.T) {
 		t.Error("detail obligatoire non vide sur error (contrat §6)")
 	}
 }
-
-// --- ItemsFromScope ------------------------------------------------------------------
 
 func TestItemsFromScopeSkipsMalformedEntries(t *testing.T) {
 	raw := []any{

@@ -15,23 +15,21 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 55.3 — **LA SUITE D'ATTAQUE CLIENTE (NFR1 : chaque cas = UN test).**
+ * **LA SUITE D'ATTAQUE CLIENTE : un cas d'attaque, un test.**
  *
  * Patron littéral de `tests/Unit/Auth/Federated/FederatedJwtVerifierTest.php`
- * (Epic 20). Le vecteur d'attaque est nommé dans le nom du test, et chaque refus
+ * . Le vecteur d'attaque est nommé dans le nom du test, et chaque refus
  * assert le CODE d'erreur attendu — un refus « pour la mauvaise raison » est une
  * régression silencieuse.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  LE CONTRÔLE POSITIF EST LA CONDITION DE VALIDITÉ DE TOUS LES REFUS
  *
  *  {@see self::a_nominal_id_token_is_accepted()} ouvre le fichier. Sans lui,
  *  chacun des refus ci-dessous pourrait n'être que le symptôme d'une plomberie
  *  cassée (mauvais PEM, mauvais `kid`, JWKS mal reconstruit) et ne
- *  démontrerait RIEN. C'est la leçon la plus chère de cet epic.
- * ══════════════════════════════════════════════════════════════════════════
+ *  démontrerait RIEN.
  *
- * ── TRAÇABILITÉ NFR1 (cas de l'AC d'epic → où il est prouvé) ───────────────
+ * **TRAÇABILITÉ : chaque cas, et où il est prouvé.**
  *
  * | Cas | Prouvé par |
  * |---|---|
@@ -47,10 +45,10 @@ use Tests\TestCase;
  * | `nonce` absent / altéré | `a_diverging_nonce_is_rejected`, `a_missing_nonce_is_rejected_when_one_was_sent` (ici) |
  * | Chaîne malformée | `a_garbage_string_is_rejected_as_malformed` (ici) |
  * | `state` altéré au retour | `Tests\Feature\OidcWitness\WitnessFlowTest` (c'est un cas de CALLBACK, pas de jeton) |
- * | **`redirect_uri` altérée** | **DÉJÀ COUVERT 55.1** — `OidcAuthorizeRefusalsTest` (`an_undeclared_redirect_uri_gets_a_local_400…`, `a_redirect_uri_matching_only_by_prefix_is_refused`) et `OidcAuthorizationFlowTest::a_redirect_uri_differing_from_the_one_bound_to_the_code_is_refused`. **Non dupliqué ici** : c'est un refus SERVEUR. |
- * | **PKCE absent / `plain` / verifier faux** | **DÉJÀ COUVERT 55.1** — `OidcAuthorizeRefusalsTest`, `OidcAuthorizationFlowTest::a_wrong_code_verifier_is_refused_and_burns_the_code`. **Non dupliqué.** |
- * | **Usage unique du code d'autorisation** | **DÉJÀ COUVERT 55.1** — `replaying_a_consumed_code_is_refused`. **Non dupliqué.** |
- * | **Secret client faux, client révoqué, scope inconnu, compte désactivé** | **DÉJÀ COUVERT 55.1/55.2** (108 tests OIDC). **Non dupliqué.** |
+ * | **`redirect_uri` altérée** | **DÉJÀ COUVERT** — `OidcAuthorizeRefusalsTest` (`an_undeclared_redirect_uri_gets_a_local_400…`, `a_redirect_uri_matching_only_by_prefix_is_refused`) et `OidcAuthorizationFlowTest::a_redirect_uri_differing_from_the_one_bound_to_the_code_is_refused`. **Non dupliqué ici** : c'est un refus SERVEUR. |
+ * | **PKCE absent / `plain` / verifier faux** | **DÉJÀ COUVERT** — `OidcAuthorizeRefusalsTest`, `OidcAuthorizationFlowTest::a_wrong_code_verifier_is_refused_and_burns_the_code`. **Non dupliqué.** |
+ * | **Usage unique du code d'autorisation** | **DÉJÀ COUVERT** — `replaying_a_consumed_code_is_refused`. **Non dupliqué.** |
+ * | **Secret client faux, client révoqué, scope inconnu, compte désactivé** | **DÉJÀ COUVERT** (108 tests OIDC). **Non dupliqué.** |
  *
  * Re-tester ici les refus du fournisseur ne prouverait rien de plus et
  * fabriquerait une seconde source de vérité à maintenir.
@@ -91,7 +89,7 @@ class WitnessIdTokenVerifierTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     private function verifier(): WitnessIdTokenVerifier
     {
@@ -175,8 +173,8 @@ class WitnessIdTokenVerifierTest extends TestCase
     }
 
     /**
-     * Claims nominaux d'un id_token émis par SE5 (structure figée par 55.1,
-     * claims métier par 55.2).
+     * Claims nominaux d'un id_token émis par SE5 (structure figée par,
+     * claims métier par).
      *
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
@@ -242,10 +240,6 @@ class WitnessIdTokenVerifierTest extends TestCase
         }
     }
 
-    // =====================================================================
-    // LE CONTRÔLE POSITIF — sans lui, aucun refus ci-dessous ne prouve rien
-    // =====================================================================
-
     #[Test]
     public function a_nominal_id_token_is_accepted(): void
     {
@@ -263,10 +257,6 @@ class WitnessIdTokenVerifierTest extends TestCase
         self::assertSame(self::CLIENT_ID, $claims['aud']);
         self::assertSame(self::ISSUER, $claims['iss']);
     }
-
-    // =====================================================================
-    // Famille 1 — la signature : algorithme, clé, kid
-    // =====================================================================
 
     #[Test]
     public function alg_none_is_rejected(): void
@@ -382,8 +372,8 @@ class WitnessIdTokenVerifierTest extends TestCase
             $this->verifier()->verify($truncated, $this->credentials(), $this->jwks(), self::NONCE);
             self::fail('Un JWT tronqué doit être refusé');
         } catch (InvalidWitnessIdTokenException $e) {
-            // ⚠️ SEUL test de ce fichier à accepter deux codes, et c'est
-            // délibéré (relevé en review 55.3 #3). Le point de troncature à 60 %
+            // ⚠️ SEUL test de ce fichier à accepter deux codes d'erreur, et
+            // c'est délibéré. Le point de troncature à 60 %
             // tombe à une position qui dépend de la longueur des claims : selon
             // qu'il coupe AVANT ou APRÈS le 2ᵉ point, le jeton est soit
             // structurellement invalide (`MALFORMED`), soit un JWT bien formé à
@@ -400,10 +390,6 @@ class WitnessIdTokenVerifierTest extends TestCase
             ]);
         }
     }
-
-    // =====================================================================
-    // Famille 2 — l'instance : `aud`, `iss`
-    // =====================================================================
 
     #[Test]
     public function an_audience_of_another_client_is_rejected(): void
@@ -446,10 +432,6 @@ class WitnessIdTokenVerifierTest extends TestCase
 
         $this->assertRejected($token, WitnessErrorCodes::AUD_MISMATCH);
     }
-
-    // =====================================================================
-    // Famille 3 — le temps : `exp`, `nbf`, et la marge de tolérance
-    // =====================================================================
 
     #[Test]
     public function an_expired_id_token_beyond_the_leeway_is_rejected(): void
@@ -506,10 +488,6 @@ class WitnessIdTokenVerifierTest extends TestCase
         $this->assertRejected($this->sign($claims), WitnessErrorCodes::MISSING_CLAIM);
     }
 
-    // =====================================================================
-    // Famille 4 — les claims requis
-    // =====================================================================
-
     #[Test]
     public function a_token_without_sub_is_rejected(): void
     {
@@ -540,10 +518,6 @@ class WitnessIdTokenVerifierTest extends TestCase
 
         $this->assertRejected($this->sign($claims), WitnessErrorCodes::MISSING_CLAIM);
     }
-
-    // =====================================================================
-    // Famille 5 — le `nonce` : lier le jeton à CETTE demande
-    // =====================================================================
 
     #[Test]
     public function a_diverging_nonce_is_rejected(): void
@@ -579,10 +553,6 @@ class WitnessIdTokenVerifierTest extends TestCase
         self::assertSame('nonce-alternatif', $claims['nonce']);
     }
 
-    // =====================================================================
-    // Famille 6 — l'usage unique du `jti` (l'anti-rejeu CONSTRUIT par 55.3)
-    // =====================================================================
-
     #[Test]
     public function a_replayed_id_token_is_rejected_on_second_use(): void
     {
@@ -612,7 +582,7 @@ class WitnessIdTokenVerifierTest extends TestCase
     #[Test]
     public function an_invalid_token_never_consumes_its_jti(): void
     {
-        // DÉCISION (miroir de M1 de l'Epic 20) : la consommation du `jti` est le
+        // DÉCISION : la consommation du `jti` est le
         // DERNIER geste de la vérification. Sinon un attaquant brûlerait à
         // l'avance le `jti` d'un jeton légitime en présentant un contrefait
         // portant le même identifiant — un déni de service silencieux sur le

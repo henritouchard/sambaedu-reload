@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 38.6 — Extinction à blanc du legacy, réversible et rejouable par
+ * Extinction à blanc du legacy, réversible et rejouable par
  * instance.
  *
  * Séquence : `a2dissite sambaedu-legacy` → `systemctl reload apache2` →
@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\Process;
  * (cf. reloadApache()) : relancer la commande après un échec mi-séquence
  * converge toujours vers l'état éteint. Le préflight rejoue le verdict de
  * `se4:status` : NO-GO (hits legacy récents) → abort sauf `--force` — c'est
- * le garde-fou lab1/exception Linux Q4, dans le code et pas dans un runbook.
+ * le garde-fou dans le code, et pas dans un runbook.
  * S'y ajoute le préflight vhost ({@see serVhostLegacyDirectives()}) : une
- * instance dont le vhost SER date d'avant la 38.1 pointe encore dans l'arbre
+ * instance dont le vhost SER date d'avant pointe encore dans l'arbre
  * legacy, et l'éteindre y ferait tomber tout `/ipxe/*`.
  * Rollback : `php artisan se4:replug`.
  */
@@ -97,8 +97,8 @@ class Se4UnplugCommand extends Command
         if (! $this->renderStatus($days, $vhostEnabled, $gpoStatus) && ! $this->option('force')) {
             $this->newLine();
             $this->error('Préflight NO-GO : des routes legacy sont encore appelées — extinction refusée.');
-            $this->line('Traiter les hits ci-dessus (fix ou story), ou relancer avec --force en connaissance de cause.');
-            $this->line('Ne JAMAIS forcer sur une instance dont le canal Linux est encore vivant (exception Q4 — lab1).');
+            $this->line('Traiter les hits ci-dessus, ou relancer avec --force en connaissance de cause.');
+            $this->line('Ne JAMAIS forcer sur une instance dont le canal Linux est encore vivant.');
 
             return self::FAILURE;
         }
@@ -115,7 +115,7 @@ class Se4UnplugCommand extends Command
 
         // Préflight vhost : si une directive du vhost SER pointe encore dans
         // l'arbre legacy, déplacer le FS casse ce qu'elle sert. Cas constaté :
-        // `Alias /ipxe <legacy>/ipxe` sur un vhost antérieur à la 38.1 — le
+        // `Alias /ipxe <legacy>/ipxe` sur un vhost antérieur — le
         // déplacement fait tomber l'Alias ET le <Directory> qui portait le
         // FallbackResource, donc TOUTES les routes `/ipxe/*` (boot, admin,
         // enrollment) avec, et plus aucun poste ne démarre en PXE. La panne est
@@ -131,7 +131,7 @@ class Se4UnplugCommand extends Command
                 $this->line('  ' . $directive);
             }
 
-            $this->line('Vhost antérieur à la Story 38.1 : éteindre le legacy maintenant casserait ce qu\'il sert.');
+            $this->line('Vhost non regénéré depuis la bascule des chemins : éteindre le legacy maintenant casserait ce qu\'il sert.');
             $this->line(sprintf('Réparer d\'abord : bash %s', base_path('scripts/setupApache.sh')));
             $this->line('(idempotent : régénère le vhost sur storage/ipxe/static, repose XSendFile, reload Apache)');
 

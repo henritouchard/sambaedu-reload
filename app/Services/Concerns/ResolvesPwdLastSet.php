@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Utilisé par AuthenticationService (sync au login) et UserSyncService (sync batch).
  *
- * Sémantique D7 :
+ * Sémantique retenue :
  *   - pwdLastSet == 0   → NULL  (changement obligatoire au prochain login = jamais validé)
  *   - pwdLastSet == -1  → now() (best-effort : compte admin/service sans expiration)
  *   - pwdLastSet > 0    → Carbon UTC depuis AD-FILETIME (intervalles 100ns depuis 1601-01-01)
@@ -21,8 +21,6 @@ use Illuminate\Support\Facades\Log;
  *   = 116444736000000000
  *
  * Formule : Unix timestamp = (pwdLastSet - FILETIME_DELTA) / 10_000_000
- *
- * Story 14.4 — AC3/AC4 (Tâche 3.1 + 4.2)
  */
 trait ResolvesPwdLastSet
 {
@@ -41,13 +39,12 @@ trait ResolvesPwdLastSet
      *   - array       → premier élément, retraité
      *   - int/string  → cast int
      *
-     * Note Carbon (D7 cas 4 — auto-cast LdapRecord) :
-     * On mappe Carbon → -1 pour que le pipeline downstream
-     * `pwdLastSetToCarbon(-1)` retourne `Carbon::now()` (sémantique D7 cas 3).
-     * Perte de précision assumée (décision utilisateur post-review review Opus 14.4 #1) :
-     * on ne préserve PAS la date Carbon brute → la valeur stockée sera `now()`
-     * au moment de la lecture, pas la vraie date pwdLastSet.
-     * Évite le bug review #1 : précédemment Carbon → 1 → unix_ts négatif → garde-fou → NULL silencieux.
+     * Note sur le cas Carbon (LdapRecord auto-caste parfois l'attribut) :
+     * une date valide est mappée vers -1 pour que `pwdLastSetToCarbon(-1)`
+     * renvoie `Carbon::now()`. La date brute n'est donc PAS préservée — la
+     * valeur persistée est l'instant de lecture, pas la vraie date pwdLastSet.
+     * Mapper Carbon vers 1 donnerait un timestamp Unix négatif, que le
+     * garde-fou de `pwdLastSetToCarbon()` transforme en NULL silencieux.
      */
     protected function resolvePwdLastSetRaw(mixed $rawValue): int
     {
@@ -57,7 +54,7 @@ trait ResolvesPwdLastSet
 
         if ($rawValue instanceof Carbon) {
             // LdapRecord a auto-casté : une date valide signifie que pwdLastSet != 0
-            // Mappage vers -1 pour aligner sur le pipeline « -1 → now() » (D7 cas 3).
+            // Mappage vers -1 pour aligner sur le pipeline « -1 → now() ».
             return $rawValue->getTimestamp() > 0 ? -1 : 0;
         }
 
@@ -73,7 +70,7 @@ trait ResolvesPwdLastSet
     }
 
     /**
-     * Convertit un int pwdLastSet canonique en Carbon UTC selon D7.
+     * Convertit un int pwdLastSet canonique en Carbon UTC.
      *
      * @param  int  $pwdLastSet  Valeur entière pwdLastSet AD
      * @return Carbon|null       NULL si pwdLastSet == 0, Carbon UTC sinon

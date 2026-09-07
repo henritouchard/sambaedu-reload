@@ -122,7 +122,6 @@ class LdapConnectionTest extends TestCase
             
             $this->assertTrue($hasAtLeastOneDn, 'Avec base_dn configuré, au moins un DN spécifique SambaEdu doit être configuré');
         } else {
-            // En environnement de test sans configuration LDAP, c'est OK
             $this->assertTrue(true, 'Configuration LDAP vide en environnement de test');
         }
     }

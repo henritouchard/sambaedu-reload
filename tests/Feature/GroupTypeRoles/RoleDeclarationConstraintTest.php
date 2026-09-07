@@ -26,10 +26,10 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.3 — AC4 : LA CONTRAINTE MORD AUX TROIS POINTS HUMAINS, ET NULLE PART
+ * LA CONTRAINTE MORD AUX TROIS POINTS HUMAINS, ET NULLE PART
  * AILLEURS.
  *
- * Ce fichier est le cœur de la story, et il prouve DEUX choses opposées, ce qui
+ * Ce fichier prouve DEUX choses opposées, ce qui
  * est tout l'intérêt :
  *
  *  1. sur un type déclaré, un rôle hors déclaration est REFUSÉ aux trois points
@@ -54,7 +54,7 @@ class RoleDeclarationConstraintTest extends TestCase
 
         $this->seed(PermissionSeeder::class);
         $this->seed(GroupRoleSeeder::class);
-        // Story 62.3 — la CONTRAINTE d'attribution n'existe que là où des rôles
+        // La CONTRAINTE d'attribution n'existe que là où des rôles
         // sont déclarés, et la migration n'en déclare plus aucun. Ce fichier
         // éprouve précisément le contraste « type déclaré / type de repli » : il
         // installe donc le profil scolaire, qui fournit les trois types déclarés.
@@ -103,7 +103,7 @@ class RoleDeclarationConstraintTest extends TestCase
     }
 
     /**
-     * Double SQL de `UserGroupService` — recopie du harnais de la story 42.3
+     * Double SQL de `UserGroupService` — recopie du harnais de la
      * (`GroupMemberRoleEditTest::bindFakeUserGroupService`).
      *
      * `save()` passe par `updateGroup()`, qui est AD-first : sans annuaire, aucun
@@ -151,10 +151,6 @@ class RoleDeclarationConstraintTest extends TestCase
         $this->app->bind(\App\Services\UserGroupService::class, fn () => $mock);
     }
 
-    // =========================================================================
-    // La garde elle-même, sans UI
-    // =========================================================================
-
     #[Test]
     public function the_guard_names_the_role_the_type_and_the_declared_vocabulary(): void
     {
@@ -184,10 +180,6 @@ class RoleDeclarationConstraintTest extends TestCase
 
         $this->addToAssertionCount(8);
     }
-
-    // =========================================================================
-    // Point humain n°1 — `updateMemberRole()`
-    // =========================================================================
 
     #[Test]
     public function updating_a_member_role_refuses_an_undeclared_role_with_a_business_message(): void
@@ -223,11 +215,11 @@ class RoleDeclarationConstraintTest extends TestCase
     }
 
     /**
-     * D3 INCHANGÉE : `owner` sur un type non-`classe` reste refusé par la garde
+     * GARDE DU PROFESSEUR PRINCIPAL INCHANGÉE : `owner` sur un type non-`classe` reste refusé par la garde
      * LITTÉRALE, avec SON message — pas par la contrainte de déclaration.
      *
-     * L'ordre compte : D3 parle en premier. C'est le message que les utilisateurs
-     * connaissent depuis 42.3, et la contrainte nouvelle ne doit pas le remplacer
+     * L'ordre compte : cette garde parle en premier. C'est le message que les
+     * utilisateurs connaissent, et la contrainte de déclaration ne doit pas le remplacer
      * par un message plus générique.
      */
     #[Test]
@@ -247,7 +239,7 @@ class RoleDeclarationConstraintTest extends TestCase
     }
 
     /**
-     * Sur un type SANS déclaration, c'est D3 — et elle seule — qui interdit
+     * Sur un type SANS déclaration, c'est la garde du professeur principal — et elle seule — qui interdit
      * `owner`. C'est exactement pourquoi elle survit à la contrainte : le repli
      * générique autorise TOUT le catalogue, `owner` compris.
      */
@@ -272,10 +264,6 @@ class RoleDeclarationConstraintTest extends TestCase
             'sans D3, un cours accepterait un « Professeur principal »',
         );
     }
-
-    // =========================================================================
-    // Point humain n°2 — `setPendingRole()`
-    // =========================================================================
 
     #[Test]
     public function choosing_a_pending_role_refuses_an_undeclared_one(): void
@@ -308,7 +296,7 @@ class RoleDeclarationConstraintTest extends TestCase
     }
 
     /**
-     * PIÈGE 42.3 #3 rejoué : le type lu par la garde est celui de la BASE, jamais
+     * PIÈGE : le type lu par la garde est celui de la BASE, jamais
      * la propriété Livewire publique — qui est ré-hydratée du client et donc
      * forgeable. Un payload annonçant `type = cours` ne doit pas désarmer la
      * contrainte d'un projet.
@@ -335,10 +323,6 @@ class RoleDeclarationConstraintTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Point humain n°3 — la revalidation de `save()`
-    // =========================================================================
-
     /**
      * `save()` refuse en SILENCE (`continue`), comme les deux autres refus de ce
      * chemin : il traite un état client déjà validé, et ce qui y arrive de non
@@ -352,7 +336,7 @@ class RoleDeclarationConstraintTest extends TestCase
         $this->actingAs($this->admin());
 
         // Le chemin de `save()` passe par `updateGroup()` (AD-first) : on lui
-        // substitue le double SQL du harnais de la story 42.3, qui reproduit le
+        // substitue le double SQL du harnais, qui reproduit le
         // read-back sans annuaire.
         $this->bindFakeUserGroupService();
 
@@ -372,18 +356,14 @@ class RoleDeclarationConstraintTest extends TestCase
         $this->assertSame(UserGroupUserPivot::ROLE_MANAGER, $stored, 'le rôle DÉRIVÉ du prof doit rester');
     }
 
-    // =========================================================================
-    // AC6 — ce que les selects RENDENT
-    // =========================================================================
-
     /**
-     * PIÈGE NOMMÉ (Dev Notes #5) — la valeur COURANTE de l'arête reste une option
+     * PIÈGE — la valeur COURANTE de l'arête reste une option
      * du select, même hors déclaration.
      *
      * Un `owner` hérité sur un projet est de la donnée PRÉ-CONTRAINTE : si le
      * select ne rendait que les rôles déclarés, le premier ré-enregistrement
      * dégraderait l'arête en silence. C'est la généralisation de la clause
-     * `|| edge_role === 'owner'` qui existait avant 62.3.
+     * `|| edge_role === 'owner'`.
      */
     #[Test]
     public function an_inherited_role_stays_visible_and_selected_in_the_member_select(): void
@@ -407,7 +387,7 @@ class RoleDeclarationConstraintTest extends TestCase
     }
 
     /**
-     * Sur une classe, le select rend EXACTEMENT ce qu'il rendait avant la story :
+     * Sur une classe, le select rend EXACTEMENT ce qu'il rendait auparavant :
      * trois options, dans l'ordre du catalogue, avec les libellés scolaires.
      */
     #[Test]
@@ -425,10 +405,6 @@ class RoleDeclarationConstraintTest extends TestCase
             ->assertSee('Enseignant')
             ->assertSee('Professeur principal');
     }
-
-    // =========================================================================
-    // La LIBERTÉ des chemins d'import : un CONTRAT, testé positivement
-    // =========================================================================
 
     /**
      * Un attach DIRECT d'un rôle hors déclaration PASSE — délibérément.
@@ -453,14 +429,14 @@ class RoleDeclarationConstraintTest extends TestCase
         );
 
         // 2. Et `assertValidRole()` n'a PAS été élargie : elle garde le
-        //    vocabulaire GLOBAL, elle ignore le type — c'est sa sémantique et la
-        //    story interdit d'y toucher.
+        //    vocabulaire GLOBAL, elle ignore le type — c'est sa sémantique, et on
+        //    n'y touche pas.
         UserGroupUserPivot::assertValidRole('tuteur');
         $this->addToAssertionCount(1);
     }
 
     /**
-     * AC4 — « IMPORT ⊆ DÉCLARATIONS SEEDÉES », le jumeau du « balayage ⊆ plancher »
+     * « IMPORT ⊆ DÉCLARATIONS SEEDÉES », le jumeau du « balayage ⊆ plancher »
      * de 62.2.
      *
      * La cohérence de l'ensemble ne tient pas par la garde mais par la

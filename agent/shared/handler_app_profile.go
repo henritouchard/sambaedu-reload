@@ -6,14 +6,14 @@ import (
 	"strings"
 )
 
-// Handler `app_profile` (aggregate / scope SESSION) — Story 36.5, contrat §7.11.
+// Handler `app_profile` (aggregate / scope SESSION), contrat §7.11.
 // SIXIÈME mécanisme HORS-REGISTRE, appliqué par le COMPAGNON (un profil
 // applicatif est une donnée d'UTILISATEUR, pas de machine). Logique PURE,
 // OS-agnostique (les ops fichier / substitution de tokens sont injectées via
 // AppProfileOps) → testée sur l'hôte ; agent/windows n'apporte que l'impl Win32
 // (écriture des ini, I/O).
 //
-// SPLIT SYSTEM-lien / COMPAGNON-reste (amendement final 36.5, Henri 2026-07-21).
+// SPLIT SYSTEM-lien / COMPAGNON-reste.
 // La pose du lien de dossier vers UNC exige `SeCreateSymbolicLinkPrivilege`,
 // qu'AUCUN canal SE5 ne peut accorder à l'utilisateur — mais que le service
 // LocalSystem possède nativement. Sur le modèle EXACT de l'overlay, c'est donc le
@@ -28,7 +28,7 @@ import (
 // DIRECTEMENT au serveur, SANS copie (un profil à gros cache/bases sqlite ferait
 // exploser le temps de logon s'il transitait par la copie d'un profil itinérant).
 //
-// CONVERGENCE level-triggered (§5, STRICT inconditionnel 27.8) :
+// CONVERGENCE level-triggered (§5, STRICT inconditionnel) :
 //   - Test  : pour chaque app, le lien existe et pointe le bon home + la paire
 //     profiles.ini/installs.ini est conforme + le marqueur `.se-profile-version`
 //     vaut la version courante (+ user.js d'épinglage cache si `cache_local`)
@@ -45,7 +45,7 @@ import (
 //     logon — en attente ») ; au cycle suivant le logon, Test ⇒ compliant.
 //     IDEMPOTENT (2 passes stables ⇒ la 2ᵉ est un no-op).
 //
-// AC4 — le nom de profil (`profile_name`, ex. `managed.default`) est émis par le
+// Le nom de profil (`profile_name`, ex. `managed.default`) est émis par le
 // serveur : NEUF, STABLE, NON versionné, HORS radical `sambaedu`. Un profiles.ini
 // produit ici n'est JAMAIS matché par `referencesSambaeduProfile()`
 // (handler_legacy_cleanup.go) : les deux canaux coexistent. La porte d'évolution
@@ -54,7 +54,7 @@ import (
 // d'orpheliner (jamais un nom versionné, qui provoquerait une perte de signets
 // silencieuse).
 //
-// AC5 — le CACHE reste LOCAL : Firefox place par défaut son cache disque (cache2)
+// Le CACHE reste LOCAL : Firefox place par défaut son cache disque (cache2)
 // sous %LOCALAPPDATA%, pas dans le profil roaming ; par sécurité (report du
 // `AppData\Local\cacheFirefox` SE4, et parce que faire tourner un cache sqlite
 // sur SMB est la fragilité connue de ce montage), un `user.js` épingle
@@ -64,14 +64,14 @@ import (
 // AppProfileVersion : version du profil géré, écrite dans le marqueur
 // `.se-profile-version` à la création et RELUE à chaque Apply. La porte
 // d'évolution : un futur format v2 lit "1" et migre EN PLACE (le nom du profil
-// ne change JAMAIS — piège n°1).
+// ne change JAMAIS).
 const AppProfileVersion = "1"
 
 // appProfileMarkerName : fichier marqueur de version DANS le profil (côté home
 // réseau). Nom hors radical `sambaedu` (préfixe `.se-`).
 const appProfileMarkerName = ".se-profile-version"
 
-// appProfileUserJsName : fichier user.js d'épinglage du cache (AC5), DANS le
+// AppProfileUserJsName : fichier user.js d'épinglage du cache, DANS le
 // profil.
 const appProfileUserJsName = "user.js"
 
@@ -97,7 +97,7 @@ type AppProfileOps interface {
 	// l'utilisateur (%USERPROFILE%) → chemin absolu local.
 	ResolveLink(link string) (string, error)
 
-	// ResolveLocalCache résout `%LOCALAPPDATA%\<cacheLocal>` (AC5) → chemin
+	// ResolveLocalCache résout `%LOCALAPPDATA%\<cacheLocal>` → chemin
 	// absolu local. Appelé seulement si CacheLocal est non vide.
 	ResolveLocalCache(cacheLocal string) (string, error)
 
@@ -128,7 +128,7 @@ type AppProfileHandler struct {
 	// lastDetail : détail du DERNIER Test/Apply (interface DetailReporter du
 	// moteur, cf. engine.go) — trace les apps dont le LIEN n'est pas encore posé
 	// (« en attente de pose par le service SYSTEM au prochain logon »). Le
-	// compagnon ne pose plus le lien (split 36.5) : un Apply qui laisse le lien
+	// compagnon ne pose plus le lien (split) : un Apply qui laisse le lien
 	// manquant est un état ATTENDU (level-triggered), pas une erreur — le detail
 	// l'explique. Convergence complète (lien présent) ⇒ "" : l'item compliant
 	// reste SANS `detail` (dédup serveur par hash préservée).
@@ -239,7 +239,7 @@ func (h *AppProfileHandler) testOne(r appProfileResolved) (bool, error) {
 		return false, nil
 	}
 
-	// user.js d'épinglage cache (AC5).
+	// User.js d'épinglage cache.
 	if r.userJs != "" {
 		content, exists, err := h.Ops.ReadFile(r.userJsPath)
 		if err != nil {
@@ -305,7 +305,7 @@ func (h *AppProfileHandler) Apply(items []StateItem) error {
 
 // applyOne : converge une app. Le dossier serveur est créé EN PREMIER — un home
 // injoignable abandonne AVANT toute op locale (jamais de suppression de données
-// locales en compensation, AC6). Le LIEN n'est PAS posé ici (split 36.5 : le
+// locales en compensation). Le LIEN n'est PAS posé ici (split : le
 // service SYSTEM le pose au logon, le compagnon n'a pas le privilège) : le
 // compagnon le CONSTATE, et n'écrit la paire d'ini QUE si le lien est déjà en
 // place et correct.
@@ -331,7 +331,7 @@ func (h *AppProfileHandler) applyOne(spec AppProfileSpec) error {
 		}
 	}
 
-	// 3) user.js d'épinglage cache (AC5), côté home.
+	// 3) user.js d'épinglage cache, côté home.
 	if r.userJs != "" {
 		content, exists, err := h.Ops.ReadFile(r.userJsPath)
 		if err != nil {
@@ -353,7 +353,7 @@ func (h *AppProfileHandler) applyOne(spec AppProfileSpec) error {
 	linkReady := exists && isLink && samePath(target, r.server)
 
 	// 5) Paire d'ini — écrite SEULEMENT si le lien est déjà présent et correct.
-	// POURQUOI CET ORDRE (repensé pour le split 36.5) : l'ancien ordre (serveur →
+	// POURQUOI CET ORDRE (repensé pour le split) : l'ancien ordre (serveur →
 	// marqueur → user.js → lien → ini) reposait sur le compagnon posant le lien
 	// juste avant les ini. Le compagnon ne pose plus le lien ; si on écrivait les
 	// ini alors que le lien n'est PAS encore là, Firefox lancé entre-temps
@@ -393,13 +393,11 @@ func (h *AppProfileHandler) writeIfDiffer(path, content string) error {
 	return h.Ops.WriteFile(path, content)
 }
 
-// --- Génération des ini (PURE — testée, non-collision AC4) --------------------
-
 // BuildProfilesIni : contenu de profiles.ini nommant le profil `profileName`
 // (relatif au dossier des ini, IsRelative=1, Default=1). Si `installHash` est
 // non vide, la section `[Install<hash>]` est ajoutée (défaut de CETTE install).
 // CRLF (convention Windows, iso SE4). Le `Name=` dérive du profileName SANS le
-// radical `sambaedu` (piège n°1). Vérifié : jamais matché par
+// radical `sambaedu`. Vérifié : jamais matché par
 // `referencesSambaeduProfile()`.
 func BuildProfilesIni(profileName, installHash string) string {
 	var b strings.Builder
@@ -436,12 +434,12 @@ func BuildInstallsIni(profileName, installHash string) string {
 	return b.String()
 }
 
-// BuildUserJs : user.js épinglant le cache disque en LOCAL (AC5). `cacheAbsPath`
+// BuildUserJs : user.js épinglant le cache disque en LOCAL. `cacheAbsPath`
 // est un chemin Windows absolu ; les backslashes sont échappés (JS string).
 func BuildUserJs(cacheAbsPath string) string {
 	escaped := strings.ReplaceAll(cacheAbsPath, `\`, `\\`)
 
-	return "// Généré par SambaEdu (Story 36.5) — cache disque épinglé en local (AC5).\r\n" +
+	return "// Généré par SambaEdu — cache disque épinglé en local.\r\n" +
 		`user_pref("browser.cache.disk.parent_directory", "` + escaped + `");` + "\r\n"
 }
 
@@ -455,8 +453,6 @@ func appProfileDisplayName(profileName string) string {
 
 	return name
 }
-
-// --- Parsing & helpers de chemin ---------------------------------------------
 
 // parseAppProfileSpec : extrait un AppProfileSpec d'un payload §3 brut. Les
 // quatre champs minimaux (app/link/server/profile_name) manquants = enveloppe

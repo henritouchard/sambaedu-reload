@@ -24,9 +24,8 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.2 — **AC3** : `GET|POST /oidc/userinfo`, conforme et fail-closed.
+ * `GET|POST /oidc/userinfo`, conforme et fail-closed.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  L'ORDRE DE CE FICHIER EST DÉLIBÉRÉ (patron `OidcAuthorizeRefusalsTest`)
  *
  *  Le contrôle POSITIF vient d'abord — le flux complet, de `/oidc/authorize`
@@ -34,7 +33,6 @@ use Tests\TestCase;
  *  401 qui suivent pourraient n'être que le symptôme d'une route cassée : un
  *  endpoint qui répond 401 à TOUT passerait haut la main une suite de tests de
  *  refus. Le fail-closed se PROUVE, il ne s'affirme pas.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * Les cinq causes de refus (absent / inconnu / expiré / client révoqué /
  * utilisateur disparu) sont vérifiées INDISTINCTES en réponse et DISTINCTES au
@@ -72,7 +70,7 @@ class OidcUserinfoTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     private function makeProf(): User
     {
@@ -152,7 +150,7 @@ class OidcUserinfoTest extends TestCase
             : $this->get('/oidc/userinfo', $headers);
     }
 
-    // ── LE CONTRÔLE POSITIF — tout le reste s'y adosse ────────────────────
+    // LE CONTRÔLE POSITIF — tout le reste s'y adosse
 
     #[Test]
     public function userinfo_serves_the_same_sub_as_the_id_token_of_the_same_flow(): void
@@ -198,7 +196,7 @@ class OidcUserinfoTest extends TestCase
     #[Test]
     public function a_token_scoped_openid_only_yields_the_sub_and_nothing_else(): void
     {
-        // Minimisation NFR5 : le filtrage par scope s'applique AUSSI ici — le
+        // Minimisation : le filtrage par scope s'applique AUSSI ici — le
         // canal de repli ne peut pas être une porte dérobée aux claims.
         $flow = $this->completeFlow('openid');
 
@@ -242,7 +240,7 @@ class OidcUserinfoTest extends TestCase
         }
     }
 
-    // ── Les refus, tous indistincts ───────────────────────────────────────
+    // Les refus, tous indistincts
 
     /** Forme canonique d'un refus « jeton présenté et rejeté ». */
     private function assertPresentedTokenRefusal($response): void
@@ -321,7 +319,7 @@ class OidcUserinfoTest extends TestCase
     #[Test]
     public function revoking_the_client_kills_its_already_issued_tokens(): void
     {
-        // C'est ICI que la promesse 55.1 — « révoquer un client rend ses jetons
+        // C'est ICI que la promesse — « révoquer un client rend ses jetons
         // inutilisables » — devient observable. Un access token AUTO-PORTEUR
         // (JWT) ne permettrait pas cela : c'est tout l'intérêt d'un jeton
         // opaque adossé à une ligne.
@@ -356,7 +354,7 @@ class OidcUserinfoTest extends TestCase
     #[Test]
     public function deactivating_the_user_kills_their_already_issued_tokens(): void
     {
-        // Correctif review 55.2 (#1) — SYMÉTRIE avec la révocation d'un client,
+        // SYMÉTRIE avec la révocation d'un client,
         // testée juste au-dessus. Sans ce contrôle, `/userinfo` continuait de
         // servir nom, rôle et groupes d'un compte désactivé pendant toute la
         // fenêtre restante du jeton (jusqu'à 10 minutes), alors même que les
@@ -384,7 +382,7 @@ class OidcUserinfoTest extends TestCase
     #[Test]
     public function a_token_passed_in_the_query_string_is_ignored(): void
     {
-        // Doctrine D-3 (55.1) : jamais de secret en query — il finirait dans
+        // Doctrine D-3 : jamais de secret en query — il finirait dans
         // les logs du serveur, l'historique et le `Referer`. RFC 6750 autorise
         // cette forme ; SE5 ne la supporte pas, donc elle vaut « absent ».
         $flow = $this->completeFlow();
@@ -410,7 +408,7 @@ class OidcUserinfoTest extends TestCase
         self::assertNull($response->json('sub'));
     }
 
-    // ── Journal : les codes fins partent, la PII reste ────────────────────
+    // Journal : les codes fins partent, la PII reste
 
     #[Test]
     public function the_served_journal_entry_carries_no_pii(): void

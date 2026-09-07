@@ -25,7 +25,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests Story 7.3 — refactor `RightsService::calculateRights()` Spatie-only.
+ * Tests — refactor `RightsService::calculateRights` Spatie-only.
  *
  * Valide :
  *  - Le calcul depuis Spatie pour chaque profil seedé.
@@ -33,7 +33,7 @@ use Tests\Traits\CreatesPermissionSchema;
  *  - Le retrait AND-NOT des délégations scopées négatives.
  *  - Le filtrage systématique de `SE_COMPUTER_VIEW`.
  *  - L'indépendance vis-à-vis de LDAP : la méthode fonctionne même si
- *    `RightRepository::getAllRightsValues()` lève (preuve qu'aucune lecture
+ *  `RightRepository::getAllRightsValues()` lève (preuve qu'aucune lecture
  *    LDAP n'est effectuée en runtime).
  */
 class RightsServiceSpatieRefactorTest extends TestCase
@@ -97,10 +97,6 @@ class RightsServiceSpatieRefactorTest extends TestCase
         ]);
     }
 
-    // ================================================================
-    // Calcul depuis Spatie (rôles seedés + permissions directes)
-    // ================================================================
-
     #[Test]
     public function it_computes_bitmask_for_user_admin_role(): void
     {
@@ -162,10 +158,6 @@ class RightsServiceSpatieRefactorTest extends TestCase
         );
     }
 
-    // ================================================================
-    // Délégations scopées
-    // ================================================================
-
     #[Test]
     public function it_adds_positive_scoped_delegation_to_bitmask(): void
     {
@@ -224,10 +216,6 @@ class RightsServiceSpatieRefactorTest extends TestCase
         // Avec scope : la négative AND-NOT retire ce bit.
         $this->assertSame(0, $bitmaskWithScope & LegacyRight::ComputerInstall->value);
     }
-
-    // ================================================================
-    // Preuve : aucune lecture LDAP
-    // ================================================================
 
     #[Test]
     public function it_works_even_if_ldap_is_down(): void

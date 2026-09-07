@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Traits;
 
 /**
- * Story 62.3 — INSTALLER le vocabulaire scolaire, au lieu de le recevoir.
+ * INSTALLER le vocabulaire scolaire, au lieu de le recevoir.
  *
  * Les libellés « Élève », « Enseignant », « Professeur principal », « Porteur » et
  * « Référent » étaient posés par la migration `create_group_type_roles_table` : toute

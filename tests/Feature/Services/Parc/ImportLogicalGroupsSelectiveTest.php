@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.7 / AC9.3 + AC10 — l'import des groupes logiques (étape 5) ne crée un
+ * + — l'import des groupes logiques (étape 5) ne crée un
  * WorkstationGroup logique QUE si le parc legacy porte au moins une application ;
  * les CN sautés sont listés nommément AVEC leur nombre de machines ;
  * `_TousLesPostes` n'est jamais importé (ni groupe, ni profil). L'import PHYSIQUE

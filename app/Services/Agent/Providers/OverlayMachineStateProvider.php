@@ -15,12 +15,12 @@ use App\Services\Overlay\OverlayService;
 use Illuminate\Support\Collection;
 
 /**
- * Volet MACHINE de l'overlay (Story 27.10) — émet l'item synthétique
+ * Volet MACHINE de l'overlay — émet l'item synthétique
  * `{kind:"machine", room}` en portée **machine** (cache persistant, survit aux
- * reboots, rempli par le cycle service + réveil-logon 27.9).
+ * reboots, rempli par le cycle service + réveil-logon).
  *
  * La salle (`room`) est une propriété STABLE du POSTE (invariant 1-salle-max :
- * `workstation.physicalRooms[0].name`), pas du user (décision D1). En la
+ * `workstation.physicalRooms[0].name`), pas du user. En la
  * basculant de la portée session (ancien item `identity`,
  * {@see OverlayStateProvider}) vers la portée machine — source UNIQUE, plus de
  * redondance — l'agent compose un overlay avec **poste + salle dès le logon**
@@ -61,7 +61,7 @@ final class OverlayMachineStateProvider implements StateProvider
 
     /**
      * Un unique candidat `machine` (la salle) — toujours émis (machine-only
-     * compris). `sourceId` 0 : ordre aggregate stable (décision 23.4 n° 9).
+     * compris). `sourceId` 0 : ordre aggregate stable.
      *
      * @return Collection<int, StateCandidate>
      */
@@ -76,7 +76,7 @@ final class OverlayMachineStateProvider implements StateProvider
                 maille: StateMaille::Workstation,
                 payload: [
                     // Kind réservé — postSignal() reclasse tout signal posté qui
-                    // le revendiquerait (iso identity, review 24.4 #2).
+                    // le revendiquerait (iso identity).
                     'kind' => OverlayService::KIND_RESERVED_MACHINE,
                     'room' => $room !== null && $room !== '' ? (string) $room : null,
                 ],

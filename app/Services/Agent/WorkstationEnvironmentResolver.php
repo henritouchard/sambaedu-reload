@@ -9,35 +9,34 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 
 /**
- * Résout UN `WorkstationEnvironment` pour un poste appartenant à N parcs
- * (Story 26.1 — AC3).
+ * Résout UN `WorkstationEnvironment` pour un poste appartenant à N parcs.
  *
  * Un poste vit dans plusieurs `WorkstationGroup` (sa salle physique + ses parcs
- * logiques, pivot global 4.11). Chaque parc PEUT déclarer un environnement ;
+ * logiques, pivot global). Chaque parc PEUT déclarer un environnement ;
  * ce service applique la **précédence** :
  *
  *     nomade > personal_local > shared_local
  *
  * et retourne le **défaut `shared_local`** quand aucune valeur n'est déclarée
  * (poste sans groupe, ou tous les groupes à `null`). La précédence vit ICI et
- * NULLE PART ailleurs (décision D1, parallèle `StateMaille`/`StateCompiler`) —
- * ni dans l'enum, ni dans les futurs StateProviders.
+ * NULLE PART ailleurs (parallèle `StateMaille`/`StateCompiler`) — ni dans
+ * l'enum, ni dans les StateProviders.
  *
  * Lecture **exclusivement Postgres** : `WorkstationGroup::whereIn('id', ...)`.
- * JAMAIS d'AD / LdapRecord / APCu (NFR7, discipline absolue iso
+ * JAMAIS d'AD / LdapRecord / APCu (discipline absolue, iso
  * {@see TargetContext}). Service stateless → singleton sans état.
  *
- * **Point de consommation Epic 27** : les handlers (raccourcis 27.1, profils
- * navigateur 27.4) appelleront ce service depuis un
+ * **Point de consommation** : les handlers (raccourcis, profils
+ * navigateur) appelleront ce service depuis un
  * `StateProvider::itemsFor(TargetContext $ctx)`. Pour rester dans la discipline
  * « les providers ne re-requêtent jamais les appartenances », privilégier
  * {@see resolveForGroupIds()} avec les ids déjà mémorisés par
  * `TargetContext::workstationGroupIds()`.
  *
- * ⚠️ Note (26.1) : ce service n'a jamais été branché sur le canal legacy
+ * ⚠️ Note : ce service n'a jamais été branché sur le canal legacy
  * (`ApplicationScriptsGenerator`/`ShortcutCompilerService` + le pansement
- * Bug C 4e5a152, tous supprimés à l'extinction legacy 27.14). Le Bug C est
- * corrigé définitivement par le handler raccourcis (Story 27.1) qui consomme
+ * Bug C 4e5a152, tous supprimés à l'extinction legacy). Le Bug C est
+ * corrigé définitivement par le handler raccourcis qui consomme
  * CE service. Ne PAS recâbler de canal legacy.
  */
 final readonly class WorkstationEnvironmentResolver
@@ -72,7 +71,7 @@ final readonly class WorkstationEnvironmentResolver
 
     /**
      * Résout l'environnement à partir d'une liste d'ids de groupes DÉJÀ
-     * résolue (point d'entrée privilégié pour les StateProviders Epic 27 :
+     * résolue (point d'entrée privilégié pour les StateProviders :
      * `TargetContext::workstationGroupIds()` — pas de re-requête des
      * appartenances).
      *

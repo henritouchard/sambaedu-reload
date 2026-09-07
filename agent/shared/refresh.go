@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Échelle de rafraîchissement du compagnon (Story 43.1, Epic 43 — application
+// Échelle de rafraîchissement du compagnon (application
 // immédiate). Après une écriture HKCU EFFECTIVE, l'Explorer déjà ouvert ne
 // relit pas ses réglages tout seul : le compagnon exécute UN geste Windows en
 // fin de passe — le plus fort requis par les items effectivement changés :
@@ -14,17 +14,16 @@ import (
 //
 // Le geste est déclaré par le SERVEUR via le champ optionnel `refresh` du
 // PAYLOAD des items `registry`/`registry_list` (sous-structure provider-defined,
-// contrat §3.2 — le wrapper 4 clés §3 est INTACT, golden inchangés en 43.1 ;
-// l'émission serveur du hint est la Story 43.2).
+// contrat §3.2 — le wrapper 4 clés §3 est INTACT, golden inchangés).
 //
-// Frontières (D1) :
+// Frontières :
 //   - les handlers ACCUMULENT le besoin pendant Apply (max des items changés,
-//     plancher shell_notify pour tout changement HKCU — D2) et l'exposent via
+//     plancher shell_notify pour tout changement HKCU) et l'exposent via
 //     l'interface optionnelle RefreshRequester ;
 //   - le COMPAGNON consomme en toute fin de RunPass (un seul geste par passe,
 //     zéro geste si passe stable) — engine.go reste sans AUCUN diff ;
 //   - le service SYSTEM (MachineEngine) ne consomme JAMAIS : aucun geste en
-//     session 0, y compris sur le fan-out HKU (piège n° 9 de 35.3, préservé
+//  session 0, y compris sur le fan-out HKU (préservé
 //     structurellement — isUserHive rend déjà false pour HKLM/HKU).
 
 // RefreshLevel : niveau de l'échelle, ORDONNÉ (la comparaison numérique EST la
@@ -38,7 +37,7 @@ const (
 	// RefreshShellNotify : SHChangeNotify(SHCNE_ASSOCCHANGED) — l'Explorer
 	// relit ses réglages de vue (Hidden, HideFileExt). PLANCHER de tout
 	// changement HKCU effectif (migration iso-comportement du registryNotifier
-	// historique, D2).
+	// historique).
 	RefreshShellNotify
 	// RefreshPolicyBroadcast : SendMessageTimeout(HWND_BROADCAST,
 	// WM_SETTINGCHANGE, "Policy") — les applis relisent leurs policies.
@@ -65,13 +64,13 @@ func (l RefreshLevel) String() string {
 	}
 }
 
-// ParseRefreshLevel : lecture INDULGENTE du hint `refresh` d'un payload (D3).
+// ParseRefreshLevel : lecture INDULGENTE du hint `refresh` d'un payload.
 // Valeur absente, vide ou INCONNUE ⇒ RefreshNone — JAMAIS une enveloppe
 // invalide, jamais un {status: error} : la validation stricte du vocabulaire
-// est serveur (AuthoringGuard 43.2, « rejet à l'authoring, jamais au
-// runtime »). Un binaire antérieur ignore déjà le champ (parseurs indulgents,
-// piège n° 1) : RefreshNone + plancher D2 = comportement actuel, additif sûr
-// (NFR-A4). Le log debug du hint inconnu vit chez l'appelant (desiredSpecs —
+// est serveur (AuthoringGuard, « rejet à l'authoring, jamais au
+// runtime »). Un binaire antérieur ignore déjà le champ (parseurs indulgents) :
+// RefreshNone + plancher shell_notify = comportement actuel, additif sûr.
+// Le log debug du hint inconnu vit chez l'appelant (desiredSpecs —
 // ce parseur pur n'a pas de logger).
 func ParseRefreshLevel(raw string) RefreshLevel {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -88,12 +87,12 @@ func ParseRefreshLevel(raw string) RefreshLevel {
 
 // logUnknownRefreshHint : trace (debug) un hint `refresh` NON VIDE que
 // ParseRefreshLevel a rendu RefreshNone (vocabulaire inconnu) — l'item reste
-// valide (D3 indulgent, jamais un {status: error}), le plancher D2 s'applique
+// valide (lecture indulgente, jamais un {status: error}), le plancher s'applique
 // si l'item change. Appelé par desiredSpecs/desiredListSpecs depuis le chemin
-// Test SEULEMENT (review 43.1 #3 : Apply re-parse les mêmes items dans la même
+// Test SEULEMENT (Apply re-parse les mêmes items dans la même
 // passe — logHints=false y évite la ligne dupliquée ; le parseur pur n'a pas
 // de logger). Champ absent/vide : silencieux (le cas nominal de tout le parc
-// pré-43.2 — pas de bruit de log).
+// antérieur — pas de bruit de log).
 func logUnknownRefreshHint(log *Logger, payload any, identity string) {
 	m, ok := payload.(map[string]any)
 	if !ok {
@@ -114,7 +113,7 @@ func maxRefreshLevel(a, b RefreshLevel) RefreshLevel {
 	return a
 }
 
-// RefreshOps : les trois gestes Windows, injectés (testable hôte — D4).
+// RefreshOps : les trois gestes Windows, injectés (testable hôte).
 // L'impl de production vit dans agent/windows/refresh_windows.go (FFI
 // NewLazySystemDLL, jamais de cgo) ; un fake en mémoire couvre les tests.
 // nil côté Companion = no-op (hôte, non-Windows). CHAQUE geste est
@@ -130,35 +129,35 @@ type RefreshOps interface {
 	PolicyBroadcast() error
 	// RestartExplorer termine puis relance explorer.exe de la session du
 	// compagnon (droits user, jamais d'élévation), avec garde
-	// anti-double-lancement (piège n° 3).
+	// anti-double-lancement.
 	RestartExplorer() error
 	// ShowRestartNotice affiche la fenêtre d'avertissement « patientez »
-	// AVANT le redémarrage d'Explorer (Story 43.4, D2/D3). La fenêtre vit
+	// AVANT le redémarrage d'Explorer. La fenêtre vit
 	// dans le PROCESS du compagnon (jamais parentée au shell) : elle SURVIT
 	// au kill d'explorer.exe et c'est le dismiss retourné qui la ferme,
 	// appelé par le compagnon APRÈS le retour de RestartExplorer. Contrat :
-	//   - best-effort ABSOLU (D4) : échec/lenteur de création = warning côté
+	//   - best-effort ABSOLU : échec/lenteur de création = warning côté
 	//     impl + dismiss no-op retourné — JAMAIS nil, JAMAIS bloquant, le
 	//     restart part quand même (l'avertissement est un confort) ;
 	//   - shown indique si la fenêtre a réellement été affichée : false sur
 	//     échec/timeout de création. Le compagnon ne paie le lead time (délai
 	//     de lecture) QUE si shown est true — pas de délai mort avant le kill
-	//     quand il n'y a rien à lire (review 43.4 #2) ;
+	//  quand il n'y a rien à lire ;
 	//   - dismiss est IDEMPOTENT (double appel sans effet) et BORNÉ (ne pend
 	//     jamais la passe), appelable même si la fenêtre n'a jamais existé.
 	// Appelée UNIQUEMENT depuis la branche explorer_restart NON throttlée de
-	// runRefreshGesture (D1, pièges #1/#6) — jamais pour les gestes faibles,
-	// jamais en passe stable, jamais côté SYSTEM/session 0 (piège #5).
+	// runRefreshGesture — jamais pour les gestes faibles,
+	// jamais en passe stable, jamais côté SYSTEM/session 0.
 	ShowRestartNotice(text string) (shown bool, dismiss func())
 }
 
-// restartNoticeText : libellé de la fenêtre d'avertissement (Story 43.4, D6) —
+// RestartNoticeText : libellé de la fenêtre d'avertissement
 // court, français, sans jargon ; purement informatif (aucun bouton, aucune
 // interaction : la fenêtre est auto-fermée par le compagnon).
 const restartNoticeText = "Application des réglages en cours — l'écran va se rafraîchir, merci de patienter quelques secondes."
 
 // restartNoticeLeadTime : bref délai de lecture entre l'affichage de la
-// fenêtre et le kill du shell (Story 43.4, D5) — borné et constant, encouru
+// fenêtre et le kill du shell — borné et constant, encouru
 // UNIQUEMENT sur la branche restart (jamais au régime stable : le surcoût ne
 // frappe que le logon où un réglage change réellement). Défaut du champ
 // Companion.NoticeLeadTime (injectable — tests).
@@ -167,8 +166,8 @@ const restartNoticeLeadTime = 2 * time.Second
 // RefreshRequester : interface OPTIONNELLE qu'un handler peut implémenter pour
 // déclarer le geste de rafraîchissement requis par sa DERNIÈRE passe (patron
 // des interfaces additives DetailReporter/InventoryReporter — mais consommée
-// par le COMPAGNON en fin de RunPass, jamais par le moteur : engine.go zéro
-// diff, D1). TakeRefreshRequest retourne le niveau MAX accumulé pendant
+// par le COMPAGNON en fin de RunPass, jamais par le moteur).
+// TakeRefreshRequest retourne le niveau MAX accumulé pendant
 // l'Apply de LA passe et remet l'accumulation à zéro (consommation par passe —
 // pas de geste fantôme au tick suivant). Le service SYSTEM n'appelle jamais
 // Take… : l'accumulation y reste vide de toute façon (gate isUserHive) et

@@ -17,7 +17,7 @@ use Tests\Traits\CreatesDhcpSchema;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 8.1 — Mode dégradé (AC6) : service DHCP injoignable.
+ * Mode dégradé : service DHCP injoignable.
  *
  *  - Page liste reste accessible (lecture DB) ;
  *  - bannière rouge + table baux affiche "Lecture indisponible" ;
@@ -88,13 +88,13 @@ class DhcpDegradedModeTest extends TestCase
             ->set('ip', '10.0.0.99')
             ->call('save');
 
-        // AC6 : réservation persistée même si reload échoue
+        // Réservation persistée même si reload échoue
         $this->assertDatabaseHas('dhcp_reservations', [
             'name' => 'posteDegraded',
             'ip' => '10.0.0.99',
         ]);
 
-        // Review code 8.1 #8 : c'est un toast WARNING (non bloquant) et
+        // C'est un toast WARNING (non bloquant) et
         // PAS un toast ERROR — la mutation a réussi, seul le reload a planté.
         // `WithToasts::toastWarning()` dispatche l'event `toastMagic` avec
         // `status: 'warning'`.

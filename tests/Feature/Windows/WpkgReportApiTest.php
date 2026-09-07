@@ -26,7 +26,7 @@ use Tests\TestCase;
  *
  * Convention :
  *   - DatabaseTransactions (rollback auto)
- *   - $this->withoutVite() dans setUp()
+ *  - $this->withoutVite() dans setUp()
  *   - Tables créées manuellement si SQLite :memory:
  */
 class WpkgReportApiTest extends TestCase
@@ -64,7 +64,7 @@ class WpkgReportApiTest extends TestCase
         parent::tearDown();
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // Helpers
 
     private function createTablesIfNeeded(): void
     {
@@ -112,7 +112,7 @@ class WpkgReportApiTest extends TestCase
             $table->unique(['workstation_id', 'application_id']);
         });
 
-        // Story 15.5 — corrélation rapport → déploiement actif via
+        // Corrélation rapport → déploiement actif via
         // ActiveDeploymentForWorkstationQuery (eager-load groups + appProfiles).
         Schema::create('workstation_groups', function (Blueprint $table) {
             $table->id();
@@ -172,7 +172,7 @@ class WpkgReportApiTest extends TestCase
             $table->timestamps();
         });
 
-        // Story 15.6 — EnsureLocalRequest::isAllowed() lit `wpkg.allowed_ips`
+        // EnsureLocalRequest::isAllowed lit `wpkg.allowed_ips`
         // via WpkgDeploymentSettings → SystemSetting::get(), donc la table
         // system_settings doit exister sinon le middleware 500 (no such table)
         // au lieu de renvoyer le 403 attendu.
@@ -216,10 +216,10 @@ class WpkgReportApiTest extends TestCase
         ]);
     }
 
-    // ─── Tests ───────────────────────────────────────────────────────────────
+    // Tests
 
     /**
-     * AC #4 : POST rapport valide → 200, SHA + statuts persistés.
+     * POST rapport valide → 200, SHA + statuts persistés.
      */
     public function test_post_valid_report_returns_200_and_persists(): void
     {
@@ -262,7 +262,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * AC #4 : POST rapport identique (même SHA) → 200 unchanged (Fix #10 : 304 → 200).
+     * POST rapport identique (même SHA) → 200 unchanged.
      */
     public function test_post_identical_report_returns_200_unchanged(): void
     {
@@ -288,7 +288,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * Fix #9 : POST avec rapport malformé → 422.
+     * POST avec rapport malformé → 422.
      * Utilise le fixture malformed_report.txt (aucun bloc valide, pas de séparateur ---).
      */
     public function test_malformed_report_returns_422(): void
@@ -313,7 +313,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * Fix #1 : header contient "Windows 10" → workstation.os = 'Windows 10' après ingestion.
+     * Header contient "Windows 10" → workstation.os = 'Windows 10' après ingestion.
      */
     public function test_os_windows10_detected_from_header(): void
     {
@@ -343,7 +343,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * AC #5 : POST depuis IP non-locale → 403.
+     * POST depuis IP non-locale → 403.
      */
     public function test_post_from_non_local_ip_returns_403(): void
     {
@@ -369,7 +369,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * AC #4 : POST rapport malformé → 422.
+     * POST rapport malformé → 422.
      */
     public function test_post_empty_report_returns_422(): void
     {
@@ -388,9 +388,6 @@ class WpkgReportApiTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /**
-     * AC #4 : POST pour hostname inconnu → 404.
-     */
     public function test_post_for_unknown_hostname_returns_404(): void
     {
         $response = $this->call(
@@ -407,7 +404,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * AC #4 : Idempotence — deux appels successifs avec le même contenu
+     * Idempotence — deux appels successifs avec le même contenu
      * ne doublent pas les entrées en base.
      */
     public function test_duplicate_ingestion_does_not_double_insert(): void
@@ -446,7 +443,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * Fix #3 : POST avec BOM UTF-8 en tête → 200 + parse OK.
+     * POST avec BOM UTF-8 en tête → 200 + parse OK.
      */
     public function test_post_report_with_bom_returns_200(): void
     {
@@ -475,7 +472,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * Fix #5 : POST avec Content-Type invalide → 415.
+     * POST avec Content-Type invalide → 415.
      */
     public function test_post_with_invalid_content_type_returns_415(): void
     {
@@ -496,7 +493,7 @@ class WpkgReportApiTest extends TestCase
     }
 
     /**
-     * Fix #5 : POST avec payload trop gros (Content-Length > 2 MiB) → 413.
+     * POST avec payload trop gros (Content-Length > 2 MiB) → 413.
      */
     public function test_post_with_oversized_payload_returns_413(): void
     {

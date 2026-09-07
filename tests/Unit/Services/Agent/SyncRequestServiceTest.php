@@ -13,10 +13,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `SyncRequestService` — Story 24.7 (AC5, AC6).
+ * Tests Unit `SyncRequestService`.
  *
  * request/fulfill/isPending + périmètre groupe avec exclusions (non
- * enrôlés / quarantaine ignorés silencieusement, piège 6). Sans HTTP — le
+ * enrôlés / quarantaine ignorés silencieusement). Sans HTTP — le
  * contrat HTTP (bypass 304 / solde au report) vit dans `SyncRequestTest`.
  */
 class SyncRequestServiceTest extends TestCase

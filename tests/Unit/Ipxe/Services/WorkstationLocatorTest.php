@@ -11,11 +11,11 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC2.1 / T2.5.
+ * T2.5.
  *
  * Tests unitaires de la résolution `WorkstationLocator::locate()`.
  *
- * Couvre les 10 cas spécifiés par AC2.1 :
+ * Couvre les 10 cas spécifiés par :
  *
  *  - Match UUID
  *  - Fallback MAC
@@ -326,9 +326,8 @@ class WorkstationLocatorTest extends TestCase
     #[Test]
     public function it_prioritises_uuid_over_mac_when_both_match_different_workstations(): void
     {
-        // Edge case : 2 workstations distincts, l'un match par UUID, l'autre
-        // par MAC. Le locator doit prioriser l'UUID (D4 — iso-legacy
-        // get_action() qui priorise l'UUID composite).
+        // Deux postes distincts, l'un identifié par son UUID, l'autre par sa MAC.
+        // L'UUID l'emporte, comme dans le `get_action()` legacy.
         $wsByUuid = $this->makeWorkstation([
             'name' => 'PC-UUID-MATCH',
             'uuid' => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',

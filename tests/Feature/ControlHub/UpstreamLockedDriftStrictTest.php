@@ -29,28 +29,27 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.5 (NFR2) — PREUVE par construction : un item amont `locked` est DÉJÀ
- * soumis au drift STRICT inconditionnel (livré en 27.8), SANS aucun câblage
+ * PREUVE par construction : un item amont `locked` est DÉJÀ
+ * soumis au drift STRICT inconditionnel (livré), SANS aucun câblage
  * d'enforcement ajouté par 29.5.
  *
  * Ce test verrouille la chaîne : un item amont `registry`/`locked`/`instance`
  * matchant une projection de capacité (même clé qu'un réglage local) est injecté
- * à la maille `StateMaille::Upstream` (rang -1, inbattable — 28.3/29.3), compilé en
+ * à la maille `StateMaille::Upstream` (rang -1, inbattable), compilé en
  * item de desired-state à **exactement 4 clés** `{type, semantics, payload, hash}`
  * portant la **valeur amont**, et **ne contient AUCUN** marqueur `mode` / `drift` /
  * `drift_policy`. C'est ce qui prouve que l'item verrouillé entre dans le pipeline
  * de réapplication STRICT côté agent (moteur Go `provision.Reconcile`, réapplique
  * sur toute divergence de hash).
  *
- * NFR2 (AC#2) : aucune modification du moteur agent ni du contrat n'est introduite
- * par 29.5 ; la couverture STRICT côté Go (`agent/shared/handler_*_test.go`, 27.8)
- * est citée comme preuve de la réapplication (un item compilé est source-agnostique
- * — un item amont est, après compilation, de forme identique à un item local).
- * AUCUN nouveau test Go n'est requis.
+ * Aucune modification du moteur agent ni du contrat n'est introduite ici ; la
+ * couverture STRICT côté Go (`agent/shared/handler_*_test.go`) suffit à prouver la
+ * réapplication (un item compilé est source-agnostique — un item amont est, après
+ * compilation, de forme identique à un item local).
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central ». [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central ».
  */
 class UpstreamLockedDriftStrictTest extends TestCase
 {
@@ -96,26 +95,26 @@ class UpstreamLockedDriftStrictTest extends TestCase
 
         $item = $items[0];
 
-        // AC#1 : EXACTEMENT 4 clés, dans l'ordre du contrat 27.8.
+        // EXACTEMENT 4 clés, dans l'ordre du contrat de desired-state.
         self::assertSame(
             ['type', 'semantics', 'payload', 'hash'],
             array_keys($item),
             'item de desired-state à 4 clés (STRICT implicite — 27.8)',
         );
 
-        // AC#1 : AUCUN marqueur de mode/drift (réintroduire un marqueur = régression 27.8).
+        // AUCUN marqueur de mode/drift (réintroduire un marqueur = régression).
         self::assertArrayNotHasKey('mode', $item);
         self::assertArrayNotHasKey('drift', $item);
         self::assertArrayNotHasKey('drift_policy', $item);
 
-        // AC#1 : l'item porte la VALEUR AMONT (la maille Upstream gagne, inbattable).
+        // L'item porte la VALEUR AMONT (la maille Upstream gagne, inbattable).
         self::assertSame(1, $item['payload']['value'], 'la valeur amont gagne (maille Upstream rang -1)');
 
         // Le hash est bien recalculé sur l'item à 4 clés (cohérence StateHasher).
         self::assertSame($this->hasher->hashItem($item), $item['hash']);
     }
 
-    // ── Helpers (calque UpstreamContractResolutionTest) ───────────────────
+    // Helpers (calque UpstreamContractResolutionTest)
 
     /**
      * @param  list<StateProvider>  $providers

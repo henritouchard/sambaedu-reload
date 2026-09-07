@@ -14,7 +14,7 @@ use Throwable;
 /**
  * Service de gestion des droits SambaEdu
  *
- * Story 7.3 — Refactor Spatie-only (2026-04-25) :
+ * Refactor Spatie-only (2026-04-25) :
  *  - `calculateRights()` ne lit plus les groupes LDAP (attribut `info`). Il
  *    reconstruit le bitmask uniquement à partir de Spatie (rôles + permissions
  *    individuelles + délégations scopées OR positifs / AND-NOT négatifs).
@@ -30,7 +30,7 @@ use Throwable;
  *  - `$login === 'admin'` → `SE_ADMIN (0xFFFF)` (cas spécial historique).
  *  - Autrement, on résout le `User` Eloquent via `$login` et on calcule son
  *    bitmask Spatie-only. Les `$rightGroups` en argument sont ignorés par
- *    7.3 — c'était une dépendance sur la lecture LDAP qui n'a plus de sens.
+ *  — c'était une dépendance sur la lecture LDAP qui n'a plus de sens.
  *
  * Les anciennes méthodes statiques (`getRightDescription`, `getRightDetails`,
  * `getRightsDefinitions`) restent disponibles via `LegacyRight` pour le
@@ -45,11 +45,6 @@ class RightsService
     {
         $this->rightRepository = $rightRepository ?? new RightRepository();
     }
-
-    // ============================================
-    // CONSTANTES LEGACY (délèguent vers LegacyRight enum)
-    // @deprecated Utiliser LegacyRight enum directement
-    // ============================================
 
     public const SE_NO_RIGHT = 0x00;
     public const SE_USER_PASSWORD_INIT = 0x01;
@@ -75,13 +70,13 @@ class RightsService
     public const SE_ADMIN = 0xFFFF;
 
     /**
-     * Calcule le bitmask de droits pour un utilisateur (Spatie-only, Story 7.3).
+     * Calcule le bitmask de droits pour un utilisateur (Spatie-only).
      *
-     * Contrat (inchangé depuis 7.1) :
-     *  - Entrée : liste des groupes LDAP legacy (ignorée en 7.3 — conservée pour rétro-compat signature) + login
+     * Contrat (inchangé depuis) :
+     *  - Entrée : liste des groupes LDAP legacy (ignorée — conservée pour rétro-compat signature) + login
      *  - Sortie : `int` bitmask des droits applicatifs
      *
-     * Pipeline interne (7.3) :
+     * Pipeline interne :
      *  1. Cas spécial `admin` / root → `SE_ADMIN`.
      *  2. Résolution du User Eloquent via `$login`.
      *  3. Récupération des permissions effectives Spatie (`getAllPermissions`).
@@ -91,7 +86,7 @@ class RightsService
      * Aucune lecture LDAP/`RightRepository` n'est effectuée — garanti par le
      * test `RightsServiceSpatieRefactorTest::it_works_even_if_ldap_is_down`.
      *
-     * @param  array<int,string>  $rightGroups  Legacy — ignoré en 7.3 (conservé signature)
+     * @param array<int,string> $rightGroups Legacy — ignoré (conservé signature)
      * @param  string  $login  Login de l'utilisateur
      * @return int  Bitmask agrégé
      */
@@ -131,7 +126,7 @@ class RightsService
      *
      * Accepte optionnellement un `WorkstationGroup` pour scope les délégations
      * (ajoute les positives actives sur ce scope, retranche les négatives
-     * actives — sémantique AND-NOT cf. matrice §7).
+     * actives — sémantique AND-NOT).
      *
      * @param  User  $user  Utilisateur cible (Eloquent)
      * @param  WorkstationGroup|null  $scope  Scope optionnel pour délégations
@@ -151,7 +146,7 @@ class RightsService
 
         $bitmask = SambaPermission::toBitmask($permissionNames);
 
-        // 2. Délégations scopées (seulement si scope fourni — matrice §7).
+        // 2. Délégations scopées (seulement si un scope est fourni).
         if ($scope !== null) {
             try {
                 // Positives actives sur ce scope → OR au bitmask.
@@ -225,7 +220,7 @@ class RightsService
     /**
      * Invalide le cache des groupes de droits
      *
-     * @deprecated since 7.3 — le calcul ne passe plus par le cache LDAP. Gardé
+     * @deprecated since — le calcul ne passe plus par le cache LDAP. Gardé
      * pour rétro-compat des appelants qui invalident après édition LDAP.
      */
     public function invalidateCache(): void

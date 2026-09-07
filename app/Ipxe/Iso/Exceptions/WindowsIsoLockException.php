@@ -7,7 +7,7 @@ namespace App\Ipxe\Iso\Exceptions;
 use RuntimeException;
 
 /**
- * Story 3.6 — D15 — Exception levée par
+ * D15 — Exception levée par
  * {@see \App\Ipxe\Iso\Services\WindowsIsoDownloadOrchestrator}
  * lorsqu'un autre téléchargement est déjà en cours et détient le
  * `Cache::lock('ipxe.iso.download.global', 7200)` global.

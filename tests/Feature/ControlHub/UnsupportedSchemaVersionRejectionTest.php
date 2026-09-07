@@ -18,16 +18,16 @@ use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
- * Story 33.2 — Négociation et rejet gracieux d'une version de schéma d'échange incompatible.
+ * Négociation et rejet gracieux d'une version de schéma d'échange incompatible.
  *
  * Couverture :
- * - #1 version déclarée non supportée → ingestion rejetée (exception dédiée, pas de DTO).
- * - #1/#2 zéro écriture : comptes des 5 tables inchangés + aucun event `ControlHubContractChanged`.
- * - #2 état d'un contrat pré-existant strictement inchangé (rollback total trivial, pré-transaction).
- * - #3 trace : message « reçue vs supportées » + log structuré `{declared, supported}`.
- * - #5 type DÉDIÉ distinct d'`InvalidUpstreamContractException` (rejet VERSION ≠ rejet CONTENU).
- * - #4 chemin heureux 33.1 inchangé (supportée acceptée, absente → version courante).
- * - #7c garde-fou R3 : aucun identifiant/message livré ne contient « central ».
+ * - version déclarée non supportée → ingestion rejetée (exception dédiée, pas de DTO).
+ * - zéro écriture : comptes des 5 tables inchangés + aucun event `ControlHubContractChanged`.
+ * - état d'un contrat pré-existant strictement inchangé (rollback total trivial, pré-transaction).
+ * - trace : message « reçue vs supportées » + log structuré `{declared, supported}`.
+ * - type DÉDIÉ distinct d'`InvalidUpstreamContractException` (rejet VERSION ≠ rejet CONTENU).
+ * - chemin heureux inchangé (supportée acceptée, absente → version courante).
+ * - règle de nommage : aucun identifiant ni message livré ne contient « central ».
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM. RefreshDatabase + CACHE_DRIVER=array.
  */
@@ -35,7 +35,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** Les 5 tables du contrat amont — leur comptage prouve le « rien écrit » (AC #1/#2). */
+    /** Les 5 tables du contrat amont — leur comptage prouve le « rien écrit ». */
     private const CONTRACT_TABLES = [
         'controlhub_contracts',
         'controlhub_contract_items',
@@ -50,7 +50,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
     }
 
     /**
-     * Payload de référence (calque 33.1) ; `$overrides` permet d'ajouter `schema_version`.
+     * Payload de référence (calque) ; `$overrides` permet d'ajouter `schema_version`.
      *
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
@@ -86,10 +86,6 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         return $counts;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #1 — Version déclarée non supportée → ingestion rejetée
-    // ──────────────────────────────────────────────────────────────────────────
-
     public function test_unsupported_declared_version_is_rejected(): void
     {
         $this->expectException(UnsupportedSchemaVersionException::class);
@@ -97,9 +93,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         $this->service()->ingest($this->payload(['schema_version' => '2.0']));
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #1 / #2 — Rejet n'écrit RIEN (5 tables + aucun event)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Le rejet n'écrit RIEN (5 tables + aucun event)
 
     public function test_rejection_writes_nothing(): void
     {
@@ -124,13 +118,9 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         Event::assertNotDispatched(ControlHubContractChanged::class);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #2 — Un contrat pré-existant reste strictement inchangé
-    // ──────────────────────────────────────────────────────────────────────────
-
     public function test_rejection_leaves_existing_contract_unchanged(): void
     {
-        // 1. Contrat valide pré-existant (chemin heureux 33.1).
+        // 1. Contrat valide pré-existant (chemin heureux).
         $this->service()->ingest($this->payload(['schema_version' => ControlHubContractSchema::CURRENT_VERSION]));
 
         $before = ControlHubContract::firstOrFail();
@@ -139,7 +129,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         $updatedAtBefore = $before->updated_at->toISOString();
         $linkStateBefore = $before->link_state->value;
         $countsBefore = $this->tableCounts();
-        // Review 33.2 (#3) — snapshot des VALEURS + timestamps enfants (pas seulement les décomptes) :
+        // Snapshot des VALEURS + timestamps enfants (pas seulement les décomptes) :
         // un hypothétique delete+reinsert identique passerait un simple comptage. On fige l'item.
         $itemsBefore = DB::table('controlhub_contract_items')->orderBy('id')->get()->toArray();
 
@@ -175,9 +165,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         Carbon::setTestNow();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #3 — Trace : message « reçue vs supportées » + log structuré
-    // ──────────────────────────────────────────────────────────────────────────
+    // Trace : message « reçue vs supportées » + log structuré
 
     public function test_exception_message_names_received_and_supported(): void
     {
@@ -215,10 +203,6 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #5 — Type DÉDIÉ, distinct d'InvalidUpstreamContractException
-    // ──────────────────────────────────────────────────────────────────────────
-
     public function test_dedicated_type_distinct_from_invalid_contract(): void
     {
         // L'exception de version n'est PAS une exception de contenu (et réciproquement).
@@ -245,10 +229,6 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #4 — Chemin heureux 33.1 strictement inchangé
-    // ──────────────────────────────────────────────────────────────────────────
-
     public function test_happy_path_unchanged(): void
     {
         // Version supportée → acceptée + enregistrée.
@@ -272,9 +252,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #7c — Garde-fou R3 : aucun identifiant/message livré ne contient « central »
-    // ──────────────────────────────────────────────────────────────────────────
+    // Règle de nommage : aucun identifiant ni message livré ne contient « central »
 
     public function test_r3_no_central_identifier(): void
     {
@@ -293,7 +271,7 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         $message = UnsupportedSchemaVersionException::for('2.0', ControlHubContractSchema::SUPPORTED_VERSIONS)->getMessage();
         $this->assertStringNotContainsStringIgnoringCase('central', $message);
 
-        // Review 33.2 (#7) — le message du Log::warning de negotiate() ne véhicule pas non plus « central ».
+        // Le message du Log::warning de negotiate() ne véhicule pas non plus « central ».
         Log::spy();
         try {
             $this->service()->ingest($this->payload(['schema_version' => '2.0']));
@@ -305,14 +283,12 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Review 33.2 (#5) — schema_version numérique DÉCLARÉ : pas de fausse acceptation
-    // ──────────────────────────────────────────────────────────────────────────
+    // schema_version numérique DÉCLARÉ : pas de fausse acceptation
 
     public function test_numeric_declared_version_is_negotiated_not_silently_accepted(): void
     {
-        // Un float JSON (ex. 2.0) ne doit PAS retomber sur la version courante par défaut :
-        // coercé en chaîne, il est rejeté comme toute version déclarée non supportée (AC #1).
+        // Un float JSON (ex.) ne doit PAS retomber sur la version courante par défaut :
+        // coercé en chaîne, il est rejeté comme toute version déclarée non supportée.
         try {
             $this->service()->ingest($this->payload(['schema_version' => 2.0]));
             $this->fail('Un schema_version float non supporté doit être rejeté, pas accepté en silence.');
@@ -332,16 +308,14 @@ class UnsupportedSchemaVersionRejectionTest extends TestCase
         $this->assertSame(0, ControlHubContract::count());
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Review 33.2 (#2) — Ordre des causes : la VERSION est validée AVANT le CONTENU
-    // ──────────────────────────────────────────────────────────────────────────
+    // Ordre des causes : la VERSION est validée AVANT le CONTENU
 
     public function test_version_is_validated_before_content(): void
     {
         // Payload DOUBLEMENT invalide : version non supportée ET contenu hors domaine.
         // La cause primaire doit être la VERSION (on ne parse pas un contenu sous les règles v1.0
         // quand la version déclarée est inconnue) → UnsupportedSchemaVersionException, pas
-        // InvalidUpstreamContractException (AC#5, diagnostic non trompeur).
+        // InvalidUpstreamContractException (diagnostic non trompeur).
         try {
             $this->service()->ingest($this->payload([
                 'schema_version' => '2.0',

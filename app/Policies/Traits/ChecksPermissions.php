@@ -56,7 +56,7 @@ trait ChecksPermissions
     /**
      * Raccourci : vérifie les droits computer-admin.
      *
-     * Correction review 7.2 #1 : la permission `computer.modify` n'existe pas
+     * La permission `computer.modify` n'existe pas
      * dans l'enum `SambaPermission`. On s'appuie sur `computer.install` (bit
      * 0x800, présent dans le composite `SE_COMPUTER_ADMIN`) pour garder la
      * cohérence avec la matrice §5.2.

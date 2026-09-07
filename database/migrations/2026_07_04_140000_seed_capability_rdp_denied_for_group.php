@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 35.6 (AC5) — capacité de PREUVE du mécanisme HORS-REGISTRE `privilege` :
+ * Capacité de PREUVE du mécanisme HORS-REGISTRE `privilege` :
  * `rdp_denied_for_group`. Dernière brique de la GPO CD95 « Blocages élèves » :
  * « les élèves ne peuvent pas ouvrir de session RDP, mais les profs OUI, sur le
  * MÊME parc » — inatteignable par `remote_desktop_enabled=off` (machine-wide,
@@ -15,12 +15,12 @@ use Illuminate\Support\Facades\Schema;
  * refuse l'ouverture de session Bureau à distance à tout membre du groupe, en
  * laissant les autres passer.
  *
- * Pattern iso 36.1/36.2 (`2026_07_04_100000_seed_capability_program_files_browse_denied`) :
+ * Pattern iso (`2026_07_04_100000_seed_capability_program_files_browse_denied`) :
  * `updateOrInsert` par `key` puis par `(capability_id, os, mechanism)`,
  * idempotent, garde `hasTable`, `down()` par suppression de la `key` (FK
  * cascade → projection + assignments).
  *
- * ── ENUM OPT-IN À TROIS VALEURS (patron « off réel » 36.1, piège #6) ─────────
+ * **ENUM OPT-IN À TROIS VALEURS (patron « off réel »)**
  *   - `unmanaged` (défaut, sentinelle) : absent de la map `accounts` ⇒ RIEN
  *     n'est émis (le handler n'est même pas invoqué — engine.go itère les
  *     types présents). Un privilège armé PUIS remis à `unmanaged` resterait
@@ -32,13 +32,13 @@ use Illuminate\Support\Facades\Schema;
  *     liste vide ⇒ l'agent VIDE le privilège (révoque tous les titulaires) ⇒
  *     RDP rétabli. C'est le retrait HONNÊTE.
  *
- * ── EFFET AU LOGON SUIVANT (piège #5) ────────────────────────────────────────
+ * **EFFET AU LOGON SUIVANT**
  * Les droits de logon `SeDeny*` sont évalués par Windows à l'OUVERTURE de
  * session : armer la capacité ne coupe PAS une session RDP en cours (la
  * PROCHAINE tentative est refusée) ; `off` rétablit le RDP au logon suivant,
  * sans reboot. Sémantique Windows, pas un bug — dit au `warning`.
  *
- * ── PAS DE CIBLAGE PAR UTILISATEUR (piège #11) ──────────────────────────────
+ * **PAS DE CIBLAGE PAR UTILISATEUR**
  * Mécanisme portée MACHINE : « qui est refusé » = la liste `accounts` DANS le
  * payload (`@eleves`), « quels postes » = les assignations parc/salle/poste/
  * broadcast. Un override UserGroup/User serait SANS EFFET.

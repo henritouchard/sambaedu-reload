@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC1/AC2) — Synchro de la source EMBARQUÉE et lecture du catalogue.
+ * Synchro de la source EMBARQUÉE et lecture du catalogue.
  *
  * La découverte des manifests est pointée sur un répertoire TEMPORAIRE
  * (`config('extensions.bundled_path')`, patron `agent.tools_embedded_path`) :
@@ -47,7 +47,7 @@ class ExtensionCatalogServiceTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function service(): ExtensionCatalogService
     {
@@ -90,7 +90,7 @@ class ExtensionCatalogServiceTest extends TestCase
 
     private function manifest(string $id, array $overrides = []): array
     {
-        // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` (chemin
+        // Une `app` DOIT déclarer `/ext/<id>` (chemin
         // provisionné par SE5) ; une `link` pointe où elle veut. La fixture
         // suit le contrat, sinon elle fabriquerait un manifest impossible.
         $type = (string) ($overrides['type'] ?? 'link');
@@ -111,7 +111,7 @@ class ExtensionCatalogServiceTest extends TestCase
         ], $overrides);
     }
 
-    // ── AC1 — chargement de la source embarquée ───────────────────────────
+    // — chargement de la source embarquée
 
     #[Test]
     public function sync_creates_the_bundled_source_and_loads_its_manifests(): void
@@ -151,7 +151,7 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertNotNull($doc, 'la tuile Documentation est chargée');
         self::assertSame('/doc', $doc->entryUrl());
         self::assertSame(ExtensionType::Link, $doc->type);
-        // `administratif` ajouté en review 54.3 (#5) : cette population, écrite
+        // `administratif` figure dans les rôles du manifeste : cette population, écrite
         // telle quelle par la sync, ouvrait sinon un lanceur SYSTÉMATIQUEMENT
         // vide — la documentation est le contre-exemple parfait d'une
         // application réservée aux enseignants et aux élèves.
@@ -168,7 +168,7 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertNotNull(ExtensionSource::where('key', ExtensionSource::KEY_BUNDLED)->first());
     }
 
-    // ── AC2 — un manifest fautif n'en casse aucun autre ───────────────────
+    // — un manifest fautif n'en casse aucun autre
 
     #[Test]
     public function an_invalid_manifest_is_skipped_without_breaking_the_others(): void
@@ -195,7 +195,7 @@ class ExtensionCatalogServiceTest extends TestCase
         );
     }
 
-    // ── AC2 — idempotence, `status` préservé ──────────────────────────────
+    // — idempotence, `status` préservé
 
     #[Test]
     public function replaying_the_sync_creates_no_duplicate_and_writes_nothing(): void
@@ -257,7 +257,7 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertSame(['profile'], $fresh->requestedScopes());
     }
 
-    // ── AC2 — prune borné ─────────────────────────────────────────────────
+    // — prune borné
 
     #[Test]
     public function a_disappeared_manifest_prunes_only_the_available_bundled_row(): void
@@ -295,7 +295,7 @@ class ExtensionCatalogServiceTest extends TestCase
         );
     }
 
-    // ── Correctif de review 54.1 — racine introuvable ≠ catalogue vide ────
+    // Correctif de review — racine introuvable ≠ catalogue vide
     //
     // Sans cette garde, `discoverBundledManifestPaths()` renvoyait `[]` pour une
     // racine ABSENTE comme pour une racine VIDE : le prune ne voyait alors aucune
@@ -345,7 +345,7 @@ class ExtensionCatalogServiceTest extends TestCase
     #[Test]
     public function the_prune_is_bounded_to_the_bundled_source(): void
     {
-        // Une extension d'une AUTRE source (anticipation Epic 56) ne doit pas
+        // Une extension d'une AUTRE source (anticipation) ne doit pas
         // être emportée par la synchro de la source embarquée.
         $remoteSource = ExtensionSource::factory()->remote()->create();
         $remote = Extension::factory()->create([
@@ -376,7 +376,7 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertSame(2, Extension::where('key', 'doc')->count());
     }
 
-    // ── Seeder ────────────────────────────────────────────────────────────
+    // Seeder
 
     #[Test]
     public function the_seeder_is_idempotent_and_returns_counters(): void
@@ -393,7 +393,7 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertSame(1, Extension::query()->count());
     }
 
-    // ── Lecture (pages admin) ─────────────────────────────────────────────
+    // Lecture (pages admin)
 
     #[Test]
     public function library_returns_flat_rows_with_labels_and_source(): void
@@ -445,13 +445,13 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertNull($this->service()->find(999_999));
     }
 
-    // ── Story 56.1 — filtrage par l'état de la SOURCE (dette 54.x soldée) ──
+    // — filtrage par l'état de la SOURCE
     //
     // `library()` / `find()` PROPOSENT : ils doivent donc taire ce qu'une
     // source désactivée ou dont le catalogue a été refusé n'a plus le droit de
     // proposer. Ils ne doivent EN REVANCHE jamais faire disparaître une
-    // extension déjà intégrée : ce serait dé-intégrer silencieusement
-    // (invariant #4), et l'admin ne verrait plus le bouton pour la désinstaller.
+    // extension déjà intégrée : ce serait dé-intégrer silencieusement,
+    // et l'admin ne verrait plus le bouton pour la désinstaller.
 
     #[Test]
     public function an_available_extension_of_a_disabled_source_disappears_from_the_library(): void
@@ -466,7 +466,7 @@ class ExtensionCatalogServiceTest extends TestCase
     #[Test]
     public function an_available_extension_of_a_source_in_error_disappears_from_the_library(): void
     {
-        // Fail-closed NFR2 : un catalogue dont la signature ne se vérifie plus
+        // Fail-closed : un catalogue dont la signature ne se vérifie plus
         // ne propose plus rien, même si ses lignes sont encore en base.
         $source = ExtensionSource::factory()->remote()->syncError()->create();
         $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
@@ -478,7 +478,7 @@ class ExtensionCatalogServiceTest extends TestCase
     #[Test]
     public function an_unreachable_source_keeps_proposing_its_last_verified_catalog(): void
     {
-        // NFR7 : le registre EST le cache local. Un dépôt momentanément
+        // Le registre EST le cache local. Un dépôt momentanément
         // injoignable ne doit RIEN changer pour l'admin.
         $source = ExtensionSource::factory()->remote()->unreachable()->create();
         $extension = Extension::factory()->create(['extension_source_id' => $source->id]);
@@ -535,17 +535,13 @@ class ExtensionCatalogServiceTest extends TestCase
         self::assertSame('', $row['source_host']);
     }
 
-    // =====================================================================
-    // Story 56.2 — le catalogue ne touche JAMAIS ce qui est installé
-    // =====================================================================
-
     #[Test]
     public function a_catalog_resync_updates_the_published_version_but_never_the_installed_one(): void
     {
         // Le scénario qui compte : une `app` tourne en 1.0.0, la source publie
         // 2.0.0. La synchro doit mettre à jour ce que la source PUBLIE
         // (`version`) sans jamais toucher ce qui TOURNE (`installed_*`) —
-        // sinon la détection de mise à jour de la 56.3 mentirait, et une
+        // sinon la détection de mise à jour mentirait, et une
         // simple re-synchro effacerait la trace de l'installation réelle.
         $source = ExtensionSource::factory()->remote('https://depot.example.test/extensions')->create();
 

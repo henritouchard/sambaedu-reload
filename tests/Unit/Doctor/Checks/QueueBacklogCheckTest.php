@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — le contrôle qui voit l'OUVRIER MORT.
+ * Le contrôle qui voit l'OUVRIER MORT.
  *
  * Sa valeur tient à une seule propriété : il alerte sur l'ANCIENNETÉ, jamais sur
  * le VOLUME. Un contrôle qui crierait dès qu'une file est chargée apprendrait à

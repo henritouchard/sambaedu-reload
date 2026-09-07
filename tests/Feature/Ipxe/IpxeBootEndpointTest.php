@@ -11,7 +11,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC4.1 / AC5.1 / AC5.2 / AC8.2 / T6.4.
+ * T6.4.
  *
  * Tests feature de l'endpoint `GET|POST /ipxe/boot` :
  *
@@ -57,8 +57,8 @@ class IpxeBootEndpointTest extends TestCase
     public function it_accepts_empty_mac_and_uuid_for_handshake(): void
     {
         // POST avec params vides → handshake (iso `boot.php:26-35` qui teste
-        // `empty($mac) || empty($uuid)` — fix review #1/#10 Q1 Henri : `||`
-        // restauré dans IpxeService::handleBoot pour parité legacy stricte).
+        // `empty($mac) || empty($uuid)` : c'est bien `||`, et non `&&`, dans
+        // IpxeService::handleBoot, pour parité legacy stricte).
         $response = $this->post('/ipxe/boot', [
             'mac' => '',
             'uuid' => '',
@@ -85,8 +85,8 @@ class IpxeBootEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('item --key 0 exit', $body);
-        // Le menu inconnu propose l'item admin (key 1 login) depuis la story
-        // 4.10 (parité boot.php:82) ; il se distingue du menu known par l'item
+        // Le menu inconnu propose l'item admin (key 1 login, parité
+        // boot.php:82) ; il se distingue du menu known par l'item
         // de boot disque en `key 0 exit` (le known utilise `key 3 default`).
         self::assertStringNotContainsString('item --key 3 default', $body);
     }
@@ -145,16 +145,14 @@ class IpxeBootEndpointTest extends TestCase
             $response->headers->get('Content-Type'),
         );
 
-        // Cache-Control no-store
         self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
-        // X-Robots-Tag noindex
         self::assertSame('noindex', $response->headers->get('X-Robots-Tag'));
     }
 
     #[Test]
     public function it_persists_machine_boot_log_row(): void
     {
-        // Fix review #5 — discriminant unique au test (machine_name) pour
+        // Discriminant unique au test (machine_name) pour
         // garantir l'isolation : la base SQLite :memory: est partagée entre
         // les tests de la classe (pas de RefreshDatabase / pas de truncate
         // dans IpxeSchemaBootstrapper qui est idempotent), donc les rows

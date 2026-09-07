@@ -7,9 +7,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 24.1 — AC1, AC2, AC3.
  *
- * Stockage D3 des rapports de conformité agent (`POST /api/v1/agent/report`,
+ * Stockage des rapports de conformité agent (`POST /api/v1/agent/report`,
  * {@see \App\Services\Agent\Reporting\ReportIngestService}) — trois tables :
  *
  *  - `agent_resource_states` — état COURANT par (poste, type) : UPSERT,
@@ -21,7 +20,7 @@ use Illuminate\Support\Facades\Schema;
  *    `agent:reports:prune`).
  *  - `agent_report_history` — payloads bruts complets, append-only,
  *    derrière le flag `AGENT_REPORT_HISTORY` (défaut off). Table de
- *    DÉBOGAGE : retrait prévu par D3 à la sortie de debug — d'où une table
+ *    DÉBOGAGE : destinée à être retirée à la sortie de debug — d'où une table
  *    dédiée, supprimable d'un bloc. Rétention
  *    `config('agent.report_history_retention_days')`.
  *
@@ -46,9 +45,9 @@ return new class extends Migration
                 $table->timestamp('reported_at')->comment('Horodatage du dernier rapport — rafraîchi même si identique');
                 $table->timestamps();
 
-                // Volume borné D3 : au plus 1 ligne par (poste, type).
+                // Volume borné : au plus 1 ligne par (poste, type).
                 $table->unique(['workstation_id', 'type']);
-                // Lectures UI conformité (24.5) : « tous les postes en drift ».
+                // Lectures UI conformité : « tous les postes en drift ».
                 $table->index('status');
             });
         }

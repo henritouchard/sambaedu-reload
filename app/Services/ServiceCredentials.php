@@ -111,7 +111,7 @@ class ServiceCredentials
     }
 
     /**
-     * Story 61.1 — ENREGISTRE UN SECRET FOURNI DE L'EXTÉRIEUR.
+     * ENREGISTRE UN SECRET FOURNI DE L'EXTÉRIEUR.
      *
      * Toutes les méthodes ci-dessus GÉNÈRENT le secret : c'est le cas de
      * `se4install`, dont SE5 est l'émetteur. L'app password admin d'une instance

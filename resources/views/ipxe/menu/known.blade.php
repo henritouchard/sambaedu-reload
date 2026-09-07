@@ -8,7 +8,7 @@ item --gap -- ------------------------------------------------------------------
 @if($isAdminActive)
 item --key 1 login (1) Acces au menu d'administration
 @endif
-{{-- Story 4.10 : `isAdminActive` reste un flag config (`ipxe.admin.enabled`)
+{{-- `isAdminActive` reste un flag config (`ipxe.admin.enabled`)
      mais default = true depuis 4.10. L'auth est dsormais gre ct serveur
      (IpxeAuthService::authorize)  un login random est rejet avec l'cran
      `auth_failed.blade.php` puis chain back boot. --}}
@@ -41,13 +41,13 @@ chain --replace --autofree {{ $serverBaseUrl }}/ipxe/admin##params
 :action
 params
 param mac ${net0/mac}
-{{-- Story 3.11 / S1 - variable SMBIOS firmware ${uuid} (jamais la valeur
+{{-- S1 - variable SMBIOS firmware ${uuid} (jamais la valeur
      Laravel-rendue) : iso bloc `:login` + contrat project_ipxe_param_use_smbios_vars.
      Un ${uuid} vide cote firmware ferait perdre l'auth/locate cote serveur. --}}
 param uuid ${uuid}
 param product ${product}
 param platform ${platform}
-{{-- Story 3.11 / D7 - chain vers la route NATIVE /ipxe/action/{action}
+{{-- Chain vers la route NATIVE /ipxe/action/{action}
      (param action dans le PATH, pas en query) au lieu du tombstone legacy
      action.php. URL absolue (jamais relative) : un chain relatif depuis
      /ipxe/boot doublerait le chemin (404, abort firmware). --}}

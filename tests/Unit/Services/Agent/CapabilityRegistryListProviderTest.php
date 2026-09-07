@@ -24,7 +24,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 35.2 — Tests Unit des providers `registry_list` (contrat §7.6).
+ * Tests Unit des providers `registry_list` (contrat §7.6).
  *
  * Le provider EXPANSE une capacité → conteneurs CONCRETS 4 clés
  * `{hive, path, entry_type, values}` via l'interpréteur de `spec` list
@@ -98,7 +98,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         return $cap;
     }
 
-    // ── Type / sémantique / portée (mêmes casiers que registry) ────────────
+    // Type / sémantique / portée (mêmes casiers que registry)
 
     #[Test]
     public function providers_declare_registry_list_exclusive_with_registry_scopes(): void
@@ -114,7 +114,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(StateScope::Session, $user->scope());
     }
 
-    // ── (a) map on → liste émise, payload EXACTEMENT 4 clés ────────────────
+    // (a) map on → liste émise, payload EXACTEMENT 4 clés
 
     #[Test]
     public function map_resolved_list_is_emitted_as_a_four_key_container(): void
@@ -137,7 +137,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(['cmd.exe', 'mstsc.exe'], $c->payload['values'], 'ordre PRÉSERVÉ (jamais trié)');
     }
 
-    // ── (b) `'off' => []` émet values: [] (purge, vraie valeur) ────────────
+    // (b) `'off' => []` émet values: [] (purge, vraie valeur)
 
     #[Test]
     public function off_empty_list_emits_an_empty_values_container(): void
@@ -153,7 +153,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($items->first()->payload));
     }
 
-    // ── (c) UNMANAGED (clé de map absente) n'émet rien ─────────────────────
+    // (c) UNMANAGED (clé de map absente) n'émet rien
 
     #[Test]
     public function unmanaged_sentinel_emits_nothing(): void
@@ -165,7 +165,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertCount(0, $this->machineProvider()->itemsFor($this->ctx()));
     }
 
-    // ── (d) littéral liste = toujours émis ─────────────────────────────────
+    // (d) littéral liste = toujours émis
 
     #[Test]
     public function literal_list_is_always_emitted(): void
@@ -180,12 +180,12 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(['a', 'b', 'c'], $c->payload['values']);
     }
 
-    // ── (e) forme assoc inattendue (dont $ensure) : non émis défensif ──────
+    // (e) forme assoc inattendue (dont $ensure) : non émis défensif
 
     #[Test]
     public function unexpected_assoc_forms_including_ensure_marker_emit_nothing(): void
     {
-        // Le marqueur $ensure de 35.1 n'est PAS supporté en registry_list :
+        // Le marqueur $ensure n'est PAS supporté en registry_list :
         // l'idiome de suppression EST la liste vide. Scalaire résolu = non émis
         // aussi (une liste est la seule forme émissible). Jamais d'exception.
         $this->makeListCapability('weird_list_cap', 'off', [
@@ -202,7 +202,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(['real.exe'], $items->first()->payload['values']);
     }
 
-    // ── (f) entry_type hors contrat : non émis (+ défaut REG_SZ) ───────────
+    // (f) entry_type hors contrat : non émis (+ défaut REG_SZ)
 
     #[Test]
     public function invalid_entry_type_is_not_emitted_and_default_is_reg_sz(): void
@@ -222,7 +222,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame('REG_EXPAND_SZ', $byPath['SOFTWARE\\X\\Expand']->payload['entry_type']);
     }
 
-    // ── (g) filtre par ruche (HKLM vs HKCU) ────────────────────────────────
+    // (g) filtre par ruche (HKLM vs HKCU)
 
     #[Test]
     public function each_provider_only_emits_containers_of_its_hive(): void
@@ -241,7 +241,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame('Software\\Y\\UserList', $userItems->first()->payload['path']);
     }
 
-    // ── (h) pas de fuite d'id, exactement 4 clés, strings only ─────────────
+    // (h) pas de fuite d'id, exactement 4 clés, strings only
 
     #[Test]
     public function payload_is_concrete_four_keys_strings_only_without_any_capability_id(): void
@@ -275,7 +275,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         }
     }
 
-    // ── (i) exclusiveKey = 2 segments minuscules (jamais de name) ──────────
+    // (i) exclusiveKey = 2 segments minuscules (jamais de name)
 
     #[Test]
     public function exclusive_key_is_two_segment_lowercased_container_identity(): void
@@ -290,7 +290,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(1, substr_count($a, '|'), 'exactement 2 segments');
     }
 
-    // ── Story 43.2 (D3, AC3) — recopie du hint `refresh` au payload ────────
+    // Recopie du hint `refresh` au payload
 
     /**
      * @param  list<array<string,mixed>>  $keys
@@ -335,7 +335,6 @@ class CapabilityRegistryListProviderTest extends TestCase
     #[Test]
     public function machine_provider_never_recopies_the_refresh_hint(): void
     {
-        // Piège n°4 — test négatif sur le mécanisme registry_list aussi.
         $this->makeListCapabilityWithRefresh('pix_extension_forced', 'on', [
             ['hive' => 'HKLM', 'path' => 'SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['abc']]],
         ], CapabilityProjection::REFRESH_SHELL_NOTIFY);
@@ -379,7 +378,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($item->payload));
     }
 
-    // ── Story 35.7 (D1/D2, AC2) — marqueur `writer` par conteneur de spec ──
+    // Marqueur `writer` par conteneur de spec
     // Le conteneur marqué est réconcilié par le service SYSTEM dans HKU\<SID>
     // (jamais par le compagnon — …\Policies\Explorer\DisallowRun non
     // user-writable sur poste joint au domaine).
@@ -416,7 +415,7 @@ class CapabilityRegistryListProviderTest extends TestCase
     #[Test]
     public function refresh_hint_is_never_posed_on_a_writer_marked_container(): void
     {
-        // (b) piège n°6 — exclusion mutuelle refresh/writer côté registry_list :
+        // Exclusion mutuelle refresh/writer côté registry_list :
         // un hint résiduel au spec n'est JAMAIS recopié sur le conteneur marqué.
         $cap = Capability::factory()->create(['key' => 'marked_list_with_hint', 'default_value' => 'on']);
         CapabilityProjection::factory()->for($cap)->create([
@@ -451,7 +450,7 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertArrayNotHasKey('writer', $machineItems->first()->payload, 'JAMAIS de writer sur un conteneur Machine (AC2)');
     }
 
-    // ── NFR7 — zéro AD/APCu dans les sources ───────────────────────────────
+    // Zéro AD/APCu dans les sources
 
     #[Test]
     public function provider_source_has_no_ad_apcu_samba_dependency(): void

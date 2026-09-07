@@ -8,13 +8,12 @@ use App\Enums\ActiveCloud;
 use App\Services\FilePolicyService;
 
 /**
- * Story 63.3 — LE MIROIR DÉRIVÉ : `files.locations` est la SOURCE,
+ * LE MIROIR DÉRIVÉ : `files.locations` est la SOURCE,
  * `files.policy` en reçoit la projection, et JAMAIS L'INVERSE.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI CE MIROIR EXISTE.** Les quatre booléens historiques de
- * `files.policy` ont encore des lecteurs vivants que cette story ne touche
- * pas : les deux objets de configuration de connexion (`\App\Services\Nextcloud\
+ * `files.policy` ont encore des lecteurs vivants, laissés intacts : les deux
+ * objets de configuration de connexion (`\App\Services\Nextcloud\
  * NextcloudConnectionConfig::current()` et son jumeau OpenCloud, cités en FQCN)
  * s'éteignent fail-closed si leur capacité passe à `false`, et la posabilité
  * d'une autorité d'écriture à la création d'un répertoire géré les lit aussi.
@@ -33,7 +32,6 @@ use App\Services\FilePolicyService;
  * **« LES DEUX CLOUDS » DEVIENT IRREPRÉSENTABLE DANS `files.policy` AUSSI.**
  * Le cloud actif est une valeur à trois positions : la projection écrit donc
  * toujours exactement un des deux booléens à `true`, ou aucun.
- * ---------------------------------------------------------------------------
  *
  * ⚠️ **LE PIÈGE, ET IL EST DANS `setGlobal()`.** Dix de ses paramètres sont
  * nullables et conservent le persisté — mais `$nextcloudServerUrl` est un

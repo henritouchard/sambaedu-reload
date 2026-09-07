@@ -7,12 +7,12 @@ namespace App\Services\AppCustomization\Contracts;
 /**
  * Contrat d'écriture du contexte applicatif `apps.$id` (clé APCu legacy).
  *
- * Story 16.7 — AC2.2 : pendant écriture du `AppContextRepository` (lecteur
- * Story 4.8). Ce contrat permet de mocker l'écriture dans les tests Feature
+ * Pendant écriture du `AppContextRepository`, qui, lui, ne fait que lire.
+ * Ce contrat permet de mocker l'écriture dans les tests Feature
  * du Controller `ApplicationsScriptsController`.
  *
- * @see \App\Services\AppCustomization\Contracts\AppContextRepository Lecteur (Story 4.8).
- * @see \App\Services\AppCustomization\CacheAppContextWriter Implémentation par défaut (Story 16.15).
+ * @see \App\Services\AppCustomization\Contracts\AppContextRepository Lecteur.
+ * @see \App\Services\AppCustomization\CacheAppContextWriter Implémentation par défaut.
  */
 interface AppContextWriter
 {

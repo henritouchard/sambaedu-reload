@@ -18,9 +18,9 @@ use Tests\Support\FakesGpoService;
 use Tests\TestCase;
 
 /**
- * Story 16.5 — AC5.2 / Volet 5.
+ * Volet 5.
  *
- * Tests Feature de la garde `can:server.admin` sur la page `/admin/settings/gpo/{guid}/links` (16.9)
+ * Tests Feature de la garde `can:server.admin` sur la page `/admin/settings/gpo/{guid}/links`
  * (defense in depth : middleware route + abort_unless dans `mount()`).
  */
 class GpoLinksPagePermissionTest extends TestCase

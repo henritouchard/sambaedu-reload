@@ -20,13 +20,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Review 62.2 #1 — une clé HÉRITÉE, non conforme au slug, reste utilisable.
+ * Une clé HÉRITÉE, non conforme au slug, reste utilisable.
  *
  * **Le défaut que ces tests épinglent.** La garde de format s'appliquait à chaque
  * `save()`, sans regarder si la clé changeait — contrairement à la garde
  * d'immuabilité, juste en dessous, qui ne s'applique qu'à une clé modifiée. Or la
  * migration de reprise insère délibérément les valeurs DÉCOUVERTES telles quelles,
- * sans les normaliser : c'est l'objet même de l'AC1, et quatre ans de colonne libre
+ * sans les normaliser : c'est l'objet même de la reprise, et quatre ans de colonne libre
  * en produisent (`Custom`, `class`, et pire). Aucune ne respecte le slug.
  *
  * Conséquence, avant correction : ces lignes étaient **injouables**. Renommer leur

@@ -31,10 +31,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC3 / NFR14) / 54.2 (AC3) / 55.1 — **FRONTIÈRE** : la sync amont
+ * **FRONTIÈRE** : la sync amont
  * (controlHub) ne touche JAMAIS le registre d'extensions — désormais
  * **6 tables** : `extensions`, `extension_sources`, `extension_audit_logs`
- * (le journal du cycle de vie, 54.2), et depuis la Story 55.1 les trois tables
+ * (le journal du cycle de vie), et les trois tables
  * du fournisseur OIDC : `oidc_clients`, `oidc_authorization_codes`,
  * `oidc_access_tokens`.
  *
@@ -58,7 +58,7 @@ use Tests\TestCase;
  *    désinstalle les `Application` hors catalogue amont, supprime les dépôts
  *    non imposés ;
  *  - autres chemins d'écriture : {@see ControlHubContractSeveranceService}
- *    (rupture) et {@see SyncManifestService::apply()} + `pass3Cleanup()`
+ *  (rupture) et {@see SyncManifestService::apply()} + `pass3Cleanup()`
  *    (suppression des entités ControlHub absentes du manifeste).
  *
  * L'isolement du registre d'extensions est **par construction** (aucune FK,
@@ -77,15 +77,16 @@ use Tests\TestCase;
  * {@see self::the_quoted_needles_do_not_confuse_the_three_tables()} le
  * vérifie explicitement pour les 3 tables.
  *
- * ⚠️ GARDE-FOU R3 : aucun « central » — vocabulaire « amont » / `Upstream`.
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central » —
+ * vocabulaire « amont » / `Upstream`.
  */
 class UpstreamSyncExtensionsBoundaryTest extends TestCase
 {
     use RefreshDatabase;
 
     /**
-     * Identifiants QUOTÉS des six tables du registre (54.2 : + le journal
-     * d'audit ; 55.1 : + les trois tables du fournisseur OIDC).
+     * Identifiants QUOTÉS des six tables du registre (+ le journal
+     * d'audit ; : + les trois tables du fournisseur OIDC).
      */
     private const REGISTRY_NEEDLES = [
         '"extensions"',
@@ -114,11 +115,11 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     /**
      * Pose la source embarquée + l'extension Documentation + AU MOINS une
-     * ligne d'audit (54.2, Task 5) — la frontière doit être vérifiée avec un
+     * ligne d'audit — la frontière doit être vérifiée avec un
      * journal déjà non vide, pas seulement un journal vide qui rendrait
      * `extension_audit_logs` invisible par construction.
      */
@@ -146,7 +147,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
             actorLogin: $actor->login,
         );
 
-        // Story 55.1 — un client OIDC LIÉ à l'extension, avec un code et un
+        // Un client OIDC LIÉ à l'extension, avec un code et un
         // access token en circulation. Les trois tables doivent être NON VIDES
         // avant les scénarios : une table vide serait invisible par
         // construction et la frontière ne prouverait rien à son sujet.
@@ -188,7 +189,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
             'sources' => 'extension_sources',
             'extensions' => 'extensions',
             'audit_logs' => 'extension_audit_logs',
-            // Story 55.1 — le fournisseur OIDC fait partie du registre.
+            // Le fournisseur OIDC fait partie du registre.
             'oidc_clients' => 'oidc_clients',
             'oidc_codes' => 'oidc_authorization_codes',
             'oidc_tokens' => 'oidc_access_tokens',
@@ -262,7 +263,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         ];
     }
 
-    // ── AC3 — le méta-test : le filtre ne ment pas ────────────────────────
+    // — le méta-test : le filtre ne ment pas
 
     #[Test]
     public function the_query_filter_actually_detects_registry_queries(): void
@@ -279,7 +280,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
 
         self::assertNotSame([], $hits, 'le filtre doit détecter une VRAIE requête sur le registre');
 
-        // Story 55.1 — le filtre doit détecter CHACUNE des trois tables OIDC
+        // Le filtre doit détecter CHACUNE des trois tables OIDC
         // individuellement : un needle absent rendrait la table concernée
         // invisible, et la frontière muette à son sujet.
         foreach ([
@@ -316,7 +317,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
             self::assertStringNotContainsString('"extension_audit_logs"', $sql);
         }
 
-        // ⚠️ 3ᵉ table (54.2) : `extension_audit_logs` ne doit JAMAIS être
+        // ⚠️ 3ᵉ table : `extension_audit_logs` ne doit JAMAIS être
         // comptée comme `extensions` — l'identifiant quoté `"extensions"`
         // n'apparaît dans aucune requête visant `extension_audit_logs`.
         $onlyAuditLogs = $this->registryQueriesDuring(function (): void {
@@ -338,12 +339,12 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         foreach ($onlyExtensions as $sql) {
             self::assertStringNotContainsString('"extension_sources"', $sql);
             self::assertStringNotContainsString('"extension_audit_logs"', $sql);
-            // ⚠️ 55.1 : `extensions` ne doit pas non plus attraper les tables
+            // ⚠️ : `extensions` ne doit pas non plus attraper les tables
             // OIDC (aucune ne contient l'identifiant quoté `"extensions"`).
             self::assertStringNotContainsString('"oidc_clients"', $sql);
         }
 
-        // ⚠️ Story 55.1 — les trois tables OIDC partagent le préfixe `oidc_` :
+        // ⚠️ — les trois tables OIDC partagent le préfixe `oidc_` :
         // sans quotes, `oidc_clients` nu ne matcherait rien de plus, mais un
         // needle mal choisi (`oidc_`) confondrait les trois. Vérification
         // deux à deux.
@@ -375,7 +376,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         }
     }
 
-    // ── AC3 — la sync amont ne franchit pas la frontière ──────────────────
+    // — la sync amont ne franchit pas la frontière
 
     #[Test]
     public function contract_ingestion_and_its_listener_cascade_never_touch_the_registry(): void
@@ -529,7 +530,7 @@ class UpstreamSyncExtensionsBoundaryTest extends TestCase
         self::assertNotNull(Extension::where('key', 'doc')->first());
         self::assertSame(1, ExtensionAuditLog::query()->count(), 'le journal d\'audit (54.2) est aussi resté intact');
 
-        // Story 55.1 — le SSO des extensions survit intégralement à la sync
+        // Le SSO des extensions survit intégralement à la sync
         // amont : le client reste actif, son code et son jeton restent en
         // circulation.
         self::assertSame(1, OidcClient::query()->count());

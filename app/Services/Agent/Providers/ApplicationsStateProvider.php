@@ -19,10 +19,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Type `applications` (contrat §7, identifiant DÉJÀ figé — NFR12,
+ * Type `applications` (contrat §7, identifiant figé,
  * {@see Application::TYPE_APPLICATIONS}) — projection en LECTURE SEULE de
  * l'ensemble cible des applications WPKG d'un poste vers des candidats d'état
- * (Story 27.5, AC1).
  *
  * **« Un tuyau, deux outils ».** L'agent unifie le TRANSPORT (le déclencheur),
  * PAS le moteur de paquets. WPKG reste le moteur déclaratif (résolution de
@@ -32,7 +31,7 @@ use Illuminate\Support\Facades\Log;
  * `{app_id, name}`, sans version, sans `<check>`, sans `<install>` (propriété de
  * `packages.xml`).
  *
- * **Lecture Postgres PURE** (NFR7, critère Keycloak). On réutilise la résolution
+ * **Lecture Postgres PURE** (critère Keycloak). On réutilise la résolution
  * WPKG existante — single source of truth sur « ce que WPKG va installer » —
  * via {@see WorkstationPackagesResolver::computePackages()} (la méthode NON
  * CACHÉE). On n'appelle JAMAIS le wrapper `resolve()` (il enveloppe
@@ -42,8 +41,8 @@ use Illuminate\Support\Facades\Log;
  * L'hydratation des libellés (`name`) passe par `Application::whereIn('app_id', …)`
  * (PG direct). AUCUN `Cache::`/APCu/AD/`samba-tool`/`LdapRecord` sur ce fichier.
  *
- * ⚠️ Préempter un faux positif de revue (anti-pattern 27.3bis) : la précédence
- * 27.3bis n'a PAS réutilisé `AssociationsResolver` (APCu) car c'était une lecture
+ * ⚠️ Préempter un faux positif de revue (anti-pattern) : la précédence
+ * `AssociationsResolver` (APCu) n'a PAS été réutilisé car c'était une lecture
  * de cache pour validation UI. Ici, la résolution de l'ENSEMBLE est la logique
  * métier centrale ; on la réutilise NON CACHÉE → le grep garde
  * `ldap|apcu|samba-tool|Cache::|LdapRecord|PackagesXml` reste vide sur ce
@@ -51,26 +50,25 @@ use Illuminate\Support\Facades\Log;
  *
  * **Sémantique `aggregate` / portée `machine`.** Un poste reçoit N applications
  * (union poste + groupes + dépendances). WPKG installe MACHINE-WIDE → portée
- * `machine` (service SYSTEM ; leçon 🔴 27.4 #1 : portée de livraison = machine,
- * jamais session/compagnon — un user ne peut pas installer machine-wide). Un
+ * `machine` (service SYSTEM) : la portée de livraison est machine, jamais
+ * session/compagnon — un user ne peut pas installer machine-wide. Un
  * item `applications` par `app_id` affecté ; le compilateur (aggregate) fait
  * l'union/dédup par contenu, sans précédence à arbitrer.
  *
- * **Maille `Broadcast`** (Décision D4). `computePackages($hostname)` résout DÉJÀ
+ * **Maille `Broadcast`.** `computePackages($hostname)` résout DÉJÀ
  * l'union poste + groupes + dépendances — c'est la résolution FINALE, mono-sortie
  * (pas une liste de candidats par maille à composer). On émet donc chaque app
  * comme candidat `StateMaille::Broadcast` (tous au même rang) ; le compilateur en
  * `aggregate` fait l'union sans précédence (sans incidence : la précédence ne joue
- * pas pour un type aggregate). Adaptation documentée (iso le collapse mono-WG de
- * 27.4) du modèle « liste de mailles » d'Epic 27 à une API de résolution
+ * pas pour un type aggregate). Adaptation documentée du modèle « liste de mailles » à une API de résolution
  * mono-sortie. Alternative écartée : ré-étiqueter chaque app par sa maille
  * d'origine (coûteux, sans valeur — aggregate ⇒ union de toute façon).
  *
- * **Zéro tri/précédence/dédup dans le provider** (discipline D2 : seul
- * `StateCompiler` le fait). Le provider étiquette ses candidats par maille et
+ * **Zéro tri/précédence/dédup dans le provider** : seul `StateCompiler` le
+ * fait. Le provider étiquette ses candidats par maille et
  * s'arrête là.
  *
- * **Apps « défaut parc » (Story 27.17).** Les applications marquées
+ * **Apps « défaut parc ».** Les applications marquées
  * `applications.is_parc_default = true` sont appliquées PAR DÉFAUT à TOUS les
  * postes (équivalent applicatif du `is_default` du wallpaper). Le provider les
  * UNIONNE à l'ensemble résolu par poste/groupe/profil, toujours en candidats
@@ -78,21 +76,21 @@ use Illuminate\Support\Facades\Log;
  * rattachements poste/groupe/profil) ; la précédence n'est pas modifiée — le
  * type `applications` est `aggregate`, l'union ne crée jamais de conflit.
  *
- * **Ordres d'install amont (Story 31.2 — FR6).** L'autorité amont (controlHub)
+ * **Ordres d'install amont.** L'autorité amont (controlHub)
  * peut ORDONNER l'install d'une app — un item de contrat `type='applications'`,
  * cible `instance` (toute la flotte) ∪ labels portés par le poste. Ces `app_id`
  * sont UNIONNÉS à l'ensemble cible AVANT hydratation, via l'accesseur LECTURE
  * SEULE {@see UpstreamContractSource::orderedApplicationAppIds()} : le payload
  * `{app_id, name}` hydraté est IDENTIQUE quelle que soit la source ⇒ une app
  * aussi résolue localement collapse en UN item (dédup aggregate du compilateur =
- * idempotence d'état). Pont au niveau ENSEMBLE (décision D3) — JAMAIS un
+ * idempotence d'état). Pont au niveau ENSEMBLE — JAMAIS un
  * `UpstreamPayloadAdapter` (un adaptateur ne pourrait hydrater le `name` depuis
- * l'`Application` locale → doublon). Court-circuit NFR3 : sans contrat actif (ou
+ * l'`Application` locale → doublon). Court-circuit : sans contrat actif (ou
  * sans ordre d'install), l'accesseur renvoie `[]` et l'ensemble reste
- * byte-identique au 27.5. Le moteur d'install (WPKG) n'est pas absorbé : SE5 ne
+ * byte-identique. Le moteur d'install (WPKG) n'est pas absorbé : SE5 ne
  * livre que l'ensemble d'`app_id`.
  *
- * **Client de synchronisation du cloud (Story 63.5).** Quand l'instance a placé
+ * **Client de synchronisation du cloud.** Quand l'instance a placé
  * un espace au cloud ET choisi d'y accéder « par le client de synchronisation »
  * plutôt que par le navigateur, l'application du catalogue DÉSIGNÉE comme client
  * du cloud actif est UNIONNÉE à l'ensemble cible — TROISIÈME source, exactement
@@ -124,12 +122,12 @@ final class ApplicationsStateProvider implements StateProvider
 {
     public function __construct(
         private readonly WorkstationPackagesResolver $resolver,
-        // Story 31.2 — SOURCE des ordres d'install amont (contrat actif). Singleton
-        // mémoïsé partagé (≤ 1 requête « contrat actif ? », court-circuit NFR3 sans
+        // SOURCE des ordres d'install amont (contrat actif). Singleton
+        // mémoïsé partagé (≤ 1 requête « contrat actif ? », court-circuit sans
         // lien actif). N'enregistre AUCUN adaptateur `applications` (pont au niveau
         // ensemble, pas par décorateur — anti double-injection, cf. AgentServiceProvider).
         private readonly UpstreamContractSource $source,
-        // Story 63.5 — POSABILITÉ + désignation du client de synchronisation du
+        // POSABILITÉ + désignation du client de synchronisation du
         // cloud actif. Service sans état, résolu par auto-wiring (le provider est
         // instancié par le conteneur dans AgentServiceProvider). Il ne lit que des
         // réglages et le catalogue : aucun cache, aucun réseau.
@@ -148,8 +146,8 @@ final class ApplicationsStateProvider implements StateProvider
 
     public function scope(): StateScope
     {
-        // MACHINE : WPKG installe machine-wide (service SYSTEM). Leçon 🔴 27.4 #1
-        // — la portée de livraison est machine, jamais session/compagnon.
+        // MACHINE : WPKG installe machine-wide (service SYSTEM) — la portée
+        // de livraison est machine, jamais session/compagnon.
         return StateScope::Machine;
     }
 
@@ -159,7 +157,7 @@ final class ApplicationsStateProvider implements StateProvider
      * CACHÉE (`computePackages`) — single source of truth, jamais une
      * réimplémentation de l'union/BFS. Les libellés (`name`) sont hydratés par
      * `Application::whereIn('app_id', …)` (PG-pur). Chaque candidat est étiqueté
-     * `Broadcast` (la résolution est déjà finale — D4) ; `sourceId` =
+     * `Broadcast` (la résolution est déjà finale) ; `sourceId` =
      * `Application::id` (PK stable, déterministe & injectif → ordre aggregate /
      * ETag stable).
      *
@@ -167,19 +165,19 @@ final class ApplicationsStateProvider implements StateProvider
      */
     public function itemsFor(TargetContext $ctx): Collection
     {
-        // Résolution WPKG NON CACHÉE (NFR7) : ensemble final des app_id (déjà
+        // Résolution WPKG NON CACHÉE : ensemble final des app_id (déjà
         // dédupliqué + trié alpha par le resolver) applicables au poste via ses
         // profils/apps × poste/groupes + dépendances transitives.
         $resolvedAppIds = $this->resolver
             ->computePackages($ctx->workstation->name)
             ->all();
 
-        // Story 27.17 — apps DÉFAUT PARC : marquées `is_parc_default=true`, elles
+        // Apps DÉFAUT PARC : marquées `is_parc_default=true`, elles
         // sont appliquées par défaut à TOUS les postes (couche Broadcast — iso
         // `is_default` du wallpaper). On les UNIONNE à l'ensemble résolu, sans
         // toucher au resolver (qui reste poste/groupe/profil) ni à la précédence
         // (`applications` est un type aggregate : l'union ne crée pas de conflit).
-        // Lecture PG-pure (NFR7) — aucun cache/AD.
+        // Lecture PG-pure — aucun cache/AD.
         $parcDefaultAppIds = Application::query()
             ->parcDefault()
             ->whereNotNull('app_id')
@@ -188,17 +186,17 @@ final class ApplicationsStateProvider implements StateProvider
             ->pluck('app_id')
             ->all();
 
-        // Story 31.2 — ORDRES D'INSTALL amont (FR6) : `app_id` qu'un contrat actif
+        // ORDRES D'INSTALL amont : `app_id` qu'un contrat actif
         // ORDONNE d'installer sur ce poste (cible `instance` ∪ labels portés). On
         // les UNIONNE à l'ensemble cible AVANT dédup/hydratation : le payload
         // {app_id, name} hydraté est IDENTIQUE quelle que soit la source ⇒ dédup
-        // aggregate naturelle (idempotence AC3). Pont au niveau ENSEMBLE (D3) — pas
+        // aggregate naturelle (idempotence). Pont au niveau ENSEMBLE — pas
         // via UpstreamPayloadAdapter (toPayload ne pourrait hydrater le name local).
-        // Court-circuit NFR3 : sans contrat actif / sans ordre, l'accesseur renvoie
-        // [] (zéro requête items, ensemble byte-identique au 27.5).
+        // Court-circuit : sans contrat actif / sans ordre, l'accesseur renvoie
+        // [] (zéro requête items, ensemble byte-identique à l'existant).
         $orderedAppIds = $this->source->orderedApplicationAppIds($ctx);
 
-        // Story 63.5 — CLIENT DE SYNCHRONISATION du cloud actif : l'`app_id` de
+        // CLIENT DE SYNCHRONISATION du cloud actif : l'`app_id` de
         // l'application DÉSIGNÉE comme client, quand l'instance a choisi
         // d'atteindre son cloud par le client plutôt que par le navigateur. On
         // l'UNIONNE à l'ensemble cible AVANT dédup/hydratation, exactement comme

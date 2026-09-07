@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.3 AC7 — LA GARDE D9, SANS UI.
+ * LA GARDE DE DÉPLACEMENT, SANS UI.
  *
  * Elle refuse de déplacer un espace qui porte des données, et elle nomme le
  * chantier qui lèvera le refus. Le constat se fait par des existences en base —
@@ -61,10 +61,6 @@ class FileLocationChangeGuardTest extends TestCase
         User::query()->create(['login' => 'p.durand', 'role' => 'prof', 'is_active' => true]);
     }
 
-    // =====================================================================
-    // L'instance NEUVE : le choix est libre, parce qu'il ne coûte rien
-    // =====================================================================
-
     #[Test]
     public function a_brand_new_instance_may_move_both_spaces_freely(): void
     {
@@ -100,10 +96,6 @@ class FileLocationChangeGuardTest extends TestCase
         ));
     }
 
-    // =====================================================================
-    // L'espace personnel
-    // =====================================================================
-
     #[Test]
     public function moving_the_personal_space_is_refused_once_a_directory_account_exists(): void
     {
@@ -116,7 +108,7 @@ class FileLocationChangeGuardTest extends TestCase
 
         self::assertSame(
             'Refusé : l\'espace personnel porte déjà des données. Le déplacer suppose de les déménager, '
-            .'ce que le chantier « Epic 64 — la bascule d\'autorité » livrera ; d\'ici là, l\'emplacement '
+            .'ce que le chantier « la bascule d\'autorité » livrera ; d\'ici là, l\'emplacement '
             .'d\'un espace qui porte des données ne se change pas.',
             $refusal,
         );
@@ -135,10 +127,6 @@ class FileLocationChangeGuardTest extends TestCase
         ));
     }
 
-    // =====================================================================
-    // L'espace partagé
-    // =====================================================================
-
     #[Test]
     public function moving_the_shared_space_is_refused_once_a_group_exists(): void
     {
@@ -150,7 +138,7 @@ class FileLocationChangeGuardTest extends TestCase
         );
 
         self::assertStringContainsString('l\'espace partagé porte déjà des données', $refusal);
-        self::assertStringContainsString('Epic 64 — la bascule d\'autorité', $refusal);
+        self::assertStringContainsString('la bascule d\'autorité', $refusal);
     }
 
     #[Test]
@@ -163,10 +151,6 @@ class FileLocationChangeGuardTest extends TestCase
             self::locations(FileBackendName::Posix, FileBackendName::Nextcloud, ActiveCloud::Nextcloud),
         ));
     }
-
-    // =====================================================================
-    // Les deux objets sont INDÉPENDANTS
-    // =====================================================================
 
     #[Test]
     public function the_two_spaces_are_constated_independently(): void
@@ -185,10 +169,6 @@ class FileLocationChangeGuardTest extends TestCase
             self::locations(FileBackendName::Posix, FileBackendName::Nextcloud, ActiveCloud::Nextcloud),
         ));
     }
-
-    // =====================================================================
-    // Ce que la garde NE refuse PAS
-    // =====================================================================
 
     /**
      * Une soumission qui ne bouge aucun des deux emplacements passe, même sur
@@ -210,10 +190,6 @@ class FileLocationChangeGuardTest extends TestCase
             self::locations(cloud: ActiveCloud::OpenCloud),
         ));
     }
-
-    // =====================================================================
-    // La garde REJOUÉE côté service
-    // =====================================================================
 
     #[Test]
     public function the_assertion_throws_on_a_refused_change(): void

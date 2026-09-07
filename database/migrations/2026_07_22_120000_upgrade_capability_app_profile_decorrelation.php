@@ -6,32 +6,32 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.7 — mise à niveau de la capacité de catalogue `roaming_app_profile`
- * (seedée en 36.5) SANS toucher le schéma :
+ * Mise à niveau de la capacité de catalogue `roaming_app_profile`
+ * (seedée) SANS toucher le schéma :
  *
- *  1. **`enabled: true` par entrée du catalogue (AC2).** Chaque app du `spec`
+ * 1. **`enabled: true` par entrée du catalogue.** Chaque app du `spec`
  *     (`apps[]`) gagne le booléen d'activation par entrée (« off réel » : une
  *     entrée `enabled:false` n'émet plus d'item sans supprimer physiquement la
  *     ligne — la suppression orphelinerait les profils déjà posés sur les homes).
  *     Idempotent : n'ajoute `enabled` qu'aux entrées qui n'en portent pas, et
- *     PRÉSERVE toute entrée ajoutée entre-temps via l'UI (Story 36.7, AC1).
+ * PRÉSERVE toute entrée ajoutée entre-temps via l'UI.
  *
- *  2. **Warning DÉCORRÉLÉ du gate K: (AC3).** Le warning 36.5 pointait la
+ * 2. **Warning DÉCORRÉLÉ du gate K:.** Le warning pointait la
  *     dépendance au montage du home K: (« si le home est désactivé, la
  *     redirection n'a aucun effet »). Cette dépendance est SUPPRIMÉE (le lien
  *     pointe l'UNC direct, Firefox le traverse — K: est cosmétique). Le nouveau
  *     texte énonce la finalité + la limite d'honnêteté (rien dans l'Explorateur
  *     ≠ inaccessible). ≤ 255 (contrainte varchar PG — invisible en SQLite).
  *
- *  3. **`options` on/off (AC4).** La capacité `toggle` gagne ses deux options
+ * 3. **`options` on/off.** La capacité `toggle` gagne ses deux options
  *     étiquetées — sans elles, la section « Capacités » d'un groupe
  *     d'utilisateurs afficherait un champ texte au lieu d'un sélecteur on/off
  *     (patron toggle iso `windows_store_disabled`). `default_value` reste `on`
- *     (comportement 36.5 préservé au déploiement — le basculer à `off` inverse la
+ *  (comportement préservé au déploiement — le basculer à `off` inverse la
  *     politique sans code).
  *
  * `update()` via Query Builder (n'émet AUCUN événement Eloquent — l'observer
- * d'authoring 36.5 n'est donc pas déclenché ; le catalogue seedé est déjà propre).
+ * d'authoring n'est donc pas déclenché ; le catalogue seedé est déjà propre).
  * `down()` : réversion best-effort du warning et des options (le champ `enabled`
  * est laissé — inoffensif, défaut `true`).
  */
@@ -100,7 +100,7 @@ return new class extends Migration
             return;
         }
 
-        // Réversion best-effort : warning 36.5 (dépendance K:) + options nulle.
+        // Réversion best-effort : warning (dépendance K:) + options nulle.
         // Le champ `enabled` du spec est laissé (inoffensif, défaut `true`).
         DB::table('capabilities')->where('key', self::KEY)->update([
             'warning' => 'Dépend du montage du home réseau K: (politique de gestion des fichiers, '

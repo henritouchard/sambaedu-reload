@@ -37,20 +37,20 @@ use Illuminate\Support\Facades\Log;
  * $data = $cache->remember('expensive_data', 7200, fn() => $this->loadData());
  * 
  * MIGRATION DEPUIS APCu :
- * - add()    : Ajouter seulement si la clé n'existe pas
- * - fetch()  : Récupérer une valeur (false si inexistante)
- * - store()  : Stocker une valeur (écrase si existe)
+ * - add() : Ajouter seulement si la clé n'existe pas
+ * - fetch() : Récupérer une valeur (false si inexistante)
+ * - store() : Stocker une valeur (écrase si existe)
  * - delete() : Supprimer une clé
  * - isAvailable() : Toujours true avec Laravel
  * 
  * NOUVELLES MÉTHODES :
- * - has()    : Vérifier l'existence d'une clé
+ * - has() : Vérifier l'existence d'une clé
  * - remember(): Cache avec callback (pattern Laravel)
- * - flush()  : Vider tout le cache SE4
+ * - flush() : Vider tout le cache SE4
  * 
  * @package App\Services
  * @author SE4 Team
- * @version 2.0
+ * @version
  */
 class CacheService
 {

@@ -9,7 +9,7 @@ use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
- * Story 60.4 — la COMPILATION d'un nœud de plan en entrées de liste d'accès
+ * La COMPILATION d'un nœud de plan en entrées de liste d'accès
  * POSIX.
  *
  * C'est le cœur de la descente, et c'est aussi le code qui ne devait surtout pas
@@ -19,8 +19,7 @@ use App\Services\Filesystem\Plan\PlanNode;
  * comportement AVANT la descente, verrouille l'ensemble chaîne par chaîne
  * ({@see \Tests\Unit\Services\Filesystem\Backend\Posix\PosixGoldenAclTest}).
  *
- * ---------------------------------------------------------------------------
- * **Story 62.4 — LES OCTROIS SE DISENT EN QUATRE VERBES, ET LA TRADUCTION EST
+ * **LES OCTROIS SE DISENT EN QUATRE VERBES, ET LA TRADUCTION EST
  * DÉRIVÉE, PAS ÉNUMÉRÉE.**
  *
  * La matrice complète — deux axes, un drapeau de nœud, une règle unique de
@@ -51,7 +50,7 @@ use App\Services\Filesystem\Plan\PlanNode;
  * bouge, aucun mode ne bouge, et les référentiels figés le vérifient chaîne par
  * chaîne sans qu'un seul de leurs littéraux ait changé.
  *
- * **Trois états d'octroi, trois traductions** — la distinction que la story 60.1
+ * **Trois états d'octroi, trois traductions**la distinction que la
  * a passé un critère entier à établir, et qu'il aurait été facile d'écraser ici :
  *  - octroi ACTIF → une (ou deux) entrées au niveau que les verbes dérivent ;
  *  - octroi SUSPENDU → une entrée EXPLICITEMENT VIDE (`---`). L'octroi existe, il
@@ -63,7 +62,7 @@ use App\Services\Filesystem\Plan\PlanNode;
  *    mutation. Le nœud n'écrit donc aucun geste pour sa clôture, et la comparaison
  *    ne lui réclame rien. C'est un backend à propagation qui devra la matérialiser.
  *
- * **Story 62.5 — cette dernière phrase disait « → RIEN », et c'est devenu FAUX.**
+ * **cette dernière phrase disait « → RIEN », et c'est devenu FAUX.**
  * Un rôle en clôture d'un ancêtre PEUT y recevoir une entrée : le COULOIR dérivé,
  * quand un nœud plus profond lui accorde quelque chose
  * ({@see PosixTraversalPlanner}). Ce n'est pas une brèche dans la clôture, et il
@@ -149,7 +148,7 @@ final class PosixAclCompiler
     private const MODE_SUSPENDED = '---';
 
     /**
-     * Story 62.5 — niveau d'un COULOIR d'accès dérivé : la traversée SEULE.
+     * Niveau d'un COULOIR d'accès dérivé : la traversée SEULE.
      *
      * Ni lecture, ni écriture : pénétrer le dossier, jamais le lister ni en ouvrir
      * le contenu. C'est la totalité de ce que la dérivation accorde, et le fait
@@ -227,7 +226,7 @@ final class PosixAclCompiler
             }
 
             // Rien de rendu : aucune entrée. Une entrée vide serait relue comme une
-            // suspension appliquée — le silence exact que cet epic supprime.
+            // suspension appliquée — le silence exact qu'on supprime ici.
             if ($rendering->isEmpty()) {
                 continue;
             }
@@ -243,8 +242,7 @@ final class PosixAclCompiler
             $fileAcls[] = "{$projection->type}:{$projection->name}:{$rendering->fileMode}";
         }
 
-        // ---------------------------------------------------------------------
-        // Story 62.5 — LES COULOIRS DÉRIVÉS, et les trois choses qu'ils NE font pas.
+        // LES COULOIRS DÉRIVÉS, et les trois choses qu'ils NE font pas.
         //
         //  1. Ils n'entrent pas dans `$acls` : leur pose est NON RÉCURSIVE, sur le
         //     répertoire de tête seul. Les mélanger aux autres les ferait descendre
@@ -347,7 +345,7 @@ final class PosixAclCompiler
      * « déposer sans effacer » retombe sur son intersection exprimable, en le
      * disant.
      *
-     * **Story 62.5 — PUBLIQUE et STATIQUE, pour ne pas en avoir deux.** Le
+     * **PUBLIQUE et STATIQUE, pour ne pas en avoir deux.** Le
      * planificateur de traversée doit savoir, d'un nœud PROFOND, si ses octrois y
      * rendent quelque chose — donc rejouer exactement cette décision. La recopier
      * chez lui aurait créé une seconde autorité sur une règle dont toute la

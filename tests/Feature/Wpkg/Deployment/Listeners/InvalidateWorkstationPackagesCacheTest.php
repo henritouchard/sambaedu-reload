@@ -21,7 +21,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.2 / AC4.4, AC7.4 — Listener générique InvalidateWorkstationPackagesCache.
+ * Listener générique InvalidateWorkstationPackagesCache.
  *
  * Vérifie qu'un dispatch d'event impactant un poste invalide bien la clé cache
  * `wpkg:packages:{lower(hostname)}` correspondante.

@@ -22,7 +22,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests Feature Livewire — `rights-drawer` Spatie (Story 7.3 refactor UI).
+ * Tests Feature Livewire — `rights-drawer` Spatie ( refactor UI).
  *
  * Vérifie :
  *  - Affichage des rôles Spatie assignés avec leur label.

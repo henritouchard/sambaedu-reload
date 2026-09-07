@@ -9,10 +9,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC1.2 / T1.3.
- *
- * Tests unitaires de la whitelist enum {@see WindowsVersion} (D1 — sécurité
- * critique : empêche l'injection de versions arbitraires dans cmdline).
+ * Tests unitaires de la whitelist {@see WindowsVersion}. C'est elle qui empêche
+ * qu'une version arbitraire venue du poste atteigne la cmdline du noyau.
  */
 class WindowsVersionTest extends TestCase
 {

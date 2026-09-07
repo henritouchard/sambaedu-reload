@@ -22,7 +22,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.17 — page /admin/settings/parc-defaults (couche Broadcast consolidée).
+ * Page /admin/settings/parc-defaults (couche Broadcast consolidée).
  *
  * Couvre : accès gardé server.admin (page + onglets), navigation par onglets,
  * et l'onglet « Applications » net-new (toggle `is_parc_default`). Le Gate
@@ -151,7 +151,7 @@ class AdminSettingsParcDefaultsPageTest extends TestCase
             ->assertSet('tab', 'wallpaper');
     }
 
-    // ── Onglet Applications (net-new is_parc_default) ─────────────────────────
+    // Onglet Applications (net-new is_parc_default)
 
     #[Test]
     public function apps_tab_gate_blocks_mount_without_server_admin(): void
@@ -186,7 +186,7 @@ class AdminSettingsParcDefaultsPageTest extends TestCase
         self::assertFalse((bool) Application::query()->find($app->id)->is_parc_default);
     }
 
-    // ── Onglet « Raccourcis » ────────────────────────────────────────────────
+    // Onglet « Raccourcis »
 
     #[Test]
     public function shortcuts_tab_marks_shortcut_as_parc_default(): void
@@ -285,7 +285,7 @@ class AdminSettingsParcDefaultsPageTest extends TestCase
         self::assertSame('a', $defaults->first()->app_id);
     }
 
-    // ── Onglet Registre/capacités (réutilise le flow saveDefault) ─────────────
+    // Onglet Registre/capacités (réutilise le flow saveDefault)
 
     #[Test]
     public function registry_tab_gate_blocks_mount_without_server_admin(): void
@@ -371,7 +371,7 @@ class AdminSettingsParcDefaultsPageTest extends TestCase
         self::assertSame('on', Capability::query()->find($cap->id)->default_value);
     }
 
-    // ── Onglet Outils agent (canal séparé — manifest) ─────────────────────────
+    // Onglet Outils agent (canal séparé — manifest)
 
     #[Test]
     public function tools_tab_gate_blocks_mount_without_server_admin(): void

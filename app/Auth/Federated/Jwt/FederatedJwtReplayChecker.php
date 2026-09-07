@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
- * Story 20.1 — D-6.
+ * D-6.
  *
  * Anti-rejeu `jti` à USAGE UNIQUE. Calqué sur le pattern double-couche de
  * {@see \App\Auth\V1\Jwt\WorkstationJwtRevocationChecker} mais avec une
@@ -22,7 +22,7 @@ use Throwable;
  * Pipeline (atomique côté cache) :
  *
  *  1. `consumeOnce($jti, $exp)` tente d'ENREGISTRER le `jti` comme consommé.
- *     - Cache : `add()` (atomique « set-if-absent » multi-worker APCu) ;
+ *  - Cache : `add()` (atomique « set-if-absent » multi-worker APCu) ;
  *       si la clé existe déjà → rejeu détecté.
  *     - DB : insert idempotent (`jti` unique) ; une violation d'unicité →
  *       rejeu détecté (filet de sécurité si le cache a expiré ou redémarré).
@@ -117,7 +117,7 @@ class FederatedJwtReplayChecker
      * l'expiration du jeton (incl. leeway) — au-delà, un rejeu serait de toute
      * façon rejeté par le verifier (jeton expiré). Plafonné à `replay.cache_ttl`
      * pour borner la mémoire ; la couche DB (`expires_at`) reste le filet
-     * durable au-delà du cache. Cf. review #7 (ancienne formule = no-op).
+     * durable au-delà du cache.
      */
     private function ttlFor(int $exp): int
     {

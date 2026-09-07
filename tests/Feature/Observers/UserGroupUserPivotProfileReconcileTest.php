@@ -16,7 +16,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 (AC2 / D9) — le hook « profils de droits » de l'observer pivot.
+ * Le hook « profils de droits » de l'observer pivot.
  *
  * Vérifie :
  *  - attach/detach sur un groupe PORTEUR ⇒ réconciliation effective ;
@@ -42,7 +42,7 @@ class UserGroupUserPivotProfileReconcileTest extends TestCase
         Queue::fake();
         UserGroupObserver::disableSync();
         // Guard FS coupé — c'est justement la configuration où la
-        // réconciliation des profils DOIT continuer de tourner (D9).
+        // réconciliation des profils DOIT continuer de tourner.
         UserGroupUserPivotObserver::disableSync();
         UserGroupUserPivotObserver::enableProfileReconcile();
     }

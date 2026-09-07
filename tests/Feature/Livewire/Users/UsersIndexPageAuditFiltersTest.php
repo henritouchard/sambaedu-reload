@@ -16,7 +16,6 @@ use Tests\Traits\CreatesPermissionSchema;
  * Tests Feature Livewire — Filtres Audit « Quota dépassé » et « Mot de passe par défaut »
  * sur le listing /users.
  *
- * Story 14.4 — AC4, AC5, AC6, AC7, AC8, AC10, AC11, AC12
  */
 class UsersIndexPageAuditFiltersTest extends TestCase
 {
@@ -44,10 +43,6 @@ class UsersIndexPageAuditFiltersTest extends TestCase
         $this->dropPermissionSchema();
         parent::tearDown();
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     private function makeUserOverSoftHome(string $login): User
     {
@@ -175,12 +170,8 @@ class UsersIndexPageAuditFiltersTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // AC10 — Filtre quota dépassé
-    // =========================================================================
-
     /**
-     * AC10 — Tâche 6.1 test 1 :
+     * Tâche test 1 :
      * Un user avec is_over_soft=true sur home apparaît avec le filtre actif.
      */
     public function test_quota_overflow_filter_includes_over_soft_users(): void
@@ -195,7 +186,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
     }
 
     /**
-     * AC10 — Tâche 6.1 test 2 :
+     * Tâche test 2 :
      * Un user avec is_over_hard=true sur sambaedu apparaît avec le filtre actif.
      */
     public function test_quota_overflow_filter_includes_over_hard_sambaedu_users(): void
@@ -210,8 +201,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
     }
 
     /**
-     * AC10 / D2 — Tâche 6.1 test 3 :
-     * Un user avec quota_snapshot NULL est exclu du filtre quota (D2).
+     * Un user avec quota_snapshot NULL est exclu du filtre quota.
      */
     public function test_quota_overflow_filter_excludes_null_snapshot_users(): void
     {
@@ -222,12 +212,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
             ->assertDontSee('dave-no-snapshot');
     }
 
-    // =========================================================================
-    // AC11 — Filtre mot de passe par défaut
-    // =========================================================================
-
     /**
-     * AC11 / D3 — Tâche 6.1 test 4 :
      * Un user avec password_changed_at=NULL apparaît avec le filtre mdp actif.
      * Un user avec une date définie est exclu.
      */
@@ -267,12 +252,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
             ->assertDontSee('grace-mdp-old');
     }
 
-    // =========================================================================
-    // AC12 — Combinaison des deux filtres (AND strict — D8)
-    // =========================================================================
-
     /**
-     * AC12 / D8 — Tâche 6.1 test 5 :
      * Seul u1 (over-soft + password_changed_at NULL) apparaît quand les 2 filtres
      * sont actifs simultanément.
      */
@@ -409,12 +389,8 @@ class UsersIndexPageAuditFiltersTest extends TestCase
             ->assertDontSee('u4-neither');
     }
 
-    // =========================================================================
-    // AC8 — Reset filtres
-    // =========================================================================
-
     /**
-     * AC8 — Tâche 5.3 :
+     *
      * resetFilters() remet quotaOverflow et passwordDefault à false.
      */
     public function test_reset_filters_clears_audit_filters(): void
@@ -429,13 +405,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
             ->assertSet('passwordDefault', false);
     }
 
-    // =========================================================================
-    // Post-review #3 — Reset selectedUsers lors d'un changement de filtre audit
-    // (parité avec updatedRole/Status/Group existants).
-    // =========================================================================
-
     /**
-     * Post-review #3 :
      * Activer/désactiver le filtre quota doit reset selectedUsers pour éviter
      * d'agir en bulk sur des logins qui ne sont plus dans la liste filtrée.
      */
@@ -450,7 +420,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
     }
 
     /**
-     * Post-review #3 : idem pour le filtre mdp par défaut.
+     * Idem pour le filtre mdp par défaut.
      */
     public function test_it_resets_selected_users_when_password_filter_changes(): void
     {
@@ -470,7 +440,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
     }
 
     /**
-     * Post-review #3 : retrait individuel d'un chip audit (remove*Filter) doit
+     * Le retrait individuel d'un chip audit (remove*Filter) doit
      * aussi reset selectedUsers (parité avec changement par toggle).
      */
     public function test_it_resets_selected_users_when_removing_audit_filter(): void
@@ -488,12 +458,7 @@ class UsersIndexPageAuditFiltersTest extends TestCase
             ->assertSet('selectedUsers', []);
     }
 
-    // =========================================================================
-    // AC7 — Combinaison avec filtres existants (AND strict)
-    // =========================================================================
-
     /**
-     * AC7 / D8 :
      * Combinaison filtre role + quotaOverflow (AND strict).
      * Seul le user prof avec quota dépassé apparaît.
      */

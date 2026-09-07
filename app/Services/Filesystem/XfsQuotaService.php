@@ -22,13 +22,13 @@ use Illuminate\Support\Collection;
  * - La disponibilité du quota d'une partition, à trois issues distinctes
  * - L'audit des modifications
  *
- * Déplacé depuis App\Services\QuotaService (Story 5.1a).
+ * Déplacé depuis App\Services\QuotaService.
  * Le cache 5 min (Cache::remember) a été supprimé — les méthodes getDiskUsage
  * et getPartitionInfo lisent directement XFS. Un snapshot BDD quotidien
- * remplacera cette optimisation en Story 5.1b.
+ * remplacera cette optimisation en.
  *
  * Note : les préfixes de log « QuotaService: » sont conservés volontairement
- * pour ne pas perturber les grep opérateurs sur /var/log/ (décision SM 5.1a).
+ * pour ne pas perturber les grep opérateurs sur /var/log/ (décision SM).
  */
 class XfsQuotaService
 {
@@ -87,20 +87,15 @@ class XfsQuotaService
         }
     }
 
-    // =========================================================================
-    // LECTURE DES QUOTAS EFFECTIFS
-    // =========================================================================
-
     /**
      * Calcule le quota effectif pour un utilisateur sur une partition.
      *
-     * **TROIS ÉTAGES, ET AUCUNE DEVINETTE** (story 63.4) :
+     * **TROIS ÉTAGES, ET AUCUNE DEVINETTE** :
      *  1. la règle NOMINATIVE (`TYPE_USER`) ;
      *  2. la PLUS GRANDE règle parmi les groupes d'appartenance (`TYPE_GROUP`) ;
      *  3. le DÉFAUT D'INSTANCE (`TYPE_DEFAULT`, une ligne par partition) ;
      *  — et « illimité » si aucune règle n'existe.
      *
-     * ---------------------------------------------------------------------------
      * **CE QUI A DISPARU, ET POURQUOI.** Cette méthode prenait un quatrième
      * paramètre `$userProfile` qui choisissait, en dernier étage, l'une de quatre
      * lignes de défaut. Ce profil n'était attaché à rien : il se DEVINAIT par des
@@ -112,7 +107,6 @@ class XfsQuotaService
      * établissement, avec une lecture de table interne à cette méthode. Il tombe
      * avec le reste : un compte externe reçoit le défaut d'instance comme tout le
      * monde, et un budget particulier se pose en RÈGLE DE GROUPE, qui se voit.
-     * ---------------------------------------------------------------------------
      *
      * @param string $username Nom d'utilisateur
      * @param string $partition /home ou /var/sambaedu
@@ -202,8 +196,8 @@ class XfsQuotaService
     /**
      * Lit l'utilisation disque actuelle d'un utilisateur via XFS
      *
-     * Lecture directe XFS (sans cache — Story 5.1a).
-     * Un snapshot BDD quotidien remplacera cette lecture directe en Story 5.1b.
+     * Lecture directe XFS (sans cache —).
+     * Un snapshot BDD quotidien remplacera cette lecture directe en.
      *
      * @param string $username
      * @return array{home: array, sambaedu: array}
@@ -293,7 +287,7 @@ class XfsQuotaService
     /**
      * Lit les informations de quota d'une partition (état, période de grâce)
      *
-     * Lecture directe XFS (sans cache — Story 5.1a).
+     * Lecture directe XFS (sans cache —).
      */
     public function getPartitionInfo(string $partition): array
     {
@@ -317,9 +311,8 @@ class XfsQuotaService
     }
 
     /**
-     * Story 63.4 — **UN PLAFOND NON POSABLE SE DIT, IL NE SE DEVINE PAS.**
+     * **UN PLAFOND NON POSABLE SE DIT, IL NE SE DEVINE PAS.**
      *
-     * ---------------------------------------------------------------------------
      * **CE QUE LE CODE SAVAIT, ET CE QU'IL EN FAISAIT.** {@see getPartitionInfo()}
      * lance la même commande d'état et AVALE son code de retour : sur une partition
      * qui ne porte pas de quota de projet, la commande échoue, aucune ligne ne
@@ -337,7 +330,6 @@ class XfsQuotaService
      * « NON APPLICABLE » NE SE CONFOND JAMAIS AVEC « NON MESURABLE » : les deux
      * ferment le champ, mais avec un motif différent, et c'est le motif qui dit à
      * l'exploitant si le geste à faire est sur le serveur ou nulle part.
-     * ---------------------------------------------------------------------------
      *
      * @return array{available: bool, reason: string|null}
      */
@@ -370,10 +362,9 @@ class XfsQuotaService
     }
 
     /**
-     * Story 63.4, correction de revue — **LA GARDE NE VAUT QUE SUR UN ESPACE SERVI
+     * Correction de revue — **LA GARDE NE VAUT QUE SUR UN ESPACE SERVI
      * PAR LE SERVEUR DE FICHIERS.**
      *
-     * ---------------------------------------------------------------------------
      * La garde d'écriture du défaut d'instance protège d'un plafond qu'on croirait
      * posé sur un système de fichiers qui ne peut pas le porter. Mais quand l'espace
      * concerné ne vit PLUS sur le serveur de fichiers, ce plafond ne s'adresse plus
@@ -385,7 +376,6 @@ class XfsQuotaService
      * Lecture TOLÉRANTE : une décision d'emplacement illisible ou absente rend
      * `true`, c'est-à-dire la garde. On ne relâche une protection que sur une
      * information qu'on a réellement lue.
-     * ---------------------------------------------------------------------------
      */
     public function partitionIsServedOverSmb(string $partition): bool
     {
@@ -449,10 +439,9 @@ class XfsQuotaService
     }
 
     /**
-     * Story 63.4, correction de revue — **LES COMPTES QUE LE DÉFAUT D'INSTANCE
+     * Correction de revue — **LES COMPTES QUE LE DÉFAUT D'INSTANCE
      * COUVRE, ET CE QUE LEUR APPLIQUER COÛTERAIT.**
      *
-     * ---------------------------------------------------------------------------
      * **POURQUOI CE DÉNOMBREMENT EXISTE.** Écrire le défaut d'instance en base ne
      * l'écrit sur AUCUN compte : les plafonds ne bougent qu'au geste suivant. Le
      * porter à tout le monde est donc un geste SÉPARÉ et EXPLICITE — mais un geste
@@ -464,7 +453,6 @@ class XfsQuotaService
      * d'occupation ne répond pas, `depassements` vaut zéro — et zéro constaté n'est
      * pas zéro mesuré. Les confondre annoncerait « personne ne bascule » sur la foi
      * d'une commande qui n'a pas tourné.
-     * ---------------------------------------------------------------------------
      *
      * @return array{couverts: int, depassements: int, mesure: bool}
      */
@@ -624,15 +612,11 @@ class XfsQuotaService
         return $usage;
     }
 
-    // =========================================================================
-    // GESTION DES RÈGLES DE QUOTAS
-    // =========================================================================
-
     /**
      * Crée ou met à jour une règle de quota
      *
      * **La garde de disponibilité est REJOUÉE ICI, et pour le seul défaut
-     * d'instance** (story 63.4) : une garde qui ne vit que dans l'écran protège
+     * D'instance** : une garde qui ne vit que dans l'écran protège
      * l'étourderie, pas la requête forgée. Refusée, elle n'écrit RIEN — ni règle,
      * ni ligne d'audit.
      *
@@ -696,7 +680,6 @@ class XfsQuotaService
             ]
         );
 
-        // Log d'audit
         QuotaAuditLog::log(
             $action,
             $performedBy,
@@ -741,10 +724,6 @@ class XfsQuotaService
 
         return $rule->delete();
     }
-
-    // =========================================================================
-    // APPLICATION SUR LE FILESYSTEM
-    // =========================================================================
 
     /**
      * Applique un quota sur le filesystem XFS
@@ -833,18 +812,14 @@ class XfsQuotaService
         ];
     }
 
-    // =========================================================================
-    // JOBS
-    // =========================================================================
-
     /**
      * Dispatch un job pour appliquer le quota.
      *
-     * ⚠️ **LA TROISIÈME BRANCHE EST NOUVELLE** (correction de revue 63.4) : sans
+     * ⚠️ **LA TROISIÈME BRANCHE EST NOUVELLE** (correction de revue) : sans
      * elle, un défaut d'instance traversait cette méthode SANS RIEN FAIRE, et le
      * plafond saisi à l'écran n'atteignait jamais le système de fichiers — le seul
      * chemin par lequel il y arrivait était la suppression d'une règle de groupe.
-     * La story aurait alors remplacé « un formulaire qui n'applique rien » par « une
+     * On aurait alors remplacé « un formulaire qui n'applique rien » par « une
      * ligne en base qui n'atteint personne ».
      *
      * ⚠️ **Elle n'est empruntée que sur une demande EXPLICITE** : l'écran enregistre
@@ -932,10 +907,9 @@ class XfsQuotaService
     }
 
     /**
-     * Correction de revue 61.3 #1, **amputée de sa moitié « profil » par la story
-     * 63.4** — la résolution d'annuaire, et elle sait dire « je ne sais pas ».
+     * Résolution d'annuaire, sans le volet « profil ». Elle sait dire « je ne sais
+     * pas ».
      *
-     * ---------------------------------------------------------------------------
      * **CE QUI A DISPARU.** Elle rendait AUSSI un profil (élève / prof / admin),
      * déterminé par comparaison de sous-chaîne sur les appartenances d'annuaire.
      * Cette détermination-là est morte avec les quatre défauts par profil : le
@@ -946,7 +920,6 @@ class XfsQuotaService
      * {@see getEffectiveQuota()} — c'est par eux qu'une règle de groupe atteint un
      * compte, y compris sur le chemin de provisionnement d'un cloud. Supprimer la
      * méthode entière aurait éteint cet étage sans qu'aucun test ne le voie.
-     * ---------------------------------------------------------------------------
      *
      * **`null` N'EST PAS UNE LISTE VIDE, et la doctrine survit transposée.**
      * Annuaire indisponible, compte introuvable, entrée sans appartenances : ce
@@ -1029,10 +1002,6 @@ class XfsQuotaService
         }
     }
 
-    // =========================================================================
-    // MÉTHODES UTILITAIRES
-    // =========================================================================
-
     /**
      * Liste toutes les règles de quotas
      */
@@ -1098,7 +1067,7 @@ class XfsQuotaService
     }
 
     /**
-     * Story 4.7 — true si l'utilisateur est en over-hard sur home OU sambaedu
+     * True si l'utilisateur est en over-hard sur home OU sambaedu
      * (blocage effectif). Utilisé par OverlaySignalBuilder pour le signal quota
      * « Stockage saturé » (ex-cartouche du compositing WallpaperComposer retiré).
      */
@@ -1110,7 +1079,7 @@ class XfsQuotaService
     }
 
     /**
-     * Story 4.7 — retourne la liste des partitions en over-quota (hard OU soft)
+     * Retourne la liste des partitions en over-quota (hard OU soft)
      * avec label humain, valeurs Mo et grace_days pour affichage UI overlay.
      *
      * @return array<int,array{label:string,used_mb:int,soft_mb:int,grace_days:int|null}>

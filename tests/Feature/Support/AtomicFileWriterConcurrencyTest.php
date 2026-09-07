@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Test feature concurrent AtomicFileWriter (Story 15.1 / AC5.1).
+ * Test feature concurrent AtomicFileWriter.
  *
  * Vérifie que des lecteurs concurrents ne capturent jamais un état partiel :
  * un producer écrit en boucle un payload `<MARKER>:<payload-md5>`, un reader

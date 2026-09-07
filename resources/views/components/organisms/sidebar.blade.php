@@ -131,7 +131,7 @@
                             </a>
                         </li>
                     @endif
-                    {{-- Extensions (Story 54.1) — bibliothèque des extensions
+                    {{-- Extensions — bibliothèque des extensions
                          disponibles et intégrées. Même garde `server.admin` que
                          Réglages : c'est une fonction d'administration serveur. --}}
                     @if ($navExtensions)

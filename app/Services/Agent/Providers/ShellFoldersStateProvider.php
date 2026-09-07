@@ -15,7 +15,7 @@ use App\Services\Agent\WorkstationEnvironmentResolver;
 use Illuminate\Support\Collection;
 
 /**
- * Type `folders` (contrat §7.12, Story 58.1) — **redirection des dossiers shell
+ * Type `folders` (contrat §7.12) — **redirection des dossiers shell
  * Windows**, portée par l'AGENT.
  *
  * # Le trou que ce provider bouche
@@ -47,7 +47,7 @@ use Illuminate\Support\Collection;
  * # Pourquoi c'est l'agent qui doit porter ça
  *
  * Re-lier la GPO legacy sur l'OU réintroduirait le canal qu'on est précisément
- * en train d'éteindre (Epic 38). L'agent est le successeur désigné : il converge
+ * en train d'éteindre. L'agent est le successeur désigné : il converge
  * en continu (level-triggered) au lieu de dépendre d'un script joué au logon, et
  * il connaît déjà le poste — ce qui compte ici, car le bon Bureau DÉPEND DU
  * POSTE.
@@ -77,9 +77,9 @@ use Illuminate\Support\Collection;
  * du parc SEUL, pas d'une table d'authoring).
  *
  * **Lecture PURE** — aucune table d'authoring, aucune ligne de réglage, aucun AD
- * (NFR7, critère Keycloak). La seule lecture est celle de l'environnement du
+ * (critère Keycloak). La seule lecture est celle de l'environnement du
  * parc, faite par le {@see WorkstationEnvironmentResolver} sur les ids déjà
- * résolus du {@see TargetContext}. **Story 63.2** : ce provider lisait EN PLUS
+ * résolus du {@see TargetContext}. Ce provider lisait autrefois EN PLUS
  * `files.policy` pour savoir si le home était monté ; il ne le lit plus. Le
  * Bureau ne dépend plus de l'emplacement de l'espace perso — le home SMB qui
  * l'héberge est toujours là pour l'agent, quel que soit le cloud
@@ -97,7 +97,7 @@ final class ShellFoldersStateProvider implements StateProvider
     /**
      * Dossier shell « Bureau ». Mot MÉTIER, pas le nom de la valeur de registre
      * (`Desktop`) : l'agent traduit `folder` → mécanisme, le serveur n'écrit
-     * jamais de chemin de clé (invariant capability-first 27.12).
+     * jamais de chemin de clé (invariant capability-first).
      */
     public const FOLDER_DESKTOP = 'desktop';
 
@@ -162,7 +162,7 @@ final class ShellFoldersStateProvider implements StateProvider
             return collect();
         }
 
-        // MÊME résolution que `shortcuts` — c'est l'invariant de la story :
+        // MÊME résolution que `shortcuts`, et c'est l'invariant :
         // l'endroit où l'agent POSE les raccourcis et l'endroit vers lequel il
         // REDIRIGE le shell sont un seul et même chemin.
         $environment = $this->environmentResolver->resolveForGroupIds($ctx->workstationGroupIds());

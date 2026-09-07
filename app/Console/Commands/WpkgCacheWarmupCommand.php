@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.2 / AC6.1 — Pré-calcul du cache `wpkg:packages:{hostname}`.
+ * Pré-calcul du cache `wpkg:packages:{hostname}`.
  */
 final class WpkgCacheWarmupCommand extends Command
 {

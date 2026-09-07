@@ -7,9 +7,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.8 — AC1 (retrait total du mode strict/default — STRICT partout).
+ * (retrait total du mode strict/default — STRICT partout).
  *
- * Annule l'ajout opéré par 27.1 : la colonne `mode` sur `wallpapers` (ajoutée
+ * Annule l'ajout opéré par : la colonne `mode` sur `wallpapers` (ajoutée
  * par `2026_06_15_100100_add_mode_to_wallpapers`) n'a plus aucun consommateur —
  * le mécanisme `strict|default` est supprimé, le fond cible est TOUJOURS
  * réimposé (comportement strict inconditionnel). Droppée proprement (zéro prod,
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Schema;
  * back-fill).
  *
  * **Réversibilité** : `down()` RE-CRÉE `mode` VARCHAR(16) nullable (mêmes
- * attributs que 27.1 — pas de default SQL).
+ * attributs que — pas de default SQL).
  *
  * **Idempotence stricte** : `Schema::hasColumn()` en garde des deux côtés.
  */

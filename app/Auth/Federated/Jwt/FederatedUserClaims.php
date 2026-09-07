@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Auth\Federated\Jwt;
 
 /**
- * Story 20.1.
  *
  * DTO immuable représentant les claims d'un JWT fédéré VALIDÉ. Retourné par
  * {@see FederatedJwtVerifier::verify()}. Calqué sur
@@ -57,7 +56,7 @@ final readonly class FederatedUserClaims
     /**
      * Sérialise le sous-ensemble NON sensible des claims (logs sans secret).
      * N'expose JAMAIS le JWT brut. `login`/`name`/`email` sont volontairement
-     * exclus du jeu « loggable » (PII) — cf. AC16.
+     * exclus du jeu « loggable » (PII) —.
      *
      * @return array<string, mixed>
      */

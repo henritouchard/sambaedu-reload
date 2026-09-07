@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC5) — SharePolicy.
+ * SharePolicy.
  */
 class SharePolicyTest extends TestCase
 {

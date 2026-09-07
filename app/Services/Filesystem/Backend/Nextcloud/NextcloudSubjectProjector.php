@@ -11,29 +11,27 @@ use App\Services\Filesystem\Plan\PlanSubject;
 use App\Services\Filesystem\ShareService;
 
 /**
- * Story 61.3 — LA TRADUCTION DES SUJETS, DANS LES DEUX SENS, ET LE SEUL ENDROIT OÙ
+ * LA TRADUCTION DES SUJETS, DANS LES DEUX SENS, ET LE SEUL ENDROIT OÙ
  * LES DEUX VOCABULAIRES SE RENCONTRENT.
  *
  * Même rôle que son homologue du serveur de fichiers historique, et pour la même
  * raison : au-dessus de la ligne, personne n'a besoin de savoir ce qu'est un
  * identifiant de compte distant.
  *
- * ---------------------------------------------------------------------------
  * **L'IDENTITÉ D'UN COMPTE VIENT DU CACHE, ET DE RIEN D'AUTRE.**
  *
  * `users.nextcloud_user_id` est la SEULE source. Pas d'autocomplétion, pas de
- * « c'est sûrement le login », pas de résolution à la volée : la revue de 61.1 a
+ * « c'est sûrement le login », pas de résolution à la volée : la revue a
  * tranché qu'on n'adopte qu'un HOMONYME, et un rattachement non vérifié rouvre
  * l'écrasement du mot de passe d'un tiers. Cache vide ⇒ le nœud le DIT, en nommant
  * l'utilisateur ET la commande qui répare. Un octroi qu'on n'écrit pas doit se voir.
  *
- * **Le `sub` d'un jeton OIDC N'EST PAS UNE CLÉ DE JOINTURE.** L'Epic 55 publie
+ * **Le `sub` d'un jeton OIDC N'EST PAS UNE CLÉ DE JOINTURE.** L' publie
  * `sub = login` : c'est un choix de CLAIM, révocable, pas un contrat de jointure.
  * La vérité de liaison est ce cache — reconstructible, vérifié à distance, et
  * porteur d'une garde d'unicité. Aucun code de ce backend ne référence un claim ni
  * le vocabulaire de la fédération, et un test d'architecture l'épingle.
  *
- * ---------------------------------------------------------------------------
  * **LES GROUPES SONT FABRIQUÉS PAR SE5, DONC LEUR NOM EST CALCULÉ, JAMAIS LU.**
  *
  * Forme canonique : `se5_<nom court>` pour un sujet de groupe nu, et
@@ -72,7 +70,7 @@ final class NextcloudSubjectProjector
      * dossier, et ni la création des sous-dossiers ni la pose des règles ne sont
      * possibles. C'est un contrat de STRUCTURE du dossier, exactement comme le
      * groupe d'administration d'annuaire l'est pour un répertoire du serveur de
-     * fichiers historique — lequel est déjà, et depuis la story 60.4, écarté des
+     * fichiers historique — lequel est déjà écarté des
      * octrois observés. On reprend cette frontière à l'identique : deux frontières
      * qui divergeraient feraient de l'une un octroi observé et de l'autre pas.
      */
@@ -81,10 +79,6 @@ final class NextcloudSubjectProjector
     public function __construct(private readonly ShareService $shareService)
     {
     }
-
-    // =========================================================================
-    // Projection AVANT (sujet de plan → principal distant)
-    // =========================================================================
 
     /**
      * Le nom de groupe distant d'un sujet de type groupe, ou `null` s'il n'est pas
@@ -215,10 +209,6 @@ final class NextcloudSubjectProjector
 
         return ['members' => $members, 'missing' => $missing];
     }
-
-    // =========================================================================
-    // Projection INVERSE (principal distant → sujet de plan)
-    // =========================================================================
 
     /**
      * Index INVERSE, construit par RECALCUL des noms attendus depuis le plan.

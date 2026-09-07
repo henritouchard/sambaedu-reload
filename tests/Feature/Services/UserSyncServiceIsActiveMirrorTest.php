@@ -16,9 +16,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 49.3 (AC1 / AC6 / AC10-9) — `users.is_active` est un MIROIR de l'AD.
+ * `users.is_active` est un MIROIR de l'AD.
  *
- * Avant cette story, `upsertUser` posait `true` en dur à la CRÉATION et ne
+ * Auparavant, `upsertUser` posait `true` en dur à la CRÉATION et ne
  * touchait pas la colonne à l'UPDATE. Conséquences, toutes deux vérifiées ici
  * en non-régression :
  *   - un compte revenu dans l'annuaire restait inactif en base à vie ;
@@ -51,10 +51,6 @@ class UserSyncServiceIsActiveMirrorTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // ldapUserToAdData — transmission de useraccountcontrol au DTO
-    // =========================================================================
-
     #[Test]
     public function ldap_user_to_ad_data_transmits_the_active_account_flag(): void
     {
@@ -72,10 +68,6 @@ class UserSyncServiceIsActiveMirrorTest extends TestCase
         }
     }
 
-    // =========================================================================
-    // upsertUser — branche CRÉATION
-    // =========================================================================
-
     #[Test]
     public function creation_writes_is_active_from_the_dto(): void
     {
@@ -85,10 +77,6 @@ class UserSyncServiceIsActiveMirrorTest extends TestCase
         self::assertTrue((bool) UserModel::query()->where('login', 'nouveau-actif')->firstOrFail()->is_active);
         self::assertFalse((bool) UserModel::query()->where('login', 'nouveau-inactif')->firstOrFail()->is_active);
     }
-
-    // =========================================================================
-    // upsertUser — branche UPDATE (le trou de FR-R4)
-    // =========================================================================
 
     #[Test]
     public function update_mirrors_a_disabled_ad_account(): void
@@ -145,10 +133,6 @@ class UserSyncServiceIsActiveMirrorTest extends TestCase
         self::assertFalse($reactivated);
         self::assertTrue((bool) UserModel::query()->where('login', 'stable')->firstOrFail()->is_active);
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     private function upsert(AdUser $adUser): bool
     {

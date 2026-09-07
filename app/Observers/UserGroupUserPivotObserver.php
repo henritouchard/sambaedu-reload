@@ -14,13 +14,13 @@ use App\Services\UserGroupService;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 5.2 (D5=A) — Observer sur le pivot `user_group_user`.
+ * Observer sur le pivot `user_group_user`.
  *
  * Quand un user est attaché ou détaché d'un `UserGroup` de type `'classe'`,
  * délègue à `ShareService::syncUserClassMemberships()` pour synchroniser
  * les ACLs filesystem (création / archivage `<eleve>` perso).
  *
- * Story 42.2 (D4) — s'y ajoute l'ancrage `updated()` : un CHANGEMENT DE RÔLE
+ * S'y ajoute l'ancrage `updated` : un CHANGEMENT DE RÔLE
  * d'arête (`wasChanged('role')`) reprojette le groupe concerné vers l'AD
  * (`UserGroupService::resyncGroupAdProjection()`). Les events created/deleted
  * n'y participent PAS : chaque canal d'attach/detach existant a déjà sa
@@ -32,22 +32,22 @@ use Illuminate\Support\Facades\Log;
  *  - Le groupe doit être de type `'classe'` (FS) / `'classe'|'equipe'` (resync
  *    AD) ; les rattachements `role`, `function`, etc. sont ignorés.
  *  - Désactivable globalement via `UserGroupUserPivotObserver::disableSync()`
- *    pour les tests/imports massifs (cohérent pattern `UserGroupObserver`) —
+ *  pour les tests/imports massifs (cohérent pattern `UserGroupObserver`)
  *    ce flag suspend AUSSI le resync AD (guard commun).
  *  - Resync AD suspendu SEUL via `disableAdResync()` pendant `syncFromAd`
- *    (read-back) : le `sync()` associatif y flippe des rôles en masse — sans
+ *  (read-back) : le `sync()` associatif y flippe des rôles en masse — sans
  *    suspension, chaque flip déclencherait une reprojection LDAP (tempête
  *    d'I/O), et écrire l'AD pendant qu'on le lit est conceptuellement faux.
  *    Flag DÉDIÉ : ne JAMAIS réutiliser `$syncEnabled`, qui gouverne la synchro
  *    FS ShareService (laquelle DOIT continuer à tourner au read-back).
- *  - Réconciliation des PROFILS DE DROITS (Story 49.1) suspendue SEULE via
- *    `disableProfileReconcile()`. Elle est ancrée AVANT le guard
- *    `$syncEnabled` — cf. le docblock de `created()`.
+ * - Réconciliation des PROFILS DE DROITS suspendue SEULE via
+ *  `disableProfileReconcile()`. Elle est ancrée AVANT le guard
+ *  `$syncEnabled` — cf. le docblock de `created()`.
  *
  * Fail-soft : aucune exception n'est propagée — un échec côté ShareService ou
  * côté projection AD est loggé et l'opération Eloquent (attach/detach/update)
  * reste valide. Le filet de sécurité est la commande
- * `php artisan shares:resync-class --classe=X` (Story 5.2 D5=D) et le bouton
+ * `php artisan shares:resync-class --classe=X` et le bouton
  * « Synchroniser avec AD » côté groupes.
  */
 class UserGroupUserPivotObserver
@@ -55,15 +55,15 @@ class UserGroupUserPivotObserver
     public static bool $syncEnabled = true;
 
     /**
-     * Story 42.2 (D4/T3.1) — flag DÉDIÉ au resync AD sur changement de rôle.
+     * Flag DÉDIÉ au resync AD sur changement de rôle.
      * Distinct de `$syncEnabled` (synchro FS ShareService) : pendant le
      * read-back `syncFromAd`, seul le resync AD est suspendu.
      */
     public static bool $adResyncEnabled = true;
 
     /**
-     * Story 49.1 (D9) — flag DÉDIÉ à la réconciliation des profils de droits
-     * portés par les groupes. Pattern documenté 42.2 : chaque canal son flag.
+     * Flag DÉDIÉ à la réconciliation des profils de droits
+     * portés par les groupes. Pattern documenté : chaque canal son flag.
      *
      * Ne JAMAIS le confondre avec `$syncEnabled` (synchro FS ShareService) ni
      * avec `$adResyncEnabled` (projection AD). `$syncEnabled` est coupé par des
@@ -104,7 +104,7 @@ class UserGroupUserPivotObserver
     }
 
     /**
-     * Story 49.1 (D9) — le hook « profils de droits » est appelé AVANT le guard
+     * Le hook « profils de droits » est appelé AVANT le guard
      * `$syncEnabled`, DÉLIBÉRÉMENT : ce flag est coupé par des chemins qui
      * doivent quand même matérialiser les rôles (import users
      * `persistUserGroupsToSql`, tests FS). Il a son propre flag.
@@ -132,11 +132,11 @@ class UserGroupUserPivotObserver
     }
 
     /**
-     * Story 60.5 — DEUX AUTORITÉS, DEUX ZONES, AUCUN CONFLIT.
+     * DEUX AUTORITÉS, DEUX ZONES, AUCUN CONFLIT.
      *
      * Cette méthode enfile la réconciliation de l'arbre NEUF, gouverné par le plan.
      * {@see dispatch()}, juste en dessous, gouverne l'arbre HISTORIQUE (chemin figé
-     * de la story 5.2, archivage implicite compris) et ne bouge pas d'une ligne. Les
+     * de la, archivage implicite compris) et ne bouge pas d'une ligne. Les
      * deux zones sont DISJOINTES par construction — la garde de chemin du backend
      * n'a aucun jeton pour l'arbre historique — et c'est cette disjonction qui fait
      * tenir « une seule autorité d'écriture par zone » sans qu'aucune des deux ne
@@ -170,19 +170,19 @@ class UserGroupUserPivotObserver
     }
 
     /**
-     * Story 42.2 (D4/T3.2) — resync AD du groupe sur CHANGEMENT DE RÔLE d'arête.
+     * Resync AD du groupe sur CHANGEMENT DE RÔLE d'arête.
      *
      * Déclenché par les writes Eloquent du pivot custom (`sync()` associatif /
      * `updateExistingPivot` → `fill()->save()` → event `updated`, uniquement si
      * dirty — un sync sans changement ne déclenche rien, bon pour
      * l'idempotence). Les writes `DB::table('user_group_user')` bruts
-     * (backfill 42.1, MergeLegacyUserGroups) ne passent PAS par ici — voulu
+     * (backfill, MergeLegacyUserGroups) ne passent PAS par ici — voulu
      * (actions de migration).
      */
     public function updated(UserGroupUserPivot $pivot): void
     {
-        // Story 60.5 — un changement de RÔLE D'ARÊTE change les audiences de
-        // l'arbre neuf (l'équipe enseignante EST un rôle d'arête depuis l'Epic 42) :
+        // Un changement de RÔLE D'ARÊTE change les audiences de
+        // l'arbre neuf (l'équipe enseignante EST un rôle d'arête) :
         // il enfile sa réconciliation, sous son propre interrupteur et avant les
         // gardes de l'annuaire.
         if ($pivot->wasChanged('role')) {
@@ -205,7 +205,7 @@ class UserGroupUserPivotObserver
         }
 
         $group = UserGroup::find($groupId);
-        // Review 42.2 #1 — prédicat aligné sur le chokepoint (`class` toléré :
+        // Prédicat aligné sur le chokepoint (`class` toléré :
         // fixtures historiques `type='class'` traitées classe-like).
         if (! $group || ! in_array($group->type, ['class', 'classe', 'equipe'], true)) {
             return; // hors scope — le rôle d'arête ne route rien ailleurs.
@@ -225,7 +225,7 @@ class UserGroupUserPivotObserver
     }
 
     /**
-     * Story 49.1 (AC2 / D9) — matérialise les profils de droits après un
+     * Matérialise les profils de droits après un
      * changement d'appartenance (attach ou detach, quel que soit le canal).
      *
      * **Early-return borné.** Si le groupe du pivot ne porte AUCUN profil, la

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unit — FirefoxPolicyAdapter — parité avec `ff_import_policy` legacy (AC 5).
+ * Tests unit — FirefoxPolicyAdapter : parité avec `ff_import_policy` legacy.
  */
 class FirefoxPolicyAdapterTest extends TestCase
 {

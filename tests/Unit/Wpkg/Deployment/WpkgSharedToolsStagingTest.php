@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.20 — Staging des outils WPKG partagés (`%Z%\wpkg\tools\`).
+ * Staging des outils WPKG partagés (`%Z%\wpkg\tools\`).
  *
  * PIVOT ARCHITECTURAL (post-review) : le staging des outils est désormais
  * AGENT-DRIVEN (module Go `agent/provision` + `manifest.json` côté serveur), PAS
@@ -19,7 +19,7 @@ use Tests\TestCase;
  * INERTE → wpkg.cmd a été REVERTI à HEAD.
  *
  * Ces tests valident le CÂBLAGE INFRA SERVEUR (scripts shell), seule surface PHP
- * de la story (le moteur de staging vit côté agent Go, testé par `go test
+ * concernée (le moteur de staging vit côté agent Go, testé par `go test
  * ./agent/provision`) :
  *   - T1 : alias Apache `/wpkg/tools` scopé + check de complétude `update.sh` ;
  *   - T3 : `ensure_wpkg_tools` provisionne les droits world-readable (664) +
@@ -31,7 +31,6 @@ use Tests\TestCase;
  * déplacée dans l'agent.)
  */
 #[Group('wpkg')]
-#[Group('story-27-20')]
 class WpkgSharedToolsStagingTest extends TestCase
 {
     private function read(string $relative): string
@@ -42,7 +41,7 @@ class WpkgSharedToolsStagingTest extends TestCase
         return (string) file_get_contents($path);
     }
 
-    // ── T1 — Alias Apache /wpkg/tools ───────────────────────────────────────
+    // T1 — Alias Apache /wpkg/tools
 
     #[Test]
     public function setup_apache_declares_wpkg_tools_alias_scoped_to_tools_subtree(): void
@@ -118,7 +117,7 @@ class WpkgSharedToolsStagingTest extends TestCase
         );
     }
 
-    // ── T2 — wpkg.cmd REVERTI (la logique outils est passée dans l'agent) ───
+    // T2 — wpkg.cmd REVERTI (la logique outils est passée dans l'agent)
 
     #[Test]
     public function wpkg_cmd_is_reverted_and_carries_no_tools_staging_logic(): void
@@ -140,7 +139,7 @@ class WpkgSharedToolsStagingTest extends TestCase
         );
     }
 
-    // ── T3 — Provisioning serveur (ensure_wpkg_tools + manifest.json) ───────
+    // T3 — Provisioning serveur (ensure_wpkg_tools + manifest.json)
 
     #[Test]
     public function update_sh_provisions_tools_world_readable_and_www_admin(): void

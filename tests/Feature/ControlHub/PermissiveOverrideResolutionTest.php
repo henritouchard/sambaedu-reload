@@ -37,17 +37,17 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.3 — Relaxation permissive : un override `workstationGroup` local
+ * Relaxation permissive : un override `workstationGroup` local
  * surcharge réellement un item amont `permissive` au compilé, tandis qu'un item
  * `locked` reste inbattable.
  *
- * Symétrique inverse de 29.2 : là où 29.2 REFUSE l'écriture d'un override sur un
- * `locked`, 29.3 fait MORDRE l'override sur un `permissive`. Le cœur du changement
+ * Symétrique inverse : là où REFUSE l'écriture d'un override sur un
+ * `locked`, fait MORDRE l'override sur un `permissive`. Le cœur du changement
  * est la maille divergente injectée par {@see UpstreamContractSource} — `locked`
  * → `StateMaille::Upstream` (rang -1, inbattable) ; `permissive` →
  * `StateMaille::UpstreamPermissive` (rang 6, plancher battable par TOUTE maille
- * locale, défaut diffusé inclus — décision Henri 2026-06-27 : le permissif est le
- * MOINS spécifique de toute la chaîne).
+ * locale, défaut diffusé inclus : le permissif est le MOINS spécifique de
+ * toute la chaîne).
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. On teste des VALEURS
  * résolues, jamais des bornes de colonne (SQLite n'applique pas varchar/enum PG).
@@ -77,8 +77,6 @@ class PermissiveOverrideResolutionTest extends TestCase
         parent::tearDown();
     }
 
-    // ── AC #1 — l'override local surcharge un item permissif (fake provider) ──
-
     #[Test]
     public function permissive_is_overridden_by_a_local_group_candidate(): void
     {
@@ -96,8 +94,6 @@ class PermissiveOverrideResolutionTest extends TestCase
         self::assertSame(0, $items[0]['payload']['value'], 'l\'override LOCAL gagne sur le plancher permissif amont (FR4)');
     }
 
-    // ── AC #2 — sans candidat local, le permissif s'applique comme baseline ──
-
     #[Test]
     public function permissive_applies_as_baseline_when_no_local_candidate(): void
     {
@@ -111,8 +107,6 @@ class PermissiveOverrideResolutionTest extends TestCase
         self::assertCount(1, $items);
         self::assertSame(5, $items[0]['payload']['value'], 'en l\'absence TOTALE de candidat local, la valeur permissive amont est la baseline (AC #2)');
     }
-
-    // ── Décision Henri — le permissif est SOUS le défaut diffusé (Broadcast) ──
 
     #[Test]
     public function permissive_is_below_the_broadcast_default(): void
@@ -131,8 +125,6 @@ class PermissiveOverrideResolutionTest extends TestCase
         self::assertSame(1, $items[0]['payload']['value'], 'le défaut diffusé (Broadcast) surcharge le plancher permissif amont');
     }
 
-    // ── AC #4 — locked reste inbattable (non-régression 28.3/29.2) ────────────
-
     #[Test]
     public function locked_still_wins_over_a_local_group_candidate(): void
     {
@@ -147,8 +139,6 @@ class PermissiveOverrideResolutionTest extends TestCase
         self::assertCount(1, $items);
         self::assertSame(9, $items[0]['payload']['value'], 'locked reste INBATTABLE (Upstream rang -1) — la relaxation 29.3 ne touche QUE permissive (AC #4)');
     }
-
-    // ── AC #1 + #5 — e2e : override par WG gagne et ne fuit PAS vers un autre parc ──
 
     #[Test]
     public function workstation_group_override_wins_for_its_members_and_does_not_leak(): void
@@ -204,18 +194,18 @@ class PermissiveOverrideResolutionTest extends TestCase
         self::assertSame(2, $valueFor($wsG), 'l\'override du parc G mord réellement au compilé (FR4)');
 
         // Poste de H : l'override de G NE FUIT PAS (≠ 2). Le défaut diffusé (1) gagne
-        // sur le plancher permissif (3) — confirme le scope par groupe (AC #5) et la
+        // sur le plancher permissif (3) — confirme le scope par groupe et la
         // règle « permissif sous le défaut diffusé ».
         self::assertSame(1, $valueFor($wsH), 'l\'override de G ne fuit pas vers H ; H retombe sur le défaut diffusé');
     }
 
-    // ── AC #6 — standalone : aucun candidat amont, court-circuit ≤ 1 requête ──
+    // Standalone : aucun candidat amont, court-circuit ≤ 1 requête
 
     #[Test]
     public function standalone_no_contract_injects_nothing_and_short_circuits(): void
     {
         // Aucun contrat actif (RefreshDatabase) : le compilé décoré doit être
-        // STRICTEMENT identique au compilé non décoré + court-circuit NFR3.
+        // STRICTEMENT identique au compilé non décoré, avec court-circuit.
         $local = $this->keyedExclusiveProvider('registry', StateScope::Session, [
             new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 7), now(), 1),
         ]);
@@ -232,7 +222,7 @@ class PermissiveOverrideResolutionTest extends TestCase
         $log = DB::getQueryLog();
         DB::disableQueryLog();
 
-        // Byte-identité sur TOUTES les portées + hash global (patron 28.3) : une
+        // Byte-identité sur TOUTES les portées + hash global : une
         // régression cantonnée à SCOPE_MACHINE/SCOPE_MACHINE_USER passerait sous le
         // radar d'une assertion sur la seule session.
         foreach (StateContract::scopes() as $scope) {
@@ -251,7 +241,7 @@ class PermissiveOverrideResolutionTest extends TestCase
         self::assertSame(0, $itemQueries, 'aucune requête items quand aucun contrat actif (court-circuit)');
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function upstreamRegistryItem(string $key, string $value, ControlHubEnforcementState $state): void
     {

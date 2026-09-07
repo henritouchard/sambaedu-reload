@@ -9,7 +9,7 @@ use App\Models\PrinterDriver;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 6.2 — Factory pour le modèle `PrinterDriver` (PK composite).
+ * Factory pour le modèle `PrinterDriver` (PK composite).
  *
  * @extends Factory<PrinterDriver>
  */

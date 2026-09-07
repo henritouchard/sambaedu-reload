@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.6 — AC2.* — Tests unitaires de WindowsIsoUrlValidator.
+ * .* — Tests unitaires de WindowsIsoUrlValidator.
  *
  * Couvre :
  *  - URLs valides (Win10 / Win11 — extraction iso_name + version_num).
@@ -67,14 +67,11 @@ class WindowsIsoUrlValidatorTest extends TestCase
     #[Test]
     public function it_accepts_an_url_on_a_subdomain_of_an_allowed_host(): void
     {
-        // Design D5 — sous-domaines Microsoft acceptés. Voir runbook 3.6-13.
-        // host `secure.download.microsoft.com` ends-with `.download.microsoft.com`
-        // → allowed via `str_ends_with($host, '.'.$allowed)`.
-        // Décision design (cf. _bmad-output/codeReviews/3-6.md #3 / #12) :
-        // tout sous-domaine `*.download.microsoft.com` est intentionnellement
-        // accepté (Microsoft contrôle ses sous-domaines + admin restreint
-        // `server.admin`). Le test négatif `microsoft.com.evil.com` confirme
-        // que les attaques par sous-domaine d'allowlist sont bloquées.
+        // Tout sous-domaine `*.download.microsoft.com` est intentionnellement
+        // accepté, via `str_ends_with($host, '.'.$allowed)` : Microsoft contrôle
+        // ses sous-domaines, et la saisie de l'URL est réservée à `server.admin`.
+        // Le test négatif `microsoft.com.evil.com` vérifie qu'un domaine
+        // simplement PRÉFIXÉ par un hôte autorisé reste bloqué.
         $url = 'https://secure.download.microsoft.com/path/Win11_25H1.iso';
         $result = $this->validator->validate($url);
 

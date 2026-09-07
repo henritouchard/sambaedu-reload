@@ -7,10 +7,10 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.2 / AC4.1 — Options `.ini` WPKG modifiées sur un poste.
+ * Options `.ini` WPKG modifiées sur un poste.
  * Déclenche la régénération atomique du fichier `.ini` per-poste
  * (cf. `RegenerateWorkstationIniOnOptionsChanged` listener).
- * Émetteurs : Story 15.4 (HORS scope ici).
+ * Émetteurs : (HORS scope ici).
  */
 final readonly class WorkstationOptionsChanged
 {

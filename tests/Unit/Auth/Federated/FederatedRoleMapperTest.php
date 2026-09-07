@@ -14,12 +14,13 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Story 20.3 — D-1 (pivot Henri 2026-06-03). Résolution du rôle asséré par
- * LOOKUP DIRECT dans les rôles EXISTANTS de l'instance (table Spatie `roles`,
- * guard `web`) : rôle existant → nom canonique renvoyé ; normalisation
- * casse/espaces ; rôle absent en base → null (→ 403) ; aucun wildcard/fallback ;
- * `super-admin` existant → renvoyé (modèle ouvert D-5). Plus AUCUNE lecture de
- * `config('federated_auth.role_map')` (table supprimée).
+ * Le rôle asséré par le jeton fédéré est résolu par LOOKUP DIRECT dans les rôles
+ * EXISTANTS de l'instance (table Spatie `roles`, guard `web`) : rôle existant →
+ * nom canonique renvoyé ; normalisation de la casse et des espaces ; rôle absent
+ * en base → null, donc 403 ; aucun wildcard ni repli ; `super-admin` renvoyé
+ * comme les autres s'il existe. Aucune lecture de
+ * `config('federated_auth.role_map')` : cette table de correspondance n'existe
+ * plus.
  */
 class FederatedRoleMapperTest extends TestCase
 {

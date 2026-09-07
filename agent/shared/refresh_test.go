@@ -2,7 +2,7 @@ package shared
 
 import "testing"
 
-// Tests de l'échelle de rafraîchissement (Story 43.1, AC1) — parsing
+// Tests de l'échelle de rafraîchissement — parsing
 // INDULGENT du hint `refresh` et ordre de l'échelle.
 
 func TestParseRefreshLevelKnownTokens(t *testing.T) {
@@ -14,7 +14,7 @@ func TestParseRefreshLevelKnownTokens(t *testing.T) {
 		{"policy_broadcast", RefreshPolicyBroadcast},
 		{"explorer_restart", RefreshExplorerRestart},
 		// Tolérance de forme (espace/casse) — le vocabulaire canonique reste
-		// serveur (AuthoringGuard 43.2), l'agent ne fait que reconnaître.
+		// serveur (AuthoringGuard), l'agent ne fait que reconnaître.
 		{"  Shell_Notify  ", RefreshShellNotify},
 		{"EXPLORER_RESTART", RefreshExplorerRestart},
 	}
@@ -26,7 +26,7 @@ func TestParseRefreshLevelKnownTokens(t *testing.T) {
 }
 
 func TestParseRefreshLevelLenientUnknownOrEmpty(t *testing.T) {
-	// AC1 : absent/vide/inconnu ⇒ RefreshNone — JAMAIS une erreur d'enveloppe
+	// Absent/vide/inconnu ⇒ RefreshNone — JAMAIS une erreur d'enveloppe
 	// (le parsing ne peut pas échouer : pas de second retour d'erreur).
 	for _, raw := range []string{"", "   ", "none", "reboot", "shell-notify", "restart_explorer"} {
 		if got := ParseRefreshLevel(raw); got != RefreshNone {
@@ -48,7 +48,7 @@ func TestRefreshLevelOrderingAndMax(t *testing.T) {
 	if got := maxRefreshLevel(RefreshPolicyBroadcast, RefreshNone); got != RefreshPolicyBroadcast {
 		t.Errorf("max(policy_broadcast, none) = %s", got)
 	}
-	// Un hint ne peut qu'ESCALADER le plancher (D2) : max(plancher, hint plus
+	// Un hint ne peut qu'ESCALADER le plancher : max(plancher, hint plus
 	// faible) reste le plancher.
 	if got := maxRefreshLevel(RefreshShellNotify, RefreshNone); got != RefreshShellNotify {
 		t.Errorf("le plancher ne s'affaiblit jamais : %s", got)

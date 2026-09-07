@@ -7,7 +7,7 @@ namespace App\Services\AppCustomization\Firefox;
 /**
  * Dispatcher — route une URL d'extension Firefox vers le bon resolver.
  *
- * Story 4.8 — préserve la compatibilité avec les XPI "maison" (hors AMO)
+ * Préserve la compatibilité avec les XPI "maison" (hors AMO)
  * tout en proposant un chemin optimal pour les addons publics AMO :
  *
  *   Input URL                                              → Resolver

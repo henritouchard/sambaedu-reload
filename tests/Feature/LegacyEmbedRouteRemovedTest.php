@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.5 — Débranchement sec de l'embed legacy.
+ * Débranchement sec de l'embed legacy.
  *
  * La route `users.groups.legacy-new` (embed `annu2/add_group.php` via
  * LegacyEmbedController/LegacyEmbedService) a été SUPPRIMÉE : création de groupe

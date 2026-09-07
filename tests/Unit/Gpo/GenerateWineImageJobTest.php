@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `GenerateWineImageJob` — Story 16.3c AC6.3 / AC2.1 / AC5.2.
+ * Tests Unit `GenerateWineImageJob` —.
  */
 class GenerateWineImageJobTest extends TestCase
 {

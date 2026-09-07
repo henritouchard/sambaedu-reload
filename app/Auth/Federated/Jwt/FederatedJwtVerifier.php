@@ -16,7 +16,7 @@ use Throwable;
 use UnexpectedValueException;
 
 /**
- * Story 20.1 — vérificateur de JWT fédéré (tier « utilisateur fédéré »).
+ * Vérificateur de JWT fédéré (tier « utilisateur fédéré »).
  *
  * Calqué sur {@see \App\Auth\V1\Jwt\WorkstationJwtVerifier}, durci selon la
  * section archi « Sécurité du jeton JWT » (constats IR H1/M1/M4).
@@ -90,7 +90,7 @@ class FederatedJwtVerifier
             throw InvalidFederatedJwtException::signatureInvalid($e);
         } catch (UnexpectedValueException $e) {
             // Couvre : algo non autorisé (alg:none, HS256), kid inconnu, JSON
-            // de segment invalide. Tout cela = refus signature (D9 iso-V1).
+            // de segment invalide. Tout cela est traité en refus de signature.
             $this->logRejection('federated.jwt.signature_invalid', $jwt, ['lib_error' => $e->getMessage()]);
             throw InvalidFederatedJwtException::signatureInvalid($e);
         } catch (Throwable $e) {
@@ -100,7 +100,6 @@ class FederatedJwtVerifier
 
         $payload = (array) $decoded;
 
-        // --- Extraction + validation de présence des claims requis ---
         $sub = $this->stringClaim($payload, 'sub');
         $jti = $this->stringClaim($payload, 'jti');
         $kid = $this->stringClaim($payload, 'kid');
@@ -112,7 +111,7 @@ class FederatedJwtVerifier
         $exp = (int) ($payload['exp'] ?? 0);
 
         // Profil d'affichage (non sécurité-critique, mais requis fonctionnel).
-        // Review 39.3 #E22 — passer par `stringClaim()` (garde `is_scalar`) comme tous
+        // Passer par `stringClaim` (garde `is_scalar`) comme tous
         // les autres claims : un `name`/`email` array JSON casterait sinon en `"Array"`
         // (warning PHP 8 + donnée corrompue silencieuse en base).
         $login = $this->stringClaim($payload, 'login');
@@ -132,13 +131,12 @@ class FederatedJwtVerifier
         // `aud` réellement ABSENT (ni string ni array non-vide) → claim manquant.
         // `aud` PRÉSENT mais sans correspondance (string ≠ ou array sans match) →
         // `audClaim()` renvoie '' et la validation `hash_equals` ci-dessous lève
-        // `aud_mismatch` (et non `missing_claim`) : code d'erreur fidèle (#3).
+        // `aud_mismatch` (et non `missing_claim`) : code d'erreur fidèle.
         if (! $this->hasAudClaim($payload)) {
             $this->logRejection('federated.jwt.missing_claim', $jwt, ['claim' => 'aud']);
             throw InvalidFederatedJwtException::missingClaim('aud');
         }
 
-        // --- Validation fonctionnelle stricte (H1) ---
 
         // iss : émetteur attendu. Source DB (IdP réellement provisionné au
         // handshake) prioritaire, config env en repli explicite (cf. expectedIss()).
@@ -221,7 +219,7 @@ class FederatedJwtVerifier
     /**
      * Le claim `aud` est-il présent dans le payload (peu importe qu'il matche) ?
      * Sert à distinguer « aud absent » (claim manquant) de « aud présent mais
-     * sans correspondance » (aud_mismatch). Cf. #3.
+     * sans correspondance » (aud_mismatch).
      *
      * @param array<string,mixed> $payload
      */
@@ -237,7 +235,7 @@ class FederatedJwtVerifier
     }
 
     /**
-     * Émetteur (`iss`) attendu. Story 39.3 — symétrique à {@see expectedAud()} :
+     * Émetteur (`iss`) attendu. — symétrique à {@see expectedAud} :
      * si l'IdP fédéré a réellement été provisionné au handshake
      * (`ControlHubConnection::current()?->hasFederatedIdp()`), la DB est la SEULE
      * source de vérité (`idp_iss`) ; sinon repli EXPLICITE sur la config env.
@@ -256,12 +254,12 @@ class FederatedJwtVerifier
 
     /**
      * Audience attendue = identifiant de CETTE instance SE5. `expected_aud`
-     * (override explicite env) reste prioritaire ; à défaut, Story 39.3 fait
+     * (override explicite env) reste prioritaire ; à défaut fait
      * porter le repli par l'uuid d'instance (`controlHub.se4fs.instance_id`) —
      * l'identifiant que l'IdP amont emploie réellement comme `aud` — et non plus
      * `sambaedu.se4fs_name` (qui n'est pas cet identifiant).
      *
-     * ⚠️ Rappel opérationnel (hors périmètre 39.3) : si `SE4FS_INSTANCE_ID`
+     * ⚠️ Rappel opérationnel (hors périmètre) : si `SE4FS_INSTANCE_ID`
      * n'est pas figé en `.env`, `config('controlHub.se4fs.instance_id')` par
      * défaut régénère un UUID aléatoire à chaque chargement de config
      * (`Str::uuid()`, cf. config/controlHub.php). Le provisioning
@@ -278,7 +276,7 @@ class FederatedJwtVerifier
     }
 
     /**
-     * Construit la key-map `kid => Key('RS256')`. Story 39.3 — source DB
+     * Construit la key-map `kid => Key('RS256')`. — source DB
      * prioritaire : si l'IdP fédéré a été provisionné au handshake
      * (`ControlHubConnection::current()?->hasFederatedIdp()`), la map n'a QU'UNE
      * entrée, bâtie DIRECTEMENT depuis la colonne PEM en clair (`idp_public_key`

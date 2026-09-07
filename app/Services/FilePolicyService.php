@@ -8,14 +8,14 @@ use App\Enums\CloudAccessPath;
 use App\Models\SystemSetting;
 
 /**
- * Politique de gestion des fichiers — réglage GLOBAL d'instance UNIQUEMENT
- * (décision Henri 2026-07-17). QUATRE CAPACITÉS INDÉPENDANTES (pas un mode
- * exclusif, PAS d'override par parc) :
+ * Politique de gestion des fichiers — réglage GLOBAL d'instance UNIQUEMENT.
+ * QUATRE CAPACITÉS INDÉPENDANTES (pas un mode exclusif, PAS d'override par
+ * parc) :
  *  - `home`      : monter le home perso (K:).
  *  - `shares`    : monter les partages serveur (classes H: + répertoires gérés).
  *  - `nextcloud` : « Accès Nextcloud » — l'instance monte les partages SMB
  *                  existants en stockage externe et SE5 provisionne ce montage et
- *                  les comptes (story 61.1).
+ * les comptes.
  *  - `opencloud` : « Accès OpenCloud » — une instance OpenCloud devient une
  *                  AUTORITÉ D'ÉCRITURE possible pour un répertoire géré (le plan
  *                  y devient un espace de projet et des octrois par nœud).
@@ -44,8 +44,7 @@ use App\Models\SystemSetting;
  * {@see \App\Services\Agent\Providers\DrivesStateProvider} (`home`→K:,
  * `shares`→H:+répertoires gérés), résolu PAR CAPACITÉ indépendamment.
  *
- * ---------------------------------------------------------------------------
- * **Story 61.1 — les réglages de connexion NON SECRETS vivent ici.** L'URL, le
+ * **les réglages de connexion NON SECRETS vivent ici.** L'URL, le
  * compte admin, le nom du serveur SMB à monter et la vérification TLS sont du
  * réglage : ils vont dans ce JSON, lisible et diffable. **L'app password admin
  * n'y est PAS** — il vit chiffré dans `service_credentials` sous le nom
@@ -53,15 +52,14 @@ use App\Models\SystemSetting;
  * `files.policy` est stocké en clair ; y mettre un secret le rendrait lisible à
  * quiconque lit la table des réglages, et à tout export de configuration.
  *
- * **Recadrage du 2026-08-08 — IL N'Y A PLUS DE « MODE ».** La story 61.2 avait
- * ajouté ici une clé `nextcloud_mode` (instance administrée / compte porteur
- * délégué) et l'identifiant du compte porteur. La mesure contre une instance réelle
- * a montré qu'un compte ordinaire ne peut créer ni Team folder, ni groupe, ni
- * partage de groupe : le mode délégué ne pouvait pas tenir la clôture, qui est la
- * raison d'être du plan de fichiers. SE5 EXIGE donc un compte administrateur, les
- * deux clés ont été retirées, et le réglage ne décrit plus qu'UNE connexion — celle
- * de 61.1. Un payload persisté qui les porte encore les voit simplement ignorées.
- * ---------------------------------------------------------------------------
+ * **IL N'Y A PLUS DE « MODE ».** Une clé `nextcloud_mode` (instance administrée /
+ * compte porteur délégué) et l'identifiant du compte porteur ont existé ici. La
+ * mesure contre une instance réelle a montré qu'un compte ordinaire ne peut créer
+ * ni Team folder, ni groupe, ni partage de groupe : le mode délégué ne pouvait pas
+ * tenir la clôture, qui est la raison d'être du plan de fichiers. SE5 EXIGE donc un
+ * compte administrateur, les deux clés ont été retirées, et le réglage ne décrit
+ * plus qu'UNE connexion. Un payload persisté qui les porte encore les voit
+ * simplement ignorées.
  */
 final class FilePolicyService
 {
@@ -103,7 +101,6 @@ final class FilePolicyService
             // apparaît sur les bureaux de l'établissement.
             'nextcloud_desktop_shortcut' => false,
 
-            // --- Accès OpenCloud : STRICTEMENT ADDITIF ------------------------
             // Aucune clé ci-dessus n'est réutilisée, renommée ni supprimée : un
             // payload persisté avant l'arrivée de ces clés se relit à
             // l'identique et signifie exactement ce qu'il signifiait
@@ -116,7 +113,6 @@ final class FilePolicyService
             // choix visible à l'écran, jamais un défaut caché dans le code.
             'opencloud_verify_tls' => true,
 
-            // --- Story 63.3 : le chemin d'accès au cloud, STRICTEMENT ADDITIF --
             // Une clé de plus, en queue, avec un défaut qui reproduit exactement
             // le comportement d'avant son arrivée : un payload persisté qui ne la
             // porte pas se relit à l'identique et signifie ce qu'il signifiait.
@@ -128,7 +124,6 @@ final class FilePolicyService
             // poste — l'écran le DIT, plutôt que de laisser croire à un effet.
             'cloud_access_path' => CloudAccessPath::Web->value,
 
-            // --- Story 63.5 : QUELLE application du catalogue EST le client ---
             // Deux clés, UNE PAR PRODUIT, strictement additives, défaut `null`.
             //
             // **Jamais une clé unique « le client du cloud actif ».** Une
@@ -208,7 +203,7 @@ final class FilePolicyService
                 ? (string) $stored['cloud_access_path']
                 : $defaults['cloud_access_path'],
 
-            // Story 63.5 — une chaîne vide, un blanc ou une valeur non textuelle
+            // Une chaîne vide, un blanc ou une valeur non textuelle
             // ne sont PAS une désignation : ils se relisent en `null`, comme
             // l'absence de clé. Un `''` persisté qui se relirait en `''` ferait
             // chercher une `Application` d'`app_id` vide.
@@ -218,7 +213,7 @@ final class FilePolicyService
     }
 
     /**
-     * Story 63.5 — un `app_id` persisté, ou `null`. Trim, puis « vide = absent ».
+     * Un `app_id` persisté, ou `null`. Trim, puis « vide = absent ».
      *
      * @param  array<mixed>  $stored
      */
@@ -251,8 +246,8 @@ final class FilePolicyService
      * Persiste la config globale (upsert SystemSetting). Normalise l'URL.
      *
      * **Tous les paramètres nullables, laissés à `null`, CONSERVENT la valeur
-     * persistée.** Ce n'est pas une commodité : les appelants antérieurs aux stories
-     * 61.1/61.2 ne les connaissent pas, et un défaut « chaîne vide » leur ferait
+     * persistée.** Ce n'est pas une commodité : les appelants plus anciens ne
+     * connaissent pas ces paramètres, et un défaut « chaîne vide » leur ferait
      * effacer la configuration de connexion à chaque bascule de capacité — une perte
      * silencieuse dont personne ne verrait la cause.
      *
@@ -262,7 +257,7 @@ final class FilePolicyService
      * suit la même règle et la même place — en queue, nullable : un appelant qui ne
      * le nomme pas ne fait pas disparaître un raccourci déjà posé sur les bureaux.
      *
-     * **Story 63.5 — les deux désignations de client, EN QUEUE et nullables**, et
+     * **les deux désignations de client, EN QUEUE et nullables**, et
      * avec une nuance qui n'existait pour aucun paramètre précédent : leur valeur
      * persistée peut LÉGITIMEMENT être `null` (aucune application désignée). Un
      * `null` qui signifierait à la fois « conserve » et « efface » rendrait le
@@ -306,7 +301,7 @@ final class FilePolicyService
             'opencloud_admin_user' => trim($opencloudAdminUser ?? $current['opencloud_admin_user']),
             'opencloud_verify_tls' => $opencloudVerifyTls ?? $current['opencloud_verify_tls'],
 
-            // Story 63.3 — même règle, même place : EN QUEUE et NULLABLE. Un
+            // Même règle, même place : EN QUEUE et NULLABLE. Un
             // appelant qui ne le nomme pas ne fait pas retomber le chemin
             // d'accès sur le navigateur à l'insu de l'exploitant. Une valeur
             // hors vocabulaire est ramenée au persisté plutôt qu'écrite.
@@ -314,13 +309,13 @@ final class FilePolicyService
                 ? (string) $cloudAccessPath
                 : $current['cloud_access_path'],
 
-            // Story 63.5 — `null` conserve, chaîne vide efface (cf. docblock).
+            // `null` conserve, chaîne vide efface (cf. docblock).
             'nextcloud_client_app_id' => self::normalizeAppId($nextcloudClientAppId ?? $current['nextcloud_client_app_id']),
             'opencloud_client_app_id' => self::normalizeAppId($opencloudClientAppId ?? $current['opencloud_client_app_id']),
         ]);
     }
 
-    /** Story 63.5 — un `app_id` trimé, ou `null` quand il ne reste rien. */
+    /** Un `app_id` trimé, ou `null` quand il ne reste rien. */
     private static function normalizeAppId(?string $appId): ?string
     {
         $appId = trim((string) $appId);
@@ -329,14 +324,14 @@ final class FilePolicyService
     }
 
     /**
-     * Story 63.3 (correction de revue) — **LE SEUL ENDROIT DU DÉPÔT QUI CONNAÎT
+     * **LE SEUL ENDROIT DU DÉPÔT QUI CONNAÎT
      * L'ORDRE DES PARAMÈTRES DE {@see self::setGlobal()}.**
      *
      * Écrit la config globale en ne nommant QUE ce qui change, tout le reste
      * étant relu et repassé explicitement. Les appelants énuméraient chacun les
      * treize paramètres positionnels dans le bon ordre — un écran, un miroir, une
      * page de connexion — si bien que le jour où la signature bouge, l'un des
-     * sites serait oublié : exactement la classe de défaut que cette story ferme.
+     * sites serait oublié : exactement la classe de défaut que ce service ferme.
      *
      * **Rien n'est conservé par omission.** `setGlobal()` a dix paramètres
      * nullables qui conservent le persisté, mais son quatrième
@@ -348,7 +343,7 @@ final class FilePolicyService
      *
      * Une clé inconnue est ignorée ; une clé absente n'est jamais effacée.
      *
-     * @param  array<string, mixed>  $changes  les clés de {@see self::defaults()} à modifier
+     * @param array<string, mixed> $changes les clés de {@see self::defaults()} à modifier
      */
     public static function patchGlobal(array $changes): void
     {
@@ -368,7 +363,7 @@ final class FilePolicyService
             (bool) $config['opencloud_verify_tls'],
             (bool) $config['nextcloud_desktop_shortcut'],
             (string) $config['cloud_access_path'],
-            // Story 63.5 — TOUJOURS une chaîne (jamais `null`) : c'est ce qui rend
+            // TOUJOURS une chaîne (jamais `null`) : c'est ce qui rend
             // l'effacement d'une désignation atteignable depuis cette méthode,
             // alors que `null` y signifierait « conserve ».
             (string) ($config['nextcloud_client_app_id'] ?? ''),

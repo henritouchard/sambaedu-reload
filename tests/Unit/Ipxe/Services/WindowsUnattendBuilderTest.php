@@ -15,7 +15,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC2.1 / AC2.2 / AC2.3 / T2.3.
+ * T2.3.
  *
  * Tests unitaires de {@see WindowsUnattendBuilder} — DOMDocument transforms +
  * interpolation placeholders + anti-injection XML.
@@ -202,7 +202,7 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('se4fs.lan', $xml);
         // ###_NAME_### remplacé par hostname.
         self::assertStringContainsString('name=pc-101', $xml);
-        // Fix 2026-06-04 — uuid/mac dans le curl OOBE : `/ipxe/windows/action`
+        // uuid/mac dans le curl OOBE : `/ipxe/windows/action`
         // résout par UUID/MAC uniquement (name non trusted) ; sans eux le
         // rapport OOBE part en `unknown_workstation` et les actions
         // programmées ne sont jamais délivrées.
@@ -210,13 +210,13 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringNotContainsString('###_MAC_###', $xml);
         self::assertStringContainsString('uuid=12345678-1234-1234-1234-aaaaaaaaaaaa', $xml);
         self::assertStringContainsString('mac=aa:bb:cc:dd:ee:01', $xml);
-        // Fix 2026-06-04 (bis) — `ret=0` requis : sans lui le controller
+        // `ret=0` est requis : sans lui le controller
         // traite l'absence de ret comme -1 → warning `non_zero_ret` au lieu
         // de `recordOobeComplete` (pas de ligne ipxe_win_report en DB).
         self::assertStringContainsString('-F "ret=0"', $xml);
     }
 
-    // ── Story 23.3 — enrôlement agent porte 1 (AC1/AC5) ─────────────────
+    // — enrôlement agent porte 1
 
     /**
      * @return array<int, string> map Order → CommandLine des FirstLogonCommands.
@@ -262,7 +262,7 @@ class WindowsUnattendBuilderTest extends TestCase
     #[Test]
     public function it_orders_enrollment_commands_before_the_oobe_curl(): void
     {
-        // Le bug le plus probable de la story : l'action.cmd récupéré par le
+        // Le bug le plus probable ici : l'action.cmd récupéré par le
         // curl oobe peut rebooter en ~5 s — l'enrôlement DOIT passer avant.
         $xml = $this->service->build(
             $this->makeWorkstation(),
@@ -271,7 +271,7 @@ class WindowsUnattendBuilderTest extends TestCase
         );
 
         $commands = $this->firstLogonCommandsByOrder($xml);
-        // Story 25.4 : un Order d'install agent (CA + binaire + service) s'insère
+        // Un Order d'install agent (CA + binaire + service) s'insère
         // entre le durcissement ACL (2) et le curl oobe (désormais 5).
         // + Order 4 : spice-guest-tools, confort VM (garde client-side, no-op
         //   sur une machine physique), AVANT le curl — l'action.cmd récupéré
@@ -281,7 +281,7 @@ class WindowsUnattendBuilderTest extends TestCase
         // 1 : échange ticket → token (dépôt C:\ProgramData\SambaEdu\Agent\token).
         self::assertStringContainsString('/api/v1/agent/enrollment', $commands[1]);
         self::assertStringContainsString('C:\ProgramData\SambaEdu\Agent\token', $commands[1]);
-        // 1 (review 23.3) : le dossier est verrouillé AVANT l'écriture du
+        // 1 (review) : le dossier est verrouillé AVANT l'écriture du
         // token — le token n'existe jamais sous ACL héritées (Users-readable),
         // et un échec de verrouillage abandonne SANS consommer le ticket.
         $lockPos = strpos($commands[1], 'icacls');
@@ -290,7 +290,7 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertNotFalse($writePos);
         self::assertLessThan($writePos, $lockPos, 'Le verrouillage ACL doit précéder l\'écriture du token.');
         self::assertStringContainsString('$LASTEXITCODE -ne 0', $commands[1]);
-        // 1 (review 23.3) : retry discriminé — seul un 4xx définitif (hors
+        // 1 (review) : retry discriminé — seul un 4xx définitif (hors
         // 429) arrête la boucle ; 5xx/429 transitoires sont retentés.
         self::assertStringContainsString('StatusCode', $commands[1]);
         self::assertStringContainsString('-ne 429', $commands[1]);
@@ -300,16 +300,16 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('/inheritance:r', $commands[2]);
         self::assertStringContainsString('*S-1-5-18', $commands[2]);
         self::assertStringContainsString('*S-1-5-32-544', $commands[2]);
-        // 3 (Story 25.4, AC3) : dépôt CA + binaire stable + install service,
+        // 3 : dépôt CA + binaire stable + install service,
         // APRÈS le token (convergence immédiate possible), AVANT le curl oobe.
         self::assertStringContainsString('/api/v1/agent/ca', $commands[3]);
         self::assertStringContainsString('certutil', $commands[3]);
         self::assertStringContainsString('-addstore', $commands[3]);
         self::assertStringContainsString('Root', $commands[3]);
         self::assertStringContainsString('/api/v1/agent/stable/download', $commands[3]);
-        // Binaire déposé à son emplacement DÉFINITIF avant `install` (piège n° 10) :
-        // le dossier littéral + l'exe résolu via Join-Path depuis ce dossier (le
-        // SCM enregistre ce chemin, jamais %temp%).
+        // Le binaire est déposé à son emplacement DÉFINITIF avant `install` :
+        // dossier littéral, exe résolu par Join-Path depuis ce dossier. C'est ce
+        // chemin que le SCM enregistre, et il ne doit jamais être un %temp%.
         self::assertStringContainsString("\$dir='C:\\Program Files\\SambaEdu\\Agent'", $commands[3]);
         self::assertStringContainsString("Join-Path \$dir 'agent.exe'", $commands[3]);
         self::assertStringContainsString('install -server-url', $commands[3]);
@@ -364,7 +364,7 @@ class WindowsUnattendBuilderTest extends TestCase
     #[Test]
     public function it_drops_non_hex_enroll_ticket_instead_of_interpolating(): void
     {
-        // Review 23.3 — invariant hex strict : le ticket atterrit entre
+        // Review — invariant hex strict : le ticket atterrit entre
         // quotes simples PowerShell ; un ticket non-hex (impossible via
         // openTicket — défense en profondeur) est vidé, jamais interpolé.
         foreach (["evil\nticket", "x'; calc; '", 'UPPERHEX', '$(/inj)'] as $forged) {
@@ -382,7 +382,7 @@ class WindowsUnattendBuilderTest extends TestCase
     #[Test]
     public function it_leaves_ticket_empty_when_none_provided(): void
     {
-        // Sans ticket (migration 23.3 absente) : placeholder vidé, pas de
+        // Sans ticket (migration absente) : placeholder vidé, pas de
         // résidu — le POST partira avec ticket vide → 403 non bloquant.
         $xml = $this->service->build(
             $this->makeWorkstation(),
@@ -429,7 +429,7 @@ class WindowsUnattendBuilderTest extends TestCase
     public function it_escapes_xml_special_chars_in_computer_name(): void
     {
         // Defense in depth : si un name AD bypass la sanitization amont
-        // (3.3), le builder doit lui-même ne PAS injecter `<EVIL>` comme
+        // , le builder doit lui-même ne PAS injecter `<EVIL>` comme
         // balise XML.
         $ws = $this->makeWorkstation('PC-101&EVIL');
         $xml = $this->service->build(
@@ -513,10 +513,10 @@ class WindowsUnattendBuilderTest extends TestCase
     }
 
     /**
-     * Post-review code-review #3 (defense in depth D6) — un credential contenant
-     * `&` ou `<` doit produire du XML well-formed (sans warning + sans node
-     * vide). `setNodeValue()` doit appliquer `WindowsXmlPlaceholders::sanitize()`
-     * AVANT d'assigner `nodeValue =` (qui attend du XML déjà escapé).
+     * Un credential contenant `&` ou `<` doit produire du XML well-formed, sans
+     * warning ni nœud vide. `setNodeValue()` applique donc
+     * `WindowsXmlPlaceholders::sanitize()` AVANT d'assigner `nodeValue =`, qui
+     * attend du XML déjà échappé.
      */
     #[Test]
     public function it_produces_well_formed_xml_with_special_chars_in_credentials(): void
@@ -548,8 +548,8 @@ class WindowsUnattendBuilderTest extends TestCase
     }
 
     /**
-     * Post-review code-review #3 — non-régression : `interpolateTextNodes` ne
-     * doit PAS double-escape les valeurs (textContent fait l'escape natif).
+     * `interpolateTextNodes` ne doit PAS double-échapper les valeurs :
+     * `textContent` échappe déjà nativement.
      * Un placeholder remplacé par une valeur contenant `&` doit produire
      * `&amp;` UNE fois à la sérialisation, pas `&amp;amp;`.
      */
@@ -576,11 +576,11 @@ class WindowsUnattendBuilderTest extends TestCase
     }
 
     /**
-     * Post-review code-review #4 — AC2.3 CRITICAL : pas de secret loggué.
+     * Aucun secret ne doit atteindre les logs.
      *
-     * On injecte des CANARY secrets connus dans la config, on capture tous les
-     * events Monolog via TestHandler, et on assert qu'AUCUN log ne contient
-     * une canary. Pattern iso `LinuxPreseedServiceTest::it_logs_preseed_*`.
+     * Des secrets CANARY connus sont posés en config, tous les événements Monolog
+     * sont capturés par un TestHandler, et on exige qu'aucun log n'en contienne
+     * un.
      */
     #[Test]
     public function it_does_not_leak_secrets_in_logs(): void

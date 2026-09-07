@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 35.1 — RETROFIT des capacités on-only : vrai « off » par SUPPRESSION.
+ * RETROFIT des capacités on-only : vrai « off » par SUPPRESSION.
  *
  * Le verbe `ensure` (contrat §7.1, agent 2.3.0) permet enfin un « off » HONNÊTE
  * pour les deux capacités bloquées en « Géré » perpétuel — leurs clés n'ont pas
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Schema;
  * "absent"}` dans la map de chaque clé → l'agent SUPPRIME les valeurs, Windows
  * reprend ses défauts), PAS un « Non géré » (libellé réservé à la sentinelle
  * UNMANAGED des capacités opt-in). L'invariant « un off proposé fait une vraie
- * action » (review #2 du lot ISO) est satisfait par la suppression. Les valeurs
+ * action » est satisfait par la suppression. Les valeurs
  * `'on'` existantes sont INCHANGÉES.
  *
  * NOUVELLE migration (les seeds d'origine ne sont PAS réécrits — on ne réécrit
@@ -38,7 +38,7 @@ return new class extends Migration
     private const RETROFIT = [
         // Libellés `on` = ceux d'ORIGINE des seeds (« Géré » pour les deux) :
         // le retrofit n'ajoute que le « off », il ne relabelle rien (review
-        // 35.1 #2 — up() et down() sont des inverses exacts, libellés compris).
+        // up() et down() sont des inverses exacts, libellés compris).
         'llmnr_disabled' => [
             'on' => 'Géré',
             'off' => 'Désactivé (clés supprimées)',

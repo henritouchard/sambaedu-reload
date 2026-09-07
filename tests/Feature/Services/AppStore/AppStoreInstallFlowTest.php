@@ -20,7 +20,7 @@ use Tests\Traits\CreatesAppStoreSchema;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Tests d'intégration pour le flow complet d'installation (Story 8.2.6)
+ * Tests d'intégration pour le flow complet d'installation
  *
  * Couvre : download XML recipe → vérif hash → download fichiers →
  * post-traitement → finalisation → packages.xml → nettoyage tmp2/.
@@ -56,7 +56,7 @@ class AppStoreInstallFlowTest extends TestCase
         // Désactiver le Log pour ne pas polluer la sortie
         Log::spy();
 
-        // Story 27.5 — AppStoreService::add() régénère le bundle WPKG après le
+        // AppStoreService::add régénère le bundle WPKG après le
         // catalogue. En test il n'y a pas de catalogue source → generate() throw,
         // et le catch défensif appelle Log::channel('wpkg-deploy')->error() qui
         // renvoie null sous Log::spy() → « error() on null ». On neutralise le
@@ -127,10 +127,6 @@ class AppStoreInstallFlowTest extends TestCase
 </packages>
 XML;
     }
-
-    // ========================================
-    // Tests : flow succès
-    // ========================================
 
     #[Test]
     public function install_flow_sets_application_status_to_installed(): void
@@ -308,10 +304,6 @@ XML;
         $this->assertTrue(true);
     }
 
-    // ========================================
-    // Tests : flow erreur
-    // ========================================
-
     #[Test]
     public function install_flow_on_download_error_sets_application_status_to_error(): void
     {
@@ -381,10 +373,6 @@ XML;
         $xmlFiles = glob($tmp2Dir . '/*.xml');
         $this->assertNotEmpty($xmlFiles, 'Les fichiers tmp2/ doivent persister en cas d\'erreur pour diagnostic');
     }
-
-    // ========================================
-    // Tests : suppression code mort (8.2.6 AC:5)
-    // ========================================
 
     #[Test]
     public function app_store_service_does_not_have_download_package_xml_method(): void

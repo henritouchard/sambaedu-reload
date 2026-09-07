@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Log;
  * @example
  * class ExecuteMyTaskJob extends BaseControlHubJob
  * {
- *     protected function execute(): array
+ *  protected function execute(): array
  *     {
  *         // Logique métier ici
  *         return ['result' => 'data'];

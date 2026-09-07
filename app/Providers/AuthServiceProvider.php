@@ -30,7 +30,7 @@ class AuthServiceProvider extends ServiceProvider
     /**
      * Mappings modèle → Policy.
      *
-     * Story 7.2 : `MachinePolicy` et `DelegationPolicy` sont adossées à des
+     * `MachinePolicy` et `DelegationPolicy` sont adossées à des
      * modèles Eloquent — elles peuvent donc être invoquées via `@can('view',
      * $machine)` ou `Gate::authorize('delete', $delegation)` directement, sans
      * passer par un nom de gate explicite. Les autres Policies restent
@@ -48,7 +48,6 @@ class AuthServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // ------------------------------------------------------------------
         // Compte d'administration protégé : couverture automatique des droits.
         //
         // Le compte `User::PROTECTED_ADMIN_LOGIN` détient TOUS les droits
@@ -81,21 +80,21 @@ class AuthServiceProvider extends ServiceProvider
         UserPolicy::registerGates();
         GroupPolicy::registerGates();
         WorkstationGroupPolicy::registerGates();
-        // Story 4.8 — personnalisation applicative
+        // Personnalisation applicative
         AppCustomizationPolicy::registerGates();
-        // Story 29.2 — verrou amont sur l'édition d'une capacité (gate
+        // Verrou amont sur l'édition d'une capacité (gate
         // `modify-capability`, DI de UpstreamLockResolver via le container).
         CapabilityPolicy::registerGates();
 
-        // Story 7.2 — 5 nouvelles Policies (AC5).
+        // 5 nouvelles Policies.
         DelegationPolicy::registerGates();
         MachinePolicy::registerGates();
         PrinterPolicy::registerGates();
         SharePolicy::registerGates();
         DhcpPolicy::registerGates();
-        // Story 34.2 — lecteurs réseau gérés (permissions dédiées networkshare.*).
+        // Lecteurs réseau gérés (permissions dédiées networkshare.*).
         NetworkSharePolicy::registerGates();
-        // Story 36.4 — règles d'accès aux dossiers (permissions dédiées folderrule.*).
+        // Règles d'accès aux dossiers (permissions dédiées folderrule.*).
         FolderAccessRulePolicy::registerGates();
     }
 }

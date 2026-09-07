@@ -15,7 +15,7 @@ use Tests\Support\FakesGpoService;
 use Tests\TestCase;
 
 /**
- * Tests unitaires {@see GpoService} (Story 16.1 / AC3.1, AC3.3).
+ * Tests unitaires {@see GpoService}.
  *
  * Couvre :
  *
@@ -157,24 +157,24 @@ class GpoServiceTest extends TestCase
     }
 
     /**
-     * Méthodes d'écriture encore en stub (CRUD GPO — Story 16.4 paused).
+     * Méthodes d'écriture encore en stub (CRUD GPO — paused).
      * `setLink` / `removeLink` / `setInheritance` ont été implémentées
-     * par Story 16.5 — elles ont leur propre suite Unit
+     * par — elles ont leur propre suite Unit
      * ({@see GpoServiceWriteTest}).
      *
      * @return iterable<string, array{0: string, 1: array<int,mixed>, 2: string}>
      */
     public static function writeStubsProvider(): iterable
     {
-        // Story 38.4 : `create` n'est plus un stub (implémenté pour le port
+        // `create` n'est plus un stub (implémenté pour le port
         // natif d'import_gpo) — couvert par les tests `create_*` ci-dessous.
-        yield 'delete' => ['delete', ['{AAAA-BBBB}'], 'Story 16.4'];
-        yield 'fetch' => ['fetch', ['{AAAA-BBBB}', '/tmp/policies'], 'Story 16.3/16.4'];
+        yield 'delete' => ['delete', ['{AAAA-BBBB}'], 'GpoService::delete()'];
+        yield 'fetch' => ['fetch', ['{AAAA-BBBB}', '/tmp/policies'], 'GpoService::fetch()'];
     }
 
     #[Test]
     #[\PHPUnit\Framework\Attributes\DataProvider('writeStubsProvider')]
-    public function write_methods_are_stubs_throwing_runtime_exception(string $method, array $args, string $expectedStoryRef): void
+    public function write_methods_are_stubs_throwing_runtime_exception(string $method, array $args, string $expectedSignature): void
     {
         $service = FakesGpoService::makeService();
         try {
@@ -182,13 +182,9 @@ class GpoServiceTest extends TestCase
             $this->fail("Expected RuntimeException not thrown for {$method}");
         } catch (RuntimeException $e) {
             $this->assertStringContainsString('not implemented yet', $e->getMessage());
-            $this->assertStringContainsString($expectedStoryRef, $e->getMessage());
+            $this->assertStringContainsString($expectedSignature, $e->getMessage());
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Story 38.4 — GpoService::create() natif (port d'import_gpo / gpocreate).
-    // -----------------------------------------------------------------------
 
     #[Test]
     public function create_invokes_samba_tool_and_parses_returned_guid(): void

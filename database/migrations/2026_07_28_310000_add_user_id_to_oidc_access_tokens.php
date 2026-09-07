@@ -8,10 +8,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 55.2 — `oidc_access_tokens.user_id` : la clé qui permet à `/userinfo`
+ * `oidc_access_tokens.user_id` : la clé qui permet à `/userinfo`
  * de résoudre l'utilisateur **sans jamais passer par le `sub`**.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI CETTE COLONNE EXISTE
  *
  *  Sans elle, `/userinfo` devrait retrouver l'utilisateur à partir de
@@ -21,14 +20,13 @@ use Illuminate\Support\Facades\Schema;
  *  {@see \App\Auth\Oidc\Support\OidcSubjectResolver}), la résolution casserait
  *  silencieusement. Un `sub` est une VALEUR PUBLIÉE, pas une clé de jointure.
  *
- *  Miroir exact de `oidc_authorization_codes.user_id` (migration 55.1) :
+ *  Miroir exact de `oidc_authorization_codes.user_id` (migration) :
  *  nullable + `nullOnDelete()`. Nullable parce que la suppression d'un compte
  *  ne doit jamais bloquer la purge des jetons — et parce qu'un `user_id` nul
  *  est précisément le signal fail-closed que `/userinfo` attend
  *  (`oidc.user_missing`, aucune donnée servie).
- * ══════════════════════════════════════════════════════════════════════════
  *
- * **Additive et idempotente** : la migration 55.1 n'est PAS retouchée (elle est
+ * **Additive et idempotente** : la migration n'est PAS retouchée (elle est
  * passée en review, un diff dessus rouvrirait un livrable clos et casserait les
  * instances déjà migrées). Gardes `hasTable`/`hasColumn` : rejouable.
  *
@@ -65,7 +63,7 @@ return new class extends Migration
                         ->nullOnDelete();
                 });
             } catch (\Throwable $e) {
-                // Correctif review 55.2 — le cas ATTENDU est SQLite, qui ne sait
+                // Correctif review — le cas ATTENDU est SQLite, qui ne sait
                 // pas ajouter une contrainte à une table existante. Mais ce
                 // `catch` intercepte aussi un échec RÉEL en PostgreSQL (nom de
                 // contrainte déjà pris, droit `ALTER` manquant) : l'avaler en

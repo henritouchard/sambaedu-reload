@@ -7,10 +7,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 34.1 — Fondations des lecteurs réseau gérés.
+ * Fondations des lecteurs réseau gérés.
  *
  * Table `network_shares` : le RÉPERTOIRE RÉSEAU nommé (un « lecteur » côté
- * client). C'est le chaînon « MVP-B » délibérément reporté en 27.2 (table +
+ * client). C'est le chaînon « MVP-B » délibérément reporté (table +
  * pivot d'assignation configurable). Le provisioning FS/ACL est porté par
  * {@see App\Services\Filesystem\NetworkShareService} (racine dédiée
  * `/var/sambaedu/Partages`) ; la projection agent par

@@ -18,7 +18,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC2, AC7.1 — Onglet WPKG sur la page poste.
+ * Onglet WPKG sur la page poste.
  */
 class MachineWpkgPageTest extends TestCase
 {

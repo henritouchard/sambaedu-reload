@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.1 (AC1/AC3/AC5) — page `/admin/extensions/sources`.
+ * Page `/admin/extensions/sources`.
  *
  * Couvre : la garde `server.admin` (403 + middleware de route), l'ajout par
  * modale (clé collée, refus http sans clé), les actions par source
@@ -113,7 +113,7 @@ class ExtensionSourcesPageTest extends TestCase
             ->create($overrides);
     }
 
-    // ── Sécurité ──────────────────────────────────────────────────────────
+    // Sécurité
 
     #[Test]
     public function mount_is_forbidden_without_server_admin(): void
@@ -134,8 +134,7 @@ class ExtensionSourcesPageTest extends TestCase
     public function every_action_is_forbidden_when_the_ability_is_revoked_after_mount(): void
     {
         // Defense-in-depth : la garde de `mount()` ne suffit pas — une ability
-        // révoquée après le montage doit rester bloquée sur CHAQUE action
-        // (patron 54.2).
+        // révoquée après le montage doit rester bloquée sur CHAQUE action.
         $source = $this->remoteSource();
 
         $allowed = true;
@@ -167,7 +166,7 @@ class ExtensionSourcesPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC1 — ajout ───────────────────────────────────────────────────────
+    // — ajout
 
     #[Test]
     public function the_page_lists_the_sources_with_their_state(): void
@@ -245,7 +244,7 @@ class ExtensionSourcesPageTest extends TestCase
         self::assertSame(0, Extension::query()->count());
     }
 
-    // ── AC5 — actualiser ──────────────────────────────────────────────────
+    // — actualiser
 
     #[Test]
     public function refreshing_a_source_reloads_its_catalog(): void
@@ -278,7 +277,7 @@ class ExtensionSourcesPageTest extends TestCase
         self::assertSame(ExtensionSourceSyncStatus::Unreachable, $source->fresh()->sync_status);
     }
 
-    // ── AC3 — activer / désactiver / retirer ──────────────────────────────
+    // — activer / désactiver / retirer
 
     #[Test]
     public function an_admin_disables_and_reenables_a_source(): void
@@ -317,9 +316,9 @@ class ExtensionSourcesPageTest extends TestCase
     #[Test]
     public function a_double_click_on_the_confirmation_is_a_clean_no_op(): void
     {
-        // Piège review 54.2 #1 : la cible ne doit pas être remise à zéro AVANT
-        // l'appel au service, sinon le second clic produit « Source #0
-        // introuvable » au lieu d'un no-op silencieux.
+        // La cible ne doit pas être remise à zéro AVANT l'appel au service,
+        // sinon le second clic produit « Source #0 introuvable » au lieu d'un
+        // no-op silencieux.
         $this->grant(['server.admin']);
         $source = $this->remoteSource();
 

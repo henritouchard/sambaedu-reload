@@ -31,7 +31,6 @@ use App\Services\ServiceCredentials;
  * un masque — ce qui couvre `var_dump`, `dd()`, et les traces d'exception qui
  * sérialisent leurs arguments. Un test l'épingle sur le rendu d'erreur.
  *
- * ---------------------------------------------------------------------------
  * **L'AUTHENTIFICATION EST BASIQUE, ET C'EST UNE MESURE, PAS UN DÉFAUT.**
  *
  * Relevé du 2026-08-13 contre l'instance déployée : l'authentification basique
@@ -43,7 +42,6 @@ use App\Services\ServiceCredentials;
  * rien à mettre en cache et rien à faire expirer. Le jour où le produit ouvrira
  * un flux d'identifiants client, ce sera un changement DANS CE FICHIER et dans le
  * client, pas dans le backend.
- * ---------------------------------------------------------------------------
  */
 final class OpenCloudConnectionConfig
 {

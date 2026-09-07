@@ -11,9 +11,8 @@ use Illuminate\Http\Response;
 
 /**
  * @legacy-port path="sambaedu/wpkg/winget_out.php"
- * @see _bmad-output/implementation-artifacts/17-6-portage-endpoints-wpkg-linux-winget.md
  *
- * Story 17.6 / AC2 — Endpoint HTTP `/wpkg/winget_out.php`.
+ * Endpoint HTTP `/wpkg/winget_out.php`.
  *
  * Consommé par `install/os/SambaEdu/install.ps1` :
  *   `Invoke-RestMethod -Method Post -Uri .../wpkg/winget_out.php`
@@ -23,24 +22,24 @@ use Illuminate\Http\Response;
  * Retourne la décision JSON `{install?, upgrade?, uninstall?}`
  * (`Content-Type: text/json` — non-standard, parité stricte legacy `:193`).
  *
- * Résolution du poste par `machine` (= `$env:ComputerName`, déjà le hostname,
- * D1 — aucun écart d'intégration) via `WorkstationPackagesResolver` (15.2,
- * Eloquent-only). Logique de mapping déléguée à `WingetPackagesResolver`.
+ * Résolution du poste par `machine` (= `$env:ComputerName`, déjà le hostname)
+ * via `WorkstationPackagesResolver` (Eloquent-only). Logique de mapping
+ * déléguée à `WingetPackagesResolver`.
  *
  * Flag d'activation `config('sambaedu.wpkg.winget_enabled')` (parité
  * `$config['winget']` legacy `:23-26` — `400` si désactivé).
  *
- * Pas d'auth JWT (D2 / `feedback_auth_iso_legacy`) : le poste n'est pas encore
+ * Pas d'auth JWT : le poste n'est pas encore
  * enrôlé pendant l'install OS. Protection = `local.request` + throttle.
  *
- * **Aucune écriture `/tmp`** (le legacy le faisait en debug — non porté, AC2.6).
+ * **Aucune écriture `/tmp`** (le legacy le faisait en debug — non porté).
  */
 final class WingetOutController
 {
     public function handle(Request $request, WingetPackagesResolver $resolver, WpkgDeploymentSettings $settings): Response
     {
         // Parité `winget_out.php:23-26` : flag winget off → 400 Bad request.
-        // Story 15.6 : lecture via résolveur (DB > env > défaut fail-closed).
+        // Lecture via résolveur (DB > env > défaut fail-closed).
         if (! $settings->wingetEnabled()) {
             return $this->badRequest();
         }
@@ -59,7 +58,7 @@ final class WingetOutController
         }
 
         // Parité `winget_out.php:29` : json_decode du payload local.
-        // Borne D7 : décodage échoue / non-tableau → 400 propre.
+        // Décodage échoué / non-tableau → 400 propre.
         $localApps = json_decode($list, true);
         if (! is_array($localApps)) {
             return $this->badRequest();

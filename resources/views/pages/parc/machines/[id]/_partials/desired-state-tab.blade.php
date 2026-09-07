@@ -8,7 +8,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 37.1 — Onglet « État cible » de la fiche POSTE (consultation pure).
+ * Onglet « État cible » de la fiche POSTE (consultation pure).
  *
  * Affiche les RACCOURCIS et les APPLICATIONS résolus pour la machine, avec le
  * badge d'ORIGINE de chaque item (réglage propre, hérité d'un parc/salle, socle
@@ -17,10 +17,10 @@ use Livewire\Component;
  * consultation parallèle, pipeline agent SANCTUARISÉ).
  *
  * Les raccourcis ciblés par UTILISATEUR / GROUPE d'utilisateurs sont EXCLUS
- * (décision D3 — session-dépendants) : une note le signale et renvoie à la fiche
+ * (ils sont session-dépendants) : une note le signale et renvoie à la fiche
  * du raccourci.
  *
- * **#[Lazy] (correction post-review P1)** — la bascule vers cet onglet montait le
+ * **#[Lazy]** — la bascule vers cet onglet montait le
  * SFC EN SYNCHRONE dans le même roundtrip Livewire que le re-rendu de la page
  * parente (fiche poste, ~1600 lignes de Blade) : navigation ressentie lente alors
  * que le service est rapide (≤ 25 ms). Le lazy-loading rend d'abord un squelette

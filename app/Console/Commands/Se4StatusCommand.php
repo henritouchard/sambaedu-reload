@@ -8,7 +8,7 @@ use App\Console\Commands\Concerns\InteractsWithSe4Extinction;
 use Illuminate\Console\Command;
 
 /**
- * Story 38.6 — Rapport d'extinction du legacy pour l'instance courante.
+ * Rapport d'extinction du legacy pour l'instance courante.
  *
  * Lecture seule (pas de garde root) : état de la bascule (vhost
  * `sambaedu-legacy`, dossiers `/var/www/sambaedu`{,`.off`}) + agrégation de

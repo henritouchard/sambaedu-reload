@@ -124,7 +124,7 @@ class UpstreamLockedShortcutWriteGuardTest extends TestCase
         self::assertFalse($orphan->isUpstreamLocked());
     }
 
-    // ── Bibliothèque des raccourcis ──────────────────────────────────────────
+    // Bibliothèque des raccourcis
 
     #[Test]
     public function the_library_refuses_to_delete_a_locked_shortcut(): void
@@ -188,7 +188,7 @@ class UpstreamLockedShortcutWriteGuardTest extends TestCase
         self::assertStringNotContainsString('>Global', $html, 'le badge du canal historique ne doit pas apparaître');
     }
 
-    // ── Fiche d'un raccourci ─────────────────────────────────────────────────
+    // Fiche d'un raccourci
 
     #[Test]
     public function the_detail_page_refuses_to_save_a_locked_shortcut(): void
@@ -216,7 +216,7 @@ class UpstreamLockedShortcutWriteGuardTest extends TestCase
         self::assertNotNull(Shortcut::query()->find($shortcut->id));
     }
 
-    // ── Onglet raccourcis d'un parc ──────────────────────────────────────────
+    // Onglet raccourcis d'un parc
 
     #[Test]
     public function the_parc_tab_shows_the_content_addressed_icon_of_an_imposed_shortcut(): void

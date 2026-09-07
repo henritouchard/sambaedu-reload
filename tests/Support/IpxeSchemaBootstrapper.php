@@ -9,7 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 3.1 — Helper de bootstrap SQLite :memory: pour les tests iPXE.
+ * Helper de bootstrap SQLite :memory: pour les tests iPXE.
  *
  * Crée les tables minimales nécessaires pour tester
  * {@see \App\Ipxe\Services\WorkstationLocator},
@@ -19,14 +19,14 @@ use Illuminate\Support\Facades\Schema;
  *
  * Tables provisionnées :
  *
- *  - `workstations` (Story 4.1 — schema réduit aux colonnes utilisées par
+ * - `workstations` (schema réduit aux colonnes utilisées par
  *    le locator/renderer)
  *  - `workstation_groups` + pivot (eager-load — sinon `with('groups')` plante)
  *  - `app_profiles` + pivot (eager-load — sinon `with('appProfiles')` plante)
  *  - `physical_rooms` (relation `physicalRoom` — minimal)
- *  - `machine_boot_logs` (Story 4.2 — schema iso migration)
+ * - `machine_boot_logs` (schema iso migration)
  *
- * Pattern iso `Tests\Support\WpkgSchemaBootstrapper` (Story 15.2).
+ * Pattern iso `Tests\Support\WpkgSchemaBootstrapper`.
  */
 final class IpxeSchemaBootstrapper
 {
@@ -70,7 +70,6 @@ final class IpxeSchemaBootstrapper
                 $table->string('mac', 32)->nullable();
                 $table->string('uuid', 64)->nullable();
                 $table->string('status', 32)->default('active');
-                // Story 3.8 — D12 — colonnes progress + programmed_action.
                 $table->string('progress', 8)->nullable();
                 $table->text('programmed_action')->nullable();
                 $table->timestamp('last_report_at')->nullable();
@@ -81,7 +80,7 @@ final class IpxeSchemaBootstrapper
                 $table->string('ad_guid', 64)->nullable();
                 $table->boolean('managed_by_control_hub')->default(false);
                 $table->timestamp('archived_at')->nullable();
-                // Story 23.3 — canal agent : la génération unattend ouvre un
+                // Canal agent : la génération unattend ouvre un
                 // ticket d'enrôlement (openTicket → colonnes agent_*).
                 $table->string('agent_token_hash', 64)->nullable();
                 $table->string('agent_previous_token_hash', 64)->nullable();
@@ -93,8 +92,8 @@ final class IpxeSchemaBootstrapper
                 $table->timestamps();
             });
         } else {
-            // Story 3.8 — D12 — ajout colonnes sur table provisionnée
-            // antérieurement par un autre test (idempotent).
+            // La table a pu être provisionnée par un autre test : on complète
+            // les colonnes manquantes, de façon idempotente.
             if (! Schema::hasColumn('workstations', 'progress')) {
                 Schema::table('workstations', function (Blueprint $table): void {
                     $table->string('progress', 8)->nullable();
@@ -105,7 +104,7 @@ final class IpxeSchemaBootstrapper
                     $table->text('programmed_action')->nullable();
                 });
             }
-            // Story 23.3 — idem, idempotent (iso pattern progress).
+            // Idem, idempotent (iso pattern progress).
             if (! Schema::hasColumn('workstations', 'agent_token_hash')) {
                 Schema::table('workstations', function (Blueprint $table): void {
                     $table->string('agent_token_hash', 64)->nullable();
@@ -192,7 +191,7 @@ final class IpxeSchemaBootstrapper
             });
         }
 
-        // Story 30.5 — assignMachineToPhysicalRoom() (et autres ops parc) appellent
+        // AssignMachineToPhysicalRoom (et autres ops parc) appellent
         // désormais guardUpstreamLockCollision() qui lit le contrat amont
         // (ControlHubContract → controlhub_contracts + items/labels). Sans ces
         // tables, la garde lève « no such table: controlhub_contracts », exception

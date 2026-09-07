@@ -18,7 +18,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC3.3 — Tests des agrégats par parc.
+ * Tests des agrégats par parc.
  */
 final class DashboardGroupAggregateTest extends TestCase
 {

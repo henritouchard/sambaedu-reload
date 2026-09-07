@@ -23,11 +23,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — LE ROUTAGE : deux origines, un seul plan.
+ * LE ROUTAGE : deux origines, un seul plan.
  *
- * Le garde-fou d'epic est ici : **aucun partage en place ne change de plan**. Un
- * partage sans origine se projette exactement comme avant, et c'est ce qui garantit
- * que la story n'a touché aucune ACL sur une instance existante.
+ * Le garde-fou est ici : **aucun partage en place ne change de plan**. Un partage
+ * sans origine se projette exactement comme avant, et c'est ce qui garantit
+ * qu'aucune ACL n'a bougé sur une instance existante.
  */
 class SharePlanRoutingTest extends TestCase
 {
@@ -74,10 +74,6 @@ class SharePlanRoutingTest extends TestCase
         return $share->fresh();
     }
 
-    // =========================================================================
-    // Le garde-fou d'epic : les partages en place ne bougent pas
-    // =========================================================================
-
     /**
      * **NON-RÉGRESSION NOMMÉE.** Le plan d'un partage sans origine est OCTET POUR
      * OCTET celui que la projection plate produisait déjà. On ne compare pas deux
@@ -105,10 +101,6 @@ class SharePlanRoutingTest extends TestCase
         $this->assertSame(PlanAnchor::Reseau, PlanAnchor::default());
         $this->assertSame(PlanAnchor::Reseau, app(SharePlanProjector::class)->project($this->flatShare())->anchor);
     }
-
-    // =========================================================================
-    // Le partage d'ARBRE : la recette gouverne, la zone suit
-    // =========================================================================
 
     #[Test]
     public function a_share_with_a_tree_origin_is_projected_by_its_recipe_in_its_own_zone(): void
@@ -244,7 +236,7 @@ class SharePlanRoutingTest extends TestCase
 
     /**
      * Supprimer la RECETTE délie le partage — elle ne l'emporte pas, et elle ne le
-     * laisse pas non plus pointer dans le vide (D9 : aucune destruction implicite,
+     * laisse pas non plus pointer dans le vide (aucune destruction implicite,
      * et aucun état intermédiaire à interpréter).
      */
     #[Test]

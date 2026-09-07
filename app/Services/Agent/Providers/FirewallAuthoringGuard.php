@@ -5,49 +5,50 @@ declare(strict_types=1);
 namespace App\Services\Agent\Providers;
 
 /**
- * Story 36.2 (AC3) — garde-fou d'AUTHORING des projections `windows/firewall` :
+ * Garde-fou d'AUTHORING des projections `windows/firewall` :
  * refuse à la SOURCE les règles que l'agent refuserait (défense en profondeur,
  * le serveur peut avoir tort mais ne doit JAMAIS produire un catalogue
  * dangereux). Jumeau de {@see FsAclAuthoringGuard} — même API (violations
  * NOMMÉES, service PUR sans requête/écriture, constantes publiques réutilisables
  * par le futur formulaire).
  *
- * **Décision Henri Q3 — le cœur de sécurité.** « Couper Internet » ne doit
+ * **Le cœur de sécurité.** « Couper Internet » ne doit
  * JAMAIS couper le poste de son SERVEUR : un `action: block` couvrant le réseau
  * local (RFC1918) ou tout (`/0`) est REFUSÉ. Le calcul est une INTERSECTION
- * MATHÉMATIQUE d'intervalles IPv4/IPv6 (leçon review 36.1 #3 — jamais un match
- * textuel : `192.160.0.0/12` recouvre 192.168/16 sans jamais l'écrire,
- * `0.0.0.0/0` et `::/0` couvrent tout). `remote_scope: internet` est SÛRE par
+ * MATHÉMATIQUE d'intervalles IPv4/IPv6, jamais un match textuel :
+ * `192.160.0.0/12` recouvre 192.168/16 sans jamais l'écrire, `0.0.0.0/0` et
+ * `::/0` couvrent tout. `remote_scope: internet` est SÛRE par
  * construction (les plages émises par le handler EXCLUENT tout ça) — c'est
  * l'usage nominal. L'échappatoire assumée = `remote_scope: explicit` avec des
  * adresses/CIDR PUBLICS uniquement.
  *
- * **Alignement serveur↔agent (leçon review 36.1 #4).** {@see PROTECTED_RANGES}
+ * **Alignement serveur↔agent.** {@see PROTECTED_RANGES}
  * est le MIROIR EXACT des plages protégées de l'agent Go
  * (`firewallProtectedRanges`, `agent/shared/handler_firewall.go`). L'autorité
  * finale reste l'agent (qui refuse aussi dans `Test` ET `Apply`) ; le serveur
  * refuse en amont pour ne jamais servir un catalogue dangereux.
  *
- * **Ce qu'il refuse** (au-delà de Q3, D12) : enums hors domaine ; `rule_id` hors
+ * **Ce qu'il refuse**, au-delà des plages protégées : enums hors domaine ; `rule_id` hors
  * slug ; `remote_scope: explicit` sans `remote_addresses` (ou vide, ou entrée
  * non parsable — mot-clé Windows, plage `a-b`, chaîne arbitraire) ;
  * `remote_addresses` présent avec `remote_scope: internet` (forme unique) ;
  * `ports` avec `protocol: any` ; port hors 1-65535 ou borne inversée ; toute
  * projection portant AU MOINS une règle `action: block` sans `warning` non vide.
  *
- * **Pas de ciblage par utilisateur (Q4).** Le mécanisme `firewall` est de portée
+ * **Pas de ciblage par utilisateur.** Le mécanisme `firewall` est de portée
  * MACHINE : « couper Internet » se cible par parc/salle (un override
  * UserGroup/User est structurellement SANS EFFET) — pas un garde-fou runtime, un
  * fait de compilation.
  *
- * **Garde-fou Q5 — `allow` ENTRANT ouvert sur Internet ⇒ warning obligatoire
- * (décision Henri).** MIROIR du warning-sur-`deny` de {@see FsAclAuthoringGuard} :
+ * **`allow` ENTRANT ouvert sur Internet ⇒ warning obligatoire.**
+ * MIROIR du warning-sur-`deny` de {@see FsAclAuthoringGuard} :
  * une règle `action: allow` + `direction: in` dont la portée remote COUVRE
  * l'Internet ouvert — `remote_scope: internet`, OU `remote_scope: explicit`
  * contenant une plage ENGLOBANT `/0` (`0.0.0.0/0` / `::/0`) — EXIGE un `warning`
  * de capacité non vide (ouvrir le poste ENTRANT à tout l'Internet est une
  * implication qui doit être confirmée). Le critère « couvre l'Internet ouvert »
- * est déterminé par la MÊME logique d'intervalles que le refus Q3 (jamais un
+ * est déterminé par la MÊME logique d'intervalles que le refus des `block`
+ * sur plages protégées (jamais un
  * match textuel : {@see coversOpenInternet}), sur la source de `warning`
  * IDENTIQUE au `block`/`deny` (le `warning` de la capacité). Un `allow` entrant
  * sur une plage ÉTROITE (host public précis, /24 privé…) N'EST PAS concerné, ni
@@ -55,40 +56,40 @@ namespace App\Services\Agent\Providers;
  *
  * **SERVEUR-only (défense en profondeur agent INEXPRIMABLE ici).** Ce garde-fou
  * est une exigence d'AUTHORING, pas un état poste : le `warning` est une
- * métadonnée de capacité qui n'atteint JAMAIS le payload (invariant 27.12).
+ * métadonnée de capacité qui n'atteint JAMAIS le payload (invariant).
  * L'agent, qui ne voit pas le `warning`, ne peut donc PAS distinguer un `allow`
  * ouvert légitime (warning authoré) d'un illégitime (warning absent) — un refus
- * agent miroir casserait les `allow` légitimes. Contrairement au refus Q3
+ * agent miroir casserait les `allow` légitimes. Contrairement au refus d'un
  * `block` (duplicable côté agent car il ne dépend QUE des adresses du payload),
  * ce garde-fou reste donc SERVEUR-only (cf. `handler_firewall.go`).
  */
 final class FirewallAuthoringGuard
 {
-    /** Directions admises (D3). */
+    /** Directions admises. */
     public const DIRECTIONS = ['in', 'out'];
 
-    /** Actions admises (D3). */
+    /** Actions admises. */
     public const ACTIONS = ['allow', 'block'];
 
-    /** Portées distantes admises (D3). */
+    /** Portées distantes admises. */
     public const REMOTE_SCOPES = ['internet', 'explicit'];
 
-    /** Protocoles admis (D3). */
+    /** Protocoles admis. */
     public const PROTOCOLS = ['any', 'tcp', 'udp'];
 
-    /** Verbe de convergence (D3, TOUJOURS explicite côté payload — piège #2/#13). */
+    /** Verbe de convergence, TOUJOURS explicite côté payload. */
     public const ENSURE = ['present', 'absent'];
 
-    /** Slug d'identité de règle (identité GLOBALE inter-capacités, piège #10). */
+    /** Slug d'identité de règle (identité GLOBALE inter-capacités). */
     public const RULE_ID = '/^[a-z0-9][a-z0-9_-]{0,63}$/';
 
     /**
-     * Plages PROTÉGÉES sur lesquelles un `action: block` est REFUSÉ (Q3, D5) —
+     * Plages PROTÉGÉES sur lesquelles un `action: block` est REFUSÉ —
      * RFC1918 + loopback + link-local + ULA, IPv4 ET IPv6. MIROIR EXACT du Go
      * (`firewallProtectedRanges`). Un préfixe `/0` (`0.0.0.0/0`, `::/0`) recouvre
      * n'importe laquelle de ces plages → refusé par l'intersection, sans cas
      * spécial. NB : le calcul est un CHEVAUCHEMENT d'intervalles, jamais un match
-     * de chaîne (piège #7).
+     * de chaîne.
      *
      * @var list<string>
      */
@@ -137,7 +138,7 @@ final class FirewallAuthoringGuard
                     $violations[] = sprintf("firewall [%s] : rule_id '%s' hors slug (^[a-z0-9][a-z0-9_-]{0,63}$).", $capability, $ruleId);
                 }
 
-                // Enums bornés (D3).
+                // Enums bornés.
                 if (! in_array($direction, self::DIRECTIONS, true)) {
                     $violations[] = sprintf("firewall [%s] règle '%s' : direction '%s' hors domaine (in|out).", $capability, $ruleId, $direction);
                 }
@@ -152,10 +153,10 @@ final class FirewallAuthoringGuard
                 }
                 $rawEnsure = $rule['ensure'] ?? null;
                 if (is_array($rawEnsure) && array_is_list($rawEnsure)) {
-                    // Une LISTE n'est ni un littéral ni une map valeur-capacité
-                    // (corr. review #5) : forme d'authoring malformée refusée
-                    // EXPLICITEMENT (sinon elle passait en silence — aucune valeur
-                    // n'était validée, fail-closed en aval mais erreur masquée).
+                    // Une LISTE n'est ni un littéral ni une map valeur-capacité :
+                    // forme d'authoring malformée refusée EXPLICITEMENT (sinon
+                    // elle passait en silence — aucune valeur n'était validée,
+                    // fail-closed en aval mais erreur masquée).
                     $violations[] = sprintf("firewall [%s] règle '%s' : forme `ensure` inattendue (ni littéral ni map valeur-capacité).", $capability, $ruleId);
                 } else {
                     foreach ($this->ensureValues($rawEnsure) as $ensure) {
@@ -169,7 +170,7 @@ final class FirewallAuthoringGuard
                     $hasBlock = true;
                 }
 
-                // Q5 : un `allow` ENTRANT `internet` ouvre le poste à tout
+                // Un `allow` ENTRANT `internet` ouvre le poste à tout
                 // l'Internet routable (les plages `internet` figées côté handler
                 // couvrent l'Internet ouvert par construction) ⇒ warning exigé.
                 if ($action === 'allow' && $direction === 'in' && $remoteScope === 'internet') {
@@ -190,17 +191,17 @@ final class FirewallAuthoringGuard
 
                             continue;
                         }
-                        // Q5 : un `allow in explicit` dont une plage ENGLOBE
+                        // Un `allow in explicit` dont une plage ENGLOBE
                         // l'Internet ouvert (`0.0.0.0/0` / `::/0`) équivaut à
                         // `internet` ⇒ warning exigé (intervalle, jamais textuel).
                         if ($action === 'allow' && $direction === 'in' && $this->coversOpenInternet($range)) {
                             $hasOpenAllowIn = true;
                         }
-                        // Q3 : un `block explicit` chevauchant une plage protégée
-                        // est REFUSÉ (intersection mathématique, piège #7).
+                        // Un `block explicit` chevauchant une plage protégée
+                        // est REFUSÉ (intersection mathématique).
                         if ($action === 'block' && $this->overlapsProtected($range)) {
                             $violations[] = sprintf(
-                                "firewall [%s] règle '%s' : action 'block' sur '%s' chevauche une plage protégée (RFC1918/loopback/link-local/ULA ou /0) — couper le réseau local du serveur est INTERDIT (Q3). Utiliser remote_scope 'internet' ou des adresses publiques uniquement.",
+                                "firewall [%s] règle '%s' : action 'block' sur '%s' chevauche une plage protégée (RFC1918/loopback/link-local/ULA ou /0) — couper le réseau local du serveur est INTERDIT. Utiliser remote_scope 'internet' ou des adresses publiques uniquement.",
                                 $capability,
                                 $ruleId,
                                 $addr,
@@ -225,7 +226,7 @@ final class FirewallAuthoringGuard
                 }
             }
 
-            // Block ⇒ warning non vide (AC3, miroir deny⇒warning de 36.1).
+            // Block ⇒ warning non vide (miroir deny⇒warning).
             if ($hasBlock && trim((string) ($warning ?? '')) === '') {
                 $violations[] = sprintf(
                     "firewall [%s] : au moins une règle `block` sans `warning` non vide — l'implication (connectivité coupée) doit être confirmée.",
@@ -233,8 +234,8 @@ final class FirewallAuthoringGuard
                 );
             }
 
-            // Q5 : `allow` entrant ouvert sur Internet ⇒ warning non vide
-            // (miroir deny⇒warning de fs_acl 36.1, décision Henri).
+            // `allow` entrant ouvert sur Internet ⇒ warning non vide
+            // (miroir du deny ⇒ warning de fs_acl).
             if ($hasOpenAllowIn && trim((string) ($warning ?? '')) === '') {
                 $violations[] = sprintf(
                     "firewall [%s] : une règle `allow` entrante ouverte sur Internet (remote_scope 'internet', ou 'explicit' englobant 0.0.0.0/0 / ::/0) exige un `warning` non vide — l'implication (poste exposé en entrée à tout l'Internet) doit être confirmée.",
@@ -264,7 +265,7 @@ final class FirewallAuthoringGuard
      * Valeurs possibles d'un champ `ensure` : littéral (1) OU chaque valeur d'une
      * map valeur-capacité. Absent ⇒ aucune valeur à valider (défaut `present`).
      * Le cas LISTE (ni littéral ni map) est traité EN AMONT par {@see violations()}
-     * comme une violation explicite (corr. review #5) — la branche `array_is_list`
+     * comme une violation explicite — la branche `array_is_list`
      * ci-dessous reste un garde défensif au cas où ce helper serait réutilisé.
      *
      * @return list<mixed>
@@ -331,7 +332,7 @@ final class FirewallAuthoringGuard
         return false;
     }
 
-    // ── Intersection d'intervalles IPv4/IPv6 (Q3, piège #7) ──────────────────
+    // Intersection d'intervalles IPv4/IPv6.
 
     /**
      * Parse une IP littérale OU un CIDR `addr/prefix` (IPv4 ou IPv6) en intervalle
@@ -403,7 +404,7 @@ final class FirewallAuthoringGuard
     }
 
     /**
-     * L'intervalle COUVRE-t-il l'Internet ouvert (Q5) — c.-à-d. englobe-t-il
+     * L'intervalle COUVRE-t-il l'Internet ouvert — c.-à-d. englobe-t-il
      * `/0` de sa famille (`0.0.0.0/0` en IPv4, `::/0` en IPv6) ? Vrai ssi la
      * borne basse est l'adresse nulle ET la borne haute l'adresse maximale de la
      * famille (bornes binaires `inet_pton`). Comparaison NUMÉRIQUE, jamais un

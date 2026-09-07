@@ -12,14 +12,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.1 — LE test de garde de la ligne de coupe.
+ * LE test de garde de la ligne de coupe.
  *
  * Un plan résolu représentatif est sérialisé, puis on vérifie MÉCANIQUEMENT qu'il
  * ne contient rien du monde d'en dessous : pas de mode de permission, pas de
  * syntaxe de liste d'accès, pas de nom de groupe système dérivé, pas de chemin
  * absolu, pas de nom de commande.
  *
- * Pourquoi ce test est le pivot de la story : le service qui dérive les
+ * Pourquoi ce test est le pivot : le service qui dérive les
  * permissions concrètes existe DÉJÀ, trois fichiers plus loin. Sans garde, il
  * remonterait au-dessus de la ligne à la première commodité, et le plan cesserait
  * d'être portable sans que personne ne s'en aperçoive. Ce test constate la
@@ -94,7 +94,7 @@ class PlanNeutralityGuardTest extends TestCase
     }
 
     /**
-     * Story 62.4 — L'ÉPINGLE RETOURNÉE : le vocabulaire du plan est celui des
+     * L'ÉPINGLE RETOURNÉE : le vocabulaire du plan est celui des
      * QUATRE VERBES, et rien d'autre n'y entre.
      *
      * Elle affirmait les deux niveaux binaires. Elle affirme désormais que tout ce

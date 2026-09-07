@@ -10,39 +10,38 @@ use App\Services\Agent\Contracts\StateProvider;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 30.5 — Détecteur de **collision verrou/verrou insoluble** à l'assignation
- * (PRÉVENTION prédictive, FR13). Service de PURE LECTURE : il PRÉDIT, à partir du
- * socle de résolution 30.4, qu'une assignation de label / un rattachement de
+ * Détecteur de **collision verrou/verrou insoluble** à l'assignation
+ * (PRÉVENTION prédictive). Service de PURE LECTURE : il PRÉDIT, à partir du
+ * socle de résolution, qu'une assignation de label / un rattachement de
  * poste introduirait une contradiction irréconciliable — deux items amont
  * `locked` imposant des valeurs DIFFÉRENTES sur la MÊME propriété exclusive
  * (`exclusiveKey()`) d'un même poste. Il n'écrit RIEN, n'émet AUCUN candidat,
- * n'introduit AUCUNE précédence (D2 reste confiné au `StateCompiler`).
+ * n'introduit AUCUNE précédence — celle-ci reste confinée au `StateCompiler`.
  *
- * **Frontière 30.4 ↔ 30.5** : 30.4 OBSERVE la collision au runtime (warning
- * `agent.state.conflict` + tiebreak déterministe, pas d'état vide). 30.5 la
- * PRÉVIENT : elle ferme la porte d'entrée à l'assignation. Les deux coexistent.
+ * **Frontière** : le compilateur OBSERVE la collision au runtime (warning
+ * `agent.state.conflict` + tiebreak déterministe, pas d'état vide) ; ce détecteur
+ * la PRÉVIENT en fermant la porte d'entrée à l'assignation. Les deux coexistent.
  *
- * **Réutilisation STRICTE (AC #5a)** :
+ * **Réutilisation STRICTE** :
  *  - les candidats `locked` viennent de {@see UpstreamContractSource::lockedLabelCandidates()}
  *    (items `target_type = label`, maille `Upstream`, payload via les adaptateurs) ;
  *  - l'identité de propriété vient de {@see KeyedExclusiveProvider::exclusiveKey()}
- *    des providers EXISTANTS (mêmes instances que celles décorées par 28.3) —
- *    aucune dérivation de clé réinventée ;
+ *    des providers EXISTANTS — aucune dérivation de clé n'est réinventée ici ;
  *  - les providers `aggregate` (non `KeyedExclusiveProvider`, ex. `shortcuts`) ont
  *    une sémantique d'UNION : pas d'exclusiveKey unique ⇒ jamais de collision
  *    insoluble ⇒ exclus du détecteur.
  *
- * **Court-circuit NFR3** : {@see self::hasLockedLabelItems()} permet à l'appelant
+ * **Court-circuit** : {@see self::hasLockedLabelItems()} permet à l'appelant
  * de NE PAS charger la population de postes quand il n'y a aucun item label
  * `locked` (ou aucun contrat actif) — hot-path d'assignation strictement intact.
  *
- * **Filtre AC #8 (« introduite, pas pré-existante »)** : une collision n'est
+ * **Filtre « introduite, pas pré-existante »** : une collision n'est
  * signalée que si AU MOINS un de ses deux côtés provient d'un label GAGNÉ par
  * l'opération. Une collision pré-existante non aggravée (deux labels déjà cumulés)
- * reste du ressort du filet runtime 30.4 — 30.5 ne paralyse pas l'admin dessus.
+ * reste du ressort du filet runtime — ne paralyse pas l'admin dessus.
  *
  * ⚠️ GARDE-FOU R3 : aucun « central ». Vocabulaire « amont » / `Upstream` /
- *    `label`. [Source: prd-contrat-manage-se5.md#R3]
+ *    `label`.
  */
 final class UpstreamLockCollisionDetector
 {
@@ -61,9 +60,9 @@ final class UpstreamLockCollisionDetector
     private ?array $index = null;
 
     /**
-     * @param  iterable<StateProvider>  $exclusiveProviders  providers déjà câblés
-     *                                  (28.3) ; seuls les `KeyedExclusiveProvider`
-     *                                  sont retenus (les aggregate sont ignorés)
+     * @param  iterable<StateProvider>  $exclusiveProviders  providers déjà câblés ;
+     *                                  seuls les `KeyedExclusiveProvider` sont
+     *                                  retenus (les aggregate sont ignorés)
      */
     public function __construct(
         private readonly UpstreamContractSource $source,
@@ -81,7 +80,7 @@ final class UpstreamLockCollisionDetector
     /**
      * Y a-t-il au moins un item `label` VERROUILLÉ dans le contrat actif ? Sinon,
      * AUCUNE collision n'est possible ⇒ l'appelant court-circuite AVANT tout
-     * eager-load de population (NFR3). Délègue au court-circuit mémoïsé de la
+     * eager-load de population. Délègue au court-circuit mémoïsé de la
      * source (≤ 1 résolution de contrat, jamais de requête parc).
      */
     public function hasLockedLabelItems(): bool
@@ -91,7 +90,7 @@ final class UpstreamLockCollisionDetector
 
     /**
      * Collisions introduites par l'assignation d'UN nouveau label à une population
-     * de postes (surface « assigner un label », Task 3).
+     * de postes (surface « assigner un label »).
      *
      * @param  iterable<Workstation>  $workstations  population touchée
      * @param  callable(Workstation):list<string>  $existingLabelsOf  labels déjà
@@ -105,12 +104,12 @@ final class UpstreamLockCollisionDetector
 
     /**
      * Collisions introduites par le GAIN d'un ensemble de labels (surface « lier un
-     * parc » : un poste rattaché à des parcs cibles gagne leurs labels, Task 4).
+     * parc » : un poste rattaché à des parcs cibles gagne leurs labels).
      *
      * Modèle ADDITIF : `post = pre ∪ gainedLabels`, `pre = $existingLabelsOf`. Le
-     * filtre AC #8 « introduite, pas pré-existante » est appliqué sur `gained =
-     * post \ pre` (un label déjà porté n'est donc JAMAIS compté comme gagné — cf.
-     * fix #2 post-review 30-5). Délègue au cœur générique
+     * filtre « introduite, pas pré-existante » est appliqué sur `gained =
+     * post \ pre` : un label déjà porté n'est donc JAMAIS compté comme gagné.
+     * Délègue au cœur générique
      * {@see self::collisionsFromFinalState()}.
      *
      * @param  iterable<Workstation>  $workstations
@@ -130,19 +129,19 @@ final class UpstreamLockCollisionDetector
     }
 
     /**
-     * Cœur générique de détection en MODÈLE pré-set / post-set par poste
-     * (post-review 30-5.md). Raisonne sur l'ÉTAT FINAL d'appartenance plutôt que
+     * Cœur générique de détection en MODÈLE pré-set / post-set par poste.
+     * Raisonne sur l'ÉTAT FINAL d'appartenance plutôt que
      * sur une sémantique purement additive — indispensable pour les surfaces de
      * REMPLACEMENT (`groups()->sync()` de `setMachineGroups`) et de SWAP
      * (`assignMachineToPhysicalRoom`) où des appartenances disparaissent et leurs
-     * labels ne doivent PAS peser dans la détection (sinon collisions fantômes,
-     * faux refus #1/M1).
+     * labels ne doivent PAS peser dans la détection, sinon la détection produit
+     * des collisions fantômes et refuse à tort l'opération.
      *
      * Pour chaque poste : `pre(ws)` = labels portés AVANT l'op, `post(ws)` = labels
      * portés APRÈS ; `gained(ws) = post \ pre`. On détecte, sur `post`, par
      * `groupKey`+`exclusiveKey`, ≥ 2 valeurs `locked` DISTINCTES dont AU MOINS une
-     * provient de `gained` (filtre AC #8 — une collision purement pré-existante,
-     * non aggravée, reste du ressort du filet runtime 30.4). Les labels RETIRÉS
+     * provient de `gained` (une collision purement pré-existante,
+     * non aggravée, reste du ressort du filet runtime). Les labels RETIRÉS
      * (`pre \ post`) n'apparaissent pas dans `post` et sont donc naturellement
      * ignorés.
      *
@@ -155,7 +154,7 @@ final class UpstreamLockCollisionDetector
     {
         $index = $this->index();
         if ($index === []) {
-            return []; // court-circuit NFR3 : aucun item label locked.
+            return []; // court-circuit : aucun item label locked.
         }
 
         /** @var array<string, array{exclusiveKey:string, providerType:string, scope:string, sideA:array{label:string,sourceId:int,value:mixed}, sideB:array{label:string,sourceId:int,value:mixed}, workstationIds:array<int,true>}> $collisions */
@@ -187,7 +186,7 @@ final class UpstreamLockCollisionDetector
             foreach ($buckets as $groupKey => $byExclusiveKey) {
                 foreach ($byExclusiveKey as $exclusiveKey => $entries) {
                     // Valeurs DISTINCTES (normalisées) ? Valeurs concordantes ⇒
-                    // rien à trancher, pas de collision (AC #2).
+                    // rien à trancher, pas de collision.
                     $distinct = [];
                     foreach ($entries as $entry) {
                         $distinct[$this->valueKey($entry['value'])] = true;
@@ -196,8 +195,8 @@ final class UpstreamLockCollisionDetector
                         continue;
                     }
 
-                    // AC #8 : au moins un côté provient d'un label GAGNÉ, sinon
-                    // c'est une collision pré-existante (ressort de 30.4).
+                    // Au moins un côté provient d'un label GAGNÉ, sinon c'est une
+                    // collision pré-existante, laissée au filet runtime.
                     $introduced = false;
                     foreach ($entries as $entry) {
                         if (isset($gainedSet[$entry['label']])) {
@@ -228,7 +227,7 @@ final class UpstreamLockCollisionDetector
             }
         }
 
-        // Déterminisme NFR4 : clés (donc collisions) ordonnées, postes triés.
+        // Déterminisme : clés (donc collisions) ordonnées, postes triés.
         ksort($collisions);
 
         $result = [];
@@ -296,7 +295,7 @@ final class UpstreamLockCollisionDetector
 
     /**
      * Construit (mémoïsé) l'index `label → groupKey → exclusiveKey → entrées` à
-     * partir des candidats `locked` du socle 30.4, keyés par les providers
+     * partir des candidats `locked` du socle, keyés par les providers
      * exclusifs existants. Les groupKey sans provider exclusif (aggregate) sont
      * ignorés (jamais de collision de clé).
      *
@@ -358,7 +357,7 @@ final class UpstreamLockCollisionDetector
 
     /**
      * Clé de comparaison d'une valeur NORMALISÉE. Les scalaires sont comparés par
-     * leur représentation chaîne (REG_DWORD `1` == REG_SZ `"1"` — §4.1, AC #2) ;
+     * leur représentation chaîne (REG_DWORD `1` == REG_SZ `"1"`) ;
      * les listes (MULTI_SZ) par leur encodage JSON déterministe.
      */
     private function valueKey(mixed $value): string

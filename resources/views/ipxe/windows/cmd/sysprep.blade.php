@@ -1,4 +1,4 @@
-{{-- Story 3.8 - D6 / AC4.1 - Port iso legacy/modules/ipxe/Win10/action.php cmd_sysprep (LOC 73-144). --}}
+{{-- Port iso legacy/modules/ipxe/Win10/action.php cmd_sysprep (LOC 73-144). --}}
 {{-- Securite critique : ce .cmd s'execute en SYSTEM cote Windows post-reboot. --}}
 {{-- Note _README.md fixtures : le legacy ne sert jamais cmd_sysprep tel quel comme body de --}}
 {{-- reponse (dispatcher legacy renvoie cmd_nosysprep pour etape=sysprep&type=clonage). --}}

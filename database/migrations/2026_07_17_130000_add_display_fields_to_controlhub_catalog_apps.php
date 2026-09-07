@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 51.1 — Champs d'AFFICHAGE du dépôt imposé (projection du catalogue amont
+ * Champs d'AFFICHAGE du dépôt imposé (projection du catalogue amont
  * controlHub en dépôt SE5).
  *
  * Migration ADDITIVE (patron
@@ -17,15 +17,14 @@ use Illuminate\Support\Facades\Schema;
  *  - `category` (string nullable) : catégorie d'affichage ;
  *  - `icon_url` (string nullable) : URL de l'icône d'affichage.
  *
- * Tous NULLABLES et OPTIONNELS (rétrocompat NFR3 : un contrat sans ces champs
+ * Tous NULLABLES et OPTIONNELS (rétrocompat : un contrat sans ces champs
  * reste accepté ; l'affichage du dépôt imposé dégrade proprement). La clé
- * naturelle `(controlhub_contract_id, app_key)` est INCHANGÉE (idempotence 28.2 /
- * NFR4). Aucun bump `schema_version` (doctrine additive 31.3/39.4).
+ * naturelle `(controlhub_contract_id, app_key)` est INCHANGÉE (idempotence).
+ * Aucun bump `schema_version` (doctrine additive).
  *
- * Garde `Schema::hasColumn` + `down()` symétrique (patron cité par la story).
+ * Garde `Schema::hasColumn` + `down()` symétrique, comme les migrations voisines.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
- * [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
  */
 return new class extends Migration
 {

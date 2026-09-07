@@ -9,13 +9,13 @@ use App\Wpkg\Deployment\Services\WpkgBundleGenerator;
 use Illuminate\Console\Command;
 
 /**
- * Story 27.5 (D6/D7) — Génère le bundle WPKG NATIF SE5 pré-substitué dans le
+ * Génère le bundle WPKG NATIF SE5 pré-substitué dans le
  * sous-dossier public servi en STATIQUE par Apache (`config('agent.wpkg_bundle_path')`).
  *
  * À lancer à la pose / au changement de conf (`se4fs_name`) — PAS par requête
  * (zéro charge Laravel sur le download : Apache sert le statique). Le profil
  * par-hôte (`profiles.xml`/`hosts.xml`) n'est PAS dans le bundle : l'agent le
- * dépose localement (D9).
+ * dépose localement.
  *
  * Rappel /vm : après génération, chown www-admin (uid 599) sur le sous-dossier
  * (convention storage non versionnée) sinon le serving Apache échoue en 404.
@@ -47,8 +47,8 @@ final class WpkgBundleGenerateCommand extends Command
 
     public function handle(WpkgBundleGenerator $generator, PackagesXmlService $packagesXml): int
     {
-        // Story 27.19 — Le bundle n'est qu'une PROJECTION du catalogue module ;
-        // `WpkgBundleGenerator` ne le régénère que s'il est ABSENT (fallback D5).
+        // Le bundle n'est qu'une PROJECTION du catalogue module ;
+        // `WpkgBundleGenerator` ne le régénère que s'il est ABSENT.
         // Sans ce regenerate explicite, un déploiement de code (ex. la réécriture
         // FULL HTTP des recettes %SOFTWARE%) ne se reflète JAMAIS dans le catalogue
         // servi tant qu'aucun ajout/retrait d'app ne déclenche regenerate() — le

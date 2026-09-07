@@ -12,21 +12,21 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 5.1b — Section Quota Livewire de la fiche user /users/[login].
+ * Section Quota Livewire de la fiche user /users/[login].
  *
- * Remplace l'ancien partial Blade pur `quota-info.blade.php` (supprimé,
- * décision D9). Ajoute la réactivité nécessaire au bouton Refresh manuel
+ * Remplace l'ancien partial Blade pur `quota-info.blade.php` (supprimé).
+ * Ajoute la réactivité nécessaire au bouton Refresh manuel
  * et au formulaire d'override user (modale).
  *
  * Sources de données :
- * - `users.quota_snapshot` (colonne JSON ajoutée par la migration 5.1b)
+ * - `users.quota_snapshot` (colonne JSON ajoutée par la migration)
  *   → affichage par défaut, zéro shellout.
  * - `XfsQuotaService::getEffectiveQuota()` → breakdown de l'héritage
  *   (user / group / default / none) conservé.
  * - `XfsQuotaService::getDiskUsage()` → lecture live XFS UNIQUEMENT sur
  *   action utilisateur (bouton Actualiser ou post-override).
  *
- * Permissions (post code review 5.1b) :
+ * Permissions (post code review) :
  * - Affichage de la section : tout utilisateur accédant à la fiche.
  * - Bouton Actualiser + action `refreshSnapshot()` : réservé
  *   `server.admin` (le refresh déclenche des shellouts `sudo xfs_quota`
@@ -49,7 +49,6 @@ new class extends Component {
     /** Breakdown héritage /var/sambaedu. */
     public array $effectiveSambaedu = [];
 
-    // ----- Override modal state -----
     public bool $showOverrideModal = false;
 
     public string $overridePartition = '/home';
@@ -77,10 +76,6 @@ new class extends Component {
         $this->loadEffectiveQuotas($user);
     }
 
-    // =========================================================================
-    // LECTURE
-    // =========================================================================
-
     /**
      * Charge le User Eloquent + sa relation userGroups en UNE seule query
      * (évite le N+1 structurel à mount()). Retourne null si le user n'existe
@@ -105,7 +100,7 @@ new class extends Component {
     /**
      * Calcule l'héritage effectif pour les 2 partitions. Ne touche pas XFS.
      *
-     * ⚠️ **La devinette de profil a été retirée** (story 63.4). Cette section
+     * ⚠️ **La devinette de profil a été retirée**. Cette section
      * portait sa PROPRE `resolveUserProfile()` — des comparaisons de sous-chaîne
      * sur les noms de groupes SQL (`admin`, `prof`, `enseignant`) — qui ne
      * ressemblait à celle du service que de loin : un groupe `profs-techno`
@@ -147,10 +142,6 @@ new class extends Component {
             ->values()
             ->all();
     }
-
-    // =========================================================================
-    // REFRESH MANUEL (AC 4, AC 7) — réservé server.admin post-review 5.1b
-    // =========================================================================
 
     /**
      * Lit les quotas XFS en live pour ce user et persiste le snapshot.
@@ -206,7 +197,7 @@ new class extends Component {
                 $partitionUsage = $usage[$key] ?? null;
                 if (!is_array($partitionUsage) || ($partitionUsage['error'] ?? null) !== null) {
                     // On ne touche pas à la clé existante en cas d'erreur
-                    // partition-spécifique (fail-soft AC 12).
+                    // partition-spécifique (fail-soft).
                     continue;
                 }
 
@@ -269,10 +260,6 @@ new class extends Component {
             'grace_days' => $usage['grace_days'] ?? null,
         ];
     }
-
-    // =========================================================================
-    // OVERRIDE QUOTA (AC 5, AC 6) — réservé server.admin
-    // =========================================================================
 
     public function openOverrideModal(string $partition): void
     {
@@ -400,10 +387,6 @@ new class extends Component {
             $this->toastError('Erreur lors de la mise à jour du quota. Consultez les logs.');
         }
     }
-
-    // =========================================================================
-    // HELPERS DE RENDU
-    // =========================================================================
 
     public function formatQuotaMb(int $mb): string
     {

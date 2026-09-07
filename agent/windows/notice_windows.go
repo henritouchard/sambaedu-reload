@@ -10,20 +10,20 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Fenêtre d'avertissement avant redémarrage d'Explorer (Story 43.4, Epic 43) —
+// Fenêtre d'avertissement avant redémarrage d'Explorer
 // impl Windows de shared.RefreshOps.ShowRestartNotice, PREMIÈRE fenêtre native
 // de l'agent. FFI user32/gdi32 pur (NewLazySystemDLL — patron wallpaper,
 // JAMAIS de cgo), exécutée dans la SESSION du compagnon avec les droits du
 // user connecté. Le MachineEngine SYSTEM ne reçoit aucune RefreshOps
-// (main_windows.go sans diff) : aucune fenêtre en session 0 (piège #5).
+// (main_windows.go) : aucune fenêtre en session 0.
 //
-// Mécanique (D2, piège #1) : la fenêtre appartient au PROCESSUS du compagnon
+// Mécanique : la fenêtre appartient au PROCESSUS du compagnon
 // — top-most, NON parentée au shell (aucun lien avec la barre des tâches) —
 // donc le kill d'explorer.exe ne la ferme PAS : c'est ce qui lui permet de
 // SURVIVRE au restart et de couvrir le trou visuel. C'est le dismiss retourné
 // qui la ferme, appelé par le compagnon APRÈS le retour de RestartExplorer.
 //
-// Contraintes Win32 (pièges #2/#3) :
+// Contraintes Win32 :
 //   - une fenêtre exige une boucle de messages sur LE thread qui l'a créée :
 //     goroutine dédiée sous runtime.LockOSThread, création + ShowWindow/
 //     UpdateWindow + pump (GetMessage/TranslateMessage/DispatchMessage) ;
@@ -34,7 +34,7 @@ import (
 //   - le texte est un contrôle STATIC enfant (auto-peint, SS_CENTER) : pas de
 //     WM_PAINT/GDI custom, moins de surface de bug.
 //
-// Best-effort ABSOLU (D4, piège #4) : toute erreur ou lenteur de création =
+// Best-effort ABSOLU : toute erreur ou lenteur de création =
 // warning + dismiss no-op + retour immédiat — la fenêtre ne retarde JAMAIS ni
 // n'empêche le restart (le redémarrage est la valeur, l'avertissement un
 // confort). dismiss est idempotent (sync.Once) et borné (jamais de blocage),
@@ -42,9 +42,9 @@ import (
 
 const noticeClassName = "SambaEduRestartNotice"
 
-// Styles/messages/metrics Win32 (piège #7 : WS_POPUP sans bordure ni titre,
+// Styles/messages/metrics Win32 : WS_POPUP sans bordure ni titre,
 // WS_EX_TOPMOST au-dessus de tout, WS_EX_TOOLWINDOW = pas de bouton barre des
-// tâches — la barre va justement mourir).
+// tâches (la barre va justement mourir).
 const (
 	wsPopup        = 0x80000000
 	wsChild        = 0x40000000
@@ -59,7 +59,7 @@ const (
 	wmTimer   = 0x0113
 
 	swShowNA   = 8 // afficher SANS voler le focus (la session est active)
-	smCxScreen = 0 // moniteur principal (piège #7 : centrage simple)
+	smCxScreen = 0 // moniteur principal (centrage simple)
 	smCyScreen = 1
 
 	colorWindow = 5 // hbrBackground = COLOR_WINDOW+1 : fond système lisible
@@ -68,13 +68,13 @@ const (
 	// GetModuleHandleEx flag : NE PAS incrémenter le refcount du module.
 	// Contrairement à GetModuleHandleW, GetModuleHandleEx bumpe le refcount avec
 	// flags=0 ; sans FreeLibrary correspondant ce serait une fuite à chaque
-	// explorer_restart. Ce flag rend l'appel iso-GetModuleHandleW (review 43.4 #1).
+	// explorer_restart. Ce flag rend l'appel iso-GetModuleHandleW.
 	getModuleHandleExUnchangedRefcount = 0x00000002
 
 	// Polices (CreateFontW) : hauteurs NÉGATIVES = hauteur de caractère en
 	// unités logiques (patron Win32). Segoe UI, rendu ClearType. Le message est
 	// plus gros et lisible que DEFAULT_GUI_FONT ; le spinner est encore plus
-	// gros pour être bien visible (Story 43.4 — design fenêtre).
+	// gros pour être bien visible (design fenêtre).
 	fwSemibold       = 600
 	fwBold           = 700
 	defaultCharset   = 1 // DEFAULT_CHARSET
@@ -82,7 +82,7 @@ const (
 	noticeMsgFontH   = -19
 	noticeSpinFontH  = -30
 
-	// Spinner animé (piège #4 préservé : l'animation vit sur le thread DÉDIÉ de
+	// Spinner animé (l'animation vit sur le thread DÉDIÉ de
 	// la fenêtre, elle ne retarde jamais le restart côté compagnon).
 	noticeTimerID     = 1
 	spinnerIntervalMs = 120
@@ -103,7 +103,7 @@ const (
 	noticeSpinH = 44
 )
 
-// Bornes dures (piège #4) : ShowRestartNotice ne peut pas pendre la passe —
+// Bornes dures : ShowRestartNotice ne peut pas pendre la passe —
 // création trop lente = on part sans fenêtre ; dismiss n'attend jamais plus
 // que sa borne la sortie de la boucle de messages.
 const (
@@ -150,7 +150,7 @@ var (
 // sur toute police). L'enchaînement | / - \ lit comme une rotation.
 var spinnerFrames = []string{"|", "/", "-", "\\"}
 
-// noticeWndProcPtr : WNDPROC stable au niveau PAQUET (piège #3 — NewCallback a
+// noticeWndProcPtr : WNDPROC stable au niveau PAQUET (NewCallback a
 // un quota process-wide, la callback n'est JAMAIS re-créée par appel). WM_TIMER
 // avance le spinner ; WM_DESTROY arrête le timer, libère les polices et poste
 // WM_QUIT (sortie propre de la boucle) ; tout le reste part à DefWindowProcW
@@ -245,8 +245,8 @@ func noticeModuleHandle() (windows.Handle, error) {
 	return module, nil
 }
 
-// ensureNoticeClass : RegisterClassExW une seule fois (piège #3 —
-// ré-enregistrer la même classe échoue). L'erreur est mémorisée : un premier
+// ensureNoticeClass : RegisterClassExW une seule fois (ré-enregistrer la
+// même classe échoue). L'erreur est mémorisée : un premier
 // échec rend tous les appels suivants no-op (best-effort assumé).
 func ensureNoticeClass() error {
 	noticeClassOnce.Do(func() {
@@ -311,7 +311,7 @@ func createNoticeWindow(text string) (uintptr, error) {
 		return 0, fmt.Errorf("GetModuleHandleEx : %w", err)
 	}
 
-	// Centrage sur le moniteur PRINCIPAL (piège #7) — clampé à l'origine si
+	// Centrage sur le moniteur PRINCIPAL — clampé à l'origine si
 	// l'écran est plus petit que la fenêtre.
 	screenW, _, _ := procGetSystemMetrics.Call(smCxScreen)
 	screenH, _, _ := procGetSystemMetrics.Call(smCyScreen)
@@ -359,7 +359,7 @@ func createNoticeWindow(text string) (uintptr, error) {
 	spinFont := createNoticeFont(noticeSpinFontH, fwBold)
 	noticeFonts = []uintptr{msgFont, spinFont}
 
-	// Message : STATIC enfant auto-peint (piège #3), centré, multi-lignes.
+	// Message : STATIC enfant auto-peint, centré, multi-lignes.
 	message, _, lastErr := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(staticClass)),
@@ -395,8 +395,8 @@ func createNoticeWindow(text string) (uintptr, error) {
 		}
 	}
 
-	// Afficher SANS voler le focus, puis peindre tout de suite (piège #2 :
-	// au moins un UpdateWindow avant le kill, sinon la fenêtre peut rester
+	// Afficher SANS voler le focus, puis peindre tout de suite (au moins un
+	// UpdateWindow avant le kill, sinon la fenêtre peut rester
 	// blanche pendant le restart).
 	_, _, _ = procShowWindow.Call(hwnd, swShowNA)
 	_, _, _ = procUpdateWindow.Call(hwnd)
@@ -419,7 +419,7 @@ func createNoticeWindow(text string) (uintptr, error) {
 // par la WNDPROC à WM_DESTROY) ou sur erreur. Sur erreur de GetMessage (-1), on
 // détruit la fenêtre avant de sortir : sans pump, un WM_CLOSE posté par dismiss
 // ne serait jamais dépilé et laisserait une fenêtre top-most figée à l'écran
-// jusqu'à la fin de session (review 43.4 #3).
+// jusqu'à la fin de session.
 func pumpNoticeMessages(hwnd uintptr) {
 	var msg noticeMsg
 	for {
@@ -449,7 +449,7 @@ type noticeState struct {
 
 // dismiss : demande la fermeture (WM_CLOSE → DefWindowProc → DestroyWindow →
 // WM_DESTROY → PostQuitMessage → sortie de la boucle) puis attend la fin de la
-// goroutine UI, BORNÉ (piège #4 : jamais de blocage). Sûre même si la fenêtre
+// goroutine UI, BORNÉ (jamais de blocage). Sûre même si la fenêtre
 // n'a jamais été créée (hwnd 0 : rien à poster, done se ferme seul) ou si la
 // création aboutit APRÈS le timeout de l'appelant (closed=true → la goroutine
 // détruit immédiatement).
@@ -472,9 +472,9 @@ func (n *noticeState) dismiss() {
 	}
 }
 
-// ShowRestartNotice : impl shared.RefreshOps (Story 43.4). Crée la fenêtre
-// top-most « patientez » sur une goroutine dédiée (thread OS verrouillé —
-// piège #2), attend son affichage BORNÉ, et retourne un dismiss idempotent +
+// ShowRestartNotice : impl shared.RefreshOps. Crée la fenêtre
+// top-most « patientez » sur une goroutine dédiée (thread OS verrouillé),
+// attend son affichage BORNÉ, et retourne un dismiss idempotent +
 // borné. Best-effort ABSOLU : tout échec = warning + dismiss no-op, le
 // restart n'est JAMAIS retardé au-delà de noticeCreateTimeout ni empêché.
 func (o *refreshOps) ShowRestartNotice(text string) (bool, func()) {
@@ -483,7 +483,7 @@ func (o *refreshOps) ShowRestartNotice(text string) (bool, func()) {
 
 	go func() {
 		defer close(n.done)
-		// La boucle de messages DOIT tourner sur le thread créateur (piège #2).
+		// La boucle de messages DOIT tourner sur le thread créateur.
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
@@ -515,9 +515,9 @@ func (o *refreshOps) ShowRestartNotice(text string) (bool, func()) {
 		pumpNoticeMessages(hwnd)
 	}()
 
-	// Attente BORNÉE de l'affichage (piège #4) : la fenêtre doit être visible
+	// Attente BORNÉE de l'affichage : la fenêtre doit être visible
 	// avant le lead time du compagnon — sinon on part sans elle (shown=false :
-	// le compagnon ne paie alors PAS le lead time, review 43.4 #2).
+	// le compagnon ne paie alors PAS le lead time).
 	shown := false
 	select {
 	case shown = <-ready:

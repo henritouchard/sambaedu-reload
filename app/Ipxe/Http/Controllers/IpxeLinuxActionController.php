@@ -11,8 +11,6 @@ use App\Ipxe\Services\WorkstationLocator;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.4 — AC5.3 / D2.
- *
  * Controller du endpoint `GET|POST /ipxe/linux/action` (port natif
  * `sambaedu/ipxe/linux/action.php`).
  *
@@ -23,8 +21,8 @@ use Illuminate\Http\Response;
  *  1. Reçoit (uuid, name, ret) après la fin d'install (debian-installer
  *     `late_command`).
  *  2. Résout la Workstation par UUID via {@see WorkstationLocator}.
- *  3. Si null → response 200 vide + log warning (D4 — pas d'echo erreur
- *     legacy `action.php:41`, juste silent + audit).
+ *  3. Si null → response 200 vide + log warning (pas d'echo d'erreur comme
+ *     le legacy `action.php:41` : silence côté poste, trace côté audit).
  *  4. Sinon → délègue à {@see LinuxPostInstallTracker::record()}.
  *  5. Response 200 text/plain vide (parité legacy `linux/action.php:39`).
  */

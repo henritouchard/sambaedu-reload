@@ -10,11 +10,11 @@ use Tests\Support\FakesGpoService;
 use Tests\TestCase;
 
 /**
- * Tests Feature — Story 16.9 redirections 301 des anciennes routes /app/gpo/*
+ * Tests Feature — redirections 301 des anciennes routes /app/gpo/*
  * vers /admin/settings/gpo/*.
  *
  * Garde-fou anti-régression : les anciens bookmarks doivent continuer de
- * fonctionner pendant toute la Phase 2 (D3). 301 permanent car aucun retour
+ * fonctionner pendant toute la transition. 301 permanent car aucun retour
  * arrière prévu.
  *
  * Routes déclarées au TOP-LEVEL (hors groupe `Route::prefix('app')->middleware('sambaedu.auth')`)
@@ -89,7 +89,7 @@ class LegacyAppGpoRoutesRedirectTest extends TestCase
     }
 
     /**
-     * Anti open-redirect : la regex GUID (iso 16.2 fix #9) doit bloquer
+     * Anti open-redirect : la regex GUID doit bloquer
      * toute valeur arbitraire — la closure de redirection ne doit jamais
      * construire un Location vers `/admin/settings/gpo/<INPUT_NON_GUID>`.
      *

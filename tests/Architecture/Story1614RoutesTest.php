@@ -8,18 +8,18 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Garde-fou architectural Story 16.14 — Routes + ordre + permissions (AC7.3).
+ * Garde-fou architectural — Routes + ordre + permissions.
  *
  * Vérifie :
  *   1. Les routes statiques du groupe `settings/gpo` sont déclarées AVANT la
- *      route paramétrée `{guid}` (anti-régression piège 1 de 16.9) et gardées
+ *      route paramétrée `{guid}` — sinon celle-ci les capture — et gardées
  *      par `can:server.admin`.
  *   2. Le groupe `settings/system-status` (« État du système ») existe.
  *
  * Historique des retraits :
  *   - `sections` (« Sections natives ») — commit 6e98c41.
  *   - `jobs` — consolidée dans `settings/system-status`.
- *   - `by-ou` (« Vue par OU », AC3.1) — supprimée : l'onglet « GPO » de
+ * - `by-ou` (« Vue par OU ») — supprimée : l'onglet « GPO » de
  *     /admin/settings/migration évalue en permanence les DEUX périmètres
  *     (postes et comptes), là où `by-ou` exigeait de choisir une OU et
  *     calculait faux sur les liens ENFORCED. Les assertions correspondantes

@@ -19,7 +19,7 @@ use Tests\TestCase;
 use App\Models\User;
 
 /**
- * Tests Feature Livewire — Page détail GPO `/admin/settings/gpo/{guid}` (Story 16.2 + 16.9, AC5.2).
+ * Tests Feature Livewire — Page détail GPO `/admin/settings/gpo/{guid}` ( +).
  *
  * Stratégie mock : helper {@see FakesGpoService} → binding container Laravel.
  */
@@ -41,9 +41,9 @@ class GpoDetailPageTest extends TestCase
         }
 
         $this->bootstrapSpatieTables();
-        // Story 16.5 review #10 : bootstrap workstations pour les tests Impact
+        // Bootstrap workstations pour les tests Impact
         // (countWorkstationsByOu interroge la table — sans ce bootstrap les tests
-        // retournaient 0 silencieusement via try/catch).
+        // retourneraient 0 silencieusement via try/catch).
         $this->bootstrapWorkstationsTable();
     }
 
@@ -102,10 +102,6 @@ class GpoDetailPageTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // AC5.2 — Page détail
-    // =========================================================================
-
     #[Test]
     public function it_renders_detail_page_with_200_for_valid_existing_guid(): void
     {
@@ -137,7 +133,7 @@ class GpoDetailPageTest extends TestCase
     #[Test]
     public function it_accepts_guid_without_braces_and_normalizes(): void
     {
-        // Fix #9 : la regex de route accepte le GUID avec ou sans accolades
+        // La regex de route accepte le GUID avec ou sans accolades
         // (URLs partagées plus tolérantes), et mount() normalise vers le format
         // canonique avec accolades avant tout appel samba-tool.
         $admin = $this->makeAdmin('admin-detail-nobrace-norm');
@@ -161,7 +157,7 @@ class GpoDetailPageTest extends TestCase
         $admin = $this->makeAdmin('admin-detail-notfound');
         $this->actingAs($admin);
 
-        // Fix #10 : abort(404) sorti du try/catch — get() retourne null
+        // abort(404) sorti du try/catch — get() retourne null
         // doit produire un 404 propre, sans listContainers appelé.
         $fake = FakesGpoService::make()->withGpo(self::VALID_GUID, null);
         $fake->mock()->shouldNotReceive('listContainers');
@@ -174,9 +170,9 @@ class GpoDetailPageTest extends TestCase
     #[Test]
     public function it_shows_error_state_when_get_throws_runtime_exception(): void
     {
-        // Fix #10 : si get() lève une exception réelle (samba-tool down),
+        // Si get() lève une exception réelle (samba-tool down),
         // la page reste navigable (status 200), affiche un bandeau d'erreur,
-        // et ne masque PAS l'erreur derrière un 404 trompeur (AC2.7).
+        // et ne masque PAS l'erreur derrière un 404 trompeur.
         $admin = $this->makeAdmin('admin-detail-svc-down');
         $this->actingAs($admin);
 
@@ -286,19 +282,13 @@ class GpoDetailPageTest extends TestCase
             ->assertSee('Gérer les profils itinérants nativement');
     }
 
-    // =========================================================================
-    // AC1.4 / Story 16.3a — Test smoke : SFC utilise bien NativeSectionResolver
-    // =========================================================================
-
     /**
-     * Test smoke : la page détail utilise NativeSectionResolver (AC1.4).
+     * Test smoke : la page détail utilise NativeSectionResolver.
      *
      * Vérifie que la SFC câble correctement le resolver — si nativeSectionLinks()
      * retourne des matches, les CTAs natifs primaires sont bien présents dans
-     * le rendu (cf. AC2.1). La couverture exhaustive des patterns est dans
+     * le rendu. La couverture exhaustive des patterns est dans
      * NativeSectionResolverTest (tests Unit purs).
-     *
-     * Migre la couverture du dataProvider 5-cas supprimé (Story 16.2 AC5.4 / Fix #7).
      */
     #[Test]
     public function it_uses_native_section_resolver_for_links(): void
@@ -314,16 +304,12 @@ class GpoDetailPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
-            // CTA natif primaire dans le header (identifié par data-testid, review 16.3a #6).
+            // CTA natif primaire dans le header (identifié par data-testid).
             ->assertSee('data-testid="native-cta-profils-itinerants"', false)
             ->assertSee('Gérer les profils itinérants nativement')
-            // L'URL contient le paramètre from_gpo (AC2.3 — breadcrumb retour)
+            // L'URL contient le paramètre from_gpo (breadcrumb retour)
             ->assertSee('from_gpo=', false);
     }
-
-    // =========================================================================
-    // Story 16.5 — AC6.3 : Enrichissement détail (CTA + encart Impact)
-    // =========================================================================
 
     #[Test]
     public function it_shows_manage_links_cta_for_server_admin(): void
@@ -348,7 +334,7 @@ class GpoDetailPageTest extends TestCase
         $admin = $this->makeAdmin('admin-detail-impact');
         $this->actingAs($admin);
 
-        // Story 16.5 review #10 : insérer fixtures réelles pour valider que
+        // Fixtures réelles pour valider que
         // countWorkstationsByOu retourne bien un compte non-zéro (suffix match
         // sur ad_dn). 3 postes dans DN_1, 1 archivé (exclu), 1 hors DN_1.
         $now = now();

@@ -23,11 +23,11 @@ use Tests\Traits\CreatesPrinterDriversSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.2 — Tests Feature Livewire de l'onglet Imprimantes avec la
+ * Tests Feature Livewire de l'onglet Imprimantes avec la
  * section Drivers Windows dans la modale édit.
  *
- * Couvre AC1, AC3 (upload happy-path / pivot down), AC5 (detach),
- * AC6 (delete protection), AC7 (Samba unavailable), AC8 (gate forgé).
+ * Couvre (upload happy-path / pivot down) (detach),
+ * (delete protection) (Samba unavailable) (gate forgé).
  */
 class PrintersTabDriversTest extends TestCase
 {
@@ -105,10 +105,6 @@ class PrintersTabDriversTest extends TestCase
         return $mock;
     }
 
-    // ========================================================================
-    // AC1 — Section drivers visible admin, masquée lambda
-    // ========================================================================
-
     #[Test]
     public function drivers_section_visible_for_admin_in_edit_modal(): void
     {
@@ -180,10 +176,6 @@ class PrintersTabDriversTest extends TestCase
             ->assertSet('sambaAvailable', false)
             ->assertSet('showEditModal', true);
     }
-
-    // ========================================================================
-    // AC3 — Upload happy-path / pivot unreachable
-    // ========================================================================
 
     #[Test]
     public function upload_driver_happy_path_calls_service_in_order_and_inserts_ser_row(): void
@@ -282,10 +274,6 @@ class PrintersTabDriversTest extends TestCase
         $this->assertSame(0, PrinterDriver::count());
     }
 
-    // ========================================================================
-    // AC5 — Detach
-    // ========================================================================
-
     #[Test]
     public function detach_driver_calls_service_and_deletes_ser_row(): void
     {
@@ -317,10 +305,6 @@ class PrintersTabDriversTest extends TestCase
         $this->assertNull(PrinterDriver::findByKey('impd', 'x64'));
     }
 
-    // ========================================================================
-    // AC6 — Delete protection
-    // ========================================================================
-
     #[Test]
     public function delete_driver_rejects_if_printer_attachments_exist(): void
     {
@@ -347,13 +331,10 @@ class PrintersTabDriversTest extends TestCase
             ->call('deleteDriver', 'Still Attached', 'x64')
             ->assertDispatched('toastMagic');
 
-        // La ligne SER doit toujours exister (refus côté D8).
+        // La ligne SER doit toujours exister : supprimer un driver encore
+        // rattaché est refusé.
         $this->assertNotNull(PrinterDriver::findByKey('impatt', 'x64'));
     }
-
-    // ========================================================================
-    // Q3A — Retry attach après état partiel (registerDriver OK + attach KO)
-    // ========================================================================
 
     #[Test]
     public function retry_attach_driver_inserts_ser_and_calls_attach(): void
@@ -391,16 +372,11 @@ class PrintersTabDriversTest extends TestCase
         $this->assertSame('Driver bureau', $drv->notes);
     }
 
-    // ========================================================================
-    // AC10 — Delete happy-path + Upload Samba down
-    // ========================================================================
-
     #[Test]
     public function delete_driver_happy_path_calls_service_when_no_attachments_exist(): void
     {
-        // Fix #3 — AC10 explicite : delete driver sans rattachement appelle
-        // bien le service `deleteDriver`. Le test précédent ne couvrait que
-        // le cas de refus avec rattachement.
+        // Un delete driver SANS rattachement appelle bien le service
+        // `deleteDriver` (le cas avec rattachement est refusé, couvert à part).
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
@@ -423,7 +399,7 @@ class PrintersTabDriversTest extends TestCase
             ->andReturn(true);
 
         Printer::create(['cups_name' => 'impdel', 'orphan' => false]);
-        // Pas de PrinterDriver pour `Removable Driver` → pas de protection D8.
+        // Pas de PrinterDriver pour `Removable Driver` → rien ne protège sa suppression.
 
         Livewire::test($this->component)
             ->call('openEditModal', 'impdel')
@@ -434,7 +410,7 @@ class PrintersTabDriversTest extends TestCase
     #[Test]
     public function upload_driver_samba_down_shows_toast_and_no_db_write(): void
     {
-        // Fix #3 — AC10 explicite : si Samba tombe en plein upload (e.g.
+        // Si Samba tombe en plein upload (e.g.
         // après getDriverDefinition réussi, registerDriver lève
         // SambaUnavailableException), le toast s'affiche et aucune ligne
         // SER ne doit avoir été créée.
@@ -470,10 +446,6 @@ class PrintersTabDriversTest extends TestCase
 
         $this->assertSame(0, PrinterDriver::count(), 'Aucune ligne SER ne doit avoir été insérée');
     }
-
-    // ========================================================================
-    // AC8 — Gate forgé
-    // ========================================================================
 
     #[Test]
     public function gate_forged_upload_driver_returns_403(): void

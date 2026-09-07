@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Epic 34 (durcissement resync) — Pré-check de résolution des groupes système.
+ * Pré-check de résolution des groupes système.
  *
  * Couvre le cas des **classes déchets** (nom `classe_473` dont le vrai groupe AD
  * est `classe_classe_473`) : `ShareService` cible `equipe_473`/`classe_473` qui

@@ -15,7 +15,7 @@ use Tests\TestCase;
 /**
  * Tests unit — FirefoxAddonResolver (API AMO v5).
  *
- * Story 4.8 — path API privilégié vs download XPI.
+ * Path API privilégié vs download XPI.
  */
 class FirefoxAddonResolverTest extends TestCase
 {

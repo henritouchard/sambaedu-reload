@@ -8,12 +8,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     /**
-     * Story 20.1 — D-8.
+     * D-8.
      *
      * Identité externe persistante d'un acteur fédéré (technicien flotte,
      * hors-AD). Upsert au login fédéré, clé = `external_sub` (claim `sub` du
      * JWT). Soft-delete : une identité externe n'est JAMAIS hard-delete
-     * (audit / RGPD — base légale détaillée en Story 20.2).
+     * (audit / RGPD — base légale détaillée en).
      *
      * Schéma minimal volontaire (M2/IR) : le cycle de vie complet est porté
      * par 20.2.

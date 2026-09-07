@@ -11,8 +11,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 3.11 — D4 / D5 / D10 / D11.
- *
  * Intention de réinstallation OS armée par poste (poste unique ou fan-out
  * salle/groupe/multi-sélection). **Une ligne = un poste.**
  *
@@ -22,7 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property int $id
  * @property int $workstation_id
- * @property string $target_action Valeur enum IpxeAdminAction (whitelist install-only D9)
+ * @property string $target_action Valeur enum IpxeAdminAction (whitelist install-only)
  * @property string $status armed|serving|installing|done|failed|canceled
  * @property int $boot_served_count
  * @property string|null $initiated_by user:<id> | group:<id>
@@ -63,7 +61,7 @@ class WorkstationReinstallRequest extends Model
         'expires_at' => 'datetime',
     ];
 
-    // Cycle de vie (D4).
+    // Cycle de vie.
     public const STATUS_ARMED = 'armed';
     public const STATUS_SERVING = 'serving';
     public const STATUS_INSTALLING = 'installing';
@@ -86,7 +84,7 @@ class WorkstationReinstallRequest extends Model
     /**
      * Statuts « actifs » (non terminaux) : une requête dans cet état est
      * servie au boot (resolveProgrammedAction) et compte dans le plafond de
-     * concurrence (D11).
+     * concurrence.
      *
      * @var list<string>
      */
@@ -98,7 +96,7 @@ class WorkstationReinstallRequest extends Model
 
     /**
      * Statuts « en vol » comptés pour le plafond de concurrence du tick
-     * (D11). Une requête `armed` mais déjà déclenchée (`triggered_at`) est en
+     * Une requête `armed` mais déjà déclenchée (`triggered_at`) est en
      * vol ; une requête `armed` pas encore déclenchée ne l'est pas (c'est un
      * candidat au déclenchement). En pratique `triggerDue()` filtre sur
      * `triggered_at`, donc on inclut ici tous les statuts actifs.
@@ -181,7 +179,7 @@ class WorkstationReinstallRequest extends Model
     }
 
     /**
-     * TTL dépassé (garde anti-boucle D5). Une requête expirée doit passer
+     * TTL dépassé (garde anti-boucle). Une requête expirée doit passer
      * `failed` et libérer son slot de concurrence.
      */
     public function isExpired(?Carbon $now = null): bool
@@ -196,7 +194,7 @@ class WorkstationReinstallRequest extends Model
     }
 
     /**
-     * Plafond de serves atteint (garde anti-boucle D5) : un poste qui échoue
+     * Plafond de serves atteint (garde anti-boucle) : un poste qui échoue
      * en boucle au chargement kernel/initrd ne doit pas réinstaller indéfiniment.
      */
     public function hasExceededServeCap(): bool

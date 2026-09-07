@@ -99,20 +99,17 @@ class ShortcutController extends Controller
                 'payload.is_active' => 'nullable|boolean',
                 'payload.is_url' => 'nullable|boolean',
                 'payload.metadata' => 'nullable',
-                // Windows
                 'payload.windows' => 'nullable|array',
                 'payload.windows.link' => 'nullable|string',
                 'payload.windows.args' => 'nullable|string',
                 'payload.windows.path' => 'nullable|string',
                 'payload.windows.workdir' => 'nullable|string',
-                // Linux
                 'payload.linux' => 'nullable|array',
                 'payload.linux.link' => 'nullable|string',
                 'payload.linux.args' => 'nullable|string',
                 'payload.linux.path' => 'nullable|string',
                 'payload.linux.startupwmclass' => 'nullable|string',
                 'payload.linux.workdir' => 'nullable|string',
-                // Workstation groups
                 'payload.workstation_groups' => 'nullable|array',
                 'payload.workstation_groups.*' => 'required',
                 'scheduled_at' => 'nullable|date',

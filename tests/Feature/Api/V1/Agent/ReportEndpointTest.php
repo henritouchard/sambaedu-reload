@@ -18,15 +18,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature `POST /api/v1/agent/report` — Story 24.1 (AC1-AC7).
+ * Tests Feature `POST /api/v1/agent/report`.
  *
  * Route RÉELLE (`agent.v1.report`) derrière la chaîne complète
  * `auth.v1.secure-headers` + `throttle:60,1` + `agent.token` (conventions
- * `StateEndpointTest`). Le golden `report.v1.json` (FIGÉ, artefact normatif
- * 23.1) est posté TEL QUEL — il doit passer. La matrice fine des événements
+ * `StateEndpointTest`). Le golden `report.v1.json` (FIGÉ, artefact normatif)
+ * est posté TEL QUEL — il doit passer. La matrice fine des événements
  * vit dans `ReportIngestServiceTest` (unit) ; ici, le contrat HTTP : 200
- * wrapper SE5, 422 sans écriture, 401/403 middleware intouchés, invariant
- * D5 (X-Agent-New-Token sur le 200 du POST), jamais 500 sur rapport forgé.
+ * wrapper SE5, 422 sans écriture, 401/403 middleware intouchés, rotation du
+ * jeton (X-Agent-New-Token sur le 200 du POST), jamais 500 sur rapport forgé.
  */
 final class ReportEndpointTest extends TestCase
 {
@@ -106,7 +106,7 @@ final class ReportEndpointTest extends TestCase
 
     /**
      * Capture les logs du channel `agent` (pattern `StateEndpointTest`,
-     * mock étendu error/critical — correctif P2 23.5).
+     * mock étendu error/critical — correctif P2).
      *
      * @return \ArrayObject<int, array{0:string,1:string,2:array<string,mixed>}>
      */
@@ -144,7 +144,7 @@ final class ReportEndpointTest extends TestCase
         self::assertSame(0, AgentReportHistory::query()->count());
     }
 
-    // ── AC1 — golden payload + upsert borné ──────────────────────────────
+    // — golden payload + upsert borné
 
     #[Test]
     public function golden_report_payload_is_accepted_verbatim(): void
@@ -165,7 +165,7 @@ final class ReportEndpointTest extends TestCase
 
         // 4 items golden = 4 lignes d'état, par (poste, type) : wallpaper
         // (compliant), overlay (drift), printers (error), applications (drift —
-        // ajouté en 27.5 pour illustrer l'inventaire). Story 27.8 : l'item
+        // Ajouté pour illustrer l'inventaire). : l'item
         // `drifted_allowed` a été retiré du golden.
         self::assertSame(4, AgentResourceState::query()->where('workstation_id', $ws->id)->count());
         $printers = AgentResourceState::query()
@@ -189,7 +189,7 @@ final class ReportEndpointTest extends TestCase
         $this->report($token, $payload)->assertOk();
 
         // Volume borné (UNIQUE) : toujours 1 ligne — et fraîcheur rafraîchie
-        // même sur rapport IDENTIQUE (décision n° 4).
+        // même sur rapport IDENTIQUE.
         self::assertSame(1, AgentResourceState::query()->count());
         self::assertTrue($first->refresh()->reported_at->gt($firstReportedAt));
     }
@@ -216,7 +216,7 @@ final class ReportEndpointTest extends TestCase
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
 
-    // ── AC2 — journal des changements (vue HTTP — matrice fine en unit) ──
+    // — journal des changements (vue HTTP — matrice fine en unit)
 
     #[Test]
     public function first_compliant_report_creates_no_event_but_first_drift_does(): void
@@ -249,7 +249,7 @@ final class ReportEndpointTest extends TestCase
         self::assertSame(1, AgentReportEvent::query()->count(), 'rapport identique = AUCUN événement');
     }
 
-    // ── AC3 — flag history ────────────────────────────────────────────────
+    // — flag history
 
     #[Test]
     public function history_is_not_written_when_flag_is_off_by_default(): void
@@ -268,8 +268,8 @@ final class ReportEndpointTest extends TestCase
         [$ws, $token] = $this->enrolledWorkstation();
         $payload = $this->reportPayload($ws, [$this->item('printers', 'error', 'spooler KO')]);
         // Champ inconnu §9 (forward-compat) : toléré par la validation ET
-        // conservé dans l'historique de debug (review 24.1 #2 — brut, pas
-        // validated() qui le stripperait).
+        // conservé dans l'historique de debug (brut, pas validated() qui le
+        // stripperait).
         $payload['future_field'] = 'v1.1-preview';
 
         $this->report($token, $payload)->assertOk();
@@ -282,7 +282,7 @@ final class ReportEndpointTest extends TestCase
         self::assertSame('v1.1-preview', $history->payload['future_field']);
     }
 
-    // ── AC4 — 422 sans écriture, jamais 500 ──────────────────────────────
+    // — 422 sans écriture, jamais 500
 
     /** @return array<string, array{0: callable(array<string,mixed>): array<string,mixed>}> */
     public static function malformedReportProvider(): array
@@ -342,7 +342,7 @@ final class ReportEndpointTest extends TestCase
     #[Test]
     public function hash_rule_rejects_trailing_newline_independently_of_trim_middleware(): void
     {
-        // Review 24.1 #1 : sans /D, `$` PCRE tolère un \n final — 65 octets
+        // Sans /D, `$` PCRE tolère un \n final — 65 octets
         // passeraient la règle (varchar(64) PG = 22001/500). Via HTTP le
         // middleware global TrimStrings masque le cas (\n trimé avant
         // validation) : on teste donc les règles directement, la validation
@@ -391,7 +391,7 @@ final class ReportEndpointTest extends TestCase
         $this->assertNothingWritten();
     }
 
-    // ── AC5 — logs & observabilité ────────────────────────────────────────
+    // — logs & observabilité
 
     #[Test]
     public function accepted_report_logs_received_with_status_counts(): void
@@ -455,11 +455,11 @@ final class ReportEndpointTest extends TestCase
         self::assertSame('warning', $mismatch[0][0]);
         self::assertSame($ws->id, $mismatch[0][2]['workstation_id']);
         self::assertSame('autre-poste-clone', $mismatch[0][2]['declared_hostname']);
-        // L'ingestion a POURSUIVI (décision n° 1) : l'état est écrit.
+        // L'ingestion a POURSUIVI malgré l'avertissement : l'état est écrit.
         self::assertSame(1, AgentResourceState::query()->where('workstation_id', $ws->id)->count());
     }
 
-    // ── AC6 — sécurité du canal ───────────────────────────────────────────
+    // — sécurité du canal
 
     #[Test]
     public function missing_bearer_returns_401_with_middleware_error_format(): void
@@ -503,7 +503,7 @@ final class ReportEndpointTest extends TestCase
     #[Test]
     public function due_rotation_token_survives_the_report_200_response(): void
     {
-        // Invariant D5 (piège n° 4) : le header de rotation posé par le
+        // Le header de rotation posé par le
         // middleware doit survivre à la réponse du POST report.
         [$ws, $token] = $this->enrolledWorkstation();
         $ws->agent_token_rotated_at = now()->subDays((int) config('agent.token_rotation_days') + 1);
@@ -521,7 +521,7 @@ final class ReportEndpointTest extends TestCase
     #[Test]
     public function rotation_header_survives_even_a_422_response(): void
     {
-        // D5 durci : même une réponse de validation refusée porte le
+        // Même une réponse de validation refusée porte le
         // nouveau token — sinon une rotation émise sur un rapport forgé
         // serait perdue (lock-out au retour du rapport suivant).
         [$ws, $token] = $this->enrolledWorkstation();
@@ -536,7 +536,7 @@ final class ReportEndpointTest extends TestCase
             (string) $response->headers->get(AuthenticateAgentToken::HEADER_NEW_TOKEN),
         );
     }
-    // ── Canaux de signalement de l'agent (report-only) ───────────────────
+    // Canaux de signalement de l'agent (report-only)
 
     /**
      * `agent_update` et `companion` n'ont AUCUN provider serveur : ils ne sont

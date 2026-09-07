@@ -16,15 +16,14 @@ use Throwable;
 use UnexpectedValueException;
 
 /**
- * Story 55.3 — **LE VÉRIFICATEUR CLIENT D'ID_TOKEN.**
+ * **LE VÉRIFICATEUR CLIENT D'ID_TOKEN.**
  *
- * Miroir client de `FederatedJwtVerifier` (Epic 20), appliqué à un id_token
+ * Miroir client de `FederatedJwtVerifier`, appliqué à un id_token
  * OIDC. C'est la pièce dont chaque laxisme deviendrait une faille de toutes les
  * extensions qui s'en inspireront : elle est donc écrite en refus par défaut, et
  * chaque vecteur d'attaque a SON test nommé
  * ({@see \Tests\Unit\OidcWitness\WitnessIdTokenVerifierTest}).
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  GARANTIES
  *
  *  1. **RS256 PINNÉ par construction.** La key-map ne contient QUE des
@@ -50,10 +49,9 @@ use UnexpectedValueException;
  *  ⚠️ Une clé étrangère est couverte par (1) : la key-map ne contient que les
  *  clés publiées par l'instance interrogée, donc une signature d'ailleurs
  *  échoue en signature — même si tous les claims étaient « bons ».
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **Où la consommation du `jti` a lieu — décision, et pourquoi elle diverge de
- * l'Epic 20.** Là-bas (M1), le vérificateur ne consommait PAS : le contrôleur
+ * L'.** Là-bas (M1), le vérificateur ne consommait PAS : le contrôleur
  * le faisait APRÈS le provisioning de l'identité, pour ne pas brûler un `jti`
  * si une étape ultérieure échouait et rendait un retry légitime impossible.
  * Ici, il n'existe aucune étape ultérieure faillible : le témoin n'ouvre pas
@@ -62,7 +60,7 @@ use UnexpectedValueException;
  * consomme jamais rien (un attaquant ne doit pas pouvoir brûler par avance le
  * `jti` d'un jeton légitime).
  *
- * **Germe du SDK (Epic 58), pas le SDK.** Rien ici n'est extrait, publié ni
+ * **Germe du SDK, pas le SDK.** Rien ici n'est extrait, publié ni
  * rendu générique : le kit sera extrait de BBB le moment venu (AR10).
  */
 class WitnessIdTokenVerifier
@@ -98,8 +96,8 @@ class WitnessIdTokenVerifier
             throw $this->reject(InvalidWitnessIdTokenException::malformed(), $idToken);
         }
 
-        // Correctif review 55.3 (#4) — défense en profondeur, PAS un correctif
-        // de faille : `WitnessCredentials::load()` refuse déjà tout champ vide,
+        // Défense en profondeur, PAS un correctif de faille :
+        // `WitnessCredentials::load()` refuse déjà tout champ vide,
         // donc `clientId` ne peut pas être vide ici aujourd'hui.
         //
         // Mais si cet invariant tombait un jour, la comparaison d'audience
@@ -140,7 +138,7 @@ class WitnessIdTokenVerifier
         /** @var array<string, mixed> $claims */
         $claims = (array) $decoded;
 
-        // ── Claims standards obligatoires ────────────────────────────────
+        // Claims standards obligatoires
         $iss = $this->stringClaim($claims, 'iss');
         $sub = $this->stringClaim($claims, 'sub');
         $jti = $this->stringClaim($claims, 'jti');
@@ -160,7 +158,7 @@ class WitnessIdTokenVerifier
             throw $this->reject(InvalidWitnessIdTokenException::missingClaim('aud'), $idToken);
         }
 
-        // ── L'instance : `iss` d'abord, `aud` ensuite ────────────────────
+        // L'instance : `iss` d'abord, `aud` ensuite
         $expectedIss = rtrim($credentials->issuer, '/');
         if ($expectedIss === '' || ! hash_equals($expectedIss, rtrim($iss, '/'))) {
             throw $this->reject(InvalidWitnessIdTokenException::issMismatch(), $idToken);
@@ -170,7 +168,7 @@ class WitnessIdTokenVerifier
             throw $this->reject(InvalidWitnessIdTokenException::audMismatch(), $idToken);
         }
 
-        // ── Le `nonce` : lie le jeton à CETTE demande ────────────────────
+        // Le `nonce` : lie le jeton à CETTE demande
         if ($expectedNonce !== '') {
             $nonce = $this->stringClaim($claims, 'nonce');
 
@@ -179,7 +177,7 @@ class WitnessIdTokenVerifier
             }
         }
 
-        // ── Usage unique du `jti`, EN DERNIER ────────────────────────────
+        // Usage unique du `jti`, EN DERNIER
         // Un jeton invalide n'a rien consommé : les refus ci-dessus sont tous
         // passés avant. Sinon un attaquant pourrait brûler à l'avance le `jti`
         // d'un jeton légitime avec un jeton contrefait.
@@ -189,10 +187,6 @@ class WitnessIdTokenVerifier
 
         return $claims;
     }
-
-    // =====================================================================
-    // Key-map : du JWKS publié aux clés vérifiables
-    // =====================================================================
 
     /**
      * Construit `kid => Key($pem, 'RS256')` depuis le JWKS.
@@ -235,7 +229,7 @@ class WitnessIdTokenVerifier
      * Reconstruit un PEM `SubjectPublicKeyInfo` depuis les composantes `n`/`e`
      * d'un JWK RSA — le sens inverse de l'export JWKS du fournisseur, et
      * exactement ce que fait toute bibliothèque cliente OIDC. Refait à la main
-     * pour n'ajouter AUCUNE dépendance (contrainte de la story).
+     * pour n'ajouter AUCUNE dépendance.
      *
      * `null` ⇒ composantes inexploitables : la clé est ignorée, jamais
      * remplacée par un repli.
@@ -305,10 +299,6 @@ class WitnessIdTokenVerifier
 
         return $decoded === false ? '' : $decoded;
     }
-
-    // =====================================================================
-    // Claims
-    // =====================================================================
 
     /** @param array<string, mixed> $claims */
     private function stringClaim(array $claims, string $key): string

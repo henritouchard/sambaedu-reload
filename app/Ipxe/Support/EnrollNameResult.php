@@ -9,8 +9,6 @@ use App\Ipxe\Services\IpxeHostnameSanitizer;
 use App\Models\Workstation;
 
 /**
- * Story 3.3 — T1.3 / AC2.1-AC2.4.
- *
  * Value object immuable retourné par
  * {@see \App\Ipxe\Services\WorkstationEnrollmentService::enrollName()}.
  *
@@ -20,9 +18,8 @@ use App\Models\Workstation;
  * être visibles côté controller pour conditionner le rendu. Un `bool` perdrait
  * cette information et obligerait à dupliquer la logique.
  *
- * **Pourquoi un `final readonly class` ?** Iso pattern PHP 8.2+
- * (parité `_bmad-output/planning-artifacts/architecture.md` §"PHP 8.2 native").
- * Aucun setter — l'objet est construit en bloc et immuable.
+ * **Pourquoi un `final readonly class` ?** Aucun setter : l'objet est
+ * construit en bloc et immuable.
  */
 final readonly class EnrollNameResult
 {
@@ -40,7 +37,7 @@ final readonly class EnrollNameResult
      */
     public static function created(Workstation $workstation, string $sanitizedName, bool $adResult): self
     {
-        // F2 (review 3.3) : sanitization ASCII iPXE iso text/plain.
+        // Sanitization ASCII : le firmware iPXE rejette l'ASCII étendu.
         return new self(
             status: EnrollNameStatus::Created,
             sanitizedName: IpxeHostnameSanitizer::sanitizeForIpxeOutput($sanitizedName),
@@ -54,7 +51,7 @@ final readonly class EnrollNameResult
      */
     public static function sameName(Workstation $workstation, string $sanitizedName): self
     {
-        // F2 (review 3.3) : sanitization ASCII iPXE iso text/plain.
+        // Sanitization ASCII : le firmware iPXE rejette l'ASCII étendu.
         return new self(
             status: EnrollNameStatus::SameName,
             sanitizedName: IpxeHostnameSanitizer::sanitizeForIpxeOutput($sanitizedName),
@@ -67,7 +64,7 @@ final readonly class EnrollNameResult
      */
     public static function renamed(Workstation $workstation, string $sanitizedName, bool $adResult): self
     {
-        // F2 (review 3.3) : sanitization ASCII iPXE iso text/plain.
+        // Sanitization ASCII : le firmware iPXE rejette l'ASCII étendu.
         return new self(
             status: EnrollNameStatus::Renamed,
             sanitizedName: IpxeHostnameSanitizer::sanitizeForIpxeOutput($sanitizedName),
@@ -81,7 +78,7 @@ final readonly class EnrollNameResult
      */
     public static function nameTaken(string $sanitizedName): self
     {
-        // F2 (review 3.3) : sanitization ASCII iPXE iso text/plain.
+        // Sanitization ASCII : le firmware iPXE rejette l'ASCII étendu.
         return new self(
             status: EnrollNameStatus::NameTaken,
             sanitizedName: IpxeHostnameSanitizer::sanitizeForIpxeOutput($sanitizedName),
@@ -94,7 +91,7 @@ final readonly class EnrollNameResult
      */
     public static function dbError(string $sanitizedName, ?string $reason = null): self
     {
-        // F2 (review 3.3) : sanitization ASCII iPXE iso text/plain.
+        // Sanitization ASCII : le firmware iPXE rejette l'ASCII étendu.
         return new self(
             status: EnrollNameStatus::DbError,
             sanitizedName: IpxeHostnameSanitizer::sanitizeForIpxeOutput($sanitizedName),
@@ -107,7 +104,7 @@ final readonly class EnrollNameResult
      */
     public static function adError(string $sanitizedName, ?Workstation $workstation = null): self
     {
-        // F2 (review 3.3) : sanitization ASCII iPXE iso text/plain.
+        // Sanitization ASCII : le firmware iPXE rejette l'ASCII étendu.
         return new self(
             status: EnrollNameStatus::AdError,
             sanitizedName: IpxeHostnameSanitizer::sanitizeForIpxeOutput($sanitizedName),

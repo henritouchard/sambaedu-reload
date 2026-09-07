@@ -12,24 +12,23 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.7 — AC2.2 (origine). Story 16.15 — AC7.1/AC7.2/AC10.3 (migration Cache).
+ * (origine)..
  *
  * Vérifie que `CacheAppContextWriter` :
  *  - écrit la clé `apps.$id` via Cache::store('app_context') avec structure
- *    compatible `CacheAppContextRepository` (lecteur 4.8 migré)
+ *  compatible `CacheAppContextRepository` (lecteur migré)
  *  - rejette les ids mal formés (no-op silencieux + warning log)
  *  - `forget()` supprime la clé apps + scripts du store
- *  - TTL iso-legacy : 1800s pour apps.$id (AC10.3)
+ * - TTL iso-legacy : 1800s pour apps.$id
  */
 class CacheAppContextWriterTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
-        // Story 16.15 — AC7.2 : utiliser Cache::store('app_context')->flush()
-        // au lieu de apcu_clear_cache(). En testing, store = array (phpunit.xml).
+        // En testing, le store `app_context` est le driver array (phpunit.xml).
         Cache::store('app_context')->flush();
-        // Isolation cross-driver (review #4) : si APCu CLI activé, purger aussi
+        // Isolation cross-driver : si APCu CLI activé, purger aussi
         // pour éviter pollution entre tests qui poseraient des clés directes.
         if (function_exists('apcu_clear_cache')) {
             apcu_clear_cache();
@@ -71,7 +70,7 @@ class CacheAppContextWriterTest extends TestCase
     #[Test]
     public function write_uses_iso_legacy_ttl_1800s(): void
     {
-        // AC10.3 — TTL iso-legacy 1800s pour apps.$id (assertion explicite).
+        // TTL iso-legacy 1800s pour apps.$id (assertion explicite).
         // En testing, le store array ne supporte pas les vérifications de TTL
         // introspectées — on vérifie que la clé est écrite correctement avec
         // le TTL par défaut (1800) en s'assurant que write() appelle put()

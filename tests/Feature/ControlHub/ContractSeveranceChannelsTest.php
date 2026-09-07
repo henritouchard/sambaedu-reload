@@ -16,13 +16,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 32.1 (Q4) — Les DEUX canaux du signal de rupture (commande artisan
+ * Les DEUX canaux du signal de rupture (commande artisan
  * `controlhub:sever-link` + endpoint `controlhub.auth`) partagent le service
  * UNIQUE `ControlHubContractSeveranceService`. Ce test prouve que chaque canal
  * applique la rupture de façon idempotente et trace son origine.
  *
- * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. ⚠️ GARDE-FOU R3 : aucun
- * « central » ; vocabulaire « amont » / `ControlHub*`.
+ * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. ⚠️ RÈGLE DE NOMMAGE :
+ * aucun identifiant livré ne contient « central » ; vocabulaire « amont » /
+ * `ControlHub*`.
  */
 class ContractSeveranceChannelsTest extends TestCase
 {
@@ -45,7 +46,7 @@ class ContractSeveranceChannelsTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Canal commande ────────────────────────────────────────────────────────
+    // Canal commande
 
     #[Test]
     public function the_command_severs_the_active_contract_and_traces_origin_command(): void
@@ -73,7 +74,7 @@ class ContractSeveranceChannelsTest extends TestCase
         self::assertSame(0, ControlHubLinkAuditLog::count());
     }
 
-    // ── Canal endpoint (controlhub.auth) ──────────────────────────────────────
+    // Canal endpoint (controlhub.auth)
 
     #[Test]
     public function the_authenticated_endpoint_severs_the_active_contract(): void

@@ -17,8 +17,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Tests\TestCase;
 
 /**
- * Tests Feature `GET /api/v1/agent/assets/wallpaper/{filename}` — Story 24.4
- * (AC6).
+ * Tests Feature `GET /api/v1/agent/assets/wallpaper/{filename}`
  *
  * Route RÉELLE (`agent.v1.assets.wallpaper`) derrière la chaîne complète
  * `auth.v1.secure-headers` + `throttle:60,1` + `agent.token` (conventions
@@ -123,7 +122,7 @@ final class AssetEndpointTest extends TestCase
         ));
     }
 
-    // ── AC6 — 200 : contenu binaire de la biblio ─────────────────────────
+    // — 200 : contenu binaire de la biblio
 
     #[Test]
     public function valid_token_serves_the_exact_binary_content_of_the_library_file(): void
@@ -159,7 +158,7 @@ final class AssetEndpointTest extends TestCase
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
 
-    // ── AC6 — 404 : inconnu / malformé / fichier absent, jamais de traversal ─
+    // ── — 404 : inconnu / malformé / fichier absent, jamais de traversal ─
 
     #[Test]
     public function wellformed_but_unknown_filename_returns_404_with_log(): void
@@ -225,7 +224,7 @@ final class AssetEndpointTest extends TestCase
         $this->asset($token, $orphan)->assertStatus(404);
     }
 
-    // ── AC6 — sécurité du canal (middleware inchangé) ────────────────────
+    // — sécurité du canal (middleware inchangé)
 
     #[Test]
     public function missing_bearer_returns_401_with_middleware_error_format(): void
@@ -256,7 +255,7 @@ final class AssetEndpointTest extends TestCase
     #[Test]
     public function due_rotation_token_survives_the_binary_200(): void
     {
-        // Invariant D5 : le middleware pose X-Agent-New-Token sur TOUTE
+        // Le middleware pose X-Agent-New-Token sur TOUTE
         // réponse 2xx — y compris un BinaryFileResponse.
         [$ws, $token] = $this->enrolledWorkstation();
         [$asset] = $this->libraryAsset();

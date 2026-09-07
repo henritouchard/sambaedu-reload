@@ -20,7 +20,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 (AC8 / D8) — verrouillage des DEUX drawers de droits pour les
+ * Verrouillage des DEUX drawers de droits pour les
  * profils PORTÉS par un groupe.
  *
  * Le `disabled` de l'UI seul serait du théâtre : un payload Livewire forgé
@@ -109,10 +109,6 @@ class CarriedProfileDrawerLockTest extends TestCase
         return User::find($user->id)->roles()->pluck('name')->sort()->values()->all();
     }
 
-    // ========================================================================
-    // Drawer BULK (pages/users/_partials/rights-drawer)
-    // ========================================================================
-
     #[Test]
     public function bulk_drawer_exposes_the_carrier_groups_of_each_role(): void
     {
@@ -196,10 +192,6 @@ class CarriedProfileDrawerLockTest extends TestCase
 
         self::assertSame(['user-admin'], $this->roleNames($target));
     }
-
-    // ========================================================================
-    // Drawer ORGANISME (components/organisms/rights-drawer)
-    // ========================================================================
 
     #[Test]
     public function user_drawer_exposes_the_carrier_groups_and_ignores_the_toggle(): void

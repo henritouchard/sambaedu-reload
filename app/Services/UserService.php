@@ -48,7 +48,6 @@ class UserService
         $this->homeDirService = $homeDirService ?? new HomeDirService();
     }
 
-
     /**
      * Recherche des utilisateurs dans Active Directory via le repository
      * 
@@ -130,7 +129,7 @@ class UserService
         }
     }
 
-    // Story 49.2 (FR-R3) — `getByLogin()` (lookup LDAP) supprimé : ses deux
+    // `getByLogin` (lookup LDAP) supprimé : ses deux
     // appelants (fallbacks d'existence des modales délégation / droits) ne
     // vérifient plus l'annuaire, Postgres étant la vérité pour l'existence
     // d'un compte côté SE5. Les lookups LDAP de ce service qui SUBSISTENT sont
@@ -184,7 +183,6 @@ class UserService
      */
     public function updatePersonalInfo(string $login, array $data): array
     {
-        // D1: Vérification des permissions côté service
         if (!Gate::allows('update-user')) {
             return ['success' => false, 'message' => 'Vous n\'avez pas les droits pour modifier cet utilisateur.'];
         }
@@ -610,7 +608,7 @@ class UserService
 
             $this->userRepository->invalidateCache($login);
 
-            // Story 61.1 — propagation au compte Nextcloud. Sans elle, sur une
+            // Propagation au compte Nextcloud. Sans elle, sur une
             // instance sans synchro LDAP, ce changement CASSE le montage : le
             // mécanisme « identifiants de connexion, enregistrés en session »
             // exige que Nextcloud accepte les identifiants AD. Fail-soft, sous
@@ -656,7 +654,7 @@ class UserService
     }
 
     /**
-     * Réinitialisation de mot de passe en masse — story 2.6.
+     * Réinitialisation de mot de passe en masse.
      *
      * Implémente un pattern « tout ou rien » côté PostgreSQL
      * (DB::transaction) avec validation préalable exhaustive des cibles AD
@@ -673,7 +671,7 @@ class UserService
      * @param array{userIds?: array<int|string>, groupIds?: array<int>} $selection
      *        Sélection mixte : logins (userIds) + ids de UserGroup (groupIds).
      *        Les membres directs des groupes sont résolus via
-     *        {@see UserGroupService::getDirectMembersForBulkReset()}.
+     *  {@see UserGroupService::getDirectMembersForBulkReset()}.
      * @param bool $force Si false, ne réinitialise que les comptes non activés
      *                    (pwdLastSet == 0). Si true (défaut), réinitialise tout.
      * @param bool $forceChangeAtNextLogin Si true (défaut), positionne
@@ -722,7 +720,6 @@ class UserService
             ];
         }
 
-        // --- PHASE DE RÉSOLUTION ------------------------------------------------
         $directLogins = array_values(array_filter(
             array_map('strval', $selection['userIds'] ?? []),
             static fn(string $v): bool => $v !== ''
@@ -777,7 +774,7 @@ class UserService
         // Fusion avec les logins directs (non dédoublonnés par groupe = pas de source_group).
         foreach ($directLogins as $login) {
             if (in_array($login, $orderedLogins, true)) {
-                // Déjà résolu par un groupe — on conserve la 1re source (cf. AC 11).
+                // Déjà résolu par un groupe — on conserve la 1re source.
                 continue;
             }
             $orderedLogins[] = $login;
@@ -814,7 +811,6 @@ class UserService
             'timestamp' => now()->toIso8601String(),
         ]);
 
-        // --- PHASE DE VALIDATION (avant toute écriture AD) ----------------------
         $scopeCode = $this->config->getCurrentEstablishmentCode();
         $hasScope = !empty($scopeCode) && $scopeCode !== '0';
 
@@ -873,12 +869,11 @@ class UserService
             ];
         }
 
-        // --- FILTRE SCOPING CLASSE (review 7.2 #8) ------------------------------
         // Defense-in-depth : même si l'UI bulk n'est aujourd'hui exposée qu'aux
         // admins globaux (user.password.init + accès page bulk), on re-check
         // `resetPassword` via la Policy pour chaque cible. Un Prof/EleveAdmin
         // scopé classe ne pourra réinitialiser que les MDP des élèves de ses
-        // classes — iso-décision 7.2 (a).
+        // classes — iso-décision (a).
         $actor = auth()->user();
         if ($actor !== null) {
             $outOfClassScope = [];
@@ -939,19 +934,17 @@ class UserService
             }
         }
 
-        // --- PHASE DE GÉNÉRATION -----------------------------------------------
         /** @var array<string, string> $plaintextPasswords */
         $plaintextPasswords = [];
         foreach ($orderedLogins as $login) {
             $plaintextPasswords[$login] = $this->passwordService->generateRandomPassword();
         }
 
-        // --- PHASE D'ÉCRITURE ATOMIQUE -----------------------------------------
         $results = [];
         $partialFailures = [];
         $success = true;
 
-        // Story 61.1 (revue #5) — UN SEUL provisionneur pour tout le lot, parce
+        // UN SEUL provisionneur pour tout le lot, parce
         // qu'il porte le disjoncteur : à la première instance injoignable, les
         // propagations suivantes sont abandonnées d'un bloc au lieu de payer le
         // délai HTTP par utilisateur (jusqu'à 15 s chacun) dans une requête
@@ -977,14 +970,14 @@ class UserService
                 $this->setUserPassword($ldapUser, $newPassword);
 
                 // 2) pwdlastset (0 = forcer changement, -1 = définitif) — réutiliser l'instance
-                // déjà chargée (évite un 2e round-trip LDAP inutile — cf. review 2.6 #5).
+                // déjà chargée : évite un 2e round-trip LDAP inutile.
                 $ldapUser->setAttribute('pwdlastset', $forceChangeAtNextLogin ? 0 : -1);
                 $ldapUser->save();
 
                 // 3) Invalider cache AD
                 $this->userRepository->invalidateCache($login);
 
-                // 3bis) Story 61.1 — propagation au compte Nextcloud (même
+                // 3bis) — propagation au compte Nextcloud (même
                 // raison qu'en réinitialisation unitaire : sans elle le montage
                 // en identifiants de session cesse d'authentifier). Fail-soft :
                 // ne fait jamais échouer le lot.
@@ -992,7 +985,7 @@ class UserService
 
                 // 4) Double-write SQL : timestamp pwd_reset_at (jamais le mdp)
                 // Transaction courte autour du seul save() — pas d'appel LDAP à l'intérieur
-                // (cf. review 2.6 #4 : évite de garder la connexion PG ouverte pendant les appels AD).
+                // (évite de garder la connexion PG ouverte pendant les appels AD).
                 if ($sqlUser !== null) {
                     $sqlUser->pwd_reset_at = now();
                     DB::transaction(static fn() => $sqlUser->save());
@@ -1045,7 +1038,7 @@ class UserService
             }
         }
 
-        // Story 61.1 (revue #5) — la clôture du lot : UN avertissement pour tous
+        // La clôture du lot : UN avertissement pour tous
         // les comptes non propagés, jamais un par utilisateur.
         if ($nextcloudBatch !== null) {
             try {
@@ -1292,7 +1285,6 @@ class UserService
             $ldapUser->setAttribute('employeenumber', $employeeNumber);
         }
 
-        // Title
         $title = $this->buildTitle($data, $data['fonction'] ?? '');
         if (!empty($title)) {
             $ldapUser->setAttribute('title', $title);
@@ -1336,7 +1328,7 @@ class UserService
         $classes = $data['classes'] ?? [];
         $new_etab = $data['new_etab'] ?? 0;
 
-        // Audit log (NFR8) — qui a créé quoi, quand
+        // Audit log — qui a créé quoi, quand
         Log::info("Création utilisateur", [
             'action' => 'user.create',
             'login' => $login,
@@ -1360,7 +1352,7 @@ class UserService
         // Créer le dossier home
         $this->homeDirService->createHomeDirectory($login);
 
-        // Story 61.1 — le compte Nextcloud, AVANT le chemin rclone.
+        // Le compte Nextcloud, AVANT le chemin rclone.
         //
         // L'ordre n'est pas indifférent : `configureUserCloud()` demande à
         // l'instance un app password pour le couple login/mot de passe AD. Sans
@@ -1442,18 +1434,18 @@ class UserService
     /**
      * Lie l'utilisateur SQL à ses groupes dans la table pivot user_group_user.
      *
-     * Story 5.2 review #1 (Q1=Option B) — sync de classes :
+     * Sync de classes :
      *   - On capture les classes Eloquent AVANT le sync (`$oldClassIds`).
-     *   - On `sync()` les classes (au lieu de `syncWithoutDetaching`) pour
+     *  - On `sync()` les classes (au lieu de `syncWithoutDetaching`) pour
      *     permettre la détection de detach (changement 6A → 5B). Les groupes
      *     non-classes (catégorie + fonction) sont gérés via
      *     `syncWithoutDetaching` (préservation des autres rattachements).
      *   - L'Observer pivot est désactivé pendant le sync atomique : on appelle
      *     ensuite `ShareService::syncUserClassMemberships($user, $oldClassIds,
      *     $newClassIds)` UNE FOIS pour orchestrer l'archivage `Classe_<old>/<eleve>
-     *     → Classe_<new>/<eleve>/Archives/` (D3=A) avec les deux listes en main.
+     *     → Classe_<new>/<eleve>/Archives/` avec les deux listes en main.
      *   - L'Observer reste actif pour les attach/detach ad-hoc (UI debug,
-     *     scripts d'import bulk, futures stories).
+     *     scripts d'import bulk).
      */
     private function persistUserGroupsToSql(string $login, string $categorie, string $fonction, array $classes): void
     {
@@ -1463,7 +1455,7 @@ class UserService
                 return;
             }
 
-            // Story 42.1 — rôle d'arête PAR DÉFAUT au rattachement, dérivé du
+            // Rôle d'arête PAR DÉFAUT au rattachement, dérivé du
             // rôle GLOBAL `users.role` DÉJÀ en mémoire (`$sqlUser->role`,
             // colonne SQL — JAMAIS `isProf()` qui ferait un round-trip LDAP).
             // Appliqué UNIQUEMENT aux arêtes RÉELLEMENT NOUVELLES : un
@@ -1491,7 +1483,7 @@ class UserService
             })->pluck('id');
 
             if ($nonClasseIds->isNotEmpty()) {
-                // Story 42.1 — n'appliquer le rôle dérivé qu'aux arêtes NOUVELLES.
+                // N'appliquer le rôle dérivé qu'aux arêtes NOUVELLES.
                 // Les ids déjà attachés sont ré-attachés sans attribut (no-op de
                 // rôle) ; seuls les nouveaux reçoivent `['role' => $derivedRole]`.
                 $alreadyAttachedIds = $sqlUser->groups()
@@ -1510,12 +1502,12 @@ class UserService
             }
 
             // 2. Classes — sync atomique (detach implicite des classes absentes).
-            //    Story 4.13 — l'import AD→SQL replie désormais les classes en UNE
+            // L'import AD→SQL replie désormais les classes en UNE
             //    ligne au NOM NU (`3A`, `type='classe'`). Le lookup `'Classe_'.$c`
             //    ne matchait plus cette ligne nue (l'élève n'était plus rattaché
             //    à sa classe). On résout désormais par NOM NU. On garde le
             //    fallback `Classe_%` côté `oldClassIds` pour les lignes héritées
-            //    (pré-4.13) qui seront fusionnées par 4.14. On résout les
+            //  (antérieur) qui seront fusionnées par 4.14. On résout les
             //    nouveaux IDs APRÈS avoir capturé les anciens.
             $oldClassIds = $sqlUser->groups()
                 ->where(function ($q) {
@@ -1546,10 +1538,10 @@ class UserService
                     ->pluck('id');
             $newClassIdsArr = $newClassIds->map(fn ($id) => (int) $id)->all();
 
-            // Désactivation de l'Observer pivot pendant le sync atomique (cf.
-            // review 5.2 #1 Q1). L'Observer reçoit des events atomiques
+            // Désactivation de l'Observer pivot pendant le sync atomique.
+            // L'Observer reçoit des events atomiques
             // (`created`/`deleted` séparés) — il ne peut pas voir oldIds ET
-            // newIds en même temps, donc l'archivage D3=A
+            // newIds en même temps, donc l'archivage
             // `Classe_<old>/<eleve> → Classe_<new>/<eleve>/Archives/` lui est
             // impossible. On détache l'observer pendant le sync, puis on
             // appelle explicitement `syncUserClassMemberships` après avec les
@@ -1564,7 +1556,7 @@ class UserService
                     $sqlUser->groups()->detach($toDetach);
                 }
                 if ($newClassIdsArr !== []) {
-                    // Story 42.1 — rôle dérivé sur les arêtes de classe
+                    // Rôle dérivé sur les arêtes de classe
                     // RÉELLEMENT nouvelles (absentes de `$oldClassIds`). Les
                     // classes déjà attachées gardent leur rôle (jamais rétrogradé,
                     // ex. `owner` d'un PP conservé au re-import).
@@ -1584,7 +1576,7 @@ class UserService
                 \App\Observers\UserGroupUserPivotObserver::enableSync();
             }
 
-            // 3. Hook ShareService (D5=A explicit) — orchestrer l'archivage et
+            // 3. Hook ShareService explicite — orchestrer l'archivage et
             //    la création/retrait des dossiers élèves en une passe avec les
             //    deux listes anciennes/nouvelles.
             if ($oldClassIds !== $newClassIdsArr) {
@@ -1753,7 +1745,6 @@ class UserService
         return $this->simplifyName($firstname, $removeHyphens);
     }
 
-
     /**
      * Génère un mot de passe aléatoire
      * Délègue au PasswordPolicyService
@@ -1920,14 +1911,13 @@ class UserService
                 return;
             }
 
-            // 1. Obtenir un app password Nextcloud
             $appPassword = $this->getNextcloudAppPassword($cloudUri, $login, $password);
             if ($appPassword === null) {
                 Log::warning("Impossible d'obtenir un app password Nextcloud pour $login");
                 return;
             }
 
-            // 2. Récupérer l'ID cloud — Story 61.1 (AC6) : le CACHE d'abord.
+            // 2. Récupérer l'ID cloud : le CACHE d'abord.
             //
             // Seule retouche autorisée à ce chemin legacy. Quand la colonne
             // `users.nextcloud_user_id` est remplie, la résolution a déjà eu lieu
@@ -1982,22 +1972,6 @@ class UserService
         }
     }
 
-    // =========================================================================
-    // Story 61.1 — LES TROIS CROCHETS NEXTCLOUD
-    //
-    // Ils sont ici, et le CLIENT est ailleurs. Le service de provisionnement est
-    // résolu par le conteneur au point d'appel plutôt qu'injecté au constructeur :
-    // ce constructeur est câblé dans une quarantaine d'endroits (et construit à la
-    // main dans plusieurs tests), et lui ajouter une dépendance obligatoire aurait
-    // fait payer à tout le dépôt une fonctionnalité que la plupart des instances
-    // n'activent pas. C'est le même précédent que `app(UserGroupService::class)`
-    // plus haut dans cette classe.
-    //
-    // Les trois sont FAIL-SOFT et bordés d'un `catch (\Throwable)` : aucun d'eux ne
-    // doit pouvoir faire échouer une création de compte ou un changement de mot de
-    // passe AD. La visibilité vient du journal, pas de l'exception.
-    // =========================================================================
-
     /**
      * Pose la clé immuable d'identité sur l'entrée d'annuaire fraîchement créée.
      *
@@ -2029,7 +2003,7 @@ class UserService
     }
 
     /**
-     * Assure le compte Nextcloud à la création SE5 (AC5).
+     * Assure le compte Nextcloud à la création SE5.
      *
      * Ne fait RIEN — et n'émet aucun appel — quand la capacité « Accès Nextcloud »
      * est éteinte ou la configuration incomplète.
@@ -2048,14 +2022,14 @@ class UserService
     }
 
     /**
-     * Propage le nouveau mot de passe au compte Nextcloud (AC7), sous double
+     * Propage le nouveau mot de passe au compte Nextcloud, sous double
      * condition portée par le provisionneur : capacité active ET identité résolue.
      *
      * `$batch` — le provisionneur PARTAGÉ d'une réinitialisation en masse : c'est
-     * lui qui porte le disjoncteur de lot (revue #5). Quand il est absent, on est
+     * lui qui porte le disjoncteur de lot. Quand il est absent, on est
      * sur le chemin unitaire : on résout un provisionneur pour l'occasion et on
      * clôt le « lot » d'un seul élément immédiatement, sans quoi une instance
-     * injoignable serait muette — ce que l'AC7 interdit.
+     * injoignable serait muette.
      */
     private function propagateNextcloudPassword(
         string $login,
@@ -2092,7 +2066,7 @@ class UserService
     }
 
     /**
-     * Identité Nextcloud CACHÉE de l'utilisateur, ou null si jamais résolue (AC6).
+     * Identité Nextcloud CACHÉE de l'utilisateur, ou null si jamais résolue.
      */
     private function cachedNextcloudUserId(string $login): ?string
     {
@@ -2185,9 +2159,6 @@ class UserService
     /**
      * Ajoute l'utilisateur au groupe AD "Cloud" s'il n'en est pas déjà membre
      */
-    // ============================================
-    // DÉSACTIVATION / ACTIVATION / SUPPRESSION
-    // ============================================
 
     /**
      * Désactive un compte utilisateur.
@@ -2439,10 +2410,6 @@ class UserService
         }
     }
 
-    // ============================================
-    // DÉPLACEMENT DN — Story 2.5
-    // ============================================
-
     /**
      * Déplace un utilisateur dans l'arbre AD quand sa catégorie ou sa fonction change.
      *
@@ -2555,7 +2522,6 @@ class UserService
         }
         $currentGroupCnsLower = array_map('strtolower', $currentGroupCns);
 
-        // --- Retirer les anciens groupes de catégorie ---
         foreach ($allMainGroups as $mainGroupName) {
             if (strcasecmp($mainGroupName, $newCategorie) === 0) {
                 continue; // on garde le nouveau
@@ -2568,7 +2534,6 @@ class UserService
             }
         }
 
-        // --- Retirer les anciens groupes de fonction ---
         foreach ($allFonctions as $fonctionName) {
             if (strcasecmp($fonctionName, $newFonction) === 0) {
                 continue; // on garde la nouvelle
@@ -2581,7 +2546,6 @@ class UserService
             }
         }
 
-        // --- Ajouter le nouveau groupe de catégorie ---
         if (!in_array(strtolower($newCategorie), $currentGroupCnsLower)) {
             $mainGroup = SambaEduGroup::findMainGroup($newCategorie);
             if ($mainGroup) {
@@ -2589,7 +2553,6 @@ class UserService
             }
         }
 
-        // --- Ajouter le nouveau groupe de fonction ---
         if (!empty($newFonction) && !in_array(strtolower($newFonction), $currentGroupCnsLower)) {
             $fonctionGroup = SambaEduGroup::query()->where('cn', '=', $newFonction)->first();
             if ($fonctionGroup) {
@@ -2597,7 +2560,6 @@ class UserService
             }
         }
 
-        // --- Cas spécial : groupe Portables pour Direction/Gestionnaire ---
         $portablesPerdir = $this->config->get('portables_perdir', '0');
         if ($portablesPerdir == '1') {
             if (in_array($newFonction, ['Direction', 'Gestionnaire'])) {

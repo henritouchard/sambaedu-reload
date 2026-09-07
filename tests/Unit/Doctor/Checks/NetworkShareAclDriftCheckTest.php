@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Epic 34 — Test du Doctor check {@see NetworkShareAclDriftCheck}.
+ * Test du Doctor check {@see NetworkShareAclDriftCheck}.
  */
 class NetworkShareAclDriftCheckTest extends TestCase
 {

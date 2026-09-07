@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     /**
-     * Story 20.1 — D-4.
+     * D-4.
      *
      * Marque l'origine d'un User Eloquent et le relie éventuellement à une
      * identité externe.
@@ -28,7 +28,7 @@ return new class extends Migration {
         Schema::table('users', function (Blueprint $table): void {
             if (! Schema::hasColumn('users', 'source')) {
                 // 'ad' = origine Active Directory (défaut, comportement actuel).
-                // 'federated' = provisionné via login fédéré (Epic 20).
+                // 'federated' = provisionné via login fédéré.
                 $table->string('source', 16)->default('ad')->index();
             }
 

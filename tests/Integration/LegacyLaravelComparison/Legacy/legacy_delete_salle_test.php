@@ -6,19 +6,16 @@
  *
  * Usage: php legacy_delete_salle_test.php <nom_salle> [parent]
  *
- * =============================================================================
  * DOCUMENTATION: Écritures AD effectuées par legacy pour supprimer une salle
- * =============================================================================
  *
  * 1. SUPPRESSION DE L'OU dans OU=Computers
- *    Fonction: oudel() - /includes/samba-tool.inc.php
+ *  Fonction: oudel() - /includes/samba-tool.inc.php
  *    ldap_delete($config['bind'], "OU={nom},OU=Computers,OU={etab},DC=...")
  *
  * 2. SUPPRESSION DU GROUPE CN dans OU=Parcs
- *    Fonction: groupdel() - /includes/samba-tool.inc.php
+ *  Fonction: groupdel() - /includes/samba-tool.inc.php
  *    ldap_delete($config['bind'], "CN={nom},OU=Parcs,OU={etab},DC=...")
  *
- * =============================================================================
  */
 
 // Paramètres

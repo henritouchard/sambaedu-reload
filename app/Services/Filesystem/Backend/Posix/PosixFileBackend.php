@@ -22,16 +22,15 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Story 60.4 — LE PREMIER BACKEND RÉEL : le serveur de fichiers historique,
+ * LE PREMIER BACKEND RÉEL : le serveur de fichiers historique,
  * derrière la ligne de contrat.
  *
  * Rien ici n'est neuf. Le jeu canonique d'entrées, la séquence de pose, la
  * séquence de révocation data-safe, la lecture de l'état effectif viennent tous
- * du provisionnement 34.1 et n'ont pas été réécrits : la valeur de cette story
+ * du provisionnement des lecteurs réseau et n'ont pas été réécrits : la valeur
  * est dans la RETENUE. Ce qui change, c'est qui les appelle et ce qu'ils
  * rendent — un état PAR NŒUD, en vocabulaire de plan, au lieu d'un booléen.
  *
- * ---------------------------------------------------------------------------
  * **LA CONVENTION DE PRÉCÉDENCE, TENUE ICI POUR LA PREMIÈRE FOIS.**
  *
  * Un nœud, une entrée de rapport, plusieurs gestes (créer, purger, poser N
@@ -48,7 +47,7 @@ use Illuminate\Support\Facades\Cache;
  * l'orchestrateur qui, au-dessus, dit « engagé, pas achevé » quand il enfile la
  * réconciliation.
  *
- * **`non_exprimable` EST produit ici depuis la story 62.4.** La phrase inverse a
+ * **`non_exprimable` EST produit ici.** La phrase inverse a
  * figuré à cette place tant que les octrois étaient binaires ; elle est devenue
  * FAUSSE le jour où ils sont devenus combinables, et une garantie périmée dans un
  * docblock est pire qu'une garantie absente. Deux cas, tous deux des limites de
@@ -69,7 +68,6 @@ use Illuminate\Support\Facades\Cache;
  * deux CÔTE À CÔTE, précisément parce que les écraser l'un sur l'autre est la
  * simplification la plus tentante du dépôt.
  *
- * ---------------------------------------------------------------------------
  * **L'IDEMPOTENCE EST DEVENUE VRAIE, ET C'EST LE SEUL CHANGEMENT DE COMPORTEMENT.**
  *
  * La séquence historique purgeait puis reposait TOUJOURS, y compris sur un
@@ -81,9 +79,9 @@ use Illuminate\Support\Facades\Cache;
  *
  * **La limite de lecture est celle d'hier, volontairement.** On lit l'état du
  * répertoire de TÊTE, pas une descente récursive. C'est la limite assumée de
- * l'audit de dérive depuis l'Epic 34, elle suffit à détecter une dérive de
- * contrat, et l'élargir en passant aurait fait de cette story une story de
- * performance sans mesure. Corollaire honnête : une dérive introduite en
+ * l'audit de dérive : elle suffit à détecter une dérive de contrat, et l'élargir
+ * en passant aurait été un chantier de performance sans mesure. Corollaire
+ * honnête : une dérive introduite en
  * profondeur (sur un seul sous-dossier) n'est pas vue, et le nœud est déclaré
  * conforme. La reconvergence forcée reste disponible.
  *
@@ -96,7 +94,7 @@ use Illuminate\Support\Facades\Cache;
 final class PosixFileBackend implements FileBackend
 {
     /**
-     * Verrou de passage, repris du provisionnement 34.1 — et pour la même raison :
+     * Verrou de passage, repris du provisionnement — et pour la même raison :
      * la mémoire cache par défaut ne verrouille pas entre processus, il faut le
      * magasin fichier. Il protège désormais AUSSI deux traitements enfilés qui se
      * croiseraient.
@@ -126,14 +124,14 @@ final class PosixFileBackend implements FileBackend
     private const STRUCTURAL_NAMED = ['domain\040admins', 'domain admins'];
 
     /**
-     * Story 62.5 — la forme CANONIQUE d'un couloir d'accès dérivé, telle qu'elle se
+     * La forme CANONIQUE d'un couloir d'accès dérivé, telle qu'elle se
      * relit.
      *
      * Elle est ici, et surtout PAS dans la table de reprojection {@see verbsOf()} :
      * un couloir n'est pas un verbe, aucune observation ne sait le dire
      * ({@see \App\Services\Filesystem\Backend\ObservedGrant} valide contre le
      * vocabulaire fermé du plan), et l'ajouter à la table percerait la ligne que la
-     * story 62.4 a fermée à dessein. Un couloir se FILTRE, il ne se traduit pas.
+     * A fermée à dessein. Un couloir se FILTRE, il ne se traduit pas.
      */
     private const TRAVERSAL_MODE = '--x';
 
@@ -150,10 +148,6 @@ final class PosixFileBackend implements FileBackend
     {
         return FileBackendName::Posix;
     }
-
-    // =========================================================================
-    // provision
-    // =========================================================================
 
     public function provision(FilePlan $plan): ReconciliationReport
     {
@@ -188,7 +182,7 @@ final class PosixFileBackend implements FileBackend
             );
         }
 
-        // Story 62.5 — les COULOIRS d'accès dérivés de ce nœud, calculés par le
+        // Les COULOIRS d'accès dérivés de ce nœud, calculés par le
         // planificateur et par lui seul. La relecture appelle le MÊME calcul : deux
         // dérivations qui divergeraient donneraient soit une repose à chaque
         // passage, soit une dérive que personne ne verrait.
@@ -246,7 +240,7 @@ final class PosixFileBackend implements FileBackend
         };
 
         if ($compiled->isDifferentiated()) {
-            // Story 62.4 — dossiers et fichiers n'attendent pas la même chose : on
+            // Dossiers et fichiers n'attendent pas la même chose : on
             // pose en DEUX passages ciblés. Un passage unique aurait forcément
             // accordé un verbe de trop d'un côté ou de l'autre.
             foreach ($compiled->acls as $acl) {
@@ -261,7 +255,7 @@ final class PosixFileBackend implements FileBackend
             }
         }
 
-        // Story 62.5 — LES COULOIRS, POSÉS EN DERNIER ET SUR LA TÊTE SEULE.
+        // LES COULOIRS, POSÉS EN DERNIER ET SUR LA TÊTE SEULE.
         //
         // En dernier parce que la purge et les poses de nœud viennent d'écrire tout
         // le reste ; sur la tête seule parce qu'un couloir est un attribut de CE
@@ -332,7 +326,7 @@ final class PosixFileBackend implements FileBackend
      * soit posée — ou, l'ayant posée, se serait vu la reposer à chaque passage :
      * dans les deux cas l'idempotence promise par le contrat aurait été fausse.
      *
-     * **Story 62.5 — les COULOIRS aussi, et pour exactement la même raison.** Ils
+     * **les COULOIRS aussi, et pour exactement la même raison.** Ils
      * sont dans l'état de tête relu ; les omettre de l'ensemble comparé aurait fait
      * relire « dérivé » un nœud parfaitement conforme, donc reposer à chaque
      * passage. Et la réciproque tient toute seule : un couloir devenu caduc — l'octroi
@@ -370,16 +364,12 @@ final class PosixFileBackend implements FileBackend
         return false;
     }
 
-    // =========================================================================
-    // deprovision
-    // =========================================================================
-
     /**
      * Révoque les droits et sort la structure de l'espace exposé — SANS DÉTRUIRE
      * DE DONNÉES.
      *
      * C'est l'obligation que le contrat décrivait sans que personne ne la tienne :
-     * elle est tenue ici. La séquence est celle de l'Epic 34, à l'identique :
+     * elle est tenue ici. La séquence est celle du provisionnement, à l'identique :
      *  1. purge des droits étendus (retire tous les octrois) ;
      *  2. resserrage du mode de base (sinon la purge laisse « les autres » entrer
      *     par la permission de base) ;
@@ -469,7 +459,7 @@ final class PosixFileBackend implements FileBackend
             return 'la cible d\'archivage est refusée par la garde du serveur de fichiers.';
         }
 
-        // La corbeille est celle de la ZONE du plan (story 60.5) : un arbre de
+        // La corbeille est celle de la ZONE du plan : un arbre de
         // classe ne s'archive jamais dans l'espace exposé des répertoires réseau.
         $trash = $this->executor->makeTrashRoot($this->guard->trashRoot($plan->anchor));
         if (! $trash->ok) {
@@ -483,10 +473,6 @@ final class PosixFileBackend implements FileBackend
 
         return null;
     }
-
-    // =========================================================================
-    // inspect
-    // =========================================================================
 
     /**
      * RELIT l'état, un nœud après l'autre, racine comprise, et le REPROJETTE en
@@ -509,7 +495,7 @@ final class PosixFileBackend implements FileBackend
      * L'asymétrie est voulue, et c'est elle qui rend la suspension observable.
      *
      * **Le plafond n'est pas regardé** (`plafondObserve = false` partout) : SE5 ne
-     * pilote pas les plafonds de zone, la story qui le ferait est suspendue. Dette
+     * pilote pas les plafonds de zone, et ce branchement est suspendu. Dette
      * datée et visible, pas limite de modèle.
      */
     public function inspect(FilePlan $plan): InspectionReport
@@ -553,7 +539,7 @@ final class PosixFileBackend implements FileBackend
         $unmapped = 0;
         $restricted = self::readsAsRestricted($read->output);
 
-        // Story 62.5 — les couloirs ATTENDUS ici, par le MÊME planificateur que la
+        // Les couloirs ATTENDUS ici, par le MÊME planificateur que la
         // pose. Ils ne sont PAS des octrois observés : le plan n'attend rien de ces
         // sujets sur ce nœud, et les compter en ferait des « entrées en trop » à
         // chaque comparaison — un bruit de dérive perpétuel sur chaque instance.
@@ -651,7 +637,7 @@ final class PosixFileBackend implements FileBackend
      * Le sujet de plan d'une entrée relue, ou `null` si rien de connu ne lui
      * correspond.
      *
-     * Extrait de la boucle de relecture par la story 62.5 : elle a désormais DEUX
+     * Extrait de la boucle de relecture : elle a désormais DEUX
      * endroits qui doivent traduire un qualifier (l'octroi observé, le couloir
      * attendu), et deux traductions qui divergeraient feraient qu'une même entrée
      * serait reconnue d'un côté et comptée en écart de l'autre.
@@ -666,7 +652,7 @@ final class PosixFileBackend implements FileBackend
     }
 
     /**
-     * Story 62.5 — la phrase d'un COULOIR ATTENDU QUI MANQUE, en vocabulaire de
+     * La phrase d'un COULOIR ATTENDU QUI MANQUE, en vocabulaire de
      * plan.
      *
      * Elle ne dit ni mode, ni bit, ni commande : elle dit qu'un passage manque, vers
@@ -702,7 +688,7 @@ final class PosixFileBackend implements FileBackend
     }
 
     /**
-     * Story 62.4 — LES VERBES qu'un mode relu représente, ou `null` si ce mode ne
+     * LES VERBES qu'un mode relu représente, ou `null` si ce mode ne
      * se réduit à aucune combinaison honnête.
      *
      * **La table est FERMÉE, et courte, parce que la lecture est celle du
@@ -728,7 +714,7 @@ final class PosixFileBackend implements FileBackend
      * relecture fine du contenu demanderait une descente récursive que ce backend
      * ne fait pas, par la même décision qu'en 60.4.
      *
-     * **Story 62.5 — la table N'A PAS BOUGÉ, et c'est un choix.** Les couloirs
+     * **la table N'A PAS BOUGÉ, et c'est un choix.** Les couloirs
      * d'accès dérivés produisent une forme d'entrée que cette table rend `null`,
      * donc « écart ». La tentation était d'y ajouter une ligne ; elle est refusée :
      * un couloir n'exprime AUCUN verbe, et le déclarer comme tel ferait remonter en
@@ -739,19 +725,19 @@ final class PosixFileBackend implements FileBackend
      * **Sur une instance en place, aucun bruit** : les recettes migrées ne portent
      * que « lire » seul et les quatre verbes, deux lignes de la table qui se
      * relisent EXACTEMENT. Les combinaisons approchées n'entrent qu'avec l'écran de
-     * composition (62.6), qui saura griser ce qu'un backend ne sait pas rendre.
+     * composition, qui saura griser ce qu'un backend ne sait pas rendre.
      *
-     * **Review 62.4 #3 — la reprojection peut SUR-DÉCLARER « éditer ».** Un dossier
+     * **La reprojection peut SUR-DÉCLARER « éditer ».** Un dossier
      * en `rwx` avec restriction se relit `{lire, editer, creer}`, que l'octroi ait
      * demandé `editer` ou non : le mode d'un dossier ne dit rien du droit d'écrire
      * dans les fichiers qu'il contient, et cette relecture porte sur le répertoire
      * de TÊTE. Un octroi `{lire, creer}` sera donc rapporté en écart avec « éditer
      * observé en trop » — écart réel (le désir n'est pas rendu tel quel), mais dont
      * le DÉTAIL nomme un droit qui n'existe sur aucun fichier. Conséquence pour
-     * 62.6, qui misera sur l'écran de dérive : ne pas présenter ce détail comme la
+     * qui misera sur l'écran de dérive : ne pas présenter ce détail comme la
      * preuve qu'un droit a été accordé. Aucune recette d'aujourd'hui n'atteint ce
-     * cas — les deux combinaisons produites par la migration Q3 ferment la boucle
-     * exactement.
+     * cas : les deux seules combinaisons produites par les recettes migrées se
+     * relisent exactement.
      *
      * @return list<string>|null
      */
@@ -767,17 +753,13 @@ final class PosixFileBackend implements FileBackend
         };
     }
 
-    // =========================================================================
-    // quota
-    // =========================================================================
-
     /**
      * DÉCLINE, honnêtement, et n'ouvre aucune infrastructure.
      *
      * Le système de fichiers SAIT plafonner une arborescence — le mécanisme de
-     * quota de projet existe, il a été monté et vérifié en ouverture d'epic. S'il
-     * ne plafonne rien, c'est que SE5 ne le pilote pas : la story qui le
-     * brancherait est SUSPENDUE. C'est donc une dette de notre code, temporaire, et
+     * quota de projet existe, il a été monté et vérifié. S'il ne plafonne rien,
+     * c'est que SE5 ne le pilote pas : ce branchement est SUSPENDU. C'est donc une
+     * dette de notre code, temporaire, et
      * l'affichage doit la GRISER — pas une limite du modèle, qui serait permanente
      * et se masquerait. Écrire « non supporté » ici mettrait une contre-vérité
      * dans le code.
@@ -799,10 +781,6 @@ final class PosixFileBackend implements FileBackend
             ),
         );
     }
-
-    // =========================================================================
-    // Effondrement et utilitaires
-    // =========================================================================
 
     /**
      * Effondre les états des gestes d'un nœud en UN état, selon la convention de
@@ -860,7 +838,7 @@ final class PosixFileBackend implements FileBackend
     }
 
     /**
-     * Story 60.5 — l'emplacement RÉEL de la racine du plan, ou `null` si la garde
+     * L'emplacement RÉEL de la racine du plan, ou `null` si la garde
      * la refuse. C'est là que l'exploitant ira lire les droits à la main, et c'est
      * ce chemin que la liste blanche du système doit couvrir.
      */

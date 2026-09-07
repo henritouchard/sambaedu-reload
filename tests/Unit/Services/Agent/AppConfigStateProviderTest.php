@@ -26,16 +26,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `AppConfigStateProvider` — Story 27.4 (AC1, AC2, AC7).
+ * Tests Unit `AppConfigStateProvider`.
  *
- * Type figé `app_config` (aggregate par app_kind / scope MACHINE — correctif
- * post-review #1 : `policies.json` machine-wide, résolu PAR PARC niveaux 1-4,
- * `$user = null`). Lecture seule des policies résolues (`app_customizations` via
+ * Type figé `app_config` (aggregate par app_kind / scope MACHINE : `policies.json`
+ * est machine-wide, donc résolu PAR PARC sur les niveaux 1-4, avec `$user = null`). Lecture seule des policies résolues (`app_customizations` via
  * `AppCustomizationService`), un item par `app_kind`, payload concret (jamais un
  * id de scope/customization), résolution par parc (niveaux 3-4), précédence WG
- * logique > physique (impédance 4.8 ↔ Epic 27), tiebreak multi-parcs logiques
- * documenté (review #2), pas de float. Lecture PG-pure : aucun AD/APCu/Cache
- * (NFR7).
+ * logique > physique (impédance ↔), tiebreak multi-parcs logiques
+ * documenté, pas de float. Lecture PG-pure : aucun AD/APCu/Cache.
  */
 class AppConfigStateProviderTest extends TestCase
 {
@@ -57,7 +55,7 @@ class AppConfigStateProviderTest extends TestCase
     {
         parent::setUp();
         // Projection Postgres-pure : aucune synchro AD à déclencher (host sans
-        // LDAP, iso NFR7). Pattern aligné sur ShortcutsStateProviderTest (27.1).
+        // LDAP). Pattern aligné sur ShortcutsStateProviderTest.
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
@@ -104,7 +102,7 @@ class AppConfigStateProviderTest extends TestCase
         self::assertSame(AppCustomization::TYPE_APP_CONFIG, $this->provider->type());
         self::assertSame('app_config', $this->provider->type());
         self::assertSame(ResourceSemantics::Aggregate, $this->provider->semantics());
-        // Portée MACHINE (correctif post-review #1) : `policies.json` machine-wide
+        // Portée MACHINE : `policies.json` est machine-wide
         // (admin-write, écrit par le service SYSTEM), résolu PAR PARC.
         self::assertSame(StateScope::Machine, $this->provider->scope());
     }
@@ -151,8 +149,8 @@ class AppConfigStateProviderTest extends TestCase
         // Niveau 6 (User) : impose une autre clé ABSENTE du template (afin que
         // sa non-résolution soit observable — `ExtensionSettings` étant déjà
         // dans le template, elle resterait toujours présente). En portée
-        // MACHINE (`$user = null`, review #1), ce niveau N'EST PAS résolu — le
-        // par-user de Firefox = le profil (Mécanisme B / roaming, hors 27.4).
+        // MACHINE (`$user = null`), ce niveau N'EST PAS résolu — le
+        // par-user de Firefox = le profil (Mécanisme B / roaming, hors).
         AppCustomization::factory()->firefox()->forScope($this->user)->create([
             'policies_json' => ['policies' => ['OfferToSaveLogins' => false]],
         ]);
@@ -181,7 +179,7 @@ class AppConfigStateProviderTest extends TestCase
         $candidates = $this->provider->itemsFor($this->ctx());
         $firefox = $candidates->first(fn (StateCandidate $c) => $c->payload['app_kind'] === 'firefox');
 
-        // Le WG LOGIQUE (parc) gagne (impédance 4.8 ↔ Epic 27, inversion 27.3 :
+        // Le WG LOGIQUE (parc) gagne (impédance ↔, inversion :
         // logique > physique). Le candidat est étiqueté maille LogicalGroup.
         self::assertSame(
             'https://parc.local/',
@@ -193,7 +191,7 @@ class AppConfigStateProviderTest extends TestCase
     #[Test]
     public function two_logical_parcs_tiebreak_smallest_id_wins_second_ignored(): void
     {
-        // Limite connue (review #2, statu quo assumé) : un poste dans DEUX parcs
+        // Limite connue et assumée : un poste dans DEUX parcs
         // logiques avec des policies Firefox différentes. `policies.json` est
         // machine-wide (un fichier par install) → on ne peut pas porter deux
         // configs concurrentes : le WG gagnant (plus petit id — déterminisme) est
@@ -225,7 +223,7 @@ class AppConfigStateProviderTest extends TestCase
     #[Test]
     public function candidate_updated_at_is_non_null_when_a_rule_exists_else_null(): void
     {
-        // latestUpdatedAt (review #6) : null si aucune règle (template/auto only),
+        // latestUpdatedAt : null si aucune règle (template/auto only),
         // non-null dès qu'une règle de parc/défaut étab existe pour CETTE app.
         $bareCandidates = $this->provider->itemsFor(TargetContext::for(
             Workstation::factory()->create(),
@@ -260,7 +258,7 @@ class AppConfigStateProviderTest extends TestCase
     #[Test]
     public function poste_without_any_workstation_group_emits_broadcast_candidates(): void
     {
-        // Poste sans aucun WG : pas de niveau 4 (la chaîne 4.8 saute le WG) →
+        // Poste sans aucun WG : pas de niveau 4 (la chaîne saute le WG) →
         // candidats étiquetés Broadcast, toujours un par app.
         $bareWs = Workstation::factory()->create();
         $candidates = $this->provider->itemsFor(TargetContext::for($bareWs, $this->user));

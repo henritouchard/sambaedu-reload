@@ -16,7 +16,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests unitaires — Story 7.2 (AC2).
+ * Tests unitaires.
  *
  * Vérifie que `UserSyncService::ensurePermissionsExist` ne détruit plus la
  * configuration des rôles à chaque sync AD.

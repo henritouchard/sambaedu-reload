@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Schema;
  * SYSTEM comme `uac_enabled` / `windows_store_disabled`). Conséquence assumée :
  * la désactivation devient machine-wide (cohérent avec la gestion par parc).
  *
- * Map SYMÉTRIQUE conservée {on:1, off:0} (27.12). IDEMPOTENT : updateOrInsert de
+ * Map SYMÉTRIQUE conservée {on:1, off:0}. IDEMPOTENT : updateOrInsert de
  * la projection (capability_id, os, mechanism).
  *
  * Règle générale : toute clé `…\Software\Policies\*` doit être projetée en HKLM

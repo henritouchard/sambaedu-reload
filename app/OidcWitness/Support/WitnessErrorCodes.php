@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\OidcWitness\Support;
 
 /**
- * Story 55.3 — Codes d'erreur INTERNES de l'app-témoin.
+ * Codes d'erreur INTERNES de l'app-témoin.
  *
  * Calque du catalogue du fournisseur (`OidcErrorCodes`), mais **côté client** :
  * ces codes ne décrivent jamais ce que le fournisseur a refusé, seulement ce que
@@ -19,7 +19,7 @@ namespace App\OidcWitness\Support;
  */
 final class WitnessErrorCodes
 {
-    // ── Provisioning / transport ──────────────────────────────────────────
+    // Provisioning / transport
 
     /** Aucun fichier de credentials : `php artisan oidc:witness:enable`. */
     public const NOT_PROVISIONED = 'witness.not_provisioned';
@@ -39,7 +39,7 @@ final class WitnessErrorCodes
     /** Réponse du token endpoint sans `id_token`. */
     public const ID_TOKEN_MISSING = 'witness.id_token_missing';
 
-    // ── État du témoin entre `start` et `callback` ────────────────────────
+    // État du témoin entre `start` et `callback`
 
     /** Cookie d'état absent, illisible, hors délai, ou démesuré. */
     public const STATE_MISSING = 'witness.state_missing';
@@ -50,7 +50,7 @@ final class WitnessErrorCodes
     /** Retour sans `code` (ou porteur d'une `error` OAuth du fournisseur). */
     public const CODE_MISSING = 'witness.code_missing';
 
-    // ── Vérification de l'id_token (la suite d'attaque NFR1) ──────────────
+    // Vérification de l'id_token
 
     public const ID_TOKEN_MALFORMED = 'witness.id_token.malformed';
 

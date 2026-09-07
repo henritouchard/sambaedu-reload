@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 5.1c — Table K/V pour les réglages système globaux.
+ * Table K/V pour les réglages système globaux.
  *
  * Permet de persister des paramètres applicatifs (JSON) sans multiplier les
  * colonnes spécialisées sur d'autres tables. Première utilisation : onglet
@@ -31,8 +31,8 @@ return new class extends Migration
             $table->string('key', 191)->unique();
 
             // JSONB sur Postgres, JSON sur SQLite — le cast 'array' du modèle
-            // normalise des deux côtés (cf. pattern delegation_history 7.1 +
-            // add_quota_snapshot 5.1b).
+            // normalise des deux côtés (cf. pattern delegation_history +
+            // add_quota_snapshot).
             if (DB::getDriverName() === 'pgsql') {
                 $table->jsonb('value')->nullable();
             } else {

@@ -19,13 +19,13 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.3 / AC4.2, AC5.3 — Garde-fou cross-feature : le pipeline
- * déploiement (Story 15.2) ne consulte JAMAIS LdapRecord en chemin
+ * Garde-fou cross-feature : le pipeline
+ * déploiement ne consulte JAMAIS LdapRecord en chemin
  * critique.
  *
  * Stratégie de test : on bind dans le container Laravel un mock strict
  * pour `LdapRecord\Connection` et pour chaque `App\LdapModels\*`. Le mock
- * est configuré `shouldReceive(...)->never()` : si la chaîne 15.2 (resolver,
+ * est configuré `shouldReceive(...)->never()` : si la chaîne (resolver,
  * controllers, generator) appelle un de ces mocks, l'assertion finale
  * `Mockery::close()` (via PHPUnit attributes) échoue.
  *
@@ -80,7 +80,7 @@ class EloquentFirstChemiCritiqueTest extends TestCase
     /**
      * Bind dans le container Laravel un mock Mockery strict
      * `shouldReceive(...)->never()` pour `LdapRecord\Connection` et pour
-     * chaque modèle `App\LdapModels\*`. Si la chaîne 15.2 instancie un
+     * chaque modèle `App\LdapModels\*`. Si la chaîne instancie l'un
      * de ces mocks (via `app(...)` ou `make(...)`), l'assertion
      * `Mockery::close()` lèvera un `Mockery\Exception\InvalidCountException`.
      */
@@ -158,7 +158,7 @@ class EloquentFirstChemiCritiqueTest extends TestCase
         self::assertTrue($packages->contains('libreoffice'));
     }
 
-    // Story 27.5 — les endpoints HTTP `/wpkg/hosts.xml` et `/wpkg/profiles.xml`
+    // Les endpoints HTTP `/wpkg/hosts.xml` et `/wpkg/profiles.xml`
     // ont été SUPPRIMÉS (livraison WPKG native : profil par-hôte déposé localement
     // par l'agent). Les tests `hosts_xml_endpoint_serves_xml_without_touching_ad`
     // et `profiles_xml_endpoint_serves_xml_without_touching_ad` ont été retirés en

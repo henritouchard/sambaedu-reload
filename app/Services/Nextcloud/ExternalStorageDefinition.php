@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 /**
- * Story 61.1 — LA DÉFINITION D'UN MONTAGE, ET SA SIGNATURE CANONIQUE.
+ * LA DÉFINITION D'UN MONTAGE, ET SA SIGNATURE CANONIQUE.
  *
  * Deux montages, et deux seulement (l'arbre de classe attendra que la zone
  * correspondante soit exportée en SMB) :
@@ -16,13 +16,13 @@ namespace App\Services\Nextcloud;
  *    substitution NATIVE de `files_external` : c'est Nextcloud qui la résout, pas
  *    SE5 — un montage par utilisateur serait un plan de permissions déguisé.
  *
- * **Le mécanisme d'authentification est le cœur de la story.**
+ * **Le mécanisme d'authentification est le cœur du montage.**
  * `password::sessioncredentials` relaie à Samba les identifiants de l'utilisateur
  * connecté : Nextcloud devient un client SMB parmi d'autres, et c'est l'ACL POSIX
  * du kernel qui tranche. Un compte de service SMB global aurait fait de chaque
  * visiteur web ce compte-là — l'autorité d'accès aurait été DUPLIQUÉE, et
  * l'applicabilité Nextcloud serait devenue le vrai filtre. C'est précisément ce
- * que le garde-fou d'epic « une seule autorité d'écriture par zone » interdit.
+ * que le garde-fou « une seule autorité d'écriture par zone » interdit.
  *
  * **Applicable à TOUS, et c'est délibéré.** Restreindre par groupe Nextcloud
  * serait un second plan de permissions sur la même zone, et exigerait des groupes
@@ -37,17 +37,15 @@ namespace App\Services\Nextcloud;
  * renommer « Partages » en « Fichiers partagés » côté SE5 doit MODIFIER le montage
  * existant, pas en créer un second.
  *
- * ---------------------------------------------------------------------------
  * **ON COMPARE LA VALEUR RELUE, JAMAIS CELLE ENVOYÉE** (mesuré sur `nc-spike`,
  * 2026-08-08). Nextcloud NORMALISE ce qu'on lui envoie : `mountPoint`
  * `ZZ_probe_smb` est relu `/ZZ_probe_smb` (slash initial ajouté), et une valeur
  * booléenne envoyée en formulaire est relue coercée. Comparer l'envoyé au relu
  * produirait une divergence PERMANENTE : chaque passage « mettrait à jour » le
- * même montage, l'idempotence de l'AC3 serait fausse — et tous les tests
+ * même montage, et l'idempotence serait fausse — tandis que tous les tests
  * `Http::fake()` resteraient verts, puisqu'ils rejoueraient ce qu'on envoie.
  * D'où {@see self::normalizeMountPoint()}, et des doubles de test qui rejouent
  * les corps RÉELS, slash compris.
- * ---------------------------------------------------------------------------
  */
 final class ExternalStorageDefinition
 {
@@ -57,7 +55,7 @@ final class ExternalStorageDefinition
     /** « Identifiants de connexion, enregistrés en session ». */
     public const AUTH_SESSION_CREDENTIALS = 'password::sessioncredentials';
 
-    /** Partage SMB des répertoires réseau gérés (Epic 34). */
+    /** Partage SMB des répertoires réseau gérés. */
     public const SHARE_PARTAGES = 'partages';
 
     /** Partage SMB des répertoires personnels (cible du lecteur K:). */
@@ -100,12 +98,12 @@ final class ExternalStorageDefinition
     ) {}
 
     /**
-     * Les deux montages canoniques de la story, pour un serveur de fichiers donné.
+     * Les deux montages canoniques, pour un serveur de fichiers donné.
      *
      * **Le montage « Documents » ne dépend PAS de la capacité `home`.** Décision de
-     * la story : `home` gouverne ce que l'AGENT monte sur le poste (la lettre K:),
-     * pas le chemin d'accès WEB. Les capacités sont indépendantes depuis la
-     * décision Henri du 2026-07-17 — les conditionner l'une à l'autre réintroduirait
+     * cadrage : `home` gouverne ce que l'AGENT monte sur le poste (la lettre K:),
+     * pas le chemin d'accès WEB. Les capacités sont indépendantes : les
+     * conditionner l'une à l'autre réintroduirait
      * par la porte de service le mode exclusif qui a été explicitement refusé, et
      * priverait d'accès web à ses propres documents une instance qui a justement
      * choisi de ne plus monter de lecteur.
@@ -226,7 +224,7 @@ final class ExternalStorageDefinition
      *     résultat voulu : côté Nextcloud, une applicabilité absente signifie
      *     « tous les utilisateurs ». On les déclare quand même ICI parce que
      *     l'intention doit être lisible et testable dans le code — c'est
-     *     l'invariant de la story (aucune restriction côté Nextcloud, Samba
+     *     l'invariant (aucune restriction côté Nextcloud, Samba
      *     tranche seul), pas un oubli.
      *  2. **`mountOptions` n'est PAS déclaré.** L'instance applique son défaut
      *     (`enable_sharing: false`, mesuré). Le déclarer ferait gouverner à SE5

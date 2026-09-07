@@ -8,36 +8,36 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 55.1 — SE5 FOURNISSEUR OIDC : registre des clients confidentiels,
+ * SE5 FOURNISSEUR OIDC : registre des clients confidentiels,
  * codes d'autorisation à usage unique, access tokens opaques.
  *
  * Trois tables, une seule migration (une migration par feature) :
  *
- *  - `oidc_clients` : le registre des clients confidentiels (FR19 amorce).
+ *  - `oidc_clients` : le registre des clients confidentiels.
  *    Adossé au registre d'extensions (`extension_id` nullable) — c'est le point
- *    d'accroche du provisioning automatique de l'Epic 56.
+ *    d'accroche du provisioning automatique des extensions.
  *  - `oidc_authorization_codes` : codes à usage unique, TTL 60 s, porteurs du
  *    challenge PKCE et du `nonce` entre `/oidc/authorize` et `/oidc/token`.
  *  - `oidc_access_tokens` : jetons OPAQUES (TTL 600 s). Posés ici pour que la
  *    réponse du token endpoint soit conforme (RFC 6749 : la réponse DOIT
- *    contenir un `access_token`) sans re-plomberie en 55.2, où `/userinfo` les
+ *  contenir un `access_token`) sans re-plomberie, où `/userinfo` les
  *    consommera.
  *
- * DÉCISIONS DE CONCEPTION (figées par la story) :
+ * DÉCISIONS DE CONCEPTION :
  *
  *  1. **AUCUN secret en clair, nulle part.** `client_secret_hash`, `code_hash`
  *     et `token_hash` stockent un sha256 ; le clair n'existe qu'en mémoire, le
- *     temps d'une réponse HTTP (ou d'un affichage artisan unique). NFR3.
+ *     temps d'une réponse HTTP (ou d'un affichage artisan unique).
  *  2. **`redirect_uris` = liste STRICTE** (JSON), correspondance EXACTE de
  *     chaîne — ni préfixe, ni wildcard, ni normalisation. Une comparaison lâche
  *     transformerait SE5 en open-redirector et ferait fuiter les codes.
  *  3. **`extension_id` nullable + `extension_key` dénormalisée** : l'app-témoin
- *     (55.3) et les clients de test précèdent le canal d'installation (Epic 56).
+ *  et les clients de test précèdent le canal d'installation.
  *     La clé dénormalisée SURVIT à la suppression de l'extension — patron du
- *     journal d'audit 54.2 : une trace qui s'efface avec son objet ne trace rien.
+ *  journal d'audit : une trace qui s'efface avec son objet ne trace rien.
  *  4. **Révocation = `enabled = false`**, jamais une suppression : les codes et
  *     tokens déjà émis restent inutilisables (toute résolution passe par
- *     `findEnabledByClientId()`) ET l'historique du registre est conservé.
+ *  `findEnabledByClientId()`) ET l'historique du registre est conservé.
  *  5. **Aucun `enum()` DB** (convention maison) ; `code_challenge_method` est
  *     une `string` — seul `S256` est accepté applicativement, la colonne existe
  *     pour l'audit et une éventuelle extension future.
@@ -49,7 +49,7 @@ use Illuminate\Support\Facades\Schema;
  *     techniques : un code et un token ne se « modifient » pas, ils se
  *     consomment. Patron des tables techniques du projet.
  *
- * ⚠️ ISOLEMENT (NFR14) : ces trois tables sont un PROLONGEMENT du registre
+ * ⚠️ ISOLEMENT : ces trois tables sont un PROLONGEMENT du registre
  * d'extensions — la sync amont (controlHub) ne doit JAMAIS les toucher. Prouvé
  * et verrouillé par `tests/Feature/ControlHub/UpstreamSyncExtensionsBoundaryTest.php`.
  *
@@ -68,7 +68,7 @@ return new class extends Migration
             Schema::create('oidc_clients', function (Blueprint $table) use ($driver): void {
                 $table->id();
 
-                // Lien vers le registre d'extensions. NULLABLE (décision #3) et
+                // Lien vers le registre d'extensions. NULLABLE et
                 // `nullOnDelete` : la suppression d'une extension ne doit pas
                 // faire disparaître la trace de son client — `extension_key`
                 // reste renseignée.
@@ -80,25 +80,26 @@ return new class extends Migration
                 // Clé dénormalisée, survit à la suppression de l'extension.
                 $table->string('extension_key', 64)->default('');
 
-                // Libellé opérateur (affiché par l'UI admin de l'Epic 56).
+                // Libellé opérateur, affiché par l'UI admin.
                 $table->string('name');
 
                 // Identifiant public opaque du client (32 hex CSPRNG).
                 // Nom d'index COURT (PostgreSQL tronque à 63 caractères).
                 $table->string('client_id', 64)->unique('oidc_clients_client_id_unique');
 
-                // sha256 du secret — JAMAIS le clair (décision #1). `$hidden`
+                // sha256 du secret — JAMAIS le clair. `$hidden`
                 // sur le modèle : ne sort ni en JSON, ni en log, ni en UI.
                 $table->string('client_secret_hash', 64);
 
-                // Liste stricte des URI de redirection (décision #2).
+                // Liste stricte des URI de redirection : correspondance EXACTE,
+                // ni préfixe, ni wildcard.
                 if ($driver === 'pgsql') {
                     $table->jsonb('redirect_uris');
                 } else {
                     $table->json('redirect_uris');
                 }
 
-                // Révocation = désactivation (décision #4).
+                // Révocation = désactivation.
                 $table->boolean('enabled')->default(true);
 
                 if ($driver === 'pgsql') {
@@ -138,14 +139,14 @@ return new class extends Migration
                 // (obligation RFC 6749 §4.1.3).
                 $table->string('redirect_uri', 512);
 
-                // PKCE — challenge base64url (décision #5).
+                // PKCE — challenge base64url.
                 $table->string('code_challenge', 128);
                 $table->string('code_challenge_method', 16)->default('S256');
 
                 // Relayé dans l'id_token s'il est non vide (anti-rejeu client).
                 $table->string('nonce', 255)->default('');
 
-                // Stocké pour 55.2/56 ; 55.1 ne l'interprète pas au-delà de
+                // Stocké pour plus tard ; ne l'interprète pas au-delà de
                 // « contient openid ».
                 $table->string('scope', 255)->default('openid');
 

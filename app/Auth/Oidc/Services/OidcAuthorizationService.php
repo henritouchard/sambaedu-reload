@@ -13,7 +13,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 55.1 — Le cœur du flux **Authorization Code + PKCE**.
+ * Le cœur du flux **Authorization Code + PKCE**.
  *
  * Deux moments, deux méthodes :
  *
@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\DB;
  *  - {@see self::consumeCode()} — échange le code au token endpoint, à usage
  *    unique, sous verrou.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  ORDRE DE VALIDATION — RÈGLE OAUTH CARDINALE
  *  On ne redirige JAMAIS vers une `redirect_uri` non validée. Sinon SE5
  *  devient un open-redirector, et le message de refus lui-même part chez
@@ -31,15 +30,14 @@ use Illuminate\Support\Facades\DB;
  *
  *   1. `client_id` présent, connu, ACTIF …………… sinon refus LOCAL (page 400)
  *   2. `redirect_uri` présente et STRICTEMENT déclarée … sinon refus LOCAL
- *   3. — à partir d'ici seulement, les refus sont REDIRIGEABLES —
+ *  3. — à partir d'ici seulement, les refus sont REDIRIGEABLES
  *      `response_type` = `code`, `scope` contenant `openid`,
  *      `code_challenge` présent et `code_challenge_method` = `S256`
  *   4. bornes de longueur des paramètres PERSISTÉS
- *   5. (55.2) tous les scopes demandés appartiennent au catalogue FERMÉ
+ *  5. tous les scopes demandés appartiennent au catalogue FERMÉ
  *   6. nominal : émission du code
- * ══════════════════════════════════════════════════════════════════════════
  *
- * **PKCE est OBLIGATOIRE, en S256 seul** (NFR1). Ni son absence ni la méthode
+ * **PKCE est OBLIGATOIRE, en S256 seul.** Ni son absence ni la méthode
  * `plain` ne sont tolérées : sans PKCE, un code intercepté (historique de
  * navigation, log de proxy, redirection détournée) suffit à obtenir un
  * id_token. `plain` transmet le secret en clair à l'autorisation et ne protège
@@ -88,7 +86,7 @@ class OidcAuthorizationService
         $redirectUri = $this->str($params, 'redirect_uri');
         $state = $this->str($params, 'state');
 
-        // ── 1. Le client ─────────────────────────────────────────────────
+        // 1. Le client
         // Un `client_id` inconnu et un client révoqué produisent le MÊME refus
         // visible (page 400 sobre) : distinguer les deux dirait à un tiers
         // quels clients existent. Le journal, lui, les sépare.
@@ -106,7 +104,7 @@ class OidcAuthorizationService
             return $this->localRefusal(OidcErrorCodes::CLIENT_DISABLED, $clientId, $redirectUri, $state);
         }
 
-        // ── 2. L'URI de redirection ──────────────────────────────────────
+        // 2. L'URI de redirection
         if ($redirectUri === '') {
             return $this->localRefusal(OidcErrorCodes::REDIRECT_URI_MISSING, $clientId, $redirectUri, $state);
         }
@@ -115,7 +113,7 @@ class OidcAuthorizationService
             return $this->localRefusal(OidcErrorCodes::REDIRECT_URI_MISMATCH, $clientId, $redirectUri, $state);
         }
 
-        // ── 3. À partir d'ici, les refus sont redirigeables ──────────────
+        // 3. À partir d'ici, les refus sont redirigeables
         $responseType = $this->str($params, 'response_type');
         if ($responseType !== 'code') {
             return $this->redirectRefusal(
@@ -163,13 +161,13 @@ class OidcAuthorizationService
             );
         }
 
-        // ── 4. Bornes de longueur des paramètres PERSISTÉS ───────────────
+        // 4. Bornes de longueur des paramètres PERSISTÉS
         // `nonce`, `scope` et `code_challenge` viennent de la query string et
         // sont écrits tels quels dans `oidc_authorization_codes` (VARCHAR 255 /
         // 255 / 128). PostgreSQL REFUSE un dépassement (`value too long for type
         // character varying`) : sans borne applicative, une valeur trop longue
         // ne produit pas un refus OAuth normalisé mais une `QueryException` →
-        // 500 générique, hors du journal `oidc` (contradiction avec FR20).
+        // 500 générique, hors du journal `oidc`.
         // SQLite, driver de toute la suite de tests, n'applique AUCUNE limite de
         // longueur (affinité de type) — la divergence est donc structurellement
         // invisible aux tests tant que la borne n'est pas dans le code.
@@ -188,12 +186,12 @@ class OidcAuthorizationService
             );
         }
 
-        // ── 5. Story 55.2 — l'ensemble des scopes est FERMÉ ──────────────
+        // 5. — l'ensemble des scopes est FERMÉ
         // Un scope hors catalogue est REFUSÉ, jamais ignoré : l'ignorer
         // reviendrait à laisser un client croire qu'il a obtenu quelque chose
         // dont personne ne connaît la sémantique, et à préparer le jour où ce
         // nom serait attribué à un vrai scope — qui deviendrait alors accordé
-        // rétroactivement. Fail-closed (NFR1).
+        // rétroactivement. Fail-closed.
         //
         // ⚠️ Ce contrôle vient APRÈS la borne de longueur, délibérément : un
         // `scope` démesuré est d'abord un paramètre hors gabarit

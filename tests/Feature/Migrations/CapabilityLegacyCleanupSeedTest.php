@@ -16,11 +16,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.3 (AC2) — seed de la capacité de gating `legacy_hooks_cleanup` +
+ * Seed de la capacité de gating `legacy_hooks_cleanup` +
  * intégration provider sur données RÉELLES (la migration de seed est jouée par
  * `RefreshDatabase`).
  *
- * FICHIER DÉDIÉ (piège #12 de 36.1) : ne touche NI
+ * FICHIER DÉDIÉ : ne touche NI
  * `CapabilitiesSchemaAndSeedTest.php` NI les tests des autres mécanismes.
  */
 class CapabilityLegacyCleanupSeedTest extends TestCase
@@ -83,7 +83,7 @@ class CapabilityLegacyCleanupSeedTest extends TestCase
         return (new LegacyCleanupCapabilityProvider())->itemsFor(TargetContext::for($this->ws, null));
     }
 
-    // ── Seed : options / défaut / warning / projection ────────────────────
+    // Seed : options / défaut / warning / projection
 
     #[Test]
     public function seed_creates_the_capability_with_the_two_value_toggle_and_warning(): void
@@ -98,7 +98,7 @@ class CapabilityLegacyCleanupSeedTest extends TestCase
         self::assertLessThanOrEqual(255, mb_strlen((string) $cap->description), 'varchar PG 255 (piège 22001, invisible en SQLite)');
         self::assertSame(['windows'], json_decode((string) $cap->applies_to_os, true));
 
-        // Toggle à DEUX valeurs — PAS de `off` (piège #7 : nettoyage one-way,
+        // Toggle à DEUX valeurs — PAS de `off` (nettoyage one-way,
         // la règle des maps registre symétriques ne s'applique pas ici).
         $options = json_decode((string) $cap->options, true);
         $values = array_column($options, 'value');
@@ -118,7 +118,7 @@ class CapabilityLegacyCleanupSeedTest extends TestCase
         self::assertSame(['on' => 'vanilla'], $spec['mozilla'], 'map valeur → traitement : `on` = vanilla (Q5-a), `unmanaged` ABSENT (sentinelle), pas de `off`');
     }
 
-    // ── Intégration provider sur le seed réel ─────────────────────────────
+    // Intégration provider sur le seed réel
 
     #[Test]
     public function default_unmanaged_emits_nothing_for_a_workstation(): void
@@ -136,7 +136,7 @@ class CapabilityLegacyCleanupSeedTest extends TestCase
         self::assertSame(['mozilla' => 'vanilla'], $items->first()->payload);
     }
 
-    // ── Idempotence / réversibilité de la migration ───────────────────────
+    // Idempotence / réversibilité de la migration
 
     #[Test]
     public function migration_is_idempotent_and_reversible(): void

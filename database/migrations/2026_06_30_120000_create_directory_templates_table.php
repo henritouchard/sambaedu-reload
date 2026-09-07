@@ -7,13 +7,13 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 34.3 — catalogue des « templates de répertoire » (recettes d'échange).
+ * Catalogue des « templates de répertoire » (recettes d'échange).
  *
- * Une ligne = une RECETTE figée paramétrable (Q3, arbitrage Henri 2026-06-30 :
- * option B = table + seeder PROD, PAS d'enum en dur, PAS de CRUD admin). La
+ * Une ligne = une RECETTE figée paramétrable : table + seeder PROD, PAS d'enum
+ * en dur, PAS de CRUD admin. La
  * variabilité métier est dans les CIBLES sélectionnées à la matérialisation, pas
  * dans la structure de la recette ; l'admin CONSOMME ces recettes, il ne les
- * édite pas (l'édition future = 34.x, option C).
+ * édite pas.
  *
  *  - `key`         : clé stable (snake_case) consommée par l'UI + le service.
  *  - `label`       : libellé FR affiché dans le sélecteur.

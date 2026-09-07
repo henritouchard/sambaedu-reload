@@ -11,7 +11,6 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 16.7 — AC4.1.
  *
  * Tests Unit pour `ApplicationActionError` : 7 cas + invalides + bitmask.
  * Vérifie strictement la parité bytes avec les constantes legacy

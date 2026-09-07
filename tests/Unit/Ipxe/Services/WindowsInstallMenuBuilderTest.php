@@ -11,7 +11,6 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC3.2.
  *
  * Tests unitaires de {@see WindowsInstallMenuBuilder} — payload variables
  * Blade rendu par {@see \App\Ipxe\Services\IpxeMenuRenderer}.

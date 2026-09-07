@@ -104,7 +104,7 @@
             @endif
         </div>
 
-        {{-- Avertissement 56.1, texte REPRIS TEL QUEL (jamais une variante). --}}
+        {{-- Avertissement, texte REPRIS TEL QUEL (jamais une variante). --}}
         @unless ($isOfficial)
             <div class="alert alert-warning mt-3" data-testid="app-operation-warning">
                 <i class="fa-solid fa-triangle-exclamation"></i>
@@ -123,7 +123,7 @@
         @endunless
     </x-molecules.modal.section>
 
-    {{-- ── Scopes demandés = ce que l'installation ACCORDERA (56.4) ─────── --}}
+    {{-- ── Scopes demandés = ce que l'installation ACCORDERA ─────── --}}
     @if ($operation !== 'remove')
         <x-molecules.modal.section title="Autorisations demandées">
             @if (count($scopes) === 0)

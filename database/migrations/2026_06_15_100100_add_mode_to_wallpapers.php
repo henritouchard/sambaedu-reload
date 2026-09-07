@@ -7,16 +7,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.1 — AC4 (mode strict|default par règle, décision n° 2).
- *
  * Greffe la colonne `mode` sur `wallpapers` : le toggle strict/default est
- * exposé DÈS 27.1 sur les 3 types (shortcuts + wallpaper + overlay) — on traite
+ * exposé DÈS sur les 3 types (shortcuts + wallpaper + overlay) — on traite
  * la dette en une fois, l'UI ne ment pas. Le `WallpaperStateProvider` lit
  * désormais le mode de SA table au lieu d'un mode constant.
  *
  *  - `mode` VARCHAR(16) **NULL** — null = non déclaré, défaut résolu côté
  *    provider. ⚠️ Non-régression : le défaut historique du wallpaper était
- *    `StateMode::Default` (constante `WallpaperStateProvider::mode()`) ; le
+ *  `StateMode::Default` (constante `WallpaperStateProvider::mode()`) ; le
  *    provider continue de retourner `default` quand la colonne est null (le
  *    comportement actuel est préservé tant qu'aucune règle n'est mise en
  *    `strict` via l'UI).

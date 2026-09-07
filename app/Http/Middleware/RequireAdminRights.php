@@ -14,7 +14,7 @@ use App\Services\AuthenticationService;
  * Middleware pour vérifier que l'utilisateur a les droits d'administration
  * (alias `sambaedu.admin`).
  *
- * **Story 49.2 — Postgres-only.** Le middleware consommait le DTO LDAP posé par
+ * **Postgres-only.** Le middleware consommait le DTO LDAP posé par
  * le guard (`memberOf`, groupes de droits AD) : une décision d'autorisation
  * prise sur des données annuaire, à chaque requête. Il consomme désormais le
  * User ELOQUENT posé par `SambaEduAuthGuard` et décide sur les données
@@ -37,7 +37,7 @@ class RequireAdminRights
     public function handle(Request $request, Closure $next): Response
     {
         // Récupérer l'utilisateur depuis la requête (déjà vérifié par SambaEduAuth,
-        // qui y pose un User Eloquent depuis la Story 49.2).
+        // qui y pose un User Eloquent).
         $user = $request->attributes->get('sambaedu_user');
         $login = $request->attributes->get('sambaedu_login');
 
@@ -78,9 +78,9 @@ class RequireAdminRights
     /**
      * Vérifie si l'utilisateur a les droits d'administration.
      *
-     * Trois voies, dans l'ordre — mêmes motifs qu'avant 49.2, données Postgres :
+     * Trois voies, dans l'ordre — mêmes motifs qu'avant, données Postgres :
      *
-     *  1. **Rôle Spatie `super-admin`** (clause AJOUTÉE par 49.2, et VITALE).
+     *  1. **Rôle Spatie `super-admin`** (clause AJOUTÉE par, et VITALE).
      *     Le compte protégé `admin` figure dans
      *     {@see \App\Constants\Ldap\MainGroups::SYSTEM_ACCOUNTS} : il est donc
      *     FILTRÉ du balayage AD→SQL et n'a **aucune appartenance** en base.
@@ -92,15 +92,15 @@ class RequireAdminRights
      *  3. Motifs historiques sur les **noms de groupes** de l'utilisateur
      *     (`user_groups`, miroir SQL des `memberOf`).
      *
-     * Écart assumé et documenté (D4) : un compte « Domain Admins uniquement »,
+     * Écart assumé : un compte « Domain Admins uniquement »,
      * hors des trois groupes principaux, n'est jamais synchronisé — il ne passera
      * donc plus par ce middleware sans délégation Spatie. Population théorique
      * (les vrais administrateurs passent par `admin` ou par une délégation),
      * consignée au runbook QA.
      */
     /**
-     * Story 49.2 (correction de review) — résolution SQL bornée aux comptes
-     * NON fédérés, symétrique de `SambaEduAuthGuard::findNativeUser()` (D2).
+     * Résolution SQL bornée aux comptes
+     * NON fédérés, symétrique de `SambaEduAuthGuard::findNativeUser()`.
      *
      * Ces deux voies de secours ne sont pas atteintes en usage normal : toutes
      * les routes `sambaedu.admin` sont imbriquées sous `sambaedu.auth`, qui pose

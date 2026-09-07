@@ -10,14 +10,12 @@ use App\Ipxe\Services\IpxeService;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.7 — AC3.1 / D1 / D4.
- *
  * Controller fin — delègue 100% à {@see IpxeService::handleClonezillaMenu()}.
  *
  * **Sert** : `GET|POST /ipxe/clonezilla-menu` (port natif
  * `sambaedu/ipxe/clonezilla_menu.php`).
  *
- * Pattern iso 3.2 `IpxeMaintenanceController` (DO-6).
+ * Pattern iso `IpxeMaintenanceController` (DO-6).
  */
 class IpxeClonezillaMenuController extends Controller
 {

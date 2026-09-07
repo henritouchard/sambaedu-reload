@@ -7,7 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Story 5.1c — Réglages système clé/valeur (JSON).
+ * Réglages système clé/valeur (JSON).
  *
  * Stocke des paramètres applicatifs globaux en pattern K/V JSON : réglages de
  * corbeille, emplacements des fichiers, politique de fichiers… Conçu pour être
@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * ⚠️ **Un réglage stocké ici n'est PAS un réglage appliqué.** Cette table a porté
  * une grille de plafonds par défaut que personne ne lisait, pendant que l'écran
- * répondait « Réglages enregistrés » ; la story 63.4 l'a supprimée et a déplacé le
+ * répondait « Réglages enregistrés » ; la l'a supprimée et a déplacé le
  * plafond là où la résolution le lit ({@see \App\Models\QuotaRule}). Avant d'ajouter
  * une clé ici, vérifier qu'elle a un LECTEUR.
  *

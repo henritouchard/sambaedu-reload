@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ReleaseCreationService` — Story 25.1 (AC1, AC5).
+ * Tests Unit `ReleaseCreationService`.
  *
  * L'AC « impossible de publier un artefact incohérent » : chaque refus
  * (fichier absent, hash divergent, version dupliquée, formats invalides)
@@ -84,7 +84,7 @@ class ReleaseCreationServiceTest extends TestCase
         self::assertSame($before, AgentRelease::query()->count(), 'Refus = AUCUNE ligne écrite.');
     }
 
-    // ── AC1 — création vérifiée ──────────────────────────────────────────
+    // — création vérifiée
 
     #[Test]
     public function create_verifies_the_hash_against_the_real_file_and_persists(): void
@@ -166,7 +166,7 @@ class ReleaseCreationServiceTest extends TestCase
     #[Test]
     public function filename_diverging_from_version_is_rejected(): void
     {
-        // Review 25.1 #2 : le manifest annoncerait une version divergente
+        // Le manifest annoncerait une version divergente
         // du binaire — refus AVANT hash/disque (aucune écriture).
         $this->putBinary('sambaedu-agent-9.9.9.exe', 'other');
 
@@ -181,7 +181,7 @@ class ReleaseCreationServiceTest extends TestCase
     #[Test]
     public function reusing_a_published_filename_for_another_version_is_rejected(): void
     {
-        // Filename dérivé de la version (review 25.1 #2) : réutiliser le
+        // Filename dérivé de la version : réutiliser le
         // filename d'une release publiée pour une autre version = mismatch,
         // refusé avant même le lookup des doublons.
         $hash = $this->putBinary('sambaedu-agent-2.1.2.exe');
@@ -197,8 +197,8 @@ class ReleaseCreationServiceTest extends TestCase
     #[Test]
     public function malformed_inputs_are_rejected_before_any_disk_access(): void
     {
-        // Domaines fermés validés EN CODE (piège n° 9 : SQLite n'applique
-        // pas les varchar) — chaque forme invalide a sa raison machine.
+        // Domaines fermés validés EN CODE (SQLite n'applique pas les varchar)
+        // — chaque forme invalide a sa raison machine.
         $this->assertRejected('invalid_version', fn () => $this->service->create(
             'v 2.1.2', // espace interdit
             'sambaedu-agent-2.1.2.exe',
@@ -226,7 +226,7 @@ class ReleaseCreationServiceTest extends TestCase
         ));
     }
 
-    // ── Décision n° 5 — promote ──────────────────────────────────────────
+    // Décision n° 5 — promote
 
     #[Test]
     public function promote_moves_the_stable_pointer(): void
@@ -251,7 +251,7 @@ class ReleaseCreationServiceTest extends TestCase
         $this->service->promote('9.9.9');
     }
 
-    // ── Décision n° 6 — target (ring) ────────────────────────────────────
+    // Décision n° 6 — target (ring)
 
     #[Test]
     public function target_creates_then_updates_a_single_ring_per_group(): void
@@ -274,7 +274,7 @@ class ReleaseCreationServiceTest extends TestCase
     #[Test]
     public function retargeting_the_same_version_refreshes_updated_at(): void
     {
-        // La récence (décision n° 4) : un re-ciblage — même de la MÊME
+        // La récence tranche : un re-ciblage — même de la MÊME
         // version (cas rollback) — doit regagner la précédence.
         $hash = $this->putBinary('sambaedu-agent-2.1.2.exe');
         $this->service->create('2.1.2', 'sambaedu-agent-2.1.2.exe', $hash);

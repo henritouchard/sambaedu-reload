@@ -33,7 +33,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.12 (AC1, AC5, AC7) — schéma des tables capacités + seed du lot iso +
+ * Schéma des tables capacités + seed du lot iso +
  * DROP de l'ancien modèle registre.
  *
  * RefreshDatabase joue TOUTES les migrations : création des 3 tables capabilities,
@@ -44,7 +44,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
 {
     use RefreshDatabase;
 
-    // ── AC1 — Schéma ──────────────────────────────────────────────────────
+    // — Schéma
 
     #[Test]
     public function the_three_capability_tables_exist_with_expected_columns(): void
@@ -89,7 +89,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function assignment_value_is_nullable(): void
     {
-        // value null = repli sur le défaut (D4). Doit être accepté par le schéma.
+        // value null = repli sur le défaut. Doit être accepté par le schéma.
         $cap = Capability::factory()->create();
 
         DB::table('capability_assignments')->insert([
@@ -104,7 +104,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertDatabaseCount('capability_assignments', 1);
     }
 
-    // ── AC7 — DROP de l'ancien modèle registre ────────────────────────────
+    // — DROP de l'ancien modèle registre
 
     #[Test]
     public function the_old_registry_tables_are_dropped(): void
@@ -113,7 +113,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertFalse(Schema::hasTable('registry_setting_assignables'), 'registry_setting_assignables doit être droppée');
     }
 
-    // ── AC5 — Seed du lot iso + migration des 3 existants ─────────────────
+    // — Seed du lot iso + migration des 3 existants
 
     #[Test]
     public function the_iso_lot_is_seeded_with_windows_registry_projections(): void
@@ -149,7 +149,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function uac_default_is_on_safe_posture_with_warning(): void
     {
-        // Migration des 3 existants : EnableLUA défaut on (UAC ACTIVÉ, 27.3ter D6)
+        // Migration des 3 existants : EnableLUA défaut on (UAC ACTIVÉ)
         // + warning conservé.
         $uac = Capability::query()->where('key', 'uac_enabled')->firstOrFail();
 
@@ -181,13 +181,13 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function on_off_capabilities_emit_a_real_value_for_off(): void
     {
-        // Décision Henri (review #2) : si l'UI propose « off », « off » doit faire
-        // une VRAIE action, PAS être un no-op silencieux. Story 35.1 : une vraie
+        // Si l'UI propose « off », « off » doit faire une VRAIE action, PAS
+        // être un no-op silencieux : une vraie
         // action = écrire une vraie valeur registre OU supprimer la clé via le
         // marqueur `{"$ensure": "absent"}` (l'agent supprime la valeur nommée,
         // Windows reprend son défaut). Chaque clé porte donc une map avec `on`
         // ET un `off` valide (valeur réelle ou marqueur).
-        // Story 35.2 : invariant ÉTENDU au mécanisme `registry_list` — un off
+        // Invariant ÉTENDU au mécanisme `registry_list` — un off
         // valide y est une LISTE (y compris VIDE : purge des entrées numérotées,
         // le « off » honnête d'une liste) ; le marqueur $ensure n'y existe pas.
         $withOff = [
@@ -200,18 +200,18 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'show_hidden_files',
             'uac_enabled',
             'windows_store_disabled',
-            // Retrofit 35.1 : les deux ex-« Géré » on-only exposent désormais un
+            // Retrofit : les deux ex-« Géré » on-only exposent désormais un
             // vrai off par suppression.
             'llmnr_disabled',
             'windows_updates_managed',
-            // Lot 35.2 : off combiné = flag supprimé (registry, marqueur) +
+            // Lot : off combiné = flag supprimé (registry, marqueur) +
             // entrées purgées (registry_list, liste vide).
             'blocked_executables',
-            // Story 35.5 : la visionneuse expose un vrai off par suppression des 4
+            // La visionneuse expose un vrai off par suppression des 4
             // clés (marqueur $ensure). Seedée INACTIVE (gate) mais la DONNÉE porte
             // bien un off honnête — l'invariant s'applique à la spec, pas à is_active.
             'photo_viewer_restored',
-            // Story 36.3 : lot Explorateur, tout opt-in, maps symétriques à
+            // Lot Explorateur, tout opt-in, maps symétriques à
             // valeurs réelles (aucun $ensure dans ce lot).
             'explorer_sidebar_pins_hidden',
             'quick_access_hidden',
@@ -260,7 +260,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function retrofitted_on_only_capabilities_expose_a_real_off_by_deletion(): void
     {
-        // Story 35.1 (remplace `windows_update_is_managed_only_no_misleading_off`) :
+        // (remplace `windows_update_is_managed_only_no_misleading_off`) :
         // les deux capacités on-only du parc sont RETROFITTÉES — leurs `options`
         // abandonnent le régime « Géré » on-only et exposent un vrai « off » dont
         // CHAQUE clé porte le marqueur de suppression. Le libellé n'est PAS
@@ -296,7 +296,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function retrofit_migration_is_idempotent_and_reversible(): void
     {
-        // Story 35.1 (AC4) : la migration de retrofit est REJOUABLE sans effet de
+        // La migration de retrofit est REJOUABLE sans effet de
         // bord (update ciblé par `key`) et son down() restaure l'état on-only
         // d'origine des seeds.
         $migration = require database_path('migrations/2026_07_03_100000_retrofit_ensure_off_on_only_capabilities.php');
@@ -317,7 +317,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame($before, $snapshot(), 'up() rejoué = aucun effet de bord');
 
         // down() restaure on-only : plus de off (ni option ni entrée de map),
-        // LIBELLÉ d'origine compris (review 35.1 #3 : les libellés font partie
+        // LIBELLÉ d'origine compris (les libellés font partie
         // de l'état restauré, pas seulement les valeurs).
         $migration->down();
         foreach (['llmnr_disabled', 'windows_updates_managed'] as $key) {
@@ -342,7 +342,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function llmnr_disabled_off_emits_ensure_absent_items_via_the_real_provider(): void
     {
-        // Story 35.1 (AC4) — chaîne seed→retrofit→spec→expand→payload prouvée sur
+        // Chaîne seed→retrofit→spec→expand→payload prouvée sur
         // données RÉELLES : un override de parc `off` sur `llmnr_disabled` fait
         // émettre par le provider machine 2 items de SUPPRESSION HKLM 4 clés
         // (EnableMulticast + NodeType), en plus du Broadcast `on` (écritures).
@@ -424,16 +424,16 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame(0, $key['value']['off'], 'off = Store accessible (défaut Windows)');
     }
 
-    // ── Story 35.4 — armement `registry_editing_disabled` par override UserGroup ─
+    // ── — armement `registry_editing_disabled` par override UserGroup ─
 
     #[Test]
     public function registry_editing_disabled_override_on_a_user_group_compiles_for_members_only(): void
     {
-        // Story 35.4 (AC5) — sur DONNÉES RÉELLES seedées (lot CD95) : un override `on`
+        // Sur DONNÉES RÉELLES seedées (lot CD95) : un override `on`
         // de `registry_editing_disabled` posé sur un UserGroup fait émettre, pour un
         // user MEMBRE, l'item session `DisableRegistryTools = 1` (HKCU, Policies\System)
         // via le StateCompiler INTOUCHÉ ; pour un user NON-membre, AUCUN item pour cette
-        // clé — le Broadcast `unmanaged` n'émet rien (piège #8).
+        // clé — le Broadcast `unmanaged` n'émet rien.
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
@@ -488,13 +488,13 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function the_excluded_legacy_settings_are_not_seeded(): void
     {
-        // Piège n°6/n°7 : verbe `delete` (telemetry-off) + substitution %SE4FS%
+        // Verbe `delete` (telemetry-off) + substitution %SE4FS%
         // (point-and-print) EXCLUS du lot MVP.
         self::assertNull(Capability::query()->where('key', 'windows_telemetry_off')->first());
         self::assertNull(Capability::query()->where('key', 'printers_point_and_print')->first());
     }
 
-    // ── Story 35.2 (AC5) — lot registry_list : pix + blocked_executables ──
+    // — lot registry_list : pix + blocked_executables
 
     #[Test]
     public function pix_extension_forced_is_seeded_with_one_registry_list_projection(): void
@@ -539,7 +539,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame('Activé', $cap->optionLabel('on'));
         self::assertSame('Désactivé (valeurs supprimées)', $cap->optionLabel('off'));
 
-        // Bi-projection D5 : DEUX lignes windows, mécanismes distincts.
+        // Bi-projection : DEUX lignes windows, mécanismes distincts.
         $projections = $cap->projections()->where('os', 'windows')->orderBy('mechanism')->get();
         self::assertCount(2, $projections, 'bi-projection = 2 lignes (registry + registry_list)');
         self::assertSame(
@@ -549,7 +549,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
 
         // Flag registry : tree restrictions `…\CurrentVersion\Policies` (en
         // LECTURE SEULE pour l'utilisateur standard sur poste joint au domaine
-        // — appliqué par SYSTEM via writer:system, Story 35.7), on=1,
+        // appliqué par SYSTEM via writer:system), on=1,
         // off=marqueur de suppression 35.1.
         $flag = $projections[0]->spec['keys'][0];
         self::assertSame('HKCU', $flag['hive']);
@@ -578,12 +578,12 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         $migration = require database_path('migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php');
 
-        // Story 43.2 — le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
-        // pose `spec.refresh` sur `blocked_executables` APRÈS ce seed. Story
-        // 35.7 — le retrofit `2026_07_13_100000` (POSTÉRIEUR aussi) pose
+        // Le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
+        // pose `spec.refresh` sur `blocked_executables` APRÈS ce seed. Le
+        // retrofit `2026_07_13_100000` (POSTÉRIEUR aussi) pose
         // `writer: 'system'` sur ses clés HKCU et retire le hint. Rejouer
         // CE seed isolément (hors séquence complète) réécrit sa `spec` ENTIÈRE
-        // (piège n°7 : littéraux `keys` dupliqués, colonne remplacée) et efface
+        // (littéraux `keys` dupliqués, colonne remplacée) et efface
         // donc `refresh` ET `writer` — orthogonaux à ce que CETTE migration
         // possède. On normalise les DEUX HORS du snapshot pour tester
         // l'idempotence des champs QUE ce seed possède (`keys` nues), pas ceux
@@ -626,7 +626,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame($before, $snapshot(), 'up() après down() = état identique');
     }
 
-    // ── Story 35.2 (AC3) — garde-fou d'authoring scalaire↔conteneur ────────
+    // — garde-fou d'authoring scalaire↔conteneur
 
     /**
      * Projections windows du catalogue RÉELLEMENT seedé, au format du garde-fou.
@@ -654,7 +654,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function no_container_is_targeted_by_both_registry_scalar_and_registry_list(): void
     {
-        // AC3 — invariant sur les DONNÉES RÉELLEMENT SEEDÉES (authoring
+        // Invariant sur les DONNÉES RÉELLEMENT SEEDÉES (authoring
         // catalogue-first) : aucune clé-conteneur registry_list n'est aussi la
         // clé d'un scalaire registry ; entry_type et values bien formés partout.
         $guard = new CapabilitySpecCollisionGuard;
@@ -669,7 +669,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function blocked_executables_parent_flag_vs_child_container_is_not_a_collision(): void
     {
-        // AC3 (cas nominal, piège n°11) : le flag `…\Policies\Explorer` (name
+        // Le flag `…\Policies\Explorer` (name
         // DisallowRun) et le conteneur `…\Policies\Explorer\DisallowRun` sont
         // des paths PARENT/ENFANT distincts → PAS une collision. Prouvé sur le
         // sous-ensemble blocked_executables seul.
@@ -686,7 +686,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_refuses_a_scalar_key_equal_to_a_list_container(): void
     {
-        // AC3 (cas refusé) : un scalaire dont le path ÉGALE le conteneur (peu
+        // Un scalaire dont le path ÉGALE le conteneur (peu
         // importe son name — il vivrait DANS la clé possédée par l'agent) est
         // une violation explicite nommant les deux capacités et le conteneur.
         $guard = new CapabilitySpecCollisionGuard;
@@ -752,7 +752,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_refuses_a_list_container_with_empty_hive_or_path(): void
     {
-        // Review 35.2 #3 : un conteneur à hive/path vide passait l'authoring
+        // Un conteneur à hive/path vide passait l'authoring
         // puis devenait {status: error} silencieux côté agent → refus AMONT.
         $guard = new CapabilitySpecCollisionGuard;
 
@@ -772,12 +772,12 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertStringContainsString('hive et path sont requis', $violations[1]);
     }
 
-    // ── Story 35.3 (AC1) — borné des ruches par mécanisme ───────────────────
+    // — borné des ruches par mécanisme
 
     #[Test]
     public function guard_refuses_a_registry_list_container_on_hku(): void
     {
-        // HKU HORS scope registry_list (piège n°11) : violation NOMMÉE — le
+        // HKU HORS scope registry_list : violation NOMMÉE — le
         // fan-out d'une réconciliation de clé-conteneur multiplierait la
         // propriété de clé par N ruches sans consommateur connu.
         $guard = new CapabilitySpecCollisionGuard;
@@ -826,7 +826,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertStringContainsString("ruche 'HKX' hors borné (HKLM|HKCU|HKU)", $violations[0]);
     }
 
-    // ── Story 43.2 (AC2) — règle 5/5b : spec.refresh (vocabulaire + HKCU) ───
+    // — règle 5/5b : spec.refresh (vocabulaire + HKCU)
 
     #[Test]
     public function guard_accepts_the_three_canonical_refresh_values_on_both_mechanisms(): void
@@ -858,7 +858,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_passes_a_spec_without_refresh_unchanged(): void
     {
-        // Champ optionnel ABSENT (AC1) : aucune des deux sous-règles ne s'applique.
+        // Champ optionnel ABSENT : aucune des deux sous-règles ne s'applique.
         $guard = new CapabilitySpecCollisionGuard;
 
         $violations = $guard->violations([
@@ -877,7 +877,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_refuses_refresh_values_outside_the_closed_vocabulary(): void
     {
-        // AC2 : non-string, variante de casse (SHELL_NOTIFY), valeur 41.x
+        // Non-string, variante de casse (SHELL_NOTIFY), valeur 41.x
         // anticipée (logoff) — toutes REFUSÉES, sur les DEUX mécanismes.
         $guard = new CapabilitySpecCollisionGuard;
 
@@ -939,10 +939,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function hku_hkcu_twin_keys_on_the_same_path_name_are_not_a_violation(): void
     {
-        // Piège n°5 (cas nominal numlock) : la double-clé HKU + HKCU sur le
+        // Cas nominal numlock : la double-clé HKU + HKCU sur le
         // MÊME {path|name} est VOULUE (SYSTEM couvre .DEFAULT/ruches, le
         // compagnon la session courante) — le guard ne la refuse PAS. Prouvé
-        // sur la projection numlock RÉELLEMENT seedée (post-retrofit 35.3).
+        // sur la projection numlock RÉELLEMENT seedée (post-retrofit).
         $guard = new CapabilitySpecCollisionGuard;
 
         $numlock = array_values(array_filter(
@@ -953,7 +953,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame([], $guard->violations($numlock), 'double-clé HKU+HKCU = non-violation');
     }
 
-    // ── Story 35.3 (AC3) — retrofit numlock : la clé HKU de l'écran de logon ─
+    // ── — retrofit numlock : la clé HKU de l'écran de logon ─
 
     #[Test]
     public function numlock_on_logon_gains_the_hku_logon_screen_key(): void
@@ -961,7 +961,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // La spec passe à 2 clés : la clé HKCU du palier A INCHANGÉE + la clé
         // HKU miroir SYMÉTRIQUE (même path/name/type, même map on/off — si
         // l'UI propose off, off écrit une vraie valeur). Le path ne porte
-        // JAMAIS `.DEFAULT\` (piège n°6 : le handler agent préfixe).
+        // JAMAIS `.DEFAULT\` : le handler agent préfixe.
         $cap = Capability::query()->where('key', 'numlock_on_logon')->firstOrFail();
 
         $keys = $cap->projections()
@@ -988,7 +988,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function numlock_hku_retrofit_migration_is_idempotent_and_reversible(): void
     {
-        // Iso pattern retrofit_migration_is_idempotent_and_reversible (35.1) :
+        // Iso pattern retrofit_migration_is_idempotent_and_reversible :
         // up() rejoué = aucun effet de bord ; down() restaure la spec 1-clé
         // (HKCU seule) du palier A ; up() après down() = état identique.
         $migration = require database_path('migrations/2026_07_03_160000_retrofit_numlock_hku_logon_screen.php');
@@ -1017,7 +1017,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function numlock_on_logon_emits_hku_machine_and_hkcu_session_items_via_the_real_providers(): void
     {
-        // Story 35.3 (AC3) — chaîne seed→retrofit→spec→expand→payload sur
+        // Chaîne seed→retrofit→spec→expand→payload sur
         // données RÉELLES : effectif `on` ⇒ le provider Machine émet l'item
         // HKU ('2') ET le provider User émet l'item HKCU ('2') ; effectif
         // `off` (override de parc) ⇒ '0' des deux côtés.
@@ -1035,7 +1035,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 fn ($c): bool => (int) $c->sourceId === (int) $cap->id,
             )->values();
 
-            // ── Effectif `on` (broadcast, aucun override) ───────────────────
+            // Effectif `on` (broadcast, aucun override)
             $machineOn = $forCap((new RegistryMachineCapabilityProvider)->itemsFor($ctx()));
             self::assertCount(1, $machineOn, 'le provider Machine émet la clé HKU');
             self::assertSame('HKU', $machineOn[0]->payload['hive']);
@@ -1046,7 +1046,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame('HKCU', $userOn[0]->payload['hive']);
             self::assertSame('2', $userOn[0]->payload['value']);
 
-            // ── Effectif `off` (override de parc) : '0' des deux côtés ──────
+            // Effectif `off` (override de parc) : '0' des deux côtés
             DB::table('capability_assignments')->insert([
                 'capability_id' => $cap->id,
                 'assignable_type' => WorkstationGroup::class,
@@ -1073,7 +1073,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         }
     }
 
-    // ── Story 35.2 (AC5) — intégration providers sur données RÉELLES ───────
+    // — intégration providers sur données RÉELLES
 
     #[Test]
     public function pix_extension_forced_on_emits_two_hklm_registry_list_items(): void
@@ -1126,7 +1126,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function blocked_executables_bi_projection_emits_flag_and_list_per_provider(): void
     {
-        // Bi-projection D5 sur données réelles : chaque provider User ne voit
+        // Bi-projection sur données réelles : chaque provider User ne voit
         // que SA projection — `on` ⇒ 1 flag (registry) + 1 conteneur 5 entrées
         // (registry_list) ; `off` ⇒ 1 item ensure:absent + 1 conteneur values:[] ;
         // `unmanaged` (défaut) ⇒ rien.
@@ -1162,11 +1162,11 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 'updated_at' => now(),
             ]);
 
-            // Story 35.7 (D7, AC5 — intégration provider sur DONNÉES RÉELLES) :
+            // Intégration provider sur DONNÉES RÉELLES :
             // le retrofit `2026_07_13_100000` re-route les DEUX projections vers
             // l'exécutant SYSTEM — `writer: "system"` recopié en DERNIÈRE clé de
             // CHAQUE payload Session (flag ET conteneur), et le hint `refresh`
-            // du retrofit 43.2 est RETIRÉ (exclusion mutuelle, piège n°6).
+            // du retrofit est RETIRÉ (exclusion mutuelle).
             $flagItems = $forCap($registryProvider->itemsFor($ctx()));
             self::assertCount(1, $flagItems, 'le provider registry ne voit que le flag');
             self::assertSame(['hive', 'path', 'name', 'type', 'value', 'writer'], array_keys($flagItems[0]->payload));
@@ -1211,9 +1211,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 35.5 — Capacité `photo_viewer_restored` (seed sans évolution moteur)
-    // ══════════════════════════════════════════════════════════════════════
+    // Capacité `photo_viewer_restored` (seed sans évolution moteur)
 
     /**
      * Commande de réenregistrement iso-GPO CD95 (Registry.xml source, à l'octet
@@ -1225,10 +1223,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function all_seeded_capability_strings_fit_their_postgres_varchar_columns(): void
     {
-        // Review 35.5 #1 — `capabilities.label/description/category` sont des
-        // varchar(255) sur Postgres ; SQLite (tests hôte) n'applique JAMAIS la
-        // longueur (mémoire projet : overflow PG 22001 invisible). Ce test
-        // structurel couvre TOUS les seeds, présents et futurs.
+        // `capabilities.label/description/category` sont des varchar(255) sur
+        // Postgres ; SQLite (tests hôte) n'applique JAMAIS la longueur, donc un
+        // overflow PG 22001 y resterait invisible. Ce test structurel couvre
+        // TOUS les seeds, présents et futurs.
         foreach (Capability::query()->get() as $cap) {
             foreach (['label', 'description', 'category'] as $col) {
                 self::assertLessThanOrEqual(
@@ -1243,7 +1241,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function photo_viewer_restored_is_seeded_iso_gpo_cd95_with_four_hkcr_keys_routed_hkcu(): void
     {
-        // AC1 — capacité + projection iso-GPO : les 4 clés HKCR routées HKCU\Software\Classes.
+        // Capacité + projection iso-GPO : les 4 clés HKCR routées HKCU\Software\Classes.
         $cap = Capability::query()->where('key', 'photo_viewer_restored')->first();
         self::assertNotNull($cap, 'capacité photo_viewer_restored seedée');
 
@@ -1270,25 +1268,25 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertStringStartsWith('Software\\Classes\\Applications\\photoviewer.dll\\', $k['path']);
         }
 
-        // #1 — open\command : name = valeur PAR DÉFAUT (''), REG_EXPAND_SZ, commande exacte.
+        // open\command : name = valeur PAR DÉFAUT (''), REG_EXPAND_SZ, commande exacte.
         self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\open\\command', $keys[0]['path']);
         self::assertSame('', $keys[0]['name'], 'open\\command écrit la valeur PAR DÉFAUT (name="")');
         self::assertSame('REG_EXPAND_SZ', $keys[0]['type']);
         self::assertSame(self::PHOTO_VIEWER_COMMAND, $keys[0]['value']['on']);
 
-        // #2 — print\command : name '', REG_EXPAND_SZ, MÊME commande (quirk print préservé).
+        // print\command : name '', REG_EXPAND_SZ, MÊME commande (quirk print préservé).
         self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\print\\command', $keys[1]['path']);
         self::assertSame('', $keys[1]['name'], 'print\\command écrit la valeur PAR DÉFAUT (name="")');
         self::assertSame('REG_EXPAND_SZ', $keys[1]['type']);
         self::assertSame(self::PHOTO_VIEWER_COMMAND, $keys[1]['value']['on'], 'quirk GPO : ImageView_Fullscreen sur print AUSSI');
 
-        // #3 — open\DropTarget : Clsid REG_SZ.
+        // open\DropTarget : Clsid REG_SZ.
         self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\open\\DropTarget', $keys[2]['path']);
         self::assertSame('Clsid', $keys[2]['name']);
         self::assertSame('REG_SZ', $keys[2]['type']);
         self::assertSame('{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}', $keys[2]['value']['on']);
 
-        // #4 — print\DropTarget : Clsid REG_SZ, GUID DISTINCT de open (source GPO fait foi).
+        // print\DropTarget : Clsid REG_SZ, GUID DISTINCT de open (source GPO fait foi).
         self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\print\\DropTarget', $keys[3]['path']);
         self::assertSame('Clsid', $keys[3]['name']);
         self::assertSame('REG_SZ', $keys[3]['type']);
@@ -1304,16 +1302,16 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names(): void
     {
-        // AC3 — gate d'honnêteté : la capacité est seedée is_active=false parce que
+        // Gate d'honnêteté : la capacité est seedée is_active=false parce que
         // l'agent actuel (parseRegistrySpec) rejette `name == ""` (valeur par défaut
         // de clé) → une capacité armée écrirait les 2 Clsid mais pas les 2 command
         // (nœud à moitié enregistré, pire que rien). Le flip is_active=true est gated
-        // par une micro-évolution agent hors story (migration d'activation postérieure).
+        // par une micro-évolution agent (migration d'activation postérieure).
         $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
 
-        // FLIP 35.2 (FAIT) : support name:"" livré/prouvé par 35.2 (agent 2.4.0)
-        // → gate levé par la migration 2026_07_03_150000 (is_active=true +
-        // description réécrite, review 35.5 #3). L'assertion balisée a basculé.
+        // Le support de name:"" est livré par l'agent 2.4.0 : le gate est levé
+        // par la migration 2026_07_03_150000 (is_active=true + description
+        // réécrite).
         self::assertTrue(
             $cap->is_active,
             'gate levé : parseRegistrySpec (agent 2.4.0) accepte name=="" — '
@@ -1369,7 +1367,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function photo_viewer_restored_seed_is_idempotent_and_reversible(): void
     {
-        // AC1 (idempotence/réversibilité) : la CHAÎNE seed (2026_07_03_130000) +
+        // La CHAÎNE seed (2026_07_03_130000) +
         // flip d'activation (2026_07_03_150000) rejouée = snapshot identique ;
         // down() du seed supprime capacité ET projection ; chaîne rejouée après
         // down() = identique. NB : le seed seul re-gate (updateOrInsert pose
@@ -1423,7 +1421,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function photo_viewer_restored_emits_session_items_via_the_real_provider_once_activated(): void
     {
-        // AC4 — chaîne seed→spec→expand→payload prouvée sur données RÉELLES (pattern
+        // Chaîne seed→spec→expand→payload prouvée sur données RÉELLES (pattern
         // llmnr_disabled_off_emits_ensure_absent_items_via_the_real_provider). On
         // SIMULE le flip post-gate (`update(is_active=true)`) pour prouver que la
         // DONNÉE est correcte de bout en bout — le gate lui-même est prouvé par
@@ -1449,7 +1447,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
 
             $userCtx = TargetContext::for($ws, null);
 
-            // ── override `on` → 4 items d'ÉCRITURE 5 clés, tous HKCU ────────────
+            // override `on` → 4 items d'ÉCRITURE 5 clés, tous HKCU
             $onItems = (new RegistryUserCapabilityProvider)
                 ->itemsFor($userCtx)
                 ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
@@ -1519,15 +1517,13 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 36.3 — Lot bibliothèque n°2 : capacités registre pures Explorateur
+    // Lot bibliothèque n°2 : capacités registre pures Explorateur
     // (zéro moteur — témoin de doctrine « capacité = donnée, coût marginal ≈ 0 »)
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function explorer_lot_is_seeded_with_expected_capabilities_and_keys(): void
     {
-        // ── 1. explorer_sidebar_pins_hidden — portée Machine (HKLM, D3) ──────
+        // 1. explorer_sidebar_pins_hidden — portée Machine (HKLM)
         $sidebar = Capability::query()->where('key', 'explorer_sidebar_pins_hidden')->firstOrFail();
         self::assertSame('unmanaged', $sidebar->default_value, 'opt-in : rien en broadcast');
         self::assertSame(['unmanaged', 'on', 'off'], $sidebar->allowedOptionValues());
@@ -1563,7 +1559,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame(['on' => 'Hide', 'off' => 'Show'], $key['value'], "clé {$i} : map symétrique, Show = défaut Windows");
         }
 
-        // ── 2. quick_access_hidden — portées mixtes HKLM+HKCU (D4) ──────────
+        // 2. quick_access_hidden — portées mixtes HKLM+HKCU
         $quickAccess = Capability::query()->where('key', 'quick_access_hidden')->firstOrFail();
         self::assertSame('unmanaged', $quickAccess->default_value);
         self::assertSame(['unmanaged', 'on', 'off'], $quickAccess->allowedOptionValues());
@@ -1598,7 +1594,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'CLSID Accueil DISTINCT du CLSID OneDrive (onedrive_hidden)',
         );
 
-        // ── 3. explorer_gallery_hidden — portée Session (HKCU), candidat ────
+        // 3. explorer_gallery_hidden — portée Session (HKCU), candidat
         $gallery = Capability::query()->where('key', 'explorer_gallery_hidden')->firstOrFail();
         self::assertSame('unmanaged', $gallery->default_value);
         self::assertSame('Masquée', $gallery->optionLabel('on'));
@@ -1646,7 +1642,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'quick_access_history_hidden',
         ];
 
-        // Story 43.2 — le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
+        // Le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
         // pose `spec.refresh` sur 3 des 4 capacités de ce lot. Rejouer CE seed
         // isolément réécrit sa `spec` ENTIÈRE et efface donc `refresh` — hors
         // scope de ce seed. On normalise `refresh` hors du snapshot (idem
@@ -1685,9 +1681,9 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function explorer_lot_keys_do_not_collide_with_any_seeded_registry_key(): void
     {
-        // AC2 — anti-collision structurel : identité normalisée `{hive|path|name}`
+        // Anti-collision structurel : identité normalisée `{hive|path|name}`
         // (iso AbstractCapabilityStateProvider::exclusiveKey) des clés `registry`
-        // scalaires du lot 36.3, UNIQUE entre elles et DISJOINTE de toutes les
+        // scalaires du lot, UNIQUE entre elles et DISJOINTE de toutes les
         // autres projections `registry`/`registry_list` du catalogue seedé.
         $lotKeys = [
             'explorer_sidebar_pins_hidden',
@@ -1734,7 +1730,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 "identité '{$identity}' : une seule capacité DU LOT ne doit la porter (trouvé : ".implode(', ', $lotCapabilities).')',
             );
 
-            // Durcissement (review 36.3 #4) : aucune capacité DU LOT ne porte
+            // Durcissement : aucune capacité DU LOT ne porte
             // DEUX FOIS la même identité `{hive|path|name}` (doublon
             // intra-capacité — invisible à `array_unique` ci-dessus). On compte
             // les occurrences BRUTES par capacité. Verrouille les futurs lots.
@@ -1774,7 +1770,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function quick_access_hidden_emits_split_machine_and_session_items_via_the_real_providers(): void
     {
-        // AC4 — chaîne seed→spec→expand→payload sur données RÉELLES (pattern
+        // Chaîne seed→spec→expand→payload sur données RÉELLES (pattern
         // numlock_on_logon_emits_hku_machine_and_hkcu_session_items_via_the_real_providers) :
         // ruches mixtes HKLM+HKCU d'une même projection, chaque provider ne voit
         // que la sienne.
@@ -1792,7 +1788,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 fn ($c): bool => (int) $c->sourceId === (int) $cap->id,
             )->values();
 
-            // ── Défaut unmanaged (sans override) : AUCUN item des 4 capacités ──
+            // Défaut unmanaged (sans override) : AUCUN item des 4 capacités
             $machineProvider = new RegistryMachineCapabilityProvider;
             $userProvider = new RegistryUserCapabilityProvider;
             foreach ([
@@ -1807,7 +1803,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 self::assertCount(0, $forOther($userProvider->itemsFor($ctx())), "{$key} : Session muette par défaut");
             }
 
-            // ── Override `on` de parc ────────────────────────────────────────
+            // Override `on` de parc
             DB::table('capability_assignments')->insert([
                 'capability_id' => $cap->id,
                 'assignable_type' => WorkstationGroup::class,
@@ -1827,7 +1823,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             $userOn = $forCap($userProvider->itemsFor($ctx()));
             self::assertCount(2, $userOn, 'Session : 2 items (LaunchTo + CLSID Accueil)');
             foreach ($userOn as $c) {
-                // Story 43.2 (D4) — retrofit shell_notify sur les clés HKCU de
+                // Retrofit shell_notify sur les clés HKCU de
                 // quick_access_hidden (la clé HKLM HubMode ci-dessus n'en porte
                 // JAMAIS, gate par portée : la clé Machine reste 5 clés).
                 self::assertSame(['hive', 'path', 'name', 'type', 'value', 'refresh'], array_keys($c->payload));
@@ -1838,7 +1834,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame(1, $byName['LaunchTo']->payload['value']);
             self::assertSame(0, $byName['System.IsPinnedToNameSpaceTree']->payload['value']);
 
-            // ── Override `off` : MÊMES identités de clé, valeurs réelles 0/2/1 ──
+            // Override `off` : MÊMES identités de clé, valeurs réelles 0/2/1
             DB::table('capability_assignments')
                 ->where('capability_id', $cap->id)
                 ->update(['value' => 'off']);
@@ -1852,7 +1848,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame(2, $userOff['LaunchTo']->payload['value']);
             self::assertSame(1, $userOff['System.IsPinnedToNameSpaceTree']->payload['value']);
 
-            // ── explorer_gallery_hidden `on` : 0 item Machine, 1 item Session ──
+            // explorer_gallery_hidden `on` : 0 item Machine, 1 item Session
             $gallery = Capability::query()->where('key', 'explorer_gallery_hidden')->firstOrFail();
             DB::table('capability_assignments')->insert([
                 'capability_id' => $gallery->id,
@@ -1875,14 +1871,12 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 43.2 (AC4) — retrofit du hint `spec.refresh` (D4, CONSERVATEUR)
-    // ══════════════════════════════════════════════════════════════════════
+    // Retrofit du hint `spec.refresh` (CONSERVATEUR)
 
     #[Test]
     public function retrofit_migration_seeds_the_conservative_refresh_hints_per_capability(): void
     {
-        // D4 : `shell_notify` sur le lot de vues Explorer HKCU.
+        // `shell_notify` sur le lot de vues Explorer HKCU.
         foreach ([
             'show_file_extensions',
             'show_hidden_files',
@@ -1896,8 +1890,8 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame('shell_notify', $projection->spec['refresh'] ?? null, "{$key} : hint shell_notify attendu");
         }
 
-        // Story 35.7 (D7, piège n°6) — les 3 projections `…\Policies\*` que le
-        // retrofit 43.2 avait mises en `policy_broadcast` sont RE-ROUTÉES vers
+        // Les 3 projections `…\Policies\*` que le
+        // retrofit avait mises en `policy_broadcast` sont RE-ROUTÉES vers
         // l'exécutant SYSTEM : le retrofit `2026_07_13_100000` POSTÉRIEUR
         // retire leur hint `refresh` (exclusion mutuelle refresh/writer) et
         // pose `writer: 'system'` sur leurs clés HKCU. L'état FINAL du
@@ -1914,7 +1908,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             ->projections()->where('os', 'windows')->where('mechanism', 'registry')->firstOrFail();
         self::assertArrayNotHasKey('refresh', $registryEditing->spec, 'registry_editing_disabled : hint RETIRÉ par le retrofit 35.7');
 
-        // D4 : AUCUN hint ailleurs — dont explorer_sidebar_pins_hidden (HKLM
+        // AUCUN hint ailleurs — dont explorer_sidebar_pins_hidden (HKLM
         // only, la règle 5b du guard REFUSERAIT un hint), numlock_on_logon
         // (lu au logon), outlook_disable_o365_account_creation (lu au
         // lancement d'Outlook), et AUCUN `explorer_restart` nulle part.
@@ -1952,11 +1946,11 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         $migration = require database_path('migrations/2026_07_11_100000_retrofit_capabilities_refresh_hints.php');
 
-        // Story 35.7 — le retrofit `2026_07_13_100000` (POSTÉRIEUR, orthogonal)
+        // Le retrofit `2026_07_13_100000` (POSTÉRIEUR, orthogonal)
         // RETIRE le hint `refresh` des 3 projections re-routées vers l'exécutant
         // SYSTEM (blocked_executables ×2 + registry_editing_disabled). Rejouer
-        // CE retrofit 43.2 isolément re-pose leur hint — orthogonal à ce que
-        // 43.2 possède encore (les 6 capacités de vues Explorer). On normalise
+        // CE retrofit isolément re-pose leur hint — orthogonal à ce que
+        // le retrofit possède encore (les 6 capacités de vues Explorer). On normalise
         // `refresh` HORS du snapshot pour ces 3 specs (iso pattern du seed
         // registry_list vs retrofit postérieur).
         $rerouted = ['blocked_executables', 'registry_editing_disabled'];
@@ -2008,7 +2002,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_still_passes_on_the_full_seeded_catalog_after_the_refresh_retrofit(): void
     {
-        // AC2/AC4 (piège n°6) — la règle 5/5b tourne sur TOUT le catalogue
+        // La règle 5/5b tourne sur TOUT le catalogue
         // seedé APRÈS toutes les migrations (retrofit inclus) et reste verte.
         $guard = new CapabilitySpecCollisionGuard;
 
@@ -2019,16 +2013,14 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         );
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 35.7 (AC5) — retrofit `writer: system` des capacités Policies
-    // ══════════════════════════════════════════════════════════════════════
+    // Retrofit `writer: system` des capacités Policies
 
     #[Test]
     public function writer_retrofit_reroutes_the_three_policies_projections_and_removes_their_refresh_hint(): void
     {
-        // D7 — état FINAL du catalogue (toutes migrations jouées) : les clés
+        // État FINAL du catalogue (toutes migrations jouées) : les clés
         // HKCU des 3 projections re-routées portent `writer: 'system'` ET
-        // leur hint `refresh` (retrofit 43.2) est RETIRÉ ; le reste des specs
+        // leur hint `refresh` (retrofit) est RETIRÉ ; le reste des specs
         // est byte-identique (mêmes hive/path/name/type/value/entry_type).
         $blocked = Capability::query()->where('key', 'blocked_executables')->firstOrFail()
             ->projections()->where('os', 'windows')->orderBy('mechanism')->get();
@@ -2068,8 +2060,8 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function writer_retrofit_migration_is_idempotent_and_reversible(): void
     {
-        // AC5 — rejouable sans effet de bord ; down() = état antérieur EXACT
-        // (writer retiré, hint `refresh: policy_broadcast` du retrofit 43.2
+        // Rejouable sans effet de bord ; down = état antérieur EXACT
+        // (writer retiré, hint `refresh: policy_broadcast` du retrofit
         // reposé). Iso pattern `refresh_hints_retrofit_migration_…`.
         $migration = require database_path('migrations/2026_07_13_100000_retrofit_session_system_writer_policies.php');
 
@@ -2090,7 +2082,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame($before, $snapshot(), 'up() rejoué = idempotent');
 
         // down() = état antérieur exact : writer retiré de TOUTES les clés,
-        // hint policy_broadcast reposé (l'état laissé par le retrofit 43.2).
+        // hint policy_broadcast reposé (l'état laissé par le retrofit).
         $migration->down();
         foreach ($snapshot() as $row) {
             foreach ($row['specs'] as $spec) {
@@ -2106,7 +2098,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame($before, $snapshot(), 'up() après down() = état retrofitté identique');
     }
 
-    // ── Story 35.7 (AC2/D3) — règle 6 du guard : writer borné ───────────────
+    // — règle 6 du guard : writer borné
 
     #[Test]
     public function guard_accepts_the_writer_marker_on_hkcu_keys_of_both_mechanisms(): void
@@ -2199,8 +2191,8 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_passes_the_full_seeded_catalog_after_the_writer_retrofit(): void
     {
-        // AC2 — invariant vert sur le catalogue RÉELLEMENT SEEDÉ APRÈS le
-        // retrofit 35.7 (writer posé, hints retirés) : les règles 1→6
+        // Invariant vert sur le catalogue RÉELLEMENT SEEDÉ APRÈS le
+        // retrofit (writer posé, hints retirés) : les règles 1→6
         // tournent ensemble sur les données réelles et ne lèvent RIEN.
         $guard = new CapabilitySpecCollisionGuard;
 

@@ -57,7 +57,7 @@
                     <thead>
                         <tr>
                             <th class="w-12">
-                                {{-- Story 3.11 — exclut les postes protégés du « tout sélectionner »
+                                {{-- Exclut les postes protégés du « tout sélectionner »
                                      (non réinstallables — D10 niveau 1). --}}
                                 <x-molecules.select-all-checkbox
                                     :ids="$this->machines->reject(fn($m) => $m->isProtected())->pluck('id')"
@@ -68,9 +68,9 @@
                             <th>IP</th>
                             <th>Dernier rapport</th>
                             <th class="text-center">État</th>
-                            {{-- Story 24.7 — colonne conformité agent (worst-status) --}}
+                            {{-- Colonne conformité agent (worst-status) --}}
                             <th class="text-center">Conformité</th>
-                            {{-- Story 16.13bis — colonne migration SE4 → SE5 --}}
+                            {{-- Colonne migration SE4 → SE5 --}}
                             <th class="text-center">Migration</th>
                             <th class="text-center">Déploiement</th>
                         </tr>
@@ -148,7 +148,7 @@
                                         <span class="text-base-content/30" title="Présence inconnue (pas d'agent)">—</span>
                                     @endif
                                 </td>
-                                {{-- Story 24.7 — badge conformité agent (worst-status par
+                                {{-- Badge conformité agent (worst-status par
                                      poste, calculé en 1 requête agrégée pour la page —
                                      $this->machineConformity, zéro N+1). Neutre si non
                                      enrôlé (hors conformité). --}}
@@ -160,7 +160,7 @@
                                         <span class="text-base-content/30" title="Poste non enrôlé">—</span>
                                     @endif
                                 </td>
-                                {{-- Story 16.13bis — badge migration SE4 → SE5. Un poste
+                                {{-- Badge migration SE4 → SE5. Un poste
                                      natif SE5 (enrôlé agent, jamais passé par le legacy)
                                      n'est pas concerné : tiret, pas de ❌ anxiogène. --}}
                                 <td class="text-center">

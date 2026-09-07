@@ -7,8 +7,8 @@ import (
 	"os"
 )
 
-// Cœur ANTI-BRIQUE du swap d'auto-update (Story 25.2, AC3). Extrait de
-// windows/ vers shared/ pour être RÉELLEMENT testé sur l'hôte Linux (#6/M6) :
+// Cœur ANTI-BRIQUE du swap d'auto-update. Extrait de
+// windows/ vers shared/ pour être RÉELLEMENT testé sur l'hôte Linux :
 // les renames POSIX se comportent comme Windows pour ce besoin (un rename de
 // l'image en cours est autorisé des deux côtés ; le handle ouvert suit
 // l'inode). Seules les SPÉCIFICITÉS OS restent côté windows/ : résolution des
@@ -32,14 +32,14 @@ var renameForSwap = os.Rename
 // sa position de staging), puis déclenche le redémarrage via `triggerRestart`.
 //
 // `expectedHash` est le SHA-256 hex attendu du binaire (== hash manifest) :
-// le `.new` réellement mis en place est RE-HASHÉ avant le rename final (M2) —
+// le `.new` réellement mis en place est RE-HASHÉ avant le rename final —
 // le binaire qui sera exécuté a passé la porte d'intégrité à SA position
 // finale, pas seulement au staging (cohérent « deux portes »).
 //
 // Séquence (target = T, T.old, T.new ; staged = S) :
 //
-//	(pré) copie ATOMIQUE S -> T.new (tmp+rename, même volume que T — M1) ;
-//	(re)  re-hash T.new == expectedHash (M2) ; divergent -> abort + cleanup ;
+//	(pré) copie ATOMIQUE S -> T.new (tmp+rename, même volume que T) ;
+//	(re)  re-hash T.new == expectedHash ; divergent -> abort + cleanup ;
 //	(a)   suppression d'un résidu T.old (idempotent) ;
 //	(b)   rename T -> T.old (autorisé même si T verrouillé) ;
 //	(c)   rename T.new -> T (atomique, même volume) ;
@@ -48,7 +48,7 @@ var renameForSwap = os.Rename
 //
 // Invariant : entre (b) et (c), T existe sous T.old ; (c) est atomique. Si
 // quoi que ce soit échoue avant (c), `target` reste l'ANCIEN binaire intact et
-// `triggerRestart` n'est JAMAIS appelé (anti-brique testable, AC3).
+// `triggerRestart` n'est JAMAIS appelé (anti-brique testable).
 //
 // `target` et `staged` peuvent vivre sur des volumes DIFFÉRENTS (Program Files
 // vs ProgramData) : la copie (pré) crée T.new sur le MÊME volume que `target`
@@ -59,16 +59,16 @@ func PerformSwap(target, staged, expectedHash string, triggerRestart func()) err
 
 	// (pré) Copie ATOMIQUE du stagé à côté de la cible (même volume), via un
 	// tmp+rename sur ce volume : un crash pendant l'écriture ne laisse jamais un
-	// T.new tronqué visible (M1). On copie octet pour octet ce qui a déjà passé
+	// T.new tronqué visible. On copie octet pour octet ce qui a déjà passé
 	// hash + signature au staging.
 	if err := atomicCopyFile(staged, newPath); err != nil {
 		return fmt.Errorf("copie atomique du binaire neuf à côté de la cible : %w", err)
 	}
 
-	// (re) Re-vérification d'intégrité du binaire RÉELLEMENT mis en place (M2) :
+	// Re-vérification d'intégrité du binaire RÉELLEMENT mis en place :
 	// re-hash de T.new à sa position finale (Program Files), == hash manifest.
 	// Couvre une corruption pendant la copie cross-volume (et un T.new substitué
-	// dans la fenêtre TOCTOU, frontière de confiance #12). Divergent -> on
+	// dans la fenêtre TOCTOU). Divergent -> on
 	// n'exécute JAMAIS ce .new : cleanup + abort, l'ancien binaire reste en place.
 	if err := verifyFileHash(newPath, expectedHash); err != nil {
 		_ = os.Remove(newPath)
@@ -89,7 +89,7 @@ func PerformSwap(target, staged, expectedHash string, triggerRestart func()) err
 	// (c) target.new -> target (rename atomique, même volume).
 	if err := renameForSwap(newPath, target); err != nil {
 		// Rollback : restaurer l'ancien binaire en place. L'ancien reste intact
-		// et fonctionnel (anti-brique, AC3).
+		// et fonctionnel (anti-brique).
 		if rbErr := renameForSwap(oldPath, target); rbErr != nil {
 			return fmt.Errorf("dépose du neuf KO (%w) ET rollback KO (%v) — état à vérifier autour de %s", err, rbErr, target)
 		}

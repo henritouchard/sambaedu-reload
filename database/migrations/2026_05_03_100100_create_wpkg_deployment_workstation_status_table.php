@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 15.1 — Statut par poste pour un déploiement WPKG donné.
+ * Statut par poste pour un déploiement WPKG donné.
  *
  * Une ligne = un (deployment, workstation) ; `app_profile_id` est nullable
  * (un déploiement peut cibler un poste sans profil dédié, ex bulk machine).

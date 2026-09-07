@@ -13,8 +13,7 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 34.3 → 60.5 — peuplement PROD des recettes de « templates de répertoire »
- * (Q3 option B, arbitrage Henri 2026-06-30).
+ * Peuplement PROD des recettes de « templates de répertoire ».
  *
  * Idempotent / non-destructif (iso {@see PermissionSeeder}) : `updateOrCreate`
  * sur la clé stable `key`. Un re-seed NE crée PAS de doublon et resynchronise
@@ -25,11 +24,11 @@ use Illuminate\Support\Facades\Log;
  *
  *  1. `direction_to_all` — direction (RW) publie, destinataires (RO) lisent.
  *  2. `profs_to_eleves`  — devoirs : les enseignants de la classe (RW) déposent,
- *                          les élèves (RO) lisent. **RECÂBLÉE en 60.5** — voir le
+ *                          les élèves (RO) lisent. **RECÂBLÉE** — voir le
  *                          docblock de la recette.
  *  3. `user_to_user`     — échange bilatéral : deux utilisateurs (RW/RW).
  *  4. `group_space`      — espace commun d'un groupe (RW).
- *  5. `classe_se4`       — **story 60.5** : le partage de classe historique, dit
+ * 5. `classe_se4` : le partage de classe historique, dit
  *                          en vocabulaire d'ARBRE et matérialisé dans la racine
  *                          NEUVE. Seule recette d'arbre du catalogue, seule
  *                          matérialisée automatiquement à la création d'un groupe.
@@ -37,14 +36,13 @@ use Illuminate\Support\Facades\Log;
  * INVARIANT (vérifié en test) : aucune recette ne porte de maille
  * `WorkstationGroup` — toutes les ACL portent sur `User`/`UserGroup`.
  *
- * ---------------------------------------------------------------------------
- * **Story 62.4 — LES DROITS SONT DITS EN VERBES, ET LA BASELINE EST DEVENUE
+ * **LES DROITS SONT DITS EN VERBES, ET LA BASELINE EST DEVENUE
  * MAXIMALEMENT PERMISSIVE. C'est une contrepartie ASSUMÉE, pas un accident.**
  *
- * L'ancien vocabulaire binaire a été traduit selon la décision Q3 (Henri,
- * 2026-08-08) : `ro` → `lire` SEUL, `rw` → les QUATRE verbes
+ * L'ancien vocabulaire binaire a été traduit ainsi : `ro` → `lire` SEUL,
+ * `rw` → les QUATRE verbes
  * ({@see PlanGrant::VERBS}). C'est le seul mappage qui ne RETIRE d'accès à
- * personne — la doctrine de l'epic est additive, et une baseline qui aurait
+ * personne — la doctrine est additive, et une baseline qui aurait
  * « profité » du nouveau vocabulaire pour resserrer les droits aurait cassé, en
  * silence, des usages en place le jour du déploiement.
  *
@@ -52,8 +50,8 @@ use Illuminate\Support\Facades\Log;
  * disait « lecture/écriture », les audiences peuvent désormais aussi SUPPRIMER —
  * ce qu'elles pouvaient déjà, puisque c'est exactement ce que le mode d'écriture
  * historique accordait. Le raffinement (« les élèves déposent mais n'effacent
- * pas ») devient EXPRIMABLE dès maintenant, et se règlera à l'écran de la story
- * 62.6. Le faire ici, à l'aveugle, changerait le comportement d'instances en
+ * pas ») devient EXPRIMABLE dès maintenant, et se règlera à l'écran. Le faire
+ * ici, à l'aveugle, changerait le comportement d'instances en
  * place sans que personne ne l'ait demandé.
  *
  * ⚠️ Pré-déploiement VM : `php artisan db:seed --class=DirectoryTemplateSeeder`.
@@ -97,7 +95,7 @@ class DirectoryTemplateSeeder extends Seeder
     }
 
     /**
-     * Baseline canonique des recettes (code = source de vérité, Q3 option B).
+     * Baseline canonique des recettes : le code est la source de vérité.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -131,18 +129,18 @@ class DirectoryTemplateSeeder extends Seeder
                 ],
             ],
             /*
-             * Story 60.5 — RECETTE RECÂBLÉE (bug « profs_to_eleves inutilisable »,
+             * RECETTE RECÂBLÉE (bug « profs_to_eleves inutilisable »,
              * constaté le 2026-08-04, invisible depuis cinq semaines).
              *
              * **Ce qui n'allait pas.** Le rôle « profs » contraignait un groupe de
-             * type `equipe`. Or ce type n'est plus produit : le repliement 4.13
+             * type `equipe`. Or ce type n'est plus produit : le repliement
              * fusionne `Classe_3A` / `Equipe_3A` / `PP_3A` en UNE ligne au nom nu,
              * de type `classe` — comptage sur instance réelle : 302 classes, ZÉRO
              * équipe. Le sélecteur de cible était donc vide, et MUET : la recette
              * était impossible à matérialiser sans que rien ne le dise.
              *
              * **Le correctif.** L'équipe enseignante n'est plus un groupe, c'est un
-             * RÔLE SUR L'ARÊTE du groupe classe (Epic 42). La recette s'accroche
+             * RÔLE SUR L'ARÊTE du groupe classe. La recette s'accroche
              * donc au type `classe` et résout ses deux rôles seule : le flux manuel
              * ne demande plus qu'UN groupe de matérialisation.
              *
@@ -234,7 +232,7 @@ class DirectoryTemplateSeeder extends Seeder
     }
 
     /**
-     * Story 60.5 — LA 5ᵉ RECETTE : le partage de classe historique, dit dans le
+     * LA 5ᵉ RECETTE : le partage de classe historique, dit dans le
      * langage d'arbre, matérialisé dans la racine NEUVE.
      *
      * **C'est à la fois la livraison et l'épreuve.** Si ce langage sait exprimer le
@@ -267,7 +265,7 @@ class DirectoryTemplateSeeder extends Seeder
      * des deux arbres lisible nom pour nom, et la migration bon marché le jour où
      * elle se décidera.
      *
-     * **D4, tenue ici sans nouvelle fabrique.** La mesure d'ouverture d'epic
+     * **Tenu ici sans nouvelle fabrique.** La mesure d'ouverture
      * recommandait un « groupe dérivé » comme artefact compilé d'une audience.
      * Cet artefact EXISTE DÉJÀ : le trio d'annuaire entretenu par la
      * synchronisation des groupes est exactement cela. La recette n'invente donc

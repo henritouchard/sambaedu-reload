@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.5 (AC3, AC6) — les trois checks doctor du domaine extensions.
+ * Les trois checks doctor du domaine extensions.
  *
  * Patron {@see SystemStatusChecksTest} : instanciation par `app()`, assertions
  * sur le `Level`, et le smoke test « aucun check ne lève » — le harnais attrape
@@ -69,9 +69,7 @@ class ExtensionsChecksTest extends TestCase
             ->create(['key' => $key, 'name' => ucfirst($key), 'version' => $version]);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC3 — joignabilité
-    // ══════════════════════════════════════════════════════════════════════
+    // Joignabilité
 
     #[Test]
     public function it_reports_ok_when_no_app_is_installed(): void
@@ -120,14 +118,14 @@ class ExtensionsChecksTest extends TestCase
 
     /**
      * Le doctor NOMME la commande de diagnostic, il ne la LANCE pas : pas
-     * d'auto-réparation (décision de périmètre de la story).
+     * d'auto-réparation.
      */
     /**
-     * Review 56.5 #1 — ce check tourne DANS une requête HTTP, à côté des autres
-     * checks réseau. Les sondes sont séquentielles et un backend mort coûte le
-     * délai complet : sans borne, quelques extensions mortes suffisaient à
-     * dépasser le `max_execution_time` et à faire tomber la page de diagnostic
-     * — celle qu'on ouvre justement quand ça va mal.
+     * Ce check tourne DANS une requête HTTP, à côté des autres checks réseau.
+     * Les sondes sont séquentielles et un backend mort coûte le délai complet :
+     * sans borne, quelques extensions mortes suffisent à dépasser le
+     * `max_execution_time` et à faire tomber la page de diagnostic — celle qu'on
+     * ouvre justement quand ça va mal.
      *
      * Budget à 0,000001 s : la borne mord dès la première extension. Ce qui est
      * verrouillé ici n'est pas une durée (intestable de façon fiable) mais le
@@ -209,7 +207,7 @@ class ExtensionsChecksTest extends TestCase
      * `warn` — et son libellé doit rester VRAI : « jamais mesuré, ou mesuré il y
      * a plus de N s ». Affirmer « le scheduler est muet depuis 900 s » serait
      * faux ici, et un diagnostic qui peut être faux est pire qu'une absence de
-     * diagnostic (leçon review 56.3 #1).
+     * diagnostic.
      */
     #[Test]
     public function a_never_measured_app_warns_without_claiming_the_scheduler_is_dead(): void
@@ -295,9 +293,7 @@ class ExtensionsChecksTest extends TestCase
         self::assertStringContainsString('illisible', $result->detail);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC6 — signal d'échec d'écriture d'audit
-    // ══════════════════════════════════════════════════════════════════════
+    // Signal d'échec d'écriture d'audit
 
     #[Test]
     public function the_audit_trail_check_is_ok_without_a_marker(): void
@@ -334,10 +330,6 @@ class ExtensionsChecksTest extends TestCase
         self::assertNull(ExtensionAuditLog::writeFailureMarker());
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Legs review 56.4 #4 — clients OIDC fantômes
-    // ══════════════════════════════════════════════════════════════════════
-
     #[Test]
     public function the_oidc_clients_check_is_ok_with_one_enabled_client_per_extension(): void
     {
@@ -353,9 +345,9 @@ class ExtensionsChecksTest extends TestCase
     }
 
     /**
-     * LE scénario de la review 56.4 #4 : un second client `enabled` porte un
-     * scope que le client AFFICHÉ n'a pas. L'admin ne le voit pas, donc il ne
-     * peut pas le révoquer — alors qu'il continue d'être servi.
+     * Un second client `enabled` porte un scope que le client AFFICHÉ n'a pas.
+     * L'admin ne le voit pas, donc il ne peut pas le révoquer — alors qu'il
+     * continue d'être servi.
      */
     #[Test]
     public function a_ghost_client_carrying_an_invisible_scope_is_an_error(): void
@@ -381,7 +373,7 @@ class ExtensionsChecksTest extends TestCase
         self::assertNotNull($result->fix);
     }
 
-    /** NFR3 — le détail ne nomme jamais un `client_id`. */
+    /** Le détail ne nomme jamais un `client_id`. */
     #[Test]
     public function the_oidc_clients_check_never_leaks_a_client_id(): void
     {
@@ -447,7 +439,7 @@ class ExtensionsChecksTest extends TestCase
 
     /**
      * Un client actif dont la clé n'est PAS une `app` installée est légitime :
-     * l'app-témoin `sso-demo` (55.3) est une extension `link`. Signaler ce cas
+     * l'app-témoin `sso-demo` est une extension `link`. Signaler ce cas
      * produirait un faux positif permanent — et un check qui crie au loup ne se
      * lit plus.
      */
@@ -476,9 +468,7 @@ class ExtensionsChecksTest extends TestCase
         self::assertStringContainsString('illisible', $result->detail);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Contrat EnvironmentCheck — aucun check ne lève, jamais
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function it_all_extension_checks_never_throw_even_without_any_table(): void

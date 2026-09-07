@@ -8,7 +8,7 @@ use App\Services\Nextcloud\NextcloudProvisioningService;
 use Illuminate\Console\Command;
 
 /**
- * Story 61.1 — LE GESTE D'EXPLOITATION, en commande.
+ * LE GESTE D'EXPLOITATION, en commande.
  *
  * Doctrine du dépôt : les opérations multi-instance sont des COMMANDES, jamais des
  * procédures manuelles à rejouer. Le bouton de `/admin/settings/files` n'est pas un
@@ -26,7 +26,6 @@ use Illuminate\Console\Command;
  * Il LIT (l'état de l'instance et l'existence des comptes) parce qu'un aperçu qui
  * n'interrogerait rien n'apprendrait rien.
  *
- * ---------------------------------------------------------------------------
  * **GESTE DÉCONSEILLÉ — la confirmation est délibérée.** Ce provisionnement
  * repose sur des montages `files_external` en SMB vers le serveur de fichiers,
  * et ce chemin d'accès n'est PAS acquis : le partage SMB est appelé à
@@ -41,7 +40,6 @@ use Illuminate\Console\Command;
  * pour `--users-only` (qui n'en pose aucun : il adopte des comptes et écrit le
  * cache d'identité). Elle est levée par `--force` ; en mode non interactif sans
  * `--force`, la commande refuse et sort en `2` : rien n'a été tenté.
- * ---------------------------------------------------------------------------
  */
 class NextcloudProvisionCommand extends Command
 {
@@ -201,7 +199,7 @@ class NextcloudProvisionCommand extends Command
             ]],
         );
 
-        // Correction de revue 61.3 #1 — le plafond qu'on n'a PAS écrit se dit. Un
+        // Le plafond qu'on n'a PAS écrit se dit. Un
         // profil indéterminable n'est pas un échec (le compte est adopté), mais le
         // taire ferait croire à un plafond posé.
         $unresolved = (int) ($counters['quotas_indetermines'] ?? 0);

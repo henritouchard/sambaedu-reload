@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 54.1 (AC2) — Validation du manifest v1.
+ * Validation du manifest v1.
  *
  * Le validateur est PUR (aucune DB, aucun FS) : ce test étend le TestCase
  * PHPUnit nu, sans application Laravel.
@@ -50,7 +50,7 @@ class ExtensionManifestValidatorTest extends TestCase
         ], $overrides);
     }
 
-    // ── Chemin heureux ────────────────────────────────────────────────────
+    // Chemin heureux
 
     #[Test]
     public function validates_the_canonical_documentation_manifest(): void
@@ -91,7 +91,7 @@ class ExtensionManifestValidatorTest extends TestCase
         $normalized = $this->validator->validate($this->validManifest([
             'id' => 'bbb',
             'type' => 'app',
-            // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` — c'est le
+            // Une `app` DOIT déclarer `/ext/<id>` — c'est le
             // chemin que SE5 provisionne lui-même. La fixture suit le contrat.
             'entry_url' => '/ext/bbb',
             'scopes' => ['profile', 'groups'],
@@ -103,7 +103,7 @@ class ExtensionManifestValidatorTest extends TestCase
         self::assertSame(['doc'], $normalized['dependencies']);
     }
 
-    // ── Champs obligatoires manquants : le champ est NOMMÉ ─────────────────
+    // Champs obligatoires manquants : le champ est NOMMÉ
 
     /** @return list<array{0:string}> */
     public static function requiredFieldProvider(): array
@@ -166,7 +166,7 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
-    // ── Type inconnu ──────────────────────────────────────────────────────
+    // Type inconnu
 
     #[Test]
     public function unknown_type_is_rejected_naming_the_type_field(): void
@@ -181,7 +181,7 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
-    // ── Version de manifest : rejet STRICT, aucun repli ────────────────────
+    // Version de manifest : rejet STRICT, aucun repli
 
     /** @return list<array{0:mixed}> */
     public static function unsupportedVersionProvider(): array
@@ -222,7 +222,7 @@ class ExtensionManifestValidatorTest extends TestCase
     {
         // Manifest à la fois hors version ET hors domaine de contenu : la cause
         // rapportée doit être la VERSION, pas le contenu (sinon la vraie cause
-        // est masquée — iso-décision 33.2).
+        // est masquée — iso-décision).
         try {
             $this->validator->validate($this->validManifest([
                 'manifest_version' => 99,
@@ -234,7 +234,7 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
-    // ── Slug d'identifiant ────────────────────────────────────────────────
+    // Slug d'identifiant
 
     /** @return list<array{0:string}> */
     public static function invalidIdProvider(): array
@@ -269,7 +269,7 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
-    // ── Champs optionnels mal typés ───────────────────────────────────────
+    // Champs optionnels mal typés
 
     #[Test]
     public function non_array_scopes_is_rejected_naming_scopes(): void
@@ -304,13 +304,13 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
-    // ── Correctifs de review 54.1 — un OBJET JSON n'est pas une LISTE ──────
+    // Un OBJET JSON n'est pas une LISTE.
     //
-    // Finding #1 : `{"roles": {"a": "admin"}}` décode en tableau ASSOCIATIF PHP.
-    // Avec un simple `is_array()`, il passait la validation et était ré-indexé
-    // silencieusement en `["admin"]` — le repli tolérant que la décision #1 du
-    // validateur refuse explicitement. Sans effet sur le dépôt (source
-    // embarquée contrôlée), décisif dès l'Epic 56 (sources DISTANTES).
+    // `{"roles": {"a": "admin"}}` décode en tableau ASSOCIATIF PHP. Sous un
+    // simple `is_array()`, il passe la validation et se fait ré-indexer
+    // silencieusement en `["admin"]` : exactement le repli tolérant que le
+    // validateur refuse. Sans conséquence tant que la source est embarquée et
+    // contrôlée, décisif dès qu'un manifest vient d'une source DISTANTE.
 
     #[Test]
     public function an_object_shaped_visibility_roles_is_rejected(): void
@@ -338,13 +338,13 @@ class ExtensionManifestValidatorTest extends TestCase
         }
     }
 
-    // ── Correctif de review 54.3 — schéma d'`entry_url` borné ─────────────
+    // Correctif de review — schéma d'`entry_url` borné
 
     #[Test]
     public function a_dangerous_entry_url_scheme_is_rejected(): void
     {
-        // La Story 54.3 fait d'`entry_url` un href CLIQUABLE dans le lanceur,
-        // exposé à tous les rôles visés. Décisif dès l'Epic 56 (sources
+        // La fait d'`entry_url` un href CLIQUABLE dans le lanceur,
+        // exposé à tous les rôles visés. Décisif dès l' (sources
         // distantes, manifests non contrôlés).
         foreach ([
             'javascript:alert(document.cookie)',

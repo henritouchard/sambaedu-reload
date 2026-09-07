@@ -17,10 +17,10 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Story 4.11 — Swap transactionnel de salle physique sur le pivot global.
+ * Swap transactionnel de salle physique sur le pivot global.
  *
- * Couvre AC3 (swap transactionnel, 1-salle-max), AC7 (dispatch
- * `WorkstationMembershipAdSyncJob::move`) et AC2 (lecture `physicalRoom` pivot).
+ * Couvre (swap transactionnel, 1-salle-max) (dispatch
+ * `WorkstationMembershipAdSyncJob::move`) et (lecture `physicalRoom` pivot).
  */
 class PhysicalRoomSwapTest extends TestCase
 {
@@ -80,7 +80,7 @@ class PhysicalRoomSwapTest extends TestCase
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
                 $table->string('app_profile_name')->nullable();
-                // Story 30.5 — la garde prédictive lit le label porté par le parc.
+                // La garde prédictive lit le label porté par le parc.
                 $table->string('controlhub_label')->nullable();
                 $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
@@ -108,8 +108,8 @@ class PhysicalRoomSwapTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 30.5 — la garde prédictive au rattachement sonde le contrat amont
-        // actif (court-circuit NFR3). Table minimale vide ⇒ aucun contrat actif ⇒
+        // La garde prédictive au rattachement sonde le contrat amont
+        // actif (court-circuit). Table minimale vide ⇒ aucun contrat actif ⇒
         // garde inerte (hot-path salle physique strictement préservé).
         if (!Schema::hasTable('controlhub_contracts')) {
             Schema::create('controlhub_contracts', function (Blueprint $table) {

@@ -14,7 +14,7 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 20.1 — AC2-10, AC16. Tests de sécurité du `FederatedJwtVerifier`.
+ * -10. Tests de sécurité du `FederatedJwtVerifier`.
  *
  * Couvre H1/H2/M4 : RS256 pinné, rejet `alg:none` + confusion d'algo,
  * validation iss/aud/tier/exp/nbf, claims requis, anti-rejeu jti, leeway ±60s.
@@ -139,7 +139,7 @@ class FederatedJwtVerifierTest extends TestCase
     public function unknown_kid_is_rejected(): void
     {
         // kid absent de la key-map → la lib ne trouve pas la clé → rejet
-        // signature (D9).
+        // signature.
         $emitted = $this->issueFederatedJwt(['kid' => 'unknown-kid']);
 
         $this->assertRejected($emitted['token'], FederatedJwtErrorCodes::JWT_SIGNATURE_INVALID);
@@ -172,7 +172,6 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function missing_exp_claim_is_rejected(): void
     {
-        // exp absent → branche dédiée `exp === 0` (couverture AC8, #5).
         $now = Carbon::now()->getTimestamp();
         $token = $this->signFederatedJwt([
             'iss' => $this->federatedTestIss,
@@ -188,7 +187,6 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function missing_aud_claim_is_rejected_as_missing_not_mismatch(): void
     {
-        // aud totalement absent → missing_claim (branche dédiée, #5).
         $now = Carbon::now()->getTimestamp();
         $token = $this->signFederatedJwt([
             'iss' => $this->federatedTestIss,
@@ -203,8 +201,8 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function aud_array_without_match_is_rejected_as_aud_mismatch(): void
     {
-        // aud PRÉSENT (array) mais aucune valeur ne matche → aud_mismatch
-        // (et NON missing_claim) : code d'erreur fidèle (#3).
+        // aud PRÉSENT (array) mais aucune valeur ne matche → aud_mismatch, et
+        // NON missing_claim : le code d'erreur doit rester fidèle à la cause.
         $emitted = $this->issueFederatedJwt([
             'aud' => ['se5-other-a', 'se5-other-b'],
         ]);
@@ -279,14 +277,10 @@ class FederatedJwtVerifierTest extends TestCase
         $this->assertRejected($emitted['token'], FederatedJwtErrorCodes::JWT_SIGNATURE_INVALID);
     }
 
-    // ---------------------------------------------------------------------
-    // Story 39.3 — bridge IdP « du handshake » (DB) → vérificateur JWT (canal ⑤)
-    // ---------------------------------------------------------------------
-
     #[Test]
     public function handshake_idp_jwt_is_accepted_from_db_without_env_config(): void
     {
-        // AC3 — preuve end-to-end : un JWT signé par l'IdP réellement provisionné
+        // Preuve end-to-end : un JWT signé par l'IdP réellement provisionné
         // au handshake (clé/kid/iss stockés en base) est accepté SANS aucun
         // réglage env. On VIDE explicitement les 3 sources config du chemin
         // « repli » pour prouver que c'est bien la DB qui répond.
@@ -313,7 +307,7 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function handshake_idp_jwt_signed_with_wrong_key_is_rejected(): void
     {
-        // Corollaire sécurité AC3/AC6 : la clé DB est bien la clé pivot. Un jeton
+        // Corollaire sécurité : la clé DB est bien la clé pivot. Un jeton
         // qui prétend le bon kid/iss/aud mais signé par la paire CONFIG (≠ paire
         // du handshake) est rejeté en signature — RS256 pinné, pas de confusion
         // de source.
@@ -343,8 +337,8 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function db_precedence_wins_over_a_conflicting_non_empty_config(): void
     {
-        // Review 39.3 #1 — preuve de précédence RÉELLE (pas seulement « la DB marche
-        // quand la config est vide »). La config reste PLEINE (clés/iss du setUp,
+        // Preuve de précédence RÉELLE, et pas seulement « la DB marche quand la
+        // config est vide ». La config reste PLEINE (clés/iss du setUp,
         // différentes de la DB) PENDANT que la ControlHubConnection est active. Un
         // jeton signé avec la paire CONFIG (kid=federatedTestKid, iss=federatedTestIss)
         // — qui serait accepté en l'ABSENCE de DB (cf. db_absent_falls_back_to_config)
@@ -363,7 +357,7 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function db_absent_falls_back_to_config(): void
     {
-        // AC4 — repli : aucune ControlHubConnection active. Résolution 100%
+        // Repli : aucune ControlHubConnection active. Résolution 100%
         // config, strictement identique à l'existant → JWT config accepté.
         $this->assertSame(0, \App\Models\ControlHubConnection::query()->count());
 
@@ -379,7 +373,7 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function incomplete_db_connection_falls_back_to_config(): void
     {
-        // AC4 — DB présente mais INCOMPLÈTE (`hasFederatedIdp() === false`, ici
+        // DB présente mais INCOMPLÈTE (`hasFederatedIdp === false`, ici
         // `idp_kid` null) → repli config, pas de crash, JWT config accepté.
         $this->seedFederatedIdpConnection(['idp_kid' => null]);
 
@@ -398,7 +392,7 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function aud_falls_back_to_instance_id_when_expected_aud_not_set(): void
     {
-        // AC2 — indépendant du bridge clé/kid/iss : DB absente, `expected_aud`
+        // Indépendant du bridge clé/kid/iss : DB absente, `expected_aud`
         // NON configuré → le repli `aud` porte sur l'uuid d'instance
         // (`controlHub.se4fs.instance_id`), pas sur `sambaedu.se4fs_name`.
         config([
@@ -416,7 +410,7 @@ class FederatedJwtVerifierTest extends TestCase
     #[Test]
     public function aud_bound_to_se4fs_name_is_rejected_after_instance_id_switch(): void
     {
-        // AC2 — preuve du changement de fallback : un jeton dont `aud` vaut
+        // Preuve du changement de fallback : un jeton dont `aud` vaut
         // l'ANCIEN identifiant (`sambaedu.se4fs_name`) n'est PLUS accepté ; seul
         // l'uuid d'instance l'est désormais.
         config([

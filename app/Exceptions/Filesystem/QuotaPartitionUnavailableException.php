@@ -7,9 +7,8 @@ namespace App\Exceptions\Filesystem;
 use RuntimeException;
 
 /**
- * Story 63.4 — LE REFUS D'ÉCRIRE UN PLAFOND SUR UNE PARTITION QUI N'EN PORTE PAS.
+ * LE REFUS D'ÉCRIRE UN PLAFOND SUR UNE PARTITION QUI N'EN PORTE PAS.
  *
- * ---------------------------------------------------------------------------
  * **Pourquoi une exception, et pas un simple `false`.** Le geste est une écriture :
  * ce qui doit se produire n'est pas « la méthode rend faux et l'appelant décide »,
  * c'est « RIEN n'est écrit — ni la règle, ni sa ligne d'audit ». Une valeur de
@@ -20,7 +19,6 @@ use RuntimeException;
  * que l'écran affiche à côté du champ fermé. Deux formulations pour une même cause
  * finiraient par diverger, et l'exploitant lirait deux histoires différentes selon
  * qu'il a cliqué ou forgé sa soumission.
- * ---------------------------------------------------------------------------
  */
 final class QuotaPartitionUnavailableException extends RuntimeException
 {

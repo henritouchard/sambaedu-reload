@@ -18,9 +18,9 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Backend\Support\RootedClassPlan;
 
 /**
- * Story 60.3 — le backend qui n'exécute rien, et qui ne ment sur rien.
+ * Le backend qui n'exécute rien, et qui ne ment sur rien.
  *
- * Le plan éprouvé est le PLAN CLASSE RÉEL (recette des stories 60.1/60.2, résolue
+ * Le plan éprouvé est le PLAN CLASSE RÉEL (recette `ClassTreeRecipe`, résolue
  * par le résolveur réel), augmenté de son nœud racine : quatre natures, un nœud
  * activable suspendu, des nœuds par membre, un plafond, des clôtures.
  */
@@ -72,7 +72,7 @@ class PreviewBackendTest extends TestCase
     }
 
     /**
-     * AC7 — la clôture TRAVERSE la ligne de contrat, et l'aperçu la rend visible.
+     * La clôture TRAVERSE la ligne de contrat, et l'aperçu la rend visible.
      * Si elle était filtrée ou résumée au passage, ce texte serait impossible à
      * produire.
      */
@@ -121,7 +121,7 @@ class PreviewBackendTest extends TestCase
     }
 
     /**
-     * AC5 — le backend d'aperçu décline SANS que ce soit ni une limite de modèle
+     * Le backend d'aperçu décline SANS que ce soit ni une limite de modèle
      * (`non_exprimable`) ni une dette de code (`non_implemente`).
      */
     #[Test]

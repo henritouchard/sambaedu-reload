@@ -19,21 +19,19 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
 /**
- * Story 3.4 — AC5.2 / D2.
- *
  * Controller du endpoint `GET|POST /ipxe/linux/preseed` (port natif
  * `sambaedu/ipxe/linux/preseed.php`).
  *
  * **Flow** :
  *  1. Valide les inputs via {@see IpxeLinuxPreseedRequest}.
  *  2. Résout la Workstation via {@see WorkstationLocator}.
- *  3. Si null → 404 + log warning (D4 — diverge legacy qui renvoyait 200
- *     vide ; un 404 explicite est plus debug-friendly).
+ *  3. Si null → 404 + log warning (divergence assumée avec le legacy, qui
+ *     renvoyait un 200 vide ; un 404 explicite est plus debug-friendly).
  *  4. Parse `os` via {@see LinuxDistribution::fromString()}. Si null → 422 + log.
  *  5. Parse `type` via {@see LinuxDesktopVariant::fromString()}. Si null → 422 + log.
  *  6. Génère le preseed via {@see LinuxPreseedService::generate()}.
  *  7. Insert `MachineBootLog` `action='ipxe_linux_preseed'`.
- *  8. Response 200 text/plain + headers D10.
+ *  8. Response 200 text/plain.
  *
  * **Sécurité** : middleware `auth.v1.lan-only` (LAN scolaire) + matching
  * MAC/UUID strict via locator.
@@ -161,7 +159,7 @@ class IpxeLinuxPreseedController extends Controller
 
     /**
      * Sanitize une input externe brute pour le logging warning
-     * (tronque 32 chars + replace non-ASCII par `?`). Iso 3.2
+     * (tronque 32 chars + replace non-ASCII par `?`). Iso
      * `IpxeService::sanitizeActionRequested()`.
      */
     private function sanitizeRaw(string $raw): string

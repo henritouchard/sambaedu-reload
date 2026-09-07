@@ -14,7 +14,7 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `associations` (Story 27.3bis) — accès registre
+// Câblage Windows du handler `associations` — accès registre
 // HKCU EN GO NATIF via golang.org/x/sys/windows/registry (déjà dans go.mod) +
 // lecture du SID/temps/experience pour le hash UserChoice. Zéro shell-out.
 //
@@ -82,9 +82,9 @@ func (o *associationsOps) ReadUserChoiceProgID(spec shared.AssociationSpec) (str
 // ProgIDRegistered : le ProgId cible est-il enregistré sur le poste ?
 // CLASSES_ROOT fusionne HKLM\Software\Classes et HKCU\Software\Classes : la
 // présence de la clé `<ProgId>` y atteste que l'application gère ce ProgId.
-// D-Henri n°5 : si absent, l'agent NE touche PAS la clé UserChoice.
+// Si le ProgId est absent, l'agent NE touche PAS la clé UserChoice.
 //
-// Story 27.11 (raffinement CAS GÉNÉRIQUE) : pour `Applications\<exe>`, la présence
+// Pour `Applications\<exe>`, la présence
 // du nœud ne suffit pas — sans `shell\open\command`, Windows ouvrirait « Comment
 // voulez-vous ouvrir… ». On vérifie donc la sous-clé `shell\open\command` ET sa
 // valeur par défaut non vide pour ce cas. Les ProgId riches restent inchangés.
@@ -112,7 +112,7 @@ func (o *associationsOps) ProgIDRegistered(progID string) (bool, error) {
 
 // progIDCommandRegistered : le ProgId générique a-t-il une commande d'ouverture
 // effective `HKCR\<ProgId>\shell\open\command` (valeur par défaut non vide) ? C'est
-// la condition RÉELLE d'applicabilité d'un `Applications\<exe>` (Story 27.11).
+// la condition RÉELLE d'applicabilité d'un `Applications\<exe>`.
 func progIDCommandRegistered(progID string) (bool, error) {
 	cmdPath := progID + `\shell\open\command`
 
@@ -140,7 +140,7 @@ func progIDCommandRegistered(progID string) (bool, error) {
 }
 
 // RegisterApplicationProgID auto-enregistre PER-USER un ProgId générique
-// `Applications\<exe>` (Story 27.11, AC6) : résout le chemin COMPLET de `<exe>` sur
+// `Applications\<exe>` : résout le chemin COMPLET de `<exe>` sur
 // le poste (App Paths puis PATH) — JAMAIS reçu du serveur — et écrit
 // `HKCU\Software\Classes\Applications\<exe>\shell\open\command = "<chemin>" "%1"`.
 // AUCUNE écriture HKLM/admin. Exe introuvable → registered=false (abstention,
@@ -154,7 +154,7 @@ func (o *associationsOps) RegisterApplicationProgID(exe string) (bool, error) {
 
 	fullPath, found := resolveExecutablePath(exe)
 	if !found {
-		// Exe introuvable sur le poste → on s'abstient (D-Henri n°5).
+		// Exe introuvable sur le poste → on s'abstient.
 		return false, nil
 	}
 
@@ -166,8 +166,8 @@ func (o *associationsOps) RegisterApplicationProgID(exe string) (bool, error) {
 	}
 	defer key.Close()
 
-	// `"<chemin>" "%1"` : le %1 passe le fichier en argument (obligatoire — piège
-	// n°4). Valeur par défaut (nom "").
+	// `"<chemin>" "%1"` : le %1 passe le fichier en argument (obligatoire).
+	// Valeur par défaut (nom "").
 	command := `"` + fullPath + `" "%1"`
 	if err := key.SetStringValue("", command); err != nil {
 		return false, fmt.Errorf("écriture de HKCU\\%s (défaut) : %w", keyPath, err)

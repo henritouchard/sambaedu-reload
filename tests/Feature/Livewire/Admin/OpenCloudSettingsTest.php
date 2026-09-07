@@ -41,7 +41,7 @@ class OpenCloudSettingsTest extends TestCase
     }
 
     /**
-     * **Retouché par la story 63.3** : l'interrupteur de capacité a QUITTÉ ce
+     * **Retouché par la** : l'interrupteur de capacité a QUITTÉ ce
      * composant — « OpenCloud » est une position du cloud actif, décidée
      * au-dessus, et projetée sur `files.policy` par le miroir. La propriété que
      * ce test tient reste la même, et elle est même plus forte : enregistrer une
@@ -180,7 +180,7 @@ class OpenCloudSettingsTest extends TestCase
      * **ET LA CAPACITÉ NE SUFFIT PAS : IL FAUT AUSSI LA CONNEXION.** Une capacité
      * allumée sur une connexion vide ferait naître un répertoire dont AUCUNE
      * réconciliation ne peut aboutir — et dont l'autorité d'écriture ne se change
-     * plus jamais (D9). Le rattrapage tardif au provisionnement est correct, mais
+     * plus jamais. Le rattrapage tardif au provisionnement est correct, mais
      * il arrive après la seule décision irréversible.
      */
     #[Test]

@@ -12,23 +12,23 @@ use App\Models\WorkstationGroup;
 use Illuminate\Support\Collection;
 
 /**
- * Story 24.7 — Lecture AGRÉGÉE de la conformité agent pour les pages parc
- * (FR10, AC1-AC3, décision n° 3). Service de LECTURE PURE partagé par les 3
+ * Lecture AGRÉGÉE de la conformité agent pour les pages parc
+ * de l'agent. Service de LECTURE PURE partagé par les 3
  * composants Livewire (parc/index, machines/[id], groups/[id]) : jamais de
  * requête agrégée dupliquée dans les vues.
  *
  * Périmètre = postes ENRÔLÉS (les non-enrôlés sont hors conformité, affichés
- * neutres côté UI). Les hashes sont OPAQUES (lus, jamais recalculés —
- * piège 9). Aucune écriture, aucun accès AD/LDAP.
+ * neutres côté UI). Les hashes sont OPAQUES : lus, jamais recalculés.
+ * Aucune écriture, aucun accès AD/LDAP.
  *
  * États affichés (3 enum + 2 dérivés) :
  *  - `compliant` / `drift` / `error` (lus de `agent_resource_states`) ;
  *  - dérivé « jamais rapporté » : poste enrôlé, zéro ligne d'état ;
  *  - dérivé « muet » : `agent_last_checkin_at` > 2 × `agent.ttl_seconds`
- *    ({@see Workstation::isAgentSilent()}, décision n° 7).
+ *    ({@see Workstation::isAgentSilent()}).
  *
- * « En écart » (compteur d'alerte) = `drift` + `error`. Story 27.8 : le statut
- * `drifted_allowed` (dérive tolérée) est SUPPRIMÉ — la cible fait toujours loi.
+ * « En écart » (compteur d'alerte) = `drift` + `error`. Il n'existe PAS de
+ * statut « dérive tolérée » : la cible fait toujours loi.
  */
 class ConformityService
 {
@@ -39,7 +39,7 @@ class ConformityService
     public const DERIVED_SILENT = 'silent';
 
     /**
-     * Précédence du worst-status (décision n° 3) : `error` domine tout,
+     * Précédence du worst-status : `error` domine tout,
      * puis `drift`, puis `compliant`. Les dérivés (jamais rapporté / muet)
      * sont calculés à part (ils ne vivent pas dans `agent_resource_states`).
      */
@@ -84,7 +84,7 @@ class ConformityService
         foreach ($enrolled as $workstation) {
             // Le « muet » prime visuellement sur le contenu rapporté : un
             // poste qui ne parle plus est suspect quel que soit son dernier
-            // état connu (décision n° 7).
+            // état connu.
             if ($workstation->isAgentSilent()) {
                 $base['silent']++;
                 continue;
@@ -109,8 +109,8 @@ class ConformityService
 
     /**
      * Worst-status par poste pour un lot d'ids — UNE requête agrégée
-     * (`groupBy workstation_id`), jamais une relation lazy par ligne
-     * (piège 11). Retourne `[workstation_id => status string]` ; un poste
+     * (`groupBy workstation_id`), jamais une relation lazy par ligne.
+     * Retourne `[workstation_id => status string]` ; un poste
      * sans aucune ligne d'état est ABSENT du tableau (dérivé « jamais
      * rapporté », à traiter par l'appelant).
      *
@@ -144,8 +144,8 @@ class ConformityService
     }
 
     /**
-     * Exceptions par type de ressource sur un périmètre (vue groupe,
-     * décision n° 4 : « penser en règles » = type × périmètre). Pour chaque
+     * Exceptions par type de ressource sur un périmètre (vue groupe) :
+     * « penser en règles » = type × périmètre. Pour chaque
      * type RAPPORTÉ, retourne le nombre total de postes enrôlés et la liste
      * des SEULS postes en exception (statut ≠ compliant, jamais rapporté,
      * muet), datés.
@@ -178,7 +178,7 @@ class ConformityService
             ->get();
 
         // Types effectivement RAPPORTÉS (pas la liste exhaustive du contrat —
-        // pas de lignes vides pour des types sans handler, Dev Notes 24.7).
+        // pas de lignes vides pour des types sans handler, Dev Notes).
         $types = $states->pluck('type')->unique()->sort()->values();
 
         $statesByType = $states->groupBy('type');
@@ -237,7 +237,7 @@ class ConformityService
     }
 
     /**
-     * États rapportés COURANTS d'un poste, par type (fiche poste, AC2). Triés
+     * États rapportés COURANTS d'un poste, par type (fiche poste). Triés
      * par type. Lecture pure de `agent_resource_states`.
      *
      * @return Collection<int, AgentResourceState>
@@ -253,7 +253,7 @@ class ConformityService
     /**
      * Depuis quand le statut COURANT de chaque type tient, indexé par type.
      *
-     * Pourquoi : la politique de drift est STRICT (27.8) — `Test()` négatif vaut
+     * Pourquoi : la politique de drift est STRICT — `Test` négatif vaut
      * `drift` même quand l'`Apply` qui suit répare aussitôt, et il n'existe aucun
      * statut « corrigé ». Un `drift` affiché ne dit donc pas s'il s'agit d'une
      * divergence transitoire déjà réparée (typiquement le PREMIER passage sur un
@@ -283,7 +283,7 @@ class ConformityService
     }
 
     /**
-     * Derniers événements de changement d'un poste (fiche poste, AC2),
+     * Derniers événements de changement d'un poste (fiche poste),
      * datés, du plus récent au plus ancien.
      *
      * @return Collection<int, AgentReportEvent>
@@ -327,7 +327,7 @@ class ConformityService
 
         // Colonnes qualifiées (la relation groupe joint le pivot) et bornées
         // au nécessaire : id/name (exceptionRow), agent_last_checkin_at
-        // (isAgentSilent), agent_token_hash (isAgentEnrolled) — review 24.7 #5.
+        // (isAgentSilent), agent_token_hash (isAgentEnrolled).
         return $query
             ->whereNotNull('agent_token_hash')
             ->get([

@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 37.1 (AC2, AC6) — onglet « État cible » de la page PARC (SFC Livewire,
+ * Onglet « État cible » de la page PARC (SFC Livewire,
  * consultation pure). Contribution du parc (direct + via profil), planchers socle
  * commun, distinction salle vs parc logique.
  */
@@ -82,7 +82,7 @@ class GroupDesiredStateTabTest extends TestCase
     #[Test]
     public function physical_room_page_says_cette_salle(): void
     {
-        // Review #5 — sur la page d'une SALLE physique : badge « Cette salle »
+        // Sur la page d'une SALLE physique : badge « Cette salle »
         // (room_self, badge-warning) + textes salle-centriques (encart d'intro,
         // états vides) — plus aucun « Ce parc ».
         $salle = WorkstationGroup::create(['name' => 'Salle101', 'is_physical' => true]);
@@ -100,7 +100,7 @@ class GroupDesiredStateTabTest extends TestCase
     #[Test]
     public function physical_room_empty_states_are_salle_centric(): void
     {
-        // Review #5 — états vides conditionnés sur is_physical.
+        // États vides conditionnés sur is_physical.
         $salle = WorkstationGroup::create(['name' => 'SalleVide', 'is_physical' => true]);
 
         Livewire::test(self::COMPONENT, ['groupId' => $salle->id])
@@ -133,7 +133,7 @@ class GroupDesiredStateTabTest extends TestCase
     #[Test]
     public function group_id_mutation_is_rejected_by_locked(): void
     {
-        // Review #4 — tentative de mutation client sur la propriété #[Locked] :
+        // Tentative de mutation client sur la propriété verrouillée :
         // doit lever (preuve réelle du verrou, pas seulement la valeur initiale).
         $parc = WorkstationGroup::create(['name' => 'ParcLock2', 'is_physical' => false]);
 

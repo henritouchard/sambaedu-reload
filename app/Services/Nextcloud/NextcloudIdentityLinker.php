@@ -9,27 +9,23 @@ use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 61.2 — LE RATTACHEMENT EXPLICITE D'IDENTITÉ (le legs N1 de la revue 61.1).
+ * LE RATTACHEMENT EXPLICITE D'IDENTITÉ.
  *
- * ---------------------------------------------------------------------------
- * **POURQUOI CE GESTE EXISTE.** Depuis la correction #2 de la revue 61.1, SE5
- * n'adopte plus qu'un HOMONYME : un candidat unique rendu par une recherche floue
- * n'est pas une preuve d'identité, et l'adopter rouvrait l'écrasement du mot de
- * passe d'un tiers (le scénario `p.durand` / `p.durand-martin`). Le cas
- * « l'instance dont les identifiants ne sont pas les logins » n'est donc plus
- * résolu automatiquement — la revue l'a nommé comme rouvrable ici, « avec une
- * corroboration explicite plutôt qu'une devinette ».
+ * **POURQUOI CE GESTE EXISTE.** SE5 n'adopte qu'un HOMONYME : un candidat unique
+ * rendu par une recherche floue n'est pas une preuve d'identité, et l'adopter
+ * rouvrirait l'écrasement du mot de passe d'un tiers (le scénario `p.durand` /
+ * `p.durand-martin`). Le cas « l'instance dont les identifiants ne sont pas les
+ * logins » n'est donc pas résolu automatiquement : il demande une corroboration
+ * explicite, pas une devinette.
  *
  * Ce service EST cette corroboration explicite : un geste d'administrateur, vérifié
  * à distance avant d'écrire.
  *
- * **LA RÈGLE DE SÉCURITÉ DE LA CORRECTION #2 EST CONSERVÉE À L'IDENTIQUE :
- * JAMAIS D'ÉCRITURE SUR UNE IDENTITÉ NON CONFIRMÉE À DISTANCE.** Qu'un humain
+ * **JAMAIS D'ÉCRITURE SUR UNE IDENTITÉ NON CONFIRMÉE À DISTANCE.** Qu'un humain
  * l'ait tapée n'y change rien — une faute de frappe sur un identifiant voisin
  * produirait exactement le défaut d'en face : le prochain changement de mot de
  * passe AD écraserait le mot de passe du compte d'une autre personne, journalisé
  * comme un succès.
- * ---------------------------------------------------------------------------
  *
  * **La vérification est PAR MODE**, parce que les deux modes n'ont pas le même
  * privilège :
@@ -38,24 +34,22 @@ use Illuminate\Support\Facades\Log;
  *  - mode **délégué** : autocomplétion avec correspondance EXACTE — c'est ce dont
  *    dispose un compte ordinaire (précédent SE4 `cloud.inc.php:989`).
  *
- * **Ce qui est écrit** : `users.nextcloud_user_id`, le cache posé en 61.1 — hors
+ * **Ce qui est écrit** : `users.nextcloud_user_id`, le cache posé — hors
  * `$fillable`, donc jamais par assignation en masse ; l'écriture est nominative et
  * passe par ce service. La colonne reste un CACHE : la vérité est chez Nextcloud,
- * et `--clear` la remet à null sans rien détruire ailleurs (D9).
+ * et `--clear` la remet à null sans rien détruire ailleurs.
  *
- * ---------------------------------------------------------------------------
- * **CORRECTION DE REVUE (61.2 #2) — UNE IDENTITÉ NEXTCLOUD N'EST PORTÉE QUE PAR UN
+ * **UNE IDENTITÉ NEXTCLOUD N'EST PORTÉE QUE PAR UN
  * SEUL UTILISATEUR SE5.** La vérification à distance prouvait que l'identité EXISTE,
  * jamais qu'elle est LIBRE. Deux logins SE5 pouvant pointer le même compte
  * Nextcloud, la propagation de mot de passe de l'un écrasait le compte de l'autre —
- * exactement le défaut que la correction #2 de la revue 61.1 avait fermé, rouvert
- * par la porte « geste d'admin vérifié ». Le geste est désormais refusé **en nommant
+ * c'est le même défaut que l'adoption d'un homonyme, rouvert par la porte
+ * « geste d'admin vérifié ». Le geste est donc refusé **en nommant
  * le login SE5 qui détient déjà l'identité**, et rien n'est écrit.
  *
  * La garde est APPLICATIVE et vaut à tous les points d'écriture du cache (ici et
  * dans {@see NextcloudUserProvisioner}) ; l'index unique en base n'en est que la
  * défense en profondeur.
- * ---------------------------------------------------------------------------
  */
 final class NextcloudIdentityLinker
 {
@@ -149,7 +143,7 @@ final class NextcloudIdentityLinker
     /**
      * Détache l'utilisateur de son identité Nextcloud — la colonne redevient nulle.
      *
-     * **Rien n'est supprimé côté instance** (D9) : le compte Nextcloud, ses fichiers
+     * **Rien n'est supprimé côté instance** : le compte Nextcloud, ses fichiers
      * et ses partages ne sont pas touchés. On efface un CACHE, et la prochaine
      * résolution le reconstruira si elle le peut.
      */
@@ -198,10 +192,6 @@ final class NextcloudIdentityLinker
 
         return $value === '' ? null : $value;
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     /**
      * Confirmation à distance. Le refus nomme la cause — et l'absence de

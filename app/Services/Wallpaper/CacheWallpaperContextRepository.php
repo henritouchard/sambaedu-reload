@@ -12,11 +12,9 @@ use Illuminate\Support\Facades\Cache;
  * Implémentation Cache (Laravel) du contexte wallpaper.
  *
  * Lit `Cache::store('app_context')->get("apps.$id")` — clé posée par
- * `CacheAppContextWriter` (Story 16.15). Le store `app_context` est
+ * `CacheAppContextWriter`. Le store `app_context` est
  * déclaré dans `config/cache.php` avec `prefix => ''` pour interop
  * avec le shim legacy `LegacyBootstrapTokenValidator`.
- *
- * Story 4.7 — AC 3 (origine). Story 16.15 — AC4 (migration Cache).
  */
 class CacheWallpaperContextRepository implements WallpaperContextRepository
 {

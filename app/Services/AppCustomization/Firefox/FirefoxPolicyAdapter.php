@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Adapter Firefox — parité `ff_import_policy` + `ff_export_policy` legacy.
  *
- * Story 4.8 — AC 5. Reproduit exactement la logique de
+ * Reproduit exactement la logique de
  * `sambaedu/includes/firefox.inc.php` L7-87 (fonctions `ff_import_policy` et
  * `ff_export_policy`). `ff_form_policy` est remplacé par le composant Livewire
  * `components::organisms.firefox.customize-form`.

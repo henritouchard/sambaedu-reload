@@ -19,27 +19,19 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.4 (AC #1, #2, #3, #4, #6) — Tri-état (verrouillé/permissif/local) sur
+ * Tri-état (verrouillé/permissif/local) sur
  * l'onglet « Registre / capacités » de /admin/settings/parc-defaults.
  *
  * Couvre :
  *   - Badge « Verrouillé » + bouton « Éditer le défaut » masqué + toggle désactivé
- *     (locked — non-régression 29.2) ;
+ *  (locked — non-régression) ;
  *   - Badge « Modifiable » + bouton « Éditer le défaut » actif + note (permissive) ;
  *   - Badge « Local » sans contrainte amont — contrat actif ;
- *   - Standalone (aucun contrat) → AUCUN badge (NFR3 AC #6) ;
- *   - Contrat severed → AUCUN badge (AC #6, même traitement que standalone).
- *
- * Corrections post-review :
- *   - #1 : tooltip Local sur parc-defaults = « Défaut diffusé — aucune contrainte amont. » ;
- *   - #2 : assertions sur le tooltip permissif (relaxabilité + assertDontSee 'valeur amont') ;
- *   - #3 : badges gatés sur hasActiveContract() — standalone = zéro badge, y compris Local ;
- *   - #6 : cas severed ajouté ;
- *   - #7 : compteur de requêtes items (zero en standalone, NFR3 au point d'usage réel) ;
- *   - #9 : assertSee génériques remplacés par assertSeeHtml contextuels.
+ *   - Standalone (aucun contrat) → AUCUN badge ;
+ *   - Contrat severed → AUCUN badge, même traitement que standalone.
  *
  * Le Gate `server.admin` est autorisé via un `Gate::before` CIBLÉ (null pour les
- * autres abilities) afin que `modify-capability` soit évalué réellement (patron 29.2).
+ * autres abilities) afin que `modify-capability` soit évalué réellement.
  */
 class ParcDefaultsStatusBadgeTest extends TestCase
 {
@@ -125,9 +117,9 @@ class ParcDefaultsStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::REGISTRY_TAB);
 
-        // AC #1 — badge verrouillé (non-régression 29.2).
+        // Badge verrouillé (non-régression).
         $component->assertSeeHtml('data-testid="upstream-locked-'.$cap->id.'"');
-        // #9 : assertSeeHtml contextuel (évite faux-positifs sur "Verrouillé" ailleurs).
+        // assertSeeHtml contextuel : évite les faux positifs sur « Verrouillé » ailleurs.
         $component->assertSeeHtml('</i> Verrouillé');
         // Bouton masqué, « Imposé par contrat amont » affiché.
         $component->assertSeeHtml('Imposé par contrat amont');
@@ -146,16 +138,16 @@ class ParcDefaultsStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::REGISTRY_TAB);
 
-        // AC #2 — badge permissif « Modifiable ».
+        // Badge permissif « Modifiable ».
         $component->assertSeeHtml('data-testid="upstream-permissive-'.$cap->id.'"');
-        // #9 : assertSeeHtml contextuel.
+        // assertSeeHtml contextuel.
         $component->assertSeeHtml('</i> Modifiable');
-        // #2 : vérité du libellé permissif — tooltip dit la RELAXABILITÉ, pas « valeur amont s'applique ».
+        // Le tooltip permissif dit la RELAXABILITÉ, pas « valeur amont s'applique ».
         $component->assertSee('votre réglage local prévaut');
         $component->assertDontSee('valeur amont');
         // Bouton « Éditer le défaut » actif (un permissif n'est pas bloqué).
         $component->assertSeeHtml('data-testid="edit-default-'.$cap->id.'"');
-        // Note FR8 : « Votre réglage local s'applique ».
+        // Note : « Votre réglage local s'applique ».
         $component->assertSeeHtml('data-testid="upstream-permissive-note-'.$cap->id.'"');
         $component->assertSeeHtml("Votre réglage local s'applique");
         // Pas de badge verrouillé ni local.
@@ -166,10 +158,10 @@ class ParcDefaultsStatusBadgeTest extends TestCase
     #[Test]
     public function local_capability_with_active_contract_renders_local_badge(): void
     {
-        // AC #3 — contrat actif sans item pour cette capacité → statut Local.
-        // #3 : le badge « Local » n'est visible QUE si un contrat est actif.
-        // #1 : tooltip = « Défaut diffusé — aucune contrainte amont. » (surface Broadcast,
-        //      différent de capabilities-tab qui dit « Réglage propre à ce parc/groupe. »).
+        // Contrat actif sans item pour cette capacité → statut Local. Le badge
+        // « Local » n'est visible QUE si un contrat est actif, et son tooltip dit
+        // « Défaut diffusé — aucune contrainte amont. » : la surface Broadcast,
+        // là où capabilities-tab dit « Réglage propre à ce parc/groupe. ».
         $this->actAsAdmin();
         $cap = $this->capabilityWithKey('show_extensions', 'HKCU', 'Software\\Ext', 'ShowExt');
         // Créer un contrat actif sans item matchant → la capacité est « Local ».
@@ -177,11 +169,11 @@ class ParcDefaultsStatusBadgeTest extends TestCase
 
         $component = Livewire::test(self::REGISTRY_TAB);
 
-        // AC #3 — marqueur local visible (contrat actif mais pas d'item pour cette capacité).
+        // Marqueur local visible (contrat actif mais pas d'item pour cette capacité).
         $component->assertSeeHtml('data-testid="upstream-local-'.$cap->id.'"');
-        // #9 : assertSeeHtml contextuel.
+        // assertSeeHtml contextuel.
         $component->assertSeeHtml('</i> Local');
-        // #1 : tooltip différencié (surface = défaut diffusé flotte, pas parc/groupe).
+        // Tooltip différencié : la surface est le défaut diffusé, pas un parc ni un groupe.
         $component->assertSeeHtml('Défaut diffusé — aucune contrainte amont.');
         // Bouton « Éditer le défaut » actif.
         $component->assertSeeHtml('data-testid="edit-default-'.$cap->id.'"');
@@ -193,27 +185,25 @@ class ParcDefaultsStatusBadgeTest extends TestCase
     #[Test]
     public function standalone_no_contract_renders_no_upstream_badges(): void
     {
-        // #3 — en standalone (aucun contrat actif), AUCUN badge n'est rendu
-        // (pas même « Local ») → UI byte-identique à 27.17 (NFR3 AC #6).
+        // En standalone (aucun contrat actif), AUCUN badge n'est rendu
+        // (pas même « Local ») → UI byte-identique.
         $this->actAsAdmin();
         $cap = $this->capabilityWithKey('uac_enabled', 'HKLM', 'Software\\UAC', 'EnableLUA');
         // Aucun contrat actif.
 
         $component = Livewire::test(self::REGISTRY_TAB);
 
-        // AC #6 — UI identique à 27.17 sans contrat.
+        // UI identique sans contrat.
         $component->assertDontSeeHtml('upstream-locked-');
         $component->assertDontSeeHtml('upstream-permissive-');
-        // #3 : badge « Local » absent en standalone (zéro badge).
+        // Badge « Local » absent en standalone (zéro badge).
         $component->assertDontSeeHtml('upstream-local-');
     }
-
-    // ── Cas severed (#6) ───────────────────────────────────────────────────────
 
     #[Test]
     public function severed_contract_renders_no_upstream_badges(): void
     {
-        // AC #6 / #3 — contrat severed = lien coupé → traité comme standalone.
+        // Contrat severed = lien coupé → traité comme standalone.
         // AUCUN badge rendu (pas même « Local »).
         $this->actAsAdmin();
         $cap = $this->capabilityWithKey('severed_cap', 'HKCU', 'Software\\Sev', 'SevVal');
@@ -231,16 +221,14 @@ class ParcDefaultsStatusBadgeTest extends TestCase
         $component->assertDontSeeHtml('upstream-local-');
     }
 
-    // ── Compteur de requêtes NFR3 (#7) ────────────────────────────────────────
-
     #[Test]
     public function standalone_no_contract_emits_zero_items_queries_on_render(): void
     {
-        // #7 — NFR3 au point d'usage réel (rendu Livewire) : en standalone,
-        // AUCUNE requête controlhub_contract_items ne doit être émise.
+        // Au point d'usage réel (le rendu Livewire) : en standalone, AUCUNE
+        // requête controlhub_contract_items ne doit être émise.
         $this->actAsAdmin();
         $this->capabilityWithKey('qry_count_cap', 'HKCU', 'Software\\QC', 'QCVal');
-        // Aucun contrat actif → court-circuit NFR3.
+        // Aucun contrat actif → court-circuit.
 
         DB::flushQueryLog();
         DB::enableQueryLog();
@@ -252,12 +240,10 @@ class ParcDefaultsStatusBadgeTest extends TestCase
         self::assertSame(0, $itemQueries, 'aucune requête controlhub_contract_items en standalone (NFR3 au rendu Livewire)');
     }
 
-    // ── Précédence verrouillé > permissif (#4) ─────────────────────────────────
-
     #[Test]
     public function locked_badge_takes_precedence_over_permissive_for_multi_key_capability(): void
     {
-        // AC #4 : une capacité avec deux clés, l'une locked, l'autre permissive.
+        // Une capacité avec deux clés, l'une locked, l'autre permissive.
         // → un seul badge : verrouillé (précédence).
         $this->actAsAdmin();
         $cap = Capability::factory()->create(['key' => 'mk_cap', 'default_value' => 'on']);

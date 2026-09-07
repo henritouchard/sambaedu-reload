@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 60.5 — « ce partage EST l'arbre de ce groupe, d'après cette recette ».
+ * « ce partage EST l'arbre de ce groupe, d'après cette recette ».
  *
  * Trois colonnes ADDITIVES et NULLABLES, et une unicité conditionnelle. Elles
  * relient un partage à son ORIGINE ; leur absence est l'état normal de tous les
@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Schema;
  *  - `directory_template_id` — la recette dont ce partage est la matérialisation ;
  *  - `user_group_id` — le groupe de cloisonnement dont il porte l'arbre ;
  *  - `node_activation` — JSON `{ "<chemin de nœud écrit>": bool }`. Une entrée
- *    ABSENTE vaut ACTIF (décision D6=A, iso l'espace d'échange historique, créé
+ *    ABSENTE vaut ACTIF (iso l'espace d'échange historique, créé
  *    actif). Le JSON ne porte donc que les écarts au défaut, et un partage neuf
  *    n'a rien à écrire.
  *
@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Schema;
  * sur les seules lignes qu'elle concerne.
  *
  * **Suppression : `nullOnDelete` des deux côtés.** Supprimer une recette ou un
- * groupe ne doit pas emporter le partage ni ses données (D9 — aucune destruction
+ * groupe ne doit pas emporter le partage ni ses données (aucune destruction
  * implicite) : la ligne survit, orpheline et visible, et l'administrateur décide
  * depuis l'écran des partages. Une cascade aurait fait disparaître un répertoire
  * réel sur un geste qui ne parlait que d'un groupe.

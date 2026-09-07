@@ -9,7 +9,7 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `privilege` (Story 35.6) — droits de logon LSA
+// Câblage Windows du handler `privilege` — droits de logon LSA
 // `SeDeny*` EN GO NATIF via la policy LSA locale. SERVICE SYSTEM seul (le
 // compagnon n'a pas les droits, et le type n'existe pas côté session).
 //
@@ -18,12 +18,12 @@ import (
 // partielle sur compte irrésoluble, idempotence) vit dans
 // shared.PrivilegeHandler (testée hôte avec un fake) ; ce fichier n'apporte
 // que l'impl des 4 ops PrivilegeOps :
-//   - LookupSid              : windows.LookupSID("", name) → sid.String()
-//     (RÉUTILISE le pattern fsAclOps.LookupSid de 36.1 — LSA locale du poste
-//     joint, noms de domaine ET well-known résolus, D5) ;
+//  - LookupSid : windows.LookupSID("", name) → sid.String()
+//  (RÉUTILISE le pattern fsAclOps.LookupSid — LSA locale du poste
+//     joint, noms de domaine ET well-known résolus) ;
 //   - AccountsWithPrivilege  : LsaOpenPolicy + LsaEnumerateAccountsWithUserRight
-//     (lazy proc advapi32 — non wrappé par x/sys, iso pattern GetAce/DeleteAce
-//     de 36.1). AUCUN titulaire (STATUS_NO_MORE_ENTRIES /
+//     (lazy proc advapi32 — non wrappé par x/sys, iso pattern GetAce/DeleteAce).
+//     AUCUN titulaire (STATUS_NO_MORE_ENTRIES /
 //     STATUS_OBJECT_NAME_NOT_FOUND) ⇒ liste vide, PAS une erreur (les SeDeny*
 //     sont vides par défaut) ; STATUS_NO_SUCH_PRIVILEGE (nom inconnu de la
 //     LSA — inatteignable derrière l'allowlist) ⇒ erreur franche nommée ;
@@ -33,7 +33,7 @@ import (
 //     droit déjà absent ⇒ STATUS_OBJECT_NAME_NOT_FOUND traité en succès,
 //     idempotent).
 //
-// AUCUN store sur disque (D4 : le privilège EST le conteneur, la liste des
+// AUCUN store sur disque (le privilège EST le conteneur, la liste des
 // titulaires est énumérable). La policy est ouverte/fermée PAR OP (pas de
 // handle long-vécu : cycle de convergence espacé, simplicité > micro-perf).
 
@@ -70,8 +70,8 @@ type privilegeOps struct {
 
 // LookupSid résout un NOM en SID string via la LSA du poste joint
 // (LookupAccountName, relayée par windows.LookupSID avec un système vide =
-// local — RÉUTILISE le pattern fsAclOps.LookupSid, 36.1). Irrésoluble ⇒ err
-// (erreur d'item, jamais d'application partielle — piège #8).
+// local — RÉUTILISE le pattern fsAclOps.LookupSid). Irrésoluble ⇒ err
+// (erreur d'item, jamais d'application partielle).
 func (o *privilegeOps) LookupSid(name string) (string, error) {
 	sid, _, _, err := windows.LookupSID("", name)
 	if err != nil {
@@ -96,7 +96,7 @@ func (o *privilegeOps) AccountsWithPrivilege(privilege string) ([]string, error)
 	}
 
 	// Buffer alloué par la LSA : reçu dans un pointeur TYPÉ (pattern getAce
-	// de 36.1 — jamais un uintptr intermédiaire, exigence go vet/GC).
+	// de — jamais un uintptr intermédiaire, exigence go vet/GC).
 	var buffer *lsaEnumerationInformation
 	var count uint32
 	ret, _, _ := procLsaEnumerateAccountsWithUserRight.Call(

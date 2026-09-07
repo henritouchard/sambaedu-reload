@@ -7,13 +7,13 @@ namespace App\Services\Print\Exceptions;
 use RuntimeException;
 
 /**
- * Story 6.2 — Exception métier pour les échecs de commandes `rpcclient` /
+ * Exception métier pour les échecs de commandes `rpcclient` /
  * `smbclient` lors de la gestion des pilotes Windows.
  *
- * Décalque `CupsCommandException` (Story 6.1) : wrappe l'erreur avec le
+ * Décalque `CupsCommandException` : wrappe l'erreur avec le
  * contexte exécutionnel (commande exacte, stderr, return code) pour
  * exposition dans `Log::error` côté Service et toast court côté Livewire
- * (cf. AC7 — pas de leak de StackTrace).
+ * (pas de leak de StackTrace).
  *
  * Sous-classes spécialisées :
  *  - {@see WindowsPivotUnreachableException} — pivot W10 injoignable

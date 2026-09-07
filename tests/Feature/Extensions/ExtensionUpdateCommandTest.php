@@ -19,13 +19,13 @@ use Tests\Support\FakeExtensionHelperRunner;
 use Tests\TestCase;
 
 /**
- * Story 56.3 (AC3, AR1) — `php artisan ext:update <key>`.
+ * `php artisan ext:update <key>`.
  *
  * La commande est une FAÇADE : ce qui est vérifié ici, ce n'est pas le moteur
  * (couvert par {@see ExtensionInstallServiceUpdateTest}) mais le contrat CLI —
  * codes retour, messages, et l'absence de tout secret à l'écran.
  *
- * ⚠️ Non-régression 56.2 : `ext:install` et `ext:remove` lisent désormais leurs
+ * ⚠️ Non-régression : `ext:install` et `ext:remove` lisent désormais leurs
  * libellés d'étapes dans le service. Leurs sorties doivent être IDENTIQUES —
  * les valeurs sont verrouillées chaîne par chaîne dans
  * {@see ExtensionInstallServiceUpdateTest::the_step_labels_of_install_and_remove_are_unchanged_by_the_refactor()},
@@ -161,10 +161,6 @@ class ExtensionUpdateCommandTest extends TestCase
         $this->files[self::BASE.'/'.self::V2_PATH] = ['body' => self::V2_BODY, 'status' => 200, 'headers' => []];
     }
 
-    // =====================================================================
-    // ext:update
-    // =====================================================================
-
     #[Test]
     public function update_succeeds_and_reports_its_steps(): void
     {
@@ -255,8 +251,8 @@ class ExtensionUpdateCommandTest extends TestCase
     #[Test]
     public function update_never_prints_the_client_secret(): void
     {
-        // La mise à jour ne régénère AUCUN secret — mais l'invariant NFR3 se
-        // vérifie, il ne se suppose pas.
+        // La mise à jour ne régénère AUCUN secret — mais l'absence de secret
+        // dans la sortie se vérifie, elle ne se suppose pas.
         $this->installed();
         $client = \App\Models\OidcClient::where('extension_key', 'hello')->firstOrFail();
         $hash = (string) $client->client_secret_hash;
@@ -274,10 +270,6 @@ class ExtensionUpdateCommandTest extends TestCase
         // secret en clair — n'est pas réécrit par une mise à jour.
         self::assertNull($this->helper->stdinFor(ExtensionInstallService::HELPER_WRITE_ENV));
     }
-
-    // =====================================================================
-    // Non-régression 56.2 — les sorties d'install/remove n'ont pas bougé
-    // =====================================================================
 
     #[Test]
     public function install_still_prints_its_documented_step_labels(): void

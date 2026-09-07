@@ -12,14 +12,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 16.13 — helper de tests Feature.
+ * Helper de tests Feature.
  *
  * Crée les schémas SQLite minimaux (`workstations`,
  * `workstation_groups`, pivot `workstation_group_workstation`, `users`)
  * + seed un poste résolvable par `WorkstationConfigContextResolver`.
  *
  * Iso-pattern `IssuesWorkstationJwt::ensureAuthV1Tables` + tests
- * `LegacyOutEndpointTest::setUp` (4.7).
+ * `LegacyOutEndpointTest::setUp`.
  */
 trait SeedsWorkstationConfig
 {

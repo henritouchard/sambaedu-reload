@@ -21,7 +21,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesWindowsIsoSchema;
 
 /**
- * Story 3.6 — AC4.1, AC4.2 — Tests unitaires de WindowsIsoDownloadOrchestrator.
+ * Tests unitaires de WindowsIsoDownloadOrchestrator.
  */
 class WindowsIsoDownloadOrchestratorTest extends TestCase
 {
@@ -265,7 +265,7 @@ class WindowsIsoDownloadOrchestratorTest extends TestCase
     }
 
     /* =================================================================
-     * Ré-injection des pilotes (resubmitExtraction — Story 3.10)
+     * Ré-injection des pilotes (resubmitExtraction —)
      * ================================================================= */
 
     /**

@@ -20,7 +20,7 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Story 25.2 : au démarrage de la nouvelle image (après un auto-update),
+	// Au démarrage de la nouvelle image (après un auto-update),
 	// nettoyer agent.exe.old (best-effort — l'ancien process est mort, son
 	// image n'est plus verrouillée). No-op si pas de résidu.
 	cleanupOldBinary()
@@ -32,13 +32,13 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 		close(done)
 	}()
 
-	// Story 27.1bis : COMPUTERNAME (machine.name de l'overlay) — jamais
-	// demandé au serveur, lu localement (iso ComposeOverlayDocument 24.6).
+	// COMPUTERNAME (machine.name de l'overlay) — jamais
+	// demandé au serveur, lu localement (iso ComposeOverlayDocument).
 	computerName := os.Getenv("COMPUTERNAME")
 
-	// Story 27.1bis (volet 2, D1) : on s'abonne aux notifications de session
+	// On s'abonne aux notifications de session
 	// (AcceptSessionChange) — au logon (WTS_SESSION_LOGON), le service compose
-	// et écrit overlay.json possédé SYSTEM (ACL <SID>:R, infalsifiable NFR5).
+	// et écrit overlay.json possédé SYSTEM (ACL <SID>:R, infalsifiable).
 	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptSessionChange}
 
 	for {
@@ -49,17 +49,17 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 				status <- req.CurrentStatus
 			case svc.SessionChange:
 				// On ne réagit QU'au logon (WTS_SESSION_LOGON 0x5) ; les autres
-				// événements (logoff, lock, unlock…) sont ignorés (Q1=B :
-				// logon-only, pas de re-write périodique ni sur unlock).
+				// événements (logoff, lock, unlock…) sont ignorés : l'écriture
+				// est logon-only, sans re-write périodique ni sur unlock.
 				// Best-effort : une composition/écriture overlay ne doit JAMAIS
 				// bloquer le SCM — elle est rapide (lecture cache +
 				// WriteFileAtomic + icacls). On NE déréférence PAS le
 				// lpEventData (uintptr→Pointer rejeté par vet) : on
-				// ré-énumère les sessions interactives (WTS vet-clean, 24.6) —
+				// ré-énumère les sessions interactives (WTS vet-clean)
 				// la nouvelle session y apparaît, on écrit pour chacune
 				// (idempotent).
 				if req.EventType == windows.WTS_SESSION_LOGON {
-					// Story 27.1bis : réécriture overlay.json (best-effort, sous
+					// Réécriture overlay.json (best-effort, sous
 					// garde recover — une panique overlay ne tue pas le SCM).
 					func() {
 						defer func() {
@@ -69,7 +69,7 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 						}()
 						writeOverlayForAllSessions(agent.Store, computerName, agent.Log)
 					}()
-					// Story 36.5 (amendement final) : pose du LIEN app_profile par
+					// Pose du LIEN app_profile par
 					// SYSTEM au logon (le compagnon n'a pas SeCreateSymbolicLinkPrivilege
 					// et ne peut pas poser le lien). Bloc best-effort DISTINCT de
 					// l'overlay (recover propre) : une panique de l'un ne touche pas
@@ -83,13 +83,13 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 						}()
 						applyAppProfilesForAllSessions(agent.Store, agent.Log)
 					}()
-					// Story 27.9 : réveil de la boucle de convergence — un cycle
+					// Réveil de la boucle de convergence — un cycle
 					// complet (RunCycle) part dès le logon au lieu d'attendre le
 					// prochain tick (jusqu'à ~1 h). Send NON-BLOQUANT (coalescé,
 					// jamais de blocage du SCM) et INDÉPENDANT de l'overlay : posé
 					// HORS du recover ci-dessus, une panique overlay n'empêche pas
-					// le réveil et vice-versa (les deux sont best-effort distincts,
-					// AC4). Le debounce min-interval vit côté boucle.
+					// le réveil et vice-versa (les deux sont best-effort distincts).
+					// Le debounce min-interval vit côté boucle.
 					agent.RequestWake()
 				}
 				// On re-confirme l'état courant au SCM (l'event n'a pas changé

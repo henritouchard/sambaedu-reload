@@ -30,11 +30,11 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Support\RecordingBackend;
 
 /**
- * Story 60.4 — L'ENCART DE CONFORMITÉ ASSAINI.
+ * L'ENCART DE CONFORMITÉ ASSAINI.
  *
- * Depuis l'Epic 34, cet encart affichait les écarts en ENTRÉES DE LISTE D'ACCÈS
+ * Depuis l', cet encart affichait les écarts en ENTRÉES DE LISTE D'ACCÈS
  * BRUTES, en chasse fixe, à l'écran d'un administrateur — ce qui frôlait le
- * garde-fou « pas d'éditeur de droits bruts » de l'epic. La descente de
+ * garde-fou « pas d'éditeur de droits bruts ». La descente de
  * l'exécution sous la ligne de contrat permet enfin de le dire autrement : un
  * nœud, un destinataire par son nom SE5, un accès attendu et un accès constaté.
  *
@@ -138,7 +138,7 @@ class ShareDriftPanelTest extends TestCase
         self::assertStringContainsString('(racine)', $section);
         self::assertStringContainsString('alice (utilisateur)', $section);
         self::assertStringContainsString("3e A (groupe d'utilisateurs)", $section);
-        // Story 62.4 — l'encart parle VERBES : l'attendu est la liste complète,
+        // L'encart parle VERBES : l'attendu est la liste complète,
         // le constaté n'est plus que « Lire ». Le vocabulaire reste celui du plan.
         self::assertStringContainsString('Lire + Éditer + Créer + Supprimer', $section);
         self::assertStringContainsString('Lire', $section);

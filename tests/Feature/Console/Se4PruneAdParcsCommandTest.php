@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.7 / AC4 — `se4:prune-ad-parcs` en dry-run : liste les CN de OU=Parcs,
+ * `se4:prune-ad-parcs` en dry-run : liste les CN de OU=Parcs,
  * journalise nommément les exclusions (app_profiles + salles physiques), et
  * n'émet AUCUNE écriture LDAP. Le seam `parcsEntriesSeam` injecte des entrées
  * factices (tests HÔTE, sans AD).

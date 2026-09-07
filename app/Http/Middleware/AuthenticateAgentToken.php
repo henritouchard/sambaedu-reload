@@ -16,40 +16,40 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 23.2 — Authentification du canal agent desired-state (FR12-FR15).
+ * Authentification du canal agent desired-state.
  *
- * Protège les futurs endpoints `/api/v1/agent/*` du canal neuf (23.5 state,
- * 24.1 report) par le bearer token per-poste émis par
+ * Protège les endpoints `/api/v1/agent/*` du canal neuf (state, report) par le
+ * bearer token per-poste émis par
  * {@see TokenRotationService}. Alias router : `agent.token`
  * ({@see \App\Providers\AgentServiceProvider}).
  *
  * Le poste résolu par le token est la SEULE identité de la requête : les
  * controllers du canal n'acceptent jamais d'identifiant de poste en entrée
- * (portée minimale AC1, règle d'enforcement documentée dans
+ * (portée minimale, règle d'enforcement documentée dans
  * docs/agent/token-lifecycle.md). Injection :
  *
  *  - `agent.workstation` ({@see Workstation}) dans `$request->attributes`.
  *
- * Ordre des vérifications (figé par la story) :
+ * Ordre des vérifications, figé :
  *
  *  1. bearer absent/malformé → 401 AGENT_TOKEN_MISSING ;
  *  2. lookup sha256 sur `agent_token_hash` OU `agent_previous_token_hash`
- *     (fenêtre de grâce D5) ; introuvable → 401 AGENT_TOKEN_INVALID
+ *     (fenêtre de grâce) ; introuvable → 401 AGENT_TOKEN_INVALID
  *     (révoqué = hash effacé = introuvable : pas d'oracle) ;
- *  3. anti-clonage (AC5) : MAC divergente → quarantaine + 403 ; hostname
+ * 3. anti-clonage : MAC divergente → quarantaine + 403 ; hostname
  *     seul divergent → warning sans quarantaine (renommage légitime) ;
- *  4. quarantaine → maj check-in (le poste reste visible, FR15) puis
+ *  4. quarantaine → maj check-in (le poste reste visible) puis
  *     403 AGENT_QUARANTINED ;
- *  5. rotation — sérialisée sous verrou ligne (transaction + FOR UPDATE,
- *     review 23.2) : auth via previous → ré-émission (réponse perdue, AC4) ;
+ *  5. rotation — sérialisée sous verrou ligne (transaction + FOR UPDATE) :
+ *     auth via previous → ré-émission (réponse perdue) ;
  *     auth via courant avec grâce ouverte → confirmation ; échéance
  *     dépassée → rotation. Nouveau token renvoyé dans le header
- *     `X-Agent-New-Token` (le corps reste le JSON v1 figé du contrat 23.1) ;
+ *  `X-Agent-New-Token` (le corps reste le JSON v1 figé du contrat) ;
  *  6. maj `agent_last_checkin_at` + injection + next.
  *
  * Réponses d'erreur JSON `{error, message, code}` iso `EnsureWorkstationJwt`.
  * Tout le flux est SQL-only — aucune dépendance annuaire (critère Keycloak,
- * AC7 : le grep de review doit rester vide).
+ * le grep de review doit rester vide).
  */
 class AuthenticateAgentToken
 {
@@ -79,7 +79,7 @@ class AuthenticateAgentToken
         $hash = hash('sha256', $bearer);
         // OR groupé : si un global scope est un jour posé sur Workstation
         // (archivage), un OR plat (`scope AND courant OR previous`) ferait
-        // échapper le previous au scope (review 23.2, défensif).
+        // échapper le previous au scope (review, défensif).
         $workstation = Workstation::query()
             ->where(function ($query) use ($hash): void {
                 $query->where('agent_token_hash', $hash)
@@ -91,7 +91,7 @@ class AuthenticateAgentToken
             return $this->errorResponse(self::CODE_TOKEN_INVALID, 'Invalid agent token', 401);
         }
 
-        // ── Anti-clonage (AC5) — avant tout traitement ─────────────────────
+        // Anti-clonage — avant tout traitement
         if ($this->isMacMismatch($request, $workstation)) {
             $this->tokens->quarantine($workstation, sprintf(
                 'mac mismatch: presented=%s expected=%s',
@@ -103,7 +103,7 @@ class AuthenticateAgentToken
         }
         $this->warnIfHostnameMismatch($request, $workstation);
 
-        // ── Quarantaine (AC3) — check-in léger : le poste reste visible ────
+        // Quarantaine — check-in léger : le poste reste visible
         if ($workstation->agent_quarantined_at !== null) {
             $workstation->agent_last_checkin_at = now();
             $workstation->save();
@@ -111,13 +111,13 @@ class AuthenticateAgentToken
             return $this->errorResponse(self::CODE_QUARANTINED, 'Agent quarantined', 403);
         }
 
-        // ── Rotation glissante D5 (AC4) — sous verrou ligne ────────────────
+        // Rotation glissante — sous verrou ligne.
         // Sans verrou, deux check-ins simultanés du même poste lisent tous
         // deux `previous = null`, rotatent chacun, et le dernier save()
         // écrase : le token renvoyé par la première réponse n'existe plus en
-        // base → lock-out possible, contraire à l'invariant AC4. Le re-fetch
+        // base → lock-out possible, contraire à l'invariant. Le re-fetch
         // FOR UPDATE sérialise et ré-évalue l'état à jour (no-op SQLite de
-        // test, verrou réel Postgres). Review 23.2.
+        // test, verrou réel Postgres).
         $newToken = null;
         $locked = DB::transaction(function () use ($hash, $workstation, &$newToken): ?Workstation {
             /** @var Workstation|null $locked */
@@ -187,13 +187,13 @@ class AuthenticateAgentToken
     }
 
     /**
-     * MAC divergente = signal de clonage fiable (AC5). Les deux formes
+     * MAC divergente = signal de clonage fiable. Les deux formes
      * passent par {@see MacAddressNormalizer::normalize()} (forme canonique
      * `aa:bb:cc:dd:ee:ff`) : l'agent Windows émettra naturellement
      * `AA-BB-CC-DD-EE-FF` (ipconfig) — un simple mismatch de séparateur ne
-     * doit pas quarantainer un poste légitime (review 23.2). Header absent,
+     * doit pas quarantainer un poste légitime (review). Header absent,
      * fiche sans MAC ou format non reconnu → pas de détection (l'agent
-     * Epic 24 enverra les headers systématiquement).
+     * enverra les headers systématiquement).
      */
     private function isMacMismatch(Request $request, Workstation $workstation): bool
     {
@@ -213,7 +213,7 @@ class AuthenticateAgentToken
 
     /**
      * Hostname seul divergent → warning sans quarantaine : tolère le délai
-     * d'un renommage légitime UI/AD vs hostname local (AC5). Comparaison
+     * D'un renommage légitime UI/AD vs hostname local. Comparaison
      * insensible à la casse (sémantique hostname).
      */
     private function warnIfHostnameMismatch(Request $request, Workstation $workstation): void
@@ -235,11 +235,11 @@ class AuthenticateAgentToken
     }
 
     /**
-     * Échéance de rotation dépassée (AC4). Pas d'expiration calendaire
+     * Échéance de rotation dépassée. Pas d'expiration calendaire
      * sèche : un token très ancien s'authentifie et se rotate. `null` (état
      * hérité improbable) ou date future (snapshot DB restauré, horloge
      * corrigée) = état incohérent → rotation immédiate, qui repose un
-     * `rotated_at` sain (review 23.2).
+     * `rotated_at` sain (review).
      */
     private function rotationDue(Workstation $workstation): bool
     {
@@ -250,7 +250,7 @@ class AuthenticateAgentToken
 
         // Plancher à 1 jour : un AGENT_TOKEN_ROTATION_DAYS mal configuré
         // (0/négatif) déclencherait une rotation + écriture DB à chaque
-        // check-in de tout le parc (review 23.2).
+        // check-in de tout le parc (review).
         $days = max(1, (int) config('agent.token_rotation_days', 30));
 
         return $rotatedAt->copy()->addDays($days)->isPast();

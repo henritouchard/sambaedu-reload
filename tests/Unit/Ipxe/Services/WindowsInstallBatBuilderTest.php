@@ -12,7 +12,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC3.1 / T2.6.
+ * T2.6.
  *
  * Tests unitaires de {@see WindowsInstallBatBuilder} — line endings `\r\n`
  * stricts + URL native + sanitization shell-arg.
@@ -214,7 +214,7 @@ class WindowsInstallBatBuilderTest extends TestCase
 
 
     /**
-     * Post-review code-review #4 — AC2.3 CRITICAL : pas de secret loggué.
+     * Aucun secret ne doit atteindre les logs.
      *
      * On injecte des CANARY secrets dans la config, on capture les logs Monolog
      * via TestHandler, et on assert qu'AUCUN log ne contient une canary.

@@ -11,20 +11,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Story 54.1 — Source d'extensions : d'OÙ provient une extension du registre.
+ * Source d'extensions : d'OÙ provient une extension du registre.
  *
- * Le multi-sources (AR7) est modélisé DÈS LE SOCLE. En 54.1 une seule ligne
+ * Le multi-sources (AR7) est modélisé DÈS LE SOCLE. En une seule ligne
  * existait : la source `bundled`, dont les manifests sont embarqués dans le
  * dépôt SE5 (`resources/extensions/<id>/manifest.json`).
  *
- * **Story 56.1** active les sources DISTANTES (`ExtensionSourceKind::Remote`) :
+ * Active les sources DISTANTES (`ExtensionSourceKind::Remote`) :
  * une source distante porte l'URL de BASE d'un dépôt statique publiant trois
  * fichiers (`index.json`, `index.json.sig`, `source.pub`), la **clé publique
  * Ed25519 pinnée** à l'ajout (`public_key` — jamais re-téléchargée ensuite) et
  * l'état de sa dernière synchro (`sync_status`, `last_synced_at`,
  * `last_error`).
  *
- * ⚠️ `kind` = transport, `is_official` = confiance (FR4). Deux axes distincts.
+ * ⚠️ `kind` = transport, `is_official` = confiance. Deux axes distincts.
  *
  * ⚠️ `url` est une URL de BASE, sans `/index.json` final : c'est le service de
  * synchro qui compose les trois chemins du dépôt (contrat de format v1).
@@ -105,7 +105,7 @@ class ExtensionSource extends Model
 
     /**
      * Hôte du dépôt — CE QUE L'ADMIN DOIT VOIR avant d'intégrer une extension
-     * tierce (FR4/UX-DR4 : « Source non officielle : `<host>` »). Chaîne vide
+     * tierce (« Source non officielle : `<host>` »). Chaîne vide
      * si l'URL n'a pas d'hôte (source embarquée).
      */
     public function host(): string
@@ -117,7 +117,7 @@ class ExtensionSource extends Model
 
     /**
      * État de synchro effectif — `Ok` par défaut pour les lignes antérieures à
-     * la migration 56.1 comme pour la source embarquée (qui ne se synchronise
+     * la migration comme pour la source embarquée (qui ne se synchronise
      * jamais par le réseau).
      */
     public function syncStatus(): ExtensionSourceSyncStatus
@@ -128,22 +128,21 @@ class ExtensionSource extends Model
     /**
      * Cette source PROPOSE-t-elle encore ses extensions `available` ?
      *
-     * Règle UNIQUE de proposabilité (56.1) : une source gelée (`enabled =
+     * Règle UNIQUE de proposabilité : une source gelée (`enabled =
      * false`) ou dont le dernier catalogue n'a pas pu être VÉRIFIÉ
      * (`sync_status = error`, signature invalide) ne propose plus rien —
-     * fail-closed NFR2. Une source `unreachable` continue de proposer son
-     * dernier catalogue vérifié (le registre EST le cache local, NFR7).
+     * fail-closed. Une source `unreachable` continue de proposer son dernier
+     * catalogue vérifié (le registre EST le cache local).
      *
      * ⚠️ Cette méthode vit sur le MODÈLE, pas dans un service, parce qu'elle a
      * DEUX appelants qui doivent dire exactement la même chose :
      * {@see \App\Services\Extensions\ExtensionCatalogService::find()} (ce qui
      * s'AFFICHE) et
      * {@see \App\Services\Extensions\ExtensionLifecycleService::integrate()}
-     * (ce qui s'INTÈGRE). Review 56.1 #1 : tant que la règle n'existait qu'en
-     * privé dans le catalogue, un appel Livewire direct à `integrate(<id>)`
-     * intégrait une extension pourtant masquée — le fail-closed ne tenait qu'à
-     * l'affichage. Une garantie qui n'existe que dans la vue n'est pas une
-     * garantie.
+     * (ce qui s'INTÈGRE). Tant que la règle vivait en privé dans le catalogue,
+     * un appel Livewire direct à `integrate(<id>)` intégrait une extension
+     * pourtant masquée : le fail-closed ne tenait qu'à l'affichage. Une garantie
+     * qui n'existe que dans la vue n'est pas une garantie.
      *
      * Ne concerne QUE le passage `available → integrated`. Une extension DÉJÀ
      * intégrée reste désinstallable même si sa source est gelée : rompre le

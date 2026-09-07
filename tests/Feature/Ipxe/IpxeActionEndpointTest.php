@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.2 — AC3.3 / AC8.2 / T6.5.
+ * T6.5.
  *
  * Tests feature de la route native `GET|POST /ipxe/action/{action}`.
  */
@@ -38,7 +38,7 @@ class IpxeActionEndpointTest extends TestCase
         $response->assertStatus(200);
         $body = (string) $response->getContent();
         self::assertStringContainsString('/ipxe/action/rescuecd##params', $body);
-        // Fix review #6 — assertions headers sécurité complètes au niveau Feature.
+        // Assertions headers sécurité complètes au niveau Feature.
         // Symfony normalise `no-store` en `no-store, private` au send (cf.
         // ResponseHeaderBag::computeCacheControlValue) ; on assert l'inclusion.
         self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
@@ -69,7 +69,7 @@ class IpxeActionEndpointTest extends TestCase
 
         $response->assertStatus(200);
         $body = (string) $response->getContent();
-        // URL absolue (fix 2026-06-04) — un `kernel Win10/wimboot` relatif se
+        // URL absolue — un `kernel Win10/wimboot` relatif se
         // résolvait contre `/ipxe/action/` → 410 → abort iPXE.
         self::assertMatchesRegularExpression('#^kernel https?://[^/]+/ipxe/Win10/wimboot$#m', $body);
     }
@@ -139,7 +139,7 @@ class IpxeActionEndpointTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.7 — AC5.2-5.7 / T4.9 — 6 nouvelles actions.
+     * T4.9 — 6 nouvelles actions.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -151,7 +151,7 @@ class IpxeActionEndpointTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        // Post-review #9 — content-type strict text/plain (contrat firmware iPXE).
+        // Content-type strict text/plain (contrat firmware iPXE).
         self::assertStringContainsString('text/plain', (string) $response->headers->get('Content-Type'));
         $body = (string) $response->getContent();
         self::assertStringContainsString('#!ipxe', $body);
@@ -240,7 +240,7 @@ class IpxeActionEndpointTest extends TestCase
     #[Test]
     public function it_persists_distinct_boot_log_action_for_3_7_actions(): void
     {
-        // D11 / AC8.1 — action clonezilla_live insere 'ipxe_clonezilla' dans boot_log.
+        // D11 / — action clonezilla_live insere 'ipxe_clonezilla' dans boot_log.
         $uniqueName = 'pc-clz-log-' . substr(bin2hex(random_bytes(4)), 0, 8);
         Workstation::create([
             'name' => $uniqueName,
@@ -264,7 +264,7 @@ class IpxeActionEndpointTest extends TestCase
     }
 
     /**
-     * Post-review #14 — différentiel poste connu vs inconnu.
+     * Différentiel poste connu vs inconnu.
      *
      * Les 6 tests `it_renders_{action}` ci-dessus POSTent avec un MAC arbitraire
      * (poste inconnu = `WorkstationLocator::locate()` retourne null). Ce test
@@ -299,17 +299,17 @@ class IpxeActionEndpointTest extends TestCase
     }
 
     /**
-     * Post-review #1 + #10 — non-régression D2 / FactoryReset label boot_log.
+     * Non-régression du label boot_log de FactoryReset.
      *
-     * `FactoryReset` (3.2) et `ClonezillaRestoreSda2Sda1` (3.7) partagent la
+     * `FactoryReset` et `ClonezillaRestoreSda2Sda1` partagent la
      * MÊME cmdline iPXE — garanti par
      * `it_ensures_factory_reset_and_clonezilla_restore_have_same_kernel_cmdline`.
      * MAIS leurs labels divergent volontairement (cf. PHPDoc bootLogAction()) :
      *
-     *  - FactoryReset                 → `'ipxe_action'`     (compat 3.2)
-     *  - ClonezillaRestoreSda2Sda1   → `'ipxe_clonezilla'` (audit fin 3.7)
+     *  - FactoryReset → `'ipxe_action'` (compat)
+     *  - ClonezillaRestoreSda2Sda1 → `'ipxe_clonezilla'` (audit fin)
      *
-     * Ce test gèle le comportement post-3.7 : un POST `/ipxe/action/factory_reset`
+     * Ce test gèle le comportement postérieur : un POST `/ipxe/action/factory_reset`
      * doit toujours produire `MachineBootLog.action='ipxe_action'`, jamais
      * `'ipxe_clonezilla'`.
      */

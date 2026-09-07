@@ -17,9 +17,9 @@ use Tests\TestCase;
 use App\Models\User;
 
 /**
- * Tests Feature — Liens profonds sections natives (Story 16.3a, AC4.4).
+ * Tests Feature — Liens profonds sections natives.
  *
- * Couvre les 6 tests AC4.4 :
+ * Couvre les 6 tests :
  * 1. Chip success visible en listing quand displayName matche
  * 2. Cellule vide en listing quand pas de match
  * 3. CTA natif primaire sur page détail quand match
@@ -83,10 +83,6 @@ class GpoNativeSectionLinksTest extends TestCase
     // reste couverte par les tests de la page DÉTAIL ci-dessous et par
     // tests/Unit/Gpo/NativeSectionResolverTest.
 
-    // =========================================================================
-    // AC4.4 — Test 3 : CTA natif primaire sur page détail quand match
-    // =========================================================================
-
     #[Test]
     public function it_displays_primary_native_cta_on_detail_page_when_match(): void
     {
@@ -101,17 +97,13 @@ class GpoNativeSectionLinksTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
-            // CTA natif présent et identifié par data-testid (review 16.3a #6).
+            // CTA natif présent et identifié par data-testid.
             ->assertSee('data-testid="native-cta-wallpapers"', false)
             // escape=true (default) : l'apostrophe est rendue via `{{ $link['label'] }}`
             // qui passe par `e()` → le HTML contient `&#039;`, on doit chercher la
             // version escapée. Avec `false`, le test cherche `'` littéral et fail.
             ->assertSee("Gérer les fonds d'écran");
     }
-
-    // =========================================================================
-    // AC4.4 — Test 4 : N CTAs pour multi-match
-    // =========================================================================
 
     #[Test]
     public function it_displays_n_ctas_for_multi_match(): void
@@ -127,12 +119,12 @@ class GpoNativeSectionLinksTest extends TestCase
 
         $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
-            // Les 3 CTAs natifs identifiés via data-testid (review 16.3a #6).
+            // Les 3 CTAs natifs identifiés via data-testid.
             ->assertSee('data-testid="native-cta-wallpapers"', false)
             ->assertSee('data-testid="native-cta-app-customizations"', false)
             ->assertSee('data-testid="native-cta-profils-itinerants"', false);
 
-        // Assertion forte sur le nombre exact de CTAs natifs (review 16.3a #6).
+        // Assertion forte sur le nombre exact de CTAs natifs.
         $html = $rendered->html();
         $this->assertSame(
             3,
@@ -140,10 +132,6 @@ class GpoNativeSectionLinksTest extends TestCase
             'Le multi-match doit produire exactement 3 CTAs natifs',
         );
     }
-
-    // =========================================================================
-    // AC4.4 — Test 5 : paramètre ?from_gpo propagé dans les URLs CTA
-    // =========================================================================
 
     #[Test]
     public function it_propagates_from_gpo_param_in_cta_urls(): void
@@ -161,13 +149,8 @@ class GpoNativeSectionLinksTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
-            // Vérification précise (review 16.3a #6) — URL CTA complète attendue.
+            // URL CTA complète attendue.
             ->assertSee('/app/parc-settings/wallpapers?from_gpo=' . $encodedGuid, false);
     }
 
-    // =========================================================================
-    // Bonus — les deux tests d'en-tête de colonne et de chip multi-match dans le
-    // LISTING sont retirés pour la même raison (écran remplacé par l'onglet
-    // « GPO » de la page Migration).
-    // =========================================================================
 }

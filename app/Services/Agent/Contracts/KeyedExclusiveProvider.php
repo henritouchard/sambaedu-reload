@@ -7,7 +7,6 @@ namespace App\Services\Agent\Contracts;
 /**
  * Marqueur OPTIONNEL d'un {@see StateProvider} `Exclusive` dont l'exclusivité se
  * joue PAR IDENTITÉ DE CLÉ et non « un seul item pour tout le type »
- * (Story 27.3).
  *
  * Cas d'usage : `registry`. Une clé de registre = UNE valeur, mais un poste peut
  * recevoir PLUSIEURS clés distinctes. La maille la plus spécifique gagne **pour
@@ -16,7 +15,7 @@ namespace App\Services\Agent\Contracts;
  * sans ce marqueur, `StateCompiler::selectExclusive()` n'élit qu'UN candidat
  * pour tout le type — ce qui écraserait des clés distinctes.
  *
- * Discipline D2 PRÉSERVÉE : le provider rend toujours des candidats BRUTS par
+ * La discipline est PRÉSERVÉE : le provider rend toujours des candidats BRUTS par
  * maille (aucune précédence/tri/dédup). Il déclare seulement COMMENT identifier
  * une « ressource exclusive » dans son payload — la sélection (précédence par
  * maille, récence intra-maille) reste au {@see StateCompiler} SEUL.

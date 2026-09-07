@@ -13,7 +13,6 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 16.10 — AC4.1.
  *
  * Middleware Laravel qui protège les routes `/api/v1/agent/*` (sauf
  * `/enroll` et `/refresh`) par un JWT RS256 `tier=workstation` valide.
@@ -25,7 +24,7 @@ use Symfony\Component\HttpFoundation\Response;
  *  - `auth_v1.workstation_uuid` (string) : claim `sub`
  *  - `auth_v1.jwt_claims` ({@see WorkstationJwtClaims}) : DTO complet
  *
- * Réponse erreur (D8) — JSON `{error, message, code}` HTTP 401.
+ * Réponse erreur — JSON `{error, message, code}` HTTP 401.
  */
 class EnsureWorkstationJwt
 {

@@ -18,12 +18,12 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature du scoping Policy WorkstationGroupPolicy (Story 7.1 — AC3, AC10).
+ * Tests Feature du scoping Policy WorkstationGroupPolicy.
  *
  * On teste directement la Policy via `Gate::forUser($user)->allows('view', $group)`
  * plutôt que via HTTP : les pages Livewire `/parc/*` ont un pipeline de setup
  * lourd (sidebar, auth guard legacy…) qui ne se prête pas à un test headless
- * isolé. La Policy est le socle logique de AC3 — si elle est correcte et si
+ * isolé. La Policy est le socle logique de — si elle est correcte et si
  * elle est bien appelée dans `mount()` (vérifié par inspection du code), le
  * contrat est respecté.
  */
@@ -186,7 +186,7 @@ class WorkstationGroupScopingTest extends TestCase
 
         Permission::firstOrCreate(['name' => 'computer.view', 'guard_name' => 'web']);
         Permission::firstOrCreate(['name' => 'computer.control', 'guard_name' => 'web']);
-        // Review 7.2 #1 : la perm existe déjà via le seeder (enum SambaPermission),
+        // La perm existe déjà via le seeder (enum SambaPermission),
         // on conserve ce firstOrCreate pour les cas de test isolé sans seeder.
         Permission::firstOrCreate(['name' => 'computer.install', 'guard_name' => 'web']);
     }
@@ -204,10 +204,6 @@ class WorkstationGroupScopingTest extends TestCase
             'is_active' => true,
         ]);
     }
-
-    // ========================================================================
-    // AC3 — Blocage d'accès direct hors périmètre
-    // ========================================================================
 
     public function test_delegated_user_can_view_authorized_group(): void
     {
@@ -266,10 +262,6 @@ class WorkstationGroupScopingTest extends TestCase
         $this->assertFalse(Gate::forUser($user->fresh())->allows('view', $group));
     }
 
-    // ========================================================================
-    // manage() gate — Story 7.1 ajout
-    // ========================================================================
-
     public function test_manage_gate_requires_computer_control(): void
     {
         $user = $this->makeUser('prof-manage');
@@ -293,16 +285,10 @@ class WorkstationGroupScopingTest extends TestCase
         $this->assertTrue(Gate::forUser($admin->fresh())->allows('manage', $group));
     }
 
-    // ========================================================================
-    // Review #1 — delete/update gate serveur
-    // ========================================================================
-
     /**
-     * Story 7.1 — Review #1 : la gate `delete-workstationGroup` doit retomber
-     * sur `canAdminComputers` (droit global `computer.install` — cf. review
-     * 7.2 #1 : la perm `computer.modify` n'existait pas dans l'enum). Un
-     * délégué sur un groupe physique ne peut PAS le supprimer, même s'il a
-     * la délégation `computer.view`.
+     * La gate `delete-workstationGroup` retombe sur `canAdminComputers` (droit
+     * global `computer.install`). Un délégué sur un groupe physique ne peut PAS
+     * le supprimer, même s'il a la délégation `computer.view`.
      */
     public function test_delegated_user_cannot_delete_group(): void
     {

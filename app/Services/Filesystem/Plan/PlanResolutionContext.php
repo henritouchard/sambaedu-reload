@@ -7,7 +7,7 @@ namespace App\Services\Filesystem\Plan;
 use App\Exceptions\Filesystem\PlanResolutionException;
 
 /**
- * Story 60.1 — ENTRÉES en mémoire d'une résolution de plan.
+ * ENTRÉES en mémoire d'une résolution de plan.
  *
  * **Tout est fourni, rien n'est cherché.** Le résolveur ne requête aucune base,
  * ne lit aucun disque, n'ouvre aucun réseau : c'est l'appelant qui assemble ce
@@ -19,12 +19,12 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  * L'isolation vient de l'APPARTENANCE, pas de l'arborescence. On ne résout donc
  * pas « une classe et ses matières » d'un coup : on résout UN groupe, l'unité de
  * cloisonnement. Pour les matières, la maille pertinente sera « matière×classe »
- * et non « matière » nue — l'accrochage au type de groupe est le périmètre de la
- * story suivante ; ici, l'invariant est seulement documenté et respecté.
+ * et non « matière » nue — l'accrochage au type de groupe reste à faire ; ici,
+ * l'invariant est seulement documenté et respecté.
  *
  * Les membres portent leur RÔLE D'ARÊTE (`member|manager|owner`), vocabulaire
  * stocké inchangé. Le drapeau historique de professeur principal est mort depuis
- * la story 42.2 — seul le rôle d'arête est vivant, et c'est le seul que ce
+ * seul le rôle d'arête est vivant, et c'est le seul que ce
  * contexte accepte.
  */
 final class PlanResolutionContext

@@ -13,7 +13,7 @@ use App\Services\Filesystem\FileLocationService;
 use RuntimeException;
 
 /**
- * Story 63.1 — LE REFUS QUI NOMME, QUAND UN EMPLACEMENT NE PEUT PAS ÊTRE
+ * LE REFUS QUI NOMME, QUAND UN EMPLACEMENT NE PEUT PAS ÊTRE
  * REPRÉSENTÉ.
  *
  * Patron {@see UnknownFileBackendException} et
@@ -47,8 +47,7 @@ final class FileLocationException extends RuntimeException
 
     /**
      * Un emplacement désigne un backend cloud qui n'est PAS le cloud actif de
-     * l'instance — garde n° 2 du cadrage, rejouée côté service (iso AC3 de
-     * 61.4).
+     * l'instance — seconde garde du cadrage, rejouée côté service.
      */
     public static function authorityIsNotTheActiveCloud(
         string $objet,

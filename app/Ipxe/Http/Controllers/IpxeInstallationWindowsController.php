@@ -10,8 +10,6 @@ use App\Ipxe\Services\IpxeService;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.5 — AC5.1 / D2.
- *
  * Controller fin — délègue 100% à
  * {@see IpxeService::handleInstallationWindowsMenu()}.
  *
@@ -20,10 +18,10 @@ use Illuminate\Http\Response;
  *
  * **Middlewares attachés en `routes/web.php`** :
  *
- *  - `auth.v1.lan-only` (16.11 — restriction RFC1918).
+ *  - `auth.v1.lan-only` (restriction RFC1918).
  *  - `throttle:600,1`.
  *
- * Pattern iso 3.1-3.4 (DO-6).
+ * Pattern iso aux contrôleurs iPXE voisins.
  */
 class IpxeInstallationWindowsController extends Controller
 {

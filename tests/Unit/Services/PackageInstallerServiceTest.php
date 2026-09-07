@@ -52,10 +52,6 @@ class PackageInstallerServiceTest extends TestCase
         rmdir($dir);
     }
 
-    // ========================================
-    // Smoke tests (existants)
-    // ========================================
-
     #[Test]
     public function it_is_instantiable(): void
     {
@@ -67,10 +63,6 @@ class PackageInstallerServiceTest extends TestCase
     {
         $this->assertTrue(method_exists($this->service, 'install'));
     }
-
-    // ========================================
-    // downloadXmlRecipe()
-    // ========================================
 
     #[Test]
     public function download_xml_recipe_downloads_to_tmp2_with_correct_naming(): void
@@ -126,10 +118,6 @@ class PackageInstallerServiceTest extends TestCase
 
         $this->service->downloadXmlRecipe($depotApp->app_id, $depotApp->xml_url);
     }
-
-    // ========================================
-    // verifyXmlHash()
-    // ========================================
 
     #[Test]
     public function verify_xml_hash_passes_with_valid_sha512(): void
@@ -214,10 +202,6 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertFileExists($filePath);
     }
 
-    // ========================================
-    // parseDirectives()
-    // ========================================
-
     #[Test]
     public function parse_directives_extracts_all_node_types(): void
     {
@@ -240,7 +224,6 @@ XML;
 
         $directives = $this->service->parseDirectives($filePath);
 
-        // Packages
         $this->assertCount(1, $directives['packages']);
         $this->assertEquals('firefox', $directives['packages'][0]['id']);
         $this->assertEquals('Mozilla Firefox', $directives['packages'][0]['name']);
@@ -250,7 +233,6 @@ XML;
         $this->assertEquals('5', $directives['packages'][0]['priority']);
         $this->assertEquals('false', $directives['packages'][0]['reboot']);
 
-        // Downloads
         $this->assertCount(2, $directives['downloads']);
         $this->assertEquals('http://example.com/setup.exe', $directives['downloads'][0]['url']);
         $this->assertEquals('wpkg/packages/firefox/setup.exe', $directives['downloads'][0]['saveto']);
@@ -259,16 +241,13 @@ XML;
         $this->assertNull($directives['downloads'][1]['md5sum']);
         $this->assertEquals('ghi789', $directives['downloads'][1]['sha256sum']);
 
-        // Deletes
         $this->assertCount(1, $directives['deletes']);
         $this->assertEquals('wpkg/packages/firefox/old-setup.exe', $directives['deletes'][0]['file']);
 
-        // Untars
         $this->assertCount(1, $directives['untars']);
         $this->assertEquals('wpkg/packages/firefox/archive.tar.gz', $directives['untars'][0]['tarfile']);
         $this->assertEquals('wpkg/packages/firefox/', $directives['untars'][0]['target']);
 
-        // Unzips
         $this->assertCount(1, $directives['unzips']);
         $this->assertEquals('wpkg/packages/firefox/archive.zip', $directives['unzips'][0]['zipfile']);
         $this->assertEquals('wpkg/packages/firefox/', $directives['unzips'][0]['target']);
@@ -327,10 +306,6 @@ XML;
 
         $this->service->parseDirectives($filePath);
     }
-
-    // ========================================
-    // downloadFiles()
-    // ========================================
 
     private function createMockInstallationLog(): InstallationLog
     {
@@ -652,10 +627,6 @@ XML;
         $this->assertFileExists($this->tmpDir . '/wpkg/packages/app/setup.exe');
     }
 
-    // ========================================
-    // processDeletes()
-    // ========================================
-
     #[Test]
     public function process_deletes_deletes_existing_file(): void
     {
@@ -679,10 +650,6 @@ XML;
         ]);
     }
 
-    // ========================================
-    // processUntars()
-    // ========================================
-
     #[Test]
     public function process_untars_calls_extract_tar_gz_with_correct_paths(): void
     {
@@ -702,10 +669,6 @@ XML;
         ]);
     }
 
-    // ========================================
-    // processUnzips()
-    // ========================================
-
     #[Test]
     public function process_unzips_calls_extract_zip_with_correct_paths(): void
     {
@@ -724,10 +687,6 @@ XML;
             ['zipfile' => 'wpkg/packages/app/archive.zip', 'target' => 'wpkg/packages/app/out'],
         ]);
     }
-
-    // ========================================
-    // resolveAndValidatePath() (via process*)
-    // ========================================
 
     #[Test]
     public function process_deletes_rejects_path_traversal(): void

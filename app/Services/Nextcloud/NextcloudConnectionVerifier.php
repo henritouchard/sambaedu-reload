@@ -10,9 +10,8 @@ use App\Services\ServiceCredentials;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Story 61.2 — LA VÉRIFICATION DE CONFIGURATION EST FAIL-CLOSED.
+ * LA VÉRIFICATION DE CONFIGURATION EST FAIL-CLOSED.
  *
- * ---------------------------------------------------------------------------
  * **RECADRAGE DU 2026-08-08 — IL N'Y A PLUS QU'UNE QUESTION.** Ce service
  * s'appelait `NextcloudModeGuard` et sondait le MODE VISÉ parmi deux positions
  * (instance administrée / compte porteur délégué). La mesure contre une instance
@@ -30,7 +29,6 @@ use Illuminate\Support\Facades\Cache;
  *     cible qu'on s'apprête à enregistrer ;
  *  3. la **persistance du diagnostic**, et avec elle l'état « déclaré mais NON
  *     VÉRIFIÉ depuis le dernier changement de secret ».
- * ---------------------------------------------------------------------------
  *
  * **La sonde ne s'exécute QUE quand ce qui définit la connexion change** —
  * l'appelant en décide, et l'écran l'applique. Le point de sauvegarde de l'écran
@@ -44,9 +42,8 @@ use Illuminate\Support\Facades\Cache;
 final class NextcloudConnectionVerifier
 {
     /**
-     * Dernier diagnostic de connexion, PERSISTÉ (correction de revue 61.2 #3).
+     * Dernier diagnostic de connexion, PERSISTÉ.
      *
-     * ---------------------------------------------------------------------------
      * **POURQUOI CE DIAGNOSTIC SURVIT À LA PAGE.** L'écran doit pouvoir dire
      * « cette configuration est déclarée mais NON VÉRIFIÉE depuis le dernier
      * changement de secret ». Une propriété Livewire ne le tiendrait pas : au
@@ -60,9 +57,8 @@ final class NextcloudConnectionVerifier
      * jamais une autorité. Le perdre ne coûte qu'un clic ; le voir mentir coûterait
      * une configuration réputée bonne qui ne l'est pas.
      *
-     * La CLÉ est inchangée depuis 61.2 : le diagnostic déjà en cache sur une
+     * La CLÉ est inchangée depuis : le diagnostic déjà en cache sur une
      * instance en service reste lisible après le retrait des modes.
-     * ---------------------------------------------------------------------------
      */
     public const DIAGNOSTIC_CACHE_KEY = 'nextcloud:mode:last-diagnostic';
 

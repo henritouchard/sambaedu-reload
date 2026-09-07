@@ -371,10 +371,8 @@ class ContractAssignmentReconciler
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Écritures — chaque support pose ce qui manque puis retire ce qui n'est
     // plus voulu, en ne touchant QUE les lignes d'origine amont.
-    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * @param  array<int, array<int, int>>  $desired
@@ -728,9 +726,7 @@ class ContractAssignmentReconciler
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Verdicts — ce que le canal ③ rapportera de chaque item.
-    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * Retient le verdict d'un item jusqu'à l'écriture.

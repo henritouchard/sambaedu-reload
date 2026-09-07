@@ -21,16 +21,16 @@ use Tests\Traits\CreatesPrinterDriversSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.2 — Tests Feature de la commande `printer-drivers:sync`.
+ * Tests Feature de la commande `printer-drivers:sync`.
  *
- * Décalque le pattern `PrintersSyncCommandTest` 6.1 (fix #12) :
+ * Décalque le pattern `PrintersSyncCommandTest` :
  *  - dry-run : aucune écriture en DB.
  *  - marquage orphan : SER row non-orphan absente de Samba → orphan=true.
  *  - restauration : SER orphan + Samba la retrouve → orphan=false.
  *  - idempotence : 2 runs consécutifs sur état aligné = 0 modification.
- *  - skip si Samba down (fix #12 décalqué) : RC != 0, aucun row marqué orphan.
+ *  - skip si Samba down : RC != 0, aucun row marqué orphan.
  *
- * Note 6.2 : la sync NE CRÉE PAS de lignes SER pour les drivers Samba sans
+ * Note : la sync NE CRÉE PAS de lignes SER pour les drivers Samba sans
  * printer_cups_name (cf. note de tête de la commande — rattachement
  * exclusivement via workflow upload UI). Test dédié vérifie le warning log.
  */
@@ -205,7 +205,7 @@ class PrinterDriversSyncCommandTest extends TestCase
             se4fsAssocs: [['cups_name' => 'imp4', 'driver_name' => 'Aligned Driver']],
         );
 
-        // Fix #22 — assert l'absence d'UPDATE sur printer_drivers, plutôt
+        // On assert l'absence d'UPDATE sur printer_drivers, plutôt
         // que de comparer updated_at (Eloquent ne touche pas updated_at
         // si aucune valeur ne change ; le test passerait même avec des
         // UPDATEs no-op inutiles).
@@ -344,7 +344,7 @@ class PrinterDriversSyncCommandTest extends TestCase
     #[Test]
     public function sync_marks_orphan_counts_all_rows_when_driver_attached_to_multiple_printers(): void
     {
-        // Fix #5 — un même driver_name rattaché à 2 imprimantes différentes
+        // Un même driver_name rattaché à 2 imprimantes différentes
         // donne 2 lignes SER ; quand le driver disparaît de Samba, les 2
         // lignes doivent passer orphan=true ET le compteur doit afficher 2
         // (pas 1, ce qui serait le bug de keyBy() qui écrase).

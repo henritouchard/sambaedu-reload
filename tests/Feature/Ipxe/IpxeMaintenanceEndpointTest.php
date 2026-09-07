@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.2 — AC3.2 / AC8.2 / T6.4.
+ * T6.4.
  *
  * Tests feature de la route native `GET|POST /ipxe/maintenance`.
  */
@@ -38,7 +38,7 @@ class IpxeMaintenanceEndpointTest extends TestCase
         $response->assertStatus(200);
         $body = (string) $response->getContent();
         self::assertStringContainsString('chain --replace --autofree maintenance##params', $body);
-        // Fix review #6 — assertions headers sécurité complètes au niveau Feature.
+        // Assertions headers sécurité complètes au niveau Feature.
         // Symfony normalise `no-store` en `no-store, private` au send (cf.
         // ResponseHeaderBag::computeCacheControlValue) ; on assert l'inclusion.
         self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));

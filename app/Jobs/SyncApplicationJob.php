@@ -141,9 +141,7 @@ class SyncApplicationJob extends BaseControlHubJob
         ];
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Mapping payload → modèle
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Applique les champs du payload au modèle Application.
@@ -171,15 +169,12 @@ class SyncApplicationJob extends BaseControlHubJob
             }
         }
 
-        // controlhub_version
         if (array_key_exists('controlhub_version', $payload)) {
             $application->controlhub_version = $payload['controlhub_version'];
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Utilitaires
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Vérifie si l'entité locale est à jour par rapport à la version ControlHub.

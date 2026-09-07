@@ -10,10 +10,10 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.11 — Tick scheduler (everyMinute) qui déclenche les réinstallations
+ * Tick scheduler (everyMinute) qui déclenche les réinstallations
  * dûes, bornées par le plafond de concurrence (D11).
  *
- * Architecture iso 4.4 :
+ * Architecture iso :
  *  - Tick (léger : 1 SELECT + N enqueue) : cette commande.
  *  - Exécution effective (reboot forcé / WOL) : worker `laravel-queue-general`
  *    via les `DispatchMachinePowerActionJob` dispatchés par le service.

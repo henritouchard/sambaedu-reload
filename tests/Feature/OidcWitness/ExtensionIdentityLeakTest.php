@@ -18,10 +18,10 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.3 — **AC3, volet fonctionnel** : *aucun identifiant de base ni
- * d'annuaire ne fuit dans le canal des extensions* (FR24).
+ * **Volet fonctionnel** : *aucun identifiant de base ni
+ * d'annuaire ne fuit dans le canal des extensions*.
  *
- * Les tests de 55.2 vérifient la LISTE EXACTE des clés de claims. Celui-ci
+ * Les tests vérifient la LISTE EXACTE des clés de claims. Celui-ci
  * vérifie autre chose, et c'est complémentaire : que les VALEURS internes
  * (`users.id`, `ad_guid`, `dn`) ne se sont glissées **nulle part** dans les
  * octets réellement servis — ni sous un nom de claim auquel personne n'a pensé,
@@ -32,7 +32,7 @@ use Tests\TestCase;
  * prouver une absence sur ce qui part sur le fil.
  *
  * ⚠️ Ce fichier est NOUVEAU et n'affaiblit aucun test existant : les assertions
- * de 55.2 restent en place et gardent leur objet propre.
+ * de restent en place et gardent leur objet propre.
  */
 class ExtensionIdentityLeakTest extends TestCase
 {
@@ -70,7 +70,7 @@ class ExtensionIdentityLeakTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     private function makeUser(): User
     {
@@ -138,10 +138,6 @@ class ExtensionIdentityLeakTest extends TestCase
         return (string) base64_decode($padded, true);
     }
 
-    // =====================================================================
-    // AC3 — la capacité négative, vérifiée sur les octets servis
-    // =====================================================================
-
     #[Test]
     public function neither_the_id_token_nor_userinfo_ever_carry_a_database_or_directory_identifier(): void
     {
@@ -158,7 +154,7 @@ class ExtensionIdentityLeakTest extends TestCase
 
         $userinfoBody = (string) $userinfo->getContent();
 
-        // ── CONTRÔLE POSITIF d'abord ─────────────────────────────────────
+        // CONTRÔLE POSITIF d'abord
         // Sans lui, les absences ci-dessous pourraient n'être que le symptôme
         // d'un flux cassé qui ne sert rien du tout.
         foreach ([$idTokenPayload, $userinfoBody] as $served) {
@@ -167,7 +163,7 @@ class ExtensionIdentityLeakTest extends TestCase
             self::assertStringContainsString('prof.dupont', $served, 'contrôle positif : le `sub` EST servi');
         }
 
-        // ── Les absences ─────────────────────────────────────────────────
+        // Les absences
         foreach ([$idTokenPayload, $userinfoBody] as $served) {
             self::assertStringNotContainsString(self::AD_GUID, $served, 'l\'objectGUID AD a fui');
             self::assertStringNotContainsString('aaaaaaaa-bbbb', $served, 'un fragment d\'objectGUID a fui');
@@ -198,7 +194,7 @@ class ExtensionIdentityLeakTest extends TestCase
         self::assertNotSame((string) $user->id, (string) $claims['sub']);
 
         // Et `/userinfo` rend le MÊME sujet — l'égalité est garantie par
-        // construction (55.2), on la vérifie ici depuis le canal extensions.
+        // construction, on la vérifie ici depuis le canal extensions.
         $userinfo = $this->get('/oidc/userinfo', [
             'Authorization' => 'Bearer ' . $body['access_token'],
         ])->assertOk()->json();

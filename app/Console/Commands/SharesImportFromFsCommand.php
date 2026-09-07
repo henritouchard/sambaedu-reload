@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Epic 34 (reprise legacy `acls/`) — IMPORT one-shot d'un répertoire legacy vers
+ * IMPORT one-shot d'un répertoire legacy vers
  * un lecteur réseau géré : matérialise les entrées ACL MAPPABLES en assignations
  * (`network_share_assignables`), puis reconverge le disque via
  * {@see NetworkShareService::provision()}.
@@ -120,7 +120,6 @@ class SharesImportFromFsCommand extends Command
             return self::FAILURE;
         }
 
-        // --- Rapport de classification ---------------------------------------
         $this->info(sprintf('Import depuis : %s', $path));
         $this->line(sprintf('  → lecteur managé : « %s »  (Partages/%s)', $name, $directoryName));
         $this->newLine();
@@ -157,14 +156,12 @@ class SharesImportFromFsCommand extends Command
 
         $this->newLine();
 
-        // --- Dry-run : on s'arrête ici --------------------------------------
         if (! $apply) {
             $this->info('[DRY-RUN] Aucune modification. Relancez avec --apply pour créer le lecteur et provisionner.');
 
             return self::SUCCESS;
         }
 
-        // --- Application ------------------------------------------------------
         $share = DB::transaction(function () use ($name, $directoryName, $result, $performedBy): NetworkShare {
             $share = NetworkShare::create([
                 'name' => $name,

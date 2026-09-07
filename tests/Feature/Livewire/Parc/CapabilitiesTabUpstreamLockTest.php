@@ -17,12 +17,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.2 (AC #1, #5, #6) — verrou amont sur l'onglet « Options / Capacités »
+ * Verrou amont sur l'onglet « Options / Capacités »
  * d'un WorkstationGroup (override PAR PARC).
  *
  * Une capacité verrouillée amont → `saveOverride`/`openAdd`/`removeOverride`
  * refusés SERVEUR (aucune écriture `capability_assignments`) + non proposée à
- * l'ajout. Une capacité non verrouillée → écrit normalement (non-régression 27.12).
+ * l'ajout. Une capacité non verrouillée → écrit normalement (non-régression).
  */
 class CapabilitiesTabUpstreamLockTest extends TestCase
 {
@@ -108,8 +108,8 @@ class CapabilitiesTabUpstreamLockTest extends TestCase
             ->set('formValue', 'off')
             ->call('saveOverride');
 
-        // AC #1 : « message explicite, pas un échec silencieux » — le toast d'erreur
-        // de verrou amont DOIT être émis (preuve que le refus n'est pas silencieux).
+        // Message explicite, pas un échec silencieux : le toast d'erreur de
+        // verrou amont DOIT être émis.
         $component->assertDispatched('toastMagic', fn ($event, $params): bool => ($params['status'] ?? null) === 'error');
 
         $this->assertDatabaseMissing('capability_assignments', [
@@ -150,7 +150,7 @@ class CapabilitiesTabUpstreamLockTest extends TestCase
         $component = Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id])
             ->call('removeOverride', $cap->id);
 
-        // AC #1 : refus explicite (toast), pas silencieux.
+        // Refus explicite (toast), pas silencieux.
         $component->assertDispatched('toastMagic', fn ($event, $params): bool => ($params['status'] ?? null) === 'error');
 
         // L'override n'est PAS retiré (refus explicite, le refnum ne touche pas un

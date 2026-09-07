@@ -15,16 +15,14 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * Story 16.12 — AC2.3 / D3 / D11 / D12.
- *
  * Endpoint d'ingestion machine-to-machine. **PAS** d'UX wrapping — réponses
  * Laravel natif :
  *
  *  - 201 noContent sur succès (insert ou idempotent_skip)
  *  - 422 `{message, errors}` sur validation FormRequest
- *  - 401 hérité du middleware `auth.v1.workstation` (16.10) `{error, code, message}`
+ *  - 401 hérité du middleware `auth.v1.workstation` `{error, code, message}`
  *
- * Idempotence (D12) — déduplication 2 niveaux :
+ * Idempotence — déduplication 2 niveaux :
  *
  *  1. **Pré-check applicatif** : avant insert, on cherche `(workstation_uuid,
  *     correlation_id)` ; si row existante → 201 silent + log
@@ -43,7 +41,7 @@ class ScriptExecutionLogIngestionController extends Controller
 
         $correlationId = $validated['correlation_id'] ?? null;
 
-        // 1. Pré-check idempotence applicatif (D12).
+        // 1. Pré-check idempotence applicatif.
         if ($correlationId !== null && $this->correlationExists($workstationUuid, (string) $correlationId)) {
             Log::channel('scriptsos')->info('scriptsos.ingest.idempotent_skip', [
                 'event' => 'scriptsos.ingest.idempotent_skip',
@@ -111,7 +109,7 @@ class ScriptExecutionLogIngestionController extends Controller
 
     /**
      * Extrait le `workstation_uuid` injecté par le middleware
-     * `auth.v1.workstation` (16.10). Garde-fou défense en profondeur :
+     * `auth.v1.workstation`. Garde-fou défense en profondeur :
      * si l'attribute est absent, c'est une erreur de routing (route sans
      * middleware) — on refuse explicitement.
      */
@@ -130,7 +128,7 @@ class ScriptExecutionLogIngestionController extends Controller
     }
 
     /**
-     * Pré-check idempotence applicatif (D12).
+     * Pré-check idempotence applicatif.
      */
     private function correlationExists(string $workstationUuid, string $correlationId): bool
     {

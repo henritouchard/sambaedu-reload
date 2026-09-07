@@ -7,10 +7,10 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.2 / AC4.1 — Composition d'un AppProfile modifiée (Application
+ * Composition d'un AppProfile modifiée (Application
  * ajoutée/retirée). Impacte tous les postes liés indirectement à ce profile
  * (postes directs + via parcs).
- * Émetteurs : Story 15.4 (HORS scope ici).
+ * Émetteurs : (HORS scope ici).
  */
 final readonly class AppProfileApplicationChanged
 {

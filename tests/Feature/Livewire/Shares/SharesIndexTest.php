@@ -18,7 +18,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 34.2 — Tests Feature Livewire de la page liste + création (T2/T3/AC1/AC2).
+ * Tests Feature Livewire de la page liste + création (T2/T3/).
  *
  * Process::fake() : AUCUN accès FS réel ; shares_root pointé sur un tempdir.
  */
@@ -114,13 +114,13 @@ class SharesIndexTest extends TestCase
             'letter' => 'P:',
             'created_by_user_id' => $admin->id,
         ]);
-        // Story 60.4 — l'écran ENFILE : rien n'est écrit dans la requête.
+        // L'écran ENFILE : rien n'est écrit dans la requête.
         Process::assertNothingRan();
         Queue::assertPushed(ReconcileNetworkShareJob::class);
     }
 
     /**
-     * **STORY 61.3 — LE CHOIX DE L'AUTORITÉ D'ÉCRITURE, GATÉ ET HONNÊTE.**
+     * **LE CHOIX DE L'AUTORITÉ D'ÉCRITURE, GATÉ ET HONNÊTE.**
      *
      * Capacité active : la case du cloud est proposée, avec sa description de chemin
      * d'accès (web + client de synchronisation, PAS de lecteur SMB), et le partage
@@ -230,7 +230,7 @@ class SharesIndexTest extends TestCase
     #[Test]
     public function user_without_view_permission_is_forbidden_on_index(): void
     {
-        // Review #5 : symétrie avec la page détail — l'hydratation directe du
+        // Symétrie avec la page détail : l'hydratation directe du
         // composant index est fermée par l'`abort_unless` du mount.
         $noPerm = User::create(['login' => 'noperm-' . uniqid(), 'role' => 'autre', 'is_active' => true]);
         $this->actingAs($noPerm);
@@ -238,7 +238,6 @@ class SharesIndexTest extends TestCase
         Livewire::test(self::PAGE)->assertStatus(403);
     }
 
-    // --- Suppression groupée -------------------------------------------------
 
     #[Test]
     public function bulk_delete_removes_selected_shares_after_typed_confirmation(): void

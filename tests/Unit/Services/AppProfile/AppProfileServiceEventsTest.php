@@ -21,10 +21,10 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC6, AC7.2 — Events dispatchés par les méthodes mutatrices
+ * Events dispatchés par les méthodes mutatrices
  * d'AppProfileService.
  *
- * Invariant AC6.3 : aucun event si la mutation échoue (transaction rollback).
+ * Invariant : aucun event si la mutation échoue (transaction rollback).
  */
 class AppProfileServiceEventsTest extends TestCase
 {
@@ -188,7 +188,7 @@ class AppProfileServiceEventsTest extends TestCase
         $this->group->appProfiles()->attach([$this->profile->id]);
         $this->group->applications()->attach([$this->application->id]);
 
-        // Crée le shim wpkg_deployments si absent (15.1 — non couvert par bootstrapper 15.2).
+        // Crée le shim wpkg_deployments si absent (non couvert par bootstrapper).
         if (! \Illuminate\Support\Facades\Schema::hasTable('wpkg_deployments')) {
             \Illuminate\Support\Facades\Schema::create('wpkg_deployments', function ($t) {
                 $t->uuid('id')->primary();
@@ -233,7 +233,6 @@ class AppProfileServiceEventsTest extends TestCase
     }
 
     /**
-     * Story 15.4 / AC6.3 + Correction post-review #1 + #3 :
      * Vérifie que les events sont dispatchés via DB::afterCommit, donc qu'un
      * rollback de la transaction parente empêche le dispatch.
      *

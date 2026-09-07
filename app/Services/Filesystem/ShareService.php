@@ -12,36 +12,35 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 5.2 — Service métier d'orchestration des partages de classe.
+ * Service métier d'orchestration des partages de classe.
  *
  * Décalque fidèle des fonctions du legacy `sambaedu/includes/partages.inc.php` :
  *  - `update_classes()` (l. 452-580) → {@see createClassShare()} +
- *    {@see toggleEchange()} (le legacy combinait les deux ; on les sépare en
- *    Story 5.2 pour une UX claire).
- *  - `cree_rep()`       (l. 326-393) → {@see syncUserClassMemberships()}.
- *  - Renommage `Classe_X` → `.Classe_X` (l. 575-578) → {@see archiveClassShare()}
- *    (D4=A : méthode publique, mais aucun appel automatique).
+ *    {@see toggleEchange()} : le legacy combinait les deux, on les sépare.
+ *  - `cree_rep()` (l. 326-393) → {@see syncUserClassMemberships()}.
+ *  - Renommage `Classe_X` → `.Classe_X` (l. 575-578) → {@see archiveClassShare()},
+ *    méthode publique mais sans aucun appel automatique.
  *
  * Convention naming (cf. legacy l. 344) :
  *   - Path FS : `/var/sambaedu/Classes/Classe_<UserGroup::name>` (casse préservée).
  *   - ACL group : `equipe_<lower(name)>` et `Classe_<lower(name)>` avec `\\040`
  *     pour les espaces (cf. {@see escapeAclClassName()}).
  *
- * Décisions kickoff (cf. story §Kickoff Décisions) :
- *  - **D1=A** : pas de table dédiée `shares`, FS = source de vérité.
- *  - **D3=A** : archive élève via `Classe_<new>/<eleve>/Archives/`.
- *  - **D4=A** : `archiveClassShare()` exposée mais pas auto-déclenchée.
- *  - **D6=A** : `_echange` activé par défaut à la création.
- *  - **D9=A** : pas de rollback mkdir+setfacl, idempotence garantie via
- *    `setAcls -b` qui wipe avant le batch.
- *  - **D10=A** : audit via `quota_audit_logs` avec `target_type='share'`.
+ * Choix de cadrage :
+ *  - pas de table dédiée `shares` : le FS est la source de vérité ;
+ *  - archive élève via `Classe_<new>/<eleve>/Archives/` ;
+ *  - `archiveClassShare()` exposée mais jamais déclenchée automatiquement ;
+ *  - `_echange` activé par défaut à la création ;
+ *  - pas de rollback mkdir+setfacl : l'idempotence est garantie par
+ *    `setAcls -b`, qui wipe avant le batch ;
+ *  - audit via `quota_audit_logs` avec `target_type='share'`.
  *
  * Sécurité : toutes les opérations FS sous `/var/sambaedu/Classes` sont
  * protégées par {@see AclService::validatePath()} (regex anti-traversal +
  * profondeur max). En complément, `mkdir`/`mv`/`chgrp`/`chown` sont préfixés
  * `escapeshellarg`.
  *
- * Cache UI (review 5.2 #13) : la SFC `class-share-section.blade.php` cache
+ * Cache UI : la SFC `class-share-section.blade.php` cache
  * `getStatus($group)` 60s sous la clé `share-status:<group_id>`. Toutes les
  * mutations publiques (`createClassShare`, `toggleEchange`, `archiveClassShare`,
  * `syncUserClassMemberships`) appellent `Cache::forget('share-status:<id>')`
@@ -51,7 +50,7 @@ use Illuminate\Support\Facades\Process;
 class ShareService
 {
     /**
-     * Racine canonique des partages classes. Overridable en tests (D13).
+     * Racine canonique des partages classes. Surchargeable en tests.
      * Cohérent avec `AclService::$classesRoot`.
      */
     public static string $classesRoot = '/var/sambaedu/Classes';
@@ -64,10 +63,6 @@ class ShareService
     {
         return rtrim((string) config('filesystem.classes_root', static::$classesRoot), '/');
     }
-
-    // =========================================================================
-    // Helpers nommage / paths
-    // =========================================================================
 
     /**
      * Dépouille le préfixe `Classe_` (case-insensitive) si présent et applique
@@ -89,10 +84,10 @@ class ShareService
     {
         $bare = preg_match('/^Classe_(.+)$/i', $rawName, $m) ? $m[1] : $rawName;
 
-        // Review 5.2 #12 (durcissement préventif) : refuser les noms
+        // Durcissement préventif : refuser les noms
         // commençant par `.` (les classes admin n'ont pas besoin de noms
         // cachés, et `archiveClassShare` réserve le préfixe `.` à l'archive).
-        // Review 5.2 #15 (Q décision) : refuser également les espaces (la
+        // Refuser également les espaces (la
         // racine FS `Classe_<name>` est ensuite passée à `validatePath` qui
         // les rejette de toute façon — cohérence et simplicité).
         // Caractères autorisés : alphanum + . _ - (1er char != `.`).
@@ -240,10 +235,6 @@ class ShareService
         return $path;
     }
 
-    // =========================================================================
-    // ACL builders — décalqués 1:1 sur partages.inc.php l. 452-580 + 372
-    // =========================================================================
-
     /**
      * Set d'ACLs canonique pour la racine `/Classe_<nom>/`. Décalque l. 498.
      */
@@ -377,19 +368,15 @@ class ShareService
         ];
     }
 
-    // =========================================================================
-    // Operations publiques
-    // =========================================================================
-
     /**
      * Crée le partage d'une classe (racine + sous-dirs + dossiers élèves) +
      * applique les ACLs canoniques. Décalque `partages.inc.php::update_classes`
      * l. 452-580.
      *
-     * Idempotent (AC 3) : un second appel re-applique les ACLs sans toucher
+     * Idempotent : un second appel re-applique les ACLs sans toucher
      * aux dossiers existants ni aux data dedans.
      *
-     * D6=A : `_echange` activé par défaut à la création.
+     * `_echange` est activé par défaut à la création.
      */
     public function createClassShare(UserGroup $group, ?string $performedBy = null): bool
     {
@@ -468,7 +455,7 @@ class ShareService
             $subdirs = [
                 '_travail' => $this->buildTravailAcls($classNameLower),
                 '_profs' => $this->buildProfsAcls($classNameLower),
-                '_echange' => $this->buildEchangeAcls($classNameLower, active: true), // D6=A
+                '_echange' => $this->buildEchangeAcls($classNameLower, active: true), // `_echange` actif par défaut à la création.
             ];
             foreach ($subdirs as $sub => $acls) {
                 $subPath = $classPath . '/' . $sub;
@@ -483,7 +470,7 @@ class ShareService
             }
 
             // 5b. Dépôt de devoirs `_travail/devoirs` (comble le gap legacy
-            //     find_devoirs()). Même ACL que _travail : l'équipe pédagogique
+            //  find_devoirs()). Même ACL que _travail : l'équipe pédagogique
             //     écrit (dépose sujets), les élèves lisent. Le legacy chownait ce
             //     dossier à UN prof (modèle mono-enseignant) ; SE5 s'appuie sur
             //     l'ACL `equipe_<classe>` (multi-enseignant, cohérent socle).
@@ -527,7 +514,7 @@ class ShareService
             return $allOk;
         } finally {
             $lock->release();
-            // Review 5.2 #13 — cache invalidation post-mutation.
+            // Invalidation du cache après mutation.
             Cache::forget('share-status:' . $group->id);
         }
     }
@@ -591,7 +578,7 @@ class ShareService
                     continue;
                 }
 
-                // D3=A : déplacer vers Classe_<new>/<eleve>/Archives.
+                // Déplacer vers Classe_<new>/<eleve>/Archives.
                 $newEleveDir = $newPath . '/' . $login;
                 $this->ensureDirectory($newEleveDir);
 
@@ -623,8 +610,8 @@ class ShareService
         // 2. Pour les classes retirées (sans nouvelle classe correspondante) :
         //    on retire l'ACL `user:<login>:rwx` du dossier classe pour ne pas
         //    laisser un accès résiduel. Le dossier élève est laissé tel quel
-        //    (data préservée — cohérent D9 fail-soft).
-        // Review 5.2 #8 — `$added` et `$removed` sont disjoints par
+        //    (data préservée, fail-soft).
+        // `$added` et `$removed` sont disjoints par
         // construction (`array_diff` symétrique), donc inutile de re-filtrer :
         // toutes les classes retirées sont également candidates au nettoyage
         // d'ACL (que la première boucle ait archivé un dossier ou non).
@@ -656,7 +643,7 @@ class ShareService
             'success' => $allOk,
         ]);
 
-        // Review 5.2 #13 — cache invalidation post-mutation : on bust toutes
+        // Invalidation du cache après mutation : on bust toutes
         // les classes concernées (old ∪ new) pour que l'UI ne montre pas un
         // état périmé sur l'une ou l'autre.
         foreach (array_unique(array_merge($oldClassIds, $newClassIds)) as $cid) {
@@ -704,15 +691,15 @@ class ShareService
             'success' => $ok,
         ]);
 
-        // Review 5.2 #13 — cache invalidation post-mutation.
+        // Invalidation du cache après mutation.
         Cache::forget('share-status:' . $group->id);
 
         return $ok;
     }
 
     /**
-     * Archive le partage d'une classe (rename `Classe_X` → `.Classe_X`). D4=A :
-     * exposé mais pas auto. Décalque l. 575-578.
+     * Archive le partage d'une classe (rename `Classe_X` → `.Classe_X`). Exposé,
+     * mais jamais déclenché automatiquement. Décalque l. 575-578.
      */
     public function archiveClassShare(UserGroup $group): bool
     {
@@ -737,7 +724,7 @@ class ShareService
             return false;
         }
 
-        // Review 5.2 #11 (Q2 décalque legacy strict + log) : si le `.Classe_X`
+        // Décalque strict du legacy, plus un log : si le `.Classe_X`
         // cible existe déjà (cycle restauration → re-archivage, ou doublon de
         // groupe avec le même nom), on REFUSE le mv. Le legacy ligne 577 a le
         // même bug silencieux ; on ajoute un log warning explicit pour que
@@ -771,7 +758,7 @@ class ShareService
 
         Log::info('ShareService: archiveClassShare', ['from' => $classPath, 'to' => $target]);
 
-        // Review 5.2 #13 — cache invalidation post-mutation.
+        // Invalidation du cache après mutation.
         Cache::forget('share-status:' . $group->id);
 
         return true;
@@ -823,10 +810,6 @@ class ShareService
         }
         return $status;
     }
-
-    // =========================================================================
-    // Helpers privés FS — encapsulent les sudo mkdir/mv/rm/chown/chgrp.
-    // =========================================================================
 
     /**
      * Crée un dossier (sudo mkdir -p) si absent. Idempotent.
@@ -907,9 +890,9 @@ class ShareService
     /**
      * Applique chown www-admin + chgrp domain admins (cohérent legacy).
      *
-     * Review 5.2 #7 : retourne `bool` et log warning si l'une des commandes
-     * échoue (ex: groupe `domain admins` inexistant en environnement non-AD
-     * ou dev VM). Cohérent AC 10 fail-soft non-silencieux.
+     * Retourne `bool` et log un warning si l'une des commandes échoue (ex :
+     * groupe `domain admins` inexistant en environnement non-AD ou sur la VM de
+     * développement) : fail-soft, mais jamais silencieux.
      */
     private function chownAndChgrp(string $path): bool
     {

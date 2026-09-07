@@ -13,7 +13,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 17.6 / AC2 / AC5 / AC6.1 — Endpoint `/wpkg/winget_out.php`.
+ * Endpoint `/wpkg/winget_out.php`.
  *
  * Parité JSON `winget_out.php` : décision {install?, upgrade?, uninstall?},
  * Content-Type text/json, JSON_PRETTY_PRINT. ≥3 scénarios de parité
@@ -51,7 +51,7 @@ class WingetOutEndpointTest extends TestCase
     }
 
     /**
-     * AC5.2 — flag winget off → 400 Bad request (parité `:23-26`).
+     * Flag winget off → 400 Bad request (parité `:23-26`).
      */
     #[Test]
     public function it_returns_400_when_winget_disabled(): void
@@ -68,12 +68,11 @@ class WingetOutEndpointTest extends TestCase
     }
 
     /**
-     * AC2.5 — validation : action != "list" / machine vide / list vide → 400.
+     * Validation : action != "list" / machine vide / list vide → 400.
      */
     #[Test]
     public function it_returns_400_on_invalid_params(): void
     {
-        // action != list
         $this->post('/wpkg/winget_out.php', ['machine' => 'PC1', 'list' => '[]', 'action' => 'install'])
             ->assertStatus(400);
 
@@ -85,14 +84,11 @@ class WingetOutEndpointTest extends TestCase
         $this->post('/wpkg/winget_out.php', ['machine' => 'PC1', 'list' => '', 'action' => 'list'])
             ->assertStatus(400);
 
-        // list non-JSON → décodage échoue → 400 (D7).
+        // list non-JSON → décodage échoue → 400.
         $this->post('/wpkg/winget_out.php', ['machine' => 'PC1', 'list' => 'not-json', 'action' => 'list'])
             ->assertStatus(400);
     }
 
-    /**
-     * Scénario 1 — Machine vierge (`list = []`) → tout en install.
-     */
     #[Test]
     public function scenario_machine_vierge_tout_en_install(): void
     {
@@ -114,7 +110,7 @@ class WingetOutEndpointTest extends TestCase
 
         $response->assertOk();
         // Parité mimetype text/json (non-standard legacy ; Laravel ajoute
-        // ; charset=utf-8 — pattern natif accepté, iso 16.13).
+        // ; charset=utf-8 — pattern natif accepté).
         self::assertStringStartsWith('text/json', (string) $response->headers->get('Content-Type'));
 
         $json = json_decode((string) $response->getContent(), true);
@@ -212,7 +208,7 @@ class WingetOutEndpointTest extends TestCase
     }
 
     /**
-     * #5 (review) — Machine inconnue (resolver retourne vide, donc liste XML
+     * Machine inconnue (resolver retourne vide, donc liste XML
      * vide) + `add.json` peuplé → toutes les entrées `add.json` partent en
      * `install` (comportement baseline `add.json`, parité legacy : `$add` est
      * mergé dans `$liste` même sans app XML). `list = []` côté poste.
@@ -246,7 +242,7 @@ class WingetOutEndpointTest extends TestCase
     }
 
     /**
-     * AC2.6 — Aucune écriture de fichier temporaire /tmp/winget_*.json.
+     * Aucune écriture de fichier temporaire /tmp/winget_*.json.
      */
     #[Test]
     public function it_does_not_write_tmp_files(): void

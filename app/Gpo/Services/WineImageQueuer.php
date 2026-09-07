@@ -14,12 +14,10 @@ use Illuminate\Support\Str;
  * Service métier — Met en queue la génération de l'image Wine partagée.
  *
  * Sépare la logique "dispatch + log + lock idempotence" du Job lui-même
- * (Controllers fins, Services métier, Jobs simples). Iso pattern 16.3b
+ * (Controllers fins, Services métier, Jobs simples). Iso pattern
  * (`NetworkScriptGenerator`).
  *
- * Story 16.3c — AC1.3, AC2.1, AC5.2.
- *
- * Idempotence (SM discrepance (a) tranchement 2026-05-12) :
+ * Idempotence :
  * - `Cache::lock('gpo:wine:generate-image:{application}', 1800)` non-bloquant
  *   AVANT le push. Si un Job est déjà en queue / en cours pour la même
  *   application, on rejette le second dispatch avec une exception métier
@@ -58,14 +56,14 @@ final class WineImageQueuer
      */
     public function dispatch(string $application): string
     {
-        // AC1.3 / AC5.2 — Validation regex stricte.
+        // Validation regex stricte.
         if (preg_match(self::APPLICATION_REGEX, $application) !== 1) {
             throw new \InvalidArgumentException(
                 "WineImageQueuer: application name '{$application}' viole regex " . self::APPLICATION_REGEX,
             );
         }
 
-        // AC1.3 — Validation que le préfixe existe (sauf chaîne vide = défaut).
+        // Validation que le préfixe existe (sauf chaîne vide = défaut).
         if (! $this->scanner->exists($application)) {
             throw new \InvalidArgumentException(
                 "WineImageQueuer: prefix '{$application}' introuvable dans le scan FS",

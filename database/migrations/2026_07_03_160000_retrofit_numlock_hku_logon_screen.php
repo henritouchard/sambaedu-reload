@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 35.3 — RETROFIT `numlock_on_logon` : la clé `HKU` de l'écran de logon.
+ * RETROFIT `numlock_on_logon` : la clé `HKU` de l'écran de logon.
  *
  * Le palier A (seed CD95 `2026_07_02_100000`) avait EXCLU la partie « numlock à
  * l'écran de logon » de la GPO Verr_num : la clé physique vit sous
@@ -16,20 +16,20 @@ use Illuminate\Support\Facades\Schema;
  * provider MACHINE, appliquée par le service SYSTEM qui la FAN-OUT vers
  * `HKU\.DEFAULT` (l'écran de logon) + chaque ruche utilisateur chargée.
  *
- * ── PIÈGE DE PATH (story, piège n° 6) ───────────────────────────────────────
+ * **Piège de path.**
  * Le path de la clé est `Control Panel\Keyboard` SANS préfixe `.DEFAULT\` :
  * c'est le HANDLER agent qui préfixe chaque cible physique (`.DEFAULT\<path>`,
  * `<SID>\<path>`). Un path de seed commençant par `.DEFAULT\` produirait un
  * double-préfixe silencieux (`.DEFAULT\.DEFAULT\…`).
  *
- * ── DÉBOUCHÉ (au-delà du numlock) ───────────────────────────────────────────
+ * **DÉBOUCHÉ (au-delà du numlock)**
  * Toute clé `HKCU\Software\Policies\*` (lecture seule pour l'utilisateur — le
  * compagnon de session échoue, leçon fix-Copilot) devient DIFFUSABLE en
  * machine/parc via une clé `hive: 'HKU'` : le contournement « clé HKLM
  * équivalente quand elle existe » (type `windows_copilot_off`) n'est plus le
  * seul chemin.
  *
- * ── DISCIPLINE DOUBLE-CLÉ (story, piège n° 5) ───────────────────────────────
+ * **Discipline double-clé.**
  * Physiquement, `HKU\<SID>\Control Panel\Keyboard` == le HKCU de cet
  * utilisateur : la clé HKU (SYSTEM, valeur machine) et la clé HKCU (compagnon,
  * valeur session) écrivent LE MÊME emplacement dans les ruches des sessions
@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\Schema;
  * la valeur machine ferait se battre compagnon et SYSTEM (réécriture croisée à
  * chaque cycle, drift perpétuel des deux côtés).
  *
- * ── ⚠️ PRÉALABLE DE PUBLICATION (story, piège n° 2 — NON NÉGOCIABLE) ─────────
+ * **⚠️ Préalable de publication, non négociable.**
  * La release agent 2.5.0 DOIT être PUBLIÉE AVANT de jouer cette migration :
  * `numlock_on_logon` est en broadcast `on` → l'item HKU part à la FLOTTE
  * ENTIÈRE immédiatement. Un binaire ≤ 2.4.1 PARSE l'item HKU puis `rootKey()`

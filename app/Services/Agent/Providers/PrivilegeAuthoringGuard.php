@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Agent\Providers;
 
 /**
- * Story 35.6 (AC3) — garde-fou d'AUTHORING des projections `windows/privilege` :
+ * Garde-fou d'AUTHORING des projections `windows/privilege` :
  * refuse à la SOURCE tout droit que l'agent refuserait (défense en profondeur —
  * le serveur peut avoir tort, mais ne doit JAMAIS produire un catalogue capable
  * de verrouiller une machine).
  *
- * **Pourquoi SeDeny*-only est la règle CENTRALE (piège #3, D3).** Le handler
- * agent possède la liste de titulaires du privilège EN ENTIER (conteneur sans
- * store, D4) : il RÉVOQUE tout titulaire hors état désiré. C'est SÛR uniquement
+ * **Pourquoi SeDeny*-only est la règle CENTRALE.** Le handler agent possède la
+ * liste de titulaires du privilège EN ENTIER (conteneur sans store) : il
+ * RÉVOQUE tout titulaire hors état désiré. C'est SÛR uniquement
  * parce que les privilèges `SeDeny*` sont VIDES PAR DÉFAUT sous Windows (aucun
  * titulaire légitime préexistant à écraser). La même convergence sur un droit
  * *grant* (`SeInteractiveLogonRight`, `SeRemoteInteractiveLogonRight`, …)
@@ -51,7 +51,7 @@ namespace App\Services\Agent\Providers;
  * **Ce qu'il N'INTERDIT PAS** : une liste `accounts` VIDE est LÉGITIME — c'est
  * le `off` réel (l'agent VIDE le privilège, RDP rétabli au logon suivant).
  *
- * **Pas de ciblage par utilisateur (piège #11).** Le mécanisme `privilege` est
+ * **Pas de ciblage par utilisateur.** Le mécanisme `privilege` est
  * de portée MACHINE : « qui est refusé » = la liste `accounts` DANS le payload,
  * « quels postes » = les assignations parc/salle/poste/broadcast. Un override
  * UserGroup/User est structurellement SANS EFFET (le service SYSTEM fetch sans
@@ -65,7 +65,7 @@ namespace App\Services\Agent\Providers;
 final class PrivilegeAuthoringGuard
 {
     /**
-     * Les 5 droits de logon `SeDeny*` — enum FERMÉ (D3, contrat §7.9). SEULS
+     * Les 5 droits de logon `SeDeny*` — enum FERMÉ (contrat §7.9). SEULS
      * noms admis au champ `privilege` d'une projection `windows/privilege`.
      * Tout droit *grant* est REFUSÉ (risque de verrouillage machine, cf.
      * docblock de classe). Constante PUBLIQUE : autorité du vocabulaire,
@@ -86,7 +86,7 @@ final class PrivilegeAuthoringGuard
      * minuscules, préfixe domaine `NT AUTHORITY\`/`BUILTIN\`/`DOMAIN\` retiré).
      * Une SeDeny* posée sur l'un d'eux verrouille le poste (personne ne peut
      * plus ouvrir de session du type refusé). Couvre FR et EN (poste localisé).
-     * Le serveur ne résout pas les SID (NFR7) : il couvre les cas NOMMABLES,
+     * Le serveur ne résout pas les SID : il couvre les cas NOMMABLES,
      * l'agent refuse par SID well-known après résolution LSA (denylist miroir).
      *
      * @var list<string>
@@ -151,7 +151,7 @@ final class PrivilegeAuthoringGuard
             $warning = $projection['warning'] ?? null;
             $spec = is_array($projection['spec'] ?? null) ? $projection['spec'] : [];
 
-            // ── 1/2. Privilège : présent, non vide, DANS l'allowlist SeDeny* ──
+            // 1/2. Privilège : présent, non vide, DANS l'allowlist SeDeny*
             $privilege = trim((string) ($spec['privilege'] ?? ''));
             if ($privilege === '') {
                 $violations[] = sprintf(
@@ -163,14 +163,14 @@ final class PrivilegeAuthoringGuard
                 $violations[] = sprintf(
                     "privilege [%s] : droit '%s' hors de l'allowlist SeDeny* (admis : %s). Tout droit *grant* est "
                     .'REFUSÉ : une convergence exclusive « possède la liste entière » sur un grant révoquerait le '
-                    .'droit de session à tout le monde — machine VERROUILLÉE, injoignable (piège #3).',
+                    .'droit de session à tout le monde — machine VERROUILLÉE, injoignable.',
                     $capability,
                     $privilege,
                     implode(', ', self::ALLOWED_PRIVILEGES),
                 );
             }
 
-            // ── 3. Comptes : jeton d'audience inconnu REFUSÉ ──────────────────
+            // 3. Comptes : jeton d'audience inconnu REFUSÉ
             foreach ($this->accountValues($spec['accounts'] ?? null) as $account) {
                 $account = (string) $account;
                 if (trim($account) === '') {
@@ -209,7 +209,7 @@ final class PrivilegeAuthoringGuard
                 }
             }
 
-            // ── 4. Mécanisme de REFUS par nature ⇒ warning non vide (AC3) ────
+            // 4. Mécanisme de REFUS par nature ⇒ warning non vide
             // Une liste `accounts` vide reste LÉGITIME (= off, privilège vidé) :
             // le guard vérifie la cohérence privilège/warning, pas la non-vacuité.
             if (trim((string) ($warning ?? '')) === '') {
@@ -277,7 +277,7 @@ final class PrivilegeAuthoringGuard
     /**
      * Comptes possibles d'un champ `accounts` de `spec` : liste littérale (ses
      * entrées) OU chaque entrée de chaque valeur d'une map valeur-capacité
-     * (`{capValue: [comptes]}`, D8). Toute autre forme est ignorée (le provider
+     * (`{capValue: [comptes]}`). Toute autre forme est ignorée (le provider
      * ne l'émettra pas — non émis défensif).
      *
      * @return list<mixed>

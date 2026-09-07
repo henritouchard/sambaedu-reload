@@ -20,15 +20,14 @@ use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 /**
- * Story 55.3 — **L'APP-TÉMOIN : un client OIDC honnête, en quarantaine.**
+ * **L'APP-TÉMOIN : un client OIDC honnête, en quarantaine.**
  *
  * Deux routes, une page : « Bonjour {name}, rôle {role}, groupes {groups} ».
  * Tout ce qui s'y affiche vient d'un id_token VÉRIFIÉ, obtenu par le protocole
  * public — discovery, autorisation, échange serveur-à-serveur, JWKS. Rien n'est
  * lu dans la base, l'annuaire, ni dans l'état de connexion de SE5.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  CE QUE CE FICHIER S'INTERDIT (FR24, verrouillé par
+ *  CE QUE CE FICHIER S'INTERDIT (verrouillé par
  *  `tests/Architecture/ExtensionIsolationTest.php`)
  *
  *  Aucun modèle Eloquent, aucun service applicatif de SE5, aucune façade de
@@ -39,9 +38,8 @@ use Throwable;
  *  Ce qu'il utilise, en revanche : le routage, les cookies chiffrés, le cache,
  *  le journal, Blade. C'est de l'INFRASTRUCTURE d'hébergement, pas de la
  *  donnée — une vraie extension aurait la sienne. La preuve d'isolation par
- *  PROCESSUS appartient aux extensions `app` (Epics 56/57) ; celle par
- *  CONTRAT est ici, et elle est testée.
- * ══════════════════════════════════════════════════════════════════════════
+ *  PROCESSUS appartient aux extensions `app` ; celle par CONTRAT est ici, et
+ *  elle est testée.
  *
  * **La route n'est PAS derrière le garde d'authentification de SE5** — et c'est
  * le cœur de la démonstration : c'est `/oidc/authorize` qui authentifie. Un
@@ -78,10 +76,6 @@ class WitnessController
         private readonly WitnessIdTokenVerifier $verifier,
     ) {
     }
-
-    // =====================================================================
-    // GET /sso-demo — le départ
-    // =====================================================================
 
     public function start(Request $request): Response
     {
@@ -133,10 +127,6 @@ class WitnessController
             ->away($authorizationUrl)
             ->withCookie($this->stateCookie($payload));
     }
-
-    // =====================================================================
-    // GET /sso-demo/callback — le retour
-    // =====================================================================
 
     public function callback(Request $request): Response
     {
@@ -209,7 +199,7 @@ class WitnessController
             'action_type' => 'oidc.witness.verified',
             'client_id' => $credentials->clientId,
             // ⚠️ Aucun claim : `sub`, `name` et `groups` sont de la PII
-            // (doctrine 55.1/55.2, reconduite côté client).
+            // (doctrine, reconduite côté client).
         ]);
 
         $groups = isset($claims['groups']) && is_array($claims['groups'])
@@ -229,10 +219,6 @@ class WitnessController
             ])
             ->withCookie(Cookie::forget(self::STATE_COOKIE));
     }
-
-    // =====================================================================
-    // Interne
-    // =====================================================================
 
     /** @param array<string, mixed> $discovery */
     private function provider(WitnessCredentials $credentials, array $discovery): GenericProvider

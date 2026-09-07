@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests groupes — résolution non-récursive + dédup (story 2.6, AC 7, 11).
+ * Tests groupes — résolution non-récursive + dédup.
  *
  * Utilise des mocks sur GroupRepository pour simuler l'AD (les tests
  * unitaires ne doivent pas dépendre d'un AD réel).
@@ -72,7 +72,7 @@ class BulkPasswordResetGroupsTest extends TestCase
                 $table->id();
                 $table->unsignedBigInteger('user_id');
                 $table->unsignedBigInteger('user_group_id');
-                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                // Rôle sur l'arête, lu par withPivot('role').
                 $table->string('role', 20)->default('member');
                 $table->timestamps();
             });

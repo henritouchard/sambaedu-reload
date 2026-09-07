@@ -17,10 +17,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests des commandes artisan releases agent — Story 25.1 (AC1, AC7).
+ * Tests des commandes artisan releases agent.
  *
  * `agent:release:create` (OK/KO + exit codes — l'outillage de publication
- * pré-UI 25.5), `agent:release:target` (lookup WG par name, updateOrCreate
+ * pré-UI), `agent:release:target` (lookup WG par name, updateOrCreate
  * + récence), `agent:release:promote` (swap du pointeur stable). Commandes
  * minces : la matrice des refus vit dans `ReleaseCreationServiceTest`, ici
  * on prouve la traduction exit ≠ 0 / aucune écriture.
@@ -62,7 +62,7 @@ class AgentReleaseCommandsTest extends TestCase
         return hash('sha256', $content);
     }
 
-    // ── agent:release:create ─────────────────────────────────────────────
+    // agent:release:create
 
     #[Test]
     public function create_publishes_a_verified_release_with_stable_flag(): void
@@ -111,7 +111,7 @@ class AgentReleaseCommandsTest extends TestCase
         self::assertSame(0, AgentRelease::query()->count());
     }
 
-    // ── agent:release:target ─────────────────────────────────────────────
+    // agent:release:target
 
     #[Test]
     public function target_rings_an_existing_group_and_refreshes_recency_on_retarget(): void
@@ -133,7 +133,7 @@ class AgentReleaseCommandsTest extends TestCase
         self::assertSame($group->id, $ring->workstation_group_id);
 
         // Re-ciblage de la MÊME version (rollback) : ligne unique, récence
-        // rafraîchie (updateOrCreate + touch — décision n° 6).
+        // rafraîchie (updateOrCreate + touch).
         $past = now()->subDays(2)->startOfSecond();
         DB::table('agent_release_rings')->where('id', $ring->id)
             ->update(['updated_at' => $past->toDateTimeString()]);
@@ -170,7 +170,7 @@ class AgentReleaseCommandsTest extends TestCase
         self::assertSame(0, AgentReleaseRing::query()->count());
     }
 
-    // ── agent:release:promote ────────────────────────────────────────────
+    // agent:release:promote
 
     #[Test]
     public function promote_swaps_the_stable_pointer(): void

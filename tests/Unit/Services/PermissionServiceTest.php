@@ -19,12 +19,12 @@ use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
- * Tests unitaires du PermissionService (Story 7.1).
+ * Tests unitaires du PermissionService.
  *
  * Couvre grant / revoke / negate / canOnWorkstationGroup / idempotence /
  * expiration / GPO dispatch / résolution user global via Spatie.
  *
- * Schéma créé ad hoc en SQLite via `createTablesIfNeeded()` (pattern story 4.4).
+ * Schéma créé ad hoc en SQLite via `createTablesIfNeeded` (pattern).
  */
 class PermissionServiceTest extends TestCase
 {
@@ -214,10 +214,6 @@ class PermissionServiceTest extends TestCase
         ]);
     }
 
-    // ========================================================================
-    // GRANT
-    // ========================================================================
-
     public function test_grant_delegation_persists_and_is_idempotent(): void
     {
         $user = $this->makeUser('prof1');
@@ -257,10 +253,6 @@ class PermissionServiceTest extends TestCase
         $this->service->grantDelegation($user, 'computer.elevate', $group);
         Queue::assertPushed(SyncGpoJob::class, 1);
     }
-
-    // ========================================================================
-    // REVOKE
-    // ========================================================================
 
     public function test_revoke_delegation_deletes_row_and_creates_history(): void
     {
@@ -307,10 +299,6 @@ class PermissionServiceTest extends TestCase
         $this->assertEquals($actor->id, $entry->actor_user_id);
     }
 
-    // ========================================================================
-    // NEGATE
-    // ========================================================================
-
     public function test_negate_delegation_creates_negative_flag(): void
     {
         $user = $this->makeUser('prof-neg');
@@ -345,7 +333,7 @@ class PermissionServiceTest extends TestCase
     }
 
     /**
-     * Story 7.1.bis : exclusion temporaire. `negateDelegation` accepte
+     * .bis : exclusion temporaire. `negateDelegation` accepte
      * désormais un `$expiresAt` — une fois la date passée, le scope `active()`
      * cesse de filtrer le group et le droit global (s'il existe) reprend.
      */
@@ -391,10 +379,6 @@ class PermissionServiceTest extends TestCase
             'Une exclusion déjà expirée ne doit pas bloquer le droit global.'
         );
     }
-
-    // ========================================================================
-    // canOnWorkstationGroup
-    // ========================================================================
 
     public function test_can_on_workstation_group_with_global_permission(): void
     {
@@ -444,9 +428,9 @@ class PermissionServiceTest extends TestCase
     }
 
     /**
-     * Story 7.1 — hiérarchie exclusion > global : une délégation négative
+     * Hiérarchie exclusion > global : une délégation négative
      * sur un group doit écraser le droit global Spatie sur ce group précis.
-     * (Régression détectée en recette 7.1 : l'UX promet le comportement mais
+     * (Régression détectée en recette : l'UX promet le comportement mais
      * le code court-circuitait sur le global.)
      */
     public function test_negative_delegation_overrides_global_permission_on_group(): void
@@ -488,7 +472,7 @@ class PermissionServiceTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #3 : une délégation NÉGATIVE expirée ne doit plus
+     * Une délégation NÉGATIVE expirée ne doit plus
      * bloquer l'accès. On simule via insertion directe avec `expires_at` passé
      * (car `negateDelegation` ne pose pas d'expires_at aujourd'hui, mais la
      * logique `canOnWorkstationGroup` doit rester cohérente).
@@ -512,10 +496,6 @@ class PermissionServiceTest extends TestCase
             'Une négative expirée ne doit pas bloquer l\'accès.'
         );
     }
-
-    // ========================================================================
-    // getAuthorizedWorkstationGroups
-    // ========================================================================
 
     public function test_get_authorized_workstation_groups_filters_correctly(): void
     {
@@ -553,13 +533,10 @@ class PermissionServiceTest extends TestCase
     }
 
     /**
-     * Story 7.1 — hiérarchie exclusion > global côté listing : un user avec le
+     * Hiérarchie exclusion > global côté listing : un user avec le
      * droit global mais une exclusion sur B ne doit pas voir B dans la liste
      * des groupes autorisés.
      */
-    // ========================================================================
-    // getEffectiveAccessSummary (Story 7.1.bis)
-    // ========================================================================
 
     public function test_effective_summary_returns_none_when_user_has_no_access(): void
     {
@@ -642,10 +619,6 @@ class PermissionServiceTest extends TestCase
         $this->assertEquals('denied', $summary['state']);
         $this->assertEquals('lift_negative', $summary['action_suggested']);
     }
-
-    // ========================================================================
-    // revokeNegativeDelegation (Story 7.1.bis)
-    // ========================================================================
 
     public function test_revoke_negative_deletes_exclusion_and_logs_revoke(): void
     {

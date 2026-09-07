@@ -14,14 +14,13 @@ use Illuminate\Support\Facades\Log;
 /**
  * @legacy-port path="sambaedu/includes/wpkg_libsql.php"
  * @legacy-port-fn="info_poste_applications"
- * @see _bmad-output/implementation-artifacts/15-2-generators-xml-ini-par-poste.md
  *
- * Story 15.2 — Résout la liste des `package-id` applicables à un poste.
+ * Résout la liste des `package-id` applicables à un poste.
  *
- * Eloquent-only (invariant fort Epic 15) : aucune lecture LDAP/AD en chemin critique.
- * La synchro AD → Eloquent est un job périodique (Story 15.3).
+ * Eloquent-only (invariant fort) : aucune lecture LDAP/AD en chemin critique.
+ * La synchro AD → Eloquent est un job périodique.
  *
- * Sources unionnées (cf. AC2.2) :
+ * Sources unionnées :
  *   1. AppProfiles rattachés directement au poste → leurs Applications.
  *   2. AppProfiles rattachés aux parcs (WorkstationGroup) du poste → leurs Applications.
  *   3. Applications rattachées directement au poste (équivalent legacy
@@ -76,8 +75,8 @@ class WorkstationPackagesResolver
      * **SANS aucun cache** — le `Cache::remember` reste exclusivement dans
      * {@see resolve()}.
      *
-     * **PUBLIC pour le canal agent (Story 27.5, NFR7 — critère Keycloak).** Le
-     * provider d'état `ApplicationsStateProvider` projette l'ensemble cible WPKG
+     * **PUBLIC pour le canal agent.** Le provider d'état
+     * `ApplicationsStateProvider` projette l'ensemble cible WPKG
      * en items d'état : il DOIT lire la résolution NON CACHÉE (un provider ne
      * touche jamais l'APCu — interdit). C'est la SEULE source de vérité sur « ce
      * que WPKG va installer » (union 4 sources + BFS de dépendances) ; la
@@ -95,7 +94,7 @@ class WorkstationPackagesResolver
      */
     public function computePackages(string $hostname): Collection
     {
-        // Story 37.1 — `computePackages()` est désormais ré-exprimée sur
+        // `computePackages` est désormais ré-exprimée sur
         // {@see explainPackages()} : les CLÉS de la map d'origines sont exactement
         // l'ensemble cible des `app_id`. Sortie BYTE-IDENTIQUE au comportement
         // historique (dédup implicite par les clés d'array + tri alpha `strcasecmp`),
@@ -111,7 +110,7 @@ class WorkstationPackagesResolver
     }
 
     /**
-     * Story 37.1 — Résout l'ensemble cible WPKG d'un poste EN ATTRIBUANT une
+     * Résout l'ensemble cible WPKG d'un poste EN ATTRIBUANT une
      * provenance à chaque `app_id` : `app_id => list<origin>` où chaque origine
      * est `{source: workstation|group|dependency, group_id?, profile_id?,
      * via_app_id?}`.
@@ -130,7 +129,7 @@ class WorkstationPackagesResolver
      * le compilateur (aggregate) dédup par contenu et l'origine disparaît, ici on
      * l'agrège.
      *
-     * INVARIANT (Story 37.1, AC3/AC5) : `array_keys()` de la valeur retournée,
+     * INVARIANT : `array_keys` de la valeur retournée,
      * triées `strcasecmp`, EST l'ensemble retourné par `computePackages()` (clés
      * ordonnées ici par `uksort`/`strcasecmp` pour que l'égalité tienne SANS
      * re-tri). Les postes/groupes/profils `archived_at` sont ignorés (fantômes),
@@ -271,11 +270,11 @@ class WorkstationPackagesResolver
             $batch = $queue;
             $queue = [];
 
-            // Story 37.1 (review #3) — ORDER BY déterministe : si une dépendance a
+            // ORDER BY déterministe : si une dépendance a
             // ≥ 2 parents dans le MÊME batch BFS, le parent attribué (« Dépendance de
             // X ») ne doit pas dépendre du plan SQL. Le tri par `application_id`
             // (PK parente) fait gagner la PLUS PETITE PK parente — tiebreak stable,
-            // purement cosmétique (l'ENSEMBLE des app_id / l'invariant AC3 est
+            // purement cosmétique (l'ENSEMBLE des app_id / l'invariant est
             // inchangé, seul le libellé du tooltip est stabilisé).
             $rows = DB::table('application_dependencies')
                 ->whereIn('application_id', $batch)

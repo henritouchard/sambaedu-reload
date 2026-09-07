@@ -18,7 +18,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 5.2 review #1 (Q1=Option B) — Hook explicit `UserService::persistUserGroupsToSql`
+ * Hook explicite `UserService::persistUserGroupsToSql`
  * → `ShareService::syncUserClassMemberships`.
  *
  * Vérifie que le changement de classe d'un utilisateur SQL passe bien par le
@@ -159,7 +159,7 @@ class UserServiceClassChangeTest extends TestCase
     #[Test]
     public function it_attaches_student_to_folded_bare_name_class(): void
     {
-        // Story 4.13 (review #8) — l'import AD→SQL replie les classes en UNE
+        // L'import AD→SQL replie les classes en UNE
         // ligne au NOM NU (`6A`, type='classe'). Le lookup `'Classe_'.$c` ne
         // matchait plus cette ligne → l'élève n'était plus rattaché à sa classe.
         // persistUserGroupsToSql doit désormais résoudre par NOM NU.
@@ -188,14 +188,10 @@ class UserServiceClassChangeTest extends TestCase
         $this->assertTrue($bob->groups()->where('user_groups.id', $eleves->id)->exists());
     }
 
-    // =====================================================================
-    // Story 42.1 — défaut de rôle au rattachement (nouvelles arêtes only)
-    // =====================================================================
-
     #[Test]
     public function it_attaches_new_edges_with_manager_role_for_a_prof(): void
     {
-        // 42.1 AC5 — un prof rattaché reçoit `role='manager'` sur ses NOUVELLES
+        // un prof rattaché reçoit `role='manager'` sur ses NOUVELLES
         // arêtes (dérivé du rôle global `users.role='prof'`), classe ET non-classe.
         $prof = SqlUser::create(['login' => 'prof.role', 'role' => 'prof', 'is_active' => true]);
         $profs = UserGroup::create(['name' => 'Profs', 'type' => 'role']);
@@ -215,7 +211,7 @@ class UserServiceClassChangeTest extends TestCase
     #[Test]
     public function it_attaches_new_edges_with_member_role_for_an_eleve(): void
     {
-        // 42.1 AC5 — un élève reçoit `role='member'` par défaut.
+        // un élève reçoit `role='member'` par défaut.
         $eleve = SqlUser::create(['login' => 'eleve.role', 'role' => 'eleve', 'is_active' => true]);
         $eleves = UserGroup::create(['name' => 'Eleves', 'type' => 'role']);
         $classe6A = UserGroup::create(['name' => '6A', 'type' => 'classe']);
@@ -234,7 +230,7 @@ class UserServiceClassChangeTest extends TestCase
     #[Test]
     public function it_does_not_downgrade_an_existing_owner_edge_on_reimport(): void
     {
-        // 42.1 AC5 (piège syncWithoutDetaching) — une arête existante `owner`
+        // Piège `syncWithoutDetaching` : une arête existante `owner`
         // (PP) ne doit PAS être rétrogradée par un re-import (les attributs ne
         // s'appliquent qu'aux arêtes NOUVELLES).
         $prof = SqlUser::create(['login' => 'prof.pp', 'role' => 'prof', 'is_active' => true]);

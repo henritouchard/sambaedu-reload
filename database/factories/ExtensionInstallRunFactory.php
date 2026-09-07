@@ -9,7 +9,7 @@ use App\Models\ExtensionInstallRun;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 56.3 — Fabrique de runs d'opération d'extension.
+ * Fabrique de runs d'opération d'extension.
  *
  * @extends Factory<ExtensionInstallRun>
  */

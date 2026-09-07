@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 60.3 — « ce partage a une AUTORITÉ D'ÉCRITURE, et elle a un nom ».
+ * « ce partage a une AUTORITÉ D'ÉCRITURE, et elle a un nom ».
  *
  * Une colonne, NOT NULL, défaut `posix`.
  *
@@ -19,13 +19,13 @@ use Illuminate\Support\Facades\Schema;
  * de toute migration de données. Un défaut « inconnu » ou nullable aurait fabriqué
  * un état intermédiaire à interpréter, pour ne rien décrire de plus.
  *
- * **Ce que cette colonne ACHÈTE** (décision Q-D, 2026-08-04) : la réversibilité.
+ * **Ce que cette colonne ACHÈTE** : la réversibilité.
  * POSIX est conservé, et il sera retirable — le jour venu, le retirer sera basculer
- * cette valeur puis lancer une migration explicite (jamais implicite, D9), pas
+ * cette valeur puis lancer une migration explicite (jamais implicite), pas
  * réécrire le domaine. C'est la colonne qui rend ce futur bon marché, et c'est la
  * raison pour laquelle elle arrive AVANT que quoi que ce soit ne route par elle.
  *
- * **Rien ne route par elle dans cette story.** Les flux de provisioning continuent
+ * **Rien ne route encore par elle.** Les flux de provisioning continuent
  * d'appeler le service historique exactement comme avant ; la colonne est affichée
  * (elle détermine le chemin d'accès de l'utilisateur, ce n'est pas un détail
  * d'implémentation) mais elle n'est PAS éditable, parce qu'une propriété qu'on

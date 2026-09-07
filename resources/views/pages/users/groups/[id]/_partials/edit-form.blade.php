@@ -1,4 +1,4 @@
-{{-- Story 62.3 — le select de rôle au rattachement lit la DONNÉE.
+{{-- Le select de rôle au rattachement lit la DONNÉE.
 
      Avant, ses deux `<option>` étaient EN DUR : « Élève » et « Prof », quel que
      soit le type du groupe — sur un projet, on proposait donc « Élève »/« Prof »
@@ -77,7 +77,7 @@
                                         <span class="text-xs text-base-content/55 ml-auto flex-shrink-0">{{ $option['hint'] }}</span>
                                     @endif
                                 </label>
-                                {{-- Story 42.3 (D5/T3.3) — user NOUVELLEMENT coché : select du
+                                {{-- User NOUVELLEMENT coché : select du
                                      rôle proposé (défaut dérivé, surchargeable Élève/Prof —
                                      jamais owner au rattachement). Label au-dessus, pas de hint
                                      décoratif, wrapper flex flex-col + w-full (piège DaisyUI 5,

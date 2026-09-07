@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests unitaires du PermissionSeeder — Story 7.2 (AC1).
+ * Tests unitaires du PermissionSeeder.
  *
  * Garantit le caractère idempotent et NON-DESTRUCTIF :
  *  - 1ère passe : seed les 19 permissions + 9 rôles ;
@@ -137,7 +137,6 @@ class PermissionSeederTest extends TestCase
             SambaPermission::UserRead->value,
         ]);
 
-        // Re-run du seeder.
         $stats = $seeder->run();
 
         $customRole->refresh();

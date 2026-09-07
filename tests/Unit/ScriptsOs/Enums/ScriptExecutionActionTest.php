@@ -9,7 +9,6 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 16.12 — AC1.3.
  */
 class ScriptExecutionActionTest extends TestCase
 {

@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Story 16.10 (AC7.3).
+ * Garde-fou architectural.
  *
  * Vérifie que le namespace `App\Auth\V1\*` respecte ses invariants :
  *
@@ -35,17 +35,17 @@ use Symfony\Component\Finder\Finder;
  *    d'enroll/refresh (encapsulation — l'émission JWT est centralisée).
  *
  * 5. **Les routes legacy `*_out.php` restent intactes** (vérifie qu'elles
- *    sont toujours présentes dans `routes/web.php` ou `routes/api.php` —
+ *  sont toujours présentes dans `routes/web.php` ou `routes/api.php`
  *    8 endpoints attendus : applications, firefox_out, thunderbird_out,
  *    wallpaper_out, shortcuts_out, network_out, veyon_out,
  *    associations_out).
  *
- * 6. **Story 16.11** : le middleware `inject.bootstrap-fragment` est
+ * 6. : le middleware `inject.bootstrap-fragment` est
  *    attaché à toutes les 8 routes legacy (lecture textuelle du contenu
  *    de `routes/web.php`).
  *
- * 7. **Story 16.11** : `JwtErrorCodes::all()` contient au moins 16 codes
- *    (14 du 16.10 + 2 nouveaux 16.11 : `bootstrap_token.uuid_mismatch`,
+ * 7. : `JwtErrorCodes::all` contient au moins 16 codes
+ *  (14 + 2 nouveaux : `bootstrap_token.uuid_mismatch`,
  *    `bootstrap.not_lan`).
  */
 class AuthV1NamespaceTest extends TestCase
@@ -249,14 +249,14 @@ class AuthV1NamespaceTest extends TestCase
         );
     }
 
-    // Story 27.14 — le test `legacy_out_routes_are_preserved` (qui exigeait la
+    // Le test `legacy_out_routes_are_preserved` (qui exigeait la
     // présence des 8 chemins `gpo/*_out.php` + `applications.php` dans les
     // routes) a été retiré : ces routes du canal de config legacy
     // (`migration.legacy.*` → `MigrationController::serveFragment`) ont été
     // SUPPRIMÉES avec l'extinction du canal.
 
     /**
-     * Story 16.13bis — le middleware `inject.bootstrap-fragment` 16.11 a
+     * Le middleware `inject.bootstrap-fragment` a
      * été SUPPRIMÉ. Garde-fou : aucune déclaration
      * `Route::middleware('inject.bootstrap-fragment')` ne doit subsister
      * dans `routes/web.php`. Le test détaillé non-régression vit dans
@@ -275,8 +275,8 @@ class AuthV1NamespaceTest extends TestCase
     }
 
     /**
-     * Story 16.11 — `JwtErrorCodes::all()` doit retourner au moins 16
-     * entrées (14 du 16.10 + 2 nouveaux 16.11) et contenir les 2 nouveaux
+     * `JwtErrorCodes::all` doit retourner au moins 16
+     * entrées (14 + 2 nouveaux) et contenir les 2 nouveaux
      * codes.
      */
     #[Test]
@@ -303,8 +303,8 @@ class AuthV1NamespaceTest extends TestCase
     }
 
     /**
-     * Story 16.11 — pas d'inclusion legacy depuis les fichiers 16.11.
-     * Story 16.13bis (2026-05-20) : `InjectBootstrapFragment` et
+     * Pas d'inclusion legacy depuis les fichiers 16.11.
+     * `InjectBootstrapFragment` et
      * `BootstrapScriptController` supprimés au profit de `MigrationController`,
      * retirés de la liste.
      */

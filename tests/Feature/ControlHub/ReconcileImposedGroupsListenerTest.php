@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 30.3 — Déclenchement automatique de la réconciliation (AC #5) via le listener
+ * Déclenchement automatique de la réconciliation via le listener
  * abonné à `ControlHubContractChanged`, et commande artisan de réconciliation manuelle.
  *
  * ⚠️ On NE fait PAS `Event::fake()` ici : on veut que le listener réel s'exécute.
@@ -36,8 +36,6 @@ class ReconcileImposedGroupsListenerTest extends TestCase
     {
         return new ControlHubContractIngestionService();
     }
-
-    // ── AC #5 — Déclenchement automatique à la réception du contrat ───────────
 
     #[Test]
     public function ingesting_imposed_groups_triggers_the_listener_and_creates_the_groups(): void
@@ -110,7 +108,7 @@ class ReconcileImposedGroupsListenerTest extends TestCase
         self::assertSame(0, WorkstationGroup::query()->count());
     }
 
-    // ── Task 4 — Commande artisan de réconciliation manuelle ─────────────────
+    // Task 4 — Commande artisan de réconciliation manuelle
 
     #[Test]
     public function artisan_command_reconciles_when_a_contract_is_active(): void

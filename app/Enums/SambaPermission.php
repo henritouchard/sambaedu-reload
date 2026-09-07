@@ -21,7 +21,7 @@ enum SambaPermission: string
     case ShareView = 'share.view';
     case ShareRefresh = 'share.refresh';
     /**
-     * Story 5.2 (D2=A) — Gestion complète des partages de classe : création
+     * Gestion complète des partages de classe : création
      * du dossier `/var/sambaedu/Classes/Classe_<name>/`, application des ACLs
      * canoniques (racine + `_travail`/`_profs`/`_echange` + dossiers élèves),
      * toggle dossier d'échange, archivage. Mappée sur le bit legacy
@@ -33,9 +33,9 @@ enum SambaPermission: string
      */
     case ShareManage = 'share.manage';
 
-    // Lecteurs réseau gérés (story 34.2)
+    // Lecteurs réseau gérés
     /**
-     * Story 34.2 (Q5) — consultation des répertoires réseau gérés
+     * Consultation des répertoires réseau gérés
      * (`network_shares`) : page liste `/admin/shares`, ouverture en lecture.
      * Permission DÉDIÉE (NE réutilise PAS `share.view`, qui gouverne les
      * partages de CLASSE) — accordée au Référent Numérique, qui n'a aucune
@@ -43,7 +43,7 @@ enum SambaPermission: string
      */
     case NetworkShareView = 'networkshare.view';
     /**
-     * Story 34.2 (Q5) — gestion des répertoires réseau gérés : création,
+     * Gestion des répertoires réseau gérés : création,
      * édition (`name`/`directory_name`/`label`/`letter`), assignation par maille
      * (User/UserGroup/WorkstationGroup, access ro|rw), provisioning, suppression.
      * Permission DÉDIÉE — `share.manage` gouverne aussi les partages de CLASSE,
@@ -54,16 +54,16 @@ enum SambaPermission: string
      */
     case NetworkShareManage = 'networkshare.manage';
 
-    // Règles d'accès aux dossiers (story 36.4 — feature à formulaire du mécanisme fs_acl)
+    // Règles d'accès aux dossiers (feature à formulaire du mécanisme fs_acl)
     /**
-     * Story 36.4 (D6) — consultation des règles d'accès aux dossiers
+     * Consultation des règles d'accès aux dossiers
      * (`folder_access_rules`) : page liste `/app/folder-rules`, ouverture en
      * lecture. Permission DÉDIÉE (module SE5-natif, aucune GPO/bit legacy) —
      * accordée au Référent Numérique et au ComputerAdmin.
      */
     case FolderRuleView = 'folderrule.view';
     /**
-     * Story 36.4 (D6) — gestion des règles d'accès aux dossiers : création,
+     * Gestion des règles d'accès aux dossiers : création,
      * édition, activation/désactivation, assignation par parc, suppression.
      * Permission DÉDIÉE. Comme `NetworkShareManage`, marquée
      * `isSecondaryBitPermission()` : elle pointe le bit représentatif
@@ -81,7 +81,7 @@ enum SambaPermission: string
     case ComputerElevate = 'computer.elevate';
     case ComputerInstall = 'computer.install';
     /**
-     * Story 7.3 (décision Henri 2026-04-25 — option C) : permission dédiée
+     * Permission dédiée
      * pour la migration des délégations RDP legacy (`rdp_<parc>` /
      * `no_rdp_<parc>`). Le legacy stockait le bitmask `SE_COMPUTER_CONTROL`
      * (0x200) pour le profil `rdp` (cf. `OU=rights/rdp`), donc on partage le
@@ -91,7 +91,6 @@ enum SambaPermission: string
      */
     case ComputerRemoteRdp = 'computer.remote.rdp';
 
-    // WPKG
     case WpkgAssign = 'wpkg.assign';
     case WpkgAdd = 'wpkg.add';
     case WpkgCreate = 'wpkg.create';
@@ -99,15 +98,11 @@ enum SambaPermission: string
     // Serveur
     case ServerAdmin = 'server.admin';
 
-    // Wallpapers (story 4.7)
+    // Wallpapers
     case WallpaperManage = 'wallpaper.manage';
 
-    // Personnalisation applicative (story 4.8 — Firefox, Thunderbird, …)
+    // Personnalisation applicative (Firefox, Thunderbird, …)
     case AppCustomize = 'app.customize';
-
-    // ========================================================================
-    // MAPPING VERS LEGACY
-    // ========================================================================
 
     /** Retourne le LegacyRight correspondant */
     public function legacyRight(): LegacyRight
@@ -121,13 +116,13 @@ enum SambaPermission: string
             self::UserDelegate => LegacyRight::UserDelegate,
             self::ShareView => LegacyRight::ShareView,
             self::ShareRefresh => LegacyRight::ShareRefresh,
-            // Story 5.2 (D2=A) — partage le bit legacy `SE_SHARE_REFRESH`
+            // Partage le bit legacy `SE_SHARE_REFRESH`
             // avec `ShareRefresh`. Marquée `isSecondaryBitPermission()` pour
             // ne PAS être sur-attribuée par `fromBitmask()` (sinon tout user
             // ayant `share.refresh` recevrait `share.manage` après import
             // bitmask). Attribuée explicitement par seeder/UI rights mgmt.
             self::ShareManage => LegacyRight::ShareRefresh,
-            // Story 34.2 — pas de bit legacy dédié (module SE5-natif, aucune GPO
+            // Pas de bit legacy dédié (module SE5-natif, aucune GPO
             // « lecteurs reseau » legacy). On pointe le bit représentatif
             // `SE_SHARE_REFRESH` (comme `ShareManage`) UNIQUEMENT pour satisfaire
             // le `match` exhaustif ; les deux permissions `networkshare.*` sont
@@ -135,7 +130,7 @@ enum SambaPermission: string
             // (jamais sur-attribuées par un import LDAP).
             self::NetworkShareView => LegacyRight::ShareRefresh,
             self::NetworkShareManage => LegacyRight::ShareRefresh,
-            // Story 36.4 — module SE5-natif sans bit legacy dédié. On pointe le
+            // Module SE5-natif sans bit legacy dédié. On pointe le
             // bit représentatif `SE_SHARE_REFRESH` UNIQUEMENT pour satisfaire le
             // `match` exhaustif ; les deux permissions `folderrule.*` sont
             // `isSecondaryBitPermission()` donc exclues des conversions bitmask.
@@ -145,7 +140,7 @@ enum SambaPermission: string
             self::ComputerControl => LegacyRight::ComputerControl,
             self::ComputerElevate => LegacyRight::ComputerElevate,
             self::ComputerInstall => LegacyRight::ComputerInstall,
-            // Story 7.3 — `ComputerRemoteRdp` partage le bit `ComputerControl`
+            // `ComputerRemoteRdp` partage le bit `ComputerControl`
             // (0x200) dans le legacy : le profil `OU=rights/rdp` stockait
             // historiquement `SE_COMPUTER_CONTROL` (0x200) dans son `info`.
             // Convention du mapping `bit représentant` (cf. matrice §11) :
@@ -157,14 +152,14 @@ enum SambaPermission: string
             self::ServerAdmin => LegacyRight::ServerAdmin,
             // WallpaperManage hérite du bitmask ServerAdmin (pas de bit legacy
             // dédié — le wallpaper était géré par l'admin serveur dans
-            // l'UI legacy `gpo/wallpaper.php`). Story 4.7.
+            // L'UI legacy `gpo/wallpaper.php`)..
             self::WallpaperManage => LegacyRight::ServerAdmin,
             // AppCustomize : gpo/firefox.php et gpo/gestion_apps.php étaient
             // gardés par SE_COMPUTER_ADMIN (composite 0xEF00). Convention de
             // coexistence : on pointe sur un bit atomique du composite —
             // ComputerInstall (0x800) — qui sert de représentant. Tout user
             // avec SE_COMPUTER_ADMIN a ce bit, donc la perm Spatie est octroyée.
-            // Ce mapping disparaît avec Story 7.3 (sunset bitmask legacy).
+            // Ce mapping disparaît avec (sunset bitmask legacy).
             self::AppCustomize => LegacyRight::ComputerInstall,
         };
     }
@@ -174,10 +169,6 @@ enum SambaPermission: string
     {
         return $this->legacyRight()->value;
     }
-
-    // ========================================================================
-    // LABELS
-    // ========================================================================
 
     public function label(): string
     {
@@ -255,13 +246,9 @@ enum SambaPermission: string
         return $this === self::ComputerElevate;
     }
 
-    // ========================================================================
-    // HELPERS STATIQUES
-    // ========================================================================
-
     /**
      * Indique si la permission est une « secondary bit permission » qui partage
-     * son bit legacy avec une permission atomique principale. Story 7.3 :
+     * son bit legacy avec une permission atomique principale. :
      * `ComputerRemoteRdp` partage `0x200` avec `ComputerControl`. Ces
      * permissions sont exclues des conversions bitmask ↔ permissions pour
      * éviter de sur-élargir les profils custom rapatriés depuis le LDAP.
@@ -271,17 +258,17 @@ enum SambaPermission: string
      */
     private function isSecondaryBitPermission(): bool
     {
-        // Story 5.2 — `ShareManage` partage le bit legacy `ShareRefresh`
+        // `ShareManage` partage le bit legacy `ShareRefresh`
         // (cf. mapping ci-dessus). Exclu du bitmask mapping pour ne pas
         // sur-élargir les profils custom rapatriés depuis le LDAP.
         return $this === self::ComputerRemoteRdp
             || $this === self::ShareManage
-            // Story 34.2 — permissions SE5-natives sans bit legacy : partagent le
+            // Permissions SE5-natives sans bit legacy : partagent le
             // bit représentatif `SE_SHARE_REFRESH` mais sont exclues des imports
             // bitmask (octroi explicite par rôle seulement).
             || $this === self::NetworkShareView
             || $this === self::NetworkShareManage
-            // Story 36.4 — permissions SE5-natives sans bit legacy : partagent le
+            // Permissions SE5-natives sans bit legacy : partagent le
             // bit représentatif `SE_SHARE_REFRESH` mais sont exclues des imports
             // bitmask (octroi explicite par rôle seulement).
             || $this === self::FolderRuleView

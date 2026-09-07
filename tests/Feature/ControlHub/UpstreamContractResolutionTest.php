@@ -36,16 +36,16 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 28.3 — Résolution AMONT > local dans `StateCompiler` (end-to-end).
+ * Résolution AMONT > local dans `StateCompiler` (end-to-end).
  *
- * Contrat persisté (factories 28.1) → {@see UpstreamContractSource} → providers
+ * Contrat persisté (factories) → {@see UpstreamContractSource} → providers
  * décorés ({@see UpstreamAwareProvider}) → compilé. Couvre : amont prime sur
  * local (même clé), empilement local sans équivalent amont, standalone
- * byte-identique + comptage de requêtes (NFR3), déterminisme du hash (NFR4),
- * `absent` non injecté / `locked`+`permissive` priment (AC #6), contrat severed
- * inerte (Epic 32), R3 (aucun « central »).
+ * byte-identique + comptage de requêtes, déterminisme du hash, `absent` non
+ * injecté / `locked`+`permissive` priment, contrat severed inerte, aucun
+ * identifiant livré ne contient « central ».
  *
- * **Story 30.4** — ciblage par label : un item `target_type = label` s'applique
+ * Ciblage par label : un item `target_type = label` s'applique
  * AUX postes portant le label (`WorkstationGroup.controlhub_label`), reste inerte
  * pour les autres ; cumul verrou/permissif SANS spécificité inter-parcs ;
  * collision de deux verrous → warning `agent.state.conflict` + tiebreak
@@ -64,7 +64,7 @@ class UpstreamContractResolutionTest extends TestCase
         parent::setUp();
         $this->hasher = new StateHasher();
         // Neutralise la sync AD au WorkstationGroup::factory()->create() (pas de
-        // LDAP en HÔTE) — Story 30.4 attache des parcs porteurs de label.
+        // LDAP en HÔTE) — attache des parcs porteurs de label.
         WorkstationGroupObserver::disableSync();
     }
 
@@ -73,8 +73,6 @@ class UpstreamContractResolutionTest extends TestCase
         WorkstationGroupObserver::enableSync();
         parent::tearDown();
     }
-
-    // ── AC #1 — amont prime sur local pour la même clé (registry) ─────────
 
     #[Test]
     public function upstream_beats_local_same_key(): void
@@ -139,7 +137,7 @@ class UpstreamContractResolutionTest extends TestCase
     {
         // REG_MULTI_SZ : la value amont (chaîne JSON array) doit être coercée en
         // list<string>, iso AbstractCapabilityStateProvider::typedValue() — sinon
-        // l'agent reçoit une string là où il attend un tableau (#2).
+        // l'agent reçoit une string là où il attend un tableau.
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->create([
             'controlhub_contract_id' => $contract->id,
@@ -157,8 +155,6 @@ class UpstreamContractResolutionTest extends TestCase
         self::assertCount(1, $items);
         self::assertSame(['alpha', 'beta'], $items[0]['payload']['value'], 'REG_MULTI_SZ → list<string>');
     }
-
-    // ── AC #2 — empilement : le local sans équivalent amont survit ────────
 
     #[Test]
     public function local_without_upstream_equivalent_survives_aggregate(): void
@@ -190,7 +186,7 @@ class UpstreamContractResolutionTest extends TestCase
     public function local_exclusive_key_not_imposed_by_upstream_survives(): void
     {
         // Type exclusif par clé : l'amont impose la clé Beta ; la clé Alpha (non
-        // imposée) conserve sa valeur locale gagnante. Empilement par clé (AC #2).
+        // imposée) conserve sa valeur locale gagnante. Empilement par clé.
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->create([
             'controlhub_contract_id' => $contract->id,
@@ -213,8 +209,6 @@ class UpstreamContractResolutionTest extends TestCase
         self::assertSame(5, $byName['Alpha']['payload']['value'], 'la clé locale non imposée survit');
         self::assertSame(9, $byName['Beta']['payload']['value'], 'la clé imposée par l\'amont est présente');
     }
-
-    // ── AC #3 / #5c — standalone byte-identique (test révélateur NFR3) ────
 
     #[Test]
     public function no_active_contract_output_is_byte_identical_and_single_cheap_query(): void
@@ -263,13 +257,11 @@ class UpstreamContractResolutionTest extends TestCase
         $itemQueries = $this->countQueries($log, '"controlhub_contract_items"');
         self::assertSame(1, $contractQueries, 'au plus 1 requête « contrat actif ? » partagée');
         self::assertSame(0, $itemQueries, 'aucune requête items quand aucun contrat actif (court-circuit)');
-        // AC #5 — sans contrat, la dimension label n'est jamais explorée : ZÉRO
+        // Sans contrat, la dimension label n'est jamais explorée : ZÉRO
         // requête « labels portés » (le court-circuit `$groupedByLabel === []`
         // précède toute lecture de `workstation_groups`).
         self::assertSame(0, $this->countQueries($log, '"workstation_groups"'), 'aucune requête « labels portés » sans contrat actif (court-circuit NFR3)');
     }
-
-    // ── AC #4 — déterminisme du hash avec contrat actif ───────────────────
 
     #[Test]
     public function deterministic_hash_with_active_contract(): void
@@ -303,7 +295,7 @@ class UpstreamContractResolutionTest extends TestCase
         self::assertSame(3, $first[StateContract::SCOPE_SESSION][0]['payload']['value']);
     }
 
-    // ── AC #6 — absent non injecté ; locked + permissive priment ──────────
+    // `absent` non injecté ; locked + permissive priment
 
     #[Test]
     public function absent_item_is_not_injected(): void
@@ -331,12 +323,12 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function locked_wins_over_local_but_permissive_is_overridden_by_local(): void
     {
-        // Story 29.3 (relaxation permissive livrée) — la maille diverge selon
+        // La maille diverge selon
         // l'enforcement : `locked` → `Upstream` (rang -1, INBATTABLE) ;
         // `permissive` → `UpstreamPermissive` (rang 6, PLANCHER battable). Un
         // override local (maille `LogicalGroup`) surcharge donc le `permissive`
-        // mais JAMAIS le `locked`. (Remplace l'ancien comportement 28.3 où
-        // `permissive` se comportait comme `locked` — couture Epic 29 fermée.)
+        // mais JAMAIS le `locked`. (Remplace l'ancien comportement où
+        // `permissive` se comportait comme `locked` — couture fermée.)
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->permissive()->create([
             'controlhub_contract_id' => $contract->id,
@@ -368,12 +360,12 @@ class UpstreamContractResolutionTest extends TestCase
         self::assertSame(2, $byName['Lock']['payload']['value'], 'locked reste inbattable (Upstream rang -1) — l\'amont prime sur le local');
     }
 
-    // ── Story 30.4 — ciblage par label ────────────────────────────────────
+    // — ciblage par label
 
     #[Test]
     public function label_item_applies_to_workstation_carrying_the_label(): void
     {
-        // AC #1 — un item `locked` ciblant `label:salle-info` gagne sur le local
+        // Un item `locked` ciblant `label:salle-info` gagne sur le local
         // pour un poste membre d'un parc portant `controlhub_label = salle-info`.
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->forLabel('salle-info')->create([
@@ -398,7 +390,7 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function label_item_does_not_apply_when_workstation_lacks_the_label(): void
     {
-        // AC #2 — même item `label:salle-info`, mais le poste ne porte PAS ce label
+        // Même item `label:salle-info`, mais le poste ne porte PAS ce label
         // (il porte un autre label) → l'item amont n'est pas injecté, le local survit.
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->forLabel('salle-info')->create([
@@ -424,9 +416,9 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function permissive_label_is_overridden_by_any_local(): void
     {
-        // AC #3 (volet permissif) — un item `permissive` ciblant un label porté est
+        // Volet permissif : un item `permissive` ciblant un label porté est
         // un PLANCHER (maille UpstreamPermissive rang 6) : tout candidat local le
-        // surcharge. (Le volet verrou `locked > local` est couvert par AC #1.)
+        // surcharge. (Le volet verrou `locked > local` est couvert plus haut.)
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->forLabel('salle-info')->permissive()->create([
             'controlhub_contract_id' => $contract->id,
@@ -449,11 +441,11 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function two_locked_labels_same_key_emit_conflict_and_pick_deterministically(): void
     {
-        // AC #4 — collision insoluble : deux items `locked` sur la MÊME exclusiveKey,
+        // Collision insoluble : deux items `locked` sur la MÊME exclusiveKey,
         // l'un via label:A l'autre via label:B, tous deux portés par le poste. Les
         // deux sont à la maille Upstream (rang -1) ⇒ même rang ⇒ aucun arbitrage par
         // parc (pas de spécificité inter-parcs) : tiebreak déterministe + warning
-        // `agent.state.conflict`. 30.4 ne RÉSOUT pas la collision (→ 30.5).
+        // `agent.state.conflict` — le tiebreak tranche, il ne RÉSOUT pas la collision.
         $contract = ControlHubContract::factory()->create();
         // `updated_at` IDENTIQUES sur les deux items (timestamp figé) : on neutralise
         // la dimension récence du tiebreak pour que le test prouve réellement le
@@ -499,7 +491,7 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function active_contract_without_label_items_is_byte_identical_and_emits_no_label_query(): void
     {
-        // AC #5/#6 — contrat ACTIF mais SANS aucun item `target_type=label` : le
+        // Contrat ACTIF mais SANS aucun item `target_type=label` : le
         // compilé est byte-identique au standalone ET aucune requête « labels
         // portés » n'est émise (court-circuit `$groupedByLabel === []`), MÊME si le
         // poste appartient à un parc porteur de label (preuve forte du court-circuit).
@@ -546,7 +538,7 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function label_injection_is_deterministic_across_compilations(): void
     {
-        // AC #6 — déterminisme : même contrat (item label) + même contexte, à deux
+        // Déterminisme : même contrat (item label) + même contexte, à deux
         // instants → même hashState (l'injection label est stable).
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->forLabel('salle-info')->create([
@@ -576,11 +568,11 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function label_item_applies_to_workstation_in_physical_group_carrying_the_label(): void
     {
-        // AC #1 (volet salle physique) — `workstationGroupIds()` réunit
+        // Volet salle physique : `workstationGroupIds()` réunit
         // `physical ∪ logical` : un item `label:salle-info` doit s'appliquer aussi
         // quand c'est une SALLE PHYSIQUE (et non un parc logique) qui porte le
         // label. La maille reste `Upstream` (rang -1) — elle NE dépend PAS du type
-        // de parc (FR12, pas de spécificité inter-parcs).
+        // de parc (pas de spécificité inter-parcs).
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->forLabel('salle-info')->create([
             'controlhub_contract_id' => $contract->id,
@@ -605,7 +597,7 @@ class UpstreamContractResolutionTest extends TestCase
     #[Test]
     public function label_item_does_not_apply_when_workstation_has_no_group(): void
     {
-        // AC #2 (volet poste sans aucun parc) — contrat actif AVEC item label, mais
+        // Volet poste sans aucun parc : contrat actif AVEC item label, mais
         // le poste n'appartient à AUCUN groupe : `workstationGroupIds()` est vide,
         // le court-circuit `groupIds === []` de `labelsCarriedBy()` s'exerce, l'item
         // label n'est jamais injecté → le réglage local survit.
@@ -665,7 +657,7 @@ class UpstreamContractResolutionTest extends TestCase
         self::assertSame(22, $byName['Lab']['payload']['value'], 'l\'item label porté est servi en plus');
     }
 
-    // ── Bornage : severed inerte (Epic 32) ────────────────────────────────
+    // Bornage : severed inerte
 
     #[Test]
     public function severed_contract_injects_nothing(): void
@@ -690,7 +682,7 @@ class UpstreamContractResolutionTest extends TestCase
         self::assertSame(0, $items[0]['payload']['value'], 'un contrat severed (non actif) n\'injecte aucun candidat');
     }
 
-    // ── Câblage conteneur : tous les providers sont enrobés ───────────────
+    // Câblage conteneur : tous les providers sont enrobés
 
     #[Test]
     public function container_wires_every_provider_through_the_decorator(): void
@@ -719,7 +711,7 @@ class UpstreamContractResolutionTest extends TestCase
         }
     }
 
-    // ── AC #5b — R3 : aucun identifiant « central » ───────────────────────
+    // Règle de nommage : aucun identifiant livré ne contient « central »
 
     #[Test]
     public function r3_no_central_identifier(): void
@@ -752,7 +744,7 @@ class UpstreamContractResolutionTest extends TestCase
         // La nouvelle maille est bien `Upstream` (valeur 'upstream'), jamais central.
         self::assertSame('upstream', StateMaille::Upstream->value);
 
-        // Story 30.4 — les nouveaux IDENTIFIANTS de `UpstreamContractSource`
+        // Les nouveaux IDENTIFIANTS de `UpstreamContractSource`
         // (méthodes/propriétés `labelsCarriedBy`, `groupedByLabel`,
         // `labelsCarriedByWorkstation`) sont déjà couverts par la boucle reflection
         // ci-dessus (FQCN dans $deliveredFqcns). On tokenise en complément le source
@@ -762,7 +754,7 @@ class UpstreamContractResolutionTest extends TestCase
         // classes/méthodes/constantes/fonctions dans le code). C'est donc PLUS
         // protecteur qu'un `file_get_contents()` brut — et, contrairement à lui, ça
         // n'inspecte JAMAIS les commentaires (où « central » apparaît légitimement
-        // dans les garde-fous R3 « aucun central »).
+        // en énonçant la règle « aucun central »).
         foreach ([UpstreamContractSource::class, UpstreamAwareProvider::class, KeyedUpstreamAwareProvider::class] as $fqcn) {
             $tokens = \PhpToken::tokenize((string) file_get_contents((new \ReflectionClass($fqcn))->getFileName()));
             foreach ($tokens as $token) {
@@ -773,7 +765,7 @@ class UpstreamContractResolutionTest extends TestCase
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     /**
      * Compile un jeu de providers ENROBÉS par le décorateur amont (source fraîche
@@ -812,11 +804,11 @@ class UpstreamContractResolutionTest extends TestCase
     /**
      * Poste rattaché à un parc par label fourni (un `WorkstationGroup`
      * `controlhub_label = <label>` par entrée). Sert à tester l'expansion
-     * `target_type = label` → postes (Story 30.4). Par défaut les parcs sont
+     * `target_type = label` → postes. Par défaut les parcs sont
      * LOGIQUES ; `$physical = true` les crée PHYSIQUES (salle physique portant le
      * label) — `workstationGroupIds()` réunit `physical ∪ logical`, l'expansion
      * doit donc valoir pour les deux types (et la maille NE dépend PAS du type —
-     * FR12, pas de spécificité inter-parcs).
+     * pas de spécificité inter-parcs).
      *
      * @param  list<string>  $labels
      */

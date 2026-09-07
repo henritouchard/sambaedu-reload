@@ -17,7 +17,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 26.3 — Bandeau orphelins + purge native (AC #3, #4, #5, #7).
+ * Bandeau orphelins + purge native.
  *
  * Couvre :
  *   - rendu du bandeau « N profils orphelins » + bouton purge (server.admin) ;

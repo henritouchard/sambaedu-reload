@@ -20,12 +20,12 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 4.10 — Tests Feature de l'auth iPXE.
+ * Tests Feature de l'auth iPXE.
  *
- * Couvre AC1, AC2 (sweep des endpoints sensibles), AC3 (permission Spatie
- * `computer.install`), AC6 (matrice {sans creds, creds invalides, creds
+ * Couvre (sweep des endpoints sensibles) (permission Spatie
+ * `computer.install`) (matrice {sans creds, creds invalides, creds
  * valides sans permission, creds valides avec permission} × endpoints),
- * AC7 (logs sécurité avec champs précis).
+ * (logs sécurité avec champs précis).
  *
  * **Setup** : stub `AuthenticationService::validateAdCredentials()` via
  * `app->instance()` pour simuler le bind LDAP (le vrai LDAP est indisponible
@@ -40,7 +40,7 @@ class IpxeAdminAuthTest extends TestCase
     use CreatesPermissionSchema;
 
     /**
-     * Liste des endpoints sensibles à protéger (AC2).
+     * Liste des endpoints sensibles à protéger.
      *
      * @return array<string, array{0:string, 1:string, 2:string}>
      *   Format: [endpoint_name => [http_path, log_context, http_method]]
@@ -142,10 +142,6 @@ class IpxeAdminAuthTest extends TestCase
         return $p;
     }
 
-    // ====================================================================
-    // AC1 — handleAdmin : matrice 4 cas
-    // ====================================================================
-
     #[Test]
     #[DataProvider('sensitiveEndpointsProvider')]
     public function it_blocks_without_credentials(string $path, string $context, string $method): void
@@ -202,7 +198,7 @@ class IpxeAdminAuthTest extends TestCase
     }
 
     /**
-     * Story 4.10 (correctif review #10) — markers stables par endpoint.
+     * Markers stables par endpoint.
      *
      * Assertion positive : on vérifie qu'un substring du template *attendu*
      * (menu admin, maintenance, action rescuecd, etc.) est présent dans la
@@ -255,7 +251,7 @@ class IpxeAdminAuthTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringNotContainsString('Acces refuse', $body, "Endpoint $path doit autoriser un user avec permission");
 
-        // Correctif review #10 — assertion positive par endpoint.
+        // Assertion positive par endpoint.
         $expected = $this->expectedAllowedSubstring();
         if (isset($expected[$path])) {
             self::assertStringContainsString(
@@ -265,10 +261,6 @@ class IpxeAdminAuthTest extends TestCase
             );
         }
     }
-
-    // ====================================================================
-    // AC7 — non-leak password dans les logs
-    // ====================================================================
 
     #[Test]
     public function it_does_not_leak_password_in_logs_on_auth_failure(): void
@@ -335,10 +327,6 @@ class IpxeAdminAuthTest extends TestCase
         self::assertStringNotContainsString('attacker', $body); // pas de leak username non plus
     }
 
-    // ====================================================================
-    // AC1 — flow admin OK : doit servir le menu admin
-    // ====================================================================
-
     #[Test]
     public function it_renders_admin_menu_on_successful_authentication(): void
     {
@@ -361,10 +349,6 @@ class IpxeAdminAuthTest extends TestCase
         self::assertStringContainsString('item --key m maintenance', $body);
     }
 
-    // ====================================================================
-    // Garde-fou : handshake reste accessible sans auth (pas de mac/uuid)
-    // ====================================================================
-
     #[Test]
     public function handshake_remains_accessible_without_credentials(): void
     {
@@ -379,9 +363,6 @@ class IpxeAdminAuthTest extends TestCase
         self::assertStringContainsString('admin##params', $body);
     }
 
-    // ====================================================================
-    // Story 4.10 — correctif review #5 — spy sur validateAdCredentials
-    // ====================================================================
     //
     // Objectif : détecter le retrait silencieux de `$this->guard()` dans un
     // handler. Un mock `expects($this->once())` casse si jamais un endpoint
@@ -416,10 +397,6 @@ class IpxeAdminAuthTest extends TestCase
         $response->assertStatus(200);
         // PHPUnit vérifie automatiquement `expects($this->once())` en tearDown.
     }
-
-    // ====================================================================
-    // Story 4.10 — correctif review #2 — propagation creds multi-step
-    // ====================================================================
 
     /**
      * Endpoints enrollment multi-step : chacun chain re-poste vers lui-même
@@ -461,7 +438,7 @@ class IpxeAdminAuthTest extends TestCase
 
         // 2ème hit (équivalent au chain `##params` re-déclenché par iPXE
         // après saisie utilisateur). Les params iPXE intègrent désormais
-        // username/password (correctif #2) — on simule ça en re-postant le
+        // username/password — on simule ça en re-postant le
         // même payload + un éventuel `new_name` / `room` / `parc`.
         $secondPayload = $payload;
         if ($path === '/ipxe/enrollment/name' || $path === '/ipxe/enrollment/byod') {
@@ -476,10 +453,6 @@ class IpxeAdminAuthTest extends TestCase
             "2ème POST $path : MissingCredentials alors que les params iPXE doivent propager username/password",
         );
     }
-
-    // ====================================================================
-    // Story 4.10 — correctif review #3 — decodePassword durcissement
-    // ====================================================================
 
     #[Test]
     public function it_decodes_standard_base64_password_correctly(): void
@@ -574,14 +547,6 @@ class IpxeAdminAuthTest extends TestCase
 
         self::assertSame('pass word@123', $received, 'Password contenant chars hors b64 doit fallback raw');
     }
-
-    // ====================================================================
-    // Story 4.10 — correctif review #14 — case sensitivity AD vs PG
-    // ====================================================================
-
-    // ====================================================================
-    // Story 4.10 — correctif review #15 — rate-limit 30/min/IP
-    // ====================================================================
 
     #[Test]
     public function it_rate_limits_admin_endpoint_after_30_failures(): void

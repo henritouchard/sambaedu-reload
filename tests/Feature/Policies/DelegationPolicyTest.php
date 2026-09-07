@@ -16,7 +16,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC5) — DelegationPolicy.
+ * DelegationPolicy.
  */
 class DelegationPolicyTest extends TestCase
 {

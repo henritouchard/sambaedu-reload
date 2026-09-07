@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.3 — la RELECTURE balaie, et elle ne prétend jamais avoir vu ce qu'elle
+ * La RELECTURE balaie, et elle ne prétend jamais avoir vu ce qu'elle
  * n'a pas regardé.
  *
  * Le piège MESURÉ est ici : une lecture unique de sous-arbre rend les enfants mais
@@ -65,10 +65,6 @@ class InspectionReportTest extends TestCase
         $this->assertCount(0, $report->failures());
     }
 
-    // =========================================================================
-    // Le plafond : deux champs, un invariant
-    // =========================================================================
-
     #[Test]
     public function claiming_a_ceiling_without_having_looked_is_refused(): void
     {
@@ -113,10 +109,6 @@ class InspectionReportTest extends TestCase
         NodeObservation::observed('_profs', [], 0, true);
     }
 
-    // =========================================================================
-    // Vocabulaire de plan, et rien d'autre
-    // =========================================================================
-
     #[Test]
     public function an_observed_grant_speaks_internal_identities_and_plan_access(): void
     {
@@ -140,7 +132,7 @@ class InspectionReportTest extends TestCase
     }
 
     /**
-     * Story 62.4 — la liste VIDE est licite pour une OBSERVATION, et elle seule :
+     * La liste VIDE est licite pour une OBSERVATION, et elle seule :
      * c'est la forme matérialisée d'une suspension. Le plan, lui, la refuse.
      */
     #[Test]

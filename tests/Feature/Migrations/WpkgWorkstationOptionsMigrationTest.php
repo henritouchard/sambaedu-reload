@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.2 / AC5.1 — Migration `wpkg_workstation_options` + pivots
+ * Migration `wpkg_workstation_options` + pivots
  * resolver `application_workstation` / `application_workstation_group`.
  */
 class WpkgWorkstationOptionsMigrationTest extends TestCase

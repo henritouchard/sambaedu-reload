@@ -11,24 +11,22 @@ use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 61.1 — LES COMPTES NEXTCLOUD : création au fil de l'eau, adoption pour le
+ * LES COMPTES NEXTCLOUD : création au fil de l'eau, adoption pour le
  * stock, propagation du mot de passe.
  *
- * ---------------------------------------------------------------------------
- * **POURQUOI CES COMPTES EXISTENT.** Le montage `files_external` de cette story
+ * **POURQUOI CES COMPTES EXISTENT.** Le montage `files_external`
  * utilise les « identifiants de connexion, enregistrés en session » : Nextcloud
  * relaie à Samba les identifiants de l'utilisateur CONNECTÉ. Le montage n'est donc
  * fonctionnel que si l'utilisateur s'authentifie auprès de Nextcloud avec ses
  * identifiants AD — soit parce que l'instance a une synchro LDAP, soit parce que
  * SE5 y a créé un compte local avec le même mot de passe. Cette classe est le
  * second cas.
- * ---------------------------------------------------------------------------
  *
  * **On n'invente JAMAIS de mot de passe.** Un compte Nextcloud créé avec un aléa
  * est un compte auquel personne ne peut se connecter : le montage lui montrerait
  * une erreur d'authentification SMB, et le compteur du rapport serait au vert.
- * C'est la signature de défaut des Epics 56/57 — un signal qui n'atteint pas son
- * destinataire. Pour le stock existant, un compte absent est donc **rapporté**
+ * C'est un signal qui n'atteint pas son destinataire.
+ * Pour le stock existant, un compte absent est donc **rapporté**
  * (compteur `introuvables`, avec la marche à suivre), jamais fabriqué. Le mot de
  * passe n'est en main qu'à deux moments : la création SE5 et le changement de mot
  * de passe — et ce sont exactement les deux crochets de cette classe.
@@ -51,12 +49,12 @@ use Illuminate\Support\Facades\Log;
  * vérité reste chez Nextcloud.
  *
  * **Limite CONNUE, à dire plutôt qu'à taire** : sur une instance à synchro LDAP,
- * la création au fil de l'eau (AC5) émet un `POST cloud/users` avec `userid =
+ * la création au fil de l'eau émet un `POST cloud/users` avec `userid =
  * login`. Si la synchro attribue à ce même utilisateur un identifiant DIFFÉRENT
  * (mappage sur un GUID), la création n'est pas rejetée en `102` et un second
  * compte, local, peut apparaître. Le cas ne s'est pas présenté au cadrage (les
- * instances d'établissement SE4 mappent l'identifiant sur le login) et la story
- * prescrit cet ordre ; il est nommé ici pour être reconnu s'il survient, pas
+ * instances d'établissement SE4 mappent l'identifiant sur le login) et cet ordre
+ * est prescrit ; il est nommé ici pour être reconnu s'il survient, pas
  * contourné par une abstraction spéculative. Le balayage du stock, lui, ne
  * masque plus ce cas : depuis la revue, l'adoption ne retient QUE l'homonyme
  * ({@see resolveRemote()}), et un identifiant divergent est rapporté comme
@@ -69,14 +67,14 @@ final class NextcloudUserProvisioner
      * login cherché. Ils ne sont JAMAIS adoptés (voir {@see resolveRemote()}) —
      * mais les taire ferait d'un « introuvable » un silence, alors que
      * l'instance, elle, a bien répondu quelque chose. Ils remontent au rapport
-     * (AC8) pour que l'exploitant sache où regarder.
+     * pour que l'exploitant sache où regarder.
      *
      * @var list<string>
      */
     private array $discardedCandidates = [];
 
     /**
-     * DISJONCTEUR DE LOT (revue 61.1 #5). Une réinitialisation en masse propage
+     * DISJONCTEUR DE LOT. Une réinitialisation en masse propage
      * le mot de passe utilisateur par utilisateur, **dans le cycle d'une requête
      * HTTP**. Chaque tentative vers une instance injoignable coûte le délai
      * complet du client (15 s) : trente élèves feraient sept minutes et demie
@@ -123,7 +121,7 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * AC5 — CRÉATION AU FIL DE L'EAU, appelée depuis le flux de création SE5.
+     * CRÉATION AU FIL DE L'EAU, appelée depuis le flux de création SE5.
      *
      * **Fail-soft, et compté dans le journal** : l'échec de Nextcloud ne bloque
      * jamais la création SE5 (iso `configureUserCloud`). Mais il n'est pas muet —
@@ -160,7 +158,7 @@ final class NextcloudUserProvisioner
         }
 
         // L'identifiant est celui que NOUS avons envoyé — première étape de la
-        // résolution ordonnée (AC6), et la seule qui ne coûte aucun appel.
+        // résolution ordonnée, et la seule qui ne coûte aucun appel.
         $held = $this->cacheIdentity($login, $login);
 
         if ($held !== null) {
@@ -181,7 +179,7 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * AC5/AC6 — ADOPTION du stock existant : on résout, on cache, on ne crée pas.
+     * ADOPTION du stock existant : on résout, on cache, on ne crée pas.
      *
      * Rend `true` si l'utilisateur est (désormais) rattaché à une identité
      * Nextcloud connue.
@@ -196,7 +194,7 @@ final class NextcloudUserProvisioner
 
         if ((string) ($user->nextcloud_user_id ?? '') !== '') {
             // Déjà résolu : AUCUN appel de RÉSOLUTION. C'est l'invariant testé de
-            // l'AC6 — le cache n'aurait aucune valeur si on le rechargeait à chaque
+            // le cache n'aurait aucune valeur si on le rechargeait à chaque
             // passage. Le plafond, lui, est un état à CONVERGER, pas une identité à
             // retrouver : il se relit et se corrige à chaque balayage.
             $this->convergeQuota($user, (string) $user->nextcloud_user_id, $client, $report, $dryRun);
@@ -261,15 +259,15 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * Story 61.3 (AC5) — LE PLAFOND D'UNE PERSONNE, convergé au balayage.
+     * LE PLAFOND D'UNE PERSONNE, convergé au balayage.
      *
-     * **La frontière D8, côté personnes.** Ce plafond budgète un COMPTE sur
+     * **La frontière, côté personnes.** Ce plafond budgète un COMPTE sur
      * l'instance ; il n'a rien à voir avec le plafond d'une ZONE, que le backend de
      * fichiers pose sur un dossier d'équipe. Les rattacher au même endroit ferait
-     * écrire un quota d'utilisateur par une recette de partage — la violation exacte
-     * que D8 nomme. Un test d'architecture tient la frontière des deux côtés.
+     * écrire un quota d'utilisateur par une recette de partage — exactement ce que
+     * cette frontière interdit. Un test d'architecture la tient des deux côtés.
      *
-     * **On COMPARE SUR LE RELU** (piège transversal de l'epic) : la valeur envoyée
+     * **On COMPARE SUR LE RELU** : la valeur envoyée
      * ne prouve rien, l'instance peut la normaliser ou l'ignorer. On ne réécrit que
      * si le relu diffère, ce qui rend le balayage idempotent — sans quoi chaque
      * passage réécrirait le plafond de chaque compte.
@@ -277,7 +275,7 @@ final class NextcloudUserProvisioner
      * **Fail-soft et SILENCIEUX sur un refus légitime.** Une instance à synchro
      * annuaire refuse la modification de ses comptes : c'est un état normal, pas une
      * panne, et il se journalise en `debug` — jamais un avertissement par
-     * utilisateur (règle héritée de la revue 61.1, sans quoi une rentrée noierait le
+     * utilisateur (règle héritée de la revue, sans quoi une rentrée noierait le
      * journal).
      */
     private function convergeQuota(
@@ -306,7 +304,7 @@ final class NextcloudUserProvisioner
             return;
         }
 
-        // Story 63.4, correction de revue — **L'ÉCRASEMENT SE COMPTE.** Le relu
+        // Correction de revue — **L'ÉCRASEMENT SE COMPTE.** Le relu
         // diffère : ce balayage change ce plafond, y compris s'il avait été réglé à
         // la main dans l'instance. C'est ici, et pas plus loin, parce que la
         // simulation doit annoncer ce que le vrai passage ferait.
@@ -368,10 +366,8 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * Correction de revue 61.3 #1, **transposée aux GROUPES par la story 63.4** —
-     * ce qui ne se résout pas ne se devine pas, et son absence se dit.
+     * Ce qui ne se résout pas ne se devine pas, et son absence se dit.
      *
-     * ---------------------------------------------------------------------------
      * **CE QUI ÉTAIT FAUX.** Le plafond se choisissait d'après un profil déduit de
      * `users.role` — une colonne qui ne garde rien dans ce produit — avec un repli
      * muet. Un enseignant dont le rôle n'était pas renseigné recevait donc le
@@ -379,7 +375,7 @@ final class NextcloudUserProvisioner
      * passés étaient TOUJOURS `[]`, ce qui rendait toute règle
      * `QuotaRule::TYPE_GROUP` inatteignable pour un compte de l'instance.
      *
-     * **LE PROFIL LUI-MÊME A DISPARU** (story 63.4) : le plafond par défaut est un
+     * **LE PROFIL LUI-MÊME A DISPARU** : le plafond par défaut est un
      * réglage d'INSTANCE, identique pour tout compte qu'aucune règle nominative ni
      * règle de groupe ne couvre. Ce qu'on demande encore à l'annuaire, ce sont donc
      * les GROUPES, et rien d'autre.
@@ -493,7 +489,7 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * AC7 — PROPAGATION DU MOT DE PASSE, sous DOUBLE condition : la capacité est
+     * PROPAGATION DU MOT DE PASSE, sous DOUBLE condition : la capacité est
      * active ET la colonne d'identité est remplie.
      *
      * La seconde condition n'est pas une optimisation : sans identité connue, on ne
@@ -568,8 +564,8 @@ final class NextcloudUserProvisioner
             // avertissement par utilisateur pour un état parfaitement normal.
             //
             // Le second cas — un privilège réellement cassé — n'est pas perdu
-            // pour autant : la sonde de connexion (AC1) et le provisionnement
-            // (AC8/AC9) le diagnostiquent, eux, en échec net et nommé. Ce sont
+            // pour autant : la sonde de connexion et le provisionnement
+            // le diagnostiquent, eux, en échec net et nommé. Ce sont
             // les endroits où un privilège cassé DOIT crier ; la classification
             // générale du client n'est pas touchée.
             Log::debug('nextcloud.user.password.not_applicable', [
@@ -595,7 +591,7 @@ final class NextcloudUserProvisioner
      *
      * À appeler après la boucle d'une réinitialisation en masse — et aussi après
      * une propagation unitaire, sans quoi une instance injoignable rendrait le
-     * chemin unitaire MUET, ce que l'AC7 interdit (« fail-soft mais visible »).
+     * chemin unitaire MUET, ce que l' interdit (« fail-soft mais visible »).
      *
      * Rend le nombre de comptes non propagés, pour que l'appelant puisse en faire
      * autre chose qu'un journal s'il le souhaite.
@@ -619,7 +615,7 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * AC6 — le cache, lu par le chemin legacy (`configureUserCloud`) quand il est
+     * Le cache, lu par le chemin legacy (`configureUserCloud`) quand il est
      * rempli. Rend `null` quand rien n'est caché : l'appelant garde alors son
      * comportement d'origine.
      */
@@ -638,12 +634,12 @@ final class NextcloudUserProvisioner
     }
 
     /**
-     * Résolution ordonnée AC6, côté distant : sonde directe puis autocomplétion.
+     * Résolution ordonnée, côté distant : sonde directe puis autocomplétion.
      *
      * Rend :
      *  - `string` — l'identifiant Nextcloud résolu ;
      *  - `null` — **introuvable**, et c'est silencieux côté API (mesure du spike
-     *    60.0 : zéro résultat, pas d'erreur) — jamais silencieux côté SE5 ;
+     *  : zéro résultat, pas d'erreur) — jamais silencieux côté SE5 ;
      *  - {@see NextcloudResult} — un échec NET (privilège, instance injoignable),
      *    qui n'est pas la même chose qu'une absence et ne doit pas être compté
      *    comme telle.
@@ -679,26 +675,6 @@ final class NextcloudUserProvisioner
             }
         }
 
-        // ---------------------------------------------------------------------
-        // **ON N'ADOPTE QUE L'HOMONYME.** L'autocomplétion est une recherche
-        // FLOUE (sous-chaîne sur l'identifiant, le nom affiché, l'adresse) : un
-        // candidat unique n'est pas une preuve d'identité, c'est le seul compte
-        // dont le nom RESSEMBLE. Adopter `p.durand-martin` pour `p.durand`
-        // écrirait cette identité dans le cache (`users.nextcloud_user_id`),
-        // puis {@see propagatePassword()} ÉCRASERAIT le mot de passe du compte
-        // d'une autre personne au prochain changement AD — silencieusement, et
-        // journalisé comme un succès.
-        //
-        // La règle « plus d'un : on ne devine pas » s'étend donc au cas « un
-        // seul, mais qui n'est pas lui » : un candidat non homonyme n'est pas
-        // une identité, c'est un INTROUVABLE, et l'appelant le compte comme tel.
-        //
-        // Ce qu'on renonce ainsi à couvrir automatiquement : l'instance dont les
-        // identifiants ne sont PAS les logins (mappage sur un GUID). Ce cas
-        // demandera un geste explicite ou une corroboration (courriel, nom
-        // affiché exact) — hors périmètre de cette story ; les candidats écartés
-        // sont nommés dans le rapport pour que le geste ait de quoi s'appuyer.
-        // ---------------------------------------------------------------------
         $this->discardedCandidates = array_values(array_map(
             static fn (array $entry): string => $entry['id'],
             $found,
@@ -711,8 +687,7 @@ final class NextcloudUserProvisioner
      * Écriture du cache. `saveQuietly` : ce n'est pas un changement d'état métier,
      * aucun observateur n'a de raison de s'en émouvoir.
      *
-     * ---------------------------------------------------------------------------
-     * **CORRECTION DE REVUE (61.2 #2) — LA GARDE D'UNICITÉ EST À TOUS LES POINTS
+     * **LA GARDE D'UNICITÉ EST À TOUS LES POINTS
      * D'ÉCRITURE, pas seulement au geste manuel.** Une identité Nextcloud portée par
      * deux logins SE5 fait que la propagation de mot de passe de l'un écrase le
      * compte de l'autre. Le rattachement explicite s'en garde
@@ -720,7 +695,6 @@ final class NextcloudUserProvisioner
      * au même titre — deux logins distincts ne peuvent normalement pas être
      * homonymes du même compte, mais la garde ne coûte rien et ferme la CLASSE
      * entière de défauts plutôt qu'un de ses chemins.
-     * ---------------------------------------------------------------------------
      *
      * Rend le login SE5 qui détient déjà cette identité — auquel cas **rien n'est
      * écrit** — ou `null` quand l'écriture a pu se faire (ou n'avait pas lieu

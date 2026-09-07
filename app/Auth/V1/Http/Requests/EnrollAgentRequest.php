@@ -7,7 +7,6 @@ namespace App\Auth\V1\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 16.10 — AC5.1.
  *
  * Validation du body de `POST /api/v1/agent/enroll`.
  *

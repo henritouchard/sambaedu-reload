@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 8.4 / AC1 — Endpoint DDNS natif servi AVANT le catchall.
+ * Endpoint DDNS natif servi AVANT le catchall.
  *
  * Le service est mocké : ici on vérifie le contrat HTTP (chemins servis,
  * paramètres transmis, réponse inerte), pas la logique DNS (couverte par
@@ -62,7 +62,7 @@ class DhcpDnsUpdateEndpointTest extends TestCase
      * Le chemin legacy reste servi NATIVEMENT : une instance dont
      * `dhcp-dyndns.sh` n'a pas encore été redéployé par `update.sh` ne doit ni
      * tomber sur le catchall (proxy vers un vhost legacy mort), ni polluer le
-     * verdict legacy de `se4:status` (38.6).
+     * verdict legacy de `se4:status`.
      */
     #[Test]
     public function legacy_php_path_is_served_natively(): void

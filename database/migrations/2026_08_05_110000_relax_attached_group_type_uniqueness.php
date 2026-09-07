@@ -7,10 +7,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 60.5 — l'accrochage cesse d'être EXCLUSIF, parce qu'il a cessé de vouloir
+ * L'accrochage cesse d'être EXCLUSIF, parce qu'il a cessé de vouloir
  * dire la même chose.
  *
- * **Ce que l'unicité de 60.2 protégeait.** « Deux recettes accrochées au même type
+ * **Ce que l'unicité protégeait.** « Deux recettes accrochées au même type
  * poseraient une question à laquelle rien ne peut répondre : laquelle matérialise ? »
  * — et c'était juste, tant qu'accrochage signifiait « c'est CETTE recette que la
  * création d'un groupe matérialise ».
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Schema;
  * cette recette sait trouver toutes ses cibles seule. » C'est une propriété
  * d'ÉLIGIBILITÉ, et plusieurs recettes peuvent parfaitement l'avoir sur le même
  * type : l'arbre de classe et la recette plate « profs → élèves » s'accrochent
- * toutes deux au type `classe`. La question de 60.2 ne disparaît pas pour autant —
+ * toutes deux au type `classe`. La question ne disparaît pas pour autant
  * elle se rétrécit à ce qu'elle visait vraiment : **un type de groupe n'a qu'une
  * recette d'ARBRE**, seule matérialisée automatiquement. Cet invariant-là est tenu
  * par une garde d'écriture applicative

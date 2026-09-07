@@ -15,18 +15,18 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — **AC2** : discovery et JWKS.
+ * Discovery et JWKS.
  *
  * Ces deux documents sont un **CONTRAT PUBLIC gelé à la première
  * publication** : une extension déployée lit la discovery une fois et met en
  * cache. Ce fichier verrouille donc leur forme.
  *
- * **Story 55.2** — l'assertion négative `userinfo_endpoint` absent (garde
- * « pas avant l'heure » de 55.1) est devenue son inverse : l'endpoint existe,
+ * L'assertion négative `userinfo_endpoint` absent (garde
+ * « pas avant l'heure ») est devenue son inverse : l'endpoint existe,
  * il doit être annoncé. La protection qu'elle portait n'est pas perdue, elle
  * est remontée d'un cran — `the_discovery_evolved_additively_from_the_55_1_contract()`
- * fige désormais CHAQUE clé publiée en 55.1 (nom ET valeur) : c'est une
- * exigence plus forte que celle qu'elle remplace (NFR11).
+ * fige désormais CHAQUE clé publiée (nom ET valeur) : c'est une
+ * exigence plus forte que celle qu'elle remplace.
  *
  * Le test du JWKS ne se contente pas de comparer des chaînes : il
  * **reconstruit une clé publique RSA depuis les seuls `n` et `e` publiés**, et
@@ -45,7 +45,7 @@ class OidcDiscoveryTest extends TestCase
         $this->useOidcTestKeys();
     }
 
-    // ── AC2 — discovery ───────────────────────────────────────────────────
+    // — discovery
 
     #[Test]
     public function the_discovery_document_is_public_and_carries_the_expected_contract(): void
@@ -76,7 +76,7 @@ class OidcDiscoveryTest extends TestCase
     }
 
     /**
-     * Story 55.2 — **ÉVOLUTION** de l'assertion 55.1
+     * **ÉVOLUTION** de l'assertion
      * `the_discovery_document_does_not_yet_announce_userinfo`.
      *
      * Elle assertait l'ABSENCE de `userinfo_endpoint` : c'était une garde
@@ -108,7 +108,7 @@ class OidcDiscoveryTest extends TestCase
             $body['claims_supported'],
         );
 
-        // NFR5 — la liste de claims annoncée est FERMÉE elle aussi : rien qui
+        // La liste de claims annoncée est FERMÉE elle aussi : rien qui
         // ressemble à de la PII hors contrat ne doit y apparaître, même
         // « juste » comme métadonnée (un intégrateur lirait la discovery et
         // demanderait le claim).
@@ -118,11 +118,11 @@ class OidcDiscoveryTest extends TestCase
     }
 
     /**
-     * Story 55.2 — **NFR11 vérifié, pas seulement affirmé** : la discovery ne
+     * **Vérifié, pas seulement affirmé** : la discovery ne
      * peut évoluer QU'ADDITIVEMENT.
      *
      * Une extension déployée lit ce document une fois et le met en cache. Ce
-     * test fige, clé par clé et valeur par valeur, ce que 55.1 a publié : tout
+     * test fige, clé par clé et valeur par valeur, ce qui est publié : tout
      * retrait, tout renommage et toute modification de valeur le fait échouer.
      * Les ajouts, eux, passent — c'est exactement l'asymétrie du contrat.
      */
@@ -131,7 +131,7 @@ class OidcDiscoveryTest extends TestCase
     {
         $body = $this->get('/.well-known/openid-configuration')->assertOk()->json();
 
-        // Le document TEL QUE 55.1 l'a publié — recopié ici volontairement,
+        // Le document TEL QUE l'a publié — recopié ici volontairement,
         // pas dérivé du code : un test qui lit la même source que
         // l'implémentation ne prouverait rien.
         $contract55_1 = [
@@ -154,14 +154,14 @@ class OidcDiscoveryTest extends TestCase
         }
 
         // `scopes_supported` et `claims_supported` sont les deux seules clés de
-        // 55.1 dont la VALEUR change : elles ne peuvent que S'ÉTENDRE.
+        // dont la VALEUR change : elles ne peuvent que S'ÉTENDRE.
         self::assertSame(['openid'], array_values(array_intersect(['openid'], $body['scopes_supported'])));
         foreach (['iss', 'sub', 'aud', 'exp', 'iat', 'jti', 'nonce'] as $claim) {
             self::assertContains($claim, $body['claims_supported'], 'claim 55.1 retiré : '.$claim);
         }
     }
 
-    // ── AC2 — JWKS ────────────────────────────────────────────────────────
+    // — JWKS
 
     #[Test]
     public function the_jwks_exposes_the_public_key_in_rfc_7517_form(): void
@@ -248,7 +248,7 @@ class OidcDiscoveryTest extends TestCase
         self::assertSame('server_error', $response->json('error'));
     }
 
-    // ── Reconstruction d'une clé publique RSA depuis un JWK ───────────────
+    // Reconstruction d'une clé publique RSA depuis un JWK
 
     /**
      * Construit un PEM `SubjectPublicKeyInfo` depuis les composantes `n`/`e`

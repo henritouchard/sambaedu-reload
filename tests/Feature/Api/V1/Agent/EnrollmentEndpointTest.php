@@ -19,9 +19,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature `POST /api/v1/agent/enrollment` — Story 23.3 (AC3, AC4).
+ * Tests Feature `POST /api/v1/agent/enrollment`.
  *
- * Piège route cache (précédent `AuthenticateAgentTokenTest` 23.2) : avec
+ * Piège route cache (précédent `AuthenticateAgentTokenTest`) : avec
  * `bootstrap/cache/routes-v7.php` sur la VM, le matcher compilé fait gagner
  * le catch-all legacy `{path}` sur toute route déclarée à l'exécution — et
  * un cache STALE ne contiendrait pas la route fraîchement ajoutée à api.php.
@@ -50,7 +50,7 @@ final class EnrollmentEndpointTest extends TestCase
 
         $this->app['router']->setRoutes(new RouteCollection());
 
-        // Re-déclaration iso routes/api.php (Story 23.3) — toute divergence
+        // Re-déclaration iso routes/api.php — toute divergence
         // de middleware ici doit être reportée là-bas et inversement.
         Route::post(self::ENROLLMENT_ROUTE, [EnrollController::class, 'store'])
             ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:10,1'])
@@ -77,7 +77,7 @@ final class EnrollmentEndpointTest extends TestCase
             ->getJson(self::ECHO_ROUTE);
     }
 
-    // ── AC3 — l'échange ticket → token ──────────────────────────────────
+    // — l'échange ticket → token
 
     #[Test]
     public function valid_ticket_births_a_usable_token_consumes_ticket_and_sets_no_store(): void
@@ -141,13 +141,13 @@ final class EnrollmentEndpointTest extends TestCase
         self::assertNull($ws->refresh()->agent_token_hash);
     }
 
-    // ── AC4 — conflit 409, rien d'écrasé ─────────────────────────────────
+    // — conflit 409, rien d'écrasé
 
     #[Test]
     public function missing_ticket_on_enrolled_workstation_returns_409_and_token_stays_intact(): void
     {
-        // Conflit fondé sur la MAC (ancre) — review #M3 : l'uuid seul ne sert
-        // plus d'oracle, le vecteur d'identité du conflit est la MAC.
+        // Le conflit se fonde sur la MAC (ancre) : l'uuid seul ne sert pas
+        // d'oracle.
         $ws = Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff']);
         $token = $this->tokens->issueFor($ws);
 
@@ -173,7 +173,7 @@ final class EnrollmentEndpointTest extends TestCase
             ->assertJson(['code' => EnrollController::CODE_NOT_ALLOWED]);
     }
 
-    // ── AC2 + AC3 — cycle réinstallation complet ─────────────────────────
+    // + — cycle réinstallation complet
 
     #[Test]
     public function full_reinstall_cycle_revokes_old_token_then_births_a_new_one(): void
@@ -184,7 +184,7 @@ final class EnrollmentEndpointTest extends TestCase
         $this->checkin($oldToken)->assertOk();
 
         // Réinstall : la génération de l'unattend ouvre un ticket → l'ancien
-        // token est révoqué IMMÉDIATEMENT (AC2), avant même le premier logon.
+        // token est révoqué IMMÉDIATEMENT, avant même le premier logon.
         $ticket = $this->service->openTicket($ws->refresh());
         $this->checkin($oldToken)->assertStatus(401);
 
@@ -195,7 +195,7 @@ final class EnrollmentEndpointTest extends TestCase
         $this->checkin($newToken)->assertOk()->assertJson(['workstation_id' => $ws->id]);
     }
 
-    // ── AC3 — log de cohérence sans blocage ──────────────────────────────
+    // — log de cohérence sans blocage
 
     #[Test]
     public function diverging_identity_is_logged_as_mismatch_but_does_not_block(): void
@@ -223,7 +223,7 @@ final class EnrollmentEndpointTest extends TestCase
         self::assertTrue($mismatchLogged, 'agent.enroll.identity_mismatch attendu dans le channel agent.');
     }
 
-    // ── AC7 — jamais de ticket/token en clair dans les logs ──────────────
+    // — jamais de ticket/token en clair dans les logs
 
     #[Test]
     public function ticket_and_token_clear_values_never_reach_the_logs(): void
@@ -245,7 +245,7 @@ final class EnrollmentEndpointTest extends TestCase
             ]);
             self::assertStringNotContainsString($ticket, $payload);
             self::assertStringNotContainsString($token, $payload);
-            // Les hash non plus (convention 23.2).
+            // Les hash non plus (convention).
             self::assertStringNotContainsString(hash('sha256', $ticket), $payload);
             self::assertStringNotContainsString(hash('sha256', $token), $payload);
         }

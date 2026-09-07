@@ -9,7 +9,6 @@ use App\Services\Filesystem\Plan\PlanGrant;
 /**
  * LA TRADUCTION DES VERBES VERS LES RÔLES, PAR CONTENANCE D'ACTIONS.
  *
- * ---------------------------------------------------------------------------
  * **CE PRODUIT N'A PAS DE MASQUE DE BITS, IL A DES RÔLES NOMMÉS — ET C'EST PLUS
  * DIFFICILE, PAS PLUS FACILE.**
  *
@@ -28,7 +27,6 @@ use App\Services\Filesystem\Plan\PlanGrant;
  * état que le plan ne sait pas DÉCRIRE — donc une dérive perpétuelle, ou pire,
  * une réconciliation qui la « corrige » en détruisant du travail.
  *
- * ---------------------------------------------------------------------------
  * **DEUX FAMILLES DE RÔLES DISJOINTES — mesuré le 2026-08-13.**
  *
  * La racine d'un espace et un sous-dossier n'acceptent PAS les mêmes rôles, et
@@ -44,7 +42,6 @@ use App\Services\Filesystem\Plan\PlanGrant;
  * RECONNAÎTRE — un droit qu'on ne nomme pas est un droit qu'on confond avec du
  * bruit.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE LA TABLE NE SAIT PAS EXPRIMER, ET QUI EST DIT PLUTÔT QUE TU.**
  *
  * `{lire, creer}` — « déposer sans pouvoir effacer » — n'a **aucun** rôle exact.
@@ -80,7 +77,7 @@ final class OpenCloudRoleTable
      * @var array<string, array{id:string,label:string,family:string,weight:int,actions:list<string>}>
      */
     public const ROLES = [
-        // --- Famille SOUS-DOSSIER --------------------------------------------
+        // Famille SOUS-DOSSIER
         'item.view' => [
             'id' => 'b1e2218d-eef8-4d4c-b82d-0f1a1b48f3b5',
             'label' => 'Can view',
@@ -130,7 +127,7 @@ final class OpenCloudRoleTable
             ],
         ],
 
-        // --- Famille RACINE D'ESPACE -----------------------------------------
+        // Famille RACINE D'ESPACE
         'space.view' => [
             'id' => 'a8d5fe5e-96e3-418d-825b-534dbdf22b99',
             'label' => 'Can view',

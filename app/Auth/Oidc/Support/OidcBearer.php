@@ -7,21 +7,19 @@ namespace App\Auth\Oidc\Support;
 use Illuminate\Http\Request;
 
 /**
- * Story 56.4 — **LE point unique d'extraction d'un Bearer opaque** (RFC 6750 §2.1).
+ * **LE point unique d'extraction d'un Bearer opaque** (RFC 6750 §2.1).
  *
- * Extrait la règle qui vivait dans `UserinfoController::extractBearer()` (55.2)
+ * Extrait la règle qui vivait dans `UserinfoController::extractBearer`
  * pour que l'API extensions n'en fasse pas une seconde copie : deux extracteurs,
  * c'est deux occasions d'accepter un jour le jeton en query « juste ici ».
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  EN-TÊTE `Authorization` UNIQUEMENT
  *
  *  La RFC 6750 §2.3 autorise la forme « URI query parameter » : SE5 ne la
  *  supporte PAS, et ce n'est pas un oubli. Un `?access_token=…` finit dans les
  *  journaux du serveur, l'historique du navigateur et l'en-tête `Referer`
- *  (doctrine D-3 du login fédéré, reprise par 55.1 et 55.2). Un jeton présenté
+ *  (doctrine D-3 du login fédéré, reprise ici). Un jeton présenté
  *  là — ou dans le corps — est simplement IGNORÉ, donc traité comme absent.
- * ══════════════════════════════════════════════════════════════════════════
  */
 final class OidcBearer
 {

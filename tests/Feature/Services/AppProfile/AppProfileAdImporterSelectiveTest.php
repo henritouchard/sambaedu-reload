@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.7 / AC9.1, AC9.2, AC10 — l'étape 7 de sync-from-ad ne réifie un
+ * L'étape 7 de sync-from-ad ne réifie un
  * AppProfile QUE si le parc legacy porte des applications ; `_TousLesPostes`
  * n'est jamais un profil, ses applications sont promues en défaut d'établissement
  * (`is_parc_default`). Le seam `parcsEntriesSeam` injecte les entrées OU=Parcs.

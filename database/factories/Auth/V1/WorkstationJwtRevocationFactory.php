@@ -10,7 +10,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.10 — AC3.3.
  *
  * Factory pour `WorkstationJwtRevocation`. Génère des entrées de révocation
  * cohérentes (`revoked_at = now`, `expires_at = +24h` parité TTL access).

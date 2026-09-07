@@ -167,7 +167,7 @@ class ShortcutContractMaterializationTest extends TestCase
         self::assertDatabaseCount('shortcuts', 0);
     }
 
-    // ── Le prune ne déborde jamais sur ce qui ne vient pas du contrat ────────
+    // Le prune ne déborde jamais sur ce qui ne vient pas du contrat
 
     #[Test]
     public function never_prunes_a_local_or_legacy_channel_shortcut(): void
@@ -230,7 +230,7 @@ class ShortcutContractMaterializationTest extends TestCase
         self::assertSame(0, $result->removed);
     }
 
-    // ── Icône ────────────────────────────────────────────────────────────────
+    // Icône
 
     #[Test]
     public function adopts_an_icon_already_content_addressed_on_disk(): void

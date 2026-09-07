@@ -14,15 +14,13 @@ use App\Models\User;
 use App\Services\AuthenticationService;
 
 /**
- * Guard de session SambaEdu — **Postgres-only depuis la Story 49.2**.
+ * Guard de session SambaEdu — **Postgres-only depuis la**.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * Doctrine (Story 49.2, FR-R4) : le guard n'interroge JAMAIS le LDAP
- * ─────────────────────────────────────────────────────────────────────────────
+ * Doctrine : le guard n'interroge JAMAIS le LDAP
  * Le guard s'exécute à CHAQUE requête HTTP authentifiée. Y placer un lookup
  * annuaire, c'était un aller-retour réseau par requête (atténué par un cache
  * 60 s qui, lui, retardait d'autant la prise en compte d'une désactivation).
- * Depuis 49.1 (rôles Spatie = miroir des appartenances) et 49.3 (`users.is_active`
+ * Depuis (rôles Spatie = miroir des appartenances) et (`users.is_active`
  * = miroir de `useraccountcontrol`, écrit par la sync ET par la réconciliation
  * des départs), Postgres porte tout ce dont le guard a besoin :
  *
@@ -34,12 +32,12 @@ use App\Services\AuthenticationService;
  * l'auto-provisioning œuf/poule déplacé dans `AuthController::authenticate`) —
  * 1 fois par session, jamais par requête.
  *
- * **Aucun cache sur ce chemin** (D8) : une lecture SQL indexée est moins chère
+ * **Aucun cache sur ce chemin** : une lecture SQL indexée est moins chère
  * que l'ancien `Cache::remember` + LDAP, et la fraîcheur EST le bénéfice (un
  * compte désactivé est déconnecté à la requête suivante, sans fenêtre). Piège
  * projet à ne pas réintroduire : APCu n'a pas de `Cache::lock()`.
  *
- * **Branche fédérée strictement inchangée** (Story 20.1 — D-5) : elle est
+ * **Branche fédérée strictement inchangée** (D-5) : elle est
  * évaluée AVANT le lookup natif et ne touche ni le LDAP ni `users.is_active`
  * (c'est `ExternalIdentity.is_active` qui fait foi pour un externe).
  *
@@ -56,7 +54,7 @@ class SambaEduAuthGuard implements AuthGuardInterface
 
     /**
      * Représentation NON ré-identifiable d'un `sub` fédéré pour les logs (M-2 /
-     * review 20.2 — doctrine AC16/D-5 : jamais de `sub` clair). Un `external_sub`
+     * review — doctrine/D-5 : jamais de `sub` clair). Un `external_sub`
      * déjà anonymisé (`anon:<hmac>`) est opaque → loggé tel quel sans re-hasher
      * (évite le double hash latent P-9).
      */
@@ -89,18 +87,18 @@ class SambaEduAuthGuard implements AuthGuardInterface
             return $this->unauthorized($request);
         }
 
-        // Story 20.1 — D-5 : RÉCONCILIATION du guard pour les sessions
+        // D-5 : RÉCONCILIATION du guard pour les sessions
         // FÉDÉRÉES. Un utilisateur externe n'existe PAS dans le LDAP — la
         // vérification `findByLogin` ci-dessous le déconnecterait à chaque
         // requête. Si la session est marquée « fédérée », on valide
         // `ExternalIdentity.is_active` et on SAUTE entièrement la vérif LDAP.
         // Le flux LDAP reste STRICTEMENT INCHANGÉ pour les sessions non
-        // fédérées (AC15).
+        // fédérées.
         if (FederatedSession::isFederated($request)) {
             return $this->handleFederatedSession($request, $next, $login);
         }
 
-        // Story 49.2 — EXISTENCE depuis Postgres (un seul lookup, réutilisé plus
+        // EXISTENCE depuis Postgres (un seul lookup, réutilisé plus
         // bas pour l'alignement `Auth::login`). Aucun appel LDAP ici.
         $user = $this->findNativeUser($login);
 
@@ -110,10 +108,10 @@ class SambaEduAuthGuard implements AuthGuardInterface
             return $this->unauthorized($request, 'Utilisateur non trouvé');
         }
 
-        // Story 49.2 — ACTIVITÉ depuis `users.is_active`, miroir de
-        // `useraccountcontrol` posé par la sync et la réconciliation (49.3).
+        // ACTIVITÉ depuis `users.is_active`, miroir de
+        // `useraccountcontrol` posé par la sync et la réconciliation.
         //
-        // ⚠️ Le `logout` est AJOUTÉ ici : jusqu'à 49.2, cette branche refusait la
+        // ⚠️ Le `logout` est AJOUTÉ ici : jusqu'à, cette branche refusait la
         // requête SANS détruire la session. La session survivait donc au refus et
         // l'utilisateur bouclait indéfiniment sur la redirection vers /login. Un
         // compte désactivé doit être DÉCONNECTÉ, pas seulement éconduit.
@@ -140,7 +138,7 @@ class SambaEduAuthGuard implements AuthGuardInterface
     }
 
     /**
-     * Story 49.2 (D2) — résolution SQL d'une session NATIVE.
+     * Résolution SQL d'une session NATIVE.
      *
      * Le lookup est borné aux comptes non fédérés : l'ancien `findByLogin` LDAP
      * les excluait implicitement (un externe n'existe pas dans l'annuaire), et
@@ -166,7 +164,7 @@ class SambaEduAuthGuard implements AuthGuardInterface
     }
 
     /**
-     * Story 20.1 — D-5. Traite une requête authentifiée dont la session est
+     * D-5. Traite une requête authentifiée dont la session est
      * marquée « fédérée ».
      *
      * Au lieu de revérifier le LDAP (l'externe n'y existe pas), on :
@@ -184,7 +182,7 @@ class SambaEduAuthGuard implements AuthGuardInterface
             ->first();
 
         if ($user === null) {
-            // AC16 : ne logger que des claims non sensibles. On dérive le `sub`
+            // Ne logger que des claims non sensibles. On dérive le `sub`
             // du login fédéré (`ext:<sub>`) et on le HASHE (M-2 : jamais en clair).
             Log::channel('federated-auth')->warning('[SambaEduAuthGuard] federated.session.user_missing', [
                 'action_type' => 'federated.session.user_missing',
@@ -246,22 +244,22 @@ class SambaEduAuthGuard implements AuthGuardInterface
 
         // Stocker l'URL demandée pour redirection après login.
         //
-        // ⚠️ `getRequestUri()` et NON `path()` (Story 55.1) : `path()` amputait
+        // ⚠️ `getRequestUri` et NON `path` : `path` amputait
         // la QUERY STRING. Or tout le flux OIDC vit dans la query
         // (`client_id`, `state`, `code_challenge`, `nonce`…) — un utilisateur
         // sans session dirigé vers `/oidc/authorize?…` était « repris » après
         // login sur `/oidc/authorize` NU, donc refusé systématiquement. Le SSO
         // ne pouvait jamais aboutir au premier accès de la journée.
         //
-        // ⚠️ Et NON `fullUrl()` (correctif review 55.1) : `fullUrl()` reconstruit
+        // ⚠️ Et NON `fullUrl()` (correctif review) : `fullUrl()` reconstruit
         // une URL ABSOLUE à partir du header `Host` de la requête, non filtré ici
         // (`TrustHosts` est désactivé dans le Kernel et le vhost Apache répond à
         // n'importe quel `Host`). Cette URL absolue serait ensuite suivie telle
         // quelle par `redirect()->intended()`, qui ne vérifie aucun host : un
         // `Host` détourné ferait de `url.intended` un open-redirect emportant
         // toute la query OIDC. `getRequestUri()` rend un chemin RELATIF
-        // (chemin + query, jamais de scheme ni d'hôte) — le besoin de la story
-        // est couvert sans jamais faire confiance à un en-tête entrant, et sans
+        // (chemin + query, jamais de scheme ni d'hôte) — le besoin est couvert
+        // sans jamais faire confiance à un en-tête entrant, et sans
         // toucher à la configuration transverse de l'application.
         //
         // Précédent interne à corriger un jour de la même façon :

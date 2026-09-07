@@ -53,7 +53,7 @@
                                 {{ \Illuminate\Support\Str::limit($printer->uri, 50) }}
                             </span>
                         </td>
-                        {{-- Story 27.2 — drapeau « imprimante par défaut » (pivot is_default).
+                        {{-- Drapeau « imprimante par défaut » (pivot is_default).
                              Réglé par WG (physique comme logique) ; l'agent pousse
                              SetDefaultPrinter sur l'item marqué. La résolution inter-WG
                              (physique > logique) est faite côté serveur à la compilation. --}}

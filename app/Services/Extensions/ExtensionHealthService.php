@@ -13,41 +13,39 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Story 56.5 (FR34, NFR6, NFR9) — **LA SANTÉ DES EXTENSIONS `app`** : sonder un
+ * **LA SANTÉ DES EXTENSIONS `app`** : sonder un
  * backend, et persister ce qu'on a observé.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  UN SEUL MESUREUR, TROIS LECTEURS
  *
  *  1. `ext:health:check` (toutes les 5 min, `routes/console.php`) : MESURE et
  *     PERSISTE. C'est le seul chemin automatique.
  *  2. Le LANCEUR ({@see ExtensionLauncherService::tilesFor()}) : LIT les
  *     colonnes persistées dans sa requête unique. **Zéro HTTP au rendu** — la
- *     navbar est rendue sur TOUTE page authentifiée, une sonde par tuile et par
- *     page vue serait la violation directe de NFR9.
+ *     navbar est rendue sur TOUTE page authentifiée, et sonder une fois par
+ *     tuile et par page vue coûterait un aller-retour HTTP à chaque affichage.
  *  3. Le DOCTOR et le bouton « Sonder maintenant » de la fiche : sondent EN
  *     DIRECT, parce que ce sont des actes de diagnostic explicites. Le doctor
  *     n'écrit RIEN (règle d'or {@see \App\Doctor\EnvironmentCheck} : aucun side
  *     effect) ; le bouton de la fiche écrit, c'est tout son intérêt.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **ÉCRIVAIN UNIQUE.** Ce service est le SEUL à écrire `extensions.health_*`
  * (colonnes hors `$fillable`, mutées par assignation de propriété explicite) —
  * même doctrine que « `ExtensionLifecycleService` est le seul écrivain de
- * `status` » (54.2). Aucun autre service, aucune commande, aucune vue ne touche
+ * `status` ». Aucun autre service, aucune commande, aucune vue ne touche
  * ces quatre colonnes.
  *
  * **ZÉRO AUDIT.** La santé est de la TÉLÉMÉTRIE, pas un acte : rien ici n'écrit
  * au journal `extension_audit_logs`. Régime `source_sync_failed` en plus strict
- * encore (doctrine 56.1 : une synchro réussie n'est pas auditée, un dépôt
+ * encore (doctrine : une synchro réussie n'est pas auditée, un dépôt
  * injoignable non plus) — un scheduler qui passe toutes les 5 minutes empilerait
  * 288 lignes par jour et par extension morte, et noierait le journal de
- * conformité sous de la métrologie. Le « dernier incident » de FR34 vit dans les
+ * conformité sous de la métrologie. Le « dernier incident » affiché par la fiche vit dans les
  * colonnes, écrit à la TRANSITION seulement.
  *
  * **AUCUNE SURFACE PRIVILÉGIÉE.** La sonde est un `GET` HTTP sur la boucle
- * locale — pas un `systemctl status` via le helper root (décision n° 1 de la
- * story). Trois raisons : le helper n'a aucune sous-commande de LECTURE et lui
+ * locale — pas un `systemctl status` via le helper root. Trois raisons : le
+ * helper n'a aucune sous-commande de LECTURE et lui
  * en ajouter une étendrait la surface `sudoers` ; une unité `active` dont le
  * backend ne répond pas est EXACTEMENT la panne qu'on veut voir ; et le
  * `ProxyPass "/ext/<key>" "http://127.0.0.1:<port>/"` fait que sonder cette
@@ -58,11 +56,11 @@ use Throwable;
  * qui fait lui aussi du `Http::`). Le seam privilégié
  * ({@see SudoExtensionHelperRunner}) reste l'exemption unique du domaine.
  *
- * NFR15 : rien d'Eloquent ne sort d'ici — uniquement des tableaux plats.
+ * Rien d'Eloquent ne sort d'ici — uniquement des tableaux plats.
  */
 class ExtensionHealthService
 {
-    /** Borne de `health_last_incident_detail` (alignée sur la migration 56.5). */
+    /** Borne de `health_last_incident_detail`, alignée sur la taille de la colonne. */
     public const INCIDENT_DETAIL_MAX = 200;
 
     /**
@@ -72,7 +70,7 @@ class ExtensionHealthService
      * {@see self::checkOne()} (qui persiste) ET par
      * {@see \App\Doctor\Checks\Extensions\ExtensionsReachableCheck} (qui ne
      * persiste pas) : les deux ne peuvent donc pas rendre des verdicts
-     * divergents (leçon review 56.1 #3).
+     * divergents.
      *
      * N'importe quelle réponse HTTP — **4xx et 5xx comprises** — prouve la
      * joignabilité : le service RÉPOND, il n'est pas mort. Seule une erreur
@@ -104,7 +102,7 @@ class ExtensionHealthService
         } catch (Throwable $e) {
             // Le détail COMPLET va dans le journal serveur, jamais en base ni à
             // l'écran : un message d'exception Guzzle suffixe l'URI appelée
-            // (piège review 39.4 #E11), et cette catégorie est lisible par tout
+            // — piège classique de Guzzle. La catégorie, elle, est lisible par tout
             // admin sur la fiche.
             Log::info('[Extensions] Sonde de santé en échec', [
                 'extension' => $extension->key,
@@ -120,7 +118,7 @@ class ExtensionHealthService
     /**
      * Sonde UNE extension et PERSISTE le résultat.
      *
-     * Transitions (décision n° 2 de la story) :
+     * Transitions :
      *  - `health_checked_at` est réécrit à CHAQUE passage — c'est lui qui porte
      *    la fraîcheur, donc la crédibilité de tout le reste ;
      *  - `health_last_incident_*` n'est écrit qu'à la TRANSITION
@@ -129,7 +127,7 @@ class ExtensionHealthService
      *    l'information « depuis quand » ;
      *  - le retour du backend repasse `health_status` à `ok` en CONSERVANT
      *    l'incident : « ça a été indisponible, voici quand » est précisément ce
-     *    que FR34 demande d'afficher.
+     *    que la fiche doit pouvoir afficher.
      *
      * Une extension hors périmètre (`link`, `app` non installée, `app` sans
      * port) n'est jamais sondée et rien n'est écrit.
@@ -179,7 +177,7 @@ class ExtensionHealthService
     /**
      * Sonde à la demande depuis l'UI, par IDENTIFIANT.
      *
-     * NFR15 (3 couches) : la fiche Livewire ne touche jamais Eloquent — elle
+     * La fiche Livewire ne touche jamais Eloquent — elle
      * appelle ce point d'entrée, qui résout la ligne et délègue à
      * {@see self::checkOne()}. `null` ⇒ identifiant inconnu, ou extension sans
      * backend à sonder (la carte « Santé » n'est alors même pas affichée).
@@ -204,8 +202,8 @@ class ExtensionHealthService
      * Ce second geste est du SELF-HEALING, pas une réparation d'extension : une
      * `app` désinstallée garde sinon un `unreachable` fossilisé, qui ferait
      * mentir la fiche et le doctor pour toujours. Il vit ici — et pas dans
-     * `ExtensionLifecycleService::markAppRemoved()` — pour tenir la doctrine
-     * 54.2 : un service par story, les précédents à zéro diff. Le prix est un
+     * `ExtensionLifecycleService::markAppRemoved()` — pour garder les services
+     * existants à zéro diff. Le prix est un
      * décalage d'au plus 5 minutes sur des colonnes que plus rien ne lit
      * (`isFlaggedUnreachable()` exige `isHealthMonitored()`).
      *
@@ -213,7 +211,7 @@ class ExtensionHealthService
      * le scheduler. On ne touche SURTOUT pas au verrou du moteur
      * (`extensions:install-engine`) : sonder n'est pas installer.
      *
-     * ⚠️ **Une extension ne fait jamais tomber le passage des autres** (NFR6) :
+     * ⚠️ **Une extension ne fait jamais tomber le passage des autres** :
      * chaque itération est isolée. `probe()` avale déjà ses propres erreurs
      * réseau, mais la PERSISTANCE peut échouer (ligne supprimée en concurrence,
      * contrainte, base indisponible) — et une exception au premier élément
@@ -327,7 +325,7 @@ class ExtensionHealthService
      * Catégorie COURTE et STABLE d'un échec de sonde.
      *
      * Jamais `$e->getMessage()` : Guzzle y suffixe l'URI appelée, et la règle
-     * `last_error` de 56.1 interdit URL et secret dans une colonne lisible par
+     * `last_error` interdit URL et secret dans une colonne lisible par
      * tout admin. On ne garde que la NATURE de l'échec — c'est tout ce dont
      * l'admin a besoin pour savoir s'il doit regarder le service ou le réseau.
      */

@@ -12,9 +12,6 @@ use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * Tests Feature — Commande `gpo:warm-cache` (Story 16.14 Q2).
- */
 class GpoWarmCacheCommandTest extends TestCase
 {
     protected function setUp(): void

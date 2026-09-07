@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC4.2 / T5.7.
- * Story 16.11 — AC1.1 (durcissement couple token↔UUID).
+ * T5.7.
+ * (durcissement couple token↔UUID).
  *
  * Tests `LegacyBootstrapTokenValidator`.
  *
@@ -78,10 +78,6 @@ class LegacyBootstrapTokenValidatorTest extends TestCase
         $this->assertFalse((new LegacyBootstrapTokenValidator())->isValid($token));
     }
 
-    // =================================================================
-    // Story 16.11 — durcissement couple token↔UUID (AC1.1)
-    // =================================================================
-
     #[Test]
     public function backward_compat_isvalid_without_uuid_arg_works(): void
     {
@@ -92,7 +88,7 @@ class LegacyBootstrapTokenValidatorTest extends TestCase
         $token = md5('bc-test-' . random_int(0, PHP_INT_MAX));
         apcu_store('apps.' . $token, ['uuid' => '11111111-1111-4111-8111-111111111111'], 60);
 
-        // Appelant 16.10 (sans 2e arg) doit continuer à fonctionner.
+        // Appelant (sans 2e arg) doit continuer à fonctionner.
         $this->assertTrue((new LegacyBootstrapTokenValidator())->isValid($token));
 
         @apcu_delete('apps.' . $token);
@@ -201,10 +197,6 @@ class LegacyBootstrapTokenValidatorTest extends TestCase
             ),
         );
     }
-
-    // =================================================================
-    // Story 16.11 — correction #3 + Opus-C : strtolower symétrique UUID
-    // =================================================================
 
     #[Test]
     public function it_matches_uppercase_declared_uuid_against_lowercase_context_uuid(): void

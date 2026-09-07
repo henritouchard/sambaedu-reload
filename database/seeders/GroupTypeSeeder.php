@@ -9,7 +9,7 @@ use App\Support\GroupTypeCatalog;
 use Illuminate\Database\Seeder;
 
 /**
- * Story 62.2 — peuplement du CATALOGUE DE TYPES DE GROUPES avec ses NEUF lignes
+ * Peuplement du CATALOGUE DE TYPES DE GROUPES avec ses NEUF lignes
  * statiques.
  *
  * Idempotent / non-destructif (patron {@see GroupRoleSeeder}) : `updateOrCreate`
@@ -22,8 +22,8 @@ use Illuminate\Database\Seeder;
  * type que l'admin vient de supprimer. La migration les catalogue une fois ; ils
  * vivent leur vie ensuite.
  *
- * **Les libellés sont EXACTEMENT ceux des `match` d'affichage qui meurent avec la
- * story** — la forme la plus riche, celle de la fiche utilisateur, seule à
+ * **Les libellés sont EXACTEMENT ceux des `match` d'affichage qui meurent avec
+ * cette table** — la forme la plus riche, celle de la fiche utilisateur, seule à
  * connaître « Rôle » et « Fonction ». C'est la condition de la parité d'affichage.
  *
  * Les types seedés ici ne sont PAS supprimables, même sans usage : leurs clés sont

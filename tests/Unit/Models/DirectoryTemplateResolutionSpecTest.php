@@ -18,7 +18,7 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 60.2 — la RÈGLE par laquelle un rôle trouve sa cible, et l'ACCROCHAGE
+ * La RÈGLE par laquelle un rôle trouve sa cible, et l'ACCROCHAGE
  * d'une recette à un type de groupe.
  *
  * Deux vocabulaires fermés de plus, validés là où vivent déjà les autres : sur le
@@ -32,7 +32,6 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
 
     private const MIGRATION = 'database/migrations/2026_08_04_150000_add_attached_group_type_to_directory_templates.php';
 
-    /** Story 60.5 — la détente de l'unicité, empilée sur la précédente. */
     private const RELAX_MIGRATION = 'database/migrations/2026_08_05_110000_relax_attached_group_type_uniqueness.php';
 
     /**
@@ -62,12 +61,8 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // La migration : additive, nullable, réversible
-    // =========================================================================
-
     /**
-     * Story 60.5 — l'accrochage n'est plus l'exception absolue qu'il était.
+     * L'accrochage n'est plus l'exception absolue qu'il était.
      *
      * Deux recettes s'accrochent désormais au type `classe` : l'ARBRE de partage de
      * classe, et la recette PLATE « profs → élèves » réparée. Les trois autres
@@ -100,8 +95,8 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
     /**
      * Réversibilité — DANS L'ORDRE, et c'est le point.
      *
-     * La story 60.5 a détendu l'unicité posée par la 60.2 : rejouer le `down()` de
-     * la 60.2 sans avoir d'abord défait la 60.5 chercherait un index unique qui
+     * La a détendu l'unicité posée par : rejouer le `down` de
+     * la sans avoir d'abord défait chercherait un index unique qui
      * n'existe plus. Une réversibilité qui ne vaudrait qu'en sautant une marche
      * n'en est pas une.
      */
@@ -124,13 +119,8 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
         $this->assertSame(5, DirectoryTemplate::count());
     }
 
-    // =========================================================================
-    // Le DÉFAUT : l'absence de règle vaut « cible désignée » (iso-34.3)
-    // =========================================================================
-
     /**
-     * Story 60.5 — les TROIS recettes que cette story ne touche pas restent en
-     * cible désignée, mot pour mot.
+     * Les TROIS recettes laissées intactes restent en cible désignée, mot pour mot.
      *
      * Les deux autres changent, et chacune a son test : « profs → élèves » est
      * RÉPARÉE (elle contraignait un type de groupe qui n'existe plus), et l'arbre
@@ -166,7 +156,7 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
         }
     }
 
-    /** Story 60.5 — les deux recettes accrochées savent, elles, se résoudre seules. */
+    /** Les deux recettes accrochées savent, elles, se résoudre seules. */
     #[Test]
     public function both_class_recipes_resolve_their_targets_on_their_own(): void
     {
@@ -186,7 +176,7 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
     public function a_user_maille_role_stays_resolvable_as_a_designated_target(): void
     {
         // NON-RÉGRESSION NOMMÉE. Le correctif « rejeter les sujets utilisateur »
-        // proposé en revue de la story 60.1 casserait cette recette LIVRÉE : ses
+        // Proposé en revue de la casserait cette recette LIVRÉE : ses
         // deux rôles sont de maille utilisateur, cardinalité un. La garde de la
         // mesure porte sur l'ÉNUMÉRATION d'une audience, pas sur le type du sujet.
         (new DirectoryTemplateSeeder())->run();
@@ -200,10 +190,6 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
             $this->assertSame(RoleResolutionStrategy::Designated, $template->resolutionOf($role)['strategy']);
         }
     }
-
-    // =========================================================================
-    // Le vocabulaire FERMÉ des règles
-    // =========================================================================
 
     #[Test]
     public function an_unknown_strategy_is_refused(): void
@@ -377,10 +363,6 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
         $template->assertValidTreeSpec();
     }
 
-    // =========================================================================
-    // L'accrochage à un type de groupe
-    // =========================================================================
-
     #[Test]
     public function an_auto_resolvable_recipe_attaches_and_is_found_by_type(): void
     {
@@ -422,7 +404,7 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
     }
 
     /**
-     * Story 60.5 — RENVERSEMENT ASSUMÉ de la règle de 60.2.
+     * RENVERSEMENT ASSUMÉ de la règle de 60.2.
      *
      * Une recette SANS arbre peut désormais s'accrocher : l'accrochage dit « je
      * sais trouver mes cibles à partir d'un groupe de ce type », ce qui est vrai
@@ -467,7 +449,7 @@ class DirectoryTemplateResolutionSpecTest extends TestCase
     }
 
     /**
-     * Story 60.5 — l'unicité SURVIT, rétrécie à ce qu'elle visait vraiment.
+     * L'unicité SURVIT, rétrécie à ce qu'elle visait vraiment.
      *
      * Deux recettes d'ARBRE sur le même type poseraient la question à laquelle rien
      * ne peut répondre : quel arbre ce groupe matérialise-t-il ? La garde est

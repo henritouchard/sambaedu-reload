@@ -26,13 +26,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature `GET /api/v1/agent/state` — Story 23.5 (AC1-AC6).
+ * Tests Feature `GET /api/v1/agent/state`.
  *
  * Route RÉELLE (`agent.v1.state`) derrière la chaîne complète
  * `auth.v1.secure-headers` + `throttle:60,1` + `agent.token` — pas de route
- * éphémère ici (le piège setRoutes() de 23.2 ne concernait que les routes
+ * éphémère ici (le piège setRoutes() ne concernait que les routes
  * déclarées à l'exécution). L'état est fabriqué via les tables métier
- * réelles (conventions 23.4) ; la réponse est validée par les INVARIANTS du
+ * réelles (conventions) ; la réponse est validée par les INVARIANTS du
  * contrat (iso `ContractV1Test`), jamais par comparaison au golden file.
  */
 final class StateEndpointTest extends TestCase
@@ -99,7 +99,7 @@ final class StateEndpointTest extends TestCase
     {
         $logs = new \ArrayObject();
         Log::shouldReceive('channel')->with('agent')->andReturnSelf();
-        // `error`/`critical` stubés aussi (review 23.5) : un futur log d'erreur
+        // `error`/`critical` stubés aussi (review) : un futur log d'erreur
         // dans la requête doit apparaître dans la capture, pas faire échouer le
         // test en BadMethodCallException Mockery opaque.
         foreach (['debug', 'info', 'warning', 'error', 'critical'] as $level) {
@@ -125,7 +125,7 @@ final class StateEndpointTest extends TestCase
         ));
     }
 
-    // ── AC1 — 200 : enveloppe v1 brute + ETag ────────────────────────────
+    // — 200 : enveloppe v1 brute + ETag
 
     #[Test]
     public function ok_response_is_the_raw_v1_envelope_without_se5_wrapper(): void
@@ -171,7 +171,7 @@ final class StateEndpointTest extends TestCase
         $items = array_merge(...array_map(fn (string $s): array => $state[$s], StateContract::scopes()));
         self::assertNotEmpty($items);
         foreach ($items as $item) {
-            // Story 27.8 : item à 4 clés (clé `mode` retirée — STRICT inconditionnel).
+            // Item à 4 clés (clé `mode` retirée — STRICT inconditionnel).
             self::assertSame(['type', 'semantics', 'payload', 'hash'], array_keys($item));
             self::assertSame(
                 $this->hasher->hashItem($item),
@@ -188,14 +188,14 @@ final class StateEndpointTest extends TestCase
 
         $response = $this->state($token)->assertOk();
 
-        // Forme quotée RFC 7232 (piège n° 2) : setEtag() ajoute les guillemets.
+        // Forme quotée RFC 7232 : setEtag() ajoute les guillemets.
         self::assertSame(
             '"' . $this->hasher->hashState($response->json()) . '"',
             $response->headers->get('ETag'),
         );
     }
 
-    // ── AC2 — 304 : réponse conditionnelle ───────────────────────────────
+    // — 304 : réponse conditionnelle
 
     #[Test]
     public function matching_if_none_match_returns_304_without_body_and_keeps_etag(): void
@@ -229,7 +229,7 @@ final class StateEndpointTest extends TestCase
     #[Test]
     public function same_state_at_different_instants_yields_304_through_http(): void
     {
-        // LE test qui valide l'ETag de bout en bout : le déterminisme 23.4
+        // LE test qui valide l'ETag de bout en bout : le déterminisme
         // (generated_at exclu du hash) prouvé à travers la couche HTTP.
         [, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
         $etag = $this->state($token)->assertOk()->headers->get('ETag');
@@ -255,7 +255,7 @@ final class StateEndpointTest extends TestCase
         self::assertNotSame($etag, $response->headers->get('ETag'));
     }
 
-    // ── AC3 — user optionnel ──────────────────────────────────────────────
+    // — user optionnel
 
     #[Test]
     public function machine_only_call_serves_no_user_targeted_rule_in_any_scope(): void
@@ -276,7 +276,7 @@ final class StateEndpointTest extends TestCase
         $state = $this->state($token)->assertOk()->json();
 
         // Les règles de mailles machine restent servies dans LEUR portée
-        // déclarée (wallpaper broadcast → session, décision n° 2)…
+        // déclarée (wallpaper broadcast → session)…
         self::assertNotEmpty($state[StateContract::SCOPE_SESSION]);
         // …mais aucune contribution user ne sort, dans aucune portée.
         self::assertStringNotContainsString($userAsset->filename, json_encode($state));
@@ -301,7 +301,7 @@ final class StateEndpointTest extends TestCase
         // La maille user (plus spécifique) gagne l'exclusif wallpaper.
         $payloads = array_column($withUser->json()[StateContract::SCOPE_SESSION], 'payload');
         self::assertContains($userAsset->filename, array_column($payloads, 'asset'));
-        // Deux contextes = deux états = deux ETags (décision n° 3).
+        // Deux contextes = deux états = deux ETags.
         self::assertNotSame(
             $machineOnly->headers->get('ETag'),
             $withUser->headers->get('ETag'),
@@ -355,12 +355,12 @@ final class StateEndpointTest extends TestCase
         self::assertCount(0, $this->logsOfType($logs, 'agent.state.unknown_user'));
     }
 
-    // ── AC4 — ttl_seconds durci ───────────────────────────────────────────
+    // — ttl_seconds durci
 
     #[Test]
     public function null_ttl_config_key_falls_back_to_3600_not_zero(): void
     {
-        // Defer review 23.4 : le défaut de config() ne couvre que l'ABSENCE
+        // Defer review : le défaut de config() ne couvre que l'ABSENCE
         // de clé — une clé null (env vide) casterait en 0 sans le `??`.
         config(['agent.ttl_seconds' => null]);
         [, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
@@ -368,7 +368,7 @@ final class StateEndpointTest extends TestCase
         $this->state($token)->assertOk()->assertJsonPath('ttl_seconds', 3600);
     }
 
-    // ── Story 43.3 — TTL PAR CONTEXTE (AgentTtlResolver) ────────────────────
+    // — TTL PAR CONTEXTE (AgentTtlResolver)
 
     #[Test]
     public function sensitive_switch_on_the_room_yields_the_short_ttl_machine_only_and_with_user(): void
@@ -399,7 +399,7 @@ final class StateEndpointTest extends TestCase
     #[Test]
     public function null_value_assignment_on_the_room_does_not_trigger_the_short_ttl(): void
     {
-        // Jumeau négatif (D2) : une ligne `capability_assignments.value = null`
+        // Jumeau négatif : une ligne `capability_assignments.value = null`
         // est un « repli sur le défaut diffusé », pas une bascule sensible —
         // l'endpoint doit servir le TTL global (3600), pas le TTL court.
         [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
@@ -438,7 +438,7 @@ final class StateEndpointTest extends TestCase
         self::assertSame(3600, $first->json('ttl_seconds'));
 
         // Bascule le contexte en « sensible » (assignment posé) SANS changer
-        // aucun item d'état — AC3 : ttl_seconds est volatil, l'ETag ne bouge
+        // aucun item d'état : ttl_seconds est volatil, l'ETag ne bouge
         // pas et le second appel obtient un 304.
         config(['agent.ttl_sensitive_capabilities' => ['restrict_run']]);
         DB::table('capability_assignments')->insert([
@@ -473,7 +473,7 @@ final class StateEndpointTest extends TestCase
         $this->state($token)->assertOk()->assertJsonPath('ttl_seconds', 60);
     }
 
-    // ── AC5 — sécurité du canal ───────────────────────────────────────────
+    // — sécurité du canal
 
     #[Test]
     public function missing_bearer_returns_401_with_middleware_error_format(): void
@@ -515,7 +515,7 @@ final class StateEndpointTest extends TestCase
     #[Test]
     public function due_rotation_token_survives_a_304_response(): void
     {
-        // Invariant D5 (piège n° 3) : rotation due + état inchangé — la
+        // Rotation due + état inchangé — la
         // réponse de rotation perdue se ré-émet AUSSI sur un 304, sinon le
         // poste resterait sur l'ancien token pour toujours.
         [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();

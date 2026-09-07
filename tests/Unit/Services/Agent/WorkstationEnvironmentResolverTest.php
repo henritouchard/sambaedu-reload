@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 26.1 — AC3 : résolution multi-parcs de l'environnement de poste.
+ * Résolution multi-parcs de l'environnement de poste.
  *
  * Précédence `nomade > personal_local > shared_local`, défaut `shared_local`
  * (poste sans groupe, ou tous les parcs à null). Lecture Postgres only — le
@@ -82,7 +82,7 @@ class WorkstationEnvironmentResolverTest extends TestCase
     public function precedence_covers_every_enum_case(): void
     {
         // Garde-fou (review S1) : la précédence DOIT être exhaustive, sinon une
-        // case ajoutée plus tard (Epic 27) serait ignorée silencieusement et
+        // case ajoutée plus tard serait ignorée silencieusement et
         // retomberait sur shared_local même si seule déclarée.
         self::assertEqualsCanonicalizing(
             WorkstationEnvironment::cases(),

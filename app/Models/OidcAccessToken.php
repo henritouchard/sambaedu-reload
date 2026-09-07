@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 55.1 — Un ACCESS TOKEN OPAQUE (TTL 600 s).
+ * Un ACCESS TOKEN OPAQUE (TTL 600 s).
  *
  * **Opaque, et pas un JWT** : ce jeton ne porte aucune information ; il ne sert
  * qu'à retrouver cette ligne. C'est un choix de conception — un access token
@@ -17,14 +17,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * dont c'est précisément la fonction (preuve d'authentification vérifiable hors
  * ligne par le client).
  *
- * En 55.1 ce jeton est ÉMIS mais jamais consommé : la réponse du token endpoint
+ * En ce jeton est ÉMIS mais jamais consommé : la réponse du token endpoint
  * DOIT contenir un `access_token` (RFC 6749 §5.1) et le poser dès maintenant
- * évite une re-plomberie en 55.2, où `/userinfo` le lira.
+ * évite une re-plomberie, où `/userinfo` le lira.
  *
  * ⚠️ **`token_hash` est dans `$hidden` et stocke un sha256** : le jeton clair ne
- * touche jamais la base ni les logs (NFR3).
+ * touche jamais la base ni les logs.
  *
- * Story 55.2 — `user_id` (migration additive `2026_07_28_310000`) : c'est par
+ * `user_id` (migration additive `2026_07_28_310000`) : c'est par
  * CETTE clé que `/userinfo` résout l'utilisateur, jamais par `user_login`.
  * `user_login` est le **sub PUBLIÉ** (résolu à l'émission par
  * {@see \App\Auth\Oidc\Support\OidcSubjectResolver}) : une valeur de contrat,
@@ -61,7 +61,7 @@ class OidcAccessToken extends Model
         'created_at',
     ];
 
-    /** NFR3 : le hash du jeton ne sort jamais d'une sérialisation. */
+    /** Le hash du jeton ne sort jamais d'une sérialisation. */
     protected $hidden = [
         'token_hash',
     ];
@@ -78,7 +78,7 @@ class OidcAccessToken extends Model
     }
 
     /**
-     * Story 55.2 — l'utilisateur porteur du jeton.
+     * L'utilisateur porteur du jeton.
      *
      * `null` si le compte a été supprimé depuis l'émission : c'est un cas
      * NOMINAL, traité fail-closed par

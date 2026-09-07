@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Tests du handler `registry_list` (Story 35.2, contrat §7.6) — réutilisent le
+// Tests du handler `registry_list` (contrat §7.6) — réutilisent le
 // fakeRegistryOps EXISTANT (étendu de ValueNames), jamais un second fake.
 
 // listItem construit un StateItem `registry_list` (payload 4 clés §7.6).
@@ -34,8 +34,6 @@ func listItemTyped(hive, path, entryType string, values []string) StateItem {
 		},
 	}
 }
-
-// --- (a) écriture 1..N ordonnée + relecture conforme --------------------------
 
 func TestRegistryListWritesOrderedCanonThenIdempotent(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -101,8 +99,6 @@ func TestRegistryListOrderMattersForConvergence(t *testing.T) {
 	}
 }
 
-// --- (b) surnuméraire supprimée, non-numérique INTOUCHÉE ----------------------
-
 func TestRegistryListRemovesSurplusNumericAndNeverTouchesNonNumeric(t *testing.T) {
 	ops := newFakeRegistryOps()
 	path := `Software\P\Explorer\DisallowRun`
@@ -138,8 +134,6 @@ func TestRegistryListRemovesSurplusNumericAndNeverTouchesNonNumeric(t *testing.T
 	}
 }
 
-// --- (c) "01"/"007" hors canon strconv : SUPPRIMÉES ---------------------------
-
 func TestRegistryListDeletesNonCanonicalNumericNames(t *testing.T) {
 	// Canon = strconv.Itoa : "01" ≠ "1", "007" ≠ "7" (comparaison STRICTE de
 	// chaînes, jamais de normalisation). Ces noms sont numériques → possédés →
@@ -172,8 +166,6 @@ func TestRegistryListDeletesNonCanonicalNumericNames(t *testing.T) {
 		t.Fatalf("2 suppressions attendues, obtenu %d", ops.deleteCnt)
 	}
 }
-
-// --- (d) liste vide = purge ; clé absente = compliant --------------------------
 
 func TestRegistryListEmptyValuesPurgesNumericEntries(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -227,10 +219,8 @@ func TestRegistryListEmptyValuesOnAbsentKeyIsCompliant(t *testing.T) {
 	}
 }
 
-// --- (f) valeur numérotée de Kind exotique (REG_UNSUPPORTED) ------------------
-
 func TestRegistryListUnsupportedKindEntriesAreRewrittenOrDeleted(t *testing.T) {
-	// Review 35.1 #1 : une valeur numérotée de type hors contrat est PRÉSENTE
+	// Une valeur numérotée de type hors contrat est PRÉSENTE
 	// et divergente — réécrite au entry_type cible si dans le canon ("1"),
 	// supprimée si surnuméraire ("9").
 	ops := newFakeRegistryOps()
@@ -255,12 +245,10 @@ func TestRegistryListUnsupportedKindEntriesAreRewrittenOrDeleted(t *testing.T) {
 	}
 }
 
-// --- (g) re-drift STRICT à travers le moteur (engine.go INTOUCHÉ) -------------
-
 func TestRegistryListThroughEngineStrictRedrift(t *testing.T) {
 	// Iso TestRegistryAbsentThroughEngineStrictRedrift : entrée surnuméraire
 	// (ré)apparue ⇒ drift + suppression ; revient ⇒ re-drift ; stable ⇒
-	// compliant. Verdict PAR TYPE (grain 27.8).
+	// compliant. Verdict PAR TYPE.
 	ops := newFakeRegistryOps()
 	path := `SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist`
 	surplus := keyID("HKLM", path, "2")
@@ -298,7 +286,6 @@ func TestRegistryListThroughEngineStrictRedrift(t *testing.T) {
 	}
 }
 
-// --- (h) besoin de rafraîchissement HKCU sur changement effectif (43.1) -------
 // Migration `notifyCnt` → TakeRefreshRequest : même gate observable (plancher
 // shell_notify sur changement HKCU effectif, silence sinon).
 
@@ -360,7 +347,7 @@ func TestRegistryListShellRefreshOnEffectiveHkcuChangeOnly(t *testing.T) {
 		if got := h.TakeRefreshRequest(); got != RefreshPolicyBroadcast {
 			t.Fatalf("hint policy_broadcast sur conteneur changé : policy_broadcast attendu, obtenu %s", got)
 		}
-		// Hint inconnu : enveloppe VALIDE (piège n° 1), comportement plancher.
+		// Hint inconnu : enveloppe VALIDE, comportement plancher.
 		unknown := listItem("HKCU", `Software\P\Explorer\DisallowRun`, []string{"cmd.exe"})
 		unknown.Payload.(map[string]any)["refresh"] = "warp_speed"
 		if err := h.Apply([]StateItem{unknown}); err != nil {
@@ -373,7 +360,7 @@ func TestRegistryListShellRefreshOnEffectiveHkcuChangeOnly(t *testing.T) {
 }
 
 func TestRegistryListUnknownRefreshHintLoggedOncePerPass(t *testing.T) {
-	// Review 43.1 #3 : iso RegistryHandler — Test PUIS Apply dans la même
+	// Iso RegistryHandler — Test PUIS Apply dans la même
 	// passe ⇒ UNE seule trace du hint inconnu (chemin Test seulement).
 	ops := newFakeRegistryOps()
 	dir := t.TempDir()
@@ -397,8 +384,6 @@ func TestRegistryListUnknownRefreshHintLoggedOncePerPass(t *testing.T) {
 		t.Fatalf("UNE trace de hint inconnu par passe attendue, obtenu %d :\n%s", got, raw)
 	}
 }
-
-// --- (i) payloads invalides ⇒ error pour le type ------------------------------
 
 func TestRegistryListInvalidPayloadIsError(t *testing.T) {
 	h := &RegistryListHandler{Ops: newFakeRegistryOps()}
@@ -427,8 +412,6 @@ func TestRegistryListInvalidPayloadIsError(t *testing.T) {
 		})
 	}
 }
-
-// --- (j) mix multi-conteneurs : effort maximal, isolation des erreurs ---------
 
 func TestRegistryListMultiContainerErrorIsolation(t *testing.T) {
 	// Un conteneur en échec (énumération refusée) n'empêche PAS les autres de
@@ -482,8 +465,6 @@ func TestRegistryListIntraContainerWriteErrorIsolation(t *testing.T) {
 	}
 }
 
-// --- (k) la clé-conteneur n'est JAMAIS supprimée -------------------------------
-
 func TestRegistryListNeverDeletesTheContainerKeyItself(t *testing.T) {
 	// Le contrat RegistryOps n'expose AUCUN delete de clé (Delete = valeur
 	// nommée seulement) : après une purge complète, les valeurs NON numériques
@@ -501,8 +482,6 @@ func TestRegistryListNeverDeletesTheContainerKeyItself(t *testing.T) {
 		t.Fatalf("les valeurs non numériques du conteneur doivent survivre à la purge complète")
 	}
 }
-
-// --- dédoublonnage par identité de conteneur (défense, iso desiredSpecs) ------
 
 func TestRegistryListDedupesByContainerIdentityLastWins(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -522,8 +501,6 @@ func TestRegistryListDedupesByContainerIdentityLastWins(t *testing.T) {
 		t.Fatalf("la DERNIÈRE occurrence fait foi : %+v", got)
 	}
 }
-
-// --- REG_EXPAND_SZ : entry_type respecté ---------------------------------------
 
 func TestRegistryListExpandSzEntriesAreWrittenWithExpandKind(t *testing.T) {
 	ops := newFakeRegistryOps()

@@ -12,11 +12,11 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 8.4 — DDNS piloté par DHCP, en **level-triggered**.
+ * DDNS piloté par DHCP, en **level-triggered**.
  *
  * Port natif de `dns_add()` / `dns_delete()`
  * (`sambaedu/includes/samba-tool.inc.php:1233-1336`) avec la correction qui
- * motive la story : le legacy réécrivait le A record à CHAQUE appel, or
+ * motive ce port : le legacy réécrivait le A record à CHAQUE appel, or
  * `on commit` de dhcpd se déclenche à chaque **renouvellement** de bail
  * (~toutes les 5 min avec `default-lease-time 600`). Ici l'état DNS est lu,
  * comparé à l'état voulu, et rien n'est écrit s'il est déjà conforme —
@@ -138,7 +138,7 @@ class DnsRecordService
 
         $current = $this->queryAddresses($server, $zone, $name);
 
-        // Cœur de la story : état déjà conforme → aucune commande d'écriture.
+        // Le cœur du port : état déjà conforme → aucune commande d'écriture.
         if ($current === [$ip]) {
             return DnsUpdateOutcome::UNCHANGED;
         }
@@ -380,7 +380,7 @@ class DnsRecordService
      * Noms d'infrastructure INTOUCHABLES par ce canal (contrôleur de domaine,
      * serveur de fichiers). Aucun bail DHCP n'a à décider de leur sort.
      *
-     * Constaté en vérification 8.4 (2026-07-21) : un `delete` sans nom sur
+     * Constaté en vérification (2026-07-21) : un `delete` sans nom sur
      * l'IP du DC balayait la zone, trouvait `se4ad` — que rien n'écartait —
      * et supprimait son enregistrement A ; le nom du domaine cessait alors de
      * résoudre. Les serveurs peuvent avoir une réservation DHCP

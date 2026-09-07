@@ -16,7 +16,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 (AC4) — commande `users:reproject-group-profiles`.
+ * Commande `users:reproject-group-profiles`.
  *
  * Backfill au déploiement + filet des chemins sans events pivot. Re-run = no-op,
  * `--dry-run` n'écrit rien, sortie en FAILURE si des erreurs sont survenues.

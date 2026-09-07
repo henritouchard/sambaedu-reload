@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 /**
- * Story 61.1 — LES ÉCHECS NETS, NOMMÉS ET DISTINCTS.
+ * LES ÉCHECS NETS, NOMMÉS ET DISTINCTS.
  *
- * Le spike 60.0 a mesuré que Nextcloud distingue nettement ses refus. Les
+ * Le spike a mesuré que Nextcloud distingue nettement ses refus. Les
  * agréger en un seul « ça n'a pas marché » ferait perdre exactement
  * l'information dont l'exploitant a besoin : un privilège manquant se corrige sur
  * l'instance, une cible absente se corrige dans SE5, une instance injoignable se
@@ -15,7 +15,7 @@ namespace App\Services\Nextcloud;
  *
  * « Déjà conforme » **n'est pas ici** : ce n'est pas un échec (statuscode OCS
  * `102`), c'est un état, et il se dit par {@see NextcloudResult::conforming()}.
- * L'y ranger aurait reproduit le défaut que l'Epic 60 a passé son temps à
+ * L'y ranger aurait reproduit le défaut que l' a passé son temps à
  * corriger — un code de transport qui remonte comme s'il était une décision.
  */
 enum NextcloudFailure: string

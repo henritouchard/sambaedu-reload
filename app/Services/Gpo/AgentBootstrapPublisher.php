@@ -12,10 +12,10 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 /**
- * Story 27.16 — Déploiement automatisé de la GPO-dispatcher figée d'amorçage
- * agent `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`, 25.4).
+ * Déploiement automatisé de la GPO-dispatcher figée d'amorçage
+ * agent `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`).
  *
- * Automatise le Fork 2 manuel de la 25.4 en surmontant le blocage qui avait
+ * Automatise le Fork 2 manuel en surmontant le blocage qui avait
  * justifié le choix manuel : **les droits SYSVOL**. Le user PHP-FPM
  * (`www-sambaedu`/`www-admin`) n'a que READ sur SYSVOL ; un `smbclient put` y
  * sort en exit 0 SANS rien écrire (faux succès — mémoires
@@ -28,7 +28,7 @@ use RuntimeException;
  *  3. établit un **contexte Kerberos Administrator**
  *     ({@see AdministratorKerberosContext}) ;
  *  4. **publie NATIVEMENT** via {@see NativeGpoPublisher} (port d'`import_gpo`) —
- *     Story 38.4 : plus AUCUN `require` du legacy `/var/www/sambaedu`. Le
+ * Plus AUCUN `require` du legacy `/var/www/sambaedu`. Le
  *     publisher CRÉE la GPC si absente ({@see GpoService::create}), écrit SYSVOL
  *     ({@see NativeGpoPublisher}), pose `gPCMachineExtensionNames` + `versionNumber`
  *     via LDAP et incrémente la version (GPT.INI CRLF) ;
@@ -50,7 +50,7 @@ use RuntimeException;
  * `GpoService` → `SambaToolRunner`. La publication SYSVOL + CSE passe par
  * {@see NativeGpoPublisher} (natif, smbclient sous ccache Administrator).
  *
- * Story 38.4 (Pb11/TD soldée) — la dépendance runtime au shim legacy
+ * La dépendance runtime au shim legacy
  * `import_gpo` (`../sambaedu/includes/gpo.inc.php`) est ÉLIMINÉE : le portage
  * natif prévu à l'extinction du legacy est réalisé ici.
  */
@@ -70,7 +70,7 @@ class AgentBootstrapPublisher
         ?NativeGpoPublisher $nativePublisher = null,
     ) {
         // Résolution paresseuse pour ne pas casser les instanciations à 2 args
-        // (tests unitaires 27.16 + sous-classe anonyme de test).
+        // (tests unitaires + sous-classe anonyme de test).
         $this->kerberos = $kerberos ?? app(AdministratorKerberosContext::class);
         $this->nativePublisher = $nativePublisher ?? new NativeGpoPublisher($gpoService);
     }
@@ -88,7 +88,6 @@ class AgentBootstrapPublisher
         $operationId = $log->operationId();
 
         try {
-            // --- Garde 1 : creds Administrator disponibles ? -------------------
             if (! $this->kerberos->hasCredentials()) {
                 $log->step('skip: admin_passwd absent (creds Administrator requis pour écrire SYSVOL)');
                 $log->success(['outcome_kind' => 'skipped', 'reason' => 'missing_admin_password']);
@@ -96,7 +95,6 @@ class AgentBootstrapPublisher
                 return AgentBootstrapDeployResult::skipped('admin_passwd absent — publication SYSVOL impossible sans creds Administrator.', $operationId);
             }
 
-            // --- Garde 2 : DC joignable ? -------------------------------------
             if (! $this->isDomainControllerReachable($log)) {
                 $log->step('skip: DC AD injoignable (samba-tool listall a échoué)');
                 $log->success(['outcome_kind' => 'skipped', 'reason' => 'dc_unreachable']);
@@ -104,7 +102,6 @@ class AgentBootstrapPublisher
                 return AgentBootstrapDeployResult::skipped('DC AD injoignable — publication reportée au prochain passage.', $operationId);
             }
 
-            // --- Stage du template versionné vers templates_dir ----------------
             $staged = $this->stageTemplate($log, $dryRun);
             if (! $this->registry->isPublishable(self::DISPLAY_NAME)) {
                 throw new RuntimeException(sprintf(
@@ -125,13 +122,10 @@ class AgentBootstrapPublisher
                 return AgentBootstrapDeployResult::dryRun($ouDn, $operationId);
             }
 
-            // --- Publication SYSVOL native sous contexte Administrator ---------
             $this->publishWithAdministratorContext($force, $operationId, $log);
 
-            // --- Vérification d'écriture réelle (anti faux-succès) -------------
             $this->verifyRealWrite($log);
 
-            // --- Résolution du GUID de la GPO publiée --------------------------
             $guid = $this->resolveGpoGuid($log);
 
             // --- Isolation : neutralisation lien racine + blocage héritage +
@@ -155,7 +149,7 @@ class AgentBootstrapPublisher
      * On retire donc **inconditionnellement et idempotemment** tout lien racine
      * APRÈS publication et AVANT le `setLink` sur l'OU établissement.
      *
-     * Story 38.4 : le publisher natif ne pose PLUS AUCUN lien (contrairement au
+     * Le publisher natif ne pose PLUS AUCUN lien (contrairement au
      * legacy `import_gpo` qui liait la racine faute de section `[links]`) —
      * `removeRootLink` est conservé en **purge défensive** des liens racine
      * hérités d'anciennes publications legacy.
@@ -228,10 +222,6 @@ class AgentBootstrapPublisher
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Garde-fous environnement
-    // -----------------------------------------------------------------------
-
     /**
      * Le DC est-il joignable ? `samba-tool gpo listall` (lecture) via le runner
      * natif : exit 0 ⇒ joignable.
@@ -251,10 +241,6 @@ class AgentBootstrapPublisher
             return false;
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Staging template
-    // -----------------------------------------------------------------------
 
     /**
      * Dépose la source versionnée `resources/gpo/SE_agent_bootstrap/` sous
@@ -297,10 +283,6 @@ class AgentBootstrapPublisher
         return str_ends_with($dir, '/') ? $dir : $dir . '/';
     }
 
-    // -----------------------------------------------------------------------
-    // Publication SYSVOL native (contexte Administrator)
-    // -----------------------------------------------------------------------
-
     /**
      * Publie via {@see NativeGpoPublisher} sous un ticket Kerberos Administrator
      * dédié ({@see AdministratorKerberosContext::withTicket}). Le publisher crée
@@ -322,10 +304,6 @@ class AgentBootstrapPublisher
             throw $e;
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Vérification d'écriture réelle (anti faux-succès SYSVOL)
-    // -----------------------------------------------------------------------
 
     /**
      * Re-lit le `startup.cmd` déposé en SYSVOL via `smbclient` (contexte
@@ -398,10 +376,6 @@ class AgentBootstrapPublisher
             }
         });
     }
-
-    // -----------------------------------------------------------------------
-    // Résolution GPO / OU
-    // -----------------------------------------------------------------------
 
     /** GUID `{...}` de la GPO publiée, résolu par displayName via le natif. */
     private function resolveGpoGuid(\App\Gpo\Support\GpoActionLog $log): string

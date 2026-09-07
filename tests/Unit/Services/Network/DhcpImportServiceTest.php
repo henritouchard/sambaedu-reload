@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesDhcpSchema;
 
 /**
- * Story 8.1 — Tests Unit du service `DhcpImportService` (FR22).
+ * Tests Unit du service `DhcpImportService`.
  *
  * Couvre :
  *  - import nominal (5 lignes mixtes OK + erreurs) ;

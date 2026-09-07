@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.1 — LE PLANCHER, sur une base où la table n'existe MÊME PAS.
+ * LE PLANCHER, sur une base où la table n'existe MÊME PAS.
  *
  * Ce cas n'est pas théorique : une bonne partie de la suite fabrique son schéma à
  * la main, sans migrations, et une instance en cours de mise à jour est dans le
@@ -39,7 +39,7 @@ class RoleCatalogFloorTest extends TestCase
         $this->assertSame('Gestionnaire', RoleCatalog::label(null, 'manager'));
         $this->assertSame('Propriétaire', RoleCatalog::label(null, 'owner'));
 
-        // Story 62.3 — MISE À JOUR D'INVENTAIRE, pas d'affaiblissement. Les
+        // MISE À JOUR D'INVENTAIRE, pas d'affaiblissement. Les
         // libellés par type ÉTAIENT du code (une constante privée de `RoleCatalog`) : ils
         // survivaient donc à l'absence de toute table, et ce test l'épinglait.
         // Ils sont désormais des DÉCLARATIONS en base ; sur une base non migrée
@@ -52,7 +52,7 @@ class RoleCatalogFloorTest extends TestCase
     }
 
     /**
-     * Story 62.3 — sans déclarations, TOUT le catalogue reste attribuable.
+     * Sans déclarations, TOUT le catalogue reste attribuable.
      *
      * C'est le pendant exact de `the_floor_narrows_it_never_opens` : le repli des
      * déclarations ne doit jamais faire REFUSER une attribution qui marchait. Une

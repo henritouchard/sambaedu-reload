@@ -7,13 +7,13 @@ import (
 )
 
 // Handler `privilege` (exclusive PAR nom de privilège / scope MACHINE
-// uniquement) — Story 35.6, contrat §7.9. Troisième mécanisme HORS-REGISTRE.
+// uniquement), contrat §7.9. Troisième mécanisme HORS-REGISTRE.
 // Logique PURE, OS-agnostique (les accès LSA réels sont injectés via
 // PrivilegeOps) → testée sur l'hôte ; agent/windows n'apporte que l'impl LSA
 // (LsaEnumerateAccountsWithUserRight / LsaAddAccountRights /
 // LsaRemoveAccountRights + windows.LookupSID).
 //
-// D4 — PROPRIÉTÉ DU CONTENEUR SANS STORE (iso `firewall`, PAS `fs_acl`,
+// PROPRIÉTÉ DU CONTENEUR SANS STORE (iso `firewall`, PAS `fs_acl`,
 // écart assumé). Un privilège LSA porte une liste de titulaires ÉNUMÉRABLE
 // (LsaEnumerateAccountsWithUserRight) — contrairement à une ACE NTFS, AUCUN
 // store « dernier appliqué » n'est nécessaire, AUCUN marqueur : le privilège
@@ -22,7 +22,7 @@ import (
 // hors état désiré (y compris un compte accordé à la main). Un
 // `accounts: []` VIDE le privilège (off réel).
 //
-// SÛRETÉ (piège #3) — « posséder la liste entière » n'est sûr QUE parce que
+// SÛRETÉ — « posséder la liste entière » n'est sûr QUE parce que
 // les privilèges `SeDeny*` sont VIDES PAR DÉFAUT sous Windows (aucun
 // titulaire légitime préexistant à écraser). La même convergence sur un droit
 // *grant* (SeInteractiveLogonRight, SeRemoteInteractiveLogonRight) révoquerait
@@ -31,7 +31,7 @@ import (
 // INDÉPENDANT du serveur — le serveur peut avoir tort, l'agent ne verrouille
 // jamais la machine).
 //
-// CONVERGENCE level-triggered (§5, STRICT inconditionnel 27.8) :
+// CONVERGENCE level-triggered (§5, STRICT inconditionnel) :
 //   - Test  : pour chaque privilège désiré, l'ensemble des SID titulaires
 //     (AccountsWithPrivilege) est EXACTEMENT égal à l'ensemble des SID désirés
 //     (résolus par LookupSid) ⇒ conforme, sinon drift (titulaire manquant OU
@@ -40,13 +40,13 @@ import (
 //     idempotent — 2 passes stables = zéro op). Accorde chaque SID désiré
 //     manquant, révoque chaque titulaire hors état désiré.
 //
-// REFUS AGENT = DÉFENSE EN PROFONDEUR (piège #9), dans Test ET Apply :
+// REFUS AGENT = DÉFENSE EN PROFONDEUR, dans Test ET Apply :
 //   - `privilege` HORS de l'allowlist SeDeny* (privilegeAllowlist, MIROIR de
 //     PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES côté PHP) ⇒ erreur d'ITEM,
 //     JAMAIS appliqué ;
 //   - compte IRRÉSOLUBLE via LSA ⇒ erreur d'item avec détail (le compte
 //     fautif), et la réconciliation de CE privilège n'est PAS appliquée
-//     partiellement (piège #8 — un trou « un élève non refusé » serait
+//     partiellement (un trou « un élève non refusé » serait
 //     silencieux) ; les AUTRES privilèges convergent, l'erreur remonte
 //     TOUJOURS (verdict `error` du type) ;
 //   - compte résolvant un principal à LARGE PORTÉE (broadPrincipalSids : Everyone
@@ -58,13 +58,13 @@ import (
 //   - payload statiquement invalide (clé manquante, `accounts` non-liste) ⇒
 //     enveloppe invalide ⇒ {status: error} pour le type (iso registry/fs_acl).
 //
-// EFFET AU LOGON SUIVANT (piège #5) : les droits de logon `SeDeny*` sont
+// EFFET AU LOGON SUIVANT : les droits de logon `SeDeny*` sont
 // évalués par Windows à l'OUVERTURE de session — accorder le deny ne coupe
 // pas une session en cours, la PROCHAINE tentative est refusée ; le retrait
 // (`accounts: []`) rétablit le logon au logon suivant, sans reboot. Sémantique
 // Windows, pas un bug.
 
-// privilegeAllowlist : les 5 droits de logon `SeDeny*` — enum FERMÉ (D3),
+// privilegeAllowlist : les 5 droits de logon `SeDeny*` — enum FERMÉ,
 // MIROIR EXACT de la constante PHP PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES
 // (le serveur refuse à l'authoring, l'agent refuse à l'application — double
 // rideau). Clés en minuscules (comparaison insensible à la casse).
@@ -117,11 +117,11 @@ func isBroadPrincipalSid(sid string) bool {
 // PrivilegeOps : accès LSA spécifiques à l'OS, injectés (testable hôte).
 // L'impl Windows vit dans agent/windows/handler_privilege_windows.go (policy
 // LSA + LookupSID) ; un fake en mémoire couvre les tests. L'interface
-// n'expose AUCUNE op de fichier : le mécanisme est SANS store (D4, structurel).
+// n'expose AUCUNE op de fichier : le mécanisme est SANS store (structurel).
 type PrivilegeOps interface {
 	// LookupSid résout un NOM (DOMAIN\name, nom nu, well-known) en SID string
 	// via la LSA du poste joint (windows.LookupSID — RÉUTILISE le pattern
-	// fsAclOps.LookupSid de 36.1). Irrésoluble ⇒ err (erreur d'item).
+	// fsAclOps.LookupSid). Irrésoluble ⇒ err (erreur d'item).
 	LookupSid(name string) (sid string, err error)
 
 	// AccountsWithPrivilege énumère les SID titulaires du privilège
@@ -154,7 +154,7 @@ func (s PrivilegeSpec) identity() string { return strings.ToLower(s.Privilege) }
 // n'est pas un objet, `privilege` est absent/vide, `accounts` est absent ou
 // n'est pas une liste de strings. Une liste VIDE est VALIDE (off réel). Le
 // contrôle d'allowlist n'est PAS ici : un SeDeny inconnu / un grant est une
-// erreur d'ITEM (piège #9), pas une enveloppe invalide.
+// erreur d'ITEM, pas une enveloppe invalide.
 func parsePrivilegeSpec(raw any) (PrivilegeSpec, bool) {
 	payload, ok := raw.(map[string]any)
 	if !ok || payload == nil {
@@ -179,19 +179,17 @@ func parsePrivilegeSpec(raw any) (PrivilegeSpec, bool) {
 }
 
 // privilegeItemViolation : raison NON vide si l'item doit être REFUSÉ (défense
-// en profondeur SeDeny*-only, piège #9), sinon "". MIROIR du guard PHP : tout
+// en profondeur SeDeny*-only), sinon "". MIROIR du guard PHP : tout
 // droit hors allowlist — un *grant* ou un SeDeny inconnu — n'est JAMAIS
 // appliqué (une convergence « possède la liste entière » sur un grant
 // verrouillerait la machine).
 func privilegeItemViolation(spec PrivilegeSpec) string {
 	if !privilegeAllowlist[spec.identity()] {
-		return fmt.Sprintf("privilège %q hors de l'allowlist SeDeny* — un droit grant possédé en liste entière verrouillerait la machine (piège #3), jamais appliqué", spec.Privilege)
+		return fmt.Sprintf("privilège %q hors de l'allowlist SeDeny* — un droit grant possédé en liste entière verrouillerait la machine, jamais appliqué", spec.Privilege)
 	}
 
 	return ""
 }
-
-// --- Résolution SID mémoïsée PAR PASSE (piège #7) -----------------------------
 
 type privilegeSidMemo struct {
 	ops   PrivilegeOps
@@ -222,11 +220,9 @@ func (m *privilegeSidMemo) resolve(name string) (string, error) {
 	return sid, nil
 }
 
-// --- Handler ------------------------------------------------------------------
-
 // PrivilegeHandler : handler exclusive-par-privilège branché dans le moteur
 // (engine.go INTOUCHÉ — la machine d'états §5 reste au moteur). SERVICE SYSTEM
-// seul. AUCUN champ de store (D4 : le privilège est le conteneur, les
+// seul. AUCUN champ de store (le privilège est le conteneur, les
 // titulaires sont énumérables — le test structurel l'atteste).
 type PrivilegeHandler struct {
 	Ops PrivilegeOps
@@ -263,7 +259,7 @@ func (h *PrivilegeHandler) desiredSpecs(items []StateItem) ([]PrivilegeSpec, err
 
 // desiredSids : résout TOUS les comptes d'un item en un ensemble de SID
 // (clé = SID majuscule, valeur = SID tel que résolu). UN compte irrésoluble ⇒
-// erreur (piège #8 : l'item entier est en erreur, JAMAIS d'application
+// erreur (l'item entier est en erreur, JAMAIS d'application
 // partielle — les comptes déjà résolus ne sont pas accordés).
 func desiredSids(memo *privilegeSidMemo, spec PrivilegeSpec) (map[string]string, error) {
 	desired := map[string]string{}
@@ -274,7 +270,7 @@ func desiredSids(memo *privilegeSidMemo, spec PrivilegeSpec) (map[string]string,
 		}
 		// Refus PORTÉE (défense en profondeur, MIROIR du guard PHP) : une
 		// SeDeny* sur un principal à large portée verrouille le poste ⇒ erreur
-		// d'item, PAS d'application partielle (iso compte irrésoluble, piège #8).
+		// d'item, PAS d'application partielle (iso compte irrésoluble).
 		if isBroadPrincipalSid(sid) {
 			return nil, fmt.Errorf("compte %q (%s) résout un principal à large portée %s — une SeDeny* dessus verrouillerait le poste, jamais appliqué", account, spec.identity(), sid)
 		}
@@ -297,7 +293,7 @@ func (h *PrivilegeHandler) Test(items []StateItem) (bool, error) {
 
 	memo := newPrivilegeSidMemo(h.Ops)
 	for _, spec := range specs {
-		// Refus SeDeny*-only (piège #9) : un item refusé ne sera jamais
+		// Refus SeDeny*-only : un item refusé ne sera jamais
 		// appliqué → non conforme (l'Apply surfacera l'erreur d'item).
 		if privilegeItemViolation(spec) != "" {
 			return false, nil
@@ -334,9 +330,9 @@ func (h *PrivilegeHandler) Test(items []StateItem) (bool, error) {
 
 // Apply : converge chaque privilège en effort MAXIMAL par item (première
 // erreur remontée à la fin, idempotent — 2 passes stables = zéro op).
-// Réconciliation de CONTENEUR (D4) : accorde les SID désirés manquants,
+// Réconciliation de CONTENEUR : accorde les SID désirés manquants,
 // révoque tout titulaire hors état désiré ; `accounts: []` VIDE le privilège.
-// AUCUN store (piège #2). SID mémoïsés PAR PASSE seulement (piège #7).
+// AUCUN store. SID mémoïsés PAR PASSE seulement.
 func (h *PrivilegeHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -354,7 +350,7 @@ func (h *PrivilegeHandler) Apply(items []StateItem) error {
 	for _, spec := range specs {
 		id := spec.identity()
 
-		// Refus SeDeny*-only (piège #9, défense en profondeur, INDÉPENDANT du
+		// Refus SeDeny*-only (défense en profondeur, INDÉPENDANT du
 		// serveur) : erreur d'item isolée, les autres items convergent.
 		if reason := privilegeItemViolation(spec); reason != "" {
 			record(fmt.Errorf("privilege refusé (%s) : %s", id, reason))
@@ -362,7 +358,7 @@ func (h *PrivilegeHandler) Apply(items []StateItem) error {
 			continue
 		}
 
-		// Résolution de TOUS les comptes AVANT toute op (piège #8) : un compte
+		// Résolution de TOUS les comptes AVANT toute op : un compte
 		// irrésoluble ⇒ erreur d'item, la réconciliation de CE privilège n'est
 		// PAS appliquée partiellement.
 		desired, err := desiredSids(memo, spec)

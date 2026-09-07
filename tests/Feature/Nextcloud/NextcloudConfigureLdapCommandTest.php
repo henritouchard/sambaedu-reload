@@ -101,7 +101,7 @@ class NextcloudConfigureLdapCommandTest extends TestCase
      * indexé par identifiant ; tout identifiant absent rend le `404` mesuré.
      *
      * @param  array<string, array<string, mixed>>  $configs
-     * @param  array<string, string>  $backendPerLogin  L'origine du compte, par login —
+     * @param array<string, string> $backendPerLogin L'origine du compte, par login
      *   c'est ce qui permet de simuler l'homonyme local d'un compte d'annuaire.
      */
     private function fakeInstance(
@@ -162,10 +162,6 @@ class NextcloudConfigureLdapCommandTest extends TestCase
         User::factory()->create(['login' => $login, 'source' => 'ad', 'is_active' => true]);
     }
 
-    // =========================================================================
-    // Les refus — rien n'est écrit
-    // =========================================================================
-
     /** Capacité éteinte : aucun appel n'est émis, et le refus nomme la cause. */
     #[Test]
     public function it_refuses_when_the_instance_capability_is_off(): void
@@ -207,10 +203,6 @@ class NextcloudConfigureLdapCommandTest extends TestCase
 
         Http::assertNothingSent();
     }
-
-    // =========================================================================
-    // L'écriture
-    // =========================================================================
 
     /** Instance vierge : on crée une configuration, puis on y écrit la carte. */
     #[Test]
@@ -310,10 +302,6 @@ class NextcloudConfigureLdapCommandTest extends TestCase
         Http::assertSent(static fn (Request $r): bool => $r->method() === 'PUT'
             && ($r->data()['configData']['turnOffCertCheck'] ?? null) === '1');
     }
-
-    // =========================================================================
-    // La vérification
-    // =========================================================================
 
     /**
      * L'ÉCRITURE QUI RÉUSSIT NE PROUVE RIEN : l'instance ne valide pas à

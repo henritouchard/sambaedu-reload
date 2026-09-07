@@ -26,7 +26,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.3 — LE BACKEND, DE BOUT EN BOUT, CONTRE UNE INSTANCE EN MÉMOIRE.
+ * LE BACKEND, DE BOUT EN BOUT, CONTRE UNE INSTANCE EN MÉMOIRE.
  *
  * Le décor est celui du partage de classe : une racine, un espace de travail, un
  * espace des enseignants (où la classe n'a RIEN — c'est la clôture), un espace
@@ -66,7 +66,7 @@ class NextcloudFileBackendTest extends TestCase
         parent::setUp();
 
         // La projection d'annuaire n'a rien à voir avec ce backend : ce sont des
-        // groupes NEXTCLOUD que la story compile, pas des groupes d'annuaire.
+        // groupes NEXTCLOUD qui sont compilés ici, pas des groupes d'annuaire.
         UserGroupObserver::disableSync();
         \Illuminate\Support\Facades\Queue::fake();
 
@@ -108,10 +108,6 @@ class NextcloudFileBackendTest extends TestCase
         return app(FileBackendRegistry::class)->get(FileBackendName::Nextcloud);
     }
 
-    // =========================================================================
-    // Le plan d'épreuve
-    // =========================================================================
-
     private function plan(bool $echangeSuspended = false): FilePlan
     {
         $members = PlanSubject::group((int) $this->classe->id, 'member');
@@ -151,10 +147,6 @@ class NextcloudFileBackendTest extends TestCase
 
         return new FilePlan('classe_share', self::ROOT, $roles, $nodes);
     }
-
-    // =========================================================================
-    // AC2 — provision
-    // =========================================================================
 
     /** Le plan devient un dossier d'équipe, ses groupes, son arborescence et ses règles. */
     #[Test]
@@ -331,7 +323,7 @@ class NextcloudFileBackendTest extends TestCase
     }
 
     /**
-     * CORRECTION DE REVUE 61.3 #4 — **LA RÉCONCILIATION NE RETIRE JAMAIS LE COMPTE
+     * **LA RÉCONCILIATION NE RETIRE JAMAIS LE COMPTE
      * D'ADMINISTRATION D'UN GROUPE DU PLAN.**
      *
      * Le commentaire de `convergeGroups()` promettait cette protection ; la boucle
@@ -400,7 +392,7 @@ class NextcloudFileBackendTest extends TestCase
 
     /**
      * **UNE IDENTITÉ MANQUANTE EST UN ÉCHEC NOMMÉ AVEC SA REMÉDIATION**, jamais une
-     * résolution à la volée : la règle de l'homonyme (revue 61.1) interdit de deviner
+     * résolution à la volée : la règle de l'homonyme (revue) interdit de deviner
      * qu'un compte « doit bien être » le login.
      */
     #[Test]
@@ -437,16 +429,12 @@ class NextcloudFileBackendTest extends TestCase
         self::assertCount(5, $report->failures());
     }
 
-    // =========================================================================
-    // AC3 — la clôture EFFECTIVE, et son constat
-    // =========================================================================
-
     /**
      * **« NON EXPRIMABLE » SE CONSTATE, IL NE SE DÉCIDE PAS.**
      *
      * On pose, PUIS ON RELIT. Ici l'instance accepte la règle de clôture en succès
      * et n'en fait rien — c'est le mode de rupture MESURÉ au sondage d'ouverture
-     * d'epic, celui qui a fait naître la clôture calculée. Le nœud doit DIRE que le
+     * d'ouverture, celui qui a fait naître la clôture calculée. Le nœud doit DIRE que le
      * cloisonnement n'a pas été obtenu, en nommant le principal dont l'accès survit :
      * jamais « appliqué » sur la foi d'une enveloppe verte.
      */
@@ -471,10 +459,6 @@ class NextcloudFileBackendTest extends TestCase
         // Les autres nœuds ne sont pas contaminés : fail-soft par nœud.
         self::assertSame(FileBackendOutcome::Applique->value, $report->for('_travail')?->outcome->value);
     }
-
-    // =========================================================================
-    // AC4 — inspect et la reprojection
-    // =========================================================================
 
     /** La relecture reprojette en vocabulaire de plan : aucun identifiant distant ne remonte. */
     #[Test]
@@ -659,10 +643,6 @@ class NextcloudFileBackendTest extends TestCase
         self::assertSame(PlanStateComparator::STATUS_CONFORME, $comparison['status'], json_encode($comparison, JSON_UNESCAPED_UNICODE));
     }
 
-    // =========================================================================
-    // AC5 — les deux quotas
-    // =========================================================================
-
     /** Le plafond de la RACINE se projette sur le plafond du dossier, comparé au RELU. */
     #[Test]
     public function the_root_cap_becomes_the_team_folder_quota(): void
@@ -714,11 +694,7 @@ class NextcloudFileBackendTest extends TestCase
         self::assertSame([], $this->instance->calls, 'rien à plafonner : aucun appel');
     }
 
-    // =========================================================================
-    // AC7 — deprovision
-    // =========================================================================
-
-    /** **RÉVOQUER N'EST PAS DÉTRUIRE** : le dossier et son contenu survivent (D9). */
+    /** **RÉVOQUER N'EST PAS DÉTRUIRE** : le dossier et son contenu survivent. */
     #[Test]
     public function deprovision_revokes_without_destroying(): void
     {
@@ -759,10 +735,6 @@ class NextcloudFileBackendTest extends TestCase
             self::assertSame(FileBackendOutcome::Conforme->value, $node['outcome']);
         }
     }
-
-    // =========================================================================
-    // location
-    // =========================================================================
 
     #[Test]
     public function the_display_location_names_the_instance_and_the_folder(): void

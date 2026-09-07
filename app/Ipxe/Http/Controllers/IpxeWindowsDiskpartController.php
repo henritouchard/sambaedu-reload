@@ -15,8 +15,6 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.5 — AC5.4 / D2.
- *
  * Controller du endpoint `GET|POST /ipxe/windows/diskpart.txt` (port natif
  * `sambaedu/ipxe/Win10/diskpart.php` 27 LOC).
  *
@@ -29,9 +27,9 @@ use Throwable;
  *  3. Response 200 + body iso-legacy + headers D10.
  *  4. Insert MachineBootLog `action='ipxe_win_diskpart'` (best-effort).
  *
- * **Note 3.7** : ce controller est rendu prêt pour migration ultérieure de
- * `repair.bat.php` legacy qui consomme `Win10/diskpart.php?...` (action winpe
- * 3.2). En 3.5 le template `ipxe.actions.winpe` pointe encore sur le legacy
+ * **Note** : ce controller est rendu prêt pour migration ultérieure de
+ * `repair.bat.php` legacy qui consomme `Win10/diskpart.php?...` (action winpe).
+ * Le template `ipxe.actions.winpe` pointe encore sur le legacy
  * via catchall — pas de modification 3.5.
  */
 class IpxeWindowsDiskpartController extends Controller

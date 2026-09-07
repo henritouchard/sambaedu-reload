@@ -20,7 +20,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 43.2 (AC6, D5/D6) — badge de temporalité d'effet sur la section
+ * Badge de temporalité d'effet sur la section
  * « Capacités » de la page d'un groupe d'utilisateurs.
  *
  * Patron {@see GroupCapabilitiesSectionTest}.
@@ -116,7 +116,7 @@ class GroupCapabilitiesSectionEffectTimingBadgeTest extends TestCase
     #[Test]
     public function machine_only_capabilities_are_excluded_from_the_listing_and_never_show_a_badge(): void
     {
-        // Piège #6 (déjà en place) : une capacité 100% HKLM n'est même PAS
+        // Une capacité 100% HKLM n'est même PAS
         // listée sur cette surface (assignabilité HKCU) — a fortiori pas de badge.
         $this->makeAdmin();
         $group = $this->makeGroup();

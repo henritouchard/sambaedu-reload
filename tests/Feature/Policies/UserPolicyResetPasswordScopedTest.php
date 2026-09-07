@@ -14,18 +14,18 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC7, décisions a+b) — UserPolicy::resetPassword et view scopées classe pour Prof.
+ * UserPolicy::resetPassword et view scopées classe pour Prof.
  *
- * Story 4.13 — Fixtures RÉÉCRITES pour le modèle POST-FOLD. L'import AD→SQL
+ * Fixtures RÉÉCRITES pour le modèle POST-FOLD. L'import AD→SQL
  * replie désormais `Classe_X`/`Equipe_X`/`PP_X` en UNE seule ligne au NOM NU
  * `X` (`type='classe'`). Il n'existe plus de distinction `Equipe_`/`Classe_`
  * côté SQL : le prof ET l'élève sont co-membres de la MÊME ligne nue `X`. La
  * distinction de rôle (qui PEUT agir) vient de `User.role` via le gate, pas du
  * nom du groupe. Les anciennes fixtures (`Classe_X` pour l'élève + `Equipe_X`
- * pour le prof) reproduisaient la forme PRÉ-4.13 et MASQUAIENT la régression de
+ * pour le prof) reproduisaient la forme d'avant le fold et MASQUAIENT la régression de
  * scope (`sharesClassWithTarget` renvoyait vide après fold → déni total).
  *
- * Scoping strict (review 7.2 #6 : `eleve-admin` désormais scopé classe aussi) :
+ * Scoping strict (`eleve-admin` est scopé classe comme `prof`) :
  *  - Prof + élève co-membres de la même classe nue X → ✅
  *  - Prof (classe X) + élève (classe Y) → ❌
  *  - Prof sans classe → ❌
@@ -66,7 +66,7 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     }
 
     /**
-     * Story 4.13 — Classe foldée au NOM NU (`type='classe'`). Prof ET élève
+     * Classe foldée au NOM NU (`type='classe'`). Prof ET élève
      * sont co-membres de cette MÊME ligne (la distinction de rôle vient de
      * `User.role`, plus du nom du groupe).
      */
@@ -229,8 +229,7 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     /**
      * Depuis 2026-04-24, `LdapUserProvider` renvoie directement un `User` Eloquent
      * (fini le wrapper AuthUser injecté dans les policies). On valide que le
-     * scoping classe s'applique sur l'Eloquent sans bridge — cas reproduit de
-     * l'ancien test #M1 mais sans AuthUser.
+     * scoping classe s'applique sur l'Eloquent sans bridge.
      */
     public function test_policy_applies_class_scoping_on_eloquent_actor(): void
     {
@@ -252,7 +251,7 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     }
 
     /**
-     * Review 7.2 #8 — defense-in-depth : le bulk reset filtre chaque cible via
+     * Defense-in-depth : le bulk reset filtre chaque cible via
      * la Policy `resetPassword`. On simule ici le filtre Gate utilisé par
      * `UserService::bulkResetPasswords` pour confirmer que le comportement
      * attendu (Prof ne filtre que ses élèves) est garanti au niveau Gate.
@@ -281,8 +280,8 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     }
 
     /**
-     * Correction review 7.2 #6 — `eleve-admin` est désormais scopé classe
-     * comme `prof` (retiré de GLOBAL_USER_ROLES, ajouté à CLASS_SCOPED_ROLES).
+     * `eleve-admin` est scopé classe comme `prof` (absent de
+     * GLOBAL_USER_ROLES, présent dans CLASS_SCOPED_ROLES).
      * Iso-legacy `sovajon_is_admin` (bits 0x07, scoping classe strict).
      */
     public function test_eleve_admin_is_class_scoped_like_prof(): void
@@ -302,8 +301,7 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $this->assertTrue($this->policy->resetPassword($actor, $studentSame));
         $this->assertTrue($this->policy->view($actor, $studentSame));
 
-        // Autre classe → KO (alors qu'avant la correction #6, eleve-admin
-        // était dans GLOBAL_USER_ROLES et voyait tout).
+        // Autre classe → KO.
         $this->assertFalse($this->policy->resetPassword($actor, $studentOther));
         $this->assertFalse($this->policy->view($actor, $studentOther));
     }

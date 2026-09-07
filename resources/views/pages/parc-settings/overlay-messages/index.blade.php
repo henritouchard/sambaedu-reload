@@ -86,7 +86,7 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
             ? Carbon::now()->addHours($this->expiresInHours)
             : null;
 
-        // Story 27.8 : le mécanisme strict/default est SUPPRIMÉ — le signal créé
+        // Le mécanisme strict/default est SUPPRIMÉ — le signal créé
         // ne porte plus de `mode` (STRICT inconditionnel, la cible fait loi).
         $overlay->postSignal(
             kind: 'notice',

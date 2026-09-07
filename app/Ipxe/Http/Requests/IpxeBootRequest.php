@@ -7,8 +7,6 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.1 — AC5.2.
- *
  * Validation **permissive** du body de `GET|POST /ipxe/boot`.
  *
  * Un firmware iPXE pose ses paramètres via `param mac ${net0/mac}` etc. —
@@ -28,13 +26,13 @@ use Illuminate\Foundation\Http\FormRequest;
  *    avoir un nom long).
  *
  * **Pas de regex stricte** : un poste avec MAC malformée recevra un menu
- * default (D6), pas un 422 — c'est le comportement iso-legacy attendu.
+ * default, pas un 422 — c'est le comportement iso-legacy attendu.
  *
  * **Pas d'`exists:` / `unique:`** : un poste inconnu est valide et doit
- * recevoir un menu default (D6), pas un 422.
+ * recevoir un menu default, pas un 422.
  *
  * `authorize()` retourne `true` — l'auth est portée par le middleware
- * `auth.v1.lan-only` (D3).
+ * `auth.v1.lan-only`.
  */
 class IpxeBootRequest extends FormRequest
 {

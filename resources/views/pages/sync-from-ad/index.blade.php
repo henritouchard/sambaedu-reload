@@ -142,7 +142,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
-            // Story 7.2 — AC4 : rapatriement non-destructif des profils LDAP custom.
+            // Rapatriement non-destructif des profils LDAP custom.
             'rights_profiles' => [
                 'id' => 'rights_profiles',
                 'title' => '9. Rapatrier les profils LDAP personnalisés',
@@ -152,7 +152,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
-            // Story 7.3 — migration one-shot bitmask → Spatie (rôles + délégations scopées).
+            // Migration one-shot bitmask → Spatie (rôles + délégations scopées).
             // L'étape affiche deux boutons : Aperçu (dry-run) et Exécuter.
             // Dans « Tout exécuter », seul le dry-run est lancé automatiquement.
             'rights_migration' => [
@@ -164,7 +164,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
-            // Story 8.1 — AC9 : import one-shot du fichier legacy
+            // Import one-shot du fichier legacy
             // /etc/sambaedu/reservations.inc dans la table dhcp_reservations.
             // Lecture seule du fichier, idempotent, rejouable.
             'dhcp_reservations' => [
@@ -551,7 +551,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 7.2 — AC4 : rapatriement non-destructif des profils LDAP custom.
+     * Rapatriement non-destructif des profils LDAP custom.
      * Les profils seedés (5 profils livrés) sont ignorés — gérés par le
      * `PermissionSeeder`. Les profils historiques (`sovajon_is_admin`, …)
      * sont mappés vers leur rôle Spatie équivalent. Les profils custom
@@ -588,7 +588,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 8.1 — AC9 / T8b : import one-shot du fichier legacy
+     * T8b : import one-shot du fichier legacy
      * /etc/sambaedu/reservations.inc dans la table dhcp_reservations.
      *
      * Lecture seule du fichier conf (pas de reload DHCP déclenché).

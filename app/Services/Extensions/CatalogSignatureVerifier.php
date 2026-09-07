@@ -7,7 +7,7 @@ namespace App\Services\Extensions;
 use SodiumException;
 
 /**
- * Story 56.1 (NFR2) — Vérification de la **signature détachée Ed25519** d'un
+ * Vérification de la **signature détachée Ed25519** d'un
  * catalogue distant.
  *
  * Service **PUR** : ni filesystem, ni base, ni HTTP, ni journalisation. Il
@@ -15,11 +15,10 @@ use SodiumException;
  * testable (paires fabriquées à la volée par `sodium_crypto_sign_keypair()` —
  * aucune fixture binaire n'est commitée dans le dépôt).
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI Ed25519 / libsodium — ET PAS RSA
  *
  *  1. **Zéro dépendance nouvelle** : sodium est compilé dans le core PHP depuis
- *     7.2 et activé par défaut (paquets Debian `phpX.Y-common`). La dépendance
+ *  et activé par défaut (paquets Debian `phpX.Y-common`). La dépendance
  *     est néanmoins EXPLICITÉE dans `composer.json` (`"ext-sodium": "*"`,
  *     comme `ext-apcu`) : une dépendance implicite est une panne différée.
  *  2. **Format trivial et non ambigu** : clé publique 32 octets, signature
@@ -30,14 +29,13 @@ use SodiumException;
  *  3. **Côté éditeur tiers** : signer un dépôt tient en trois lignes de PHP
  *     (`sodium_crypto_sign_keypair` + `sodium_crypto_sign_detached`), ou en un
  *     `minisign`/`signify`. C'est le patron standard des dépôts statiques
- *     signés (l'outillage de publication est la Story 58.2).
+ * signés (l'outillage de publication est la).
  *  4. **Pourquoi PAS la paire RSA du fournisseur OIDC** ({@see \App\Auth\Oidc\Keys\OidcKeyManager}) :
  *     domaine de confiance DIFFÉRENT. Ici la clé appartient à la **source**
  *     (chaque éditeur a la sienne, SE5 ne fait que la pinner) ; là-bas elle
  *     appartient à l'instance SE5 qui signe ses propres jetons. Mélanger les
  *     deux infrastructures mélangerait deux contrats et rendrait une rotation
  *     de clé OIDC capable de casser la vérification des catalogues.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **Fail-closed sans exception** : toute anomalie (base64 invalide, longueur
  * inattendue, chaîne vide, extension sodium absente, exception interne) rend

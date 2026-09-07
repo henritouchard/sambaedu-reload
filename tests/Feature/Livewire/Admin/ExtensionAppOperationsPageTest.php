@@ -18,13 +18,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.3 (AC1, AC2, AC4, AC5, AC6) — Le cycle `app` dans les DEUX pages
+ * Le cycle `app` dans les DEUX pages
  * admin : bibliothèque et fiche.
  *
- * Fichier NOUVEAU, volontairement : les suites 54.1/54.2/56.1
+ * Fichier NOUVEAU, volontairement : les suites
  * ({@see ExtensionsLibraryPageTest}, {@see ExtensionDetailPageTest}) restent
  * VERBATIM, sans une assertion touchée. Qu'elles passent inchangées EST la
- * preuve de non-régression du cycle `link` demandée par l'AC6 — l'affaiblir ou
+ * preuve de non-régression du cycle `link` — l'affaiblir ou
  * la réécrire ferait disparaître la preuve avec le risque.
  *
  * ⚠️ `Queue::fake()` partout : `phpunit.xml` force `QUEUE_CONNECTION=sync`, un
@@ -93,10 +93,6 @@ class ExtensionAppOperationsPageTest extends TestCase
             ->installed(8600, '1.0.0')
             ->create(['key' => 'hello', 'name' => 'Hello', 'version' => '1.0.0']);
     }
-
-    // =====================================================================
-    // AC1 — la modale de confirmation
-    // =====================================================================
 
     #[Test]
     public function an_installable_app_offers_the_integrate_button_in_the_library(): void
@@ -247,10 +243,6 @@ class ExtensionAppOperationsPageTest extends TestCase
             ->assertDispatched('toastMagic', status: 'error');
     }
 
-    // =====================================================================
-    // AC2 — confirmer crée le run et met le Job en file
-    // =====================================================================
-
     #[Test]
     public function confirming_creates_a_pending_run_and_queues_the_job(): void
     {
@@ -274,8 +266,8 @@ class ExtensionAppOperationsPageTest extends TestCase
     #[Test]
     public function a_double_click_on_the_confirmation_creates_a_single_run(): void
     {
-        // Piège review 54.2 #1 reproduit : la cible n'est PAS remise à zéro
-        // avant l'appel, sinon le second clic parlerait de l'extension #0.
+        // La cible n'est PAS remise à zéro avant l'appel : sinon le second
+        // clic parlerait de l'extension #0.
         Queue::fake();
         $this->grant(['server.admin']);
         $extension = $this->installableApp();
@@ -304,10 +296,6 @@ class ExtensionAppOperationsPageTest extends TestCase
         self::assertSame(0, ExtensionInstallRun::query()->count());
         Queue::assertNothingPushed();
     }
-
-    // =====================================================================
-    // AC5 — le verrou du moteur est global : l'UI le reflète
-    // =====================================================================
 
     #[Test]
     public function every_operation_button_is_disabled_while_a_run_is_active(): void
@@ -443,10 +431,6 @@ class ExtensionAppOperationsPageTest extends TestCase
         $component->call('pollRuns')->assertDispatched('toastMagic', status: 'error');
     }
 
-    // =====================================================================
-    // AC3 — la mise à jour proposée
-    // =====================================================================
-
     #[Test]
     public function an_available_update_is_advertised_and_offered(): void
     {
@@ -493,10 +477,6 @@ class ExtensionAppOperationsPageTest extends TestCase
             ->assertSee('2.0.0');
     }
 
-    // =====================================================================
-    // AC4 — la désinstallation d'une `app`
-    // =====================================================================
-
     #[Test]
     public function the_remove_modal_says_what_will_actually_be_purged(): void
     {
@@ -532,10 +512,6 @@ class ExtensionAppOperationsPageTest extends TestCase
         self::assertSame(ExtensionInstallRun::OPERATION_REMOVE, $run->operation);
         Queue::assertPushedOn('default', RunExtensionOperationJob::class);
     }
-
-    // =====================================================================
-    // AC6 — defense-in-depth
-    // =====================================================================
 
     #[Test]
     public function asking_an_operation_is_forbidden_when_the_ability_is_revoked_after_mount(): void
@@ -591,10 +567,6 @@ class ExtensionAppOperationsPageTest extends TestCase
         $allowed = false;
         $component->call('pollRuns')->assertForbidden();
     }
-
-    // =====================================================================
-    // La FICHE : mêmes gestes, même modale, panneau d'état
-    // =====================================================================
 
     #[Test]
     public function the_detail_page_offers_the_same_app_actions(): void

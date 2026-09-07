@@ -16,35 +16,32 @@ use App\Support\GroupTypeCatalog;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Story 34.3 — « template de répertoire » (recette d'échange préfabriquée).
+ * « template de répertoire » (recette d'échange préfabriquée).
  *
  * Lecture seule côté applicatif (peuplé par {@see Database\Seeders\DirectoryTemplateSeeder},
- * jamais édité en 34.3 — Q3 option B). Une recette décrit les RÔLES-cibles d'un
+ * jamais édité). Une recette décrit les RÔLES-cibles d'un
  * pattern métier récurrent ; {@see App\Services\Filesystem\DirectoryTemplateService}
  * lit `roles_spec` depuis la DB pour matérialiser un {@see NetworkShare} + ses
  * assignations par maille au bon niveau (le vocabulaire binaire des
- * assignations, traduit depuis les verbes de la recette — story 62.4).
+ * assignations, traduit depuis les verbes de la recette —).
  *
  * **Mailles autorisées dans une recette** : `User` et `UserGroup` UNIQUEMENT.
  * Aucune recette ne porte d'ACL sur un `WorkstationGroup` (invariant WG-montage-
- * seul de 34.1 : POSIX ne sait pas exprimer « les users de la machine X »).
+ * seul : POSIX ne sait pas exprimer « les users de la machine X »).
  *
- * ---------------------------------------------------------------------------
- * Story 60.1 — la recette sait aussi décrire un ARBRE (`path_pattern` +
+ * La recette sait aussi décrire un ARBRE (`path_pattern` +
  * `nodes_spec`, colonnes additives NULLABLES). Le vocabulaire d'arbre vit À CÔTÉ
  * du vocabulaire de rôles, jamais à sa place : les octrois de nœud RÉFÉRENCENT
  * les rôles de `roles_spec` par leur `key`. Une recette sans arbre (les 4 recettes
  * seedées) se comporte exactement comme avant.
  *
- * ---------------------------------------------------------------------------
- * Story 60.2 — la recette sait aussi dire COMMENT chaque rôle trouve sa cible
+ * La recette sait aussi dire COMMENT chaque rôle trouve sa cible
  * (clé additive `resolution` dans `roles_spec`, {@see RoleResolutionStrategy}) et
  * À QUEL TYPE DE GROUPE elle s'accroche (colonne additive nullable
  * `attached_group_type`). L'absence de `resolution` vaut « cible désignée à la
  * matérialisation » : les 4 recettes seedées ne savent pas qu'il y a du nouveau.
  *
- * ---------------------------------------------------------------------------
- * Story 60.5 — la recette dit aussi DANS QUELLE ZONE son arbre vit (colonne
+ * La recette dit aussi DANS QUELLE ZONE son arbre vit (colonne
  * additive nullable `root_anchor`, {@see PlanAnchor}) — un jeton NEUTRE, jamais un
  * chemin. Et l'ACCROCHAGE change de portée : il vaut désormais « cette recette sait
  * se résoudre seule à partir d'un groupe de ce type », sans plus exiger un arbre.
@@ -72,7 +69,7 @@ class DirectoryTemplate extends Model
     public const KEY_GROUP_SPACE = 'group_space';
 
     /**
-     * Story 60.5 — la 5ᵉ recette : le partage de classe historique, dit en
+     * La 5ᵉ recette : le partage de classe historique, dit en
      * vocabulaire de plan et matérialisé dans la racine NEUVE.
      */
     public const KEY_CLASSE_SE4 = 'classe_se4';
@@ -87,7 +84,7 @@ class DirectoryTemplate extends Model
     ];
 
     /**
-     * Story 60.1 — jeton RÉSERVÉ désignant, dans les octrois d'un nœud par membre,
+     * Jeton RÉSERVÉ désignant, dans les octrois d'un nœud par membre,
      * le membre énuméré lui-même (octroi nominatif). Il commence par `@`, donc il
      * ne peut jamais entrer en collision avec une `key` de `roles_spec` (snake_case).
      *
@@ -105,7 +102,7 @@ class DirectoryTemplate extends Model
     public const PLACEHOLDER_MEMBER_LOGIN = 'member.login';
 
     /**
-     * Story 60.2 — les deux moitiés du nom d'un groupe « matière × classe ».
+     * Les deux moitiés du nom d'un groupe « matière × classe ».
      *
      * Résolvables UNIQUEMENT pour un groupe de type `matiere_classe`, dont le nom
      * (`Matiere_Maths@6A`) porte deux mailles séparées par un « @ » et n'est donc
@@ -135,7 +132,7 @@ class DirectoryTemplate extends Model
     ];
 
     /**
-     * Story 60.2 — placeholders admis dans le MOTIF DE NOM d'un rôle en stratégie
+     * Placeholders admis dans le MOTIF DE NOM d'un rôle en stratégie
      * `pattern`.
      *
      * Plus étroit que {@see TREE_PLACEHOLDERS} — et volontairement : un motif de
@@ -153,7 +150,7 @@ class DirectoryTemplate extends Model
 
     /**
      * Clés ADMISES dans un nœud de `nodes_spec`. Liste FERMÉE, et c'est ce qui
-     * rend la clôture (story 60.1) inauthorable : `closure`, `excluded_roles` ou
+     * rend la clôture inauthorable : `closure`, `excluded_roles` ou
      * tout autre champ qui prétendrait la saisir est refusé à la validation.
      * L'auteur d'une recette n'a qu'un seul levier sur la clôture — écrire ou
      * retirer un octroi.
@@ -166,11 +163,11 @@ class DirectoryTemplate extends Model
      * Clés admises dans un octroi de nœud. Fermée pour la même raison : aucun
      * champ d'interdiction n'est exprimable.
      *
-     * **Story 62.4 — `verbs` REMPLACE `access`, il ne cohabite pas avec lui.**
+     * **`verbs` REMPLACE `access`, il ne cohabite pas avec lui.**
      * C'est le vocabulaire de clés FERMÉ qui rend une recette non migrée bruyante :
      * elle est refusée avec « champ inconnu », jamais lue de travers. Accepter les
      * deux clés « par tolérance » recréerait le JSON à deux vocabulaires que le
-     * garde-fou d'epic interdit.
+     * garde-fou du modèle interdit.
      *
      * @var list<string>
      */
@@ -236,27 +233,23 @@ class DirectoryTemplate extends Model
         return true;
     }
 
-    // =========================================================================
-    // Story 60.2 — la règle de résolution d'un rôle
-    // =========================================================================
-
     /**
      * Garde d'écriture de l'accrochage.
      *
      * Un accrochage invalide ne doit PAS pouvoir être persisté : la donnée
-     * d'accrochage n'a pas d'écran (elle est seedée, story 60.5), donc aucune
+     * D'accrochage n'a pas d'écran (elle est seedée), donc aucune
      * validation de formulaire ne la protège. La garde vit ici, au seul endroit
      * par lequel toute écriture passe. Elle ne se déclenche QUE si un accrochage
      * est effectivement posé : les 4 recettes seedées, non accrochées, ne la
      * rencontrent jamais.
      *
-     * **Story 62.2 — le type accroché est désormais du VOCABULAIRE.** La migration
-     * de 60.2 affirmait « Pas de clé étrangère : il n'existe pas de table des
-     * types » ; il en existe une depuis la story 62.2 ({@see \App\Models\GroupType}),
+     * **le type accroché est désormais du VOCABULAIRE.** La migration
+     * de affirmait « Pas de clé étrangère : il n'existe pas de table des
+     * types » ; il en existe une depuis la ({@see \App\Models\GroupType}),
      * et la référence reste faite PAR CLÉ IMMUABLE, sans clé étrangère — décision
-     * D2 de l'epic 62, par cohérence avec le catalogue de rôles de 62.1 : une
+     * assumée, par cohérence avec le catalogue de rôles : une
      * valeur lisible en base plutôt qu'une jointure, et un refus NOMMÉ plutôt
-     * qu'un `RESTRICT` muet. Le docblock de la migration 60.2 n'est pas réécrit
+     * qu'un `RESTRICT` muet. Le docblock de la migration n'est pas réécrit
      * (l'histoire est append-only) ; celui-ci dit l'état d'aujourd'hui.
      *
      * Concrètement, un accrochage à un type qui n'existe pas au catalogue n'est
@@ -300,7 +293,7 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * Story 60.5 — ZONE logique de l'arbre de cette recette, jeton NEUTRE.
+     * ZONE logique de l'arbre de cette recette, jeton NEUTRE.
      *
      * L'absence vaut la zone par défaut : les recettes qui ne se prononcent pas
      * vivent là où elles ont toujours vécu.
@@ -313,7 +306,7 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * Story 62.2 — le type accroché doit EXISTER au catalogue.
+     * Le type accroché doit EXISTER au catalogue.
      *
      * Sans cette garde, une recette pouvait s'accrocher à `classse` (faute de
      * frappe), à un type supprimé, ou à un vocabulaire d'une autre instance :
@@ -397,7 +390,7 @@ class DirectoryTemplate extends Model
      * Règle de résolution d'un rôle, NORMALISÉE, défaut compris.
      *
      * L'absence de clé `resolution` vaut « cible désignée à la matérialisation » —
-     * le comportement de la story 34.3, celui des 4 recettes livrées. La clé est
+     * le comportement des 4 recettes livrées. La clé est
      * ADDITIVE : rien de ce qui existe ne change de sens.
      *
      * @param  array<string, mixed>  $role  un élément de `roles_spec`
@@ -507,7 +500,7 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * Story 62.4 — les verbes portés par un RÔLE de recette (`roles_spec[].verbs`).
+     * Les verbes portés par un RÔLE de recette (`roles_spec[].verbs`).
      *
      * Deux exigences, et la première est la plus utile : l'ancienne clé `access`
      * est refusée NOMMÉMENT. `roles_spec` n'a pas de vocabulaire de clés fermé
@@ -515,7 +508,7 @@ class DirectoryTemplate extends Model
      * `cardinality`, `resolution`…), donc rien n'aurait signalé une recette non
      * migrée : elle aurait simplement été lue avec les verbes par défaut, et un
      * rôle en écriture serait devenu un rôle en lecture SANS UN MOT. C'est
-     * exactement la classe de silence que l'epic traque.
+     * exactement la classe de silence traquée ici.
      *
      * L'absence de `verbs`, elle, reste licite et vaut `lire` — c'est le plancher
      * historique d'un rôle qui ne se prononce pas.
@@ -547,7 +540,7 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * Story 62.4 — garde COMMUNE aux deux endroits où une recette écrit des
+     * Garde COMMUNE aux deux endroits où une recette écrit des
      * droits : les verbes d'un rôle et les verbes d'un octroi de nœud.
      *
      * Refuse : le scalaire nu (l'ancien `'rw'` recopié), la liste vide, le verbe
@@ -616,10 +609,6 @@ class DirectoryTemplate extends Model
         return true;
     }
 
-    // =========================================================================
-    // Story 60.2 — l'accrochage à un type de groupe
-    // =========================================================================
-
     /**
      * Type de groupe auquel cette recette est accrochée, ou `null` (le cas
      * normal : l'accrochage est l'exception).
@@ -638,7 +627,7 @@ class DirectoryTemplate extends Model
      * `null` est l'état NORMAL de la quasi-totalité des types : ce n'est pas une
      * anomalie, et l'appelant ne doit pas la traiter comme telle.
      *
-     * **Pourquoi « d'arbre » est dans le nom du résultat, story 60.5.** Depuis que
+     * **Pourquoi « d'arbre » est dans le nom du résultat.** Depuis que
      * l'accrochage vaut « sait se résoudre seule », PLUSIEURS recettes peuvent
      * s'accrocher au même type — sur le type `classe`, l'arbre du partage de classe
      * et la recette plate « profs → élèves » y sont toutes les deux. Cette méthode
@@ -668,11 +657,11 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * Story 60.5 — `true` si la CRÉATION d'un groupe de ce type doit matérialiser
+     * `true` si la CRÉATION d'un groupe de ce type doit matérialiser
      * cette recette toute seule.
      *
      * **La propriété des seules recettes d'ARBRE, et c'est délibéré.** Deux
-     * recettes s'accrochent au type `classe` depuis cette story. Si la création de
+     * recettes s'accrochent au type `classe`. Si la création de
      * groupe matérialisait toute recette accrochée, chaque classe naîtrait avec un
      * partage plat « profs → élèves » que personne n'a demandé — une matérialisation
      * de masse par surprise, sur les 302 classes d'une instance en place.
@@ -688,7 +677,7 @@ class DirectoryTemplate extends Model
     /**
      * Vérifie qu'une recette PEUT s'accrocher à un type de groupe.
      *
-     * **Une seule condition depuis la story 60.5 : être AUTO-RÉSOLVABLE** (aucun
+     * **Une seule condition : être AUTO-RÉSOLVABLE** (aucun
      * rôle en cible désignée). L'accrochage dit « à partir d'un groupe de ce type,
      * cette recette sait trouver toutes ses cibles seule » — c'est vrai d'un arbre
      * comme d'un partage plat, et c'est ce qui permet au flux « créer depuis une
@@ -697,7 +686,7 @@ class DirectoryTemplate extends Model
      * **Ce que l'accrochage n'implique plus** : la matérialisation automatique à la
      * création d'un groupe. Elle reste réservée aux recettes d'arbre
      * ({@see materializesOnGroupCreation()}). Exiger un arbre ICI, comme le faisait
-     * la story 60.2, revenait à confondre les deux — et interdisait de réparer une
+     * la, revenait à confondre les deux — et interdisait de réparer une
      * recette plate dont les rôles savent pourtant se résoudre.
      *
      * @throws InvalidTreeSpecException
@@ -811,10 +800,6 @@ class DirectoryTemplate extends Model
         return $pattern;
     }
 
-    // =========================================================================
-    // Story 60.1 — l'arbre : motif de chemin + nœuds
-    // =========================================================================
-
     /**
      * Motif de chemin RELATIF avec substitution, ex. `Classes/Classe_{group.bare_name}`,
      * ou `null` pour une recette sans arbre. Jamais un chemin absolu : la racine
@@ -860,7 +845,7 @@ class DirectoryTemplate extends Model
      */
     public function assertValidTreeSpec(): void
     {
-        // Story 60.2 — les deux volets de la MÊME recette : une recette qu'on
+        // Les deux volets de la MÊME recette : une recette qu'on
         // s'apprête à résoudre doit être valide de l'arbre ET de la règle par
         // laquelle chaque rôle trouve sa cible. Les 4 recettes seedées ne portent
         // aucune règle : elles restent valides sans modification.
@@ -944,7 +929,7 @@ class DirectoryTemplate extends Model
 
             $isRootNode = $path === GroupNameNormalizer::ROOT_NODE_PATH;
 
-            // Story 60.5 — LE JETON RACINE s'ouvre au vocabulaire de recette.
+            // LE JETON RACINE s'ouvre au vocabulaire de recette.
             //
             // Sans lui, la racine d'un arbre n'a aucun octroi exprimable, et le
             // partage de classe historique — dont la racine porte la traversée de
@@ -1014,7 +999,7 @@ class DirectoryTemplate extends Model
             ];
         }
 
-        // Story 62.5 — LES RÈGLES PARENT→ENFANT, APRÈS la boucle et jamais avant.
+        // LES RÈGLES PARENT→ENFANT, APRÈS la boucle et jamais avant.
         //
         // Elles ne portent que sur des nœuds DÉJÀ individuellement valides. L'ordre
         // n'est pas cosmétique : une recette qui écrit `depots/{member.login}` sur un
@@ -1025,7 +1010,7 @@ class DirectoryTemplate extends Model
     }
 
     /**
-     * Story 62.5 — **UN OCTROI QUE PERSONNE NE PEUT ATTEINDRE EST REFUSÉ À
+     * **UN OCTROI QUE PERSONNE NE PEUT ATTEINDRE EST REFUSÉ À
      * L'ÉCRITURE.**
      *
      * Le compilateur travaille nœud par nœud : il ne voit jamais l'arbre. Une
@@ -1055,7 +1040,7 @@ class DirectoryTemplate extends Model
             // **Le nœud racine n'est PAS exigé**, et c'est calibré sur l'existant :
             // une recette peut n'avoir que des nœuds de premier niveau, sans jamais
             // se prononcer sur la racine de son propre partage. C'est l'état livré
-            // par la story 60.5 — hors contrat, mais pas aggravé ici. La règle ne
+            // par la — hors contrat, mais pas aggravé ici. La règle ne
             // porte donc que sur les préfixes STRICTS, jamais sur la racine.
             foreach (self::strictAncestorsOf($path) as $ancestor) {
                 if (! array_key_exists($ancestor, $declared)) {
@@ -1188,10 +1173,10 @@ class DirectoryTemplate extends Model
      * @param  array<int, mixed>  $grants
      */
     /**
-     * L'octroi accorde-t-il la lecture ? (Review 62.5 #2.)
+     * L'octroi accorde-t-il la lecture ?
      *
      * L'absence de `verbs` vaut « lire » — plancher historique d'un rôle qui ne se
-     * prononce pas, posé en 62.4 et conservé ici sans exception.
+     * prononce pas, posé et conservé ici sans exception.
      *
      * @param  array<string, mixed>  $grant
      */
@@ -1221,14 +1206,10 @@ class DirectoryTemplate extends Model
                 continue;
             }
 
-            // Review 62.5 #2 — un octroi qui n'accorde pas la LECTURE ne couvre
-            // rien. La règle cherchait un rôle couvrant par sa STRATÉGIE, sans
-            // jamais regarder ce qu'il accorde : un octroi `supprimer` seul — liste
-            // non vide, donc parfaitement valide depuis 62.4 — suffisait à déclarer
-            // l'ancêtre couvert. Le dossier personnel en dessous était alors validé
-            // « atteignable » et compilait « conforme », en restant un mirage :
-            // exactement le défaut que cette story existe pour éliminer, réintroduit
-            // par sa propre validation.
+            // Un octroi qui n'accorde pas la LECTURE ne couvre rien. Regarder la
+            // seule STRATÉGIE du rôle ferait passer un octroi `supprimer` seul
+            // pour couvrant : le dossier personnel en dessous serait alors validé
+            // « atteignable » et compilerait « conforme » en restant un mirage.
             //
             // La règle est énoncée en termes MÉTIER, pas en termes de backend : une
             // audience qui gouverne un ancêtre doit pouvoir l'ouvrir. Elle vaut donc

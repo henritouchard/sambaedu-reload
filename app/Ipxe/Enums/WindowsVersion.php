@@ -5,23 +5,21 @@ declare(strict_types=1);
 namespace App\Ipxe\Enums;
 
 /**
- * Story 3.5 — D1 / AC1.2.
- *
  * Whitelist stricte des versions Windows acceptées par les endpoints natifs
- * 3.5 (`/ipxe/windows/{install.bat,unattend.xml,diskpart.txt}`).
+ * (`/ipxe/windows/{install.bat,unattend.xml,diskpart.txt}`).
  *
  * **Sécurité critique** — l'enum est l'UNIQUE source de vérité des versions
  * autorisées. Toute valeur reçue côté FormRequest est validée via
  * {@see self::fromString()} (whitelist enum + Rule::in côté FormRequest =
  * defense in depth).
  *
- * **2 cases stricts en 3.5** :
+ * **2 cases stricts** :
  *
  *  - `Win10` — Windows 10 (parité legacy `actions/wimboot10.php`).
  *  - `Win11` — Windows 11 (parité legacy `actions/wimboot11.php`).
  *
- * **Hors-scope 3.5** (déféré 3.7) :
- *  - `Win11-old` (variante `installw11old` legacy — cf. story 3.5 § D14).
+ * **Hors périmètre** (déféré) :
+ * - `Win11-old` (variante `installw11old` legacy — § D14).
  *  - `Win7` (legacy `windows.inc.php:364` — pas d'usage terrain documenté).
  *
  * **Anti-injection** : toute valeur non listée retourne `null` (court-circuite
@@ -41,7 +39,7 @@ enum WindowsVersion: string
      */
     public static function fromString(string $raw): ?self
     {
-        // Post-review : anti-injection. `trim()` strip silencieusement le
+        // Anti-injection. `trim()` strip silencieusement le
         // null byte `\x00` et les newlines `\r\n` → un input
         // `"Win11\x00"` ou `"Win11\nkernel http://evil"` matcherait
         // `tryFrom('Win11')` après trim. Stratégie :

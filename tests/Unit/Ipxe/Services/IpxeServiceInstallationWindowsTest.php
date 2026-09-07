@@ -14,7 +14,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.5 — AC4.1 / T5.4.
+ * T5.4.
  *
  * Tests unitaires de {@see IpxeService::handleInstallationWindowsMenu()}.
  */

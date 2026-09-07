@@ -14,12 +14,12 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * Story 24.4 — `GET /api/v1/agent/assets/wallpaper/{filename}`
+ * `GET /api/v1/agent/assets/wallpaper/{filename}`
  * (route `agent.v1.assets.wallpaper`).
  *
  * Serving binaire des assets de la bibliothèque wallpaper pour le canal
  * agent desired-state : le payload `wallpaper` de `GET /state` ne porte que
- * `{asset, checksum}` (figé 23.4 — décision 24.4 n° 2 : PAS de champ `url`,
+ * `{asset, checksum}` (figé : PAS de champ `url`,
  * l'agent construit l'URL depuis `server_url` + ce chemin documenté, comme
  * pour /state et /report). Le téléchargement est fait côté SYSTEM (seul
  * détenteur du token) qui vérifie le SHA-256 = `checksum` à l'arrivée.
@@ -33,8 +33,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  * 404 pour TOUT échec (filename malformé, asset inconnu, fichier absent) :
  * aucun oracle de présence au-delà du nécessaire. Middlewares
  * (routes/api.php) : `auth.v1.secure-headers` + `throttle:60,1` +
- * `agent.token` — chaîne iso state/report, X-Agent-New-Token survit (D5,
- * le middleware pose le header sur toute réponse).
+ * `agent.token` — chaîne iso state/report, X-Agent-New-Token survit (le
+ * middleware pose le header sur toute réponse).
  */
 class AssetController extends Controller
 {
@@ -81,7 +81,7 @@ class AssetController extends Controller
         Log::channel('agent')->info('[AssetController] agent.asset.not_found', [
             'action_type' => 'agent.asset.not_found',
             'workstation_id' => $workstation->id,
-            // Input client non authentifié en forme : borné avant log (P5 23.2).
+            // Input client non authentifié en forme : borné avant log (P5).
             'filename' => Str::limit($filename, 128),
         ]);
 

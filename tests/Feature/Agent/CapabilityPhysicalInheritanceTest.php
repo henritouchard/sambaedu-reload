@@ -25,7 +25,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.x — HÉRÉDITÉ des CAPACITÉS le long de la chaîne physique
+ * .x — HÉRÉDITÉ des CAPACITÉS le long de la chaîne physique
  * (`parent_id`) + conflit entre groupes LOGIQUES arbitré par la DATE
  * d'assignation.
  *
@@ -34,7 +34,7 @@ use Tests\TestCase;
  *   1. une capacité sur la salle PARENTE est héritée par un poste de la salle
  *      ENFANT ;
  *   2. l'enfant OVERRIDE le parent (profondeur la plus faible gagne) ;
- *   3. `logique > physique` CONSERVÉ (régression 27.3) ;
+ *  3. `logique > physique` CONSERVÉ (régression) ;
  *   4. deux groupes LOGIQUES en conflit → la plus RÉCENTE gagne ;
  *   5. sans assignation → `default_value` ;
  *   6. GARDE WPKG : une app sur la salle parente n'est PAS installée sur un
@@ -84,7 +84,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     /**
      * Chaîne physique « techos » (parent racine) ← « techno » (enfant). Le poste
@@ -139,7 +139,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         return $registry[0]['payload']['value'];
     }
 
-    // ── 1. Hérédité physique : le parent est hérité ───────────────────────
+    // 1. Hérédité physique : le parent est hérité
 
     #[Test]
     public function capability_on_parent_room_is_inherited_by_child_room_workstation(): void
@@ -150,7 +150,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         self::assertSame(2, $this->resolvedHidden(), 'le poste enfant hérite de la capacité de la salle parente');
     }
 
-    // ── 2. L'enfant override le parent (enfant gagne) ─────────────────────
+    // 2. L'enfant override le parent (enfant gagne)
 
     #[Test]
     public function child_room_overrides_parent_room(): void
@@ -162,7 +162,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         self::assertSame(2, $this->resolvedHidden(), 'l\'enfant (profondeur 0) bat le parent (profondeur 1)');
     }
 
-    // ── 3. logique > physique (régression 27.3) ───────────────────────────
+    // 3. logique > physique (régression)
 
     #[Test]
     public function logical_group_beats_physical_chain(): void
@@ -177,7 +177,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         self::assertSame(1, $this->resolvedHidden(), 'le parc logique bat la chaîne physique (D-Q3 conservé)');
     }
 
-    // ── 4. Conflit entre groupes LOGIQUES → la plus récente gagne ─────────
+    // 4. Conflit entre groupes LOGIQUES → la plus récente gagne
 
     #[Test]
     public function conflicting_logical_groups_resolve_by_most_recent_assignment(): void
@@ -203,7 +203,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         self::assertSame(1, $this->resolvedHidden(), 'après MAJ, N=on (désormais la plus récente) gagne');
     }
 
-    // ── 5. Sans assignation → default_value ───────────────────────────────
+    // 5. Sans assignation → default_value
 
     #[Test]
     public function without_any_assignment_falls_back_to_default_value(): void
@@ -238,7 +238,7 @@ class CapabilityPhysicalInheritanceTest extends TestCase
         );
     }
 
-    // ── 6. GARDE ANTI-RÉGRESSION WPKG : pas d'hérédité d'apps ─────────────
+    // 6. GARDE ANTI-RÉGRESSION WPKG : pas d'hérédité d'apps
 
     #[Test]
     public function wpkg_app_on_parent_room_is_not_installed_on_child_room_workstation(): void

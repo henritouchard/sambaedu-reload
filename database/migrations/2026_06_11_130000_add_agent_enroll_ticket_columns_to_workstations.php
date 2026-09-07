@@ -7,7 +7,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 23.3 — AC1.
  *
  * Ajoute les colonnes du ticket d'enrôlement one-time (porte 1 — chaîne
  * d'install iPXE Windows) à `workstations`. Le ticket est émis à la

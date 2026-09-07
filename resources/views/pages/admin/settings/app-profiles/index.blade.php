@@ -10,7 +10,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 36.7 (AC1) — /admin/settings/app-profiles : catalogue des profils
+ * Admin/settings/app-profiles : catalogue des profils
  * applicatifs itinérants (Firefox, Thunderbird…) redirigés vers le home réseau.
  *
  * La donnée vit dans le `spec` de LA projection `app_profile` de la capacité
@@ -22,11 +22,11 @@ use Livewire\Component;
  * install_hash, `enabled` booléen) — les violations remontent en TOASTS lisibles,
  * jamais en 500.
  *
- * « OFF RÉEL » (AC1/AC2) : la SUPPRESSION est remplacée par la DÉSACTIVATION
+ * « OFF RÉEL » : la SUPPRESSION est remplacée par la DÉSACTIVATION
  * (`enabled=false`) — supprimer une entrée dont des profils existent déjà sur les
  * homes orphelinerait les données de l'utilisateur.
  *
- * L'ACTIVATION PAR UTILISATEUR (AC4) ne se fait PAS ici : c'est la section
+ * L'ACTIVATION PAR UTILISATEUR ne se fait PAS ici : c'est la section
  * « Capacités » des pages GROUPES D'UTILISATEURS (assignation on/off de la
  * capacité `roaming_app_profile`). Cette page pilote le CATALOGUE, pas le CIBLAGE.
  *
@@ -45,14 +45,13 @@ new #[Title('Profils applicatifs itinérants')] class extends Component {
     /** Le catalogue (capacité + projection) existe-t-il ? (migration jouée) */
     public bool $catalogExists = false;
 
-    // --- Modale ajout / édition --------------------------------------------
     public bool $isModalOpen = false;
     public bool $isEditing = false;
 
     /**
      * Index de l'entrée éditée dans le spec.apps courant (null = ajout).
      * `#[Locked]` : index positionnel — un tamper client le ferait pointer une
-     * AUTRE entrée (review 36.7 #3). L'identité de l'app capturée à l'ouverture
+     * AUTRE entrée. L'identité de l'app capturée à l'ouverture
      * ({@see $editApp}) verrouille en plus contre une édition concurrente.
      */
     #[Locked]
@@ -235,7 +234,7 @@ new #[Title('Profils applicatifs itinérants')] class extends Component {
                 $this->toastError('Entrée introuvable — rechargez la page.');
                 return;
             }
-            // Garde anti-concurrence (review 36.7 #3) : le spec a été RECHARGÉ ;
+            // Garde anti-concurrence : le spec a été RECHARGÉ ;
             // si l'entrée à cet index ne porte plus l'app capturée à l'ouverture
             // (autre admin/onglet a inséré/supprimé/réordonné entre-temps), refuser
             // plutôt qu'écraser silencieusement la mauvaise entrée.

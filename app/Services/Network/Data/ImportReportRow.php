@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Network\Data;
 
 /**
- * Story 8.1 — Ligne du rapport d'import CSV (FR22).
+ * Ligne du rapport d'import CSV.
  *
  * Stocké dans le cache Redis (24h) sous `dhcp.import.report.<uuid>` puis
  * affiché dans la page `/app/network/dhcp/import/{uuid}`.

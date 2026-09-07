@@ -13,8 +13,7 @@ use Livewire\Component;
  * LA PAGE DE CONNEXION À L'INSTANCE OPENCLOUD — bloc 1 de l'onglet
  * « Emplacements et cloud » de /admin/settings/files.
  *
- * ---------------------------------------------------------------------------
- * **STORY 63.3 — CE BLOC A DÉMÉNAGÉ, IL N'A PAS ÉTÉ RÉÉCRIT.** Il était
+ * **CE BLOC A DÉMÉNAGÉ, IL N'A PAS ÉTÉ RÉÉCRIT.** Il était
  * l'onglet « OpenCloud » ; il est maintenant révélé par la position « OpenCloud »
  * du choix de cloud, et par elle seule. Le comportement, les libellés, les
  * gardes et les tests sont conservés à l'identique.
@@ -32,7 +31,6 @@ use Livewire\Component;
  * vérification TLS cochée par défaut, sonde qui n'écrit rien et diagnostic
  * persisté. Un exploitant qui connaît l'un sait lire l'autre.
  *
- * ---------------------------------------------------------------------------
  * **LE SECRET NE TRANSITE JAMAIS EN RETOUR.** Le mot de passe d'administration
  * est un champ d'ÉCRITURE SEULE : il n'est jamais préchargé depuis le stock, et
  * la propriété est VIDÉE dès qu'elle est persistée — sans quoi elle repartirait
@@ -45,7 +43,6 @@ use Livewire\Component;
  * de déployer, ou vers une instance hébergée ailleurs, ce qui doit rester
  * possible. Un bouton « déployer » ici ferait croire que la seule instance
  * légitime est locale.
- * ---------------------------------------------------------------------------
  *
  * Composant enfant (nested) — double garde `server.admin`, et **racine stable** :
  * aucune condition au premier niveau du gabarit, sous peine d'erreur au
@@ -139,7 +136,7 @@ new class extends Component {
 
     /**
      * Publie l'icône du raccourci vers le portail web — **le même appel que dans
-     * l'onglet voisin, et pour la même raison** (Story 63.2).
+     * L'onglet voisin, et pour la même raison**.
      *
      * Le raccourci « Mes fichiers en ligne » suit le CLOUD ACTIF de l'instance :
      * il est donc posé aussi quand ce cloud est OpenCloud. Sans cet appel ici,

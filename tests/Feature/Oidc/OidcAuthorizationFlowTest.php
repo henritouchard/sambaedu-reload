@@ -20,7 +20,7 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — **AC1** (flux nominal) et **AC3** (refus de l'échange).
+ * (flux nominal) et (refus de l'échange).
  *
  * Le chemin nominal complet est déroulé pour de vrai : `/oidc/authorize` →
  * code → `/oidc/token` → id_token DÉCODÉ ET VÉRIFIÉ avec la clé publique. Les
@@ -55,7 +55,7 @@ class OidcAuthorizationFlowTest extends TestCase
         ]);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function makeUser(string $login = 'prof.dupont'): User
     {
@@ -123,7 +123,7 @@ class OidcAuthorizationFlowTest extends TestCase
         ]);
     }
 
-    // ── AC1 — le chemin nominal ───────────────────────────────────────────
+    // — le chemin nominal
 
     #[Test]
     public function authorize_then_token_yields_a_signed_id_token_without_any_login_form(): void
@@ -133,7 +133,7 @@ class OidcAuthorizationFlowTest extends TestCase
 
         $authorize = $this->actingAs($user)->get('/oidc/authorize?'.http_build_query($this->authorizeQuery($client)));
 
-        // FR17 : aucune re-saisie d'identifiants — on repart directement chez
+        // Aucune re-saisie d'identifiants — on repart directement chez
         // le client, pas vers un formulaire de login.
         $authorize->assertStatus(302);
         $location = (string) $authorize->headers->get('Location');
@@ -152,7 +152,7 @@ class OidcAuthorizationFlowTest extends TestCase
             'consumed_at' => null,
         ]);
 
-        // ── L'échange ────────────────────────────────────────────────────
+        // L'échange
         $token = $this->exchange($client, (string) $query['code']);
 
         $token->assertOk();
@@ -163,14 +163,14 @@ class OidcAuthorizationFlowTest extends TestCase
         self::assertNotEmpty($body['access_token']);
         self::assertNotEmpty($body['id_token']);
 
-        // L'access_token opaque est persisté HASHÉ (consommé par 55.2).
+        // L'access_token opaque est persisté HASHÉ (consommé par).
         self::assertSame(1, OidcAccessToken::query()->count());
         self::assertDatabaseHas('oidc_access_tokens', [
             'token_hash' => hash('sha256', (string) $body['access_token']),
             'user_login' => 'prof.dupont',
         ]);
 
-        // ── L'id_token, vérifié pour de vrai ─────────────────────────────
+        // L'id_token, vérifié pour de vrai
         $parts = explode('.', (string) $body['id_token']);
         self::assertCount(3, $parts, 'un JWT a trois segments');
         $header = json_decode((string) base64_decode(strtr($parts[0], '-_', '+/')), true);
@@ -188,14 +188,11 @@ class OidcAuthorizationFlowTest extends TestCase
         self::assertNotEmpty($claims['jti']);
         self::assertLessThanOrEqual(300, $claims['exp'] - $claims['iat'], 'TTL court (NFR1)');
 
-        // ⚠️ CONTRAT VERSIONNÉ (NFR11).
+        // ⚠️ CONTRAT VERSIONNÉ.
         //
-        // Story 55.2 — cette assertion ÉVOLUE DE SENS sans changer de forme.
-        // En 55.1 elle disait « les claims métier n'existent pas encore ».
-        // Depuis 55.2 ils existent — et ce flux demande `scope=openid` SEUL :
-        // elle prouve désormais le SCOPE-GATING (un scope non demandé ne
-        // produit rien, NFR5), ce qui est une exigence strictement plus forte.
-        // La preuve positive est dans `OidcIdTokenClaimsTest`.
+        // Ce flux demande `scope=openid` SEUL : l'absence des claims métier
+        // ci-dessous prouve le SCOPE-GATING — un scope non demandé ne produit
+        // rien. La preuve positive est dans `OidcIdTokenClaimsTest`.
         self::assertSame(
             'openid',
             OidcAccessToken::query()->first()?->scope,
@@ -228,7 +225,7 @@ class OidcAuthorizationFlowTest extends TestCase
         self::assertArrayNotHasKey('nonce', $claims);
     }
 
-    // ── AC1 / AC3 — usage unique ──────────────────────────────────────────
+    // — usage unique
 
     #[Test]
     public function replaying_a_consumed_code_is_refused(): void
@@ -334,7 +331,7 @@ class OidcAuthorizationFlowTest extends TestCase
         $this->exchange($client, $code)->assertOk();
     }
 
-    // ── AC3 — authentification du client ──────────────────────────────────
+    // — authentification du client
 
     #[Test]
     public function a_wrong_client_secret_is_refused_with_invalid_client(): void
@@ -404,7 +401,7 @@ class OidcAuthorizationFlowTest extends TestCase
 
         $response->assertStatus(400);
         self::assertSame('unsupported_grant_type', $response->json('error'));
-        // FR22 (`client_credentials`) est explicitement hors périmètre : Epic 56.
+        // `client_credentials` est explicitement hors périmètre.
         self::assertSame(0, OidcAccessToken::query()->count());
     }
 

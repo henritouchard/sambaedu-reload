@@ -33,19 +33,19 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 30.5 — Validation prédictive à l'assignation (FR13).
+ * Validation prédictive à l'assignation.
  *
  * Un détecteur de collision verrou/verrou ({@see UpstreamLockCollisionDetector})
- * réutilise le socle 30.4 ({@see UpstreamContractSource::lockedLabelCandidates()})
+ * réutilise le socle ({@see UpstreamContractSource::lockedLabelCandidates()})
  * pour PRÉDIRE, AVANT toute écriture, qu'une assignation de label / un rattachement
  * de poste introduirait deux items amont `locked` contradictoires sur la MÊME
  * `exclusiveKey` d'un même poste — et REFUSE l'opération.
  *
- * Couvre AC #1–#8 : refus à l'assignation (#1) + DB inchangée ; pas-de-collision /
- * valeurs égales OK (#2) ; permissif/absent jamais bloquant (#3) ; refus au
- * rattachement + pivot inchangé (#4) ; réutilisation stricte + R3 (#5) ; standalone
- * & court-circuit NFR3 + comptage de requêtes (#6) ; déterminisme (#7) ; collision
- * pré-existante non aggravée non bloquée (#8).
+ * Couvre : refus à l'assignation + DB inchangée ; pas-de-collision /
+ * valeurs égales OK ; permissif/absent jamais bloquant ; refus au
+ * rattachement + pivot inchangé ; réutilisation stricte du socle ; standalone
+ * & court-circuit + comptage de requêtes ; déterminisme ; collision
+ * pré-existante non aggravée non bloquée.
  *
  * ⚠️ Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. Invariants par
  *    COMPORTEMENT (refus + état DB inchangé) + comptage de requêtes — jamais par
@@ -68,8 +68,6 @@ class UpstreamLockCollisionTest extends TestCase
         WorkstationGroupObserver::enableSync();
         parent::tearDown();
     }
-
-    // ── AC #1 — assignation introduisant une collision verrou/verrou : refus ──
 
     #[Test]
     public function assigning_label_introducing_locked_conflict_is_refused(): void
@@ -127,7 +125,7 @@ class UpstreamLockCollisionTest extends TestCase
         self::assertSame([(int) $workstation->id], $collision->workstationIds);
     }
 
-    // ── AC #2 — pas de collision : assignation réussit (30.2 préservé) ────────
+    // Pas de collision : l'assignation réussit
 
     #[Test]
     public function assigning_label_without_conflict_succeeds(): void
@@ -153,7 +151,7 @@ class UpstreamLockCollisionTest extends TestCase
     {
         $contract = $this->activeContract();
         $this->freeLabel($contract, 'parc-b');
-        // MÊME clé, MÊME valeur (X=1 des deux côtés) → rien à trancher (AC #2).
+        // MÊME clé, MÊME valeur (X=1 des deux côtés) → rien à trancher.
         $this->lockedLabelItem($contract, 'parc-a', 'HKCU|P|Foo|REG_DWORD', '1');
         $this->lockedLabelItem($contract, 'parc-b', 'HKCU|P|Foo|REG_DWORD', '1');
 
@@ -167,7 +165,7 @@ class UpstreamLockCollisionTest extends TestCase
         self::assertSame('parc-b', $groupB->fresh()->controlhub_label);
     }
 
-    // ── AC #3 — permissif / absent jamais bloquant ───────────────────────────
+    // Permissif / absent jamais bloquant
 
     #[Test]
     public function permissive_overlap_does_not_block(): void
@@ -215,7 +213,7 @@ class UpstreamLockCollisionTest extends TestCase
         self::assertSame('parc-b', $groupB->fresh()->controlhub_label);
     }
 
-    // ── AC #4 — rattachement d'un poste à un parc labellisé ───────────────────
+    // Rattachement d'un poste à un parc labellisé
 
     #[Test]
     public function attaching_workstation_to_labeled_parc_introducing_conflict_is_refused(): void
@@ -286,7 +284,7 @@ class UpstreamLockCollisionTest extends TestCase
         ]);
     }
 
-    // ── AC #6 — standalone & court-circuit NFR3 (comptage de requêtes) ────────
+    // Standalone & court-circuit (comptage de requêtes)
 
     #[Test]
     public function detector_short_circuits_with_no_active_contract_and_no_parc_query(): void
@@ -346,7 +344,7 @@ class UpstreamLockCollisionTest extends TestCase
         ]);
     }
 
-    // ── AC #7 — déterminisme du rapport ──────────────────────────────────────
+    // Déterminisme du rapport
 
     #[Test]
     public function detection_is_deterministic_across_runs_and_time(): void
@@ -383,8 +381,6 @@ class UpstreamLockCollisionTest extends TestCase
         self::assertStringContainsString((string) max($ws1->id, $ws2->id), $first);
     }
 
-    // ── AC #8 — collision pré-existante non aggravée : non bloquée ────────────
-
     #[Test]
     public function preexisting_conflict_not_aggravated_is_not_blocked(): void
     {
@@ -410,7 +406,7 @@ class UpstreamLockCollisionTest extends TestCase
         self::assertSame('parc-c', $groupC->fresh()->controlhub_label);
     }
 
-    // ── AC #5c — R3 : aucun identifiant / littéral « central » ────────────────
+    // Règle de nommage : aucun identifiant ni littéral « central »
 
     #[Test]
     public function r3_no_central_identifier(): void
@@ -433,7 +429,7 @@ class UpstreamLockCollisionTest extends TestCase
             }
 
             // Tokenisation : littéraux de chaîne + identifiants bareword (jamais les
-            // commentaires, où « central » figure légitimement dans les garde-fous R3).
+            // commentaires, où « central » figure légitimement en énonçant la règle).
             $tokens = \PhpToken::tokenize((string) file_get_contents($reflection->getFileName()));
             foreach ($tokens as $token) {
                 if ($token->is([T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE, T_STRING])) {
@@ -443,25 +439,25 @@ class UpstreamLockCollisionTest extends TestCase
         }
     }
 
-    // ── AC #5b — anti-régression D2 : le moteur n'est pas touché ──────────────
+    // Anti-régression : le moteur n'est pas touché
 
     #[Test]
     public function d2_engine_files_do_not_reference_30_5_collision_logic(): void
     {
-        // 30.5 vit dans un service d'ASSIGNATION, jamais dans le moteur. Preuve :
+        // La détection vit dans un service d'ASSIGNATION, jamais dans le moteur. Preuve :
         // ni StateCompiler ni StateMaille ne référencent la logique de collision.
         $compiler = (string) file_get_contents(app_path('Services/Agent/StateCompiler.php'));
         $maille = (string) file_get_contents(app_path('Enums/StateMaille.php'));
 
         self::assertStringNotContainsString('UpstreamLockCollision', $compiler, 'StateCompiler ne doit PAS connaître 30.5');
         self::assertStringNotContainsString('UpstreamLockCollision', $maille, 'StateMaille ne doit PAS connaître 30.5');
-        // La maille interne reste à 8 cas (rien ajouté par 30.5).
+        // La maille interne reste à 8 cas (rien ajouté par).
         self::assertCount(8, \App\Enums\StateMaille::cases());
     }
 
-    // ── Post-review 30-5 — surfaces sync/swap (modèle pré-set/post-set) ───────
+    // Surfaces sync/swap (modèle pré-set/post-set)
 
-    // #1 — setMachineGroups (REMPLACEMENT) : rescaper un poste HORS d'un setup
+    // setMachineGroups (REMPLACEMENT) : rescaper un poste HORS d'un setup
     // conflictuel vers un parc non conflictuel ne doit PAS être bloqué (les
     // appartenances actuelles sont supprimées par `groups()->sync()`).
     #[Test]
@@ -522,7 +518,7 @@ class UpstreamLockCollisionTest extends TestCase
         ]);
     }
 
-    // #2 — setGroupMachines : un poste DÉJÀ membre (et déjà en conflit runtime) ne
+    // setGroupMachines : un poste DÉJÀ membre (et déjà en conflit runtime) ne
     // « gagne » pas le label de G → ne doit pas faire échouer le sync.
     #[Test]
     public function set_group_machines_preexisting_member_conflict_is_not_blocked(): void
@@ -538,7 +534,7 @@ class UpstreamLockCollisionTest extends TestCase
         $m2 = Workstation::factory()->create();
 
         // m1 déjà membre de G (label parc-g déjà porté) → non « gagné » → la
-        // collision pré-existante ne doit PAS bloquer le sync (fix #2).
+        // collision pré-existante ne doit PAS bloquer le sync.
         $this->parcService()->setGroupMachines((int) $groupG->id, [(int) $m1->id, (int) $m2->id]);
 
         self::assertDatabaseHas('workstation_group_workstation', [
@@ -632,7 +628,7 @@ class UpstreamLockCollisionTest extends TestCase
         ]);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // Helpers
 
     private function activeContract(): ControlHubContract
     {
@@ -678,7 +674,7 @@ class UpstreamLockCollisionTest extends TestCase
 
     private function labelService(): WorkstationGroupLabelService
     {
-        // Détecteur résolu paresseusement via le conteneur (binding réel 30.5).
+        // Détecteur résolu paresseusement via le conteneur (binding réel).
         return new WorkstationGroupLabelService();
     }
 

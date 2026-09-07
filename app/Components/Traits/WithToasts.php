@@ -11,7 +11,7 @@ namespace App\Components\Traits;
  *   class MyComponent extends Component {
  *       use WithToasts;
  *       
- *       public function save() {
+ *  public function save() {
  *           $this->toast('success', 'Succès', 'Enregistré avec succès');
  *           $this->toastSuccess('Enregistré avec succès');
  *           $this->toastError('Une erreur est survenue');
@@ -71,7 +71,7 @@ trait WithToasts
     /**
      * Toast de succès étendu avec liens d'action et durée sticky.
      *
-     * Utilisé par le bulk-reset mdp (story 2.6) pour afficher les liens
+     * Utilisé par le bulk-reset mdp pour afficher les liens
      * "Télécharger PDF" + "Télécharger CSV" en post-traitement.
      *
      * @param array<int,array{label:string,url:string}> $links

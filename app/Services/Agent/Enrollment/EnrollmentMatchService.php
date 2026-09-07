@@ -8,11 +8,11 @@ use App\Ipxe\Support\MacAddressNormalizer;
 use App\Models\Workstation;
 
 /**
- * Story 25.3 — Rapprochement du faisceau de preuves d'une demande d'enrôlement
- * porte 2 vers un poste connu en DB (gap architecture n° 3, FR16).
+ * Rapprochement du faisceau de preuves d'une demande d'enrôlement
+ * porte 2 vers un poste connu en DB.
  *
  * Règle de preuve FIGÉE (aucune preuve suffisante seule — l'uuid SMBIOS s'est
- * montré peu fiable, mémoire `project_ipxe_param_use_smbios_vars`) :
+ * montré peu fiable en pratique) :
  *
  *  - **MAC = ancre fiable** : seule clé de rapprochement. Normalisée des deux
  *    côtés ({@see MacAddressNormalizer} — accepte tirets/colons/nu), comparée à
@@ -24,8 +24,8 @@ use App\Models\Workstation;
  *
  * Un rapprochement n'est retenu que s'il désigne un **candidat UNIQUE**
  * (plusieurs postes partageant une MAC → ambiguïté → pas de candidat). Le
- * service ne lit QUE `workstations` (lecture seule, zéro AD — critère Keycloak
- * NFR7) et n'écrit rien.
+ * service ne lit QUE `workstations` (lecture seule, zéro AD — critère Keycloak)
+ * et n'écrit rien.
  */
 class EnrollmentMatchService
 {
@@ -39,8 +39,8 @@ class EnrollmentMatchService
     {
         $mac = MacAddressNormalizer::normalize((string) ($identity['mac'] ?? ''));
         if ($mac === null) {
-            // Sans MAC lisible, aucun rapprochement fiable possible (l'uuid et
-            // le hostname seuls ne suffisent jamais — gap 3).
+            // Sans MAC lisible, aucun rapprochement fiable possible : l'uuid et
+            // le hostname seuls ne suffisent jamais.
             return null;
         }
 
@@ -62,8 +62,9 @@ class EnrollmentMatchService
      *
      * Concordant ⇔ MAC connue (le poste a une MAC qui matche le faisceau
      * normalisé) ET hostname cohérent (ou absent côté demande) ET poste **non
-     * enrôlé** (un poste déjà enrôlé = conflit, jamais auto — piège n° 4). Cet
-     * invariant de sécurité ne se débraye JAMAIS, même en campagne (piège n° 3).
+     * enrôlé** : un poste déjà enrôlé est traité comme un conflit, jamais
+     * auto-approuvé. Cet invariant de sécurité ne se débraye JAMAIS, même
+     * campagne active.
      *
      * @param array{uuid?: string|null, mac?: string|null, hostname?: string|null} $identity
      */

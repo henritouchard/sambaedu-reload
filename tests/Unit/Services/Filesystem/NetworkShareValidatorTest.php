@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 34.2 — Tests Unit du validateur prédictif (pure lecture, T5/AC4/AC6).
+ * Tests Unit du validateur prédictif (pure lecture, T5/).
  */
 class NetworkShareValidatorTest extends TestCase
 {
@@ -55,7 +55,6 @@ class NetworkShareValidatorTest extends TestCase
         ]);
     }
 
-    // === Source unique RESERVED_LETTERS =====================================
 
     #[Test]
     public function reserved_letters_mirror_the_providers_canonical_set(): void
@@ -78,7 +77,6 @@ class NetworkShareValidatorTest extends TestCase
         }
     }
 
-    // === Format directory_name (source unique NetworkShareService) ==========
 
     #[Test]
     public function directory_name_pattern_matches_the_service_rule(): void
@@ -94,7 +92,6 @@ class NetworkShareValidatorTest extends TestCase
         }
     }
 
-    // === Règle (a) WG-montage-seul → warning ================================
 
     #[Test]
     public function wg_only_assignment_yields_a_non_blocking_warning(): void
@@ -130,7 +127,6 @@ class NetworkShareValidatorTest extends TestCase
         self::assertSame([], $this->validator->warnings($share));
     }
 
-    // === Règle (b) collision de lettre → erreur =============================
 
     #[Test]
     public function same_explicit_letter_overlapping_audience_is_a_collision(): void
@@ -201,7 +197,6 @@ class NetworkShareValidatorTest extends TestCase
         self::assertCount(1, $this->validator->letterCollisions($b));
     }
 
-    // === suggestNextFreeLetter ==============================================
 
     #[Test]
     public function suggests_first_free_safe_letter_skipping_used_and_reserved(): void

@@ -11,7 +11,7 @@ use Illuminate\Contracts\Container\Container;
 /**
  * Registre centralisé des adapters `AppPolicyAdapter`.
  *
- * Story 4.8 — AC 1. Auto-découvre via `AppKind::cases()` + `adapterClass()`.
+ * Auto-découvre via `AppKind::cases` + `adapterClass`.
  * Résout via le container IoC (permet l'injection de dépendances dans chaque
  * adapter). Cache in-memory par instance (1 instance par request).
  *

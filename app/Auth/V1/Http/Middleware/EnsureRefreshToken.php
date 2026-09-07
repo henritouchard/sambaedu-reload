@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 16.10 — AC4.3 / D10.
+ * D10.
  *
  * Protège `POST /api/v1/agent/refresh`. Lit `refresh_token` du body JSON,
  * lookup le hash en DB, gère replay detection.
@@ -33,7 +33,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * **Important** : la regex `refresh_token` (64 hex chars) est aussi validée
  * par `RefreshTokenRequest` côté FormRequest. Le middleware fait sa propre
- * validation pour pouvoir formater une réponse `code` cohérente avec D8.
+ * validation pour pouvoir formater une réponse `code` cohérente avec le
+ * catalogue {@see \App\Auth\V1\Support\JwtErrorCodes}.
  */
 class EnsureRefreshToken
 {

@@ -21,7 +21,7 @@ use Livewire\Wireable;
  * @property bool $managed_by_control_hub Géré par ControlHub
  * @property int|null $depot_id ID du dépôt parent
  * @property string $app_id Identifiant technique de l'application
- * @property bool $is_parc_default App appliquée par défaut à tous les postes (couche Broadcast — Story 27.17)
+ * @property bool $is_parc_default App appliquée par défaut à tous les postes (couche Broadcast —)
  * @property string $name Nom d'affichage
  * @property string|null $version Version de l'application
  * @property string|null $category Catégorie
@@ -36,7 +36,7 @@ use Livewire\Wireable;
  * @property string|null $installer_url URL de l'installeur
  * @property string|null $installer_sha256 Hash SHA256 de l'installeur
  * @property string|null $installer_filename Nom du fichier installeur
- * @property string|null $executable Nom de l'exe runtime (27.11 — fabrique le ProgId générique Applications\<exe> ; seul le BASENAME est consommé côté serveur, le chemin complet n'est ni transmis au payload ni consommé par l'agent, le poste le re-résout)
+ * @property string|null $executable Nom de l'exe runtime (fabrique le ProgId générique Applications\<exe> ; seul le BASENAME est consommé côté serveur, le chemin complet n'est ni transmis au payload ni consommé par l'agent, le poste le re-résout)
  * @property int|null $installer_size Taille en octets
  * @property string|null $local_xml_path Chemin XML local
  * @property string|null $local_installer_path Chemin installeur local
@@ -52,10 +52,10 @@ class Application extends Model implements Wireable
 {
     /**
      * Identifiant FIGÉ du type d'état du contrat agent (`se5.desired-state/v1`,
-     * §7 — NFR12). Partagé serveur / agent / JSON / DB / UI : JAMAIS renommé en
+     * §7). Partagé serveur / agent / JSON / DB / UI : JAMAIS renommé en
      * place (déprécier + ajouter en cas d'erreur). Iso {@see \App\Models\Printer}
      * `TYPE_PRINTERS` et {@see \App\Models\AppCustomization::TYPE_APP_CONFIG}.
-     * Story 27.5 — l'agent DÉCLENCHE WPKG : ce type projette l'ensemble cible des
+     * L'agent DÉCLENCHE WPKG : ce type projette l'ensemble cible des
      * applications (résolution {@see \App\Wpkg\Deployment\Services\WorkstationPackagesResolver})
      * en état, payload concret `{app_id, name}`.
      */
@@ -164,7 +164,7 @@ class Application extends Model implements Wireable
     }
 
     /**
-     * Story 27.17 — applications désignées « défaut parc » (appliquées par
+     * Applications désignées « défaut parc » (appliquées par
      * défaut à TOUS les postes, couche Broadcast).
      */
     public function scopeParcDefault(Builder $query): Builder
@@ -197,27 +197,27 @@ class Application extends Model implements Wireable
     }
 
     /**
-     * Story 31.1 — Restreint les applications proposables au CATALOGUE applicatif
-     * AMONT (controlHub) faisant autorité (FR5).
+     * Restreint les applications proposables au CATALOGUE applicatif
+     * AMONT (controlHub) faisant autorité.
      *
      * Si un contrat amont actif borne le canal d'install (catalogue non vide), ne
      * renvoie que les apps dont `app_id` figure dans le catalogue. Sinon (standalone
-     * OU catalogue vide — D1), **pass-through** strict : aucune clause ajoutée, le
-     * résultat est byte-identique au comportement pré-31.1 (NFR3).
+     * OU catalogue vide), **pass-through** strict : aucune clause ajoutée, le
+     * résultat est byte-identique au comportement sans contrat.
      *
      * Le bornage matche sur `app_id` (string), iso `controlhub_contract_catalog_apps.app_key`
-     * (D2) — JAMAIS sur l'`id` numérique local. La décision « borné ? » est déléguée
-     * à {@see \App\Services\ControlHub\UpstreamCatalogResolver} (mémoïsé, court-circuit
-     * NFR3 : zéro requête catalogue sans contrat actif).
+     * — JAMAIS sur l'`id` numérique local. La décision « borné ? » est déléguée
+     * à {@see \App\Services\ControlHub\UpstreamCatalogResolver} (mémoïsé,
+     * court-circuit : zéro requête catalogue sans contrat actif).
      *
-     * ⚠️ GARDE-FOU R3 : aucun mot « central ». [Source: prd-contrat-manage-se5.md#R3]
+     * ⚠️ Convention de nommage : aucun mot « central ».
      */
     public function scopeInUpstreamCatalog(Builder $query): Builder
     {
         $resolver = app(\App\Services\ControlHub\UpstreamCatalogResolver::class);
 
         if (! $resolver->isBounded()) {
-            return $query; // pass-through NFR3 (standalone OU catalogue vide).
+            return $query; // pass-through (standalone OU catalogue vide).
         }
 
         return $query->whereIn('app_id', $resolver->allowedAppIds());
@@ -301,7 +301,7 @@ class Application extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — Postes ayant cette appli rattachée directement.
+     * Postes ayant cette appli rattachée directement.
      */
     public function workstations(): BelongsToMany
     {
@@ -314,7 +314,7 @@ class Application extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — Parcs ayant cette appli rattachée directement.
+     * Parcs ayant cette appli rattachée directement.
      */
     public function workstationGroups(): BelongsToMany
     {
@@ -327,7 +327,7 @@ class Application extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — Dépendances applicatives transitives (parité legacy
+     * Dépendances applicatives transitives (parité legacy
      * table `dependance(id_app, id_app_requise)`). Auto-référence via le
      * pivot `application_dependencies(application_id, required_application_id)`.
      */

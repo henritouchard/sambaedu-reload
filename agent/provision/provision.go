@@ -1,5 +1,5 @@
 // Package provision est le moteur GÉNÉRIQUE et OS-AGNOSTIQUE de mise à
-// disposition de RESSOURCES de support sur le poste (Story 27.20).
+// disposition de RESSOURCES de support sur le poste.
 //
 // Séparation des responsabilités (modèle desired-state du projet, leçon
 // applications/wpkg « impératif vs déclaratif ») :

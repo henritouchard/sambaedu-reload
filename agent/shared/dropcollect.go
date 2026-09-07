@@ -10,12 +10,12 @@ import (
 	"time"
 )
 
-// Collecte des drops session au cycle du service (Story 24.6 — portage de
-// Read-SessionReports 24.4). Le rapport v1 n'a PAS de dimension user (§6
+// Collecte des drops session au cycle du service (portage de
+// Read-SessionReports). Le rapport v1 n'a PAS de dimension user (§6
 // FIGÉ) : le compagnon ne poste jamais — il dépose son session-report.json
 // per-SID, le service collecte, VALIDE STRICTEMENT, fusionne et rapporte.
 //
-// FRONTIÈRE DE CONFIANCE (piège n° 8) : le user peut forger SON
+// FRONTIÈRE DE CONFIANCE : le user peut forger SON
 // session-report.json (et SON applied-state local) — chaque entrée est
 // validée AVANT fusion (type publié §7, status enum, hash hex-64, detail
 // borné, taille de fichier plafonnée, JSON invalide = drop ignoré + log).
@@ -27,7 +27,7 @@ import (
 // Fusion : un item PAR type (le rapport §6 exige des types UNIQUES) — en
 // multi-session, le drop au generated_at le plus récent gagne (postes
 // d'école = 1 session interactive ; limitation documentée). Ordre des types
-// ASCENDANT dans le rapport (déterminisme — acquis dev 24.4 n° 5 : le
+// ASCENDANT dans le rapport (déterminisme : le
 // serveur n'impose pas d'ordre, mais un ordre stable facilite le debug).
 
 type mergedDropItem struct {
@@ -187,7 +187,7 @@ func statusSeverity(status string) int {
 }
 
 // MergeReportItemsByType fusionne une liste d'items de rapport pour garantir des
-// types UNIQUES (contrat §6) — Story 27.3. Un même type peut arriver de DEUX
+// types UNIQUES (contrat §6) —. Un même type peut arriver de DEUX
 // portées convergées séparément : `registry` HKLM (service SYSTEM, portée
 // machine) ET `registry` HKCU (compagnon, portée session). Sans fusion, le
 // rapport porterait deux items `registry` → l'ingestion serveur

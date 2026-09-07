@@ -9,16 +9,13 @@ use App\Services\ControlHub\ImposedDepotReconciler;
 use Illuminate\Console\Command;
 
 /**
- * Story 51.1 — Réconciliation manuelle du dépôt IMPOSÉ par le contrat amont (controlHub).
+ * Réconciliation manuelle du dépôt IMPOSÉ par le contrat amont (controlHub).
  *
  * Point d'invocation EXPLICITE et IDEMPOTENT (reprise après incident, re-jeu après
  * correction d'une app en échec de désinstallation) hors réception d'un contrat. Délègue
  * à {@see ImposedDepotReconciler::reconcile()} et affiche les compteurs.
  *
- * NFR3 — sans contrat amont actif : message standalone + exit 0, rien d'écrit.
- *
- * ⚠️ GARDE-FOU R3 : vocabulaire « imposé » / « amont » / `Imposed` / `Upstream`
- * exclusivement, terme prohibé proscrit. [Source: prd-contrat-manage-se5.md#R3]
+ * Sans contrat amont actif : message standalone + exit 0, rien d'écrit.
  */
 class ReconcileImposedDepot extends Command
 {
@@ -47,7 +44,7 @@ class ReconcileImposedDepot extends Command
 
     public function handle(ImposedDepotReconciler $reconciler): int
     {
-        // NFR3 — standalone : sans contrat amont actif, ne rien écrire.
+        // Standalone : sans contrat amont actif, ne rien écrire.
         if (ControlHubContract::active() === null) {
             $this->info('Aucun contrat amont actif — réconciliation du dépôt imposé ignorée (comportement standalone, rien écrit).');
 

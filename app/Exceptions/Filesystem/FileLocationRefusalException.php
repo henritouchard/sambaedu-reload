@@ -9,7 +9,7 @@ use App\Services\Filesystem\FileLocationOptions;
 use InvalidArgumentException;
 
 /**
- * Story 63.3 (correction de revue) — LE REFUS MÉTIER DES DEUX GARDES
+ * LE REFUS MÉTIER DES DEUX GARDES
  * D'EMPLACEMENT, ET RIEN D'AUTRE.
  *
  * Les deux gardes ({@see FileLocationOptions::assertAvailable()} et

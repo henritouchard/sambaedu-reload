@@ -9,13 +9,13 @@ use App\Enums\StateScope;
 /**
  * Source unique du contrat d'état cible `se5.desired-state/v1`.
  *
- * Le nom du schéma est un irréversible figé (NFR12) : c'est une **constante**,
+ * Le nom du schéma est un irréversible figé : c'est une **constante**,
  * jamais une variable d'environnement. Un agent déployé fige le wire format ;
  * toute évolution passe par un bump explicite (`v2`) + golden files mis à jour
  * (cf. `docs/agent/contract-v1.md`, règle d'évolution).
  *
- * Cette story ne crée **pas** `config/agent.php` (relève de 23.5) : le serveur
- * et les tests référencent ces constantes directement.
+ * Il n'existe **pas** de `config/agent.php` : le serveur et les tests référencent
+ * ces constantes directement.
  */
 final class StateContract
 {
@@ -30,12 +30,12 @@ final class StateContract
     public const SCOPE_MACHINE_USER = 'machine_user';
 
     /**
-     * Identifiants de type de ressource publiés (§7 contrat v1 — NFR12).
+     * Identifiants de type de ressource publiés (§7 contrat v1).
      *
      * Clé de voûte du contrat, partagés serveur / agent / JSON / DB / UI :
      * **figés une fois publiés** — jamais de renommage en place (déprécier +
      * ajouter en cas d'erreur). Liste FERMÉE consommée par la validation de
-     * l'ingestion des rapports (Story 24.1) : un type inconnu → 422 (un
+     * L'ingestion des rapports : un type inconnu → 422 (un
      * nouveau type = bump de contrat de toute façon). Constante ADDITIVE :
      * seuls golden files + `contract-v1.md` + hash figé sont intouchables.
      *
@@ -52,13 +52,13 @@ final class StateContract
         'registry',
         'app_config',
         'applications',
-        // Story 35.2 (D1) — listes registre à sous-valeurs indexées `\1..\N`
+        // Listes registre à sous-valeurs indexées `\1..\N`
         // (ExtensionInstallForcelist, DisallowRun). Ajout ADDITIF : la
         // constante est consommée par `ReportRequest` (Rule::in) — l'ingestion
         // accepte le type sans autre changement. Un agent ≤ 2.3.0 IGNORE ce
         // type en silence (contrat §8) → release 2.4.0 à publier.
         'registry_list',
-        // Story 36.1 (D1) — mécanisme HORS-REGISTRE `fs_acl` : ACE NTFS gérées
+        // Mécanisme HORS-REGISTRE `fs_acl` : ACE NTFS gérées
         // sur le poste (chirurgie DACL, service SYSTEM, portée Machine). Payload
         // EXACTEMENT 6 clés `{path, trustee, ace_type, rights, applies_to,
         // ensure}` — enums fermés de mots métier, aucun masque brut ni SDDL
@@ -66,7 +66,7 @@ final class StateContract
         // sans autre changement. Un agent ≤ 2.5.0 IGNORE ce type EN SILENCE
         // (contrat §8 — aucun statut au rapport) → release 2.6.0 à publier.
         'fs_acl',
-        // Story 36.2 (D1) — mécanisme HORS-REGISTRE `firewall` : règles pare-feu
+        // Mécanisme HORS-REGISTRE `firewall` : règles pare-feu
         // Windows POSSÉDÉES PAR GROUPE (`SambaEdu-Agent`) sur le poste (service
         // SYSTEM, portée Machine). Payload `{rule_id, direction, action,
         // remote_scope, protocol, ensure}` + `remote_addresses` ssi `explicit`
@@ -75,7 +75,7 @@ final class StateContract
         // le type sans autre changement. Un agent ≤ 2.6.0 IGNORE ce type EN
         // SILENCE (contrat §8 — aucun statut au rapport) → release 2.7.0 à publier.
         'firewall',
-        // Story 35.6 (D1) — mécanisme HORS-REGISTRE `privilege` : droits de
+        // Mécanisme HORS-REGISTRE `privilege` : droits de
         // logon LSA `SeDeny*` gérés sur le poste (réconciliation de CONTENEUR
         // sans store — le privilège EST le conteneur, titulaires énumérables via
         // LsaEnumerateAccountsWithUserRight ; service SYSTEM, portée Machine).
@@ -87,19 +87,19 @@ final class StateContract
         // autre changement. Un agent ≤ 2.7.0 IGNORE ce type EN SILENCE (contrat
         // §8 — aucun statut au rapport) → release 2.8.0 à publier.
         'privilege',
-        // Story 38.3 (D1) — nettoyage des crochets legacy SE4 du poste
+        // Nettoyage des crochets legacy SE4 du poste
         // (`legacy_cleanup`) : suppression idempotente par SCAN sans store du
         // catalogue d'artefacts legacy LOCAUX versionné DANS l'agent (blobs
         // applications-*, tâches WPKG, scripts GPO locale, helpers, autologon
-        // se4install, paires Mozilla `sambaedu.default` — Q5-a VANILLA).
+        // se4install, paires Mozilla `sambaedu.default` — traitement VANILLA).
         // Payload EXACTEMENT 1 clé `{mozilla: "vanilla"}` (enum FERMÉ 1
         // valeur, §7.10) — le serveur GATE (capacité `legacy_hooks_cleanup`),
-        // l'agent sait QUOI nettoyer (D3). Ajout ADDITIF : `ReportRequest`
+        // l'agent sait QUOI nettoyer. Ajout ADDITIF : `ReportRequest`
         // (Rule::in) accepte le type sans autre changement. Un agent ≤ 2.8.0
         // IGNORE ce type EN SILENCE (contrat §8 — aucun statut au rapport) →
         // release 2.9.0 à publier.
         'legacy_cleanup',
-        // Story 36.5 (D1) — mécanisme HORS-REGISTRE `app_profile` : redirection
+        // Mécanisme HORS-REGISTRE `app_profile` : redirection
         // du profil applicatif (Firefox/Thunderbird) vers le home réseau, portée
         // SESSION (le COMPAGNON seul — donnée d'utilisateur, pas de machine).
         // Report du mécanisme SE4 `Roaming→Server` (lien de dossier, accès
@@ -110,7 +110,7 @@ final class StateContract
         // agent ≤ 2.12.4 IGNORE ce type EN SILENCE (contrat §8 — aucun statut au
         // rapport) → release 2.13.0 à publier.
         'app_profile',
-        // Story 58.1 (D1) — mécanisme `folders` : REDIRECTION DE DOSSIER SHELL
+        // Mécanisme `folders` : REDIRECTION DE DOSSIER SHELL
         // Windows (`HKCU\…\Explorer\User Shell Folders`), portée MachineUser
         // (le SET est trivial, mais le CHEMIN dépend du POSTE — iso `shortcuts`).
         // Successeur du script GPO legacy `folders/bureau_samba|bureau_local`,
@@ -141,8 +141,8 @@ final class StateContract
      * du poste. `RESOURCE_TYPES` reste donc la liste FERMÉE de ce que le
      * serveur SERT ; `reportableTypes()` est celle de ce qu'il ACCEPTE.
      *
-     * - `agent_update` : échec du dernier cycle d'auto-update (Story 25.2,
-     *   décision n° 7 — émis par `drainUpdateReportItems`).
+     * - `agent_update` : échec du dernier cycle d'auto-update, émis par
+     *   `drainUpdateReportItems`.
      * - `companion` : le compagnon de session ne donne plus signe de vie alors
      *   qu'une session interactive est ouverte. Sans lui, une tâche compagnon
      *   qui échoue au lancement (ACL du binaire, droit de logon, crash) est

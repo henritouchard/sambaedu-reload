@@ -16,7 +16,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.2 / AC2 + AC3 — `WorkstationPackagesResolver`.
+ * + — `WorkstationPackagesResolver`.
  */
 class WorkstationPackagesResolverTest extends TestCase
 {

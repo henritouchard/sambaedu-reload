@@ -11,7 +11,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC3.1 / AC3.2 / T3.6.
+ * T3.6.
  *
  * Tests unitaires du rendu des 3 templates Blade
  * (`handshake`, `default`, `known`) + helper `renderBootDiskFallback()`.
@@ -61,7 +61,7 @@ class IpxeMenuRendererTest extends TestCase
         // poste inconnu (sinon impossible de l'enrôler/installer via iPXE : la
         // machine neuve n'atteindrait jamais /ipxe/admin). Le bloc :login
         // chaîne vers la route native /ipxe/admin. admin.enabled = true par
-        // défaut (Story 4.10).
+        // défaut.
         $body = $this->renderer->renderUnknown('192.168.1.42', 'http://se4fs.lan');
 
         self::assertStringStartsWith('#!ipxe', $body);
@@ -77,9 +77,9 @@ class IpxeMenuRendererTest extends TestCase
     #[Test]
     public function it_renders_known_menu_with_login_chain_to_native_admin(): void
     {
-        // Story 3.2 — AC4.4 — la chain `:login` cible maintenant la route
+        // La chain `:login` cible maintenant la route
         // native `/ipxe/admin` (sans `.php`) au lieu du legacy
-        // `/ipxe/admin.php`. Test mis à jour iso AC4.4.
+        // `/ipxe/admin.php`. Test mis à jour iso.
         $ws = Workstation::create([
             'name' => 'PC-SALLE-101',
             'uuid' => 'abcdef12-3456-7890-abcd-ef1234567890',
@@ -96,9 +96,9 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('item --key 3 default', $body);
         self::assertStringContainsString(':login', $body);
         self::assertStringContainsString(':default', $body);
-        // Story 3.2 — la cible native :
+        // La cible native :
         self::assertStringContainsString('http://se4fs.lan/ipxe/admin##params', $body);
-        // Story 3.2 — l'ancienne cible legacy NE DOIT PLUS être présente :
+        // L'ancienne cible legacy NE DOIT PLUS être présente :
         self::assertStringNotContainsString('/ipxe/admin.php##params', $body);
     }
 
@@ -167,7 +167,7 @@ class IpxeMenuRendererTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.2 — AC4.1 / AC4.2 / AC4.3 — handshake parametré + admin + maintenance
+     * Handshake parametré + admin + maintenance
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -229,7 +229,7 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('http://se4fs.lan/ipxe/maintenance##params', $body);
         // Chain retour vers /ipxe/boot.
         self::assertStringContainsString('http://se4fs.lan/ipxe/boot##params', $body);
-        // Story 3.3 — AC6.6 — items enrollment activés pour poste connu.
+        // Items enrollment activés pour poste connu.
         self::assertStringContainsString('item --key n set-name', $body);
         self::assertStringContainsString('item --key a salle', $body);
         self::assertStringContainsString('item --key p parcs', $body);
@@ -244,8 +244,8 @@ class IpxeMenuRendererTest extends TestCase
     #[Test]
     public function it_renders_admin_menu_minimal_for_unknown(): void
     {
-        // Story 3.3 — AC6.6 / T6.8 — la branche poste inconnu rend l'item
-        // `(n) set-name` (remplace le message neutre 3.2) + chain enrollment.
+        // T6.8 — la branche poste inconnu rend l'item
+        // `(n) set-name` (remplace le message neutre) + chain enrollment.
         $body = $this->renderer->renderAdminMenu(null, '192.168.1.42', 'http://se4fs.lan');
 
         self::assertStringStartsWith('#!ipxe', $body);
@@ -264,8 +264,8 @@ class IpxeMenuRendererTest extends TestCase
     #[Test]
     public function it_renders_admin_menu_hides_enrollment_items_when_disabled(): void
     {
-        // Story 3.3 — D11 — feature flag `ipxe.enrollment.enabled = false`
-        // masque tous les items enrollment côté template admin.
+        // `ipxe.enrollment.enabled = false` masque tous les items d'enrôlement
+        // dans le template du menu admin.
         \Illuminate\Support\Facades\Config::set('ipxe.enrollment.enabled', false);
 
         $ws = Workstation::create([
@@ -368,16 +368,11 @@ class IpxeMenuRendererTest extends TestCase
         }
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.2 — Correctif review #1 (params block iso-legacy)
-     * ------------------------------------------------------------------ */
-
     #[Test]
     public function it_renders_admin_menu_with_params_block_for_chain_namespace(): void
     {
-        // Fix review #1 / pertinence 3 — sans bloc params en tête, les chain
-        // ##params injectent un namespace vide → MachineBootLog audit cassé.
-        // Iso-legacy `sambaedu/ipxe/admin.php:69-74`.
+        // Sans bloc params en tête, les `chain ##params` injectent un namespace
+        // vide et l'audit MachineBootLog perd sa trace.
         //
         // Le bloc params utilise les variables iPXE SMBIOS (${net0/mac}/${uuid})
         // et NON les valeurs Laravel-rendues : fournies par le firmware à chaque
@@ -403,7 +398,6 @@ class IpxeMenuRendererTest extends TestCase
     #[Test]
     public function it_renders_maintenance_menu_with_params_block_for_chain_namespace(): void
     {
-        // Fix review #1 — iso-legacy `sambaedu/ipxe/maintenance.php:19-22`.
         // Le bloc params utilise les variables iPXE SMBIOS (${net0/mac}/${uuid})
         // et NON les valeurs Laravel : un uuid SQL vide ferait basculer
         // /ipxe/action (sélectionné depuis ce menu) sur le préambule handshake.
@@ -450,7 +444,7 @@ class IpxeMenuRendererTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.3 — AC5.1 — renderEnrollment*Menu (5 nouveaux templates)
+     * RenderEnrollment*Menu (5 nouveaux templates)
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -647,7 +641,7 @@ class IpxeMenuRendererTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC6.1 — renderInstallationWindowsMenu().
+     * RenderInstallationWindowsMenu.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -669,7 +663,6 @@ class IpxeMenuRendererTest extends TestCase
         // 7 sections de chain.
         self::assertStringContainsString(':install_win11', $body);
         self::assertStringContainsString('/ipxe/action/install_win11##params', $body);
-        // Default = install_win11.
         self::assertStringContainsString('set menu-default install_win11', $body);
         // Exit + fallback boot disk (retour boot manager UEFI, plus de sanboot).
         self::assertStringContainsString(':exit', $body);
@@ -732,7 +725,7 @@ class IpxeMenuRendererTest extends TestCase
     #[Test]
     public function it_renders_admin_menu_with_install_windows_url(): void
     {
-        // Story 3.5 — non-régression menu admin : nouvelle var
+        // Non-régression menu admin : nouvelle var
         // `$installWindowsBaseUrl` exposée.
         $ws = Workstation::create([
             'name' => 'PC-ADMIN-WIN',

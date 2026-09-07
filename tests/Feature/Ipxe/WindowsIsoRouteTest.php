@@ -13,7 +13,7 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesWindowsIsoSchema;
 
 /**
- * Story 3.6 — AC5.1, AC6.1 — Tests Feature de la route admin `/admin/ipxe/iso-windows`.
+ * Tests Feature de la route admin `/admin/ipxe/iso-windows`.
  *
  * Vérifie le contrat middleware :
  *  - 302 redirect login si user non authentifié.
@@ -96,7 +96,7 @@ class WindowsIsoRouteTest extends TestCase
 
         // sambaedu.auth lit $_SESSION (non touché par actingAs) et RequireAdminRights
         // lit `sambaedu_user` posé par SambaEduAuth — bypass des deux pour atteindre
-        // le `can:server.admin` (iso-pattern WinePageTest, Story 16.9).
+        // le `can:server.admin` (iso-pattern WinePageTest).
         $this->withoutMiddleware([
             \App\Http\Middleware\Auth\SambaEduAuth::class,
             \App\Http\Middleware\RequireAdminRights::class,

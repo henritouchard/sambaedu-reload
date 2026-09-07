@@ -14,9 +14,8 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 5.1b — AC 11 : aucun shellout `xfs_quota` / `quota` ne doit
- * être déclenché par le rendu du listing /users. Tout passe par la
- * colonne `users.quota_snapshot`.
+ * Aucun shellout `xfs_quota` / `quota` ne doit être déclenché par le rendu du
+ * listing /users. Tout passe par la colonne `users.quota_snapshot`.
  *
  * On utilise `Process::fake()` + `Process::assertNothingRan()` : si un
  * composant enfant invoquait un shellout via la façade Process, le test
@@ -55,7 +54,7 @@ class UsersIndexPageNoShelloutTest extends TestCase
     }
 
     /**
-     * Story 14.4 — AC9 / Tâche 6.2 :
+     *
      * Les filtres audit (quotaOverflow + passwordDefault) ne déclenchent
      * aucun shellout via la façade Process (ni xfs_quota, ni smbclient, ni autre).
      */

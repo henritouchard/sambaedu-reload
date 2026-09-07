@@ -14,7 +14,7 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Story 34.2 (Q5) — Policy dédiée `NetworkSharePolicy` + permissions
+ * Policy dédiée `NetworkSharePolicy` + permissions
  * `networkshare.view` / `networkshare.manage` accordées à refnum + admins
  * partages/users (+ superadmin auto), refusées aux autres rôles.
  */

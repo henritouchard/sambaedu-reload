@@ -10,21 +10,19 @@ use App\Models\User;
 /**
  * LE RATTACHEMENT D'IDENTITÉ — le SEUL écrivain du cache, et sa garde d'unicité.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI CE SERVICE EXISTE, ET POURQUOI IL EST SI PETIT.**
  *
  * Le backend traduit un sujet de plan en compte distant **par le cache, et par
  * rien d'autre** : cache vide ⇒ le nœud rend un échec NOMMÉ. Il faut donc bien
  * que quelque chose remplisse ce cache — sans quoi le message de remédiation
  * renverrait vers un geste qui n'existe pas, c'est-à-dire vers le défaut exact que
- * tout cet epic combat : un signal dont le destinataire est absent.
+ * on combat partout : un signal dont le destinataire est absent.
  *
  * Ce service est ce geste, et il ne fait que lui. Il ne provisionne AUCUN compte :
  * créer des comptes sur l'instance est un chantier à part, et un backend de plan
  * de fichiers qui saurait le faire finirait par en créer « à la volée » le jour où
  * le cache serait vide — rouvrant la règle de l'homonyme, payée cher ailleurs.
  *
- * ---------------------------------------------------------------------------
  * **DEUX GARDES, ET AUCUNE N'EST UNE COMMODITÉ.**
  *
  *  1. **L'identité est CONFIRMÉE À DISTANCE avant d'être écrite.** Un identifiant
@@ -38,7 +36,7 @@ use App\Models\User;
  *     L'index unique en base est la défense EN PROFONDEUR, pas la seule.
  *
  * **Détacher n'est jamais destructeur** : le cache redevient nul, et rien n'est
- * supprimé côté instance (D9 — aucune suppression implicite).
+ * supprimé côté instance : aucune suppression implicite.
  */
 final class OpenCloudIdentityLinker
 {

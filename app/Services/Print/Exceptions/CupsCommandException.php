@@ -7,11 +7,11 @@ namespace App\Services\Print\Exceptions;
 use RuntimeException;
 
 /**
- * Story 6.1 — Exception métier pour les échecs de commandes CUPS.
+ * Exception métier pour les échecs de commandes CUPS.
  *
  * Wrappe les erreurs `lpadmin`/`lpstat`/`cupsenable`/`cupsdisable`/`lpinfo` avec
  * leur contexte exécutionnel (commande exacte, stderr, return code) pour
- * exposition dans `Log::error` côté Service et toast côté Livewire (AC5).
+ * exposition dans `Log::error` côté Service et toast côté Livewire.
  */
 class CupsCommandException extends RuntimeException
 {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Applications personnalisables par le système de customization (story 4.8).
+ * Applications personnalisables par le système de customization.
  *
  * Extension : ajouter un case ici + une classe Adapter implémentant
  * `App\Services\AppCustomization\Contracts\AppPolicyAdapter` + un composant

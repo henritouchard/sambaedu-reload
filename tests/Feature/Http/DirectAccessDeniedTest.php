@@ -11,7 +11,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC11) — Accès refusé sur URL directe.
+ * Accès refusé sur URL directe.
  *
  * Scénarios :
  *  - User non-admin tape `/app/users/new` → 403 (middleware can:user.modify).

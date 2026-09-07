@@ -18,7 +18,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC4.3 / T5.6.
+ * T5.6.
  */
 class EnsureRefreshTokenTest extends TestCase
 {

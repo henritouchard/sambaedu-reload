@@ -27,9 +27,6 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        // =====================================================================
-        // WORKSTATIONS - Postes de travail
-        // =====================================================================
         Schema::create('workstations', function (Blueprint $table) {
             $table->id();
             $table->string('name', 100)->unique()->comment('Nom du poste (hostname)');
@@ -58,7 +55,6 @@ return new class extends Migration {
             
             $table->timestamps();
             
-            // Index
             $table->index('status');
             $table->index('physical_room_id');
             $table->index('ad_guid');
@@ -66,9 +62,6 @@ return new class extends Migration {
             $table->index('mac');
         });
 
-        // =====================================================================
-        // WORKSTATION_GROUPS - Groupes/Salles de machines
-        // =====================================================================
         Schema::create('workstation_groups', function (Blueprint $table) {
             $table->id();
             $table->string('name', 100)->unique()->comment('Identifiant unique (slug)');
@@ -94,7 +87,6 @@ return new class extends Migration {
             
             $table->timestamps();
             
-            // Index
             $table->index('parent_id');
             $table->index('is_physical_room');
             $table->index('is_active');
@@ -109,9 +101,6 @@ return new class extends Migration {
                 ->onDelete('set null');
         });
 
-        // =====================================================================
-        // WORKSTATION_GROUP_WORKSTATION - Pivot groupe ↔ poste
-        // =====================================================================
         Schema::create('workstation_group_workstation', function (Blueprint $table) {
             $table->id();
             $table->foreignId('workstation_group_id')
@@ -125,9 +114,6 @@ return new class extends Migration {
             $table->unique(['workstation_group_id', 'workstation_id'], 'wg_ws_unique');
         });
 
-        // =====================================================================
-        // DEPOTS - Dépôts d'applications WPKG
-        // =====================================================================
         Schema::create('depots', function (Blueprint $table) {
             $table->id();
             $table->string('name', 255)->comment('Nom du dépôt');
@@ -141,9 +127,6 @@ return new class extends Migration {
             $table->index('is_primary');
         });
 
-        // =====================================================================
-        // APPLICATIONS - Applications WPKG
-        // =====================================================================
         Schema::create('applications', function (Blueprint $table) {
             $table->id();
             $table->foreignId('depot_id')
@@ -170,9 +153,6 @@ return new class extends Migration {
             $table->index('branch');
         });
 
-        // =====================================================================
-        // APP_PROFILES - Profils applicatifs
-        // =====================================================================
         Schema::create('app_profiles', function (Blueprint $table) {
             $table->id();
             $table->string('name', 100)->unique()->comment('Identifiant unique');
@@ -185,9 +165,6 @@ return new class extends Migration {
             $table->index('is_active');
         });
 
-        // =====================================================================
-        // APP_PROFILE_APPLICATION - Pivot profil ↔ application
-        // =====================================================================
         Schema::create('app_profile_application', function (Blueprint $table) {
             $table->id();
             $table->foreignId('app_profile_id')
@@ -201,9 +178,6 @@ return new class extends Migration {
             $table->unique(['app_profile_id', 'application_id'], 'app_profile_app_unique');
         });
 
-        // =====================================================================
-        // APP_PROFILE_WORKSTATION_GROUP - Pivot profil ↔ groupe
-        // =====================================================================
         Schema::create('app_profile_workstation_group', function (Blueprint $table) {
             $table->id();
             $table->foreignId('app_profile_id')
@@ -217,9 +191,6 @@ return new class extends Migration {
             $table->unique(['app_profile_id', 'workstation_group_id'], 'app_profile_wg_unique');
         });
 
-        // =====================================================================
-        // APP_PROFILE_WORKSTATION - Pivot profil ↔ poste
-        // =====================================================================
         Schema::create('app_profile_workstation', function (Blueprint $table) {
             $table->id();
             $table->foreignId('app_profile_id')
@@ -233,9 +204,6 @@ return new class extends Migration {
             $table->unique(['app_profile_id', 'workstation_id'], 'app_profile_ws_unique');
         });
 
-        // =====================================================================
-        // SHORTCUTS - Raccourcis
-        // =====================================================================
         Schema::create('shortcuts', function (Blueprint $table) {
             $table->id();
             $table->string('key', 100)->unique()->comment('Clé unique du raccourci');
@@ -266,9 +234,6 @@ return new class extends Migration {
             $table->index('owner');
         });
 
-        // =====================================================================
-        // CONTROLHUB_CONNECTION - Connexion au ControlHub
-        // =====================================================================
         Schema::create('controlhub_connection', function (Blueprint $table) {
             $table->id();
             $table->string('base_url', 512)->comment('URL de base du ControlHub');
@@ -295,9 +260,6 @@ return new class extends Migration {
             $table->index('is_active');
         });
 
-        // =====================================================================
-        // CONTROLHUB_TASKS - Tâches reçues du ControlHub
-        // =====================================================================
         Schema::create('controlhub_tasks', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->uuid('controlhub_task_id')->unique()->comment('ID de la tâche côté ControlHub');
@@ -314,7 +276,6 @@ return new class extends Migration {
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             
-            // Callback
             $table->boolean('callback_sent')->default(false);
             $table->timestamp('callback_sent_at')->nullable();
             $table->jsonb('callback_response')->nullable();
@@ -327,9 +288,6 @@ return new class extends Migration {
             $table->index('callback_sent');
         });
 
-        // =====================================================================
-        // JOBS - File d'attente Laravel
-        // =====================================================================
         Schema::create('jobs', function (Blueprint $table) {
             $table->id();
             $table->string('queue')->index();
@@ -363,9 +321,6 @@ return new class extends Migration {
             $table->timestamp('failed_at')->useCurrent();
         });
 
-        // =====================================================================
-        // CACHE - Table de cache Laravel (optionnel)
-        // =====================================================================
         Schema::create('cache', function (Blueprint $table) {
             $table->string('key')->primary();
             $table->mediumText('value');
@@ -378,9 +333,6 @@ return new class extends Migration {
             $table->integer('expiration');
         });
 
-        // =====================================================================
-        // SESSIONS - Sessions Laravel (optionnel)
-        // =====================================================================
         Schema::create('sessions', function (Blueprint $table) {
             $table->string('id')->primary();
             $table->foreignId('user_id')->nullable()->index();

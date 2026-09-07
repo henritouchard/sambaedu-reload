@@ -47,10 +47,6 @@ class MachineModel extends BaseComputer
         return $dnHelper->computers();
     }
     
-    // ============================================
-    // ACCESSEURS SÉMANTIQUES - Masquent la complexité LDAP
-    // ============================================
-    
     /**
      * Récupère le nom de la machine (équivalent à cn en LDAP)
      * 

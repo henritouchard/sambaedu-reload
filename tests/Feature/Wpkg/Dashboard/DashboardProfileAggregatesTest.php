@@ -17,7 +17,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / Fix #12 — Tests des agrégats par profil.
+ * Tests des agrégats par profil.
  *
  * Vérifie spécifiquement que la jointure restructurée en UNION ALL
  * exclut bien les workstations archivées (lien direct ou via groupe).

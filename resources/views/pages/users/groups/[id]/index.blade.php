@@ -40,7 +40,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
     public bool $editing = false;
 
     /**
-     * Story 42.3 (T3.2/D5) — map `userId => rôle choisi` pour les membres
+     * Map `userId => rôle choisi` pour les membres
      * NOUVELLEMENT cochés dans l'edit-form (jamais pour les membres déjà
      * existants). Initialisée au défaut dérivé par `toggleUser`, purgée à
      * `cancelEditing`/`save`. Validée exclusivement via `setPendingRole()`.
@@ -72,7 +72,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
     {
         $group = $this->userGroupService->getById($this->groupId);
 
-        // Story 60.2 — le libellé du rôle d'arête dépend du TYPE de groupe
+        // Le libellé du rôle d'arête dépend du TYPE de groupe
         // (« Enseignant » en classe, « Porteur » en projet, « Référent » en
         // équipe). On lit le type en BASE et non `$this->type` : cette propriété
         // Livewire publique est ré-hydratée depuis le client, donc forgeable.
@@ -88,15 +88,15 @@ new #[Title('Groupe utilisateur')] class extends Component {
             // (déjà en mémoire via `with('users')`). Les helpers `User::isProf()`/
             // `isEleve()` qui interrogeaient le LDAP « d'abord » — 1 round-trip
             // réseau par membre au render, pour une info déjà présente en base —
-            // ont été SUPPRIMÉS par la Story 49.2 (FR-R3). SQL = source de vérité
-            // côté SE5 (alignée par syncFromAd).
+            // ont été SUPPRIMÉS. SQL = source de vérité côté SE5 (alignée
+            // par syncFromAd).
             $role = $user->role === 'prof' ? 'prof' : ($user->role === 'eleve' ? 'eleve' : 'autre');
 
-            // Story 42.3 (D1/T1.1) — rôle D'ARÊTE (`user_group_user.role`),
+            // Rôle D'ARÊTE (`user_group_user.role`),
             // exposé sous des clés NOUVELLES `edge_role`/`edge_role_label` :
             // `'role'` ci-dessus reste le rôle GLOBAL (pilote onglets + badge
-            // PP), AUCUNE collision de nom (piège 42.1 #5). Arête vide/hors
-            // vocabulaire (donnée sale) → affichée « Élève » (D1).
+            // PP), AUCUNE collision de nom. Arête vide ou hors vocabulaire
+            // (donnée sale) → affichée « Élève ».
             $edgeRoleRaw = (string) ($user->pivot->role ?? '');
             $edgeRole = in_array($edgeRoleRaw, UserGroupUserPivot::roles(), true)
                 ? $edgeRoleRaw
@@ -108,14 +108,14 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 'label' => $label,
                 'role' => $role,
                 // Badge PP : porté par le RÔLE d'arête (`role === 'owner'`,
-                // story 42.1 — bascule de lecture depuis `is_head_teacher`). La
+                // bascule de lecture depuis `is_head_teacher`). La
                 // CLÉ de view-model reste `'is_head_teacher'` : le `'role'`
                 // ci-dessus est le rôle GLOBAL (prof/eleve/autre), ne PAS
-                // introduire de collision de nom (l'UI rôle d'arête = 42.3).
+                // introduire de collision de nom (l'UI rôle d'arête =).
                 'is_head_teacher' => (($user->pivot->role ?? null) === UserGroupUserPivot::ROLE_OWNER),
                 'edge_role' => $edgeRole,
-                // Story 42.3 (D1) — aucune valeur technique (`member|manager|
-                // owner`) n'est rendue comme texte visible. Story 60.2 — le
+                // Aucune valeur technique (`member|manager|
+                // Owner`) n'est rendue comme texte visible. — le
                 // libellé vient de la table CANONIQUE par type de groupe, plus
                 // d'un `match` local écrit pour le seul cas scolaire.
                 'edge_role_label' => RoleCatalog::label($groupType, $edgeRole),
@@ -124,22 +124,22 @@ new #[Title('Groupe utilisateur')] class extends Component {
     }
 
     /**
-     * Story 42.3 (AC2/D4/D7) — édition UNITAIRE du rôle d'arête d'un membre
+     * Édition UNITAIRE du rôle d'arête d'un membre
      * depuis la colonne « Rôle » de la table des membres. Write Eloquent
-     * direct : l'observer pivot (42.2, `updated()`) reprojette l'AD si le
+     * direct : l'observer pivot (`updated()`) reprojette l'AD si le
      * rôle change réellement (dirty) — AUCUN appel `updateGroup`/
-     * `resyncGroupAdProjection` explicite ici (contrat 42.2 #4, volet
-     * unitaire — c'est le volet MASSE de `save()` qui l'exige).
+     * `resyncGroupAdProjection` explicite ici : c'est le volet MASSE de
+     * `save()` qui l'exige, pas ce volet unitaire.
      */
     public function updateMemberRole(int $userId, string $role): void
     {
-        // Double guard — pattern removeMember/head-teacher-section (D7).
+        // Double guard — pattern removeMember/head-teacher-section.
         Gate::authorize('update-group');
 
         try {
             UserGroupUserPivot::assertValidRole($role);
         } catch (InvalidArgumentException) {
-            // Piège n°8 — valeur reçue non constante (client) : jamais de 500.
+            // Valeur reçue du client, donc non constante : jamais de 500.
             $this->toastError('Rôle invalide.');
             return;
         }
@@ -150,8 +150,8 @@ new #[Title('Groupe utilisateur')] class extends Component {
             return;
         }
 
-        // D3 — « Prof principal » (owner) uniquement pour les groupes classe,
-        // y compris contre un payload forgé. Review 42.3 #3 : garde sur le type
+        // « Prof principal » (owner) uniquement pour les groupes classe,
+        // y compris contre un payload forgé. La garde porte sur le type
         // DB ($group->type), jamais $this->type — propriété Livewire publique
         // ré-hydratée du client, donc forgeable.
         if ($role === UserGroupUserPivot::ROLE_OWNER && $group->type !== 'classe') {
@@ -162,12 +162,13 @@ new #[Title('Groupe utilisateur')] class extends Component {
             return;
         }
 
-        // Story 62.3 — LA CONTRAINTE DE DÉCLARATION, premier des trois points
-        // d'étranglement HUMAINS. Elle est APRÈS D3, délibérément : sur une
-        // classe, `owner` est déclaré et D3 laisse passer ; sur un `projet`, D3
-        // parle en premier avec son message spécifique, qui reste celui que les
-        // tests de non-régression épinglent. Même lecture du type que D3 — le
-        // `$group->type` DB, jamais la propriété Livewire (review 42.3 #3).
+        // LA CONTRAINTE DE DÉCLARATION, premier des trois points
+        // d'étranglement HUMAINS. Elle vient APRÈS la garde ci-dessus,
+        // délibérément : sur une classe, `owner` est déclaré et la garde laisse
+        // passer ; sur un `projet`, la garde parle en premier avec son message
+        // spécifique, qui reste celui que les tests de non-régression épinglent.
+        // Même lecture du type — le `$group->type` DB, jamais la propriété
+        // Livewire.
         try {
             RoleCatalog::assertAssignable($group->type, $role);
         } catch (InvalidArgumentException $e) {
@@ -179,8 +180,8 @@ new #[Title('Groupe utilisateur')] class extends Component {
 
         unset($this->members, $this->students, $this->teachers);
 
-        // D6 — toast factuel, aucune promesse de persistance (limite
-        // transitoire read-back documentée en doc QA §17).
+        // Toast factuel, aucune promesse de persistance : le read-back AD peut
+        // encore défaire ce rôle.
         $this->toastSuccess('Rôle mis à jour.');
     }
 
@@ -220,8 +221,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             ->getAssignableUsers()
             ->reject(fn($user): bool => in_array((int) $user->id, $memberIds, true));
 
-        // Story 42.3 (T3.1) — `getAssignableUsers()` (app/Services, non modifiable
-        // — AC8) ne sélectionne pas `role` : lecture SQL complémentaire, ZÉRO LDAP
+        // `getAssignableUsers` (app/Services, non modifiable) ne sélectionne pas `role` : lecture SQL complémentaire, ZÉRO LDAP
         // (project_isprof_iseleve_ldap_first_cost), pour dériver le rôle par
         // défaut proposé au rattachement.
         $globalRolesById = User::query()
@@ -240,7 +240,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
                     'label' => $label,
                     'hint' => $user->login,
                     'disabled' => false,
-                    // D5/T3.1 — défaut dérivé, jamais owner.
+                    // Défaut dérivé, jamais owner.
                     'default_role' => UserGroupUserPivot::defaultRoleForGlobalRole($globalRolesById[$user->id] ?? null),
                 ];
             })
@@ -279,7 +279,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             unset($this->pendingRoles[$userId]);
         } else {
             $this->selectedUserIds[] = $userId;
-            // D5/T3.2 — un user coché ici est TOUJOURS un candidat non-membre
+            // Un user coché ici est TOUJOURS un candidat non-membre
             // (availableUsers exclut déjà les membres actuels) : propose le
             // défaut dérivé, surchargeable via setPendingRole().
             $option = collect($this->availableUsers)->firstWhere('value', $userId);
@@ -288,10 +288,10 @@ new #[Title('Groupe utilisateur')] class extends Component {
     }
 
     /**
-     * Story 42.3 (T3.2/D5) — surcharge du rôle proposé pour un candidat
+     * Surcharge du rôle proposé pour un candidat
      * NOUVELLEMENT coché de l'edit-form. Options UI limitées à Élève/Prof
-     * (jamais owner) ; validation serveur systématique (D7 — un payload
-     * forgé ne doit jamais atteindre le pivot).
+     * (jamais owner) ; validation serveur systématique — un payload forgé ne
+     * doit jamais atteindre le pivot.
      */
     public function setPendingRole(int $userId, string $role): void
     {
@@ -308,7 +308,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
         }
 
         if ($role === UserGroupUserPivot::ROLE_OWNER) {
-            // D5 — jamais owner au rattachement, même payload forgé.
+            // Jamais owner au rattachement, même payload forgé.
             $this->toastError(sprintf(
                 'Le rôle « %s » ne peut pas être choisi au rattachement.',
                 RoleCatalog::label('classe', UserGroupUserPivot::ROLE_OWNER),
@@ -316,10 +316,10 @@ new #[Title('Groupe utilisateur')] class extends Component {
             return;
         }
 
-        // Story 62.3 — deuxième point humain, et LE point qui PARLE : c'est ici
+        // Deuxième point humain, et LE point qui PARLE : c'est ici
         // que l'administrateur choisit un rôle pour un rattachement. Le type est
         // relu en BASE et jamais pris sur `$this->type` — propriété Livewire
-        // publique, donc ré-hydratée du client et forgeable (review 42.3 #3) ;
+        // publique, donc ré-hydratée du client et forgeable ;
         // sans cette relecture, un payload annonçant `type = cours` désarmerait
         // la contrainte sur une classe.
         $group = $this->userGroupService->getById($this->groupId);
@@ -370,8 +370,8 @@ new #[Title('Groupe utilisateur')] class extends Component {
         ]);
 
         // Snapshot AVANT `updateGroup` (AD-first) — sert à isoler les ids
-        // RÉELLEMENT nouveaux (piège n°3 : les arêtes existantes ne sont
-        // JAMAIS réécrites par ce chemin, D5).
+        // RÉELLEMENT nouveaux : les arêtes existantes ne sont JAMAIS réécrites
+        // par ce chemin.
         $existingMemberIds = $this->userGroupService->getById($this->groupId)
             ?->users
             ?->pluck('id')
@@ -385,9 +385,9 @@ new #[Title('Groupe utilisateur')] class extends Component {
             'user_ids' => $this->selectedUserIds,
         ]);
 
-        // T3.4 (D5) — surcharges de rôle pour les SEULS membres réellement
-        // nouveaux, calculées sur l'état FRAIS posé par le read-back AD-first
-        // d'`updateGroup` (piège n°3 : jamais un état pré-save).
+        // Surcharges de rôle pour les SEULS membres réellement nouveaux,
+        // calculées sur l'état FRAIS posé par le read-back AD-first
+        // d'`updateGroup` — jamais sur un état pré-save.
         $newMemberIds = array_values(array_diff($this->selectedUserIds, $existingMemberIds));
 
         if ($newMemberIds !== []) {
@@ -406,7 +406,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
                     continue;
                 }
 
-                // Défense en profondeur (D7) — `setPendingRole()` a déjà
+                // Défense en profondeur — `setPendingRole()` a déjà
                 // validé/refusé owner, mais on ne fait jamais confiance à un
                 // état client sans revalider au point d'écriture pivot.
                 try {
@@ -417,7 +417,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 if ($chosen === UserGroupUserPivot::ROLE_OWNER) {
                     continue;
                 }
-                // Story 62.3 — troisième point humain. Il refuse en SILENCE
+                // Troisième point humain. Il refuse en SILENCE
                 // (`continue`), exactement comme les deux refus juste au-dessus :
                 // ce chemin traite un état CLIENT déjà validé par
                 // `setPendingRole()`, et tout ce qui y arrive de non conforme est
@@ -433,9 +433,9 @@ new #[Title('Groupe utilisateur')] class extends Component {
             }
 
             if ($overrides !== []) {
-                // Contrat review 42.2 #4 — édition EN MASSE : suspendre le
-                // resync AD unitaire par write, puis UNE SEULE reprojection
-                // explicite (piège n°2 : sinon K writes = K tempêtes LDAP).
+                // Édition EN MASSE : suspendre le resync AD unitaire par write,
+                // puis UNE SEULE reprojection explicite — sinon K writes
+                // déclenchent K tempêtes LDAP.
                 UserGroupUserPivotObserver::disableAdResync();
                 try {
                     foreach ($overrides as $uid => $overrideRole) {
@@ -461,7 +461,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
     }
 
     /**
-     * Story 62.2 — le libellé vient du CATALOGUE, plus d'un `match` local.
+     * Le libellé vient du CATALOGUE, plus d'un `match` local.
      *
      * Le `match` qui vivait ici ignorait `role` et `function` et rendait donc
      * « Role »/« Function » là où la fiche utilisateur disait « Rôle »/« Fonction ».
@@ -560,14 +560,14 @@ new #[Title('Groupe utilisateur')] class extends Component {
             @include('pages.users.groups.[id]._partials.group-header')
             @include('pages.users.groups.[id]._partials.members-list')
 
-            {{-- Story 5.2 — Section Partage de classe (Livewire SFC).
+            {{-- Section Partage de classe (Livewire SFC).
                  Visible UNIQUEMENT si $type === 'classe' (le SFC fait aussi
                  son propre check en mount + retourne un div vide sinon).
                  Position : entre members-list et group-quota-section. --}}
             @if ($type === 'classe')
                 @livewire('pages::users.groups.[id]._partials.class-share-section', ['groupId' => $groupId], key('class-share-' . $groupId))
 
-                {{-- Story 4.15 (refonte UI) — MODALE « Professeur principal »
+                {{-- MODALE « Professeur principal »
                      (Livewire SFC, rendue masquée). Déclenchée par l'action
                      « Nommer un professeur principal » du menu Actions
                      (event open-head-teacher-modal). Désigne le(s) PP via le
@@ -578,14 +578,14 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 @livewire('pages::users.groups.[id]._partials.head-teacher-section', ['groupId' => $groupId], key('head-teacher-' . $groupId))
             @endif
 
-            {{-- Story 5.1c — Section Quota groupe (Livewire SFC).
+            {{-- Section Quota groupe (Livewire SFC).
                  Section verticale (pas d'onglets). Visible en lecture pour tout user, modifiable
                  uniquement par server.admin (double guard UI + serveur).
                  NB : on utilise la directive @livewire(...) plutôt que la tag-syntax
                  car les crochets `[id]` du chemin SFC cassent le parsing Blade. --}}
             @livewire('pages::users.groups.[id]._partials.group-quota-section', ['groupId' => $groupId], key('group-quota-' . $groupId))
 
-            {{-- Story 35.4 — Section « Capacités » du groupe d'utilisateurs (Livewire
+            {{-- Section « Capacités » du groupe d'utilisateurs (Livewire
                  SFC). Arme une capacité par groupe (override de valeur, maille
                  UserGroup). Visible pour TOUS les types de groupes (les cibles CD95
                  sont « élèves » = classes ET « direction/vie scolaire » = groupes

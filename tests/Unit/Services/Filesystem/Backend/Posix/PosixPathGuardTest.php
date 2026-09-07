@@ -15,11 +15,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 → 60.5 — la garde de chemin, DESCENDUE puis DOUBLEMENT ANCRÉE.
+ * → — la garde de chemin, DESCENDUE puis DOUBLEMENT ANCRÉE.
  *
- * Les assertions de la story 60.4 viennent des tests de l'Epic 34 : elles
- * survivent, leur emplacement suit le code. La story 60.5 les rend SYMÉTRIQUES —
- * chacune vaut désormais pour chaque zone, parce qu'une garde qui ne tiendrait que
+ * Les assertions viennent des tests du provisionnement : elles survivent, leur
+ * emplacement suit le code. Elles sont rendues SYMÉTRIQUES — chacune vaut pour
+ * chaque zone, parce qu'une garde qui ne tiendrait que
  * sur la zone historique laisserait la zone neuve sans protection le jour où elle
  * devient la seule écrite.
  */
@@ -61,10 +61,6 @@ class PosixPathGuardTest extends TestCase
 
         return new FilePlan('@partage', $rootPath, [], $planNodes, $anchor);
     }
-
-    // =========================================================================
-    // Les gardes, zone par zone
-    // =========================================================================
 
     #[Test]
     #[DataProvider('anchors')]
@@ -125,7 +121,7 @@ class PosixPathGuardTest extends TestCase
     }
 
     /**
-     * L'ajustement de la story 60.4 : un nœud à deux niveaux sous la racine du plan
+     * L'ajustement : un nœud à deux niveaux sous la racine du plan
      * est résolvable. L'ancienne borne (deux segments en tout) l'aurait refusé, et
      * la chaîne recette→arbre serait morte à la première tentative.
      */
@@ -177,10 +173,6 @@ class PosixPathGuardTest extends TestCase
         self::assertNull($this->guard->trashTarget($plan, 'nimporte'));
     }
 
-    // =========================================================================
-    // Ce que la seconde ancre apporte, et ce qu'elle n'ouvre PAS
-    // =========================================================================
-
     /**
      * Les deux zones sont DISJOINTES : un chemin de l'une n'est jamais valide dans
      * l'autre. C'est ce qui fait qu'« une autorité d'écriture par zone » n'est pas
@@ -216,12 +208,8 @@ class PosixPathGuardTest extends TestCase
         self::assertNull($this->guard->planRoot($this->plan($anchor, 'Classes/Classe_3emeA')));
     }
 
-    // =========================================================================
-    // L'INTERDIT CENTRAL DE LA STORY
-    // =========================================================================
-
     /**
-     * **LA promesse de la story 60.5, mécanisée.**
+     * **LA promesse, mécanisée.**
      *
      * SE5 n'écrit jamais un octet dans l'arbre de classe HISTORIQUE. Ce n'est pas
      * une précaution mais une propriété : cette racine n'a AUCUN jeton de zone,
@@ -305,10 +293,6 @@ class PosixPathGuardTest extends TestCase
         self::assertGreaterThan(50, count($resolved), 'le balayage doit produire des chemins à éprouver');
     }
 
-    // =========================================================================
-    // Les zones doivent être DISJOINTES — et c'est réglable par environnement
-    // =========================================================================
-
     /**
      * LE BALAYAGE CI-DESSUS NE REJOUE QUE LES RACINES QU'IL A LUI-MÊME FIXÉES.
      *
@@ -316,7 +300,7 @@ class PosixPathGuardTest extends TestCase
      * rien de la CONFIGURATION d'une instance réelle, où la zone des arbres de
      * classe se règle par variable d'environnement. Un copier-coller malheureux y
      * suffirait à faire écrire SE5 dans l'arbre historique — en silence, alors que
-     * toute la story repose sur l'idée qu'aucun chemin ne mène là.
+     * tout ce garde repose sur l'idée qu'aucun chemin ne mène là.
      *
      * La garde refuse donc de servir une racine qui coïncide, et le dit.
      *

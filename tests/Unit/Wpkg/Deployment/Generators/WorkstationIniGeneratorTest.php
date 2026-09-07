@@ -12,7 +12,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.2 / AC5.3-AC5.7 — Tests unit du `WorkstationIniGenerator`.
+ * Tests unit du `WorkstationIniGenerator`.
  */
 class WorkstationIniGeneratorTest extends TestCase
 {

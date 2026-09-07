@@ -10,9 +10,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 61.3 (AC8) — LE CANAL, VERROUILLÉ CONTRE L'INSTANCE RÉELLE.
+ * LE CANAL, VERROUILLÉ CONTRE L'INSTANCE RÉELLE.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE CE TEST PROUVE, ET QU'AUCUN DOUBLE NE PEUT PROUVER.**
  *
  *  1. les SÉMANTIQUES du canal sont bien celles que les doubles rejouent — et si
@@ -22,10 +21,10 @@ use PHPUnit\Framework\TestCase;
  *     d'équipe n'est PAS visible depuis l'espace de fichiers du compte
  *     d'administration tant que ce compte n'appartient pas à un groupe monté sur
  *     ce dossier : mesuré ici, `MKCOL` rend `409 Parent node does not exist`. Après
- *     inscription au groupe structurel, LE MÊME `MKCOL` rend `201`. C'est la
- *     décision n°3 des notes de la story, prise sans mesure et **confirmée ici** ;
+ *     inscription au groupe structurel, LE MÊME `MKCOL` rend `201`. C'était une
+ *     décision prise sans mesure, et elle est **confirmée ici** ;
  *  3. le MASQUE de clôture `31` n'est **pas coercé** par l'instance : il se relit
- *     tel qu'il a été écrit (décision n°2, également « à confirmer par l'AC8 ») ;
+ *     tel qu'il a été écrit ;
  *  4. la **perception EFFECTIVE d'un compte** : un membre d'un rôle CLOS obtient un
  *     refus sur le dossier fermé, et ce dossier DISPARAÎT de son listing. Aucune
  *     relecture de règle ne dit cela : une règle relue prouve une règle, pas une
@@ -44,7 +43,6 @@ use PHPUnit\Framework\TestCase;
  * exercé de bout en bout par {@see NextcloudFileBackendConvergenceTest}, qui vit à
  * côté et lit le même environnement.
  *
- * ---------------------------------------------------------------------------
  * **SKIPPÉ PAR DÉFAUT.** Il exige `NC_SPIKE_URL`, `NC_SPIKE_ADMIN` et
  * `NC_SPIKE_PASSWORD`, et il vit hors de la suite par défaut
  * (`phpunit.integration.xml`). Il s'exécute depuis le checkout principal, jamais
@@ -166,16 +164,12 @@ class NextcloudTeamFolderBackendTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // LA PREUVE DU 409 — pourquoi le groupe structurel existe
-    // =========================================================================
-
     /**
      * **SANS APPARTENANCE, LE COMPTE D'ADMINISTRATION NE VOIT PAS LE DOSSIER
      * D'ÉQUIPE — ET C'EST TOUTE LA RAISON D'ÊTRE DU GROUPE STRUCTUREL.**
      *
-     * Les notes de la story posaient le risque en toutes lettres : « si l'AC8 montre
-     * qu'un admin voit les dossiers d'équipe sans appartenance, ce groupe devient
+     * Le risque était posé en toutes lettres : si un admin voyait les dossiers
+     * d'équipe sans appartenance, ce groupe deviendrait
      * inutile et se retire sans rien casser ». La mesure ci-dessous tranche dans
      * l'autre sens : il ne les voit pas. Le canal des règles passant par
      * `/remote.php/dav/files/<admin>/…`, sans ce groupe **aucun sous-dossier n'est
@@ -195,7 +189,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         self::assertNotNull($this->folderId, 'le dossier doit figurer dans l\'inventaire RELU');
         self::assertNotContains($this->folderId, self::PROTECTED_FOLDER_IDS, 'garde : jamais les dossiers du spike');
 
-        // --- AVANT : le dossier existe côté instance… et n'existe PAS côté admin --
         $unmounted = $this->dav('PROPFIND', $this->mountPoint);
         $this->note('PROPFIND racine SANS appartenance', $unmounted);
         self::assertSame(
@@ -218,7 +211,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         // --- LA PARADE : le groupe STRUCTUREL, exactement comme le backend le pose -
         $this->ensureStructuralAccess();
 
-        // --- APRÈS : le MÊME geste, et il aboutit ----------------------------
         $mounted = $this->dav('PROPFIND', $this->mountPoint);
         $this->note('PROPFIND racine AVEC appartenance', $mounted);
         self::assertSame(207, $mounted['status'], 'le dossier d\'équipe est désormais monté dans l\'espace de l\'admin');
@@ -235,10 +227,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         $this->assertNoWriteTouchedTheSpikeState();
     }
 
-    // =========================================================================
-    // Le scénario complet, dans l'ordre du backend
-    // =========================================================================
-
     #[Test]
     public function the_measured_channel_still_behaves_as_the_fakes_replay_it(): void
     {
@@ -247,7 +235,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         $eleve = 'se5it_eleve_' . substr($this->structuralGroup, -10);
         $prof = 'se5it_prof_' . substr($this->structuralGroup, -10);
 
-        // --- 0. Le décor : groupes et comptes jetables -----------------------
         foreach ([$members, $managers] as $group) {
             $created = $this->rest('POST', 'ocs/v1.php/cloud/groups', ['groupid' => $group]);
             $this->groups[] = $group;
@@ -266,7 +253,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
             self::assertContains($this->ocsCode($created), [100, 200, 102], 'création de compte');
         }
 
-        // --- 1. Le dossier d'équipe, créé PUIS relu -------------------------
         $created = $this->rest('POST', 'index.php/apps/groupfolders/folders', ['mountpoint' => $this->mountPoint]);
         $this->note('dossier ' . $this->mountPoint, $created);
 
@@ -280,7 +266,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         $again = $this->findFolderId($this->mountPoint);
         self::assertSame($this->folderId, $again, 'la reconnaissance porte sur le point de montage RELU');
 
-        // --- 2. Le groupe STRUCTUREL — l'étape 2 du backend ------------------
         $this->ensureStructuralAccess();
 
         $folder = $this->folder($this->folderId);
@@ -290,7 +275,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
             'le groupe structurel porte les quatre verbes — et pas le bit de re-partage',
         );
 
-        // --- 3. L'INTERRUPTEUR des permissions avancées, AVANT tout plafond ---
         $toggled = $this->rest('POST', 'index.php/apps/groupfolders/folders/' . $this->folderId . '/acl', ['acl' => 1]);
         $this->note('acl=1', $toggled);
         self::assertTrue((bool) ($this->folder($this->folderId)['acl'] ?? false), 'sans cet interrupteur, les règles n\'ont AUCUN effet');
@@ -303,7 +287,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         $this->note('acl avec un principal (attendu : refus)', $misuse);
         self::assertSame(400, $misuse['status'], 'cette route est un INTERRUPTEUR, jamais la pose d\'une règle');
 
-        // --- 4. L'arborescence, un niveau à la fois --------------------------
         //
         // Le dossier d'équipe est MONTÉ (étape 2) : le `409` ci-dessous ne peut donc
         // avoir qu'une seule cause — ce protocole ne crée pas les parents. C'est
@@ -318,7 +301,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         self::assertSame(201, $this->dav('MKCOL', $this->mountPoint . '/_travail/devoirs')['status']);
         self::assertSame(201, $this->dav('MKCOL', $this->mountPoint . '/_profs')['status']);
 
-        // --- 5. La CLÔTURE : posée, RELUE, et comparée SUR LE RELU ------------
         $empty = $this->propfindAcl($this->mountPoint . '/_profs');
         $this->note('acl-list avant pose', $empty);
         self::assertStringContainsString('404 Not Found', $empty['body'], '« aucune règle » se dit 404 DANS le multistatus');
@@ -345,7 +327,7 @@ class NextcloudTeamFolderBackendTest extends TestCase
             'LE SERVEUR AJOUTE UN CHAMP que personne n\'a écrit : la comparaison doit l\'ignorer',
         );
 
-        // **LE MASQUE 31 N'EST PAS COERCÉ** (décision n°2, « à confirmer par l'AC8 »).
+        // **LE MASQUE 31 N'EST PAS COERCÉ**, et c'est confirmé ici.
         // La comparaison porte sur la valeur RELUE, réduite aux QUATRE champs écrits :
         // le libellé ajouté par le serveur n'entre pas dans le tableau comparé, il ne
         // peut donc pas faire échouer le test — ni masquer une coercition.
@@ -370,7 +352,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         $this->note('inherited-acl-list', $inherited);
         self::assertStringContainsString('inherited-acl-list', $inherited['body']);
 
-        // --- 6. LES PLAFONDS, EN DERNIER (le seul geste qui élargit) ----------
         foreach ([[$members, 1], [$managers, self::ALL_MODELLED]] as [$group, $permissions]) {
             $this->rest('POST', 'index.php/apps/groupfolders/folders/' . $this->folderId . '/groups', ['group' => $group]);
             $set = $this->rest(
@@ -391,7 +372,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
             'les quatre verbes valent 15 — aucune coercition, et le bit de re-partage n\'est pas accordé',
         );
 
-        // --- 7. LA PREUVE : la perception EFFECTIVE d'un compte ---------------
         $eleveOnClosed = $this->davAs($eleve, self::THROWAWAY_PASSWORD, 'PROPFIND', $this->mountPoint . '/_profs');
         $this->note('élève sur le dossier CLOS', $eleveOnClosed);
         self::assertSame(404, $eleveOnClosed['status'], 'le dossier refermé est INATTEIGNABLE pour le rôle clos');
@@ -405,7 +385,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
         $this->note('enseignant sur le dossier clos', $profOnClosed);
         self::assertSame(207, $profOnClosed['status'], 'le rôle octroyé, lui, garde son accès');
 
-        // --- 8. Les DEUX plafonds, chacun sur son objet -----------------------
         $this->rest('POST', 'index.php/apps/groupfolders/folders/' . $this->folderId . '/quota', ['quota' => 5368709120]);
         self::assertSame(5368709120, (int) ($this->folder($this->folderId)['quota'] ?? 0), 'plafond de ZONE relu');
 
@@ -418,7 +397,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
             'plafond de PERSONNE relu — un autre objet, un autre canal (frontière D8)',
         );
 
-        // --- 9. La RÉVOCATION : sans destruction ------------------------------
         $this->proppatchAcl($this->mountPoint . '/_profs', []);
         foreach ([$members, $managers] as $group) {
             $this->rest('DELETE', 'index.php/apps/groupfolders/folders/' . $this->folderId . '/groups/' . rawurlencode($group));
@@ -433,13 +411,8 @@ class NextcloudTeamFolderBackendTest extends TestCase
         );
         self::assertSame(207, $this->dav('PROPFIND', $this->mountPoint . '/_profs')['status'], 'le dossier SURVIT');
 
-        // --- 10. LA GARDE DÉFENSIVE -------------------------------------------
         $this->assertNoWriteTouchedTheSpikeState();
     }
-
-    // =========================================================================
-    // La séquence du backend, reproduite à l'identique
-    // =========================================================================
 
     /**
      * L'ÉTAPE 2 DU BACKEND, geste pour geste : assurer le groupe structurel, y
@@ -521,10 +494,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
             }
         }
     }
-
-    // =========================================================================
-    // Transport
-    // =========================================================================
 
     /**
      * @param  array<string, mixed>  $form
@@ -634,10 +603,6 @@ class NextcloudTeamFolderBackendTest extends TestCase
 
         return ['status' => $status, 'body' => (string) $raw];
     }
-
-    // =========================================================================
-    // Lecture
-    // =========================================================================
 
     /**
      * Les règles portées par une propriété de liste, réduites AUX QUATRE CHAMPS

@@ -18,17 +18,17 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 29.1 — Tests de WorkstationGroupPolicy::assignWpkg (Gate scopé WPKG).
+ * Tests de WorkstationGroupPolicy::assignWpkg (Gate scopé WPKG).
  *
  * Couvre :
- *  - AC #1 : délégué positif actif sur A autorisé sur A, refusé sur B ;
- *  - AC #2 : admin global `wpkg.assign` autorisé partout (+ scope null) ;
- *  - AC #3 : exclusion négative active prévaut même sur le droit global ;
- *  - AC #4 : délégation expirée → refus ;
+ *  - délégué positif actif sur A autorisé sur A, refusé sur B ;
+ *  - admin global `wpkg.assign` autorisé partout (+ scope null) ;
+ *  - exclusion négative active prévaut même sur le droit global ;
+ *  - délégation expirée → refus ;
  *  - groupe logique (is_physical=false) → fallback global UNIQUEMENT ;
  *  - enregistrement du Gate `assign-wpkg-workstationGroup` (RegistersGates).
  *
- * Piège SQLite (mémoire projet) : on teste des DÉCISIONS d'autorisation
+ * Piège SQLite : on teste des DÉCISIONS d'autorisation
  * (booléens), pas des bornes de colonnes ; l'expiration utilise une date
  * passée explicite (now()->subDay()), jamais une longueur.
  */

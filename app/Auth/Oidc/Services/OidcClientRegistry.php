@@ -12,17 +12,17 @@ use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 /**
- * Story 55.1 — Le REGISTRE DES CLIENTS CONFIDENTIELS (FR19 amorce).
+ * Le REGISTRE DES CLIENTS CONFIDENTIELS.
  *
- * Trois opérations, et le point d'accroche de l'Epic 56 :
+ * Trois opérations, et le point d'accroche des extensions :
  *
- *  - {@see self::register()}   — déclare un client, retourne le secret CLAIR
+ *  - {@see self::register()} — déclare un client, retourne le secret CLAIR
  *    **une seule fois** ;
  *  - {@see self::authenticate()} — vérifie un couple `client_id`/secret au
  *    token endpoint ;
- *  - {@see self::revoke()}     — désactive un client (jamais de suppression) ;
- *  - {@see self::revokeScope()} — Story 56.4 : retire UN scope accordé, sans
- *    toucher au client ni à ses jetons (FR23).
+ *  - {@see self::revoke()} — désactive un client (jamais de suppression) ;
+ * - {@see self::revokeScope} : retire UN scope accordé, sans
+ *    toucher au client ni à ses jetons.
  *
  * ⚠️ **Deux révocations, deux portées, à ne pas confondre.** `revoke()` coupe
  * l'ACCÈS (le client ne peut plus rien obtenir, ses jetons meurent) ;
@@ -30,12 +30,12 @@ use InvalidArgumentException;
  * n'apprend simplement plus cette information). Les confondre transformerait un
  * réglage de confidentialité en panne de connexion.
  *
- * En 55.1, les clients sont déclarés par commande artisan. En Epic 56, c'est
+ * En, les clients sont déclarés par commande artisan. En, c'est
  * l'installation d'une extension de type `app` qui appellera `register()` et sa
  * désinstallation qui appellera `revoke()` — d'où une API pensée pour être
  * pilotée par du code, pas par un formulaire.
  *
- * **NFR3 — le secret n'existe en clair qu'une fois.** `register()` le renvoie à
+ * **Le secret n'existe en clair qu'une fois.** `register()` le renvoie à
  * son appelant ; seul `hash('sha256', $secret)` est persisté. Il n'est ni
  * loggé, ni ré-affichable : un secret perdu se remplace, il ne se retrouve pas.
  *
@@ -67,7 +67,7 @@ class OidcClientRegistry
      *
      * @param  list<string>  $redirectUris  Liste STRICTE — égalité exacte à l'usage.
      * @param  string|null   $extensionKey  Clé d'une extension du registre (facultatif).
-     * @param  list<string>  $grantedScopes Story 56.4 — scopes ACCORDÉS (⊆ catalogue
+     * @param list<string> $grantedScopes — scopes ACCORDÉS (⊆ catalogue
      *                                      fermé). Défaut `[]` : fail-closed, le
      *                                      client n'obtiendra que `sub`.
      * @return array{client: OidcClient, client_id: string, client_secret: string}
@@ -87,7 +87,7 @@ class OidcClientRegistry
 
         $normalizedUris = $this->validateRedirectUris($redirectUris);
 
-        // Story 56.4 — le vocabulaire est vérifié AVANT toute écriture : un
+        // Le vocabulaire est vérifié AVANT toute écriture : un
         // octroi hors catalogue est un refus, jamais une troncature silencieuse.
         $normalizedScopes = $this->normalizeGrantedScopes($grantedScopes);
 
@@ -116,7 +116,7 @@ class OidcClientRegistry
             'enabled' => true,
         ]);
 
-        // ⚠️ Ni le secret ni son hash ne sont loggés (NFR3). Les scopes
+        // ⚠️ Ni le secret ni son hash ne sont loggés. Les scopes
         // accordés, eux, ne sont PAS un secret : ce sont exactement ce que
         // l'admin doit pouvoir auditer.
         Log::channel('oidc')->info('[OidcClientRegistry] oidc.client.registered', [
@@ -210,7 +210,7 @@ class OidcClientRegistry
     }
 
     /**
-     * Story 56.4 — **Révoque UN scope accordé à un client** (FR23).
+     * **Révoque UN scope accordé à un client.**
      *
      * IDEMPOTENT, exactement comme {@see self::revoke()} : un scope déjà absent
      * est un no-op signalé (`changed: false`), pas une erreur — l'écran de
@@ -262,7 +262,7 @@ class OidcClientRegistry
     }
 
     /**
-     * Story 56.4 — Valide et normalise une liste de scopes à ACCORDER.
+     * Valide et normalise une liste de scopes à ACCORDER.
      *
      * Vocabulaire FERMÉ : les scopes à claims du catalogue
      * ({@see OidcClaimsResolver::CLAIMS_BY_SCOPE}), donc `profile` et `groups`.
@@ -272,7 +272,8 @@ class OidcClientRegistry
      *
      * Refus plutôt que filtrage : accorder « ce qu'on a compris » d'une demande
      * qu'on ne comprend pas produirait une extension à moitié fonctionnelle
-     * pour une raison invisible (doctrine README OIDC, invariant #11).
+     * pour une raison invisible (cf. « Les invariants à ne pas casser » dans le
+     * README de ce namespace).
      *
      * @param  list<string>  $scopes
      * @return list<string>
@@ -311,7 +312,7 @@ class OidcClientRegistry
     /**
      * Valide et normalise une liste d'URI de redirection.
      *
-     * **Schémas bornés** (précédent : correctif `entry_url` de la review 54.3) :
+     * **Schémas bornés** (précédent : correctif `entry_url` de la review) :
      * seules une URL absolue `http(s)://…` et un chemin absolu de l'instance
      * (`/callback`) sont acceptés. Sont refusés `javascript:`, `data:`, et les
      * URL protocol-relative `//hôte` — qui, écrites dans un `Location:`,

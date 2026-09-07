@@ -43,7 +43,7 @@ class PowerShellRemoteService
 
         // Rechercher la machine via le shim in-repo `search_machine`
         // (défini par legacy/ldap.inc.php, chargé par legacy()->getConfig()
-        // ci-dessus — Story 38.4 : plus de require FS legacy).
+        // Ci-dessus : plus de require FS legacy).
         $machine = search_machine($config, $machineName, true);
         if (empty($machine)) {
             return [

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
- * Story 7.1 — Entrée d'historique (audit trail) d'une opération de délégation.
+ * Entrée d'historique (audit trail) d'une opération de délégation.
  *
  * Table append-only : toute tentative d'UPDATE lève une LogicException.
  * Les FK sont en ON DELETE SET NULL pour garder l'historique lisible après
@@ -48,8 +48,8 @@ class DelegationHistory extends Model
     public const UPDATED_AT = null;
 
     /**
-     * Story 7.1 — Review #2 : `created_at` retiré de $fillable pour empêcher
-     * toute entrée antidatée. Eloquent gère le timestamp automatiquement
+     * `created_at` est volontairement hors de `$fillable` : cela interdit toute
+     * entrée antidatée. Eloquent gère le timestamp automatiquement
      * à l'insertion (append-only). Les appelants doivent passer par le
      * service `DelegationHistoryService::log()` qui n'inclut pas `created_at`
      * dans son payload.
@@ -73,10 +73,6 @@ class DelegationHistory extends Model
         'created_at' => 'datetime',
     ];
 
-    // ========================================================================
-    // APPEND-ONLY GUARD
-    // ========================================================================
-
     /**
      * Bloque tout UPDATE : la table est append-only.
      *
@@ -94,10 +90,6 @@ class DelegationHistory extends Model
 
         return parent::save($options);
     }
-
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
 
     /**
      * L'utilisateur qui a effectué l'opération (peut être null si supprimé).
@@ -122,10 +114,6 @@ class DelegationHistory extends Model
     {
         return $this->belongsTo(WorkstationGroup::class, 'workstation_group_id');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     public function scopeForTarget(Builder $query, User $target): Builder
     {

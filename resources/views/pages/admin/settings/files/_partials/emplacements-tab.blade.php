@@ -26,7 +26,6 @@ use Livewire\Component;
  * Onglet « Emplacements et cloud » de /admin/settings/files — L'ÉCRAN QUI POSE
  * ENFIN LA QUESTION.
  *
- * ---------------------------------------------------------------------------
  * **CE QU'IL RÉPARE.** L'écran d'avant portait quatre interrupteurs
  * indépendants — répertoire personnel, partages, Nextcloud, OpenCloud — qui
  * disaient ce qui était ALLUMÉ, et jamais OÙ VIVENT LES FICHIERS. Il acceptait
@@ -41,7 +40,7 @@ use Livewire\Component;
  *     d'instance, chacun avec l'effet qu'il produit sur le poste ;
  *  3. les réglages : le chemin d'accès au cloud ({@see CloudAccessPath}), le
  *     plafond par défaut des espaces personnels et la corbeille des répertoires
- *     personnels (story 63.4, deux composants enfants). ⚠️ Ce bloc est rendu
+ * personnels (deux composants enfants). ⚠️ Ce bloc est rendu
  *     SANS CONDITION : les deux cartes ne dépendent d'aucune décision
  *     d'emplacement, et les conditionner les rendait injoignables précisément
  *     sur les instances dont la reprise n'a pas été jouée.
@@ -49,7 +48,6 @@ use Livewire\Component;
  * **Aucun public, aucune ligne, aucun rang, aucune précédence** : ce sont deux
  * réglages d'instance, et rien d'autre. Et il n'existe **aucune troisième
  * valeur « aucun »** pour un emplacement — un espace vit quelque part.
- * ---------------------------------------------------------------------------
  *
  * **`files.locations` est la SOURCE, `files.policy` en est le MIROIR DÉRIVÉ**
  * ({@see FileLocationPolicyMirror}), écrit dans le même geste : les quatre
@@ -146,11 +144,11 @@ new class extends Component {
      * la base porte : sur une instance qui reprend un serveur de fichiers déjà en
      * service, elle est aveugle jusqu'au premier import d'annuaire. Le dire ici,
      * à côté du bouton, est la seule honnêteté disponible — l'écran ne sait pas
-     * détecter cet existant, et la story lui interdit d'aller le chercher.
+     * détecter cet existant, et il lui est interdit d'aller le chercher.
      */
     public const CHOICE_FREEZES_ONCE_ACCOUNTS_EXIST = 'Ce choix se fige dès que l\'instance porte un compte '
         .'ou un groupe : déplacer un espace peuplé suppose de déménager les données, ce que le chantier '
-        .'« Epic 64 — la bascule d\'autorité » livrera. Tranchez-le avant le premier import d\'annuaire.';
+        .'« la bascule d\'autorité » livrera. Tranchez-le avant le premier import d\'annuaire.';
 
     /**
      * Littéral figé — LE RICOCHET, expliqué AVANT le refus.
@@ -163,7 +161,7 @@ new class extends Component {
      */
     public const RICOCHET_NOTICE = 'Un espace vit actuellement sur ce cloud : changer de position ici le '
         .'déplacerait, et ce déplacement est refusé tant que l\'espace porte des données. Videz d\'abord '
-        .'l\'espace concerné, ou attendez le chantier « Epic 64 — la bascule d\'autorité ».';
+        .'l\'espace concerné, ou attendez le chantier « la bascule d\'autorité ».';
 
     /** Le cloud actif de l'instance ({@see ActiveCloud}), en valeur brute. */
     public string $cloudActif = 'aucun';
@@ -294,7 +292,6 @@ new class extends Component {
      * LE CLOUD RÉELLEMENT ACTIF — celui que `files.locations` PERSISTE, et le
      * seul que la compilation d'état lise (correction de revue).
      *
-     * ---------------------------------------------------------------------------
      * **{@see self::selectedCloud()} ne sert qu'à AFFICHER ; tout ce qui écrit,
      * ou garde une écriture, lit CELUI-CI.** Le défaut corrigé était réel et
      * atteignable en deux clics légitimes, sans rien forger : les blocs 1 et 2
@@ -309,7 +306,6 @@ new class extends Component {
      * **Fail-closed sur une ligne illisible** : `Aucun` refuse toute position
      * « par le client ». Le message de lecture, lui, est déjà affiché par
      * {@see self::mount()} ; on ne l'écrase pas ici, et on n'écrit rien.
-     * ---------------------------------------------------------------------------
      */
     public function activeCloud(): ActiveCloud
     {
@@ -383,7 +379,7 @@ new class extends Component {
     }
 
     /**
-     * Story 63.5 — LE MOTIF D'ABSENCE de la position « par le client de
+     * LE MOTIF D'ABSENCE de la position « par le client de
      * synchronisation », ou `null` si elle est tenable.
      *
      * Recalculé à CHAQUE rendu (le service est interrogé, jamais un instantané) :
@@ -579,7 +575,7 @@ new class extends Component {
             }
         }
 
-        // Story 63.5 — LA DÉSIGNATION NE SUIT PAS LA RADIO (correction de revue).
+        // LA DÉSIGNATION NE SUIT PAS LA RADIO (correction de revue).
         // Elle porte sur le cloud ACTIF, et la radio n'est qu'un brouillon tant
         // qu'« Enregistrer les emplacements » n'a pas été cliqué : la faire
         // suivre laisserait croire qu'on désigne le client du produit affiché,
@@ -594,7 +590,6 @@ new class extends Component {
      * SEULEMENT l'écriture de la source et de son miroir, **dans une seule
      * transaction**.
      *
-     * ---------------------------------------------------------------------------
      * **LA POSABILITÉ NE PORTE QUE SUR CE QUI CHANGE** (correction de revue),
      * symétriquement à {@see FileLocationChangeGuard}. Rejouée
      * inconditionnellement, elle refusait un ré-enregistrement qui ne change
@@ -609,7 +604,6 @@ new class extends Component {
      * cloud soit joignable priverait les utilisateurs du seul chemin vers leurs
      * fichiers. Un agent qui compile dans cette fenêtre, ou un miroir qui échoue,
      * suffisent à la produire — d'où la transaction.
-     * ---------------------------------------------------------------------------
      */
     public function save(): void
     {
@@ -687,11 +681,11 @@ new class extends Component {
      *
      * **Il ne ré-énumère plus les treize paramètres de `setGlobal()`**
      * (correction de revue) : ce doublon de l'ordre des paramètres était
-     * exactement la classe de défaut que cette story ferme. Il ne nomme que ce
+     * exactement la classe de défaut qu'on ferme ici. Il ne nomme que ce
      * qu'il change, et {@see FilePolicyService::patchGlobal()} — seul endroit du
      * dépôt à connaître cet ordre — relit et repasse tout le reste.
      *
-     * **Story 63.5 — LA POSABILITÉ EST REJOUÉE ICI, AVANT L'ÉCRITURE.** La liste
+     * **LA POSABILITÉ EST REJOUÉE ICI, AVANT L'ÉCRITURE.** La liste
      * affichée ne propose pas « par le client de synchronisation » tant qu'aucune
      * application désignée ne tient ; mais une propriété Livewire se forge, et
      * une garde qui ne vit que dans la liste protège l'étourderie, pas la requête
@@ -764,7 +758,7 @@ new class extends Component {
     }
 
     /**
-     * Story 63.5 — ramène le chemin d'accès au navigateur quand la position
+     * Ramène le chemin d'accès au navigateur quand la position
      * « par le client de synchronisation » vient de cesser d'être tenable.
      * Rend `true` si elle a écrit.
      *
@@ -799,12 +793,12 @@ new class extends Component {
     }
 
     /**
-     * Story 63.5 — la position PERSISTÉE est « par le client de
+     * La position PERSISTÉE est « par le client de
      * synchronisation », et elle n'est plus tenable.
      *
      * Trois chemins y mènent, tous réels : un changement de cloud actif, une
      * application désignée qui perd son statut ou sa désinstallation hors de cet
-     * écran, et un payload enregistré par la story 63.3 — où la position
+     * écran, et un payload enregistré par la — où la position
      * s'enregistrait sans aucune garde parce qu'elle n'avait aucun effet. On ne
      * corrige rien en douce : on DIT que rien n'est posé, et l'administrateur
      * tranche.
@@ -1168,7 +1162,7 @@ new class extends Component {
                 $syncRefusal = $this->syncClientRefusal();
                 $accessPaths = $this->availableAccessPaths();
                 $designatable = $this->designatableApplications();
-                // AC6 — INCONDITIONNEL (correction de revue) : il informe, il
+                // INCONDITIONNEL (correction de revue) : il informe, il
                 // n'interdit rien, et c'est AVANT de s'engager sur une
                 // désignation qu'il est le plus utile.
                 $versionWarning = $this->agentVersionWarning();
@@ -1258,7 +1252,7 @@ new class extends Component {
             </div>
         @endif
 
-        {{-- Les deux cartes de la story 63.4. Composants ENFANTS : chacune
+        {{-- Les deux cartes. Composants ENFANTS : chacune
              porte sa propre double garde, ses propres notifications et son
              propre geste d'enregistrement — les noyer dans ce composant
              aurait fait d'un écran de trois questions un écran de six. --}}

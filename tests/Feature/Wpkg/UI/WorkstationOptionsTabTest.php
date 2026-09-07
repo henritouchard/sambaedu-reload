@@ -14,7 +14,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC5, AC7.1 — Onglet Options .ini du poste.
+ * Onglet Options.ini du poste.
  * Vérifie : (a) modif option persiste, (b) event WorkstationOptionsChanged
  * dispatché, (c) listener `RegenerateWorkstationIniOnOptionsChanged` régénère
  * le `.ini` (test feature live, pas Event::fake — on observe le disque).

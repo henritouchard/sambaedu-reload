@@ -14,9 +14,9 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Story 5.1c — Tests Feature listener `NotifyQuotaOverageOnLogin`.
+ * Tests Feature listener `NotifyQuotaOverageOnLogin`.
  *
- * Couvre AC 13 #15-19 + AC 9 :
+ * Couvre :
  *  15. fire toast quand user is_over_soft sur /home
  *  16. no-op si snapshot null
  *  17. no-op si rien over (toutes les partitions sous quota)
@@ -170,10 +170,6 @@ class LoginOverQuotaToastTest extends TestCase
         ];
     }
 
-    // =========================================================================
-    // AC 13 #15 — fire on over_soft on home
-    // =========================================================================
-
     public function test_it_fires_toast_when_user_is_over_soft_on_home(): void
     {
         $user = $this->makeUser('over-home', $this->snapshotOverHome());
@@ -183,10 +179,6 @@ class LoginOverQuotaToastTest extends TestCase
         $listener = new NotifyQuotaOverageOnLogin();
         $listener->handle(new Login('web', $user, false));
     }
-
-    // =========================================================================
-    // AC 13 #16 — no toast if snapshot null
-    // =========================================================================
 
     public function test_it_does_not_fire_toast_when_snapshot_is_null(): void
     {
@@ -199,10 +191,6 @@ class LoginOverQuotaToastTest extends TestCase
         $listener->handle(new Login('web', $user, false));
     }
 
-    // =========================================================================
-    // AC 13 #17 — no toast if nothing over
-    // =========================================================================
-
     public function test_it_does_not_fire_toast_when_nothing_over(): void
     {
         $user = $this->makeUser('all-good', $this->snapshotNothingOver());
@@ -212,10 +200,6 @@ class LoginOverQuotaToastTest extends TestCase
         $listener = new NotifyQuotaOverageOnLogin();
         $listener->handle(new Login('web', $user, false));
     }
-
-    // =========================================================================
-    // AC 13 #18 — single toast when both partitions over
-    // =========================================================================
 
     public function test_it_fires_single_toast_when_both_partitions_are_over(): void
     {
@@ -228,12 +212,8 @@ class LoginOverQuotaToastTest extends TestCase
         $listener->handle(new Login('web', $user, false));
     }
 
-    // =========================================================================
-    // AC 13 #19 — listener doesn't refire on second request same session
-    // =========================================================================
-
     /**
-     * D5=A : le listener est attaché à `Illuminate\Auth\Events\Login`. Cet
+     * Le listener est attaché à `Illuminate\Auth\Events\Login`. Cet
      * event est émis UNIQUEMENT par `Auth::login()` (1 seule fois en début
      * de session — pas à chaque revalidation cookie). L'idempotence 1×/session
      * est donc garantie par le framework (event Login unique), PAS par le

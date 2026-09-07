@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 /**
- * Service de gestion des profils itinérants (story 1bis.18f).
+ * Service de gestion des profils itinérants (.18f).
  *
- * Story 38.4 (AC2) — **port natif** : ce service ne charge plus le bootstrap
+ * **port natif** : ce service ne charge plus le bootstrap
  * legacy `/var/www/sambaedu` ni n'appelle les fonctions legacy
  * (`read_gpo_sysvol`, `update_gpo_sysvol`, `increment_gpo_sysvol`,
  * `get_pol_key`, `change_pol_key`, `search_ad`). Il résout la GPO
@@ -31,7 +31,7 @@ use RuntimeException;
  * On ne peut pas remplacer la persistance SYSVOL par Eloquent sans casser le
  * contrat GPO.
  *
- * Décision consignée (Story 38.4) : `write_gpo_json` (traçage de l'état pour
+ * Décision consignée : `write_gpo_json` (traçage de l'état pour
  * l'UI legacy dans `/etc/sambaedu/applications/gpos.json`) est **abandonné** —
  * aucun consommateur SE5.
  *
@@ -91,7 +91,7 @@ class RoamingProfileService
     /**
      * Regex stricte de validation des entrées d'exclusion (anti path-traversal
      * + anti injection bash). Autorise [A-Za-z0-9_], `-`, `.`, `/`, ` `.
-     * Rejette `;`, `$()`, backtick, `|`, `&`, `<`, `>`, `'`, `"`, `\`, etc.
+     * Rejette `;`, `$`, backtick, `|`, `&`, `<`, `>`, `'`, `"`, `\`, etc.
      *
      * Note : la regex autorise `.` (utile pour des extensions ex `.cache`) ;
      * la séquence `..` (path traversal) est rejetée explicitement par
@@ -124,7 +124,7 @@ class RoamingProfileService
      * d'exclusion GPO, donc `/` autorisé), un nom de dossier de profil ne doit
      * JAMAIS contenir de séparateur. Regex stricte sans `/`, veto `..`/`.`,
      * pour ne pas s'appuyer sur le seul `str_contains` en aval (modèle de
-     * sécurité explicite — cf. review 26.3 #6).
+     * sécurité explicite).
      */
     public static function isSafeProfileDirName(string $name): bool
     {
@@ -248,7 +248,7 @@ class RoamingProfileService
             $policy = $this->sysvolPolicy()->readUserPolicy($gpo);
             if (! $this->codec()->setKeyValues($policy, self::EXCLUDE_KEY, $clean)) {
                 // Clé absente du Registry.pol : réécrire tel quel + bumper la
-                // version ferait croire à un enregistrement (review 38.4 #7).
+                // version ferait croire à un enregistrement.
                 Log::warning('[RoamingProfileService] Clé ExcludeProfileDirs absente du Registry.pol', [
                     'op' => 'setExclusions',
                     'gpo' => $gpo->name,
@@ -260,10 +260,10 @@ class RoamingProfileService
             $this->sysvolPolicy()->writeUserPolicy($gpo, $policy);
 
             if ($applyVersionBump) {
-                // write_gpo_json ABANDONNÉ (Story 38.4) : aucun consommateur SE5.
+                // Write_gpo_json ABANDONNÉ : aucun consommateur SE5.
                 $this->sysvolPolicy()->bumpUserVersion($gpo);
 
-                // Story 16.14 Q2 — invalider le cache santé GPO après bump version.
+                // Invalider le cache santé GPO après le bump de version.
                 try {
                     app(\App\Gpo\Support\CachedGpoLookups::class)->forgetGpo($gpo->name);
                 } catch (\Throwable) {
@@ -423,10 +423,6 @@ class RoamingProfileService
         return $res;
     }
 
-    // =========================================================================
-    // Story 26.3 — Scan natif /home/profiles + détection orphelins + cache + purge
-    // =========================================================================
-
     /**
      * Racine du store des profils itinérants. Toute suppression DOIT rester
      * confinée sous ce préfixe (vérifié par realpath dans `purgeOrphanProfiles`).
@@ -584,7 +580,7 @@ class RoamingProfileService
     /**
      * Détecte les profils ORPHELINS : dossiers de `/home/profiles` dont le
      * login extrait ne correspond à AUCUN compte `User` (résolu `LOWER(login)`,
-     * NFR7 Postgres-only — JAMAIS l'AD).
+     * en Postgres uniquement, JAMAIS dans l'AD).
      *
      * @param  array<int, string>  $dirs  Noms de dossiers (premier niveau).
      * @return array<int, string>  Sous-ensemble de $dirs sans compte user.
@@ -616,8 +612,6 @@ class RoamingProfileService
 
         return array_values($orphans);
     }
-
-    // ------------------------------------------------------------------ Lecteurs cache
 
     /**
      * Taille (Mo) du profil itinérant d'un login, lue UNIQUEMENT depuis le
@@ -668,8 +662,6 @@ class RoamingProfileService
     {
         return count($this->getOrphanProfiles());
     }
-
-    // ------------------------------------------------------------------ Écriture snapshot
 
     /**
      * Persiste le résultat d'un scan nocturne (appelé par `profiles:snapshot`).
@@ -734,8 +726,6 @@ class RoamingProfileService
             'orphans' => count($orphans),
         ];
     }
-
-    // ------------------------------------------------------------------ Purge sécurisée
 
     /**
      * Purge native des profils orphelins (réimplémentation de `clean_profiles('*')`

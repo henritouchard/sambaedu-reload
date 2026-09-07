@@ -14,7 +14,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.4 — AC4.1 / T5.4.
+ * T5.4.
  *
  * Tests unitaires de {@see IpxeService::handleInstallationLinuxMenu()}.
  */
@@ -118,7 +118,7 @@ class IpxeServiceInstallationLinuxTest extends TestCase
     #[Test]
     public function it_handles_action_dispatch_for_install_deb_gnome(): void
     {
-        // Ce test vérifie que le dispatcher 3.2 fonctionne pour les nouveaux
+        // Ce test vérifie que le dispatcher fonctionne pour les nouveaux
         // cases install_*. Pattern iso 3.2.
         $ws = Workstation::create([
             'name' => 'PC-INSTALL',

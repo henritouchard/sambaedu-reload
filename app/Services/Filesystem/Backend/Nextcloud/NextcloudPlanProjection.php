@@ -9,9 +9,8 @@ use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 61.3 — LE PLAN, TRADUIT UNE FOIS, DANS LE MODÈLE DU DOSSIER D'ÉQUIPE.
+ * LE PLAN, TRADUIT UNE FOIS, DANS LE MODÈLE DU DOSSIER D'ÉQUIPE.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI DEUX ÉTAGES, ET PAS UN.**
  *
  * Le modèle de permissions d'un dossier d'équipe a deux étages, et ils ne font pas
@@ -41,7 +40,6 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * pose sur sa classe — sur son PROPRE dossier. Comparer son octroi au plafond
  * conclurait « il a déjà tout », n'écrirait rien, et le laisserait dehors.
  *
- * ---------------------------------------------------------------------------
  * **TROIS ÉTATS D'OCTROI, TROIS TRADUCTIONS DISTINCTES** (aucune ne se confond) :
  *
  *  | état du plan            | traduction                                    |
@@ -56,7 +54,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * l'observation les range dans deux champs différents.
  *
  * **Un sujet à la fois octroyé par un rôle et clos par un autre reste OCTROYÉ** :
- * l'union au plus permissif est la doctrine de l'epic, et la clôture n'a jamais été
+ * l'union au plus permissif est la doctrine, et la clôture n'a jamais été
  * une interdiction — elle constate qu'un rôle n'a rien reçu.
  */
 final class NextcloudPlanProjection
@@ -96,7 +94,6 @@ final class NextcloudPlanProjection
         $notices = [];
         $memberOfGroup = [];
 
-        // --- 1. Les principaux, une fois pour toutes -------------------------
         foreach ($projector->subjectsOf($plan) as $subject) {
             if ($subject->type === PlanSubject::TYPE_USER) {
                 $id = $projector->nextcloudUserIdFor($subject);
@@ -153,7 +150,6 @@ final class NextcloudPlanProjection
             }
         }
 
-        // --- 2. Les bits voulus, nœud par nœud -------------------------------
         $desired = [];
         $closedSubjects = [];
         $nodeDetails = [];
@@ -198,7 +194,6 @@ final class NextcloudPlanProjection
             $closedSubjects[$node->path] = array_values($closedSubjects[$node->path]);
         }
 
-        // --- 3. Les plafonds : l'union de tout ce qu'un membre peut recevoir --
         $ceilings = [];
         foreach (array_keys($groups) as $name) {
             $ceilings[$name] = 0;
@@ -224,7 +219,6 @@ final class NextcloudPlanProjection
             }
         }
 
-        // --- 4. Le plafond EFFECTIF d'un principal ---------------------------
         $effectiveCeilings = [];
         foreach ($principals as $key => $principal) {
             if ($principal['type'] === NextcloudAclRule::TYPE_GROUP) {

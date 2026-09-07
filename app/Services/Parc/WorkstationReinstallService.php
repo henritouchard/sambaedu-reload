@@ -14,19 +14,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.11 — Service métier de la réinstallation OS pilotée.
+ * Service métier de la réinstallation OS pilotée.
  *
  * Responsabilités :
  *  - **Armement** poste unique {@see armForMachine} + fan-out salle/groupe/
- *    multi-sélection {@see armForMachines} (skip `protected` D10, skip doublon
- *    actif, `insert()` bulk chunké D3/D11).
+ *    multi-sélection {@see armForMachines} (skip des postes `protected`, skip
+ *    doublon actif, `insert()` bulk chunké).
  *  - **Annulation** {@see cancel}.
  *  - **Résolution** de la requête active d'un poste {@see activeRequestFor}
  *    (lue par {@see \App\Ipxe\Services\IpxeService::resolveProgrammedAction()}).
- *  - **Transitions de statut** + garde anti-boucle (D5) : {@see markServed},
+ *  - **Transitions de statut** + garde anti-boucle : {@see markServed},
  *    {@see markInstalling}, {@see markDone}, {@see markFailed}.
- *  - **Déclenchement throttlé par vagues** (D6/D11) : {@see triggerReboot}
- *    (infra async 4.2) + {@see triggerDue} (plafond de concurrence, FIFO,
+ *  - **Déclenchement throttlé par vagues** : {@see triggerReboot}
+ *    (infra async) + {@see triggerDue} (plafond de concurrence, FIFO,
  *    idempotence `triggered_at`).
  *
  * **Ne touche JAMAIS** `Workstation::status` (varchar(20) domaine fermé →
@@ -35,7 +35,7 @@ use Illuminate\Support\Facades\Log;
 class WorkstationReinstallService
 {
     /**
-     * Catalogue OS exposé = whitelist install-only (D9). Exclut explicitement
+     * Catalogue OS exposé = whitelist install-only. Exclut explicitement
      * la maintenance/diagnostic (rescuecd, winpe, factory_reset, clonezilla_*,
      * gparted, hdt, memtest86plus) : ce ne sont pas des réinstallations OS.
      *
@@ -72,7 +72,7 @@ class WorkstationReinstallService
 
     /**
      * Catalogue OS exposé en UI = `ipxe.linux.menu_items` + `ipxe.windows.menu_items`
-     * (D9). Chaque entrée : `['enum' => <valeur>, 'label' => <ASCII>, 'os' => 'linux'|'windows']`.
+     * Chaque entrée : `['enum' => <valeur>, 'label' => <ASCII>, 'os' => 'linux'|'windows']`.
      *
      * @return list<array{enum:string, label:string, os:string}>
      */
@@ -97,15 +97,11 @@ class WorkstationReinstallService
         return $catalog;
     }
 
-    // ========================================================================
-    // Armement
-    // ========================================================================
-
     /**
      * Arme la réinstallation d'un poste unique.
      *
-     * @throws \InvalidArgumentException  Action hors whitelist install-only (D9).
-     * @throws \DomainException           Poste `protected` (D10) ou requête active déjà présente.
+     * @throws \InvalidArgumentException  Action hors whitelist install-only.
+     * @throws \DomainException           Poste `protected` ou requête active déjà présente.
      */
     public function armForMachine(
         Workstation $ws,
@@ -145,9 +141,9 @@ class WorkstationReinstallService
 
     /**
      * Fan-out salle/groupe/multi-sélection (poste unique = cas N=1). Résout la
-     * liste **à l'instant de l'armement** (D3 liste figée), skip les postes
-     * `protected` (D10) et ceux déjà porteurs d'une requête active (pas de
-     * doublon), puis crée les lignes en `insert()` bulk chunké (D3/D11).
+     * liste **à l'instant de l'armement**, skip les postes
+     * `protected` et ceux déjà porteurs d'une requête active (pas de
+     * doublon), puis crée les lignes en `insert()` bulk chunké.
      *
      * @param  iterable<Workstation>  $workstations
      * @return array{armed_count:int, skipped_duplicate:int, skipped_protected:int, armed_workstation_ids:list<int>}
@@ -219,7 +215,7 @@ class WorkstationReinstallService
             ];
         }
 
-        // insert() bulk chunké — pas de N saves Eloquent (D3/D11).
+        // insert() bulk chunké — pas de N saves Eloquent.
         foreach (array_chunk($toInsert, 500) as $chunk) {
             WorkstationReinstallRequest::query()->insert($chunk);
         }
@@ -231,18 +227,14 @@ class WorkstationReinstallService
             'armed_count' => count($toInsert),
             'skipped_duplicate' => count($alreadyActiveIds),
             'skipped_protected' => $skippedProtected,
-            // Fix review #7 — la clé contient des workstation_id (pas des ids de
+            // La clé contient des workstation_id (pas des ids de
             // requêtes) : nom explicite pour éviter toute confusion côté appelant.
             'armed_workstation_ids' => $armedIds,
         ];
     }
 
-    // ========================================================================
-    // Annulation & résolution
-    // ========================================================================
-
     /**
-     * Annule une requête non terminale. No-op si déjà terminale (D5/AC8).
+     * Annule une requête non terminale. No-op si elle est déjà terminale.
      */
     public function cancel(WorkstationReinstallRequest $req): void
     {
@@ -266,10 +258,10 @@ class WorkstationReinstallService
      * n'a effectivement pas abouti, et l'historique doit distinguer « l'admin a
      * renoncé avant le départ » de « la tentative a échoué, on rejoue ».
      *
-     * Aucun reboot n'est déclenché ici : comme pour un armement normal (D2,
-     * chemin unique), c'est le tick `parc:reinstall-due` qui s'en charge.
+     * Aucun reboot n'est déclenché ici : comme pour un armement normal, c'est le
+     * tick `parc:reinstall-due` qui s'en charge, et c'est le seul chemin.
      *
-     * @throws \DomainException  Poste devenu `protected` entre-temps (D10).
+     * @throws \DomainException  Poste devenu `protected` entre-temps.
      */
     public function relaunchForWorkstation(
         Workstation $ws,
@@ -302,10 +294,6 @@ class WorkstationReinstallService
             ->orderByDesc('id')
             ->first();
     }
-
-    // ========================================================================
-    // Transitions de statut (garde anti-boucle D5)
-    // ========================================================================
 
     /**
      * Incrémente le compteur de serves + horodate + bascule `armed → serving`.
@@ -394,12 +382,8 @@ class WorkstationReinstallService
         }
     }
 
-    // ========================================================================
-    // Déclenchement throttlé par le tick (D6/D11)
-    // ========================================================================
-
     /**
-     * Enqueue un reboot forcé (fallback WOL si éteint) via l'infra async 4.2 —
+     * Enqueue un reboot forcé (fallback WOL si éteint) via l'infra async
      * pas de nouveau worker. Pose `triggered_at` (idempotence du tick).
      */
     public function triggerReboot(WorkstationReinstallRequest $req): void
@@ -439,7 +423,7 @@ class WorkstationReinstallService
         $now ??= Carbon::now();
         $maxConcurrent = max(0, (int) config('ipxe.reinstall.max_concurrent', 40));
 
-        // Fix review #3 — sweep temporel : une requête active dont le TTL est
+        // Sweep temporel : une requête active dont le TTL est
         // dépassé libère son slot par le TEMPS (pas par un boot). Sans ça, une
         // machine réellement morte (jamais bootée après triggerReboot) resterait
         // `serving`/`armed` en vol et bloquerait indéfiniment le plafond de
@@ -500,7 +484,7 @@ class WorkstationReinstallService
     /**
      * Calcule l'échéance TTL de la requête.
      *
-     * Fix review #4 — l'échéance est ancrée sur `max($now, $scheduledAt)` : une
+     * L'échéance est ancrée sur `max($now, $scheduledAt)` : une
      * planification future (« ce soir ») armée le matin ne doit pas expirer
      * avant l'heure prévue du déclenchement. `$scheduledAt` null (armement
      * immédiat) revient à ancrer sur `$now`.

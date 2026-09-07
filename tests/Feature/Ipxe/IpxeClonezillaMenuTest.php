@@ -11,7 +11,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.7 — AC3.1 / AC4.1 / AC4.5 / AC5.1 / T3.3.
+ * T3.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/clonezilla-menu`.
  */
@@ -59,7 +59,7 @@ class IpxeClonezillaMenuTest extends TestCase
         $response->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
         $body = (string) $response->getContent();
         self::assertStringContainsString('#!ipxe', $body);
-        // Menu items AC5.1
+        // Menu items
         self::assertStringContainsString('item --key l clonezilla_live', $body);
         self::assertStringContainsString('item --key s clonezilla_save', $body);
         self::assertStringContainsString('item --key r clonezilla_restore', $body);
@@ -88,7 +88,7 @@ class IpxeClonezillaMenuTest extends TestCase
     #[Test]
     public function it_returns_menu_for_unknown_workstation(): void
     {
-        // AC4.5 — poste inconnu : menu toujours rendu (parité legacy clonezilla_menu.php).
+        // Poste inconnu : menu toujours rendu (parité legacy clonezilla_menu.php).
         $response = $this->post('/ipxe/clonezilla-menu', [
             'mac' => 'aa:bb:cc:ff:ff:ff',
             'uuid' => 'ffffffff-ffff-ffff-ffff-ffffffffffff',

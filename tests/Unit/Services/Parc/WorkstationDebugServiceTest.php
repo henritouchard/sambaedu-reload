@@ -64,7 +64,7 @@ class WorkstationDebugServiceTest extends TestCase
         $this->service()->setDebug($ws, false);
 
         self::assertFalse($ws->fresh()->debug);
-        // 'false' = défaut legacy → l'override est supprimé (parité 15.4).
+        // 'false' = défaut legacy → l'override est supprimé (parité).
         self::assertSame(
             0,
             WpkgWorkstationOption::where('workstation_id', $ws->id)

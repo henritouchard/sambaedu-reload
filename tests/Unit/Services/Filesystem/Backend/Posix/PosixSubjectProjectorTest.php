@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 — LA TABLE DE TRADUCTION DES SUJETS, branche par branche, refus
+ * LA TABLE DE TRADUCTION DES SUJETS, branche par branche, refus
  * compris.
  */
 class PosixSubjectProjectorTest extends TestCase
@@ -52,10 +52,6 @@ class PosixSubjectProjectorTest extends TestCase
             'ad_dn' => 'CN=Classe_3SB,OU=Groupes,OU=0991229y,DC=lab,DC=lan',
         ]);
     }
-
-    // =========================================================================
-    // Comptes
-    // =========================================================================
 
     #[Test]
     public function a_user_subject_becomes_its_login_with_its_case_preserved(): void
@@ -95,10 +91,6 @@ class PosixSubjectProjectorTest extends TestCase
         self::assertNull($projection->name);
     }
 
-    // =========================================================================
-    // Groupes — mappage historique (sans rôle d'arête)
-    // =========================================================================
-
     #[Test]
     public function a_group_without_an_edge_role_uses_the_historic_mapping(): void
     {
@@ -115,10 +107,6 @@ class PosixSubjectProjectorTest extends TestCase
         self::assertSame('equipe_3sb-1229y', $this->projector()->project(PlanSubject::group((int) $equipe->id))->name);
         self::assertSame('direction', $this->projector()->project(PlanSubject::group((int) $custom->id))->name);
     }
-
-    // =========================================================================
-    // Groupes — mappage d'arête (le trio de compatibilité)
-    // =========================================================================
 
     #[Test]
     public function the_three_edge_roles_of_a_class_map_onto_the_legacy_trio(): void
@@ -174,10 +162,6 @@ class PosixSubjectProjectorTest extends TestCase
             }
         }
     }
-
-    // =========================================================================
-    // Jamais un nom inventé
-    // =========================================================================
 
     #[Test]
     public function a_name_the_system_cannot_resolve_is_refused_and_named(): void
@@ -289,10 +273,6 @@ class PosixSubjectProjectorTest extends TestCase
         Process::assertRanTimes(fn ($p): bool => str_starts_with($p->command, 'getent group '), 1);
         Process::assertNotRan(fn ($p): bool => str_contains($p->command, 'sudo getent'));
     }
-
-    // =========================================================================
-    // Projection inverse
-    // =========================================================================
 
     #[Test]
     public function the_reverse_index_resolves_the_ambiguous_name_onto_the_subject_the_plan_expresses(): void

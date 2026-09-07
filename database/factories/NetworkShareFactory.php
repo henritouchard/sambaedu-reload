@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /**
  * @extends Factory<NetworkShare>
  *
- * Story 34.1 — fabrique de répertoires réseau (tests + tinker en l'absence
- * d'UI 34.2). `letter` null par défaut → le provider auto-assigne ; surcharger
+ * Fabrique de répertoires réseau (tests + tinker en l'absence
+ * d'UI). `letter` null par défaut → le provider auto-assigne ; surcharger
  * avec `->state(['letter' => 'P:'])` pour forcer une lettre.
  */
 class NetworkShareFactory extends Factory

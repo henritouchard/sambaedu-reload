@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Handler `folders` (exclusive PAR DOSSIER / scope machine_user) — Story 58.1,
+// Handler `folders` (exclusive PAR DOSSIER / scope machine_user),
 // contrat §7.12. SEPTIÈME mécanisme hors-catalogue, appliqué par le COMPAGNON
 // (la redirection vit dans HKCU : c'est une donnée d'UTILISATEUR). Logique PURE,
 // OS-agnostique (registre + I/O injectés) → testée sur l'hôte ; agent/windows
@@ -42,7 +42,7 @@ import (
 //
 // Une redirection de dossier shell n'est PAS relue par un simple
 // SHChangeNotify : Explorer lit `User Shell Folders` à son démarrage. Un
-// changement EFFECTIF demande donc RefreshExplorerRestart (échelle 43.1) — le
+// changement EFFECTIF demande donc RefreshExplorerRestart (échelle) — le
 // COMPAGNON exécute le geste en fin de passe, une seule fois. Au régime stable,
 // aucune écriture ⇒ aucun geste ⇒ pas de bureau qui clignote à chaque cycle.
 //
@@ -345,7 +345,7 @@ func (h *FoldersHandler) applyTarget(target folderTarget) error {
 
 	// Explorer lit `User Shell Folders` à SON démarrage : un SHChangeNotify ne
 	// suffit pas, il faut le relancer. Accumulé ici, exécuté UNE fois en fin de
-	// passe par le compagnon (43.1) — jamais inline (une seule voie d'émission).
+	// passe par le compagnon — jamais inline (une seule voie d'émission).
 	h.refreshWanted = maxRefreshLevel(h.refreshWanted, RefreshExplorerRestart)
 
 	return h.convergeQuickAccess(target, previous)
@@ -361,7 +361,7 @@ func (h *FoldersHandler) applyTarget(target folderTarget) error {
 // l'utilisateur, alors que le desired-state est compilé par couple (poste,
 // user). Un handler qui déciderait seul de « nettoyer les emplacements
 // concurrents » retirerait l'épingle qu'un AUTRE poste du même utilisateur vient
-// légitimement de poser (c'est exactement le finding 🔴 de la review 27.21, sur
+// légitimement de poser (le même piège que sur
 // `desktop_sweep_paths`). `previous` échappe à ce piège : ce n'est pas un
 // emplacement dérivé ni deviné, c'est la valeur que CE poste remplace à
 // l'instant — l'agent ne retire que sa propre trace.

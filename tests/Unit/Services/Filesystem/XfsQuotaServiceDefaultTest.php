@@ -17,9 +17,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.4 — **LA RÉSOLUTION TIENT EN TROIS ÉTAGES, ET AUCUN NE DEVINE.**
+ * **LA RÉSOLUTION TIENT EN TROIS ÉTAGES, ET AUCUN NE DEVINE.**
  *
- * ---------------------------------------------------------------------------
  * Ce fichier REMPLACE `XfsQuotaServiceItinerantTest`, qui a perdu son sujet : la
  * règle « itinérante » n'existe plus. Elle n'était d'ailleurs jamais rendue par les
  * deux devinettes de profil du dépôt — c'était un quatrième public d'interface pour
@@ -32,10 +31,9 @@ use Tests\TestCase;
  *  - **un compte rattaché à un autre établissement reçoit le défaut d'instance
  *    comme tout le monde** — l'étage qui le traitait à part est mort ;
  *  - **deux comptes sans règle propre reçoivent LE MÊME plafond**, quels que
- *    soient leurs groupes : c'est LA propriété que la story livre ;
+ *    soient leurs groupes : c'est LA propriété visée ;
  *  - et la signature publique, qui ne porte plus que TROIS paramètres — l'assertion
  *    qui prouve que la devinette n'a pas de porte dérobée.
- * ---------------------------------------------------------------------------
  */
 class XfsQuotaServiceDefaultTest extends TestCase
 {
@@ -161,10 +159,6 @@ class XfsQuotaServiceDefaultTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // Les trois étages
-    // =========================================================================
-
     #[Test]
     public function a_default_rule_reaches_an_account_that_no_other_rule_covers(): void
     {
@@ -237,27 +231,26 @@ class XfsQuotaServiceDefaultTest extends TestCase
     }
 
     /**
-     * ⚠️ **ÉCART CONNU ET DATÉ — 2026-08-15, story 63.4.**
+     * ⚠️ **ÉCART CONNU ET DATÉ — 2026-08-15.**
      *
-     * ---------------------------------------------------------------------------
      * **CE QUE CE TEST ÉPINGLE EST UN DÉFAUT, pas une propriété.** Le second étage
      * trie les règles de groupe par plafond dur DÉCROISSANT, où `0` — qui signifie
      * « illimité », donc le plus large de tous — arrive DERNIER. Un compte membre
      * d'un groupe illimité et d'un groupe borné reçoit donc le plafond BORNÉ : la
      * règle la plus large perd.
      *
-     * **Le comportement est ANTÉRIEUR à cette story** (vérifié contre `HEAD`), et il
+     * **Le comportement est ANTÉRIEUR**, et il
      * n'est pas corrigé ici : le corriger ÉLARGIRAIT des plafonds en vigueur, et un
      * élargissement décidé par un correctif, à l'insu de l'exploitant, n'est pas plus
      * défendable qu'un rétrécissement. Il se corrige avec un geste d'exploitation,
      * pas dans un `orderBy`.
      *
-     * ⚠️ **Mais cette story rend le cas BEAUCOUP PLUS PROBABLE**, et c'est pour cela
-     * que l'écart est daté ici : elle supprime les plafonds par profil et recommande
+     * ⚠️ **Mais l'effondrement des défauts rend le cas BEAUCOUP PLUS PROBABLE**, et
+     * c'est pour cela que l'écart est daté ici : il supprime les plafonds par profil
+     * et recommande
      * de poser les budgets particuliers en règle de groupe — or le budget le plus
      * large qu'un exploitant posera est « illimité ». Le jour où quelqu'un le signale
      * comme un bug, ce test doit être le premier endroit trouvé.
-     * ---------------------------------------------------------------------------
      */
     #[Test]
     public function known_gap_2026_08_15_an_unlimited_group_rule_loses_to_a_bounded_one(): void
@@ -293,10 +286,6 @@ class XfsQuotaServiceDefaultTest extends TestCase
         $this->assertSame('none', $service->getEffectiveQuota('alice', QuotaRule::PARTITION_SAMBAEDU)['source']);
     }
 
-    // =========================================================================
-    // Ce que la story RETIRE — et qui doit rester retiré
-    // =========================================================================
-
     /**
      * **UN COMPTE EXTERNE TOMBE SUR LE DÉFAUT D'INSTANCE COMME TOUT LE MONDE.**
      * L'étage qui le traitait à part — déclenché par le rattachement à un autre
@@ -317,7 +306,7 @@ class XfsQuotaServiceDefaultTest extends TestCase
     }
 
     /**
-     * **LA PROPRIÉTÉ QUE LA STORY LIVRE**, épinglée positivement : deux comptes
+     * **LA PROPRIÉTÉ VISÉE**, épinglée positivement : deux comptes
      * qu'aucune règle nominative ni règle de groupe ne couvre reçoivent le MÊME
      * plafond — même si leurs groupes ressemblent à des publics d'autrefois.
      */
@@ -366,15 +355,11 @@ class XfsQuotaServiceDefaultTest extends TestCase
         $this->assertFalse(method_exists(XfsQuotaService::class, 'getUserProfile'));
     }
 
-    // =========================================================================
-    // Story 63.4, correction de revue — **LE PLAFOND ATTEINT LE DISQUE**
-    // =========================================================================
-
     /**
      * ⚠️ **LE DÉFAUT D'INSTANCE TRAVERSAIT L'APPLICATION SANS RIEN FAIRE.** La
      * méthode de mise en file ne connaissait que les règles nominatives et de groupe :
      * un défaut d'instance passait par ses deux branches sans en emprunter aucune, et
-     * le plafond saisi à l'écran n'atteignait JAMAIS le système de fichiers. La story
+     * le plafond saisi à l'écran n'atteignait JAMAIS le système de fichiers. On
      * aurait remplacé « un formulaire qui n'applique rien » par « une ligne en base
      * qui n'atteint personne ».
      */

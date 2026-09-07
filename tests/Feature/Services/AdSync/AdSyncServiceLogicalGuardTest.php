@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.7 / AC3 — défense en profondeur : les méthodes d'écriture AD de
+ * Défense en profondeur : les méthodes d'écriture AD de
  * {@see AdSyncService} refusent un groupe LOGIQUE (`is_physical = false`) AVANT
  * toute requête LDAP. `OU=Parcs` est en lecture seule ; le chemin normal ne doit
  * jamais atteindre ces méthodes avec un groupe logique (l'observer filtre en
@@ -60,10 +60,10 @@ class AdSyncServiceLogicalGuardTest extends TestCase
     }
 
     /**
-     * Défaut n°3 du contexte de la story : jadis `moveWorkstationGroup()` sur un
-     * groupe logique atteignait `findSalleOu()` (null → « OU salle non trouvée »
-     * → throw en queue sync → exception dans la requête HTTP). La garde 38.7 le
-     * refuse d'abord — plus aucune requête LDAP, plus d'exception traversante.
+     * Jadis, `moveWorkstationGroup()` sur un groupe logique atteignait
+     * `findSalleOu()` (null → « OU salle non trouvée » → throw en queue sync →
+     * exception dans la requête HTTP). La garde le refuse d'abord — plus aucune
+     * requête LDAP, plus d'exception traversante.
      */
     #[Test]
     public function move_refuses_a_logical_group_before_reaching_ldap(): void

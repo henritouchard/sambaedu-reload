@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Exceptions;
 
 /**
- * Story 36.1 (corr. review #2b) — levée quand une projection `windows/fs_acl`
+ * Levée quand une projection `windows/fs_acl`
  * viole le garde-fou d'authoring {@see \App\Services\Agent\Providers\FsAclAuthoringGuard}
  * au moment de la persistance (observer Eloquent sur {@see \App\Models\CapabilityProjection}).
  *
- * Rend la décision Q2 (« deny descendant sur racine protégée interdit », etc.)
- * RÉELLE au runtime serveur : une projection dangereuse ne peut plus être
- * enregistrée (protège aussi le futur formulaire 36.4). Le message liste les
+ * Rend les règles du garde-fou (« deny descendant sur racine protégée
+ * interdit », etc.) RÉELLES au runtime serveur : une projection dangereuse ne peut plus être
+ * enregistrée (protège aussi le futur formulaire). Le message liste les
  * violations en clair (FR).
  */
 class FsAclAuthoringException extends \RuntimeException
@@ -22,7 +22,7 @@ class FsAclAuthoringException extends \RuntimeException
     public function __construct(public readonly array $violations)
     {
         parent::__construct(
-            "Projection fs_acl refusée par le garde-fou d'authoring (Story 36.1) :\n- "
+            "Projection fs_acl refusée par le garde-fou d'authoring :\n- "
             .implode("\n- ", $violations)
         );
     }

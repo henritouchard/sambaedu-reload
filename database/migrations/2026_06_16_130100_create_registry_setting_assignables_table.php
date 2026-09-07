@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3 — Pivot d'assignation des réglages de registre, calqué EXACTEMENT
+ * Pivot d'assignation des réglages de registre, calqué EXACTEMENT
  * sur `shortcut_assignables` (2026_02_09_173400). Morph polymorphe :
  *   - WorkstationGroup (salles physiques, parcs logiques) — geste UI v1 par PARC ;
  *   - Workstation (postes individuels) ;

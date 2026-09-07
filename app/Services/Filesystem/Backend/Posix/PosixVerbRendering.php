@@ -7,10 +7,9 @@ namespace App\Services\Filesystem\Backend\Posix;
 use App\Services\Filesystem\Plan\PlanGrant;
 
 /**
- * Story 62.4 — CE QUE LE SERVEUR DE FICHIERS HISTORIQUE SAIT RENDRE d'une liste de
+ * CE QUE LE SERVEUR DE FICHIERS HISTORIQUE SAIT RENDRE d'une liste de
  * verbes, et ce qu'il ne sait pas.
  *
- * ---------------------------------------------------------------------------
  * **CE N'EST PAS UNE TABLE DE QUINZE CAS. C'EST DEUX AXES ET UN DRAPEAU.**
  *
  * La tentation, devant quatre verbes combinables, est d'écrire les quinze
@@ -40,21 +39,19 @@ use App\Services\Filesystem\Plan\PlanGrant;
  *     écrit. La règle interdit de l'accorder, donc `supprimer` n'est pas rendu, et
  *     le nœud le dit ({@see \App\Enums\FileBackendOutcome::NonExprimable}).
  *
- * ---------------------------------------------------------------------------
  * **LA RÈGLE UNIQUE DE DÉGRADATION.**
  *
  * Quand le mécanisme ne sait pas rendre la découpe demandée, il rend
  * l'**INTERSECTION EXPRIMABLE** — jamais un verbe de MUTATION que l'octroi ne
  * porte pas — et DÉCLARE ce qui manque.
  *
- * Le précédent du « surensemble nommé » (story 60.4, où une audience plus large
+ * Le précédent du « surensemble nommé » (où une audience plus large
  * que celle demandée était acceptée) ne s'étend PAS ici : il portait sur QUI, pas
  * sur QUOI. Élargir l'audience d'un droit déjà accordé est une approximation
  * discutable ; accorder `creer` pour pouvoir rendre `supprimer` ouvrirait un droit
  * que l'administrateur n'a pas donné. Ce n'est pas la même chose, et la seconde
  * n'est jamais acceptable.
  *
- * ---------------------------------------------------------------------------
  * **LA RESTRICTION DE SUPPRESSION EST UNE PROPRIÉTÉ DU NŒUD, PAS DE L'ENTRÉE.**
  *
  * Elle se pose sur le DOSSIER et vaut pour tout le monde. Toute conception qui

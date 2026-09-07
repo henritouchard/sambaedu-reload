@@ -25,7 +25,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 34.2 — Détail d'un lecteur réseau géré : édition des champs + assignation
+ * Détail d'un lecteur réseau géré : édition des champs + assignation
  * par maille (pivot SQL pur) + suppression. Validation prédictive (collision de
  * lettre, WG-montage-seul) calquée sur 30.5.
  */
@@ -54,14 +54,14 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     // Édition de l'identité : header en lecture seule par défaut, formulaire à la demande.
     public bool $editingDetails = false;
 
-    // Story 60.4 — écart entre le PLAN (base autoritaire) et l'état RELU, dit en
+    // Écart entre le PLAN (base autoritaire) et l'état RELU, dit en
     // vocabulaire de plan : par nœud, par sujet, l'attendu et le constaté. Plus
     // aucune ligne de permission brute n'arrive ici. Rafraîchi au montage et à la
     // demande — pas un calcul à chaque rendu (il relit le serveur).
     // `null` = non calculé.
     public ?array $drift = null;
 
-    // Story 60.4 — la réconciliation déclenchée depuis cet écran est ENFILÉE.
+    // La réconciliation déclenchée depuis cet écran est ENFILÉE.
     // L'écran le DIT, et s'arrête là : pas d'interrogation périodique, pas de
     // diffusion d'événement, pas d'indicateur de progression. Un seul geste passe
     // par ici et la boucle de rétroaction existe déjà — l'encart de conformité
@@ -89,7 +89,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public ?array $planPreview = null;
 
     /**
-     * Story 60.5 — l'ORIGINE du partage : la recette dont il est la
+     * L'ORIGINE du partage : la recette dont il est la
      * matérialisation, le groupe qu'il cloisonne, et l'emplacement RÉEL de sa
      * racine côté serveur. `null` pour un partage ordinaire, qui n'a pas d'origine.
      *
@@ -103,7 +103,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public ?array $treeOrigin = null;
 
     /**
-     * Story 60.5 — les nœuds ACTIVABLES du plan, avec leur état.
+     * Les nœuds ACTIVABLES du plan, avec leur état.
      *
      * Une entrée ABSENTE de la donnée d'activation vaut ACTIF : c'est la décision
      * de l'espace d'échange historique, créé actif. Suspendre VIDE l'octroi
@@ -115,12 +115,12 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public array $activableNodes = [];
 
     /**
-     * Story 60.5 — le DERNIER RAPPORT de réconciliation, par nœud.
+     * Le DERNIER RAPPORT de réconciliation, par nœud.
      *
      * Un partage plat a un nœud : « ça a marché ou pas » suffisait. Un arbre en a
      * quatre plus un par élève, et la question de l'administrateur devient
      * « LEQUEL a échoué ». C'est l'arbre qui donne enfin son audience à ce rapport,
-     * écrit et testé depuis la story 60.4 mais rendu nulle part.
+     * écrit et testé depuis la mais rendu nulle part.
      *
      * Il arrive en TABLEAU : un rapport ne se reconstruit pas sans repasser par sa
      * fabrique et son plan, et pour l'AFFICHER le tableau suffit.
@@ -160,7 +160,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     }
 
     /**
-     * Story 60.5 — origine et nœuds activables. Silencieux et sans effet pour un
+     * Origine et nœuds activables. Silencieux et sans effet pour un
      * partage ordinaire : il n'a pas d'origine, et il n'a rien à activer.
      */
     private function loadTreeOrigin(NetworkShare $share): void
@@ -248,7 +248,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     }
 
     /**
-     * Story 60.5 — bascule un nœud ACTIVABLE de l'arbre.
+     * Bascule un nœud ACTIVABLE de l'arbre.
      *
      * Persiste l'état PUIS enfile la réconciliation : la pose est quadratique, et
      * le cycle d'une requête n'est pas le bon endroit pour l'attendre.
@@ -299,7 +299,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         }
     }
 
-    // --- Story 60.3 : aperçu du plan avant application ----------------------
 
     /**
      * Projette le partage en plan NEUTRE, le soumet au backend d'aperçu obtenu
@@ -316,7 +315,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         }
 
         try {
-            // Story 60.5 — la projection passe par l'ORCHESTRATEUR, qui route selon
+            // La projection passe par l'ORCHESTRATEUR, qui route selon
             // l'origine du partage. Court-circuiter vers la projection plate
             // montrerait, pour un partage d'arbre, un aperçu à un seul nœud sans
             // ses audiences : un aperçu FAUX est pire qu'une absence d'aperçu.
@@ -324,7 +323,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
             // Le backend d'APERÇU, jamais celui du partage : on montre ce que le
             // plan dit sans rien écrire. Résolu par le REGISTRE — le chemin du
             // contrat, pas un raccourci vers la classe : le jour où l'aperçu
-            // pourra s'appuyer sur l'autorité réelle du partage (60.4), c'est
+            // pourra s'appuyer sur l'autorité réelle du partage, c'est
             // cette ligne qui changera, et elle seule.
             $backend = app(FileBackendRegistry::class)->get(FileBackendName::Preview);
             $report = $backend->provision($plan);
@@ -393,7 +392,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
                 $grants[] = [
                     'label' => $label,
-                    // Story 62.4 — l'octroi porte des VERBES : on rend la liste
+                    // L'octroi porte des VERBES : on rend la liste
                     // telle quelle, avec le même libellé que l'encart de dérive.
                     'access_label' => PlanStateComparator::accessLabel($grant->verbs),
                     'suspended' => ! $grant->isActive(),
@@ -426,7 +425,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         ];
     }
 
-    // --- Assignations actuelles --------------------------------------------
 
     #[Computed]
     public function assignments(): array
@@ -487,7 +485,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         return app(NetworkShareValidator::class)->warnings($this->share);
     }
 
-    // --- Pickers SQL (zéro CN AD) ------------------------------------------
 
     #[Computed]
     public function candidates(): array
@@ -535,7 +532,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $this->assignSearch = '';
     }
 
-    // --- Édition des champs -------------------------------------------------
 
     public function editDetails(): void
     {
@@ -603,7 +599,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $this->loadShare();
     }
 
-    // --- Assignations -------------------------------------------------------
 
     public function openAssign(): void
     {
@@ -649,9 +644,9 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
         // L'ajout d'une cible ÉLARGIT l'audience : ce répertoire peut entrer en
         // collision de lettre avec un AUTRE répertoire de même lettre explicite
-        // dont l'audience recouvre désormais la cible ajoutée (piège #3, finding
-        // review #1 — `saveDetails`/`createShare` validaient déjà, `addAssignment`
-        // était le vecteur non couvert). On valide DANS la transaction : si
+        // dont l'audience recouvre désormais la cible ajoutée (`saveDetails` et
+        // `createShare` validaient déjà, `addAssignment` était le vecteur non
+        // couvert). On valide DANS la transaction : si
         // collision, l'assignation est rollback (aucune écriture partielle).
         try {
             DB::transaction(function (): void {
@@ -709,7 +704,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $this->surfaceWarnings();
     }
 
-    // --- Suppression --------------------------------------------------------
 
     public function deleteShare()
     {
@@ -721,12 +715,12 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         // sort le dossier de l'espace exposé par le share SMB [partages] (sinon
         // un dossier « supprimé » reste atteignable en UNC avec ses grants). Le
         // contenu est archivé (mv en poubelle), pas détruit.
-        // Story 60.4 — le déprovisionnement reste SYNCHRONE : la ligne disparaît
+        // Le déprovisionnement reste SYNCHRONE : la ligne disparaît
         // juste après, et un répertoire encore exposé pendant ce temps reste
         // atteignable par tous ceux qui y avaient accès.
         $deprovisioned = $share !== null && app(NetworkShareService::class)->deprovision($share);
 
-        // La suppression cascade le pivot (onDelete cascade, 34.1).
+        // La suppression cascade le pivot (onDelete cascade).
         NetworkShare::where('id', $this->id)->delete();
 
         session()->flash('toast', [
@@ -740,7 +734,6 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         return redirect()->route('admin.shares');
     }
 
-    // --- Helpers ------------------------------------------------------------
 
     /**
      * ENFILE la réconciliation et le DIT. Aucune écriture n'a lieu dans le cycle
@@ -782,7 +775,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
      * Met l'écart en forme d'affichage : les sujets sont résolus PAR IDENTITÉ
      * INTERNE, en lot (deux requêtes au plus), et rendus par leur nom SE5. Aucun
      * nom système, aucun mode de permission, aucun chemin n'entre ici — c'est ce
-     * que la story 60.4 assainit sur cet écran.
+     * que la assainit sur cet écran.
      *
      * @param  array{status:string,nodes:list<array<string,mixed>>,detail?:string}  $drift
      */
@@ -988,7 +981,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 <x-organisms.page title="Lecteur réseau géré" :scrollable="true" :back="route('admin.shares')"
     back-text="Retour aux lecteurs réseau">
     <x-slot:actions>
-        {{-- Story 60.3 — l'aperçu est READ-ONLY : il n'écrit rien, il montre. --}}
+        {{-- L'aperçu est READ-ONLY : il n'écrit rien, il montre. --}}
         <button type="button" class="btn btn-outline btn-sm" wire:click="openPlanPreview"
             wire:loading.attr="disabled" wire:target="openPlanPreview">
             <span wire:loading.remove wire:target="openPlanPreview"><i class="fa-solid fa-eye"></i> Aperçu du plan</span>
@@ -1123,7 +1116,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                                     <span class="whitespace-pre-line">{{ $description }}</span>
                                 </div>
                             @endif
-                            {{-- Story 60.5 — l'ORIGINE : de quelle recette ce partage est la
+                            {{-- L'ORIGINE : de quelle recette ce partage est la
                                  matérialisation, quel groupe il cloisonne, et OÙ il vit
                                  réellement. Ce dernier point est ce qu'on va vérifier à la
                                  main, et ce que la liste blanche du système doit couvrir. --}}
@@ -1149,7 +1142,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         </div>
     </div>
 
-    {{-- ===================== Conformité des droits (Story 60.4) =====================
+    {{-- ===================== Conformité des droits =====================
          L'encart parle le VOCABULAIRE DU PLAN : un nœud, un sujet par son nom SE5,
          un accès attendu et un accès constaté. Plus aucune ligne de permission
          brute — c'est l'assainissement porté par la story 60.4, et un test de
@@ -1255,7 +1248,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         </div>
     @endif
 
-    {{-- ===================== Dossiers activables (Story 60.5) =====================
+    {{-- ===================== Dossiers activables =====================
          Suspendre VIDE les accès du dossier ; le dossier et son contenu RESTENT.
          Le libellé le dit en toutes lettres — c'est la distinction que tout le
          modèle a passé un critère entier à établir, et la confondre avec une
@@ -1314,7 +1307,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         </div>
     @endif
 
-    {{-- ===================== Dernier passage, par nœud (Story 60.5) =====================
+    {{-- ===================== Dernier passage, par nœud =====================
          Un partage plat a un nœud : « ça a marché ou pas » suffisait. Un arbre en a
          quatre plus un par élève, et la question devient « LEQUEL a échoué ». Le
          rapport est lu depuis un TABLEAU : un rapport ne se reconstruit pas sans
@@ -1436,7 +1429,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                 </div>
             @endif
 
-    {{-- ===================== Modale : aperçu du plan (Story 60.3) ===================== --}}
+    {{-- ===================== Modale : aperçu du plan ===================== --}}
     <x-molecules.modal wire:model="isPlanPreviewOpen" size="max-w-4xl" height="h-auto"
         close-method="closePlanPreview"
         title="Aperçu du plan" icon="fa-eye text-primary"

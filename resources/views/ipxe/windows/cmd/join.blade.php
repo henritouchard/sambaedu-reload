@@ -1,4 +1,4 @@
-{{-- Story 3.8 - D6 / AC4.3 - Port iso legacy/modules/ipxe/Win10/action.php cmd_join (LOC 358-406). --}}
+{{-- Port iso legacy/modules/ipxe/Win10/action.php cmd_join (LOC 358-406). --}}
 {{-- Securite critique : ce .cmd s'execute en SYSTEM cote Windows post-reboot. --}}
 {{-- Sanitization : tous les placeholders {{ $name }}, {{ $role }}, {{ $ou }} passent --}}
 {{-- par WindowsXmlPlaceholders::sanitizeBatPlaceholder() dans le builder. --}}

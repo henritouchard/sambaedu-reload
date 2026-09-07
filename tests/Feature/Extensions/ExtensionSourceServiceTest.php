@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.1 (AC1/AC3/AC6) — Actes d'administration d'une source.
+ * Actes d'administration d'une source.
  *
  * Le cœur testé ici est le **pin de clé** : par où elle peut entrer (collée, ou
  * lue une seule fois sous https), par où elle ne peut PAS entrer (http sans
@@ -29,7 +29,7 @@ use Tests\TestCase;
  * Puis les gardes de cycle de vie (bundled intouchable, retrait bloqué par une
  * intégrée) et la discipline d'audit (no-op = zéro ligne).
  *
- * Tests HÔTE (php 8.4 + pdo_sqlite + sodium natif), `RefreshDatabase`.
+ * Tests HÔTE (php + pdo_sqlite + sodium natif), `RefreshDatabase`.
  */
 class ExtensionSourceServiceTest extends TestCase
 {
@@ -65,7 +65,7 @@ class ExtensionSourceServiceTest extends TestCase
         });
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     /** @return array{public: string, secret: string} */
     private static function keypair(): array
@@ -122,10 +122,6 @@ class ExtensionSourceServiceTest extends TestCase
             'visibility' => ['roles' => ['admin']],
         ], $overrides);
     }
-
-    // =====================================================================
-    // AC1 — ajout
-    // =====================================================================
 
     #[Test]
     public function a_source_is_added_with_a_pasted_key_and_synchronized_at_once(): void
@@ -317,10 +313,6 @@ class ExtensionSourceServiceTest extends TestCase
         self::assertSame('', $entry->extension_key, 'un événement de source ne nomme aucune extension');
     }
 
-    // =====================================================================
-    // AC6 — la clé pinnée n'est jamais renégociée
-    // =====================================================================
-
     #[Test]
     public function refreshing_never_downloads_source_pub_again(): void
     {
@@ -343,10 +335,6 @@ class ExtensionSourceServiceTest extends TestCase
         $pubCalls = collect(Http::recorded())->filter(fn ($pair): bool => str_contains($pair[0]->url(), 'source.pub'))->count();
         self::assertSame(1, $pubCalls, 'source.pub n\'est lu qu\'à l\'ajout, jamais au rafraîchissement');
     }
-
-    // =====================================================================
-    // AC3 — activer / désactiver / retirer
-    // =====================================================================
 
     #[Test]
     public function disabling_and_enabling_a_source_is_audited_once_each(): void
@@ -451,10 +439,6 @@ class ExtensionSourceServiceTest extends TestCase
         }
     }
 
-    // =====================================================================
-    // Rafraîchissement
-    // =====================================================================
-
     #[Test]
     public function refreshing_a_disabled_source_is_refused(): void
     {
@@ -478,10 +462,6 @@ class ExtensionSourceServiceTest extends TestCase
 
         $this->service()->refresh($bundled->id, $this->admin);
     }
-
-    // =====================================================================
-    // Lecture
-    // =====================================================================
 
     #[Test]
     public function the_listing_exposes_flat_rows_with_counts_and_state(): void

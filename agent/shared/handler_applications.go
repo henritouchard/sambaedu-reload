@@ -8,7 +8,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Handler `applications` (aggregate / scope MACHINE) — Story 27.5.
+// Handler `applications` (aggregate / scope MACHINE).
 //
 // « UN TUYAU, DEUX OUTILS » : l'agent unifie le TRANSPORT (le déclencheur), PAS
 // le moteur de paquets. WPKG reste le moteur déclaratif (résolution de
@@ -25,7 +25,7 @@ import (
 // justifiée à « API native, zéro shell-out » : déclencher un moteur externe ne
 // s'écrit pas en Win32.
 //
-// CONVERGENCE level-triggered (Vérité #5 « programmé aujourd'hui, effectif
+// CONVERGENCE level-triggered (« programmé aujourd'hui, effectif
 // demain »), JAMAIS un événement ponctuel :
 //   - Test  : l'ensemble cible (app_id) est-il DÉJÀ entièrement installé ?
 //     « désiré ⊆ installé ? » lu dans `wpkg.xml` (l'état courant réel de WPKG).
@@ -35,16 +35,16 @@ import (
 //     manque. Idempotent / level-triggered : re-déclencher sur un poste déjà
 //     convergé est sans effet cumulatif (WPKG no-op de lui-même).
 //
-// MARQUEUR DE PÉRIMÈTRE (« désactiver = cesser de gérer », iso 27.1/27.4) : une
+// MARQUEUR DE PÉRIMÈTRE (« désactiver = cesser de gérer ») : une
 // app retirée des affectations disparaît de l'ensemble cible → elle n'est plus
 // exigée installée (l'inventaire la libère) ; l'agent NE la désinstalle PAS de
 // lui-même (c'est WPKG qui le ferait via `<remove>` dans son profil — le handler
 // ne touche jamais au poste hors du déclenchement WPKG).
 //
-// ISOLATION (AC4) : un échec de déclenchement WPKG → l'op renvoie une erreur →
+// ISOLATION : un échec de déclenchement WPKG → l'op renvoie une erreur →
 // le moteur (engine.go RunPass) rend {status: error, detail} pour le SEUL type
-// `applications` ; les autres types convergent. Jamais de faux `compliant` (leçon
-// 🟠 27.4 #7) : un échec d'install est `error` + `detail`.
+// `applications` ; les autres types convergent. Jamais de faux `compliant` :
+// un échec d'install est `error` + `detail`.
 
 // ApplicationsSpec : une application cible (un item du payload `applications`).
 // `AppId` est l'identifiant de paquet WPKG ( = `package-id` de `profiles.xml`) ;
@@ -57,7 +57,7 @@ type ApplicationsSpec struct {
 
 // WpkgPackageResult : résultat par paquet d'un run WPKG (lu dans `wpkg.xml`
 // après le déclenchement). `Installed` = le paquet est présent dans la base
-// d'état locale de WPKG. Sert l'inventaire par app (AC4) — fondation des
+// D'état locale de WPKG. Sert l'inventaire par app — fondation des
 // licences à pool.
 type WpkgPackageResult struct {
 	AppId     string
@@ -93,7 +93,7 @@ type ApplicationsOps interface {
 	// sortie d'échec global) → {status: error}.
 	//
 	// `specs` = l'ensemble cible (utilisé pour générer le profil par-hôte
-	// `profiles.xml`/`hosts.xml` localement — D9 : zéro charge Laravel).
+	// `profiles.xml`/`hosts.xml` localement — zéro charge Laravel).
 	TriggerWpkg(specs []ApplicationsSpec) (WpkgResult, error)
 
 	// DeployedProfileAppIds lit l'ensemble des `package-id` du profil par-hôte
@@ -118,10 +118,10 @@ type ApplicationsOps interface {
 // la machine d'états §5 et le hash d'agrégat restent au moteur, JAMAIS ici.
 //
 // `lastInventory` : inventaire PAR APP du dernier Test/Apply (PROCESS-LOCAL),
-// exposé via Inventory() pour le BuildReport du cycle (AC4 — champ additif
+// exposé via Inventory pour le BuildReport du cycle (champ additif
 // `inventory` sur l'item de rapport `applications`). Le verdict de conformité du
 // TYPE reste UN statut (worst-status) géré par le moteur ; l'inventaire est une
-// DONNÉE additive sous la ligne d'état, jamais un verdict per-app (grain 27.8
+// DONNÉE additive sous la ligne d'état, jamais un verdict per-app (grain
 // intact).
 type ApplicationsHandler struct {
 	Ops ApplicationsOps
@@ -177,7 +177,7 @@ func (h *ApplicationsHandler) desiredSpecs(items []StateItem) ([]ApplicationsSpe
 // re-déclenchement permanent — WPKG le préserve déjà (paquet non-zombie).
 //
 // On NE réimplémente PAS `<check>` : la présence est CELLE QUE WPKG A ÉCRITE dans
-// `wpkg.xml`. L'inventaire par app est mémorisé pour le rapport (AC4). Une erreur
+// `wpkg.xml`. L'inventaire par app est mémorisé pour le rapport. Une erreur
 // de lecture (`wpkg.xml` ou `profiles.xml` illisible) remonte → le moteur rend
 // error (jamais un faux compliant).
 func (h *ApplicationsHandler) Test(items []StateItem) (bool, error) {
@@ -224,9 +224,9 @@ func (h *ApplicationsHandler) Test(items []StateItem) (bool, error) {
 // l'ensemble cible. WPKG résout/installe ce qui manque (dépendances comprises).
 // Idempotent / level-triggered (re-déclencher sur un poste convergé = no-op
 // WPKG). Après le run, on relit l'état par paquet (`wpkg.xml`) pour l'inventaire
-// (AC4) et on construit le verdict par app. EFFORT MAXIMAL : si une app cible
+// et on construit le verdict par app. EFFORT MAXIMAL : si une app cible
 // reste manquante APRÈS le run, on remonte une erreur (jamais un faux
-// `compliant`, leçon 🟠 27.4 #7) — mais l'inventaire reflète l'état réel.
+// `compliant`) — mais l'inventaire reflète l'état réel.
 func (h *ApplicationsHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -243,7 +243,7 @@ func (h *ApplicationsHandler) Apply(items []StateItem) error {
 	}
 
 	// État par paquet relu APRÈS le run (level-triggered) — source de vérité
-	// `wpkg.xml`. Sert l'inventaire (AC4) et le verdict effort-maximal.
+	// `wpkg.xml`. Sert l'inventaire et le verdict effort-maximal.
 	installedSet := normalizedSet(result.Installed)
 
 	var missing []string
@@ -260,7 +260,7 @@ func (h *ApplicationsHandler) Apply(items []StateItem) error {
 	if len(missing) > 0 {
 		// WPKG a été déclenché mais certaines apps cibles ne sont toujours pas
 		// installées (installeur en échec, dépendance manquante…). On NE ment
-		// PAS : error + detail (jamais un compliant optimiste, leçon 🟠 27.4 #7).
+		// PAS : error + detail (jamais un compliant optimiste).
 		logError(h.Log, "WPKG déclenché mais %d app(s) cible(s) non installée(s) : %s", len(missing), strings.Join(missing, ", "))
 
 		return fmt.Errorf("WPKG déclenché mais apps non installées après le run : %s", strings.Join(missing, ", "))
@@ -271,7 +271,7 @@ func (h *ApplicationsHandler) Apply(items []StateItem) error {
 	return nil
 }
 
-// Inventory expose l'inventaire PAR APP du dernier Test/Apply (AC4) — consommé
+// Inventory expose l'inventaire PAR APP du dernier Test/Apply — consommé
 // par le BuildReport du cycle (champ additif `inventory` sur l'item de rapport
 // `applications`). Vide tant qu'aucun Test/Apply n'a tourné dans ce cycle.
 func (h *ApplicationsHandler) Inventory() []WpkgPackageResult {
@@ -280,7 +280,7 @@ func (h *ApplicationsHandler) Inventory() []WpkgPackageResult {
 
 // ReportInventory implémente InventoryReporter (engine.go) : projette
 // l'inventaire par app du dernier Test/Apply en items de rapport (champ additif
-// `inventory`, AC4). Statut PAR APP : `compliant` si installée, `error` sinon
+// `inventory`). Statut PAR APP : `compliant` si installée, `error` sinon
 // (compliant/drift comptent comme un siège ; le handler ne distingue pas drift
 // d'install neuve au niveau de l'app — la présence/absence suffit à la
 // comptabilité). Le verdict du TYPE reste worst-status (engine), inchangé.
@@ -317,7 +317,7 @@ func parseApplicationsSpec(raw any) (ApplicationsSpec, bool) {
 	return ApplicationsSpec{AppId: appID, Name: name}, true
 }
 
-// normalizeNFC : forme NFC d'une chaîne (leçon 🟠 27.4 #3 — Windows peut produire
+// normalizeNFC : forme NFC d'une chaîne (Windows peut produire
 // du NFD). Évite un faux « non installé » quand le package-id relu de `wpkg.xml`
 // est en NFD alors que la cible est en NFC (ou inversement).
 func normalizeNFC(s string) string {

@@ -24,8 +24,7 @@ use Tests\TestCase;
 
 /**
  * Tests Feature `GET /api/v1/agent/release` (manifest) et
- * `GET /api/v1/agent/releases/{filename}` (download) — Story 25.1
- * (AC2, AC3, AC4, AC6, AC7).
+ * `GET /api/v1/agent/releases/{filename}` (download)
  *
  * Routes RÉELLES (`agent.v1.release`, `agent.v1.release.download`) derrière
  * la chaîne complète `auth.v1.secure-headers` + `throttle:60,1` +
@@ -97,7 +96,7 @@ final class ReleaseEndpointTest extends TestCase
 
     /**
      * Release RÉELLE : binaire factice sur disque + ligne `agent_releases`
-     * au hash exact du fichier (l'invariant garanti par la création AC1).
+     * au hash exact du fichier (l'invariant garanti par la création).
      */
     private function publishedRelease(string $version, bool $stable = false, ?string $content = null): AgentRelease
     {
@@ -121,7 +120,7 @@ final class ReleaseEndpointTest extends TestCase
         ]);
         if ($updatedAt !== null) {
             // Query builder : bypass des timestamps Eloquent (la récence est
-            // LA donnée sous test — décision n° 4).
+            // LA donnée sous test).
             DB::table('agent_release_rings')->where('id', $ring->id)->update(['updated_at' => $updatedAt]);
         }
 
@@ -160,7 +159,7 @@ final class ReleaseEndpointTest extends TestCase
         ));
     }
 
-    // ── AC2 — manifest résolu par ring ───────────────────────────────────
+    // — manifest résolu par ring
 
     #[Test]
     public function manifest_is_resolved_by_the_ring_of_the_workstation(): void
@@ -184,14 +183,14 @@ final class ReleaseEndpointTest extends TestCase
             route('agent.v1.release.download', ['filename' => $canary->filename]),
             $url,
         );
-        // URL ABSOLUE (piège n° 6) — jamais un chemin relatif.
+        // URL ABSOLUE — jamais un chemin relatif.
         self::assertStringStartsWith('http', $url);
     }
 
     #[Test]
     public function manifest_response_conforms_to_the_golden_fixture_shape(): void
     {
-        // Forme normative (NFR13 — consommée par les tests croisés Go 25.2),
+        // Forme normative (consommée par les tests croisés Go),
         // PAS les valeurs : mêmes clés, même ordre, mêmes types/formats.
         [, $token] = $this->enrolledWorkstation();
         $this->publishedRelease('2.1.2', stable: true);
@@ -218,8 +217,8 @@ final class ReleaseEndpointTest extends TestCase
         $parc = WorkstationGroup::factory()->logical()->create();
         $lab = WorkstationGroup::factory()->create();
         $ws->groups()->attach([$parc->id, $lab->id]);
-        // Ciblage parc ANCIEN, ciblage lab RÉCENT : le poste de lab reçoit
-        // la canari (le cas canari de la décision n° 4).
+        // Ciblage parc ANCIEN, ciblage lab RÉCENT : entre deux anneaux qui
+        // désignent le même poste, le plus récemment mis à jour gagne.
         $this->ringFor($parc, $old, now()->subDays(3)->toDateTimeString());
         $this->ringFor($lab, $new, now()->toDateTimeString());
 
@@ -233,7 +232,7 @@ final class ReleaseEndpointTest extends TestCase
         self::assertEqualsCanonicalizing([$parc->id, $lab->id], $conflicts[0][2]['group_ids']);
     }
 
-    // ── AC3 — sans ring : stable, jamais une canari par accident ─────────
+    // — sans ring : stable, jamais une canari par accident
 
     #[Test]
     public function workstation_without_ring_receives_the_stable_release(): void
@@ -274,14 +273,14 @@ final class ReleaseEndpointTest extends TestCase
         $ws->groups()->attach($group->id);
         $this->ringFor($group, $canary);
 
-        // FK cascade : la ligne ring disparaît avec la release (AC3).
+        // FK cascade : la ligne ring disparaît avec la release.
         $canary->delete();
         self::assertSame(0, AgentReleaseRing::query()->count());
 
         $this->manifest($token)->assertOk()->assertJson(['version' => $stable->version]);
     }
 
-    // ── AC4 — download : binaire exact, 404 indistinct ───────────────────
+    // — download : binaire exact, 404 indistinct
 
     #[Test]
     public function download_serves_the_binary_whose_sha256_matches_the_manifest_hash(): void
@@ -299,8 +298,8 @@ final class ReleaseEndpointTest extends TestCase
         self::assertInstanceOf(BinaryFileResponse::class, $response->baseResponse);
         $served = $response->baseResponse->getFile()->getPathname();
         self::assertSame($this->releasesDir . '/' . $release->filename, $served);
-        // L'invariant AC4 : le SHA-256 du corps reçu = le hash du manifest
-        // (l'agent 25.2 refusera tout binaire divergent).
+        // L'invariant : le SHA-256 du corps reçu = le hash du manifest
+        // (l'agent refusera tout binaire divergent).
         self::assertSame($manifest['hash'], hash('sha256', (string) file_get_contents($served)));
 
         $servedLogs = $this->logsOfType($logs, 'agent.release.download_served');
@@ -367,7 +366,7 @@ final class ReleaseEndpointTest extends TestCase
     #[Test]
     public function file_on_disk_without_db_row_is_never_served(): void
     {
-        // Lookup DB d'abord (AC4) : un binaire orphelin déposé dans le
+        // Lookup DB d'abord : un binaire orphelin déposé dans le
         // répertoire (résidu, dépôt manuel raté) n'est jamais servi.
         [, $token] = $this->enrolledWorkstation();
         file_put_contents($this->releasesDir . '/sambaedu-agent-0.0.1.exe', 'orphan-bytes');
@@ -375,7 +374,7 @@ final class ReleaseEndpointTest extends TestCase
         $this->download($token, 'sambaedu-agent-0.0.1.exe')->assertStatus(404);
     }
 
-    // ── AC6 — sécurité du canal (middleware 23.2 inchangé) ───────────────
+    // — sécurité du canal (middleware inchangé)
 
     #[Test]
     public function missing_bearer_returns_401_with_middleware_error_format(): void
@@ -416,7 +415,7 @@ final class ReleaseEndpointTest extends TestCase
     #[Test]
     public function due_rotation_token_survives_the_manifest_200(): void
     {
-        // Invariant D5 (piège n° 8) : le middleware pose X-Agent-New-Token
+        // Le middleware pose X-Agent-New-Token
         // APRÈS $next() — la réponse manifest 200 doit le porter.
         [$ws, $token] = $this->enrolledWorkstation();
         $this->publishedRelease('2.1.2', stable: true);

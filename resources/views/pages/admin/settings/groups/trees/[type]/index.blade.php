@@ -39,7 +39,6 @@ use Livewire\Component;
  * matrice de dégradation, la traversée dérivée et l'atteignabilité, le backend
  * d'aperçu et son registre.
  *
- * ---------------------------------------------------------------------------
  * **TROIS AUTORITÉS, AUCUNE DUPLIQUÉE.**
  *
  *  1. **l'écran PROPOSE** — les jetons, les natures, les audiences, les zones
@@ -50,10 +49,9 @@ use Livewire\Component;
  *     nomment le chemin fautif : on les ATTRAPE et on les MONTRE, jamais on ne
  *     les reformule ;
  *  3. **le backend DÉCLARE** — ce qu'il sait rendre d'une liste de verbes est SA
- *     propriété. L'écran l'interroge par le CONTRAT (voir {@see self::renderingOf()}),
+ *  propriété. L'écran l'interroge par le CONTRAT (voir {@see self::renderingOf()}),
  *     il ne redit pas la règle et ne nomme aucune autorité.
  *
- * ---------------------------------------------------------------------------
  * **L'ÉTAT DU FORMULAIRE EST LE JSON STOCKÉ.** `$rolesSpec` et `$nodesSpec` sont
  * les tableaux relus tels quels, mutés de façon CIBLÉE par les actions. Aucune
  * renormalisation à l'ouverture ni à l'enregistrement : c'est ce qui rend
@@ -169,7 +167,6 @@ new #[Title('Arborescence')] class extends Component {
      */
     public ?int $focusedNode = null;
 
-    // --- Aperçu ---------------------------------------------------------------
 
     public ?int $previewGroupId = null;
 
@@ -224,10 +221,6 @@ new #[Title('Arborescence')] class extends Component {
             ->whereRaw('LOWER(type) = ?', [mb_strtolower($this->typeKey)])
             ->count();
     }
-
-    // =========================================================================
-    // L'ARBRE : une VUE ordonnée de `nodesSpec`, jamais un tri de `nodesSpec`
-    // =========================================================================
 
     /**
      * Les nœuds dans l'ordre où un arbre se lit — un parent, puis ses enfants —
@@ -387,10 +380,6 @@ new #[Title('Arborescence')] class extends Component {
         $this->focusedNode = array_key_exists($index, $this->nodesSpec) ? $index : null;
     }
 
-    // =========================================================================
-    // Créer, renommer, retirer un dossier — le chemin DÉCOULE de la place
-    // =========================================================================
-
     /**
      * Un dossier neuf SOUS le nœud désigné.
      *
@@ -546,10 +535,6 @@ new #[Title('Arborescence')] class extends Component {
         }
     }
 
-    // =========================================================================
-    // Saisie : mutations CIBLÉES du JSON
-    // =========================================================================
-
     /**
      * Les seules conversions d'entrée de tout l'écran, et elles ne portent QUE sur
      * ce que l'utilisateur vient de taper.
@@ -698,10 +683,6 @@ new #[Title('Arborescence')] class extends Component {
         return $cut === false ? $root : $root . ' / ' . str_replace('/', ' / ', substr($path, 0, $cut));
     }
 
-    // =========================================================================
-    // La matrice rôles × verbes
-    // =========================================================================
-
     /**
      * Coche ou décoche un verbe pour une audience sur un nœud.
      *
@@ -808,10 +789,6 @@ new #[Title('Arborescence')] class extends Component {
         }
     }
 
-    // =========================================================================
-    // Les audiences de la recette
-    // =========================================================================
-
     /**
      * Les audiences proposées à l'ajout : « tout le groupe », puis un rôle du
      * catalogue ATTRIBUABLE dans ce type.
@@ -839,7 +816,7 @@ new #[Title('Arborescence')] class extends Component {
     }
 
     /**
-     * Review 62.3 #1 — `owner` porte la désignation du professeur principal : il ne
+     * `owner` porte la désignation du professeur principal : il ne
      * se déclare que sur `classe`, et la garde du modèle l'y confine. Le proposer
      * ailleurs offrirait un octroi que personne ne recevra jamais.
      *
@@ -860,7 +837,7 @@ new #[Title('Arborescence')] class extends Component {
      * Un type sans déclaration rend TOUT le catalogue attribuable ; un type qui
      * déclare se restreint à ce qu'il déclare. Sans cette ligne d'aide, un
      * administrateur qui ne trouve pas un rôle conclut qu'il n'existe pas — au lieu
-     * de conclure que ce type ne l'a pas déclaré (review 62.3 #1).
+     * de conclure que ce type ne l'a pas déclaré.
      *
      * @return array<string, string> clé => libellé
      */
@@ -936,7 +913,7 @@ new #[Title('Arborescence')] class extends Component {
 
     /**
      * Retire une audience — REFUSÉ tant qu'elle porte des octrois, avec le
-     * décompte (patron des refus 62.1/62.3).
+     * décompte (patron des refus).
      */
     public function removeAudience(string $roleKey): void
     {
@@ -966,10 +943,6 @@ new #[Title('Arborescence')] class extends Component {
             static fn (mixed $role): bool => ! is_array($role) || ($role['key'] ?? null) !== $roleKey,
         ));
     }
-
-    // =========================================================================
-    // Enregistrer
-    // =========================================================================
 
     public function save(): void
     {
@@ -1062,7 +1035,7 @@ new #[Title('Arborescence')] class extends Component {
     }
 
     /**
-     * La clé d'une recette NEUVE : slug figé à la création (patron 62.1/62.2).
+     * La clé d'une recette NEUVE : slug figé à la création.
      *
      * La garde ne mord qu'à la SAISIE : une clé déjà stockée n'est jamais
      * réécrite, et l'édition ne la propose pas.
@@ -1093,10 +1066,6 @@ new #[Title('Arborescence')] class extends Component {
     {
         return $this->typeKey !== '' && trim($this->pathPattern) !== '';
     }
-
-    // =========================================================================
-    // CE QUE LE BACKEND DÉCLARE SAVOIR RENDRE
-    // =========================================================================
 
     /**
      * **LE POINT D'APPEL UNIQUE — la règle du grisé est la DÉCLARATION DU BACKEND.**
@@ -1172,10 +1141,6 @@ new #[Title('Arborescence')] class extends Component {
             return null;
         }
     }
-
-    // =========================================================================
-    // Le modèle de vue de l'éditeur
-    // =========================================================================
 
     /**
      * Les colonnes de la matrice d'un nœud : les rôles DE LA RECETTE, plus le jeton
@@ -1505,10 +1470,6 @@ new #[Title('Arborescence')] class extends Component {
         return $rows;
     }
 
-    // =========================================================================
-    // L'APERÇU — premier consommateur visible du backend d'aperçu
-    // =========================================================================
-
     /**
      * Résout l'état du formulaire sur un groupe d'ESSAI et le fait décrire par le
      * backend d'aperçu.
@@ -1648,7 +1609,7 @@ new #[Title('Arborescence')] class extends Component {
      *
      * La traversée est un savoir de BACKEND : le plan n'en porte aucune trace, et
      * l'importer ici ferait de la traversée un objet d'écran, exactement ce que la
-     * story 62.5 a refusé. Ce qui se lit sur le plan, en revanche, est purement
+     * A refusé. Ce qui se lit sur le plan, en revanche, est purement
      * structurel : une audience servie en profondeur et absente des octrois de ses
      * ancêtres passera par un couloir dérivé.
      *

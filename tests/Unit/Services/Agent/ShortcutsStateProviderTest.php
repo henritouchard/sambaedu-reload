@@ -36,12 +36,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ShortcutsStateProvider` — Story 27.1 (AC1, AC2, AC3).
+ * Tests Unit `ShortcutsStateProvider`.
  *
  * Mailles (poste/parc/user/groupes user via pivot SQL), union sans précédence,
- * payload v1, résolution du chemin du bureau par environnement (fix Bug C),
- * lecture seule, ZÉRO AD. Le ciblage AD-CN legacy (`ad_users`/`ad_user_groups`)
- * n'est JAMAIS lu (NFR7, décision n° 8).
+ * payload v1, résolution du chemin du bureau par environnement, lecture seule,
+ * ZÉRO AD. Le ciblage AD-CN legacy (`ad_users`/`ad_user_groups`) n'est JAMAIS lu.
  */
 class ShortcutsStateProviderTest extends TestCase
 {
@@ -63,7 +62,7 @@ class ShortcutsStateProviderTest extends TestCase
     {
         parent::setUp();
         // Le ciblage est Postgres-pur : aucune raison de déclencher la synchro
-        // AD des groupes/users (host sans LDAP). Iso discipline NFR7.
+        // AD des groupes/users (host sans LDAP).
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
@@ -119,7 +118,7 @@ class ShortcutsStateProviderTest extends TestCase
         ], $mailles->all());
     }
 
-    // ── Défaut de parc : posé partout, sans assignation ──────────────────────
+    // Défaut de parc : posé partout, sans assignation
 
     #[Test]
     public function a_parc_default_shortcut_reaches_a_workstation_without_any_assignment(): void
@@ -218,7 +217,7 @@ class ShortcutsStateProviderTest extends TestCase
             'icon' => 'C:\\icons\\i.ico',
             'place' => 'desktop',
             'desktop_path' => '\\\\<se4fs>\\users\\<user>\\Bureau\\',
-            // Story 27.21 (option A) : parc partagé ⇒ les DEUX Bureaux sont
+            // Parc partagé ⇒ les DEUX Bureaux sont
             // balayés (POSE ≠ BALAYAGE).
             'desktop_sweep_paths' => [
                 '\\\\<se4fs>\\users\\<user>\\Bureau\\',
@@ -241,12 +240,11 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertSame('%USERPROFILE%\\Desktop\\', $payload['desktop_path']);
     }
 
-    // --- Story 63.2 : le bureau ne dépend QUE de l'environnement du parc ------
 
     /**
      * Matrice {SharedLocal, PersonalLocal, Nomade} — **et rien d'autre**.
      *
-     * L'axe « politique home » a DISPARU en 63.2 : le bureau réseau vit dans le
+     * L'axe « politique home » a DISPARU : le bureau réseau vit dans le
      * home SMB, et ce partage-là est toujours là pour l'agent même quand
      * l'espace perso de l'utilisateur a déménagé au cloud. Le seul facteur
      * restant est l'exception « portables » (perdir / nomade), et elle est
@@ -284,7 +282,7 @@ class ShortcutsStateProviderTest extends TestCase
     }
 
     /**
-     * LE point de la story, énoncé sur l'axe qui a disparu : poser l'espace
+     * LE point, énoncé sur l'axe qui a disparu : poser l'espace
      * perso au cloud ne déplace PLUS le Bureau d'un poste partagé.
      */
     #[Test]
@@ -312,11 +310,9 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertSame($expected, $payload['desktop_path']);
     }
 
-    // --- Story 27.21 (option A) : le SERVEUR nomme les Bureaux à BALAYER ------
 
     /**
-     * Matrice {SharedLocal, PersonalLocal, Nomade} des emplacements de BALAYAGE
-     * (finding 🔴 #1 de la review 27.21).
+     * Matrice {SharedLocal, PersonalLocal, Nomade} des emplacements de BALAYAGE.
      *
      * Le Bureau réseau est PARTAGÉ entre tous les postes d'un utilisateur : seul
      * un parc `shared_local` a autorité pour y supprimer des `.lnk` gérés. Un
@@ -326,7 +322,7 @@ class ShortcutsStateProviderTest extends TestCase
      * La liste n'a jamais dépendu d'un réglage de fichiers, et ne dépend
      * toujours que de l'environnement : les deux emplacements d'un parc partagé
      * restent balayés quoi qu'il arrive, sinon celui qu'on vient d'abandonner ne
-     * serait plus jamais nettoyé (AC3 de la 27.21).
+     * serait plus jamais nettoyé.
      *
      * @return iterable<string, array{WorkstationEnvironment, list<string>}>
      */
@@ -368,7 +364,7 @@ class ShortcutsStateProviderTest extends TestCase
         // Le balayage est une donnée de CONTEXTE (le poste), pas une propriété
         // du raccourci : l'agent doit connaître les Bureaux à nettoyer MÊME
         // quand plus aucune règle `place=desktop` n'existe (sinon un Bureau vidé
-        // de ses règles garde ses `.lnk` gérés orphelins à vie — review #2 de 27.1).
+        // de ses règles garde ses `.lnk` gérés orphelins à vie).
         $sc = $this->shortcut('boot', ['place' => Shortcut::PLACE_STARTUP, 'windows_link' => 'C:\\b.exe']);
         $this->assign($sc, Workstation::class, $this->ws->id);
 
@@ -384,9 +380,9 @@ class ShortcutsStateProviderTest extends TestCase
     #[Test]
     public function perdir_park_never_names_the_shared_network_desktop(): void
     {
-        // LE garde-fou du finding #1 : un parc perdir ne nomme JAMAIS le Bureau
+        // Le garde-fou central : un parc perdir ne nomme JAMAIS le Bureau
         // réseau — ni en pose, ni en balayage, ni dans le payload du portail.
-        // Y compris quand l'espace perso a déménagé au cloud (63.2 : le Bureau
+        // Y compris quand l'espace perso a déménagé au cloud (le Bureau
         // ne suit plus les emplacements, mais l'exception portables tient).
         $this->parc->update(['environment' => WorkstationEnvironment::PersonalLocal]);
         $this->enablePortalShortcut();
@@ -436,7 +432,7 @@ class ShortcutsStateProviderTest extends TestCase
     #[Test]
     public function same_rule_on_two_mailles_yields_one_candidate_per_maille(): void
     {
-        // Story 27.8 : un MÊME raccourci assigné à deux mailles produit un
+        // Un MÊME raccourci assigné à deux mailles produit un
         // candidat par maille (l'étiquetage par maille survit ; le mécanisme
         // mode strict/default a été retiré — STRICT inconditionnel).
         $shortcut = $this->shortcut('pronote');
@@ -467,9 +463,8 @@ class ShortcutsStateProviderTest extends TestCase
     #[Test]
     public function ad_cn_targeting_is_never_read(): void
     {
-        // Une règle ciblée UNIQUEMENT par CN AD legacy (ad_users) — INTERDIT
-        // NFR7 — ne doit JAMAIS produire de candidat (le provider lit le pivot
-        // SQL seulement, décision n° 8).
+        // Une règle ciblée UNIQUEMENT par CN AD legacy (ad_users) ne doit JAMAIS
+        // produire de candidat : le provider lit le pivot SQL seulement.
         $sc = $this->shortcut('ad-only', [
             'ad_users' => [$this->user->login ?? 'someone'],
             'ad_user_groups' => ['Profs'],
@@ -479,7 +474,6 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertCount(0, $this->provider->itemsFor($this->ctx()));
     }
 
-    // --- Story 27.7 : icône UPLOADÉE (nom nu) → asset content-addressed -------
 
     #[Test]
     public function uploaded_icon_bare_name_emits_asset_and_checksum(): void
@@ -555,8 +549,8 @@ class ShortcutsStateProviderTest extends TestCase
     public function bare_name_without_backfilled_asset_falls_back_to_raw_icon(): void
     {
         // Nom nu mais AUCUN asset content-addressed en base (`icon_asset` null) :
-        // on tombe sur `icon` brut (ancien comportement), JAMAIS un asset cassé
-        // (piège n° 3). Le backfill rattrapera.
+        // on tombe sur `icon` brut, JAMAIS un asset cassé. Le backfill
+        // rattrapera.
         $sc = $this->shortcut('vivaldi', [
             'place' => Shortcut::PLACE_STARTUP,
             'windows_icon' => 'vivaldi',
@@ -571,11 +565,10 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertArrayNotHasKey('icon_checksum', $payload);
     }
 
-    // --- Le raccourci SYNTHÉTIQUE vers le portail web -------------------------
     //
     // Il ne vient d'aucune ligne de `shortcuts` : il naît du PLAN DE FICHIERS
-    // (Story 63.2) — un cloud actif ET au moins un des deux espaces servi par
-    // lui —, parce qu'un espace servi par un cloud n'a aucune lettre de lecteur
+    // un cloud actif ET au moins un des deux espaces servi par
+    // lui, parce qu'un espace servi par un cloud n'a aucune lettre de lecteur
     // et que le navigateur est son seul chemin d'accès. Un cloud seulement
     // CONFIGURÉ, dont aucun espace ne dépend, ne pose rien : le raccourci mène
     // là où vivent les fichiers.
@@ -670,7 +663,7 @@ class ShortcutsStateProviderTest extends TestCase
     }
 
     /**
-     * **AC6 — la capacité du produit n'est PLUS une condition.** L'accès
+     * **la capacité du produit n'est PLUS une condition.** L'accès
      * Nextcloud est ÉTEINT dans `files.policy` pendant que le plan de fichiers
      * désigne Nextcloud comme cloud actif et lui confie l'espace perso : le
      * raccourci est posé quand même. C'est le plan de fichiers qui décide où
@@ -883,8 +876,7 @@ class ShortcutsStateProviderTest extends TestCase
 
     /**
      * Insère une ligne du pivot polymorphe `shortcut_assignables` (le morph
-     * accepte tout modèle SQL — WorkstationGroup, Workstation, UserGroup,
-     * User : ciblage MVP pivot SQL, décision n° 8).
+     * accepte tout modèle SQL — WorkstationGroup, Workstation, UserGroup, User).
      */
     private function assign(Shortcut $shortcut, string $type, int $id): void
     {

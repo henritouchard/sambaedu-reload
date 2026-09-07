@@ -9,7 +9,7 @@ use App\Services\Filesystem\NetworkShareService;
 use Illuminate\Console\Command;
 
 /**
- * Epic 34 (gap Docs/Progs) — Amorce les partages ÉTABLISSEMENT historiques
+ * Amorce les partages ÉTABLISSEMENT historiques
  * (`/var/sambaedu/Docs`, `/var/sambaedu/Progs`) sous forme de LECTEURS RÉSEAU
  * MANAGÉS, plutôt que de recréer un provisionneur bespoke.
  *

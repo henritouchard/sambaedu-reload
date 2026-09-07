@@ -12,14 +12,12 @@ use Illuminate\Support\Carbon;
 use RuntimeException;
 
 /**
- * Story 16.10 — AC5.3 / D5.
- *
  * Endpoint `GET /api/v1/agent/ping` — echo de test minimaliste pour valider
  * la chaîne complète (signature JWT → middleware → claim parsing → context
  * binding).
  *
  *  - **Pas de logique métier**. Lecture des claims JWT uniquement.
- *  - Réutilisé par 16.11 comme health-check post-enrollment.
+ *  - Réutilisé par comme health-check post-enrollment.
  *  - Réponse :
  *      ```
  *      {

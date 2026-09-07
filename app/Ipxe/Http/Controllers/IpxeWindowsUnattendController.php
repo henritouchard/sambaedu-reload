@@ -21,20 +21,19 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
 /**
- * Story 3.5 — AC5.2 / D2.
- *
  * Controller du endpoint `GET|POST /ipxe/windows/unattend.xml` (port natif
  * `sambaedu/ipxe/Win10/unattend.xml.php` 39 LOC + `windows.inc.php:3-380`).
  *
  * **Flow** :
  *  1. Valide les inputs via {@see IpxeWindowsUnattendRequest}.
  *  2. Résout la Workstation via {@see WorkstationLocator}.
- *  3. Si null → 404 + log warning (D4 — cohérence 3.4 preseed unknown 404).
+ *  3. Si null → 404 + log warning (cohérent avec le preseed Linux, qui répond
+ *     404 lui aussi sur un poste inconnu).
  *  4. Parse `version` via {@see WindowsVersion::fromString()}. Si null → 422 + log.
  *  5. Génère le XML via {@see WindowsUnattendBuilder::build()}.
  *  6. Insert `MachineBootLog` `action='ipxe_win_unattend'` (best-effort).
  *  7. Log info `ipxe.windows.unattend.generated` (sha256 only, jamais le XML).
- *  8. Response 200 text/plain + headers D10.
+ *  8. Response 200 text/plain.
  *
  * **Sécurité** : middleware `auth.v1.lan-only` (LAN scolaire) + matching
  * MAC/UUID strict via locator + sanitize XML special chars dans le builder.
@@ -89,15 +88,13 @@ class IpxeWindowsUnattendController extends Controller
         // 3. Résolution OU AD du poste — fallback config.
         $ou = $this->resolveOu($workstation);
 
-        // TODO 3.7 (post-review code-review #N2) : porter `remove_dual_boot()`
-        // legacy (`sambaedu/ipxe/Win10/unattend.xml.php:30`). Si un poste avait
+        // TODO : porter `remove_dual_boot()` legacy
+        // (`sambaedu/ipxe/Win10/unattend.xml.php:30`). Si un poste avait
         // précédemment été en dual-boot (entrée `boot.php` legacy), la réinstall
-        // Windows ne nettoie pas le marqueur côté serveur. Acceptable pour 3.5
-        // (scope minimal), à porter quand le flow `boot.php` dual-boot sera
-        // migré SE5 (probablement en même temps que la story 3.7 clonage).
+        // Windows ne nettoie pas le marqueur côté serveur.
 
-        // 3bis. Story 23.3 — ticket d'enrôlement agent one-time (porte 1) :
-        // émis ici (révoque l'ancien token si réinstall — AC2), interpolé
+        // 3bis. — ticket d'enrôlement agent one-time (porte 1) :
+        // Émis ici (révoque l'ancien token si réinstall —), interpolé
         // dans la FirstLogonCommand « agent enrollment » de l'unattend. Un
         // re-fetch WinPE ré-émet simplement un ticket neuf (écrasement).
         $enrollTicket = $this->openEnrollTicket($workstation);
@@ -146,9 +143,9 @@ class IpxeWindowsUnattendController extends Controller
     }
 
     /**
-     * Story 23.3 — émet le ticket d'enrôlement via
+     * Émet le ticket d'enrôlement via
      * {@see EnrollmentService::openTicket()}. Guard `Schema::hasColumn` :
-     * si la migration 23.3 n'est pas passée, on sert l'unattend SANS ticket
+     * si la migration n'est pas passée, on sert l'unattend SANS ticket
      * (placeholder vide → POST refusé 403, non bloquant) plutôt que de
      * casser la chaîne d'install — pas de feature flag dédié, la chaîne
      * Windows a déjà son toggle `ipxe.windows.*`.

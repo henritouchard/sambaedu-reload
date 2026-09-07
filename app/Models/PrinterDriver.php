@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 6.2 — Modèle SER pour les pilotes Windows associés aux imprimantes CUPS.
+ * Modèle SER pour les pilotes Windows associés aux imprimantes CUPS.
  *
  * Couche métier complémentaire à Samba (pas un remplacement). Samba via
  * `rpcclient enumdrivers` reste source de vérité runtime de la liste publiée.
@@ -23,14 +23,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *  - Drift : `orphan` (true = SER seul, Samba l'a perdu).
  *  - Métadata métier : `notes` (nom interne lisible).
  *
- * Friction Eloquent PK composite (décision DEV 2026-05-20) :
+ * Friction Eloquent avec une clé primaire composite :
  *  - `$primaryKey = null` + `$incrementing = false` désactive les helpers
- *    Eloquent qui supposent une clé primaire scalaire (`find()`,
- *    route model binding, save()-with-existing-key). On expose un helper
- *    statique `findByKey()` et on s'appuie sur le Query Builder pour les
- *    mises à jour ciblées (`->where()->update()`).
+ *  Eloquent qui supposent une clé primaire scalaire (`find()`,
+ *  route model binding, save()-with-existing-key). On expose un helper
+ *  statique `findByKey()` et on s'appuie sur le Query Builder pour les
+ *  mises à jour ciblées (`->where()->update()`).
  *  - L'INSERT/CREATE marche normalement (Eloquent compose le SQL depuis
- *    `$fillable`). Le DELETE par instance (`$model->delete()`) fonctionne
+ *  `$fillable`). Le DELETE par instance (`$model->delete()`) fonctionne
  *    aussi car il utilise les attributs courants pour construire la WHERE.
  */
 class PrinterDriver extends Model
@@ -63,10 +63,6 @@ class PrinterDriver extends Model
         'orphan' => 'boolean',
     ];
 
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
-
     /**
      * Imprimante CUPS portant ce driver (FK CASCADE).
      */
@@ -82,10 +78,6 @@ class PrinterDriver extends Model
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     /**
      * Drivers présents à la fois en SER et dans Samba (état normal).
@@ -104,7 +96,7 @@ class PrinterDriver extends Model
     }
 
     /**
-     * Drivers d'une architecture donnée (D5 : `x64` uniquement en 6.2).
+     * Drivers d'une architecture donnée (`x64` uniquement à ce jour).
      */
     public function scopeForArchitecture(Builder $query, string $arch): Builder
     {
@@ -118,10 +110,6 @@ class PrinterDriver extends Model
     {
         return $query->where('source', $source);
     }
-
-    // ========================================================================
-    // HELPERS (composite key)
-    // ========================================================================
 
     /**
      * Lookup par clé composite — remplace `Model::find($id)` qui ne fonctionne

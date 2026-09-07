@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Tests du handler `folders` (Story 58.1, contrat §7.12) — logique PURE, aucune
+// Tests du handler `folders` (contrat §7.12) — logique PURE, aucune
 // dépendance Windows : le registre passe par le fake `fakeRegistryOps` déjà
 // utilisé par le handler `registry`, les accès disque par `fakeFolderOps`.
 //
@@ -153,8 +153,6 @@ func desktopValue(reg *fakeRegistryOps) (RegistryValue, bool) {
 	return v, ok
 }
 
-// --- Le geste nominal --------------------------------------------------------
-
 func TestFoldersApplyCreatesDirThenWritesExpandSzValue(t *testing.T) {
 	h, ops, reg := newFoldersHandler()
 	items := []StateItem{folderItem("desktop", networkDesktopTemplate)}
@@ -207,8 +205,6 @@ func TestFoldersApplyCreatesDirBeforeWritingValue(t *testing.T) {
 	}
 }
 
-// --- Idempotence -------------------------------------------------------------
-
 func TestFoldersIsIdempotentOnStableState(t *testing.T) {
 	h, ops, reg := newFoldersHandler()
 	items := []StateItem{folderItem("desktop", networkDesktopTemplate)}
@@ -245,8 +241,6 @@ func TestFoldersIsIdempotentOnStableState(t *testing.T) {
 	}
 }
 
-// --- Rafraîchissement --------------------------------------------------------
-
 func TestFoldersRequestsExplorerRestartOnEffectiveChange(t *testing.T) {
 	h, _, _ := newFoldersHandler()
 
@@ -265,8 +259,6 @@ func TestFoldersRequestsExplorerRestartOnEffectiveChange(t *testing.T) {
 		t.Errorf("2e lecture : got %v, want RefreshNone", level)
 	}
 }
-
-// --- Dérives -----------------------------------------------------------------
 
 func TestFoldersDetectsValuePointingElsewhere(t *testing.T) {
 	h, ops, reg := newFoldersHandler()
@@ -329,8 +321,6 @@ func TestFoldersDetectsMissingDirEvenWhenValueIsCorrect(t *testing.T) {
 	}
 }
 
-// --- Le chemin local ---------------------------------------------------------
-
 func TestFoldersLocalTemplateKeepsEnvVarUnexpanded(t *testing.T) {
 	h, ops, reg := newFoldersHandler()
 	ops.dirs[`%USERPROFILE%\Desktop`] = true
@@ -367,8 +357,6 @@ func TestFoldersTrimsTrailingSeparatorFromServerTemplate(t *testing.T) {
 		t.Errorf("la valeur ne doit pas se terminer par un séparateur : %q", v.Str)
 	}
 }
-
-// --- Cible injoignable -------------------------------------------------------
 
 func TestFoldersUnreachableTargetIsAnErrorNotADrift(t *testing.T) {
 	h, ops, reg := newFoldersHandler()
@@ -408,8 +396,6 @@ func TestFoldersUnresolvableTokensAbortWithoutWriting(t *testing.T) {
 		t.Error("aucune redirection ne doit être posée avec des tokens non résolus")
 	}
 }
-
-// --- Enveloppe ---------------------------------------------------------------
 
 func TestFoldersRejectsInvalidPayloads(t *testing.T) {
 	cases := map[string]any{
@@ -464,8 +450,6 @@ func TestFoldersEmptyTargetIsCompliantAndWritesNothing(t *testing.T) {
 	}
 }
 
-// --- Câblage dans le moteur --------------------------------------------------
-
 func TestFoldersHandlerConvergesThroughEngine(t *testing.T) {
 	h, _, _ := newFoldersHandler()
 	engine := &Engine{Handlers: map[string]Handler{"folders": h}}
@@ -480,8 +464,6 @@ func TestFoldersHandlerConvergesThroughEngine(t *testing.T) {
 		t.Errorf("verdict inattendu : %s (%s)", reports[0].Status, reports[0].Detail)
 	}
 }
-
-// --- Accès rapide -------------------------------------------------------------
 
 func TestFoldersPinsQuickAccessAndUnpinsTheReplacedLocation(t *testing.T) {
 	h, ops, reg := newFoldersHandler()
@@ -523,7 +505,7 @@ func TestFoldersNeverUnpinsALocationItDidNotReplace(t *testing.T) {
 		t.Fatalf("Apply : %v", err)
 	}
 
-	// LE point (finding 🔴 de la review 27.21, transposé) : sans `previous`, le
+	// LE point : sans `previous`, le
 	// handler « nettoierait » un emplacement partagé et déclencherait une guerre
 	// de désépinglage entre les postes de l'utilisateur.
 	if !ops.pins[`C:\Users\mickael.barbier\Desktop`] {

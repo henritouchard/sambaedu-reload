@@ -8,19 +8,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 56.5 — SANTÉ d'une extension `app` installée : ce que l'instance a
+ * SANTÉ d'une extension `app` installée : ce que l'instance a
  * OBSERVÉ de son backend, et quand.
  *
- * Migration **strictement ADDITIVE** : ni 54.1, ni 54.2, ni 56.1, ni 56.2 ne
- * sont retouchées — elles sont passées en review et les instances les ont déjà
- * jouées. Aucune table nouvelle : la santé est un ATTRIBUT de l'extension, pas
- * une entité (la frontière NFR14 `UpstreamSyncExtensionsBoundaryTest` reste
+ * Migration **strictement ADDITIVE** : aucune migration antérieure n'est
+ * retouchée — les instances les ont déjà jouées. Aucune table nouvelle : la santé est un ATTRIBUT de l'extension, pas
+ * une entité (la frontière d'isolement `UpstreamSyncExtensionsBoundaryTest` reste
  * donc vraie verbatim).
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  DÉCISIONS DE CONCEPTION (figées par la story)
+ *  DÉCISIONS DE CONCEPTION
  *
- *  1. **L'état est PERSISTÉ, jamais mesuré au rendu (NFR9).** La navbar est
+ *  1. **L'état est PERSISTÉ, jamais mesuré au rendu.** La navbar est
  *     rendue sur TOUTE page authentifiée : elle LIT ces colonnes dans sa
  *     requête unique. La MESURE appartient à la commande planifiée
  *     `ext:health:check` (toutes les 5 min) et à
@@ -31,31 +29,30 @@ use Illuminate\Support\Facades\Schema;
  *  2. **`health_status` est un string libre borné, pas un `enum()` DB.**
  *     Valeurs actuelles : `''` (JAMAIS sondé — l'état inconnu se dit en base,
  *     il ne se devine pas), `ok`, `unreachable`. Même doctrine que `action` du
- *     journal d'audit (54.2) : la colonne survit à l'ajout d'un état sans
+ *  journal d'audit : la colonne survit à l'ajout d'un état sans
  *     migration, et `NOT NULL DEFAULT ''` évite le piège du tri-état
- *     `null`/`''`/valeur (piège #3 de la migration 54.1, reconduit).
+ *     `null`/`''`/valeur, comme les colonnes voisines.
  *
  *  3. **`health_last_incident_*` porte le DERNIER incident, pas un historique**
- *     (FR34 dit « dernier incident »). Écrit à la TRANSITION seulement
+ *     Écrit à la TRANSITION seulement
  *     (`ok`/`''` → `unreachable`) : sinon le scheduler réécrirait la même
  *     information toutes les 5 minutes. Il SURVIT au retour du backend — c'est
  *     précisément sa raison d'être : « ça a été indisponible, voici quand ».
  *     Un historique de santé serait une table, donc une entité, donc un
- *     franchissement de la frontière NFR14 pour un besoin non exprimé.
+ *     franchissement de la frontière d'isolement pour un besoin non exprimé.
  *
  *  4. **`health_last_incident_detail` est une CATÉGORIE courte (200), jamais un
- *     message brut.** Même règle que `last_error` (56.1) et que
- *     `extension_audit_logs.details` (56.2) : un message d'exception Guzzle
- *     suffixe l'URI complète (piège review 39.4 #E11), et cette colonne est
+ *  message brut.** Même règle que `last_error` et que
+ *  `extension_audit_logs.details` : un message d'exception Guzzle
+ *     suffixe l'URI complète, et cette colonne est
  *     lisible par tout admin sur la fiche. Le détail complet reste dans
  *     `Log::`.
  *
  *  5. **Hors `$fillable`** d'{@see \App\Models\Extension} — même doctrine que
- *     `status` (54.2) et `installed_*` (56.2) : le `fill()` de l'upsert de
+ *  `status` et `installed_*` : le `fill` de l'upsert de
  *     catalogue reçoit un manifest de source TIERCE. S'il pouvait écrire ces
  *     colonnes, un manifest hostile se déclarerait `health_status = ok` et
  *     effacerait le seul signal qui dit que son backend est mort.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **Rejouable** : gardes `hasTable` / `hasColumn` partout. Branches driver
  * `timestampTz` / `timestamp` : les tests HÔTE rejouent toutes les migrations

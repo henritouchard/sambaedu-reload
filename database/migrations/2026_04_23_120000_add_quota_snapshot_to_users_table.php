@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 5.1b — Snapshot quotas quotidien.
+ * Snapshot quotas quotidien.
  *
  * Ajoute une colonne `quota_snapshot` sur la table `users`. Cette colonne
  * contient un document JSON par utilisateur, alimenté quotidiennement à 03h00

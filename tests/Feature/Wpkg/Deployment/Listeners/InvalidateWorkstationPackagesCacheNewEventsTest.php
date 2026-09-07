@@ -17,7 +17,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC7.4 — Les 3 nouveaux events additifs câblés sur le
+ * Les 3 nouveaux events additifs câblés sur le
  * listener générique `InvalidateWorkstationPackagesCache`.
  */
 class InvalidateWorkstationPackagesCacheNewEventsTest extends TestCase

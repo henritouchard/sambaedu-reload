@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unitaires — CachedGpoLookups (Story 16.14 Q2 arbitré Henri 2026-05-20).
+ * Tests unitaires — CachedGpoLookups.
  *
  * Vérifie le comportement cache 24 h + invalidation portable (sans tags) :
  *  - cache miss spawn samba-tool exactement 1 fois

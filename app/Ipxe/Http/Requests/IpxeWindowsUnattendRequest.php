@@ -11,7 +11,6 @@ use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 3.5 — AC5.7 / AC5.2.
  *
  * Validation du body de `GET|POST /ipxe/windows/unattend.xml`.
  *

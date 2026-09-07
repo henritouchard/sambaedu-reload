@@ -14,9 +14,9 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Story 62.1 — LE POINT DE LECTURE UNIQUE du catalogue de rôles d'arête.
+ * LE POINT DE LECTURE UNIQUE du catalogue de rôles d'arête.
  *
- * Il remplace la table de libellés de la story 60.2 (supprimée), dont il reprend le rôle —
+ * Il remplace la table de libellés de la (supprimée), dont il reprend le rôle
  * dire comment un rôle stocké se LIT — en changeant sa source : les trois lignes
  * ne sont plus une constante, elles sont une table administrable
  * ({@see \App\Models\GroupRole}).
@@ -36,16 +36,15 @@ use Throwable;
  * doit jamais faire refuser `member` par la garde d'arête. Le repli RESTREINT au
  * vocabulaire historique — il n'élargit rien : une valeur inconnue reste refusée.
  *
- * **Story 62.3 — les libellés par TYPE de groupe ne sont plus du code.** La table
- * privée qui les portait ici, dernier vestige de la classe supprimée en 62.1, est
+ * **les libellés par TYPE de groupe ne sont plus du code.** La table
+ * privée qui les portait ici, dernier vestige de la classe supprimée, est
  * MORTE : ses lignes sont devenues des DÉCLARATIONS administrables
  * ({@see \App\Models\GroupTypeRole}), lues ici et surchargeables depuis l'onglet
  * « Types de groupes ». Une déclaration dit deux choses à la fois : que ce rôle a
  * un SENS dans ce type (c'est la base de {@see self::assignableKeys()}), et
  * éventuellement comment il s'y DIT (le libellé local, optionnel). Un
  * administrateur qui renomme « Gestionnaire » voit désormais où sa modification
- * est masquée, et peut la lever — c'est la clôture du point reporté par la review
- * 62.1 #4.
+ * est masquée, et peut la lever.
  *
  * **Ce que la classe ne fait PAS.** Elle n'est pas importée par le namespace pur
  * du plan de fichiers ({@see \App\Services\Filesystem\Plan\GroupNameNormalizer}),
@@ -98,10 +97,9 @@ final class RoleCatalog
      *
      * Elle vit ICI et pas dans une classe à part : `flush()` vide les deux mémos
      * d'un coup, donc elle hérite gratuitement du `Queue::before` de
-     * `AppServiceProvider` (review 62.1 #1 : un worker `queue:work --max-time=3600`
-     * ne réinitialise aucune statique) et du `setUp()` de `tests/TestCase.php`.
-     * Une mémo séparée avec son propre flush rejouerait cette review à
-     * l'identique.
+     * `AppServiceProvider` (un worker `queue:work --max-time=3600` ne
+     * réinitialise aucune statique) et du `setUp()` de `tests/TestCase.php`.
+     * Une mémo séparée avec son propre flush rejouerait le même problème.
      *
      * @var array{exact: array<string, array<string, ?string>>, lower: array<string, array<string, ?string>>}|null
      */
@@ -128,10 +126,10 @@ final class RoleCatalog
      * Libellé FR d'un rôle d'arête dans un groupe de ce type.
      *
      * Un rôle vide ou hors catalogue (donnée héritée) est lu comme `member` — même
-     * normalisation que les écrans de groupes depuis la story 42.3 : on affiche le
+     * normalisation que les écrans de groupes : on affiche le
      * rôle le moins doté plutôt qu'une valeur technique ou un vide.
      *
-     * Précédence, inchangée depuis 60.2 sauf pour la SOURCE du premier terme :
+     * Précédence, inchangée depuis sauf pour la SOURCE du premier terme :
      * libellé LOCAL déclaré → libellé du catalogue → repli générique → clé brute.
      * Un rôle déclaré avec `label = null` (déclaré SANS surcharge) tombe donc au
      * libellé du catalogue, et un rôle NON déclaré reste AFFICHÉ : la lecture ne
@@ -206,12 +204,12 @@ final class RoleCatalog
     }
 
     /**
-     * Story 62.3 — les rôles ATTRIBUABLES dans un groupe de ce type, dans l'ordre
+     * Les rôles ATTRIBUABLES dans un groupe de ce type, dans l'ordre
      * d'affichage du catalogue.
      *
      * Deux régimes, et c'est délibéré :
      *  - **type DÉCLARÉ** (au moins une déclaration) : ses rôles déclarés, et eux
-     *    seuls. C'est la contrainte que l'epic demandait — on n'attribue pas un
+     *    seuls. C'est la contrainte du modèle — on n'attribue pas un
      *    rôle qu'un type ne reconnaît pas ;
      *  - **type SANS déclaration** : TOUT le catalogue. Un type découvert en base
      *    (`class`, `Custom`) ou créé à l'écran n'a aucune déclaration, et le
@@ -241,7 +239,7 @@ final class RoleCatalog
     }
 
     /**
-     * Story 62.3 — LA CONTRAINTE D'ATTRIBUTION, et la FRONTIÈRE qu'elle trace.
+     * LA CONTRAINTE D'ATTRIBUTION, et la FRONTIÈRE qu'elle trace.
      *
      * Lève si ce rôle n'est pas attribuable dans un groupe de ce type.
      *
@@ -252,20 +250,20 @@ final class RoleCatalog
      *
      * Elle n'est PAS sur le modèle pivot, PAS dans
      * {@see \App\Models\Pivot\UserGroupUserPivot::assertValidRole()}, PAS dans un
-     * événement Eloquent — c'est le précédent posé par 62.2 (garde au service, pas
+     * événement Eloquent — c'est le précédent posé par (garde au service, pas
      * sur `UserGroup`) et il tient pour la même raison : ces chemins-là écrivent
      * des arêtes sans qu'aucun humain n'ait rien choisi, et les brider casserait
      * le flux dont l'annuaire est autoritaire. `assertValidRole()` en particulier
-     * est appelée par `defaultRoleForGlobalRole()` sur le chemin d'import « D6
-     * fail-soft intégral, jamais de levée », et elle ne connaît même pas le type
+     * est appelée par `defaultRoleForGlobalRole()` sur le chemin d'import, qui
+     * est fail-soft intégral et ne lève jamais ; elle ne connaît même pas le type
      * du groupe.
      *
      * **Le recensement des écrivains de `user_group_user.role`**, pour que le
      * prochain lecteur n'ait pas à refaire l'audit :
      *  - GARDÉS (humains) : `updateMemberRole()`, `setPendingRole()`, `save()` ;
      *  - LIBRES (dérivation, import, reprise) : `UserGroupService` (balayage AD et
-     *    fold du trio), `UserService::persistUserGroupsToSql()` (import
-     *    d'utilisateurs), `User::userGroupSyncPayloadWithDerivedRole()` (payload
+     *  fold du trio), `UserService::persistUserGroupsToSql()` (import
+     *  d'utilisateurs), `User::userGroupSyncPayloadWithDerivedRole()` (payload
      *    partagé fiche user / drawer), `MergeLegacyUserGroups` et
      *    `BackfillUserGroupUserRoles` (reprises one-shot), les factories et les
      *    tests.
@@ -276,7 +274,7 @@ final class RoleCatalog
      * `classe` déclare les trois, `projet` et `equipe` déclarent `member` et
      * `manager`, les autres types n'ont pas de déclaration donc pas de contrainte.
      * Un test épingle cette composition (« import ⊆ déclarations seedées »), jumeau
-     * du « balayage ⊆ plancher » de 62.2 : si quelqu'un ampute le seed, il tombe.
+     * du « balayage ⊆ plancher » : si quelqu'un ampute le seed, il tombe.
      */
     public static function assertAssignable(?string $groupType, string $roleKey): void
     {
@@ -309,8 +307,8 @@ final class RoleCatalog
      *     `Custom` et `custom` déclarent tous deux, un groupe stocké `Custom` lit
      *     les siennes ;
      *  2. à défaut, correspondance sur la clé ABAISSÉE — la normalisation
-     *     historique de la résolution (minuscule + trim, story 60.2), celle que la
-     *     parité de 62.1 épingle (`label('Classe', 'member') === 'Élève'`). En cas
+     * historique de la résolution (minuscule + trim), celle que la
+     *  parité épingle (`label('Classe', 'member') === 'Élève'`). En cas
      *     d'homonymie de casse, le bucket appartient ENTIÈREMENT au premier type
      *     déclarant dans l'ordre du catalogue de types : fusionner les
      *     déclarations de deux types produirait un vocabulaire qui n'est celui
@@ -355,7 +353,7 @@ final class RoleCatalog
      * la main. Absence de table ⇒ aucune déclaration, donc régime de REPLI (tout
      * le catalogue attribuable, libellés génériques) — jamais une exception dans
      * un écran, et jamais un refus d'attribution causé par une panne. Review
-     * 62.1 #2 : une panne de base ne doit pas être indiscernable d'une base non
+     * Une panne de base ne doit pas être indiscernable d'une base non
      * migrée, on journalise donc la dégradation ; et le journal est lui-même gardé,
      * parce que ce chemin doit rester traversable sans application bootée.
      *
@@ -508,7 +506,7 @@ final class RoleCatalog
             // Pas de connexion (test unitaire nu), schéma absent, migration en
             // cours : le plancher tient.
             //
-            // Review 62.1 #2 — mais il tenait en SILENCE. Une vraie panne de base
+            // Mais il tenait en SILENCE. Une vraie panne de base
             // en production (bascule de réplique, pool épuisé, droits révoqués)
             // empruntait exactement le même chemin qu'une base non migrée : les
             // rôles administrés disparaissaient du vocabulaire, un rôle

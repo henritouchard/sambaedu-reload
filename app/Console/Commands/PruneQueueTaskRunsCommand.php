@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 29.10 — Purge des runs de tracking d'exécution des jobs.
+ * Purge des runs de tracking d'exécution des jobs.
  *
  * Supprime les lignes `queue_task_runs` :
  *  - statut `done` dont le `finished_at` dépasse `workers.retention.done_days` (14 j) ;

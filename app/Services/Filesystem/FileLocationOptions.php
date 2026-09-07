@@ -13,7 +13,7 @@ use App\Services\Nextcloud\NextcloudConnectionConfig;
 use App\Services\OpenCloud\OpenCloudConnectionConfig;
 
 /**
- * Story 63.3 — CE QU'ON PEUT DÉSIGNER COMME EMPLACEMENT, ET POURQUOI ON NE PEUT
+ * CE QU'ON PEUT DÉSIGNER COMME EMPLACEMENT, ET POURQUOI ON NE PEUT
  * PAS.
  *
  * Calque littéral de `\App\Services\Filesystem\Backend\FileBackendSelection`
@@ -29,12 +29,11 @@ use App\Services\OpenCloud\OpenCloudConnectionConfig;
  * filtré : une garde qui ne vit que dans la liste affichée protège
  * l'étourderie, pas la requête forgée.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI UN SERVICE DE PLUS, ET PAS `FileBackendSelection`.**
  *
  * Les deux services répondent à deux questions différentes :
  *  - `FileBackendSelection` dit ce qu'un administrateur peut choisir **à la
- *    création d'un répertoire géré** (D9 : le choix ne se change plus après) ;
+ *    création d'un répertoire géré** : le choix ne se change plus après ;
  *  - celui-ci dit où peut vivre **un des deux espaces de l'instance**.
  *
  * Et surtout, la règle du premier est ASYMÉTRIQUE entre les deux produits :
@@ -42,7 +41,7 @@ use App\Services\OpenCloud\OpenCloudConnectionConfig;
  * OpenCloud exige capacité **ET** connexion complète. Cette asymétrie est
  * visible et gênante, mais la corriger là-bas changerait le comportement de la
  * création de répertoire géré et de la préfabrication d'arborescences — hors
- * périmètre de cette story, qui laisse ce fichier à ZÉRO DIFF.
+ * périmètre : ce fichier reste à ZÉRO DIFF.
  *
  * Ici, la règle est SYMÉTRIQUE : les deux produits sont disponibles si et
  * seulement si leur objet de configuration ne lève pas — soit exactement le
@@ -51,7 +50,6 @@ use App\Services\OpenCloud\OpenCloudConnectionConfig;
  * classe : un service n'a pas à dépendre d'une commande) : capacité active ET
  * connexion complète. Un espace placé sur une connexion incomplète serait un
  * espace que rien ne peut servir.
- * ---------------------------------------------------------------------------
  *
  * **AUCUN APPEL RÉSEAU.** « Connexion complète » n'est pas « connexion
  * vérifiée » : les deux objets de configuration ne lisent que le réglage

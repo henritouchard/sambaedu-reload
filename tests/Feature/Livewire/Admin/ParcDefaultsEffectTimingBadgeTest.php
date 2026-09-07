@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 43.2 (AC6, D5/D6) — badge de temporalité d'effet sur l'onglet
+ * Badge de temporalité d'effet sur l'onglet
  * « Registre / capacités » de /admin/settings/parc-defaults.
  *
  * Patron {@see ParcDefaultsStatusBadgeTest} : mêmes gardes (Gate::before ciblé
@@ -112,7 +112,7 @@ class ParcDefaultsEffectTimingBadgeTest extends TestCase
     #[Test]
     public function a_machine_only_capability_shows_no_badge(): void
     {
-        // Piège n°8 — AUCUN badge pour une capacité sans clé HKCU registre.
+        // AUCUN badge pour une capacité sans clé de registre HKCU.
         $this->actAsAdmin();
         $cap = $this->makeCapability('machine_only_cap', [
             'keys' => [['hive' => 'HKLM', 'path' => 'SOFTWARE\\Z', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => 0]]],

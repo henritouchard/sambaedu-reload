@@ -17,7 +17,7 @@ use Tests\TestCase;
  * absente.
  *
  * Contexte (incident du 2026-08-07). Un `bootstrap/cache/routes-v7.php` figé au
- * 11 juillet — donc antérieur aux routes d'extensions (Epic 54, fin juillet) —
+ * 11 juillet — donc antérieur aux routes d'extensions (fin juillet)
  * rendait `admin.extensions` introuvable. La sidebar l'appelait sans garde ; or
  * elle est rendue sur CHAQUE page. Résultat : 500 sur l'application entière, y
  * compris le tableau de bord, et plus aucun écran pour diagnostiquer. Le code
@@ -41,7 +41,7 @@ class SidebarRouteGuardTest extends TestCase
      * PIÈGE : la closure DOIT déclarer un premier paramètre acceptant `null`.
      * `Gate::callBeforeCallbacks()` saute tout callback qui n'accepte pas
      * l'invité quand aucun utilisateur n'est authentifié — et ces tests rendent
-     * la vue sans session. Avec `fn () => true`, le `@can('server.admin')`
+     * la vue sans session. Avec `fn => true`, le `@can('server.admin')`
      * restait faux, la section « Serveur » n'était jamais rendue, et les
      * assertions `assertStringNotContainsString()` passaient pour la mauvaise
      * raison.

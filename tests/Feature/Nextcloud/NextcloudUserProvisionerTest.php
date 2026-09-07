@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.1 — les crochets du cycle de vie utilisateur (AC5, AC6, AC7).
+ * Les crochets du cycle de vie utilisateur.
  *
  * Chaque branche a son test : compte créé, compte adopté (`102`), échec net,
  * capacité éteinte (aucun appel), propagation de mot de passe sous double
@@ -50,10 +50,6 @@ class NextcloudUserProvisionerTest extends TestCase
             'data' => $data,
         ]];
     }
-
-    // =====================================================================
-    // AC5 — création au fil de l'eau
-    // =====================================================================
 
     #[Test]
     public function creating_a_user_posts_the_account_with_the_password_in_hand(): void
@@ -111,10 +107,6 @@ class NextcloudUserProvisionerTest extends TestCase
         Http::assertNothingSent();
     }
 
-    // =====================================================================
-    // AC7 — propagation du mot de passe
-    // =====================================================================
-
     #[Test]
     public function the_password_is_propagated_when_capability_and_identity_both_hold(): void
     {
@@ -164,14 +156,12 @@ class NextcloudUserProvisionerTest extends TestCase
     }
 
     /**
-     * Revue #3 — UN REFUS CÔTÉ INSTANCE SE JOURNALISE EN DEBUG, JAMAIS EN
-     * WARNING.
+     * UN REFUS CÔTÉ INSTANCE SE JOURNALISE EN DEBUG, JAMAIS EN WARNING.
      *
-     * Le test d'origine se terminait par `assertTrue(true)` : une façade qui
-     * serait restée verte quel que soit le niveau émis. Or l'AC7 exige le niveau,
-     * pas seulement l'absence d'exception — à la rentrée, une réinitialisation en
-     * masse sur une instance à synchro LDAP produirait un WARNING par utilisateur
-     * pour un état parfaitement normal.
+     * Le niveau émis fait partie du contrat, pas seulement l'absence
+     * d'exception : à la rentrée, une réinitialisation en masse sur une instance
+     * à synchro LDAP produirait un WARNING par utilisateur pour un état
+     * parfaitement normal.
      *
      * Les trois formes du même refus sont couvertes : `403` HTTP, statuscode OCS
      * `997` (les deux classés `Privilege` par le client) et le refus générique.
@@ -212,10 +202,6 @@ class NextcloudUserProvisionerTest extends TestCase
         ];
     }
 
-    // =====================================================================
-    // Revue #1 — l'hôte SMB vide ne rend RIEN muet
-    // =====================================================================
-
     /**
      * LE scénario qui était cassé. L'écran valide `nextcloud_smb_host` en
      * `nullable` et ne lui met pas d'astérisque : le laisser vide est un geste
@@ -242,10 +228,6 @@ class NextcloudUserProvisionerTest extends TestCase
         Http::assertSent(static fn (Request $r): bool => $r->method() === 'PUT'
             && str_contains($r->url(), '/ocs/v2.php/cloud/users/alice'));
     }
-
-    // =====================================================================
-    // Revue #2 — on n'adopte QUE l'homonyme
-    // =====================================================================
 
     /**
      * LE scénario de sécurité, verrouillé.
@@ -286,16 +268,6 @@ class NextcloudUserProvisionerTest extends TestCase
 
         Http::assertNothingSent();
     }
-
-    // =====================================================================
-    // CORRECTION DE REVUE #2 — LA GARDE D'UNICITÉ VAUT AUSSI POUR LA
-    // RÉSOLUTION AUTOMATIQUE
-    //
-    // Le geste manuel n'est pas le seul chemin d'écriture du cache : le balayage
-    // en est un autre. La garde ferme la CLASSE de défauts, pas un de ses
-    // chemins — et dans le balayage, le refus est COMPTÉ ET RAPPORTÉ, jamais une
-    // exception qui interromprait le lot.
-    // =====================================================================
 
     #[Test]
     public function an_identity_already_held_by_another_user_is_reported_and_never_overwritten(): void
@@ -341,10 +313,6 @@ class NextcloudUserProvisionerTest extends TestCase
 
         self::assertSame('alice', $user->fresh()->nextcloud_user_id);
     }
-
-    // =====================================================================
-    // AC6 — le cache lu par le chemin legacy
-    // =====================================================================
 
     #[Test]
     public function the_cached_identity_is_readable_and_null_when_absent(): void

@@ -20,7 +20,7 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.1 — Tests Unit du modèle App\Models\Printer.
+ * Tests Unit du modèle App\Models\Printer.
  *
  * Couvre :
  *  - PK string + non-incrementing + keyType.

@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.2 (décision Henri n° 5) — drapeau « imprimante par défaut » sur le
+ * Drapeau « imprimante par défaut » sur le
  * pivot `printer_workstation_group`.
  *
  * Réglage EXPLICITE porté par l'attachement imprimante↔WG (settable par l'admin

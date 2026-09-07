@@ -7,7 +7,6 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.3 — AC7.2.
  *
  * Validation permissive partagée par `GET|POST /ipxe/enrollment/parc-add` et
  * `GET|POST /ipxe/enrollment/parc-remove`. Ajoute `parc` (int positif) à la

@@ -13,11 +13,11 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 6.2 — Réconciliation table SER `printer_drivers` ↔ Samba.
+ * Réconciliation table SER `printer_drivers` ↔ Samba.
  *
  * Exécutée :
  *  - quotidiennement à 03:35 par `app/Console/Kernel.php` (5 min après
- *    `printers:sync` 03:30, monitoring séparé — D7).
+ *    `printers:sync` 03:30, monitoring séparé).
  *  - à la demande : `php artisan printer-drivers:sync [--dry-run]`.
  *
  * Idempotente : la relancer ne change rien quand l'état est aligné.
@@ -32,12 +32,12 @@ use Illuminate\Support\Facades\Log;
  *  3. SER contient des rows orphan présents dans Samba → UPDATE
  *     orphan=false (réintroduction).
  *
- * Fix #12 décalqué 6.1 : si `isSambaHealthy()` retourne false (Kerberos
+ * Garde de santé Samba : si `isSambaHealthy()` retourne false (Kerberos
  * KO, daemon down) → log error + Command::FAILURE + AUCUN row SER
  * marqué orphan. Évite la perte de visibilité massive en cas
  * d'interruption transitoire.
  *
- * Auto-attachement AC4 (Q1A — décision Henri 2026-05-20) :
+ * Auto-attachement :
  * la sync interroge `listPrintersOnSe4fs()` (= `rpcclient enumprinters
  * <se4fs>`) pour obtenir les associations (cups_name → driver_name)
  * effectives côté Samba. Pour chaque association détectée, si la ligne
@@ -79,7 +79,7 @@ class PrinterDriversSyncCommand extends Command
     {
         $dryRun = (bool) $this->option('dry-run');
 
-        // Fix #12 6.1 décalqué : pré-flight santé Samba.
+        // Pré-flight santé Samba.
         if (!$driverService->isSambaHealthy()) {
             Log::error('[printer-drivers:sync] — Samba injoignable, synchronisation annulée', [
                 'dry_run' => $dryRun,
@@ -188,7 +188,7 @@ class PrinterDriversSyncCommand extends Command
         ]);
 
         if (!$dryRun) {
-            // Fix #5 — re-count via la valeur retournée par UPDATE (multi-rows).
+            // Re-count via la valeur retournée par UPDATE (multi-rows).
             if ($toMarkOrphan->isNotEmpty()) {
                 foreach ($toMarkOrphan as $key) {
                     [$driverName, $architecture] = explode('|', $key, 2);

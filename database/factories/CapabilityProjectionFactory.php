@@ -9,7 +9,7 @@ use App\Models\CapabilityProjection;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 27.12 — factory de projection registry (windows). Par défaut une seule
+ * Factory de projection registry (windows). Par défaut une seule
  * clé HKCU à map on/off ; `keys()` permet de poser une `spec` arbitraire (bundle,
  * littéral, MULTI_SZ…).
  *

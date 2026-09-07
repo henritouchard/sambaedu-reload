@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Story 39.4 — Canal ④ : téléchargement + VÉRIFICATION D'INTÉGRITÉ + matérialisation locale d'un
+ * Canal ④ : téléchargement + VÉRIFICATION D'INTÉGRITÉ + matérialisation locale d'un
  * binaire imposé par le contrat amont (controlHub). Extrait de {@see \App\Jobs\ControlHub\PullContractArtifactJob}
  * (le job reste un thin wrapper `ShouldQueue`) pour la testabilité (patron repo).
  *
@@ -27,11 +27,11 @@ use Throwable;
  *  - **match** → matérialisation dans le foyer local, filename DÉRIVÉ SERVEUR (jamais
  *    `artifact.filename` brut — anti-traversal), `pull_status = downloaded` ;
  *  - **mismatch / échec** → AUCUNE écriture d'asset, fichier temporaire supprimé,
- *    `pull_status = error` + `pull_error` (message court, jamais l'URL signée en clair — NFR-A3) ;
+ *    `pull_status = error` + `pull_error` (message court, jamais l'URL signée en clair) ;
  *  - **précédence locale re-vérifiée EN TÊTE** (garde contre double exécution / re-tentative :
  *    ré-pull au même checksum = no-op, aucun téléchargement).
  *
- * Le pull NE REMPLACE JAMAIS une source locale : il ne comble que l'absence (AC8).
+ * Le pull NE REMPLACE JAMAIS une source locale : il ne comble que l'absence.
  *
  * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
  */
@@ -63,7 +63,7 @@ class ArtifactPullService
      * @param  int          $itemId    id de l'item {@see ControlHubContractItem} à mettre à jour
      * @param  string       $type      `wallpapers` | `lockscreens` | `agent_tools`
      * @param  string       $key       clé fonctionnelle de l'item (identité par-clé des agent_tools)
-     * @param  string       $url       URL SIGNÉE volatile (jamais persistée en colonne — AC5)
+     * @param string $url URL SIGNÉE volatile (jamais persistée en colonne —)
      * @param  string       $checksum  sha256 hex attendu (identité stable — base du no-op)
      * @param  string|null  $filename  nom informatif annoncé (JAMAIS utilisé pour le nommage disque)
      * @param  int|null     $size      taille attendue (informative)
@@ -77,7 +77,7 @@ class ArtifactPullService
         ?string $filename = null,
         ?int $size = null,
     ): void {
-        // Review 39.4 #1 (défense en profondeur) — checksum toujours normalisé minuscule à l'entrée
+        // Défense en profondeur — checksum toujours normalisé minuscule à l'entrée
         // du service, quel que soit l'appelant : garantit que precedence + materialize sont cohérents
         // avec l'écriture minuscule de WallpaperUploadService/AgentToolService (l'ingestion normalise
         // déjà au point canonique, mais ce service est public).
@@ -90,7 +90,7 @@ class ArtifactPullService
             return;
         }
 
-        // Précédence locale re-vérifiée EN TÊTE (AC8/AC9) : si l'asset est apparu entre le dispatch
+        // Précédence locale re-vérifiée EN TÊTE : si l'asset est apparu entre le dispatch
         // et l'exécution (concurrence, upload admin, job jumeau au même checksum), aucun
         // téléchargement n'est retenté — l'état désiré est déjà satisfait (ré-pull no-op).
         if ($this->presentLocally($type, $key, $checksum)) {
@@ -115,7 +115,7 @@ class ArtifactPullService
         $tmp = rtrim($destDir, '/\\') . DIRECTORY_SEPARATOR . '.chpull-' . bin2hex(random_bytes(8)) . '.tmp';
 
         try {
-            // Review 39.4 #3 — téléchargement STREAMÉ vers le fichier temporaire (`sink`) plutôt que
+            // Téléchargement STREAMÉ vers le fichier temporaire (`sink`) plutôt que
             // `->body()` résumé en mémoire (un binaire anormalement volumineux ne gonfle plus la RAM du
             // worker), + BORNE de taille dure post-téléchargement (le sha256 seul ne borne pas la taille).
             $response = Http::timeout(self::HTTP_TIMEOUT_SECONDS)->sink($tmp)->get($url);
@@ -152,7 +152,7 @@ class ArtifactPullService
             // Comparaison STRICTE, insensible à la casse hex (hash_equals sur formes normalisées).
             if (! hash_equals(strtolower($checksum), strtolower($computed))) {
                 @unlink($tmp);
-                // NFR-A3 : ni l'URL signée, ni un secret ne figurent dans le message.
+                // Ni l'URL signée, ni un secret ne figurent dans le message.
                 $this->markError($item, 'sha256 non concordant : binaire rejeté (aucune matérialisation)');
 
                 Log::warning('ArtifactPullService: sha256 mismatch, binary rejected', [
@@ -166,7 +166,7 @@ class ArtifactPullService
                 return;
             }
 
-            // Review 39.4 #2 — un sha256 concordant ne prouve PAS que le contenu est une image :
+            // Un sha256 concordant ne prouve PAS que le contenu est une image :
             // le chemin de pull ne re-normalise/recompresse PAS (préserver le checksum vérifié), donc
             // sans garde on stockerait un binaire arbitraire (bombe de décompression, non-image) comme
             // WallpaperAsset légitime — que du code aval (aperçu/thumbnail Imagick) rouvrirait, ré-
@@ -203,7 +203,7 @@ class ArtifactPullService
             $this->reapplyAssignmentsAfterWallpaperPull($type, $item);
         } catch (Throwable $e) {
             @unlink($tmp);
-            // Review 39.4 #E11 (NFR-A3) — NE JAMAIS persister `$e->getMessage()` dans
+            // NE JAMAIS persister `$e->getMessage` dans
             // `pull_error` : Guzzle suffixe l'URI complète (query string `?sig=…`) à ses
             // messages (ConnectException/RequestException), et cette colonne est remontée
             // à l'amont par le canal ③. On persiste une catégorie stable (classe d'exception) ;
@@ -221,7 +221,7 @@ class ArtifactPullService
     }
 
     /**
-     * Review 39.4 #3 — borne de taille dure d'un binaire amont (wallpapers/outils = petits ;
+     * Borne de taille dure d'un binaire amont (wallpapers/outils = petits ;
      * pas d'ISO multi-Go par ce canal). Configurable, défaut 256 MiB.
      */
     private static function maxArtifactBytes(): int
@@ -232,7 +232,7 @@ class ArtifactPullService
     }
 
     /**
-     * Review 39.4 #2 — le fichier tiré est-il une image raster d'un type autorisé ? Validation EN
+     * Le fichier tiré est-il une image raster d'un type autorisé ? Validation EN
      * LECTURE SEULE : `getimagesize()` ne lit que les en-têtes (pas de décompression complète → sûr
      * face à une bombe), et l'on restreint au même ensemble de types que la bibliothèque wallpaper.
      * Si Imagick est disponible, `pingImage()` (métadonnées seules) sous les limites de ressources

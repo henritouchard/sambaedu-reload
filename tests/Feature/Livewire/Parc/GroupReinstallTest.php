@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Réinstallation salle/groupe (fan-out) — AC7/8/11/12.
+ * Réinstallation salle/groupe (fan-out) —/8/11/12.
  *
  * NOTE ENVIRONNEMENT : la page groupe (`pages::parc.groups.[id].index`) ne peut
  * pas compléter un rendu HTML complet ni un second roundtrip Livewire sur
@@ -103,7 +103,7 @@ class GroupReinstallTest extends TestCase
 
     public function test_added_member_after_arming_is_not_reinstalled(): void
     {
-        // D3 — liste figée à l'armement.
+        // La liste des membres est figée à l'armement.
         $group = WorkstationGroup::factory()->create();
         $initial = Workstation::factory()->count(2)->create();
         $group->workstations()->attach($initial->pluck('id')->all());

@@ -21,9 +21,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.1 — AC6/AC7 : la reprise, en commande — pas en migration.
+ * La reprise, en commande — pas en migration.
  *
- * Les cinq combinaisons de l'AC8 sont couvertes par
+ * Les cinq combinaisons sont couvertes par
  * `\Tests\Unit\Services\Filesystem\FileLocationsParityTest` (cité en FQCN :
  * une suite de test n'a pas à importer une autre suite pour un renvoi) ; celle-ci
  * se concentre sur ce qui est spécifique à LA COMMANDE : les deux refus nommés,
@@ -101,10 +101,6 @@ class AdoptFileLocationsCommandTest extends TestCase
         return is_array($stored) ? $stored : null;
     }
 
-    // =========================================================================
-    // AUCUN appel réseau
-    // =========================================================================
-
     #[Test]
     public function elle_n_emet_aucun_appel_reseau(): void
     {
@@ -129,16 +125,6 @@ class AdoptFileLocationsCommandTest extends TestCase
         Http::assertNothingSent();
         self::assertSame('opencloud', FileLocationService::current()->cloudActif->value);
     }
-
-    // =========================================================================
-    // CORRECTION DE REVUE 63.3 — LA COMMANDE EST UN ÉCRIVAIN **COMPLET** :
-    // ELLE ÉCRIT LA DÉCISION **ET SON MIROIR**
-    //
-    // Elle n'écrivait que `files.locations`. La divergence produite était
-    // silencieuse, transitoire (le premier enregistrement d'écran la réparait) —
-    // et pourtant suffisante pour qu'un répertoire géré soit créé sur une
-    // instance que la décision ne reconnaît plus comme cloud actif.
-    // =========================================================================
 
     #[Test]
     public function la_decision_ecrite_est_immediatement_reflechie_dans_les_quatre_booleens(): void
@@ -215,17 +201,13 @@ class AdoptFileLocationsCommandTest extends TestCase
         self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
     }
 
-    // =========================================================================
-    // AC7 — refus n°1 : les deux clouds configurés
-    // =========================================================================
-
     #[Test]
     public function les_deux_clouds_configures_est_un_refus_nomme(): void
     {
         Http::fake();
         $this->configureLesDeuxClouds(true, true);
 
-        // AC7 : le message nomme LES DEUX PRODUITS **et leurs URL**, pas
+        // Le message nomme LES DEUX PRODUITS **et leurs URL**, pas
         // seulement le conflit — sans les URL, l'exploitant ne sait pas quelles
         // deux instances s'affrontent.
         $this->artisan('files:adopt-locations')
@@ -240,7 +222,7 @@ class AdoptFileLocationsCommandTest extends TestCase
     }
 
     /**
-     * AC7 — « la ligne reste inchangée si elle existait ». Les cinq autres tests
+     * « la ligne reste inchangée si elle existait ». Les cinq autres tests
      * de refus vérifient son ABSENCE ; celui-ci vérifie sa NON-MODIFICATION,
      * qui est l'autre moitié du contrat.
      */
@@ -260,10 +242,6 @@ class AdoptFileLocationsCommandTest extends TestCase
         self::assertSame(self::DECISION_NEXTCLOUD_POSIX, $this->ligneEnregistree(), 'un refus ne réécrit ni n\'efface la ligne existante');
         Http::assertNothingSent();
     }
-
-    // =========================================================================
-    // AC7 — refus n°2 : emplacement web-uniquement sans aucun cloud configuré
-    // =========================================================================
 
     #[Test]
     public function home_coupe_sans_aucun_cloud_configure_est_un_refus_nomme(): void
@@ -297,7 +275,7 @@ class AdoptFileLocationsCommandTest extends TestCase
     }
 
     /**
-     * AC7 — le message DISTINGUE « capacité éteinte » de « capacité active mais
+     * Le message DISTINGUE « capacité éteinte » de « capacité active mais
      * connexion incomplète », et, dans ce second cas, NOMME ce qui manque : ici
      * la capacité Nextcloud est active, mais ni URL ni identifiant ni secret.
      */
@@ -322,7 +300,7 @@ class AdoptFileLocationsCommandTest extends TestCase
      * (piège nommé de `OpenCloudDeploymentService::prefillConnection()`). Le
      * libellé attendu doit donc être celui de la capacité, JAMAIS celui de la
      * connexion incomplète — sinon l'assertion passerait pour les deux branches
-     * et ne prouverait plus la distinction que l'AC7 lui confie.
+     * et ne prouverait plus la distinction que l' lui confie.
      */
     #[Test]
     public function une_connexion_complete_mais_une_capacite_eteinte_n_est_pas_un_cloud_configure(): void
@@ -340,12 +318,8 @@ class AdoptFileLocationsCommandTest extends TestCase
         self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
     }
 
-    // =========================================================================
-    // --dry-run — la décision ET LES MOTIFS, sans écrire
-    // =========================================================================
-
     /**
-     * AC6 : `--dry-run` affiche la décision ET LES MOTIFS. Le code de sortie
+     * `--dry-run` affiche la décision ET LES MOTIFS. Le code de sortie
      * est ≠ 0 tant qu'il reste à écrire — même doctrine que `ad:immutable-key`,
      * pour qu'un enchaînement `--dry-run && <geste réel>` ne prenne pas une
      * simulation pour un feu vert.
@@ -377,10 +351,6 @@ class AdoptFileLocationsCommandTest extends TestCase
             ->assertExitCode(0);
     }
 
-    // =========================================================================
-    // Idempotence
-    // =========================================================================
-
     #[Test]
     public function rejouee_sur_un_etat_deja_repris_elle_rend_deja_conforme_et_n_ecrit_rien(): void
     {
@@ -409,10 +379,6 @@ class AdoptFileLocationsCommandTest extends TestCase
             'aucune écriture ne doit toucher updated_at',
         );
     }
-
-    // =========================================================================
-    // Décision existante différente : refus sans --force, écrasement avec
-    // =========================================================================
 
     #[Test]
     public function une_decision_existante_differente_n_est_pas_ecrasee_sans_force(): void
@@ -467,10 +433,6 @@ class AdoptFileLocationsCommandTest extends TestCase
         self::assertSame(self::DECISION_NEXTCLOUD_POSIX, $this->ligneEnregistree());
     }
 
-    // =========================================================================
-    // Une ligne ILLISIBLE : la commande la répare, elle ne plante pas dessus
-    // =========================================================================
-
     /**
      * Une ligne que la garde de lecture refuse ne doit pas faire planter l'outil
      * dont c'est justement le rôle de la réparer : sans `--force`, refus NOMMÉ
@@ -508,17 +470,6 @@ class AdoptFileLocationsCommandTest extends TestCase
 
         self::assertSame(self::DECISION_NEXTCLOUD_POSIX, $this->ligneEnregistree());
     }
-
-    // =========================================================================
-    // Story 63.2 — l'icône du raccourci-portail
-    //
-    // `shortcuts.portal_icon` est une clé NEUVE, absente de toute instance
-    // déployée, et le raccourci « Mes fichiers en ligne » ne dépend plus d'un
-    // geste d'écran mais du cloud actif — écrit par CETTE commande. Sans
-    // publication ici, le parcours de mise en service documenté (jouer la
-    // reprise, puis déployer) poserait sur tous les bureaux un `.lnk` affichant
-    // l'icône de `rundll32.exe`.
-    // =========================================================================
 
     /**
      * Redirige le dossier servi : un test n'écrit pas dans le storage de
@@ -629,19 +580,6 @@ class AdoptFileLocationsCommandTest extends TestCase
         self::assertNotNull($icone);
         self::assertFileExists($served.'/'.$icone['asset']);
     }
-
-    // =========================================================================
-    // CORRECTION DE REVUE 63.3 (résidu B1) — `--cloud=` : LE CHOIX DEVIENT UNE
-    // ENTRÉE, PLUS UNE DÉRIVATION
-    //
-    // Deux héritages n'avaient AUCUNE sortie hors SQL, et le second est celui
-    // qui motive la correction : `home = false` avec les DEUX capacités cloud
-    // éteintes. L'administrateur peut y déclarer une connexion complète (l'écran
-    // monte les deux blocs de connexion), mais l'écran affiche le bandeau de
-    // reprise et n'offre AUCUN contrôle de décision ; or la capacité, seul
-    // critère que la dérivation regardait, n'a plus qu'un écrivain : le miroir,
-    // écrit par une décision que le bandeau interdit de prendre.
-    // =========================================================================
 
     /** Pose une connexion Nextcloud COMPLÈTE sans toucher aux capacités. */
     private function poserLaConnexionNextcloud(): void

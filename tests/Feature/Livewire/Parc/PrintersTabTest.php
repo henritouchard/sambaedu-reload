@@ -22,13 +22,13 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.1 — Tests Feature Livewire de l'onglet Imprimantes /parc?tab=printers.
+ * Tests Feature Livewire de l'onglet Imprimantes /parc?tab=printers.
  *
- * Couvre AC1 (liste), AC2 (ajout + insertion SER + pivot + rollback SER fix #5),
- * AC3 (edit pre-fill), AC4 (delete cascade), AC5 (erreur toast), AC6 (admin filtres),
- * AC7 (lambda scopé), AC8 (gate forgé).
+ * Couvre la liste, l'ajout (insertion SER, pivot, rollback SER), le pré-remplissage
+ * de l'édition, la suppression en cascade, le toast d'erreur, les filtres admin,
+ * le lambda scopé et le gate forgé.
  *
- * Fix #19 : les tests toggle mockent également `getPrinter()` (état live CUPS).
+ * Les tests de bascule mockent également `getPrinter()` : l'état live vient de CUPS.
  */
 class PrintersTabTest extends TestCase
 {
@@ -114,10 +114,6 @@ class PrintersTabTest extends TestCase
         return $mock;
     }
 
-    // ========================================================================
-    // AC1 — Listing depuis le service
-    // ========================================================================
-
     #[Test]
     public function it_lists_printers_from_cups_service_for_admin(): void
     {
@@ -152,10 +148,6 @@ class PrintersTabTest extends TestCase
         Livewire::test($this->component)
             ->assertSet('cupsAvailable', false);
     }
-
-    // ========================================================================
-    // AC7 — Lambda voit uniquement ses parcs (filtrage scopé)
-    // ========================================================================
 
     #[Test]
     public function lambda_user_sees_only_printers_attached_to_their_groups(): void
@@ -192,10 +184,6 @@ class PrintersTabTest extends TestCase
         $component->assertDontSee('imp_other');
         $component->assertDontSee('imp_orph');
     }
-
-    // ========================================================================
-    // AC2 — Ajout via modale (CUPS-first + insert SER + pivot)
-    // ========================================================================
 
     #[Test]
     public function add_printer_creates_cups_then_ser_row_with_pivot(): void
@@ -257,7 +245,7 @@ class PrintersTabTest extends TestCase
     #[Test]
     public function add_printer_rolls_back_cups_when_ser_fails(): void
     {
-        // Fix #5 : quand l'INSERT SER échoue après que CUPS a réussi,
+        // Quand l'INSERT SER échoue après que CUPS a réussi,
         // on doit appeler deletePrinter() pour rollback CUPS.
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
@@ -303,10 +291,6 @@ class PrintersTabTest extends TestCase
         $this->assertSame(0, Printer::count());
     }
 
-    // ========================================================================
-    // AC3 — Edit pre-fill
-    // ========================================================================
-
     #[Test]
     public function open_edit_modal_pre_fills_existing_config_and_attachments(): void
     {
@@ -340,10 +324,6 @@ class PrintersTabTest extends TestCase
             ->assertSet('showEditModal', true);
     }
 
-    // ========================================================================
-    // AC4 — Delete cascade SER + pivot
-    // ========================================================================
-
     #[Test]
     public function delete_printer_removes_cups_and_ser_row(): void
     {
@@ -370,10 +350,6 @@ class PrintersTabTest extends TestCase
         $this->assertNull(Printer::find('imp_del'), 'La row SER doit être supprimée');
     }
 
-    // ========================================================================
-    // AC6 — Toggle enable/disable (fix #19 : getPrinter pour état live)
-    // ========================================================================
-
     #[Test]
     public function toggle_printer_state_calls_disable_when_idle(): void
     {
@@ -383,7 +359,7 @@ class PrintersTabTest extends TestCase
         $mock = $this->bindCupsMock([
             ['name' => 'imp_t', 'state' => 'idle'],
         ]);
-        // Fix #19 : getPrinter() est appelé pour refetch l'état live CUPS.
+        // getPrinter() est appelé pour refetch l'état live CUPS.
         $mock->shouldReceive('getPrinter')->with('imp_t')->andReturn([
             'name' => 'imp_t', 'uri' => 'socket://192.0.2.10:9100',
             'state' => 'idle', 'description' => null, 'location' => null,
@@ -407,7 +383,7 @@ class PrintersTabTest extends TestCase
         $mock = $this->bindCupsMock([
             ['name' => 'imp_t', 'state' => 'disabled'],
         ]);
-        // Fix #19 : getPrinter() refetch l'état live.
+        // getPrinter() refetch l'état live.
         $mock->shouldReceive('getPrinter')->with('imp_t')->andReturn([
             'name' => 'imp_t', 'uri' => 'socket://192.0.2.10:9100',
             'state' => 'disabled', 'description' => null, 'location' => null,
@@ -421,10 +397,6 @@ class PrintersTabTest extends TestCase
             ->call('togglePrinterState', 'imp_t')
             ->assertDispatched('toastMagic');
     }
-
-    // ========================================================================
-    // AC8 — Gate forgé
-    // ========================================================================
 
     #[Test]
     public function lambda_without_delegation_cannot_force_add_printer(): void
@@ -459,10 +431,6 @@ class PrintersTabTest extends TestCase
         $this->assertNotNull(Printer::find('imp_p'), 'L\'imprimante ne doit pas avoir été supprimée');
     }
 
-    // ========================================================================
-    // AC6 — Admin filtres orphans/unattached
-    // ========================================================================
-
     #[Test]
     public function admin_can_filter_orphans(): void
     {
@@ -488,7 +456,7 @@ class PrintersTabTest extends TestCase
     #[Test]
     public function admin_sees_orphans_in_all_filter(): void
     {
-        // Fix #6 (solution 2) : le filtre 'all' inclut les orphans pour les admins.
+        // Le filtre 'all' inclut les orphans pour les admins.
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 

@@ -15,7 +15,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 4.9 — Tests d'observation (AC10).
+ * Tests d'observation.
  *
  * Vérifie que les hooks Eloquent created/updated/deleting du
  * {@see WorkstationObserver} dispatchent bien le bon
@@ -112,7 +112,7 @@ class WorkstationObserverTest extends TestCase
     #[Test]
     public function changing_name_and_status_dispatches_single_update_job(): void
     {
-        // Décision design #3 (review 4.9) : si name ET status changent dans
+        // Si name ET status changent dans
         // le même `save()`, l'observer doit dispatcher UN SEUL job `update`
         // (pas un rename + un status).
         $ws = $this->makeWorkstation('PC-FUSION-1');

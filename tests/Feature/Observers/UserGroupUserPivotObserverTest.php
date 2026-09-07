@@ -19,7 +19,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 5.2 (D5=A) — Observer sur le pivot `user_group_user`.
+ * Observer sur le pivot `user_group_user`.
  *
  * Le test vérifie que :
  *  - un attach sur un UserGroup type='classe' déclenche
@@ -27,7 +27,7 @@ use Tests\Traits\CreatesPermissionSchema;
  *  - un attach sur un UserGroup type='role' (ou autre) ne déclenche RIEN ;
  *  - un detach sur classe déclenche `syncUserClassMemberships(user, [oldId], [])`.
  *
- * Story 42.2 (AC4) — s'y ajoute l'ancrage `updated()` : un changement de RÔLE
+ * S'y ajoute l'ancrage `updated` : un changement de RÔLE
  * d'arête reprojette le groupe vers l'AD via
  * `UserGroupService::resyncGroupAdProjection()` (mocké ici — le routage AD réel
  * est couvert par `UserGroupServiceLegacyCompatibilityTest`), suspendu par le
@@ -178,10 +178,6 @@ class UserGroupUserPivotObserverTest extends TestCase
         $this->assertTrue(true);
     }
 
-    // =========================================================================
-    // Story 42.2 (AC4) — resync AD sur changement de rôle d'arête
-    // =========================================================================
-
     /** ShareService tolérant : absorbe les events created des fixtures attach. */
     private function tolerantShareService(): void
     {
@@ -194,7 +190,7 @@ class UserGroupUserPivotObserverTest extends TestCase
     #[Test]
     public function it_resyncs_ad_projection_when_edge_role_changes(): void
     {
-        // AC4(a) — un UPDATE de rôle d'arête (updateExistingPivot → event
+        // Un UPDATE de rôle d'arête (updateExistingPivot → event
         // `updated` du pivot custom, wasChanged('role')) reprojette LE groupe
         // concerné via le point d'entrée public resyncGroupAdProjection.
         $this->tolerantShareService();
@@ -222,7 +218,7 @@ class UserGroupUserPivotObserverTest extends TestCase
     #[Test]
     public function it_does_not_resync_when_update_does_not_touch_role(): void
     {
-        // AC4 — l'ancrage est filtré wasChanged('role') : un update d'un autre
+        // L'ancrage est filtré wasChanged('role') : un update d'un autre
         // attribut d'arête ne déclenche AUCUNE reprojection.
         $this->tolerantShareService();
 
@@ -234,7 +230,7 @@ class UserGroupUserPivotObserverTest extends TestCase
         $classe = UserGroup::create(['name' => '6B', 'type' => 'classe']);
         $user->groups()->attach($classe->id, ['role' => 'manager']);
 
-        // Update d'un attribut ≠ role (colonne legacy stale, D5).
+        // Update d'un attribut ≠ role (colonne legacy stale).
         $user->groups()->updateExistingPivot($classe->id, ['is_head_teacher' => true]);
 
         $this->assertTrue(true); // Mockery vérifie via shouldNotReceive.
@@ -243,7 +239,7 @@ class UserGroupUserPivotObserverTest extends TestCase
     #[Test]
     public function it_does_not_resync_while_ad_resync_is_suspended(): void
     {
-        // AC4(b) — pendant le read-back `syncFromAd`, le flag DÉDIÉ
+        // Pendant le read-back `syncFromAd`, le flag DÉDIÉ
         // $adResyncEnabled suspend le resync (le flip de rôle en masse ne doit
         // pas déclencher d'écriture LDAP). Le guard commun $syncEnabled
         // (imports users) suspend AUSSI. La scène complète syncFromAd est
@@ -275,7 +271,7 @@ class UserGroupUserPivotObserverTest extends TestCase
     #[Test]
     public function it_ignores_role_changes_on_non_classe_like_groups(): void
     {
-        // AC4(c) — le rôle d'arête ne route rien hors classe/equipe : aucun
+        // Le rôle d'arête ne route rien hors classe/equipe : aucun
         // resync pour un groupe `cours` (ou role/function/custom).
         $this->tolerantShareService();
 
@@ -295,8 +291,8 @@ class UserGroupUserPivotObserverTest extends TestCase
     #[Test]
     public function it_resyncs_for_equipe_type_groups(): void
     {
-        // AC4 — le filtre type couvre classe ET equipe (Equipe_ orpheline
-        // projetée en ligne nue type equipe — 4.13 D1).
+        // Le filtre type couvre classe ET equipe (une Equipe_ orpheline est
+        // projetée en ligne nue de type equipe).
         $this->tolerantShareService();
 
         $equipe = UserGroup::create(['name' => 'MathsTeam', 'type' => 'equipe']);
@@ -318,7 +314,7 @@ class UserGroupUserPivotObserverTest extends TestCase
     #[Test]
     public function it_keeps_pivot_write_valid_when_resync_fails(): void
     {
-        // AC4(d) — fail-soft : un échec de la projection AD (Throwable) est
+        // Fail-soft : un échec de la projection AD (Throwable) est
         // loggé et ne casse JAMAIS l'écriture pivot qui vient d'aboutir.
         $this->tolerantShareService();
 

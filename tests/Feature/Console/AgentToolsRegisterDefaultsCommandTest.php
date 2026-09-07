@@ -13,7 +13,7 @@ use Tests\TestCase;
 use ZipArchive;
 
 /**
- * Story 27.17 — provisioning serveur `agent:tools:register-defaults`.
+ * Provisioning serveur `agent:tools:register-defaults`.
  *
  * Enregistre le portable Rainmeter EMBARQUÉ (via `AgentToolService::registerEmbedded`).
  * Couvre : présence (l'outil est inscrit dans `agent_tools`), idempotence (un

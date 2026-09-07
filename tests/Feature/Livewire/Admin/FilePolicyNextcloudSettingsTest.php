@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.1 — l'écran de connexion Nextcloud sur `/admin/settings/files`.
+ * L'écran de connexion Nextcloud sur `/admin/settings/files`.
  *
  * Le test pivot est {@see self::the_admin_secret_never_appears_in_the_rendered_html()} :
  * une propriété Livewire non vidée repart dans l'instantané du composant, donc
@@ -49,12 +49,8 @@ class FilePolicyNextcloudSettingsTest extends TestCase
         return ['ocs' => ['meta' => ['status' => 'ok', 'statuscode' => $code, 'message' => 'OK'], 'data' => $data]];
     }
 
-    // =====================================================================
-    // AC11 — les champs de connexion
-    // =====================================================================
-
     /**
-     * **Retouché par la story 63.3** : l'interrupteur de capacité a QUITTÉ ce
+     * **Retouché par la** : l'interrupteur de capacité a QUITTÉ ce
      * composant (« Accès Nextcloud » suit le cloud actif, décidé au-dessus). Ce
      * qui reste est la propriété que ce test tenait : le bloc de connexion est
      * bien rendu, et rien n'y est annoncé comme « pas encore disponible ».
@@ -117,10 +113,6 @@ class FilePolicyNextcloudSettingsTest extends TestCase
         self::assertSame('se4fs', $config['nextcloud_smb_host']);
     }
 
-    // =====================================================================
-    // AC1 — le secret, jamais rendu
-    // =====================================================================
-
     #[Test]
     public function the_admin_secret_never_appears_in_the_rendered_html(): void
     {
@@ -170,10 +162,6 @@ class FilePolicyNextcloudSettingsTest extends TestCase
 
         self::assertNull(app(ServiceCredentials::class)->password(NextcloudConnectionConfig::CREDENTIAL_NAME));
     }
-
-    // =====================================================================
-    // AC1 / AC9 — les trois diagnostics, distincts sur l'écran
-    // =====================================================================
 
     private function ready(): void
     {
@@ -249,10 +237,6 @@ class FilePolicyNextcloudSettingsTest extends TestCase
         self::assertStringContainsString('identifiant du compte admin', $component->get('probeResult')['message']);
         Http::assertNothingSent();
     }
-
-    // =====================================================================
-    // AC8 — le bouton enfile, il n'exécute pas
-    // =====================================================================
 
     #[Test]
     public function the_provision_button_queues_the_job(): void

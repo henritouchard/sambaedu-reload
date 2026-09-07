@@ -10,12 +10,10 @@ use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Http\Request;
 
 /**
- * Story 3.2 — D9 / D10 / AC1.2.
- *
  * Résout et rend les templates Blade des actions iPXE whitelistées
  * (`resources/views/ipxe/actions/{rescuecd,winpe,factory_reset}.blade.php`).
  *
- * **Décisions de design (cf. story 3.2 §Dev Notes)** :
+ * **Décisions de design** :
  *
  *  - Service séparé de {@see IpxeMenuRenderer} — la sémantique diffère
  *    (menu interactif vs script kernel/initrd directement exécuté par le
@@ -24,19 +22,19 @@ use Illuminate\Http\Request;
  *    la clé qui héberge `se4install_passwd` — pas de hardcode.
  *  - Pré-construction de l'URL `$autorunUrl` (rescuecd) côté service pour
  *    permettre le test unit (snapshot d'interpolation).
- *  - Sanitize ASCII des inputs sensibles (`mac`, `uuid`, `workstationName`)
- *    iso 3.1 — un firmware iPXE rejette l'ASCII étendu.
+ *  - Sanitize ASCII des inputs sensibles (`mac`, `uuid`, `workstationName`) —
+ *    un firmware iPXE rejette l'ASCII étendu.
  *  - **Pas de side effect** : aucun log direct ici (porté par
  *    {@see IpxeService}), aucune insertion DB.
  *
- * **Charset ASCII strict** : iso 3.1 D9 — les templates `ipxe.actions.*` ne
+ * **Charset ASCII strict** : les templates `ipxe.actions.*` ne
  * contiennent que des caractères ASCII (0x20-0x7E). Tout input non ASCII est
  * remplacé par `?` via {@see sanitizeAscii()}.
  */
 final class IpxeActionResolver
 {
     /**
-     * Iso 3.1 DO-13 — le shebang `#!ipxe` est injecté comme variable Blade
+     * Iso DO-13 — le shebang `#!ipxe` est injecté comme variable Blade
      * pour contourner le strip PHP automatique des shebangs CLI.
      */
     private const IPXE_SHEBANG = '#!ipxe';
@@ -61,7 +59,7 @@ final class IpxeActionResolver
      * Rend le script iPXE d'une action whitelistée.
      *
      * @param  IpxeAdminAction  $action   Case enum (déjà validé par le
-     *                                    controller via `tryFrom()`).
+     *  controller via `tryFrom()`).
      * @param  Workstation|null  $ws      Poste résolu (null = poste inconnu
      *                                    autorisé en parité legacy
      *                                    `action.php:28` — un poste neuf en
@@ -93,7 +91,7 @@ final class IpxeActionResolver
             );
 
         // Variables spécifiques `winpe` — iso-legacy `actions/winpe.php`.
-        // Fix review #2 / Q2 Henri — whitelist stricte de `$version`. Défense
+        // Whitelist stricte de `$version`. Défense
         // en profondeur : on revalide côté resolver pour le cas où la
         // FormRequest serait court-circuitée (tests, instanciation directe du
         // service). Hors whitelist → fallback DEFAULT_WIN_VERSION sans
@@ -111,20 +109,20 @@ final class IpxeActionResolver
         $disk = (int) $request->input('disk', 0);
         $perso = (int) $request->input('perso', 0);
 
-        // Story 3.4 — AC6.2 / AC7.1 — variables Linux install pour les
+        // Variables Linux install pour les
         // templates `ipxe.actions.install_*`. linuxMeta() retourne null pour
-        // les 3 actions historiques 3.2 (rescuecd, winpe, factory_reset).
+        // les 3 actions historiques (rescuecd, winpe, factory_reset).
         $linuxVariables = $this->resolveLinuxVariables($action, $mac, $uuid, $scriptUrl, $perso);
 
-        // Story 3.5 — AC6.2 / AC7.1 — variables Windows install pour les
+        // Variables Windows install pour les
         // templates `ipxe.actions.install_win*`. windowsMeta() retourne null
         // pour les 12 cases hors install_win*.
         $windowsVariables = $this->resolveWindowsVariables($action, $scriptUrl, $osUrl);
 
-        // Story 3.7 — post-review #12 — variables config-driven pour les
+        // Variables config-driven pour les
         // templates « tools » (gparted/hdt/memtest86plus). Injectées ici
         // (resolver) plutôt qu'appelées via `config()` dans le Blade — pattern
-        // Epic 3 standard, facilite les tests + override sans toucher la
+        // standard, facilite les tests + override sans toucher la
         // config globale.
         $toolsVariables = $this->resolveToolsVariables();
 
@@ -147,7 +145,7 @@ final class IpxeActionResolver
     }
 
     /**
-     * Story 3.5 — AC6.2 / AC7.1 — Construit les variables Blade pour les
+     * Construit les variables Blade pour les
      * templates `ipxe.actions.install_win*`.
      *
      * Pour les actions hors install_win* : retourne un tableau vide (les
@@ -220,7 +218,7 @@ final class IpxeActionResolver
     }
 
     /**
-     * Story 3.4 — AC6.2 / AC7.1 — Construit les variables Blade pour les
+     * Construit les variables Blade pour les
      * templates `ipxe.actions.install_*`.
      *
      * Pour les actions hors install_* (rescuecd, winpe, factory_reset) :
@@ -356,20 +354,18 @@ final class IpxeActionResolver
     }
 
     /**
-     * Story 3.7 — D8 — Résout l'URL de base du serveur (scheme + host, sans
+     * Résout l'URL de base du serveur (scheme + host, sans
      * le suffixe `/ipxe`). Utilisée par les templates des outils de diagnostic
      * (gparted, hdt, memtest86plus) dont les assets sont servis depuis la
      * racine du serveur Apache (`/bin/gparted/`, `/bin/hdt/`, etc.) et non
      * depuis `/ipxe/`.
      *
-     * Post-review #5 (2026-05-22) — **clé config canonique unifiée** avec
+     * **Clé config canonique unifiée** avec
      * {@see IpxeService::resolveServerBaseUrl()} et
      * {@see \App\Ipxe\Services\IpxeEnrollmentOrchestrator} : on lit
-     * `ipxe.se4fs_url` (override env `IPXE_SE4FS_URL`) — auparavant on lisait
-     * `ipxe.actions.server_base_url` (clé orpheline), ce qui ignorait
-     * silencieusement les overrides ops. La clé legacy reste tolérée en
-     * fallback secondaire pour compatibilité descendante (deprecated, sera
-     * retirée Phase 3).
+     * `ipxe.se4fs_url` (override env `IPXE_SE4FS_URL`). La clé
+     * `ipxe.actions.server_base_url` reste tolérée en fallback secondaire pour
+     * compatibilité descendante (deprecated).
      *
      * Priorité : `config('ipxe.se4fs_url')` (override env canonique) →
      * `config('ipxe.actions.server_base_url')` (fallback deprecated) →
@@ -379,8 +375,8 @@ final class IpxeActionResolver
     {
         $configured = (string) config('ipxe.se4fs_url', '');
         if ($configured === '') {
-            // Compat descendante — clé orpheline livrée 3.7. Fallback secondaire
-            // pour ne pas casser un override prod éventuel posé avant le fix.
+            // Compat descendante : fallback secondaire pour ne pas casser un
+            // override prod éventuel posé sur l'ancienne clé.
             $configured = (string) config('ipxe.actions.server_base_url', '');
         }
         if ($configured !== '') {
@@ -396,8 +392,6 @@ final class IpxeActionResolver
     }
 
     /**
-     * Story 3.7 — post-review #12 (2026-05-22).
-     *
      * Construit les variables Blade `$gpartedKernelPath`, `$gpartedInitrdPath`,
      * `$gpartedFilesystemPath`, `$hdtPxelinux0Path`, `$hdtPxelinuxCfg`,
      * `$memtestPxelinux0Path`, `$memtestPxelinuxCfg` lues par les 3 templates
@@ -405,7 +399,7 @@ final class IpxeActionResolver
      *
      * Avant le fix, ces templates appelaient `config('ipxe.tools.*.kernel_path')`
      * directement — couplage caché, non testable sans modif config globale, et
-     * divergence du pattern Epic 3 « resolver injecte, Blade consomme ».
+     * divergence du pattern « resolver injecte, Blade consomme ».
      *
      * Tableau retourné systématiquement (pas de short-circuit) — les 3 templates
      * ont leurs variables, mais celles non utilisées sont simplement ignorées
@@ -428,7 +422,7 @@ final class IpxeActionResolver
 
     /**
      * Délègue à l'implémentation canonique {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()}
-     * — Unicode-aware + fail-closed sur UTF-8 invalide (cf. F15 review).
+     * — Unicode-aware + fail-closed sur UTF-8 invalide.
      */
     private function sanitizeAscii(string $value): string
     {

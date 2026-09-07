@@ -9,9 +9,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 57.4 / **AR12 — L'EXTINCTION DU BBB LEGACY, PROUVÉE PLUTÔT QU'ANNONCÉE.**
+ * **AR12 — L'EXTINCTION DU BBB LEGACY, PROUVÉE PLUTÔT QU'ANNONCÉE.**
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE QUE CE FICHIER AFFIRME
  *
  *  Le critère d'acceptation final du système d'extensions dit : « plus aucun
@@ -32,9 +31,8 @@ use Symfony\Component\Finder\Finder;
  *   3. **Les méta-tests** — le scanner mord réellement, et il ne mord ni ses
  *      propres chaînes ni les faux positifs nommés du terrain. Un scanner qui
  *      passerait sur une zone vide ou avec une expression cassée « prouverait »
- *      l'extinction pour la mauvaise raison — la signature de défaut de tout cet
- *      epic (la garantie qui n'existe que dans la vue).
- * ══════════════════════════════════════════════════════════════════════════
+ *      l'extinction pour la mauvaise raison — la garantie qui n'existe que dans
+ *      la vue.
  *
  * Patron : {@see ExtensionBbbIsolationTest} pour les méta-tests et le plancher
  * de fichiers, {@see LegacyTombstoneRoutesTest} pour la lecture textuelle.
@@ -46,7 +44,7 @@ class LegacyBbbLinkExtinctionTest extends TestCase
      *
      *  - `extensions/` — c'est le SUCCESSEUR. `/ext/bbb/visio` y est la nouvelle
      *    route publique, pas un vestige ; l'y interdire reviendrait à interdire
-     *    ce que la story livre ;
+     *    ce qui la remplace ;
      *  - `tests/` — ce fichier et ses aiguilles y vivent ;
      *  - `docs/`, `userDoc/` — de la documentation, y compris historique. Le
      *    critère parle de LIENS SERVIS, pas de prose : une page qui raconte ce
@@ -94,14 +92,13 @@ class LegacyBbbLinkExtinctionTest extends TestCase
             //    exige le slash de tête, sans quoi « provisioning »
             //    déclencherait.
             //
-            //    ⚠️ Review 57.4 #2 — le lookbehind est ancré au préfixe COMPLET
-            //    de l'extension et non aux trois dernières lettres de ce
-            //    préfixe. Ancré sur ces trois lettres seules, il neutralisait
-            //    n'importe quelle chaîne se terminant par elles : un chemin du
-            //    genre « quelque-chose-qui-finit-pareil » suivi du chemin
-            //    public legacy passait alors sous le radar. Le successeur a un
-            //    chemin EXACT, c'est celui-là qu'on excepte — pas un suffixe
-            //    qui se trouve lui ressembler. Les trois cas frontière sont
+            //  ⚠️ Le lookbehind est ancré au préfixe COMPLET de l'extension,
+            //    pas à ses trois dernières lettres. Ancré sur ces trois lettres
+            //    seules, il neutraliserait n'importe quelle chaîne se terminant
+            //    par elles : un chemin du genre « quelque-chose-qui-finit-pareil »
+            //    suivi du chemin public legacy passerait sous le radar. Le
+            //    successeur a un chemin EXACT, c'est celui-là qu'on excepte —
+            //    pas un suffixe qui lui ressemble. Les trois cas frontière sont
             //    dans `the_successor_exception_is_anchored_to_its_exact_path`,
             //    où ils sont écrits par concaténation, seule façon de les citer
             //    dans un fichier que ce scan lit lui-même.
@@ -131,10 +128,6 @@ class LegacyBbbLinkExtinctionTest extends TestCase
 
         return $found;
     }
-
-    // =====================================================================
-    // Volet 1 — le grep
-    // =====================================================================
 
     #[Test]
     public function the_core_no_longer_serves_a_single_link_to_the_legacy_bbb(): void
@@ -168,8 +161,8 @@ class LegacyBbbLinkExtinctionTest extends TestCase
             }
         }
 
-        // Méta-test #3 — LE PLANCHER. Une zone renommée, déplacée ou mal
-        // filtrée ferait passer ce test à vide, indéfiniment, et au vert.
+        // LE PLANCHER. Une zone renommée, déplacée ou mal filtrée ferait passer
+        // ce test à vide, indéfiniment, et au vert.
         self::assertGreaterThanOrEqual(
             800,
             $inspected,
@@ -186,14 +179,10 @@ class LegacyBbbLinkExtinctionTest extends TestCase
         );
     }
 
-    // =====================================================================
-    // Volet 2 — ce que le grep ne peut pas prouver
-    // =====================================================================
-
     #[Test]
     public function the_in_process_legacy_module_is_gone_for_good(): void
     {
-        // Le contre-modèle nommé de l'epic : du code SE4 exécuté DANS le Laravel
+        // Le contre-modèle nommé : du code SE4 exécuté DANS le Laravel
         // du core. Chaque page avait son successeur dans l'extension ; le module
         // n'a plus d'objet, et le laisser reviendrait à garder deux chemins vers
         // la même fonction, dont un sans autorisation côté serveur.
@@ -251,7 +240,7 @@ class LegacyBbbLinkExtinctionTest extends TestCase
     public function the_se4_extinction_inventory_of_epic_38_is_deliberately_left_alone(): void
     {
         // NON-OBJECTIF, écrit pour qu'on ne le « nettoie » pas par zèle :
-        // l'allowlist d'observation de l'Epic 38 décrit les répertoires du
+        // l'allowlist d'observation décrit les répertoires du
         // système de fichiers SE4 — pas la surface SE5. Y retirer `bbb` et
         // `visio` fausserait le verdict d'extinction d'un canal qui existe
         // encore sur les instances non débranchées.
@@ -263,14 +252,10 @@ class LegacyBbbLinkExtinctionTest extends TestCase
         self::assertStringContainsString("'vis" . "io'", $source);
     }
 
-    // =====================================================================
-    // Volet 3 — les méta-tests : le scanner mord, et seulement où il faut
-    // =====================================================================
-
     #[Test]
     public function the_scanner_really_bites_on_the_links_that_were_removed(): void
     {
-        // Les formes RÉELLES des liens supprimés par cette story, plus celles
+        // Les formes RÉELLES des liens supprimés, plus celles
         // que le legacy fabriquait à l'exécution.
         $samples = [
             'lien vers une page BBB legacy' => [
@@ -344,12 +329,12 @@ class LegacyBbbLinkExtinctionTest extends TestCase
     #[Test]
     public function the_successor_exception_is_anchored_to_its_exact_path(): void
     {
-        // ⚠️ Review 57.4 #2 — la nuance qui décide si ce test protège quelque
-        // chose. Le lookbehind exceptant le successeur était ancré sur les trois
-        // lettres `bb` . `b` et non sur son chemin complet : TOUTE chaîne
-        // finissant par ces lettres se voyait exceptée, et un lien legacy
-        // résiduel construit par concaténation serait passé sans que rien ne
-        // bouge. Ces trois cas sont la frontière exacte.
+        // La nuance qui décide si le scan protège quelque chose. Si le
+        // lookbehind exceptant le successeur était ancré sur les trois lettres
+        // `bb` . `b` plutôt que sur son chemin complet, TOUTE chaîne finissant
+        // par ces lettres serait exceptée, et un lien legacy résiduel construit
+        // par concaténation passerait sans que rien ne bouge. Ces trois cas
+        // sont la frontière exacte.
         $mustBite = [
             'url("foo-bb' . 'b/vis' . 'io")',
             'https://exemple.test/redirectbb' . 'b/vis' . 'io',

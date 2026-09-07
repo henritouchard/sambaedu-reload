@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Job de synchronisation SQL → AD des WorkstationGroup PHYSIQUES.
  *
- * Story 38.7 — n'est dispatché QUE pour les groupes physiques (`is_physical =
+ * N'est dispatché QUE pour les groupes physiques (`is_physical =
  * true`) : l'observer filtre en amont. Il n'écrit plus que l'`OU` de la salle
  * sous `OU=Computers` (rangement des machines + liens GPO — l'unique invariant
  * AD). `OU=Parcs` est en LECTURE SEULE : on l'y LIT à l'import de migration, on
@@ -48,10 +48,6 @@ class WorkstationGroupAdSyncJob implements ShouldQueue
     ) {
     }
 
-    // ========================================================================
-    // FACTORY METHODS
-    // ========================================================================
-
     public static function create(int $workstationGroupId): self
     {
         return new self($workstationGroupId, self::ACTION_CREATE);
@@ -81,10 +77,6 @@ class WorkstationGroupAdSyncJob implements ShouldQueue
             'is_physical' => $isPhysical,
         ]);
     }
-
-    // ========================================================================
-    // HANDLER
-    // ========================================================================
 
     public function handle(AdSyncService $adSyncService): void
     {
@@ -116,10 +108,6 @@ class WorkstationGroupAdSyncJob implements ShouldQueue
             'id' => $this->workstationGroupId,
         ]);
     }
-
-    // ========================================================================
-    // ACTION HANDLERS
-    // ========================================================================
 
     private function handleCreate(AdSyncService $adSyncService): array
     {
@@ -189,10 +177,6 @@ class WorkstationGroupAdSyncJob implements ShouldQueue
 
         return $adSyncService->deleteWorkstationGroupByName($name, $adGuid, $isPhysical);
     }
-
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
 
     private function findGroup(): ?WorkstationGroup
     {

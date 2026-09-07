@@ -15,9 +15,9 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 36.4 — Détail d'une règle d'accès : édition des champs + activation/
- * désactivation + assignation de parcs (picker RESTREINT aux parcs autorisés,
- * piège #9) + suppression (refusée si active — D3). Calque `shares/[id]`.
+ * Détail d'une règle d'accès : édition des champs, activation/désactivation,
+ * assignation de parcs (picker RESTREINT aux parcs que l'acteur peut gérer) et
+ * suppression (refusée si la règle est active). Calque `shares/[id]`.
  */
 new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
     use WithToasts;
@@ -58,7 +58,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
     {
         $this->id = (int) $id;
         $this->loadRule();
-        // Correction review #1 : autorisation policy-backed AVEC la règle en
+        // Autorisation policy-backed AVEC la règle en
         // ressource (le délégué scopé parc devient ATTEIGNABLE) — même patron
         // que `/app/parc/groups/{id}` (`can:viewAny-workstationGroup` en route +
         // scoping fin dans le mount). La route porte `can:viewAny-folderrule`.
@@ -81,7 +81,6 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
         $this->denyAcknowledged = false;
     }
 
-    // --- Parcs assignés + candidats (SCOPÉS, piège #9) ----------------------
 
     #[Computed]
     public function assignedParcs(): array
@@ -98,8 +97,8 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
                 'id' => $w->id,
                 'label' => (string) ($w->display_name ?: $w->name),
                 'is_physical' => (bool) $w->is_physical,
-                // Correction review #5 : le bouton de retrait par parc n'est offert
-                // que si l'acteur peut gérer CE parc (délégation scopée, piège #9) —
+                // Le bouton de retrait par parc n'est offert
+                // que si l'acteur peut gérer CE parc (délégation scopée) —
                 // sinon on afficherait un bouton inopérant (le service refuserait).
                 'can_manage' => $user !== null
                     && $permissions->canOnWorkstationGroup($user, 'folderrule.manage', $w),
@@ -108,7 +107,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     /**
      * Parcs proposables = parcs NON encore assignés ET que l'acteur peut gérer
-     * (délégation scopée — piège #9). L'admin global voit tout ; un délégué ne
+     * (délégation scopée). L'admin global voit tout ; un délégué ne
      * voit que ses parcs.
      *
      * @return array<int, array{id:int,label:string}>
@@ -151,11 +150,10 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
             ->all();
     }
 
-    // --- Édition des champs -------------------------------------------------
 
     public function editRule(): void
     {
-        // Correction review #1 : gate policy-backed AVEC la règle (délégué scopé
+        // Gate policy-backed AVEC la règle (délégué scopé
         // gérant au moins un parc assigné passe ; global aussi).
         abort_unless(Gate::allows('manage-folderrule', $this->rule), 403);
         $this->editing = true;
@@ -211,7 +209,6 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
         $this->toastSuccess('Règle mise à jour.');
     }
 
-    // --- Cycle de vie -------------------------------------------------------
 
     public function toggleActive(): void
     {
@@ -246,13 +243,12 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
         return redirect()->route('app.folder-rules');
     }
 
-    // --- Assignation de parcs -----------------------------------------------
 
     public function attachParc(): void
     {
-        // Correction review #1 : PAS de gate GLOBAL ici — le contrôle PAR PARC
-        // (piège #9) est délégué au service, qui vérifie `canOnWorkstationGroup`
-        // sur CE parc (et refuse un acteur null, correction #3). Un gate global
+        // PAS de gate GLOBAL ici — le contrôle PAR PARC est délégué au service,
+        // qui vérifie `canOnWorkstationGroup` sur CE parc (et refuse un acteur
+        // null). Un gate global
         // aurait pris 403 avant même que le scoping ne s'exécute.
         if ($this->assignParcId === null) {
             $this->toastWarning('Sélectionnez un parc à assigner.');
@@ -278,7 +274,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function detachParc(int $wgId): void
     {
-        // Correction review #1 : contrôle PAR PARC délégué au service (piège #9),
+        // Contrôle PAR PARC délégué au service,
         // pas de gate global (qui bloquerait un délégué scopé légitime).
         $group = WorkstationGroup::find($wgId);
         if ($group === null) {
@@ -296,7 +292,6 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
         $this->toastSuccess('Parc retiré.');
     }
 
-    // --- Helpers ------------------------------------------------------------
 
     private function surfacePredictiveWarnings(FolderAccessRule $rule): void
     {
@@ -502,7 +497,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
                         <span wire:key="parc-{{ $parc['id'] }}" class="badge badge-lg gap-2 {{ $parc['is_physical'] ? 'badge-info' : 'badge-warning' }}">
                             <i class="fa-solid {{ $parc['is_physical'] ? 'fa-door-open' : 'fa-layer-group' }} text-xs"></i>
                             {{ $parc['label'] }}
-                            {{-- Correction review #5 : retrait offert PAR PARC (canOnWorkstationGroup),
+                            {{-- Retrait offert PAR PARC (canOnWorkstationGroup),
                                  pas via le gate global — sinon bouton inopérant pour un délégué scopé. --}}
                             @if ($parc['can_manage'])
                                 <button type="button" class="hover:text-error" wire:click="detachParc({{ $parc['id'] }})"

@@ -7,7 +7,7 @@ namespace App\Auth\V1\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 16.10 — AC5.2 / T6.2.
+ * T6.2.
  *
  * Validation supplémentaire du body de `POST /api/v1/agent/refresh` :
  *

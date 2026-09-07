@@ -11,13 +11,13 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 56.2 (AC1) — Extension ADDITIVE du manifest v1 : bloc `install` et
+ * Extension ADDITIVE du manifest v1 : bloc `install` et
  * règle `entry_url` du type `app`.
  *
- * Le fichier {@see ExtensionManifestValidatorTest} (54.1) reste la référence du
- * contrat de base et n'est pas réécrit : on ajoute ici, à côté, ce que 56.2
- * introduit — plus une contre-épreuve explicite que le contrat v1 SANS bloc
- * `install` est resté valide verbatim (NFR11).
+ * Le fichier {@see ExtensionManifestValidatorTest} reste la référence du
+ * contrat de base : on couvre ici ce que le bloc `install` ajoute, plus une
+ * contre-épreuve explicite qu'un manifest v1 SANS bloc `install` reste valide
+ * verbatim.
  */
 class ExtensionManifestValidatorInstallBlockTest extends TestCase
 {
@@ -83,10 +83,6 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
         ], $overrides);
     }
 
-    // =====================================================================
-    // Additivité (NFR11) — un manifest v1 sans bloc `install` est INCHANGÉ
-    // =====================================================================
-
     #[Test]
     public function a_manifest_without_an_install_block_stays_valid_and_gains_no_key(): void
     {
@@ -99,7 +95,7 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
     #[Test]
     public function an_app_manifest_without_an_install_block_is_valid_too(): void
     {
-        // Le catalogue doit pouvoir AFFICHER une `app` non installable (56.1) :
+        // Le catalogue doit pouvoir AFFICHER une `app` non installable :
         // c'est `ext:install` qui refuse fail-closed, pas le validateur.
         $normalized = $this->validator->validate($this->appManifest());
 
@@ -110,7 +106,7 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
     public function the_bundled_manifests_of_the_repository_remain_valid(): void
     {
         // Régression directe : les deux manifests réellement livrés par le
-        // dépôt (54.2 `doc`, 55.3 `sso-demo`) ne doivent pas bouger d'un octet.
+        // dépôt (`doc`, `sso-demo`) ne doivent pas bouger d'un octet.
         $root = dirname(__DIR__, 3).'/resources/extensions';
 
         $found = 0;
@@ -125,10 +121,6 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
 
         self::assertGreaterThan(0, $found, 'Aucun manifest embarqué trouvé — la régression ne prouverait rien.');
     }
-
-    // =====================================================================
-    // AR3 — `type = app` ⇒ `entry_url === /ext/<id>`
-    // =====================================================================
 
     #[Test]
     public function an_app_must_declare_the_provisioned_entry_url(): void
@@ -171,10 +163,6 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
         self::assertSame('https://exemple.test/doc', $normalized['entry_url']);
     }
 
-    // =====================================================================
-    // Bloc `install` — chemin heureux
-    // =====================================================================
-
     #[Test]
     public function a_well_formed_install_block_is_normalized(): void
     {
@@ -202,7 +190,7 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
     public function a_link_may_also_carry_an_install_block_without_breaking_validation(): void
     {
         // Le validateur ne corrèle pas type et bloc `install` : c'est le moteur
-        // qui refuse d'installer une `link` (message pointant le cycle 54.2).
+        // qui refuse d'installer une `link` (message pointant le cycle).
         // Le prouver évite qu'une review « corrige » une règle inexistante.
         $normalized = $this->validator->validate($this->linkManifest([
             'install' => $this->installBlock(['package' => 'packages/x.deb']),
@@ -210,10 +198,6 @@ class ExtensionManifestValidatorInstallBlockTest extends TestCase
 
         self::assertSame('deb', $normalized['install']['channel']);
     }
-
-    // =====================================================================
-    // Bloc `install` — refus
-    // =====================================================================
 
     #[Test]
     public function an_install_block_that_is_not_an_object_is_rejected(): void

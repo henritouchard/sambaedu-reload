@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Process;
  * Test fonctionnel : exécute réellement `samba-tool gpo listall` avec
  * l'option Kerberos configurée. C'est LA preuve que toute la chaîne
  * (binaire + DC + ccache OU passdb.tdb + permissions) fonctionne pour
- * l'usage métier réel de l'UI admin GPO (Story 16.9).
+ * L'usage métier réel de l'UI admin GPO.
  *
  * Read-only : `gpo listall` ne modifie rien côté AD.
  */

@@ -7,10 +7,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 24.7 — AC5 (« Forcer la synchro »).
+ * (« Forcer la synchro »).
  *
  * Ajoute la colonne `agent_sync_requested_at` à `workstations` — la
- * mécanique PULL du bouton « forcer la synchro » (décision n° 1) : une
+ * mécanique PULL du bouton « forcer la synchro » : une
  * demande de resynchronisation pendante est un simple timestamp nullable
  * posé sur la ligne du poste.
  *
@@ -19,11 +19,10 @@ use Illuminate\Support\Facades\Schema;
  *    `If-None-Match` concorde (bypass du 304, même ETag, enveloppe brute) ;
  *    le premier `POST /api/v1/agent/report` suivant la solde (remise à null).
  *
- * Exactement DEUX écrivains (décision n° 2, invariant « colonnes `agent_*` »
- * de 24.1 étendu) : l'UI admin via `SyncRequestService::request()` (canal
+ * Exactement DEUX écrivains : l'UI admin via `SyncRequestService::request()` (canal
  * web authentifié) et `ReportController` via `SyncRequestService::fulfill()`
  * (canal agent). Hors `$fillable` du modèle (anti mass-assignment), iso les
- * autres colonnes `agent_*` (23.2).
+ * autres colonnes `agent_*`.
  *
  * **Idempotence stricte** : `Schema::hasColumn()` avant création (iso
  * `2026_06_11_120000_add_agent_token_columns_to_workstations`). Type simple

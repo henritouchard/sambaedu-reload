@@ -1,10 +1,10 @@
 // Package shared est le cœur OS-agnostique de l'agent SambaEdu desired-state
-// (contrainte n° 5 du cahier des charges : cœur partageable cross-OS).
+// (cœur partageable cross-OS).
 //
 // Il contient : la canonicalisation + StateHasher (miroir bit-à-bit de
 // app/Services/Agent/StateHasher.php, validé contre les golden files), le
 // parsing du contrat v1, la construction du rapport, le client HTTP (rotation
-// D5, fenêtre de grâce, quarantaine), le cache local atomique et la boucle de
+// du token, fenêtre de grâce, quarantaine), le cache local atomique et la boucle de
 // convergence. Rien ici ne dépend de Windows : tout est testable par
 // `go test ./...` sur l'hôte Linux. Le spécifique Win32 (service SYSTEM, ACL
 // icacls, UUID SMBIOS) vit dans agent/windows/.
@@ -13,11 +13,11 @@
 // files tests/Fixtures/Agent/*.v1.json — ce package ne fait que le consommer.
 package shared
 
-// Version est la source unique de la version de l'agent (AC6 story 24.5) :
+// Version est la source unique de la version de l'agent :
 // déclarée dans chaque rapport (`agent_version`) et reprise par le nommage de
-// l'artefact de build. La lignée PowerShell (spike 24.2-24.4) était 1.0.0 ;
+// l'artefact de build. La lignée PowerShell du sondage était 1.0.0 ;
 // le binaire Go marque une rupture d'artefact → 2.x (les rapports Go sont
-// discernables des rapports PS en lab). 2.1.0 = binaire COMPLET 24.6
+// discernables des rapports PS en lab). 2.1.0 = binaire COMPLET
 // (compagnon + handlers + drops) — discernable en lab des rapports core-only
 // 2.0.0 de 24.5. 2.1.1 = correctif terrain T12 (setAgentACL : flags (OI)(CI)
 // réservés aux répertoires — posés sur un fichier, DACL effective vide et
@@ -30,26 +30,26 @@ package shared
 // [60 s, 24 h], amorcé depuis le cache au démarrage ; `interval_seconds`
 // local devient le repli avant la première enveloppe vue.
 // 2.2.3 = fond d'écran servi EN DIRECT par Apache (Alias /assets/wallpaper,
-// calque Story 27.7) : SyncWallpaperAssets passe du Client token'd
-// (/api/v1/agent/assets/wallpaper) à un GET statique sans token, hors PHP-FPM.
+// calque) : SyncWallpaperAssets passe du Client token'd
+// (api/v1/agent/assets/wallpaper) à un GET statique sans token, hors PHP-FPM.
 // Contrat wire INCHANGÉ (payload {asset, checksum}, golden figés) — seule la
 // dérivation d'URL côté agent change ; la route Laravel token'd reste vivante
 // le temps du rollout.
-// 2.2.4 = correctif race overlay au logon (Story 27.1bis) : la tâche
+// 2.2.4 = correctif race overlay au logon : la tâche
 // `session-fetch` compose désormais overlay.json elle-même après avoir peuplé
 // le cache per-SID, dans le même process SYSTEM séquentiel. L'évènement
 // WTS_SESSION_LOGON du service arrivait avant le fetch réseau → cache absent au
 // moment de composer → no-op gracieux jamais rattrapé (logon-only) → overlay.json
 // jamais écrit. L'écriture du service reste en place (idempotente, filet).
-// 2.2.5 = correctif section du Rainmeter.ini durci (Story 27.1bis) : la section
+// 2.2.5 = correctif section du Rainmeter.ini durci : la section
 // d'instance était `[SambaEduOverlay\SambaEduOverlay]` (forme à deux niveaux) →
 // Rainmeter cherchait un dossier de config Skins\SambaEduOverlay\SambaEduOverlay\
 // inexistant → AUCUNE skin activée → Rainmeter tournait mais écran vide. La
 // section correcte est `[SambaEduOverlay]` (chemin du DOSSIER de config relatif à
 // Skins\) ; `Active=1` y sélectionne le 1er .ini. overlay.json était bien écrit,
 // seul le rendu manquait.
-// 2.2.9 = Rainmeter MODE INSTALLÉ, settings per-user writable (Story 27.1ter).
-// Le « verrouillage par Rainmeter.ini read-only » de 27.1bis cassait l'e2e sur un
+// 2.2.9 = Rainmeter MODE INSTALLÉ, settings per-user writable.
+// Le « verrouillage par Rainmeter.ini read-only » cassait l'e2e sur un
 // user standard : modales « Rainmeter.ini is not writable » + « Safe Start »
 // (Rainmeter ne peut écrire ses settings/marqueur d'arrêt sous ProgramData RX).
 // Désormais : (1) le SERVICE SYSTEM ne pose plus de Rainmeter.ini sous ProgramData
@@ -58,20 +58,20 @@ package shared
 // (skins restées verrouillées RX) ; (3) le COMPAGNON (droits user) écrit
 // %APPDATA%\Rainmeter\Rainmeter.ini durci, WRITABLE (atomique, idempotent, sans
 // ACL), au démarrage AVANT le lancement du watchdog. overlay.json reste écrit par
-// SYSTEM (NFR5 intact) ; contrat/golden inchangés.
-// 2.2.19 = staging AGENT-DRIVEN des outils WPKG partagés (Story 27.20, pivot
+// SYSTEM ; contrat/golden inchangés.
+// 2.2.19 = staging AGENT-DRIVEN des outils WPKG partagés (pivot
 // architectural). Le handler `applications` (windows) fetch désormais
 // `<server_url>/wpkg/tools/manifest.json` AVANT de déclencher `wpkg-client.vbs`,
 // puis appelle le NOUVEAU module générique `agent/provision` (Reconcile par hash)
 // pour déposer les outils (7za.exe, nircmd.exe, tooltip/*) sous
 // `%WinDir%\install\wpkg\tools\` (= `%Z%\wpkg\tools\`). Idempotence VRAIE par
 // sha256 (skip si déjà à jour), download atomique, fail-soft (un outil manquant
-// ne bloque pas le run). Remplace la tentative inerte de la 1re 27.20 (logique
+// ne bloque pas le run). Remplace la tentative inerte de la 1re (logique
 // outils dans `resources/wpkg/wpkg.cmd`, jamais exécuté sur le chemin agent —
 // reverti). Module `provision` OS-agnostique : adaptateur Windows seul réalisé,
 // TargetResolver = interface prête pour un futur resolver Linux. Contrat
 // wire/golden INCHANGÉS (aucune surface /state ou rapport touchée).
-// 2.2.10 = préchargement identité MACHINE de l'overlay (Story 27.10). La SALLE
+// 2.2.10 = préchargement identité MACHINE de l'overlay. La SALLE
 // (`machine.room`) passe de la portée session (item identity) à la portée
 // MACHINE (cache persistant) : ComposeOverlayDocument extrait `room` de l'item
 // `kind:"machine"`, et OverlayDocumentForSession lit le cache MACHINE + le cache
@@ -79,9 +79,9 @@ package shared
 // attendre le fetch per-user (login/fullname arrivent ensuite avec le cache
 // session). Byte-format overlay.json INCHANGÉ ; contrat bumpé (golden + 2 hashes
 // figés croisés PHP↔Go).
-// 2.3.0 = verbe `ensure` sur les items `registry` (Story 35.1, contrat §7.1) :
+// 2.3.0 = verbe `ensure` sur les items `registry` (contrat §7.1) :
 // champ optionnel `ensure ∈ present|absent` (absence = present, contrat ADDITIF
-// D1 — les items d'écriture 5 clés restent byte-identiques). Un item 4 clés
+// — les items d'écriture 5 clés restent byte-identiques). Un item 4 clés
 // `{hive, path, name, ensure:"absent"}` fait SUPPRIMER la valeur nommée
 // (RegistryOps.Delete → DeleteValue ; ErrNotExist = succès idempotent — JAMAIS
 // la clé-conteneur), portées Machine (SYSTEM/HKLM) ET Session (compagnon/HKCU,
@@ -91,16 +91,16 @@ package shared
 // recalculés). Un binaire ANTÉRIEUR parse un item `absent` en {status: error}
 // isolé sur le type registry → publier la release (update.sh ne publie jamais
 // seul).
-// 2.4.0 = type `registry_list` (Story 35.2, contrat §7.6) : listes registre à
+// 2.4.0 = type `registry_list` (contrat §7.6) : listes registre à
 // sous-valeurs indexées `\1..\N` (ExtensionInstallForcelist, DisallowRun) —
 // NOUVEAU handler `RegistryListHandler` (portées Machine/SYSTEM et Session/
-// compagnon), réconciliation de CLÉ-CONTENEUR (D3) : écrit les valeurs `1..N`
+// compagnon), réconciliation de CLÉ-CONTENEUR : écrit les valeurs `1..N`
 // dans l'ordre (Kind = entry_type ∈ REG_SZ|REG_EXPAND_SZ), supprime toute
 // autre valeur AU NOM NUMÉRIQUE (canon strconv strict, "01" ≠ "1") — jamais
 // les valeurs non numériques, jamais la clé-conteneur ; liste vide = purge.
 // NOUVEL op additif `RegistryOps.ValueNames(hive, path)` (clé absente ⇒
 // nil,nil). AUSSI : `parseRegistrySpec` accepte `name: ""` (valeur PAR DÉFAUT
-// d'une clé, `(Default)` — besoin 35.5) : la clé `name` doit être PRÉSENTE
+// d'une clé, `(Default)` — besoin) : la clé `name` doit être PRÉSENTE
 // (absence = invalide), vide = default value (Get/Set/DeleteValue("") la
 // ciblent nativement). Golden state.v1.json bumpé (+1 item registry_list
 // machine, hashes figés jumeaux PHP↔Go recalculés). ⚠️ Un binaire ≤ 2.3.0
@@ -113,7 +113,7 @@ package shared
 // jamais le stop manuel du service) → présence « éteint » immédiate dans l'UI
 // au lieu du seuil de silence 2 × ttl (NotifyShutdown, shared/shutdown.go).
 //
-// 2.5.0 = ruche `HKU` sur les items `registry` (Story 35.3, contrat §7.1) :
+// 2.5.0 = ruche `HKU` sur les items `registry` (contrat §7.1) :
 // troisième VALEUR admise du champ `hive` (pas un champ ni un type nouveau —
 // golden/hashes figés INCHANGÉS). Un item `hive:"HKU"` (portée MACHINE,
 // service SYSTEM) est FAN-OUT en interne par le handler vers `HKU\.DEFAULT`
@@ -130,17 +130,17 @@ package shared
 // HKLM cessent de converger → PUBLIER la release 2.5.0 AVANT de jouer la
 // migration numlock HKU (update.sh ne publie jamais seul).
 //
-// 2.6.0 = mécanisme HORS-REGISTRE `fs_acl` (Story 36.1, contrat §7.7) : NOUVEAU
+// 2.6.0 = mécanisme HORS-REGISTRE `fs_acl` (contrat §7.7) : NOUVEAU
 // type + NOUVEAU handler `FsAclHandler` (portée MACHINE / service SYSTEM seul)
 // qui gère des ACE NTFS explicites par CHIRURGIE DACL — merge
 // SetEntriesInAcl + SetNamedSecurityInfo DACL-only (SANS PROTECTED_*), la DACL
 // n'est JAMAIS réécrite, owner/SACL/ACE héritées/ACE tierces JAMAIS touchés
-// (D4). Payload 6 clés `{path, trustee, ace_type, rights, applies_to, ensure}`,
+// Payload 6 clés `{path, trustee, ace_type, rights, applies_to, ensure}`,
 // enums fermés de mots métier (masques/flags SPÉCIFIQUES traduits côté handler,
 // jamais GENERIC_*). STORE « dernier appliqué » par item (fsacl-state.json,
 // WriteFileAtomic) = SEULE mémoire des ACE posées → réconciliation d'orphelins
 // (aucune ACE orpheline au changement de valeur). Résolution SID par LSA sur le
-// poste joint (LookupAccountName, D5 — zéro SID en SQL). REFUS agent défense en
+// poste joint (LookupAccountName — zéro SID en SQL). REFUS agent défense en
 // profondeur : deny sur SID well-known système (Everyone/Authenticated Users/
 // SYSTEM/BUILTIN/comptes de service) ⇒ erreur d'item ; chemin inexistant ⇒
 // erreur (jamais de mkdir) ; trustee irrésoluble ⇒ erreur. Policy STRICT (ACE
@@ -149,15 +149,15 @@ package shared
 // SILENCE (contrat §8 — aucun statut, aucune erreur : « réglage sans effet »)
 // → PUBLIER la release 2.6.0 (update.sh ne publie jamais seul). Golden
 // state.v1.json bumpé (+1 item fs_acl machine, hashes figés jumeaux PHP↔Go
-// recalculés). PLOMBERIE 35.6 : la résolution SID (LSA) et les jetons
-// d'audience sont livrés ici — le gate 35.6 (privilege) reste FERMÉ, RIEN
+// recalculés). PLOMBERIE : la résolution SID (LSA) et les jetons
+// d'audience sont livrés ici — le gate (privilege) reste FERMÉ, RIEN
 // n'est ouvert.
 //
-// 2.7.0 = mécanisme HORS-REGISTRE `firewall` (Story 36.2, contrat §7.8) :
+// 2.7.0 = mécanisme HORS-REGISTRE `firewall` (contrat §7.8) :
 // NOUVEAU type + NOUVEAU handler `FirewallHandler` (portée MACHINE / service
 // SYSTEM seul) qui gère des règles pare-feu Windows POSSÉDÉES PAR GROUPE
 // (`SambaEdu-Agent`). Contrairement à fs_acl (store « dernier appliqué »), le
-// champ `Grouping` de la règle EST le marqueur de propriété (D4) : le handler
+// champ `Grouping` de la règle EST le marqueur de propriété : le handler
 // réconcilie le GROUPE (iso registry_list — désirées présentes+conformes, toute
 // règle du groupe hors désir SUPPRIMÉE, groupe vide = « off » symétrique),
 // JAMAIS les règles hors groupe, la politique par défaut ou le service MpsSvc
@@ -167,7 +167,7 @@ package shared
 // métier (AUCUNE syntaxe netsh/SDDL). Traduction `remote_scope: internet` FIGÉE
 // dans le code (plages inverses-RFC1918 IPv4 `a-b` + IPv6 `2000::/3`), comparaison
 // par NORMALISATION CANONIQUE d'intervalles (anti drift-loop d'écho Windows,
-// piège #4). REFUS agent défense en profondeur Q3 (dans Test ET Apply) : un
+// canonique). REFUS agent défense en profondeur (dans Test ET Apply) : un
 // `block explicit` chevauchant une plage protégée (RFC1918/loopback/link-local/
 // ULA ou /0, INTERSECTION mathématique) ⇒ erreur d'item — MIROIR des plages du
 // guard PHP. Impl Windows en COM natif vtable INetFwPolicy2 (ZÉRO dépendance —
@@ -179,7 +179,7 @@ package shared
 // MANUELLE de la release 2.7.0 (update.sh ne publie jamais seul) livre les DEUX
 // mécanismes fs_acl ET firewall d'un coup.
 //
-// 2.8.0 = mécanisme HORS-REGISTRE `privilege` (Story 35.6, contrat §7.9) :
+// 2.8.0 = mécanisme HORS-REGISTRE `privilege` (contrat §7.9) :
 // NOUVEAU type + NOUVEAU handler `PrivilegeHandler` (portée MACHINE / service
 // SYSTEM seul) qui gère des droits de logon LSA `SeDeny*` par RÉCONCILIATION
 // DE CONTENEUR SANS STORE (iso firewall, PAS fs_acl) : le privilège EST le
@@ -188,7 +188,7 @@ package shared
 // LsaAddAccountRights, révoque tout titulaire hors état désiré via
 // LsaRemoveAccountRights ; `accounts: []` VIDE le privilège = off réel). Payload
 // 2 clés `{privilege, accounts}` — noms Windows seulement (résolution SID via
-// windows.LookupSID, RÉUTILISE le pattern fsAclOps.LookupSid de 36.1, D5 ; mémo
+// windows.LookupSID, RÉUTILISE le pattern fsAclOps.LookupSid ; mémo
 // PAR PASSE). REFUS agent SeDeny*-only en DOUBLE RIDEAU (miroir de
 // PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES) : un droit *grant* possédé en
 // liste entière révoquerait le logon de tout le monde → machine VERROUILLÉE —
@@ -205,23 +205,23 @@ package shared
 // PAS ENCORE ÉTÉ PUBLIÉES — la publication MANUELLE de la release 2.8.0
 // (update.sh ne publie jamais seul) livre les TROIS mécanismes d'un coup.
 //
-// 2.9.0 = nettoyage des crochets legacy SE4 (Story 38.3, contrat §7.10) :
+// 2.9.0 = nettoyage des crochets legacy SE4 (contrat §7.10) :
 // NOUVEAU type `legacy_cleanup` + NOUVEAU handler `LegacyCleanupHandler`
 // (portée MACHINE / service SYSTEM seul) qui retire du poste les artefacts
 // legacy LOCAUX par SCAN idempotent SANS store (iso firewall/privilege — les
 // artefacts sont énumérables à chaque passe). Catalogue versionné DANS l'agent
-// (D3) : blobs `applications-*` (%windir%, %windir%\Temp, %TEMP% per-user),
+// : blobs `applications-*` (%windir%, %windir%\Temp, %TEMP% per-user),
 // marqueurs `.md5` (garde 32-hex), tâches planifiées `wpkg4`/`*-system`
 // (garde : l'action référence gpo/applications.php|wpkg — sinon conservée +
 // rapportée), scripts GPO LOCALE curl-ant `gpo/*.php` + purge `scripts.ini`
 // (JAMAIS GroupPolicy\DataStore), `wpkg-client.vbs`/`wpkg-gpo.txt`, jonctions
 // `install`/`rapports` (reparse-only — un vrai dossier = provisioning natif
-// 27.20, INTOUCHABLE), `action.cmd`/`autorun.cmd`/`gpo.txt`/`C:\Netinst`/
+// INTOUCHABLE), `action.cmd`/`autorun.cmd`/`gpo.txt`/`C:\Netinst`/
 // `%WINDIR%\Web\SE4`, valeur Run `action`, autologon résiduel `se4install`
 // (garde DefaultUserName), helpers `%ProgramFiles%\SambaEdu` en LISTE BLANCHE
 // nommée (JAMAIS Agent\**), paires Mozilla `profiles.ini`/`installs.ini`
 // référençant `sambaedu.default` (Firefox ET Thunderbird, chaque C:\Users\* —
-// Q5-a VANILLA : la PAIRE seulement, JAMAIS le dossier de profil, JAMAIS un
+// mode VANILLA : la PAIRE seulement, JAMAIS le dossier de profil, JAMAIS un
 // profiles.ini sain, AUCUN profil forcé posé). Payload `{mozilla: "vanilla"}`
 // (enum fermé). Reporting : drift + Detail listant les artefacts supprimés
 // (nouvelle interface OPTIONNELLE DetailReporter du moteur, additive) ; poste
@@ -235,7 +235,7 @@ package shared
 // la release 2.9.0 (update.sh ne publie jamais seul) livre les QUATRE
 // mécanismes d'un coup.
 //
-// 2.10.0 = échelle de rafraîchissement du compagnon (Story 43.1, Epic 43 —
+// 2.10.0 = échelle de rafraîchissement du compagnon (
 // application immédiate) : le champ OPTIONNEL `refresh` du PAYLOAD des items
 // `registry`/`registry_list` (shell_notify < policy_broadcast <
 // explorer_restart) déclare le geste Windows minimal rendant un réglage HKCU
@@ -253,20 +253,20 @@ package shared
 // (Toolhelp32, garde anti-double-lancement — Windows relance parfois le shell
 // seul). JAMAIS de geste côté service SYSTEM/MachineEngine ni sur fan-out HKU
 // (session 0). Parsing INDULGENT : `refresh` absent/vide/inconnu =
-// comportement plancher actuel (additif sûr NFR-A4) — la validation stricte
-// du vocabulaire est serveur (AuthoringGuard 43.2). Contrat wire/golden
+// comportement plancher actuel (additif sûr) — la validation stricte
+// du vocabulaire est serveur (AuthoringGuard). Contrat wire/golden
 // INCHANGÉS (le hint vit dans le payload provider-defined §3.2 ; AUCUN
-// provider ne l'émet encore — c'est la 43.2). ⚠️ Un binaire ≤ 2.9.0 IGNORE le
+// provider ne l'émet encore). ⚠️ Un binaire ≤ 2.9.0 IGNORE le
 // hint EN SILENCE (parseurs indulgents — clés écrites mais AUCUN geste :
 // l'« effet immédiat » promis par l'UI serait un mensonge sur les postes non
 // à jour) → PUBLIER la release 2.10.0 (manuelle — update.sh ne publie jamais
 // seul) AVANT de jouer tout seeder/retrofit 43.2. ⚠️ ÉTAT DES PUBLICATIONS :
-// à la création de la 38.3, les 2.6.0 (fs_acl), 2.7.0 (firewall) et 2.8.0
+// à la création, les 2.6.0 (fs_acl), 2.7.0 (firewall) et 2.8.0
 // (privilege) n'avaient JAMAIS été publiées — vérifier au moment de publier
 // si la 2.9.0 l'a été depuis (sinon la 2.10.0 livre les cinq lots d'un coup).
 //
-// 2.11.0 = fenêtre d'avertissement avant explorer_restart (Story 43.4, Epic
-// 43) : quand — et SEULEMENT quand — le geste résolu de fin de passe est un
+// 2.11.0 = fenêtre d'avertissement avant explorer_restart : quand — et
+// SEULEMENT quand — le geste résolu de fin de passe est un
 // explorer_restart RÉELLEMENT exécuté (jamais shell_notify/policy_broadcast,
 // jamais passe stable, jamais le restart throttlé→dégradé), le compagnon
 // affiche SA propre petite fenêtre top-most « Application des réglages en
@@ -285,16 +285,16 @@ package shared
 // Session user seulement — le MachineEngine SYSTEM n'a aucune RefreshOps,
 // aucune fenêtre en session 0. Contrat wire/golden INCHANGÉS (réaction 100 %
 // LOCALE du compagnon au geste déjà résolu : aucun hint nouveau, aucun champ
-// de payload, aucune projection — D7). ⚠️ Comportement VISIBLE : un binaire
+// de payload, aucune projection). ⚠️ Comportement VISIBLE : un binaire
 // ≤ 2.10.0 redémarre Explorer SANS avertissement (aucune casse, juste le trou
 // d'UX) → PUBLIER la release 2.11.0 (manuelle — update.sh ne publie jamais
 // seul) pour que l'avertissement prenne effet sur le parc. ⚠️ ÉTAT DES
 // PUBLICATIONS : vérifier au moment de publier si la 2.10.0 (échelle de
-// rafraîchissement, gate des seeders 43.2) l'a été depuis la 43.1 — sinon la
+// rafraîchissement, gate des seeders) l'a été depuis — sinon la
 // 2.11.0 livre les lots en attente d'un coup.
 //
 // 2.12.0 = application SYSTEM des capacités `HKCU\…\Policies\*` par session
-// (Story 35.7, contrat §7.1/§7.6) : champ additif OPTIONNEL `writer` sur les
+// (contrat §7.1/§7.6) : champ additif OPTIONNEL `writer` sur les
 // payloads `registry`/`registry_list` (enum fermé, seule valeur publiée
 // "system" — portées session/machine_user, ruche HKCU, mutuellement exclusif
 // avec `refresh`). Cause racine : sur poste JOINT AU DOMAINE, TOUT
@@ -309,7 +309,7 @@ package shared
 // seul code) : pour chaque session interactive de la dernière énumération WTS,
 // les items `writer == "system"` du cache per-SID sont appliqués dans
 // `HKU\<SID de LA session ciblée>` via un DÉCORATEUR d'ops (sessionHiveOps :
-// HKCU → HKU\<SID> — UN SID, JAMAIS le fan-out .DEFAULT/multi-ruches de 35.3 ;
+// HKCU → HKU\<SID> — UN SID, JAMAIS le fan-out.DEFAULT/multi-ruches ;
 // les overrides UserGroup/User atteignent l'item, ciblage par-utilisateur
 // conservé). Handlers registry/registry_list réutilisés TELS QUELS
 // (réconciliation de conteneur incluse) ; sonde race-logoff de Write héritée
@@ -321,14 +321,14 @@ package shared
 // ces policies au logon — comportement GPO user policy ; le retrofit serveur
 // RETIRE le hint `refresh` des 3 projections re-routées, exclusion mutuelle).
 // ⚠️ Un binaire ≤ 2.11.x IGNORE le marqueur EN SILENCE (champ inconnu, §9) :
-// AUCUNE casse ne flotte (contrairement au piège HKU/35.3) mais AUCUN
+// AUCUNE casse ne flotte (contrairement au piège HKU) mais AUCUN
 // correctif — le compagnon garde son « Accès refusé », le service n'applique
 // rien → PUBLIER la release 2.12.0 (manuelle — update.sh ne publie jamais
 // seul) AVANT de jouer la migration retrofit
 // `2026_07_13_100000_retrofit_session_system_writer_policies.php` sur /vm
 // (la version rapportée au check-in fait foi). ⚠️ ÉTAT DES PUBLICATIONS :
-// vérifier au moment de publier si la 2.11.0 (fenêtre explorer_restart,
-// epic 43) l'a été — sinon la 2.12.0 livre les lots en attente d'un coup.
+// vérifier au moment de publier si la 2.11.0 (fenêtre explorer_restart)
+// l'a été — sinon la 2.12.0 livre les lots en attente d'un coup.
 //
 // 2.12.1 — CORRECTIF : compagnon de session muet sur poste fraîchement
 // installé par le bootstrap GPO. `startup.cmd` dépose agent.exe par
@@ -338,7 +338,7 @@ package shared
 // (ACE (I) mais ORPHELINES) : la tâche compagnon, en RunLevel Limited, échoue
 // en 0x80070005 ACCESS_DENIED à chaque logon. Le service SYSTEM, lui, tourne
 // normalement → AUCUN signal côté SE5 (l'overlay ne produit plus d'item de
-// rapport depuis 27.1bis), diagnostic uniquement par
+// rapport depuis), diagnostic uniquement par
 // `Get-ScheduledTaskInfo`/`icacls` sur le poste. `installService` répare
 // désormais la DACL du binaire ({@see resetBinaryACL}, icacls /reset) avant
 // d'enregistrer service et tâches — idempotent, non bloquant, et rejoué à
@@ -371,13 +371,13 @@ package shared
 // (c) Catalogue d'outils enfin capable de LIVRER une mise à jour :
 // `provisionRainmeterPortable` compare le SHA-256 du marqueur à celui du
 // manifest au lieu de tester la seule présence du fichier. La donnée était déjà
-// écrite depuis 25.6, jamais relue — réuploader un portable neuf n'atteignait
+// écrite depuis, jamais relue — réuploader un portable neuf n'atteignait
 // aucun poste déjà provisionné, EN SILENCE. Le marqueur est retiré juste avant
 // la bascule : `RainmeterOps.Installed()` le relit, donc le watchdog du
 // compagnon cesse de relancer l'ancienne image pendant le remplacement. On ne
 // tue PAS l'instance vivante (le provisioning est SYSTEM, le lancement est
 // compagnon) : exe verrouillé ⇒ bascule en échec ⇒ retry au cycle suivant,
-// l'instance meurt au logoff. D4 intact : sans outil actif au manifest, on ne
+// l'instance meurt au logoff. Sans outil actif au manifest, on ne
 // désinstalle jamais.
 //
 // ⚠️ Un binaire ≤ 2.12.1 n'émet aucun item `companion` : l'absence de la ligne
@@ -406,12 +406,12 @@ package shared
 // initiale reste le chemin nominal (cache déjà présent = console conservée, zéro
 // clignotement) ; le hook n'est qu'un rattrapage. Effet de bord bienvenu : le
 // toggle debug prend désormais effet EN COURS de session, sans rouvrir la
-// session — la « latence assumée au logon suivant » documentée en 24.6 disparaît.
+// session — la « latence assumée au logon suivant » documentée disparaît.
 // Un échec de rattachement est LOGGÉ en warning (c'est le silence qui avait rendu
 // ce bug indétectable), jamais fatal.
 //
 // (b) Rattrapage de convergence — un écart réparé n'attend plus une heure pour
-// être signalé conforme. Sous politique STRICT (27.8), le premier passage sur un
+// être signalé conforme. Sous politique STRICT, le premier passage sur un
 // poste réinstallé est non conforme PAR CONSTRUCTION (rien n'est encore
 // appliqué) : `Test()` négatif ⇒ `drift`, `Apply` répare dans la seconde, et il
 // n'existe aucun statut « corrigé ». Le poste était donc conforme quelques
@@ -439,7 +439,7 @@ package shared
 //
 // La 2.12.3 a rendu le mode debug enfin fiable — et a du même coup rendu
 // ATTEIGNABLES les deux dangers que le commentaire de detachConsole documentait
-// depuis 24.6 (constat lab ws 49). Avant elle, la course au logon empêchait le
+// depuis (constat lab ws 49). Avant elle, la course au logon empêchait le
 // drapeau `debug` de s'armer : la console n'apparaissait jamais, le risque était
 // théorique. Il ne l'est plus.
 //
@@ -475,18 +475,18 @@ package shared
 // normalement). Toute rupture de contrat entre vN et vN+1 (format du cache
 // per-SID, du drop, nouveaux types d'items) se manifeste dans cette fenêtre.
 //
-// 2.13.0 = Story 36.5 : nouveau type `app_profile` (§7.11, mécanisme
+// 2.13.0 = : nouveau type `app_profile` (§7.11, mécanisme
 // HORS-REGISTRE — redirection du profil applicatif Firefox/Thunderbird vers le
 // home réseau, portée SESSION). Ajout ADDITIF de type (contrat §9) : un binaire
 // ≤ 2.12.4 IGNORE le type EN SILENCE (§8 — aucun statut, aucune erreur ; symptôme
 // « profil non redirigé »). La release 2.13.0 DOIT être publiée manuellement pour
 // armer le mécanisme.
 //
-// AMENDEMENT FINAL 36.5 (split SYSTEM-lien / COMPAGNON-reste, Henri 2026-07-21,
+// AMENDEMENT FINAL (split SYSTEM-lien / COMPAGNON-reste,
 // toujours en 2.13.0 — non publiée). Le lien de dossier vers UNC (mklink /D
 // iso-SE4) exige `SeCreateSymbolicLinkPrivilege`, qu'AUCUN canal SE5 ne peut
-// accorder au compagnon (mécanisme `privilege` 35.6 SeDeny*-only) mais que
-// LocalSystem possède nativement. Sur le modèle EXACT de l'overlay (27.1bis), le
+// accorder au compagnon (mécanisme `privilege` SeDeny*-only) mais que
+// LocalSystem possède nativement. Sur le modèle EXACT de l'overlay, le
 // SERVICE SYSTEM pose donc / répare le LIEN au WTS_SESSION_LOGON
 // (app_profile_logon.go pur + app_profile_logon_windows.go glue : token WTS →
 // profil, source = cache per-SID INFALSIFIABLE écrit par SYSTEM au fetch,
@@ -499,20 +499,20 @@ package shared
 // INCHANGÉS (aucun champ de payload nouveau — seul CHANGE l'acteur qui pose le
 // lien).
 //
-// 2.14.0 = Story 27.21, 1re passe — ⛔ JAMAIS PUBLIÉE, COMPORTEMENT RÉPUDIÉ.
+// 2.14.0 =, 1re passe — ⛔ JAMAIS PUBLIÉE, COMPORTEMENT RÉPUDIÉ.
 // NE JAMAIS CONSTRUIRE NI PUBLIER un binaire portant ce numéro.
 //
 // Elle faisait balayer au handler `shortcuts` les DEUX Bureaux candidats de
 // façon INCONDITIONNELLE, le Bureau RÉSEAU étant dérivé localement d'une
-// constante d'agent (`NetworkDesktopPathTemplate`, supprimée depuis). Défaut
-// 🔴 identifié en review (finding #1) : `\\<se4fs>\users\<user>\Bureau\` est un
+// constante d'agent (`NetworkDesktopPathTemplate`, supprimée depuis).
+// Défaut identifié : `\\<se4fs>\users\<user>\Bureau\` est un
 // emplacement PAR UTILISATEUR, PARTAGÉ entre TOUS ses postes, alors que le
 // desired-state est compilé par couple (poste, user). Un poste perdir/nomade y
 // supprimait donc les `.lnk` gérés légitimement posés par un poste `shared_local`
 // du même utilisateur, que ce dernier recréait à la passe suivante — ping-pong
 // permanent de suppressions/re-créations sur un partage de production.
 //
-// 2.15.0 = Story 27.21, arbitrage « option A » : c'est le SERVEUR qui NOMME les
+// 2.15.0 = c'est le SERVEUR qui NOMME les
 // emplacements Bureau à balayer, via le champ additif `desktop_sweep_paths` du
 // payload `shortcuts`. L'agent n'invente plus rien, il obéit :
 //
@@ -542,7 +542,7 @@ package shared
 // substituable (hors-domaine, ni SE4FS ni LOGONSERVER), la probe réseau est
 // IGNORÉE — jamais une passe en erreur, les autres emplacements convergent.
 //
-// 2.16.0 = Story 58.1, type `folders` (§7.12) — l'agent porte enfin la
+// 2.16.0 =, type `folders` (§7.12) — l'agent porte enfin la
 // REDIRECTION des dossiers shell (`HKCU\…\Explorer\User Shell Folders`), pas
 // seulement le contenu qu'il y dépose.
 //
@@ -574,7 +574,7 @@ package shared
 // désépingle QUE la valeur qu'il vient lui-même de remplacer : la jumplist vit
 // dans %APPDATA%, donc dans le profil itinérant PARTAGÉ entre tous les postes de
 // l'utilisateur — « nettoyer les emplacements concurrents » rejouerait le
-// finding 🔴 de la 27.21.
+// même défaut que sur `desktop_sweep_paths`.
 //
 // CONTRAT WIRE : type AJOUTÉ = évolution mineure §9, forward-compatible. Un agent
 // ≤ 2.15.0 IGNORE `folders` EN SILENCE (contrat §8) — il continue de poser les

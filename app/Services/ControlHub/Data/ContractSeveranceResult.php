@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\ControlHub\Data;
 
 /**
- * Story 32.1 — Résultat d'une tentative de rupture du lien amont (controlHub).
+ * Résultat d'une tentative de rupture du lien amont (controlHub).
  *
  * Porte le verdict (rupture réellement appliquée vs no-op idempotent) et les
  * compteurs récapitulatifs (items levés, apps conservées, valeurs effectives
  * matérialisées). Consommé par la commande artisan et l'endpoint pour leur sortie.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central ». [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU R3 : aucun mot « central ».
  */
 final readonly class ContractSeveranceResult
 {

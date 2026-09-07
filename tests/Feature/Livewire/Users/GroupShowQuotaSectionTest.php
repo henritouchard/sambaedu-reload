@@ -16,9 +16,9 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 5.1c — Tests Feature Livewire SFC `group-quota-section`.
+ * Tests Feature Livewire SFC `group-quota-section`.
  *
- * Couvre AC 13 #1-8 :
+ * Couvre :
  *   1. rendu "Hérité" si aucune règle groupe
  *   2. rendu custom (label soft + overage)
  *   3. rendu "Illimité" si soft=0 && hard=0
@@ -103,7 +103,7 @@ class GroupShowQuotaSectionTest extends TestCase
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->unsignedBigInteger('user_id');
                 $table->unsignedBigInteger('user_group_id');
-                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                // Rôle sur l'arête, lu par withPivot('role').
                 $table->string('role', 20)->default('member');
                 $table->primary(['user_id', 'user_group_id']);
             });
@@ -232,10 +232,6 @@ class GroupShowQuotaSectionTest extends TestCase
         return $user;
     }
 
-    // =========================================================================
-    // AC 13 #1
-    // =========================================================================
-
     public function test_it_renders_group_quota_section_with_inherited_label(): void
     {
         $group = $this->makeGroup('classe-6a');
@@ -247,10 +243,6 @@ class GroupShowQuotaSectionTest extends TestCase
             ->assertSet('groupName', 'classe-6a')
             ->assertSee('Hérité (défaut)');
     }
-
-    // =========================================================================
-    // AC 13 #2
-    // =========================================================================
 
     public function test_it_renders_group_quota_section_with_custom_rule(): void
     {
@@ -274,10 +266,6 @@ class GroupShowQuotaSectionTest extends TestCase
             ->assertSee('+20%');
     }
 
-    // =========================================================================
-    // AC 13 #3
-    // =========================================================================
-
     public function test_it_renders_unlimited_when_soft_and_hard_zero(): void
     {
         $group = $this->makeGroup('classe-4c');
@@ -299,10 +287,6 @@ class GroupShowQuotaSectionTest extends TestCase
             ->assertSee('Illimité');
     }
 
-    // =========================================================================
-    // AC 13 #4 — UI gate
-    // =========================================================================
-
     public function test_it_hides_modify_button_without_server_admin(): void
     {
         $group = $this->makeGroup('classe-3d');
@@ -313,10 +297,6 @@ class GroupShowQuotaSectionTest extends TestCase
         Livewire::test($this->componentPath(), ['groupId' => $group->id])
             ->assertDontSee('Modifier');
     }
-
-    // =========================================================================
-    // AC 13 #5 — Forged payload
-    // =========================================================================
 
     public function test_it_blocks_apply_override_without_server_admin_even_on_forged_payload(): void
     {
@@ -333,10 +313,6 @@ class GroupShowQuotaSectionTest extends TestCase
             ->call('applyOverride')
             ->assertStatus(403);
     }
-
-    // =========================================================================
-    // AC 13 #6 — Inherited override deletes rule
-    // =========================================================================
 
     public function test_it_applies_inherited_override_deletes_rule(): void
     {
@@ -372,10 +348,6 @@ class GroupShowQuotaSectionTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // AC 13 #7 — Custom override sets rule + dispatch
-    // =========================================================================
-
     public function test_it_applies_custom_override_sets_rule_and_dispatches_recalculate(): void
     {
         $service = $this->makeStubXfsQuotaService();
@@ -403,10 +375,6 @@ class GroupShowQuotaSectionTest extends TestCase
             'quota_hard_mb' => 600,
         ]);
     }
-
-    // =========================================================================
-    // AC 13 #8 — Validation soft >= 10 Mo
-    // =========================================================================
 
     public function test_it_rejects_custom_soft_below_10mb_on_home(): void
     {

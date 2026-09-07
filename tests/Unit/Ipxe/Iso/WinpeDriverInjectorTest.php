@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.10 — AC6.1 — Tests unitaires de {@see WinpeDriverInjector}.
+ * Tests unitaires de {@see WinpeDriverInjector}.
  *
  * `Process::fake()` partout (jamais de vrai `wimlib-imagex` — cf.
  * [[project_phpunit_test_env_host_vs_vm]]). On vérifie : no-op pack vide

@@ -9,7 +9,7 @@ import (
 // fakeAppProfileOps : impl mémoire de AppProfileOps (testable hôte). Les fichiers
 // et l'état du lien sont des maps ; `serverDown` simule un home injoignable.
 //
-// SPLIT 36.5 : le compagnon NE POSE PLUS le lien (c'est le service SYSTEM au
+// SPLIT : le compagnon NE POSE PLUS le lien (c'est le service SYSTEM au
 // logon). Le fake ne fournit donc PLUS de CreateLink ; `linkTarget`/`linkReal`
 // simulent le lien tel que SYSTEM l'a (ou non) déjà posé, que le compagnon se
 // contente de CONSTATER (LinkState) pour décider s'il écrit la paire d'ini.
@@ -304,9 +304,9 @@ func TestAppProfileMissingMinimalFieldsIsInvalidEnvelope(t *testing.T) {
 	}
 }
 
-// AC4 (piège n°1) — un profiles.ini produit par CE mécanisme ne doit JAMAIS être
+// Un profiles.ini produit par CE mécanisme ne doit JAMAIS être
 // matché par la garde `referencesSambaeduProfile()` du mécanisme legacy_cleanup
-// (38.3), sinon les deux canaux se battraient à chaque logon. Test verrouillé en
+// , sinon les deux canaux se battraient à chaque logon. Test verrouillé en
 // appelant RÉELLEMENT la fonction du package.
 func TestAppProfileIniNotMatchedByLegacyCleanupGuard(t *testing.T) {
 	profilesIni := BuildProfilesIni("managed.default", "308046B0AF4A39CB")

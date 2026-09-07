@@ -13,14 +13,14 @@ use Illuminate\Support\Facades\Log;
 /**
  * Résolution de l'ID Gecko d'une extension Firefox depuis son URL XPI.
  *
- * Story 4.8 — AC 14. Durcissement vs `get_ff_ext_id` legacy :
+ * Durcissement vs `get_ff_ext_id` legacy :
  *   - Allowlist de domaines (config `app-customizations.firefox.extension_resolver.allowed_domains`)
  *   - Scheme HTTPS strict (pas de http://, file://, ftp://)
  *   - Timeout court (5s)
  *   - Taille max (10 Mo)
  *   - Sandbox dans `storage/app/tmp/` (pas `/tmp`)
  *   - Extraction ZIP via `getFromName('manifest.json')` uniquement (pas d'`extractTo`)
- *   - `unlink()` systématique en `finally`
+ *  - `unlink()` systématique en `finally`
  *
  * Surface SSRF confinée à l'UI admin (gate `app.customize`).
  */

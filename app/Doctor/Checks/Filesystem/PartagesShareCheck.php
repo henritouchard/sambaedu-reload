@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Process;
 
 /**
  * Vérifie que l'export SMB `[partages]` existe et pointe sur la racine des
- * lecteurs réseau gérés (Epic 34).
+ * lecteurs réseau gérés.
  *
  * Sans ce partage, NetworkShareService crée bien les répertoires + ACL et
  * DrivesStateProvider projette la lettre, mais l'agent échoue au montage
@@ -54,7 +54,7 @@ final class PartagesShareCheck implements EnvironmentCheck
                 'Partage SMB [partages] absent de la configuration Samba.',
                 'Lancer `scripts/update.sh` (étape ensure_samba_partages_share) pour déployer '
                 . '/etc/samba/smb.conf.d/partages.conf et l\'include dans smb.conf. Sans ce partage, '
-                . 'les lecteurs réseau gérés (Epic 34) ne se montent pas (WNetAddConnection2 code=67).',
+                . 'les lecteurs réseau gérés ne se montent pas (WNetAddConnection2 code=67).',
             );
         }
 

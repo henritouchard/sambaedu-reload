@@ -10,12 +10,12 @@ import (
 	"strings"
 )
 
-// Handler `firewall` (exclusive PAR rule_id / scope MACHINE uniquement) — Story
-// 36.2, contrat §7.8. Deuxième mécanisme HORS-REGISTRE. Logique PURE,
+// Handler `firewall` (exclusive PAR rule_id / scope MACHINE uniquement),
+// contrat §7.8. Deuxième mécanisme HORS-REGISTRE. Logique PURE,
 // OS-agnostique (les accès pare-feu réels sont injectés via FirewallOps) →
 // testée sur l'hôte ; agent/windows n'apporte que l'impl COM (INetFwPolicy2).
 //
-// D4 — PROPRIÉTÉ PAR CONTENEUR (anti-36.1, inversé). Contrairement à une ACE
+// PROPRIÉTÉ PAR CONTENEUR (inversé). Contrairement à une ACE
 // NTFS, une règle pare-feu PORTE son marqueur de propriété : son champ
 // `Grouping = SambaEdu-Agent`. Le handler possède le GROUPE en entier et le
 // réconcilie (iso registry_list) — AUCUN store n'est nécessaire (pas de
@@ -23,11 +23,11 @@ import (
 // profils et le service MpsSvc ne sont JAMAIS touchés (FirewallOps n'expose
 // AUCUNE op dessus — l'interdit est inexprimable, structurel).
 //
-// CONVERGENCE level-triggered (§5, STRICT inconditionnel 27.8) :
+// CONVERGENCE level-triggered (§5, STRICT inconditionnel) :
 //   - Test  : énumère les règles DU GROUPE seulement ; conforme ssi chaque item
-//     `present` (passant le refus Q3) a sa règle `SambaEdu-Agent: <rule_id>`
+//     `present` (passant le refus agent) a sa règle `SambaEdu-Agent: <rule_id>`
 //     ÉQUIVALENTE (direction/action/protocol/ports/adresses par normalisation
-//     canonique — piège #4, jamais de match de chaîne brute — Enabled/Grouping
+//     canonique, jamais de match de chaîne brute — Enabled/Grouping
 //     exacts) ET aucune règle du groupe hors état désiré présent (couvre les
 //     items `absent` ET les règles étrangères au state) ;
 //   - Apply : effort MAXIMAL par règle (première erreur remontée à la fin,
@@ -36,17 +36,17 @@ import (
 //     PUIS Add (recréation atomique). Un état désiré effectif VIDE (que des
 //     `absent`) VIDE le groupe.
 //
-// REFUS AGENT = DÉFENSE EN PROFONDEUR (Q3, piège #7), INDÉPENDANT du serveur,
-// dans Test ET Apply (leçon review 36.1 #2a) : un `present` `action: block`
+// REFUS AGENT = DÉFENSE EN PROFONDEUR, INDÉPENDANT du serveur,
+// dans Test ET Apply : un `present` `action: block`
 // dont la portée `explicit` chevauche une plage protégée (RFC1918/loopback/
 // link-local/ULA ou /0) ⇒ erreur d'ITEM (jamais posée) ; adresse non parsable
 // ⇒ erreur d'item. `remote_scope: internet` est SÛRE par construction (les
-// plages émises EXCLUENT tout ça — D6). Constantes MIROIR du guard PHP
+// plages émises EXCLUENT tout ça). Constantes MIROIR du guard PHP
 // (FirewallAuthoringGuard::PROTECTED_RANGES). Les AUTRES items convergent ;
 // l'erreur remonte TOUJOURS (verdict `error` du type).
 
 // FirewallRuleGroup : le conteneur POSSÉDÉ par l'agent (marqueur de propriété
-// D4 — champ `Grouping` des règles). Constante partagée (agent/shared).
+// porté par le champ `Grouping` des règles). Constante partagée (agent/shared).
 const FirewallRuleGroup = "SambaEdu-Agent"
 
 // FirewallRuleName dérive le nom de règle unique et stable d'un rule_id (la
@@ -56,7 +56,7 @@ func FirewallRuleName(ruleID string) string {
 }
 
 // firewallRuleIDSlug : MIROIR EXACT de FirewallAuthoringGuard::RULE_ID côté
-// serveur (corr. review #4 — défense en profondeur symétrique, iso les plages
+// serveur (défense en profondeur symétrique, iso les plages
 // protégées). Un `rule_id` malformé qui atteindrait l'agent (serveur contourné/
 // buggé) produit une ERREUR d'enveloppe, jamais un nom de règle Windows non
 // slugifié.
@@ -66,14 +66,14 @@ var firewallRuleIDSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 // MÉTIER (l'impl COM traduit ↔ les constantes NET_FW_*) : la comparaison de
 // convergence reste PURE et OS-agnostique.
 type FwRule struct {
-	Name     string
-	Grouping string
+	Name      string
+	Grouping  string
 	Direction string // "in" | "out"
 	Action    string // "allow" | "block"
 	Protocol  string // "any" | "tcp" | "udp"
 	// Adresses/ports : listes de tokens tels que posés/relus (CIDR `addr/n`,
 	// plages `a-b`, forme `adresse/masque` échoée par Windows — la comparaison
-	// passe par une normalisation canonique en intervalles, piège #4).
+	// passe par une normalisation canonique en intervalles).
 	RemoteAddresses []string
 	LocalPorts      []string
 	RemotePorts     []string
@@ -83,7 +83,7 @@ type FwRule struct {
 // FirewallOps : accès pare-feu spécifiques à l'OS, injectés (testable hôte).
 // L'impl Windows vit dans agent/windows/handler_firewall_windows.go (COM natif
 // INetFwPolicy2) ; un fake en mémoire couvre les tests. L'interface n'expose
-// AUCUNE op de politique par défaut / profils / service (piège #11, structurel).
+// AUCUNE op de politique par défaut / profils / service (interdit structurel).
 type FirewallOps interface {
 	// ListGroupRules retourne les règles dont le `Grouping` est `group`
 	// (SEULEMENT — jamais les voisines hors groupe). Groupe vide ⇒ (nil, nil).
@@ -115,10 +115,10 @@ func (s FirewallSpec) absent() bool { return s.Ensure == "absent" }
 func (s FirewallSpec) name() string { return FirewallRuleName(s.RuleID) }
 
 // internetRemoteAddresses est la traduction FIGÉE de `remote_scope: internet`
-// (D6, piège #8) : le complément des plages non routables/privées. IPv4 en
+// — le complément des plages non routables/privées. IPv4 en
 // plages `a-b` (formes STABLES à l'écho Windows), IPv6 `2000::/3` (unicast
 // global — fe80::/10, fc00::/7, ::1 restent joignables). SÛRE par construction
-// (Q3) : ces plages EXCLUENT RFC1918/loopback/link-local/ULA. Toute évolution
+// — ces plages EXCLUENT RFC1918/loopback/link-local/ULA. Toute évolution
 // future = décision écrite (test golden-style verrouille la chaîne EXACTE).
 func internetRemoteAddresses() []string {
 	return []string{
@@ -135,7 +135,7 @@ func internetRemoteAddresses() []string {
 	}
 }
 
-// firewallProtectedRanges : plages PROTÉGÉES (Q3, piège #7) — MIROIR EXACT de
+// firewallProtectedRanges : plages PROTÉGÉES — MIROIR EXACT de
 // FirewallAuthoringGuard::PROTECTED_RANGES (RFC1918 + loopback + link-local +
 // ULA, IPv4 ET IPv6). Un préfixe `/0` recouvre n'importe laquelle → refusé par
 // l'intersection sans cas spécial.
@@ -179,17 +179,17 @@ func parseAuthoringPrefix(s string) (netip.Prefix, bool) {
 	return netip.PrefixFrom(a, a.BitLen()), true
 }
 
-// GARDE-FOU Q5 (allow entrant ouvert ⇒ warning) = SERVEUR-ONLY, PAS ici. Le
+// GARDE-FOU « allow entrant ouvert ⇒ warning » = SERVEUR-ONLY, PAS ici. Le
 // warning-sur-`allow in` couvrant l'Internet est une exigence d'AUTHORING
-// (FirewallAuthoringGuard, décision Henri), pas un état poste : le `warning` est
-// une métadonnée de capacité qui n'atteint JAMAIS le payload (invariant 27.12).
+// (FirewallAuthoringGuard), pas un état poste : le `warning` est
+// une métadonnée de capacité qui n'atteint JAMAIS le payload (invariant).
 // L'agent ne voit donc pas le warning et ne peut pas distinguer un `allow`
 // ouvert légitime (warning authoré) d'un illégitime — un refus agent miroir
-// casserait les `allow` légitimes. Contrairement au refus Q3 `block` ci-dessous
-// (duplicable car il ne dépend QUE des adresses du payload), Q5 reste serveur-only.
+// casserait les `allow` légitimes. Contrairement au refus `block` ci-dessous
+// (duplicable car il ne dépend QUE des adresses du payload), ce garde-fou reste serveur-only.
 //
 // firewallItemViolation : raison NON vide si l'item `present` doit être REFUSÉ
-// (défense en profondeur Q3, dans Test ET Apply), sinon "". Un `absent`
+// (défense en profondeur, dans Test ET Apply), sinon "". Un `absent`
 // (retrait) reste toujours autorisé (retirer une règle dangereuse est sûr).
 // `internet` est SÛRE par construction (jamais refusée).
 func firewallItemViolation(spec FirewallSpec) string {
@@ -204,7 +204,7 @@ func firewallItemViolation(spec FirewallSpec) string {
 		if spec.Action == "block" {
 			for _, prot := range firewallProtectedRanges {
 				if prot.Overlaps(pfx) {
-					return fmt.Sprintf("action 'block' sur %q chevauche une plage protégée (RFC1918/loopback/link-local/ULA ou /0) — couper le réseau local du serveur est INTERDIT (Q3)", addr)
+					return fmt.Sprintf("action 'block' sur %q chevauche une plage protégée (RFC1918/loopback/link-local/ULA ou /0) — couper le réseau local du serveur est INTERDIT", addr)
 				}
 			}
 		}
@@ -244,7 +244,7 @@ func desiredRule(spec FirewallSpec) FwRule {
 // ruleEquivalent : la règle relue est-elle conforme à la cible ? Direction/
 // action/protocol/grouping insensibles à la casse ; Enabled strict ; adresses
 // et ports comparés par NORMALISATION CANONIQUE (intervalles fusionnés —
-// piège #4, jamais de match de chaîne brute).
+// jamais de match de chaîne brute).
 func ruleEquivalent(actual, target FwRule) bool {
 	if !strings.EqualFold(actual.Grouping, target.Grouping) ||
 		!strings.EqualFold(actual.Direction, target.Direction) ||
@@ -258,8 +258,6 @@ func ruleEquivalent(actual, target FwRule) bool {
 		samePortSet(actual.LocalPorts, target.LocalPorts) &&
 		samePortSet(actual.RemotePorts, target.RemotePorts)
 }
-
-// --- Normalisation canonique des adresses (anti drift-loop, piège #4) --------
 
 // ipInterval : un intervalle d'adresses [lo, hi] d'une famille (4 | 6), bornes
 // en octets big-endian (largeur 4 ou 16 — comparaison lexicographique non
@@ -462,8 +460,6 @@ func sameAddressSet(a, b []string) bool {
 	return true
 }
 
-// --- Normalisation canonique des ports ---------------------------------------
-
 type portInterval struct{ lo, hi int }
 
 func parsePortInterval(tok string) (portInterval, bool) {
@@ -532,8 +528,6 @@ func normalizePorts(tokens []string) []portInterval {
 
 	return merged
 }
-
-// --- Parse strict du payload -------------------------------------------------
 
 func stringSlice(raw any) ([]string, bool) {
 	arr, ok := raw.([]any)
@@ -638,8 +632,6 @@ func parseFirewallSpec(raw any) (FirewallSpec, bool) {
 	return spec, true
 }
 
-// --- Handler ------------------------------------------------------------------
-
 // FirewallHandler : handler exclusive-par-rule_id branché dans le moteur
 // (engine.go INTOUCHÉ). SERVICE SYSTEM seul.
 type FirewallHandler struct {
@@ -676,7 +668,7 @@ func (h *FirewallHandler) desiredSpecs(items []StateItem) ([]FirewallSpec, error
 }
 
 // keptTargets : les règles cibles à GARDER (items `present` passant le refus
-// Q3), indexées par nom (insensible à la casse). Les items `absent` et les
+// agent), indexées par nom (insensible à la casse). Les items `absent` et les
 // items refusés n'y figurent PAS (leur règle du groupe sera supprimée).
 func keptTargets(specs []FirewallSpec) map[string]FwRule {
 	kept := map[string]FwRule{}
@@ -695,8 +687,8 @@ func keptTargets(specs []FirewallSpec) map[string]FwRule {
 
 // Test : conforme ssi (a) chaque règle du groupe est une cible gardée ET
 // équivalente ; (b) aucune règle du groupe hors cibles gardées (couvre les
-// items `absent`, les règles refusées Q3 et les règles étrangères) ; (c) aucun
-// item `present` refusé Q3 (l'Apply surfacera l'erreur). Un payload invalide /
+// items `absent`, les règles refusées par l'agent et les règles étrangères) ; (c) aucun
+// item `present` refusé (l'Apply surfacera l'erreur). Un payload invalide /
 // une énumération illisible = erreur franche.
 func (h *FirewallHandler) Test(items []StateItem) (bool, error) {
 	specs, err := h.desiredSpecs(items)
@@ -704,7 +696,7 @@ func (h *FirewallHandler) Test(items []StateItem) (bool, error) {
 		return false, err
 	}
 
-	// (c) Refus Q3 sur un item `present` ⇒ non conforme (Apply erreur d'item).
+	// (c) Refus agent sur un item `present` ⇒ non conforme (Apply erreur d'item).
 	for _, spec := range specs {
 		if !spec.absent() && firewallItemViolation(spec) != "" {
 			return false, nil
@@ -741,7 +733,7 @@ func (h *FirewallHandler) Test(items []StateItem) (bool, error) {
 }
 
 // Apply : converge le groupe en effort MAXIMAL par règle (première erreur
-// remontée à la fin, idempotent). Réconciliation par CONTENEUR (D4) : jamais de
+// remontée à la fin, idempotent). Réconciliation par CONTENEUR : jamais de
 // règle hors groupe, jamais la politique par défaut / le service.
 func (h *FirewallHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
@@ -756,7 +748,7 @@ func (h *FirewallHandler) Apply(items []StateItem) error {
 		}
 	}
 
-	// Refus Q3 (défense en profondeur, INDÉPENDANT du serveur) : un item
+	// Refus agent (défense en profondeur, INDÉPENDANT du serveur) : un item
 	// `present` refusé n'est JAMAIS posé — erreur d'item isolée, les autres
 	// convergent.
 	for _, spec := range specs {
@@ -776,7 +768,7 @@ func (h *FirewallHandler) Apply(items []StateItem) error {
 	}
 
 	// (1) Supprimer toute règle du groupe hors cibles gardées (strays, items
-	// `absent`, items refusés Q3). Ordre trié (logs déterministes).
+	// `absent`, items refusés par l'agent). Ordre trié (logs déterministes).
 	existing := map[string]FwRule{}
 	strayNames := []string{}
 	for _, rule := range rules {
@@ -809,7 +801,7 @@ func (h *FirewallHandler) Apply(items []StateItem) error {
 			continue // déjà conforme → zéro op (idempotence).
 		}
 		if present {
-			// Non conforme : recréation atomique (Remove PUIS Add, piège #6).
+			// Non conforme : recréation atomique (Remove PUIS Add).
 			if err := h.Ops.RemoveRule(target.Name); err != nil {
 				record(fmt.Errorf("suppression de la règle non conforme %q : %w", target.Name, err))
 

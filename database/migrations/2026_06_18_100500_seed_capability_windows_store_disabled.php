@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Capacité « Désactiver le Microsoft Store » — ajout au lot iso (modèle
- * capability-first 27.12). Capacité NEUVE (aucune source GPO legacy `se4_*`).
+ * capability-first). Capacité NEUVE (aucune source GPO legacy `se4_*`).
  *
  * IDEMPOTENT : même pattern que le seed du lot iso (2026_06_18_100300) —
  * `updateOrInsert` par `key` puis par `(capability_id, os, mechanism)`.
@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Schema;
  *   1 = Store bloqué · 0 = Store accessible (défaut Windows).
  * Scope MACHINE (HKLM) → seul `RegistryMachineCapabilityProvider` l'émet.
  *
- * Map SYMÉTRIQUE {on:1, off:0} (règle 27.12 : si l'UI propose « off », off doit
+ * Map SYMÉTRIQUE {on:1, off:0} (règle : si l'UI propose « off », off doit
  * réécrire une vraie valeur — ici 0 = réactivation, défaut Windows).
  *
  * Défaut diffusé = `on` (Store bloqué sur tout le parc sans override ; les rares

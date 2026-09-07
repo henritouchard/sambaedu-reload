@@ -29,12 +29,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.12 — Tests Unit des providers `registry` CAPABILITY-FIRST.
+ * Tests Unit des providers `registry` CAPABILITY-FIRST.
  *
  * Le provider EXPANSE une capacité (intention) → items de contrat CONCRETS
- * `{hive, path, name, type, value}` via l'interpréteur de `spec` (D5 : map/
+ * `{hive, path, name, type, value}` via l'interpréteur de `spec` (map ou
  * littéral, coercition par type). Broadcast (défaut diffusé) + override de VALEUR
- * de capacité par maille (D4). Candidats BRUTS (D2). Lecture Postgres pure (NFR7).
+ * de capacité par maille. Candidats BRUTS : la précédence entre mailles est
+ * arbitrée plus tard par le compilateur. Lecture Postgres pure.
  * INVARIANT CENTRAL : jamais d'id/key de capacité/projection au payload.
  */
 class CapabilityRegistryProviderTest extends TestCase
@@ -52,7 +53,7 @@ class CapabilityRegistryProviderTest extends TestCase
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
 
-        // Le lot iso est seedé par migration (AC5). On repart d'un catalogue VIDE
+        // Le lot iso est seedé par migration. On repart d'un catalogue VIDE
         // pour contrôler exactement ce que le provider émet.
         DB::table('capability_assignments')->delete();
         DB::table('capability_projections')->delete();
@@ -115,7 +116,7 @@ class CapabilityRegistryProviderTest extends TestCase
         );
     }
 
-    // ── Type / sémantique / portée ────────────────────────────────────────
+    // Type / sémantique / portée
 
     #[Test]
     public function machine_provider_declares_registry_exclusive_machine(): void
@@ -135,7 +136,7 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(StateScope::Session, $p->scope());
     }
 
-    // ── Broadcast (défaut diffusé) + map on/off ───────────────────────────
+    // Broadcast (défaut diffusé) + map on/off
 
     #[Test]
     public function active_capability_without_override_emits_a_broadcast_default(): void
@@ -188,13 +189,13 @@ class CapabilityRegistryProviderTest extends TestCase
         }
     }
 
-    // ── on-only : valeur effective absente de la map ⇒ clé NON émise ───────
+    // on-only : valeur effective absente de la map ⇒ clé NON émise
 
     #[Test]
     public function on_only_map_emits_nothing_when_effective_value_is_off(): void
     {
         // Capacité on-only : la map ne porte que `on`. Override vers `off` ⇒ aucune
-        // clé émise (= cesser de gérer cette clé) — D5 / piège n°5.
+        // clé émise (= cesser de gérer cette clé).
         $cap = $this->makeCapability('windows_copilot_off', 'on', [
             ['hive' => 'HKCU', 'path' => 'Software\\Policies\\…\\WindowsCopilot', 'name' => 'TurnOffWindowsCopilot', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
         ]);
@@ -220,7 +221,7 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertCount(0, $items, 'défaut off + map on-only ⇒ aucune clé gérée');
     }
 
-    // ── Littéral (toujours émis) + MULTI_SZ ───────────────────────────────
+    // Littéral (toujours émis) + MULTI_SZ
 
     #[Test]
     public function literal_scalar_value_is_always_emitted(): void
@@ -250,7 +251,7 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(['a', 'b', 'c'], $c->payload['value']);
     }
 
-    // ── Marqueur `$ensure` (Story 35.1) : trois régimes ────────────────────
+    // Marqueur `$ensure` : trois régimes
 
     #[Test]
     public function ensure_marker_emits_a_four_key_absent_item(): void
@@ -318,7 +319,7 @@ class CapabilityRegistryProviderTest extends TestCase
     public function absent_item_carries_no_value_no_type_and_no_capability_id(): void
     {
         // (d) l'item de suppression ne porte ni value/type ni fuite d'id (invariant
-        // central 27.12, étendu au payload 4 clés).
+        // central, étendu au payload 4 clés).
         $this->makeCapability('llmnr_disabled', 'off', [
             ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => ['$ensure' => 'absent']]],
         ]);
@@ -334,8 +335,8 @@ class CapabilityRegistryProviderTest extends TestCase
     public function unknown_assoc_form_in_map_emits_nothing_defensively(): void
     {
         // (e) forme assoc NON reconnue (ni marqueur, ni liste) ⇒ clé non émise —
-        // défensif, jamais d'exception au render (piège n°4 : avant 35.1,
-        // typedValue() la coerçait silencieusement en 0/'').
+        // défensif : jamais d'exception au render, et jamais de coercition
+        // silencieuse en 0/''.
         $this->makeCapability('weird_cap', 'off', [
             ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'A', 'type' => 'REG_DWORD', 'value' => ['off' => ['$ensure' => 'present']]],
             ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'B', 'type' => 'REG_DWORD', 'value' => ['off' => ['unexpected' => 'shape']]],
@@ -394,7 +395,7 @@ class CapabilityRegistryProviderTest extends TestCase
         }
     }
 
-    // ── Filtre HKLM / HKCU par provider ───────────────────────────────────
+    // Filtre HKLM / HKCU par provider
 
     #[Test]
     public function each_provider_only_emits_keys_of_its_hive(): void
@@ -429,7 +430,7 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertCount(0, $this->userProvider()->itemsFor($this->ctx()));
     }
 
-    // ── Bundle = une capacité → N candidats ───────────────────────────────
+    // Bundle = une capacité → N candidats
 
     #[Test]
     public function bundle_capability_emits_one_candidate_per_emitted_key(): void
@@ -450,7 +451,7 @@ class CapabilityRegistryProviderTest extends TestCase
         }
     }
 
-    // ── Ciblage multi-maille (poste + groupe user) ────────────────────────
+    // Ciblage multi-maille (poste + groupe user)
 
     #[Test]
     public function targets_workstation_and_user_group_mailles_too(): void
@@ -494,13 +495,13 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(7, $ugOverride->payload['value']);
     }
 
-    // ── Valeur PAR DÉFAUT d'une clé : name "" (Story 35.2, scope 35.5) ────
+    // Valeur PAR DÉFAUT d'une clé : name "" (scope)
 
     #[Test]
     public function empty_name_default_value_key_is_emitted_and_hashable(): void
     {
         // `""` est le nom légitime de la valeur PAR DÉFAUT d'une clé Windows
-        // (`(Default)`, contrat §7.1) — besoin 35.5 (photoviewer command).
+        // (`(Default)`, contrat §7.1) — besoin (photoviewer command).
         // AUCUNE garde ne doit le refuser : le provider l'émet tel quel, le
         // StateHasher le canonicalise sans erreur, l'exclusiveKey reste stable.
         $this->makeCapability('photoviewer_default_command', 'on', [
@@ -523,7 +524,7 @@ class CapabilityRegistryProviderTest extends TestCase
         ]));
     }
 
-    // ── Ruche HKU : machine-only (Story 35.3) ──────────────────────────────
+    // Ruche HKU : machine-only
     // `HKU` est la TROISIÈME valeur admise de `hive` (portée machine) : émise
     // par le provider Machine (le service SYSTEM fan-out .DEFAULT + ruches
     // chargées côté agent), JAMAIS par le provider Session ni par les
@@ -533,7 +534,7 @@ class CapabilityRegistryProviderTest extends TestCase
     public function hku_key_is_emitted_by_the_machine_provider_as_a_five_key_item(): void
     {
         // (a) clé HKU émise par le provider Machine : item CONCRET iso-format
-        // 5 clés, path SANS préfixe .DEFAULT (piège n°6 — le handler préfixe),
+        // 5 clés, path SANS préfixe .DEFAULT (c'est le handler agent qui préfixe),
         // zéro fuite d'id, zéro float (REG_SZ → string).
         $cap = $this->makeCapability('numlock_on_logon', 'on', [
             ['hive' => 'HKU', 'path' => 'Control Panel\\Keyboard', 'name' => 'InitialKeyboardIndicators', 'type' => 'REG_SZ', 'value' => ['on' => '2', 'off' => '0']],
@@ -578,7 +579,7 @@ class CapabilityRegistryProviderTest extends TestCase
     #[Test]
     public function ensure_marker_on_hku_key_emits_a_four_key_absent_item(): void
     {
-        // (c) le marqueur $ensure (35.1) vaut aussi en HKU : item de
+        // (c) le marqueur $ensure vaut aussi en HKU : item de
         // SUPPRESSION 4 clés émis par le provider Machine (l'agent supprime la
         // valeur dans TOUTES les ruches du fan-out).
         $this->makeCapability('a_hku_cap', 'off', [
@@ -610,7 +611,7 @@ class CapabilityRegistryProviderTest extends TestCase
     #[Test]
     public function registry_list_providers_never_emit_an_hku_container(): void
     {
-        // (e bis) HKU HORS scope registry_list (piège n°11) : l'expand() des
+        // (e bis) HKU HORS scope registry_list : l'expand() des
         // providers list garde son filtre DIRECT par ruche — un conteneur HKU
         // (que le guard refuse déjà à l'authoring) n'est émis par AUCUN des
         // deux providers list (défense en profondeur au render).
@@ -626,11 +627,11 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertCount(0, (new RegistryListUserCapabilityProvider)->itemsFor($this->ctx()));
     }
 
-    // ── Story 43.2 (D3, AC3) — recopie du hint `refresh` au payload ────────
+    // Recopie du hint `refresh` au payload
 
     /**
      * Fabrique une capacité toggle + sa projection registry portant un
-     * `spec.refresh` à la RACINE (D1), en plus des `keys`.
+     * `spec.refresh` à la RACINE, en plus des `keys`.
      *
      * @param  list<array<string,mixed>>  $keys
      */
@@ -667,7 +668,7 @@ class CapabilityRegistryProviderTest extends TestCase
     #[Test]
     public function session_provider_recopies_the_refresh_hint_on_ensure_absent_suppression_items_too(): void
     {
-        // D3 : « supprimer une policy exige le même geste » — le hint est
+        // Supprimer une policy exige le même geste de rafraîchissement : le hint est
         // recopié y compris sur l'item de SUPPRESSION 4 clés.
         $cap = $this->makeCapabilityWithRefresh('blocked_executables_flag', 'on', [
             ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'DisallowRun', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
@@ -685,9 +686,9 @@ class CapabilityRegistryProviderTest extends TestCase
     #[Test]
     public function machine_provider_never_recopies_the_refresh_hint_even_on_a_mixed_spec(): void
     {
-        // Piège n°4 (test négatif OBLIGATOIRE) : un spec PORTANT un hint valide
-        // + des clés HKLM/HKU/HKCU mixtes ne recopie le hint QUE sur les items
-        // du provider Session — jamais Machine (HKLM ni HKU).
+        // Un spec PORTANT un hint valide + des clés HKLM/HKU/HKCU mixtes ne
+        // recopie le hint QUE sur les items du provider Session — jamais
+        // Machine (HKLM ni HKU).
         $this->makeCapabilityWithRefresh('mixed_hint_cap', 'on', [
             ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'MachineKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
             ['hive' => 'HKU', 'path' => 'Software\\X', 'name' => 'HkuKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
@@ -732,8 +733,8 @@ class CapabilityRegistryProviderTest extends TestCase
     #[Test]
     public function a_spec_without_refresh_emits_byte_identical_payloads(): void
     {
-        // Non-régression (AC3) : un spec SANS `refresh` reste byte-identique
-        // à avant la story (5 clés, jamais de clé `refresh`).
+        // Non-régression : un spec SANS `refresh` reste byte-identique
+        // à ce qu'il était (5 clés, jamais de clé `refresh`).
         $this->makeCapability('show_hidden_files', 'on', [
             ['hive' => 'HKCU', 'path' => 'Software\\X\\Advanced', 'name' => 'Hidden', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => 0]],
         ]);
@@ -743,7 +744,7 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($item->payload));
     }
 
-    // ── Story 35.7 (D1/D2, AC2) — marqueur `writer` par clé de spec ────────
+    // Marqueur `writer` par clé de spec
     // L'attribut `'writer' => 'system'` d'une CLÉ de spec est recopié sur
     // l'item émis (l'item est appliqué par le service SYSTEM dans HKU\<SID>,
     // jamais par le compagnon — trees HKCU\…\Policies\* non user-writable).
@@ -809,7 +810,7 @@ class CapabilityRegistryProviderTest extends TestCase
     #[Test]
     public function refresh_hint_is_never_posed_on_a_writer_marked_item(): void
     {
-        // (d) piège n°6 — exclusion mutuelle refresh/writer : MÊME si la
+        // Exclusion mutuelle refresh/writer : MÊME si la
         // projection porte un hint résiduel (donnée incohérente hypothétique),
         // withRefreshHint() ne pose JAMAIS `refresh` sur un item marqué. Les
         // clés NON marquées de la même spec gardent le hint (le spec peut
@@ -882,7 +883,7 @@ class CapabilityRegistryProviderTest extends TestCase
         }
     }
 
-    // ── exclusiveKey : identité insensible à la casse ─────────────────────
+    // exclusiveKey : identité insensible à la casse
 
     #[Test]
     public function exclusive_key_is_case_insensitive_identity(): void
@@ -894,7 +895,7 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame($a, $b);
     }
 
-    // ── NFR7 — lecture seule Postgres, zéro AD ────────────────────────────
+    // Lecture seule Postgres, zéro AD
 
     #[Test]
     public function provider_source_has_no_ad_apcu_samba_dependency(): void

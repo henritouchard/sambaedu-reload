@@ -19,19 +19,18 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Story 15.6 / AC4 / AC5 / AC6.5 — Tests Livewire de la carte « Réglages de déploiement ».
+ * Tests Livewire de la carte « Réglages de déploiement ».
  *
  * Couvre :
- *   - AC4.1 : rendu carte + badge source DB/env
- *   - AC4.2 : toggle winget persiste + toast + audit
- *   - AC4.3 : ajout CIDR → modale ; suppression → pas de modale
- *   - AC4.4 : saisie invalide → erreur inline, pas de persistance
- *   - AC4.5 : user sans server.admin → 403 sur les actions
- *   - AC4.6 : non-régression audit GPO existant (fonctionnel et inchangé)
- *   - AC5.1 + AC5.2 : audit émis depuis save() (pas via middleware HTTP)
+ * - rendu carte + badge source DB/env
+ * - toggle winget persiste + toast + audit
+ * - ajout CIDR → modale ; suppression → pas de modale
+ * - saisie invalide → erreur inline, pas de persistance
+ * - user sans server.admin → 403 sur les actions
+ * - non-régression audit GPO existant (fonctionnel et inchangé)
+ * - + : audit émis depuis save (pas via middleware HTTP)
  */
 #[Group('wpkg-deploy')]
-#[Group('story-15-6')]
 class WpkgDeploymentSettingsPageTest extends TestCase
 {
     use DatabaseTransactions;
@@ -80,15 +79,11 @@ class WpkgDeploymentSettingsPageTest extends TestCase
         return User::query()->create(['login' => $login, 'role' => 'eleve', 'is_active' => true]);
     }
 
-    // Story 27.14 — le helper `bindSyncOk()` (mock `WpkgGpoSynchronizer` pour
+    // Le helper `bindSyncOk` (mock `WpkgGpoSynchronizer` pour
     // l'audit GPO `se4_wpkg`) a été retiré : l'audit a été supprimé de la page
     // avec l'extinction du canal de config legacy. La page n'injecte plus le
     // synchronizer ; seuls les réglages de déploiement (winget + allowlist)
     // subsistent.
-
-    // =========================================================================
-    // AC4.1 — Rendu + badge source
-    // =========================================================================
 
     #[Test]
     public function admin_sees_deployment_settings_card(): void
@@ -123,10 +118,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
             ->assertSet('allowedIpsSource', 'db');
     }
 
-    // =========================================================================
-    // AC4.2 — Toggle winget
-    // =========================================================================
-
     #[Test]
     public function toggle_winget_persists_and_emits_toast(): void
     {
@@ -154,10 +145,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
             ->call('toggleWinget')
             ->assertSet('wingetEnabled', false);
     }
-
-    // =========================================================================
-    // AC4.3 — Ajout CIDR (modale) et suppression (pas de modale)
-    // =========================================================================
 
     #[Test]
     public function adding_cidr_opens_modal(): void
@@ -223,10 +210,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
         self::assertContains('10.0.0.1', $stored);
     }
 
-    // =========================================================================
-    // AC4.4 — Validation : entrée invalide → erreur inline, pas de persistance
-    // =========================================================================
-
     #[Test]
     public function invalid_ip_shows_error_without_persisting(): void
     {
@@ -278,10 +261,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
             ->assertSet('newIpError', fn ($v) => $v !== null);
     }
 
-    // =========================================================================
-    // AC4.5 — User sans server.admin → 403
-    // =========================================================================
-
     #[Test]
     public function toggle_winget_aborts_403_without_server_admin(): void
     {
@@ -302,10 +281,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(403);
     }
-
-    // =========================================================================
-    // Correction post-review #5 — Garde 403 par action (abort_unless dans chaque action)
-    // =========================================================================
 
     /**
      * Prouve que toggleWinget() lui-même aborte 403 (garde par action, pas seulement mount).
@@ -355,14 +330,10 @@ class WpkgDeploymentSettingsPageTest extends TestCase
             ->assertStatus(403);
     }
 
-    // Story 27.14 — le test AC4.6 `existing_gpo_audit_is_still_functional`
+    // Le test `existing_gpo_audit_is_still_functional`
     // (carte d'audit GPO `se4_wpkg` + bouton re-publish + re-audit) a été retiré :
     // l'audit GPO a été supprimé de la page avec l'extinction du canal de config
     // legacy. Seuls les réglages de déploiement (winget + allowlist) subsistent.
-
-    // =========================================================================
-    // AC5 — Audit émis depuis save() (pas via middleware HTTP)
-    // =========================================================================
 
     #[Test]
     public function toggle_winget_emits_structured_log_audit(): void
@@ -372,7 +343,7 @@ class WpkgDeploymentSettingsPageTest extends TestCase
 
         $logInfoCalled = false;
 
-        // AC5.2 — Assert contraint : le log doit être émis avec les bons champs.
+        // Assert contraint : le log doit être émis avec les bons champs.
         Log::shouldReceive('channel')
             ->with('wpkg-deploy')
             ->once()
@@ -407,7 +378,7 @@ class WpkgDeploymentSettingsPageTest extends TestCase
         $oldIps = [];
         $newCidr = '192.168.10.0/24';
 
-        // AC5.2 — Assert contraint : le log doit être émis avec les bons champs.
+        // Assert contraint : le log doit être émis avec les bons champs.
         Log::shouldReceive('channel')
             ->with('wpkg-deploy')
             ->once()

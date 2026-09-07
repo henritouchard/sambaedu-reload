@@ -13,12 +13,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 25.5 — greffe de persistance de la version rapportée (AC4).
+ * Greffe de persistance de la version rapportée.
  *
  * `agent_version` était validé puis SILENCIEUSEMENT jeté : la greffe l'écrit
  * désormais dans `workstations.agent_reported_version` (+ `_at`) au fil du
- * report, dans `ReportController::store()` (hors transaction D3,
- * `ReportIngestService` toujours read-only sur `workstations`). Le contrat de
+ * report, dans `ReportController::store()`, hors de la transaction
+ * d'ingestion des items (`ReportIngestService` reste read-only sur
+ * `workstations`). Le contrat de
  * report (golden) est inchangé : la colonne ne modifie pas le payload.
  */
 final class ReportedVersionPersistenceTest extends TestCase
@@ -101,7 +102,7 @@ final class ReportedVersionPersistenceTest extends TestCase
     #[Test]
     public function empty_items_report_still_persists_the_version(): void
     {
-        // La greffe est indépendante du stockage des items (hors transaction D3).
+        // La greffe a lieu hors de la transaction d'ingestion des items.
         [$ws, $token] = $this->enrolledWorkstation();
 
         $this->report($token, $this->payload($ws, '2.1.2', []))->assertOk();

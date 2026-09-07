@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
 /**
- * Story 27.3bis — Catalogue des associations de fichiers/protocoles par défaut
- * (type `associations` sans table métier existante : table DÉDIÉE, D1, iso 27.3).
+ * Catalogue des associations de fichiers/protocoles par défaut
+ * (type `associations` sans table métier existante : table DÉDIÉE).
  *
  * Chaque ligne est une association PRÉDÉTERMINÉE activable par parc. Le
  * {@see \App\Services\Agent\Providers\AssociationsStateProvider} la COMPILE en un
@@ -29,7 +29,7 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * @property string $identifier Extension (.pdf) ou protocole (http)
  * @property string $assoc_type file | protocol
  * @property string $progid ProgId Windows cible (UserChoice)
- * @property string $source native | wpkg (D-Henri n°7) — SERVEUR-only
+ * @property string $source native | wpkg — SERVEUR-only
  * @property string|null $wpkg_package <package id> WPKG d'origine (= Application::app_id) ; null si native
  * @property bool $is_active
  * @property \Illuminate\Support\Carbon $created_at
@@ -42,7 +42,7 @@ class FileAssociation extends Model
     protected $table = 'file_associations';
 
     /**
-     * Identifiant FIGÉ du type de ressource desired-state (contrat §7, NFR12),
+     * Identifiant FIGÉ du type de ressource desired-state (contrat §7),
      * iso `CapabilityProjection::MECHANISM_REGISTRY`/`Shortcut::TYPE_SHORTCUTS`. Consommé
      * par {@see \App\Services\Agent\Providers\AssociationsStateProvider}.
      * snake_case, jamais renommé une fois publié.
@@ -56,7 +56,7 @@ class FileAssociation extends Model
     public const ASSOC_TYPE_PROTOCOL = 'protocol';
 
     /**
-     * Source `native` (D-Henri n°7) : le ProgId est un built-in Windows (ex.
+     * Source `native` : le ProgId est un built-in Windows (ex.
      * `txtfile` pour `.txt`, `WindowsPhotoViewer` pour `.jpg`) — TOUJOURS présent
      * sur le poste, donc l'association est TOUJOURS applicable (aucune dépendance
      * de paquet). `wpkg_package` est `null`.
@@ -64,7 +64,7 @@ class FileAssociation extends Model
     public const SOURCE_NATIVE = 'native';
 
     /**
-     * Source `wpkg` (D-Henri n°7) : le ProgId est fourni par un paquet WPKG (ex.
+     * Source `wpkg` : le ProgId est fourni par un paquet WPKG (ex.
      * `FirefoxURL` par le paquet `firefox`). L'association n'est applicable QUE si
      * `wpkg_package` est déployé sur le parc — sinon l'UI affiche « indisponible »
      * AVANT déploiement (l'agent reste le dernier rempart sur le poste).
@@ -156,11 +156,11 @@ class FileAssociation extends Model
     }
 
     /**
-     * Le ProgId cible est-il un built-in Windows (D-Henri n°7) ? Si oui,
+     * Le ProgId cible est-il un built-in Windows ? Si oui,
      * l'association est applicable sur N'IMPORTE quel parc (aucune dépendance de
      * paquet WPKG). Sinon (`wpkg`), l'applicabilité dépend du déploiement du
      * paquet `wpkg_package` sur le parc — vérifié côté UI (validation prédictive),
-     * JAMAIS côté provider (qui émet toujours, D-Henri n°3, NFR7).
+     * JAMAIS côté provider, qui émet toujours.
      */
     public function isNative(): bool
     {
@@ -170,7 +170,7 @@ class FileAssociation extends Model
     /**
      * Le ProgId cible est-il GÉNÉRIQUE `Applications\<exe>` (« Ouvrir avec »
      * fabriqué par le resolver faute de ProgId riche), insensible à la casse ?
-     * Un générique est « best-effort » côté UI (AC5) : l'association SERA tentée
+     * Un générique est « best-effort » côté UI : l'association SERA tentée
      * mais dépend de l'app réellement installée et résoluble sur le poste —
      * INDÉPENDAMMENT de `source` (un générique de native l'est aussi). Distinct
      * d'un ProgId canonique (ex. `txtfile`), toujours « applicable ».
@@ -182,7 +182,7 @@ class FileAssociation extends Model
 
     /**
      * Clé de catalogue DÉTERMINISTE dérivée de l'identité d'une entrée =
-     * `(identifier, progid)`. Story 27.3bis : le seed-migration, la baseline figée
+     * `(identifier, progid)`. : le seed-migration, la baseline figée
      * du seeder ET le parse `default.xml` legacy DOIVENT converger sur cette clé
      * pour qu'une paire identique upsert au lieu de DUPLIQUER (sinon doublon
      * catalogue + faux conflit `agent.state.conflict` au compilateur sur VM, où

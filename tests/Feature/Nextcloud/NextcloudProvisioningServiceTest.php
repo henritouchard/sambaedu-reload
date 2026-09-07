@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.1 — le provisionnement, sans réseau.
+ * Le provisionnement, sans réseau.
  *
  * Les doubles rejouent les corps RÉELS mesurés sur l'instance de sondage le
  * 2026-08-08 — **slash initial du point de montage compris**. C'est le seul moyen
@@ -124,11 +124,6 @@ class NextcloudProvisioningServiceTest extends TestCase
         $this->app->instance(SambaEduConfig::class, $config);
     }
 
-    // =====================================================================
-    // LE DOMAINE SMB — sans lui, les deux montages échouent en
-    // authentification sur toute instance en conteneur (mesuré 2026-08-17).
-    // =====================================================================
-
     /** Le domaine part avec la création, dérivé de la configuration SambaEdu. */
     #[Test]
     public function the_created_mounts_carry_the_directory_short_domain(): void
@@ -217,10 +212,6 @@ class NextcloudProvisioningServiceTest extends TestCase
         Http::assertNotSent(static fn (Request $r): bool => in_array($r->method(), ['POST', 'PUT'], true));
     }
 
-    // =====================================================================
-    // AC1 — fail-closed sur la configuration
-    // =====================================================================
-
     #[Test]
     public function a_disabled_capability_refuses_by_name_and_emits_no_call_at_all(): void
     {
@@ -259,10 +250,6 @@ class NextcloudProvisioningServiceTest extends TestCase
         self::assertSame([], $report->mounts());
         Http::assertSentCount(2); // capabilities + lecture des montages : aucune écriture
     }
-
-    // =====================================================================
-    // AC3 — les montages, idempotents par signature
-    // =====================================================================
 
     #[Test]
     public function it_creates_the_two_canonical_mounts_on_a_bare_instance(): void
@@ -372,7 +359,7 @@ class NextcloudProvisioningServiceTest extends TestCase
     }
 
     /**
-     * Revue #1 — HÔTE SMB VIDE : le provisionnement ne refuse RIEN, il dérive le
+     * HÔTE SMB VIDE : le provisionnement ne refuse RIEN, il dérive le
      * défaut là où il est consommé (`sambaedu.se4fs_name`), exactement comme
      * l'agent substitue le jeton `<se4fs>` dans les UNC des lecteurs.
      */
@@ -421,10 +408,6 @@ class NextcloudProvisioningServiceTest extends TestCase
         self::assertStringContainsString('smbclient', $report->mounts()[0]['detail']);
     }
 
-    // =====================================================================
-    // AC8 — le dry-run n'écrit RIEN
-    // =====================================================================
-
     #[Test]
     public function a_dry_run_emits_no_write_at_all(): void
     {
@@ -448,10 +431,6 @@ class NextcloudProvisioningServiceTest extends TestCase
             'la simulation ne persiste même pas le cache d\'identité',
         );
     }
-
-    // =====================================================================
-    // AC5 / AC6 — le stock : adoption, introuvables, exclusions
-    // =====================================================================
 
     #[Test]
     public function existing_users_are_adopted_and_their_identity_cached(): void
@@ -497,7 +476,7 @@ class NextcloudProvisioningServiceTest extends TestCase
     }
 
     /**
-     * Revue #2 — L'AUTOCOMPLÉTION N'ADOPTE QUE L'HOMONYME.
+     * L'AUTOCOMPLÉTION N'ADOPTE QUE L'HOMONYME.
      *
      * Elle cherche par SOUS-CHAÎNE : un candidat unique n'est pas une preuve
      * d'identité. L'adopter le graverait dans `users.nextcloud_user_id`, d'où
@@ -625,10 +604,6 @@ class NextcloudProvisioningServiceTest extends TestCase
         self::assertStringContainsString('privilège requis', $report->userIssues()[0]['detail']);
     }
 
-    // =====================================================================
-    // AC8 — verrou et dernier rapport
-    // =====================================================================
-
     #[Test]
     public function a_concurrent_run_is_refused_by_the_file_lock(): void
     {
@@ -650,7 +625,7 @@ class NextcloudProvisioningServiceTest extends TestCase
     }
 
     /**
-     * Revue #4 — LE MARQUEUR D'EXÉCUTION EN COURS.
+     * LE MARQUEUR D'EXÉCUTION EN COURS.
      *
      * Le rapport n'est mis en cache qu'à la FIN : une exécution interrompue (job
      * tué par la file) ne laisserait rien à voir. Le marqueur est donc posé AVANT

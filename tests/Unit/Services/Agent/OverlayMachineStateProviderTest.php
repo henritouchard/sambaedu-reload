@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `OverlayMachineStateProvider` — Story 27.10 (AC1).
+ * Tests Unit `OverlayMachineStateProvider`.
  *
  * Le volet MACHINE de l'overlay : émet `{kind:"machine", room}` en portée
  * machine (source UNIQUE de la salle, retirée de l'item identity session).

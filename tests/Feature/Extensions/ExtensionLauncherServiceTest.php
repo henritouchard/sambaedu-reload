@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.3 (AC1, AC2) — `ExtensionLauncherService::tilesFor()` : les
+ * `ExtensionLauncherService::tilesFor` : les
  * tuiles d'un utilisateur, filtrées par intersection `visibility.roles` ∩
  * `businessRoles()`.
  */
@@ -47,7 +47,7 @@ class ExtensionLauncherServiceTest extends TestCase
             'type' => $type,
             'name' => $key,
             'version' => '1.0.0',
-            // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` — c'est le
+            // Une `app` DOIT déclarer `/ext/<id>` — c'est le
             // chemin que l'installation provisionne (ProxyPass).
             'entry_url' => $type === ExtensionType::App->value ? '/ext/'.$key : '/'.$key,
             'icon' => 'fa-solid fa-puzzle-piece',
@@ -144,7 +144,7 @@ class ExtensionLauncherServiceTest extends TestCase
     {
         // Type `app` artificiellement `integrated` (factory) SANS port : rien
         // n'a été provisionné derrière `/ext/<clé>`, la tuile mènerait à un
-        // 404 — fail-closed testé explicitement. Story 56.2 : c'est le
+        // 404 — fail-closed testé explicitement. : c'est le
         // `installed_port` qui distingue une installation réelle d'une ligne
         // fabriquée, pas le type.
         Extension::factory()->integrated()->create([
@@ -201,7 +201,7 @@ class ExtensionLauncherServiceTest extends TestCase
         $this->assertSame([], $this->service->tilesFor($eleve));
     }
 
-    // ── Instances servies sous un sous-chemin (reverse proxy) ─────────────
+    // Instances servies sous un sous-chemin (reverse proxy)
 
     /**
      * Régression terrain (lab1, `APP_URL=https://lab1.sambaedu.org/0991229y`) :
@@ -233,7 +233,7 @@ class ExtensionLauncherServiceTest extends TestCase
      * Symétrique du test ci-dessus : une extension hébergée AILLEURS déclare
      * une URL absolue. La préfixer la casserait — elle doit traverser telle
      * quelle. Les deux cas sont exhaustifs, `ExtensionManifestValidator`
-     * n'acceptant que `/…` ou `http(s)://` (review 54.3).
+     * n'acceptant que `/…` ou `http(s)://` (review).
      */
     #[Test]
     public function an_absolute_http_entry_url_is_left_untouched(): void
@@ -253,14 +253,13 @@ class ExtensionLauncherServiceTest extends TestCase
         $this->assertSame('https://bbb.example.org/rooms', $tiles[0]['entry_url']);
     }
 
-    // ── Story 56.1 — l'état de la SOURCE ne retire jamais une tuile ────────
+    // — l'état de la SOURCE ne retire jamais une tuile
     //
-    // Décision tranchée en 56.1 (report explicite de 54.3) : une extension
-    // INTÉGRÉE garde sa tuile quel que soit l'état de sa source. Doctrine
-    // « rupture = figer l'état » + invariant 54.1 #4 (jamais de dé-intégration
-    // silencieuse). Faire disparaître une tuile parce qu'un dépôt distant est
-    // tombé transformerait un incident de catalogue en panne visible pour les
-    // profs et les élèves — l'exact contraire de NFR7.
+    // Une extension INTÉGRÉE garde sa tuile quel que soit l'état de sa
+    // source : la rupture fige l'état, elle ne dé-intègre jamais en silence.
+    // Faire disparaître une tuile parce qu'un dépôt distant est tombé
+    // transformerait un incident de catalogue en panne visible pour les profs
+    // et les élèves.
 
     #[Test]
     public function an_integrated_extension_of_a_disabled_source_keeps_its_tile(): void
@@ -294,9 +293,9 @@ class ExtensionLauncherServiceTest extends TestCase
     public function an_available_extension_of_an_active_source_never_becomes_a_tile(): void
     {
         // Contre-épreuve de la décision ci-dessus : « intégrée » reste la SEULE
-        // condition d'apparition. (Déjà couvert par les tests d'état 54.3 ; on
+        // condition d'apparition. (Déjà couvert par les tests d'état ; on
         // le REDIT ici avec une source explicitement active, pour que la
-        // décision 56.1 soit lisible d'un seul tenant.)
+        // décision soit lisible d'un seul tenant.)
         $source = ExtensionSource::factory()->remote()->create();
         Extension::factory()
             ->link('/agenda')
@@ -312,14 +311,10 @@ class ExtensionLauncherServiceTest extends TestCase
         $this->assertSame([], $this->service->tilesFor($admin));
     }
 
-    // =====================================================================
-    // Story 56.2 — une `app` RÉELLEMENT installée obtient sa tuile
-    // =====================================================================
-
     #[Test]
     public function an_installed_app_gets_a_tile_pointing_at_its_provisioned_path(): void
     {
-        // Levée MAÎTRISÉE du filtre `type = link` de 54.3 : le moteur
+        // Levée MAÎTRISÉE du filtre `type = link` : le moteur
         // d'installation existe désormais, et `installed_port` atteste que
         // l'exposition `/ext/<clé>` a bien été provisionnée.
         Extension::factory()->app()->installed(8600)->create([
@@ -332,7 +327,7 @@ class ExtensionLauncherServiceTest extends TestCase
         $tiles = $this->service->tilesFor($prof);
 
         $this->assertSame(['hello'], array_column($tiles, 'key'));
-        // ⚠️ MERGE Epic 56 → main : depuis le fix « extensions bad url »,
+        // ⚠️ MERGE → main : depuis le fix « extensions bad url »,
         // un chemin de manifest est résolu contre la racine de l'instance
         // (`url()`), et non recopié brut — sinon une instance servie sous un
         // sous-chemin (lab1) perdait son préfixe et partait en 404. La tuile
@@ -373,12 +368,9 @@ class ExtensionLauncherServiceTest extends TestCase
         $this->assertSame([], $this->service->tilesFor($this->makeUser('eleve')));
     }
 
-    // =====================================================================
-    // Story 56.5 (AC2, FR35) — la tuile PORTE l'état de santé, LU
-    // =====================================================================
     //
     // ⚠️ Ajouts en FIN de fichier, aucune assertion existante retouchée : le
-    // socle 54.3/56.1/56.2 doit rester vrai verbatim.
+    // socle doit rester vrai verbatim.
 
     /** Une `app` installée sondée injoignable RÉCEMMENT est marquée. */
     #[Test]

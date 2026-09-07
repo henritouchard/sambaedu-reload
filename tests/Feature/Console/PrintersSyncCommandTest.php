@@ -20,15 +20,15 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.1 — Tests Feature de la commande `printers:sync`.
+ * Tests Feature de la commande `printers:sync`.
  *
- * Couvre AC9 :
+ * Couvre :
  *  - dry-run : aucune écriture en DB.
  *  - ajout : CUPS retourne N imprimantes absentes en SER → INSERT (orphan=false).
  *  - marquage orphan : SER retourne M imprimantes non-orphan absentes de CUPS → UPDATE orphan=true.
  *  - restauration : SER orphan + CUPS la retrouve → UPDATE orphan=false.
  *  - idempotence : 2 runs consécutifs sur état aligné = 0 modification.
- *  - fix #12 : CUPS down → skip (aucun row SER marqué orphan).
+ *  - CUPS down → skip (aucun row SER marqué orphan).
  */
 class PrintersSyncCommandTest extends TestCase
 {
@@ -62,7 +62,7 @@ class PrintersSyncCommandTest extends TestCase
      * Bind un `CupsPrinterService` qui retourne une liste programmable
      * d'imprimantes via un `FakeCommandRunner`.
      *
-     * Fix #12 : programme également `lpstat -r` → success (CUPS healthy)
+     * Programme également `lpstat -r` → success (CUPS healthy)
      * pour que `isHealthy()` retourne true et laisse passer la synchronisation.
      *
      * @param  array<int, array{name:string,uri:string}>  $cupsPrinters
@@ -71,7 +71,7 @@ class PrintersSyncCommandTest extends TestCase
     {
         $runner = new FakeCommandRunner();
 
-        // Fix #12 : lpstat -r → CUPS est healthy.
+        // lpstat -r → CUPS est healthy.
         $runner->whenContains('lpstat -r', 'scheduler is running');
 
         // `lpstat -s` → "device for X: socket://..."
@@ -91,7 +91,7 @@ class PrintersSyncCommandTest extends TestCase
         }
         $runner->whenContains('lpstat -l -p', implode("\n", $lpLines));
 
-        // `lpstat -o` → 0 jobs (batch, fix #2).
+        // `lpstat -o` → 0 jobs (batch).
         $runner->whenContains('lpstat -o', '');
         $runner->setDefault(0, '');
 

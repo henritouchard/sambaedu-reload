@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Story 8.3 — Modèle Eloquent d'un sous-réseau DHCP (VLAN).
+ * Modèle Eloquent d'un sous-réseau DHCP (VLAN).
  *
  * Source de vérité SER pour les sous-réseaux/VLAN DHCP gérés. L'export vers
  * `/etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf` est dérivé de cette table
@@ -18,10 +18,10 @@ use Illuminate\Database\Eloquent\Model;
  *
  * Le sous-réseau **par défaut** (VLAN 0) n'est PAS modélisé ici : il vit dans
  * `dhcp.conf` (clés `dhcp_reseau`, `dhcp_masque`, …) et reste géré par
- * l'autoconf serveur (lecture seule côté SER, cf. décision D3 de la story).
+ * l'autoconf serveur (lecture seule côté SER).
  *
  * @property int          $id
- * @property int          $vlan_id      1..999 (contrainte D4 : générateur < 1024)
+ * @property int          $vlan_id      1..999 (le générateur exige < 1024)
  * @property string       $network      CIDR complet normalisé (ex. `192.168.20.0/24`)
  * @property string       $gateway      IPv4 de la passerelle du VLAN
  * @property array<int,array{begin:string,end:string}> $ranges  Plages dynamiques (min 1)

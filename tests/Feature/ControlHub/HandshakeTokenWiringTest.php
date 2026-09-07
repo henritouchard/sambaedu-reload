@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 39.5 (couture E10) — CÂBLAGE du credential d'auth entrante CH→SE5.
+ * CÂBLAGE du credential d'auth entrante CH→SE5.
  *
  * Le controlHub authentifie ses appels entrants (ingestion de contrat, rupture
  * de lien) avec le token qu'il FRAPPE et nous renvoie AU handshake (`api_token`).

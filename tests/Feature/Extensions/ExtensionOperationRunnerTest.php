@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.3 (AC2, AC5) — L'orchestrateur de runs : ce qui garantit qu'un clic
+ * L'orchestrateur de runs : ce qui garantit qu'un clic
  * produit UNE ligne d'état et UN Job, et que deux clics n'en produisent pas
  * deux.
  *
@@ -48,10 +48,6 @@ class ExtensionOperationRunnerTest extends TestCase
     {
         return Extension::factory()->app()->withInstallBlock()->create(['key' => 'hello']);
     }
-
-    // =====================================================================
-    // AC2 — un clic = une ligne d'état + un Job
-    // =====================================================================
 
     #[Test]
     public function starting_an_operation_creates_a_pending_run_and_queues_the_job(): void
@@ -106,10 +102,6 @@ class ExtensionOperationRunnerTest extends TestCase
         self::assertSame(1, $job->tries, 'un échec d\'installation est terminal');
         self::assertSame([], $job->middleware(), 'WithoutOverlapping s\'appuie sur APCu : interdit (piège daté)');
     }
-
-    // =====================================================================
-    // AC5 — concurrence
-    // =====================================================================
 
     #[Test]
     public function a_second_operation_is_refused_while_one_is_active(): void
@@ -231,10 +223,6 @@ class ExtensionOperationRunnerTest extends TestCase
         self::assertNotNull($this->runner()->start(ExtensionInstallRun::OPERATION_INSTALL, $extension->id, $this->admin('autre')));
     }
 
-    // =====================================================================
-    // AC2 — atomicité row ⇒ Job
-    // =====================================================================
-
     #[Test]
     public function a_dispatch_that_fails_leaves_no_orphan_row(): void
     {
@@ -254,10 +242,6 @@ class ExtensionOperationRunnerTest extends TestCase
 
         self::assertSame(0, ExtensionInstallRun::query()->count(), 'la transaction doit avoir tout annulé');
     }
-
-    // =====================================================================
-    // Gardes de base
-    // =====================================================================
 
     #[Test]
     public function an_unknown_extension_is_refused_without_creating_a_run(): void
@@ -300,10 +284,6 @@ class ExtensionOperationRunnerTest extends TestCase
 
         $this->runner()->start('reboot', $this->app_()->id, $this->admin());
     }
-
-    // =====================================================================
-    // Lecture : UNE requête, des tableaux plats
-    // =====================================================================
 
     #[Test]
     public function the_library_reads_the_latest_run_of_each_extension(): void

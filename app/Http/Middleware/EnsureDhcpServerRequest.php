@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 8.4 — Garde de l'endpoint DDNS `/dhcp/dnsupdate`.
+ * Garde de l'endpoint DDNS `/dhcp/dnsupdate`.
  *
  * Le seul appelant légitime est `dhcp-dyndns.sh`, exécuté par dhcpd **sur le
  * serveur lui-même** : l'origine autorisée se réduit donc au loopback et à

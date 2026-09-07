@@ -15,20 +15,20 @@ import (
 	"unicode/utf8"
 )
 
-// LE chemin le plus testé de l'agent (NFR8, AC6). La matrice obligatoire de la
-// story tourne ICI, sur l'hôte Linux : fake serveur HTTP (manifest + binaire),
-// primitives Windows (VerifyAuthenticode / SwapAndRestart) STUBÉES par
-// injection (décision n° 2). Cas couverts : nominal, 404 no_release, version
+// La matrice de test de l'auto-update tourne ICI,
+// sur l'hôte Linux : fake serveur HTTP (manifest + binaire), primitives Windows
+// (VerifyAuthenticode / SwapAndRestart) STUBÉES par injection. Cas couverts :
+// nominal, 404 no_release, version
 // égale, hash KO, signature KO, download interrompu, download tronqué (>16 Mio),
 // swap KO rapporté (orchestration), 401 arrêt, 403 release = update sauté SANS
-// quarantaine (M4 — y compris un cycle complet où le report part quand même),
+// quarantaine (y compris un cycle complet où le report part quand même),
 // report d'échec agent_update, version dans le rapport, un seul download par
 // cycle, survie token après swap.
 //
 // Le CŒUR anti-brique (copie-atomique→re-hash→rename→ROLLBACK) est testé
-// directement sur shared.PerformSwap dans swap_test.go (AC3, #6/M6) : swap
+// directement sur shared.PerformSwap dans swap_test.go : swap
 // nominal + triggerRestart appelé, staged absent (aucune mutation), hash .new
-// divergent (M2, abort), rename final KO (rollback de l'ancien binaire). Ces
+// divergent (abort), rename final KO (rollback de l'ancien binaire). Ces
 // tests vérifient que triggerRestart (= os.Exit côté Windows) n'est JAMAIS
 // appelé si le swap échoue.
 
@@ -159,7 +159,7 @@ func stagedExists(store *Store) bool {
 	return err == nil
 }
 
-// ── Cas nominal ──────────────────────────────────────────────────────────────
+// Cas nominal
 
 func TestSelfUpdateNominalDownloadsVerifiesSwaps(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -183,7 +183,7 @@ func TestSelfUpdateNominalDownloadsVerifiesSwaps(t *testing.T) {
 	if stubs.lastVersion != "9.9.9" {
 		t.Errorf("version cible 9.9.9 attendue au swap, got %q", stubs.lastVersion)
 	}
-	// M2 : le hash manifest est transmis au swap pour la re-vérification du
+	// Le hash manifest est transmis au swap pour la re-vérification du
 	// binaire réellement mis en place (.new à sa position finale).
 	if stubs.lastHash != f.hash {
 		t.Errorf("hash manifest transmis au swap attendu (%q), got %q", f.hash, stubs.lastHash)
@@ -201,7 +201,7 @@ func TestSelfUpdateNominalDownloadsVerifiesSwaps(t *testing.T) {
 	}
 }
 
-// ── No-op : 404 no_release ───────────────────────────────────────────────────
+// No-op : 404 no_release
 
 func TestSelfUpdate404NoReleaseIsNoop(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -225,7 +225,7 @@ func TestSelfUpdate404NoReleaseIsNoop(t *testing.T) {
 	}
 }
 
-// ── No-op : version cible == courante ────────────────────────────────────────
+// No-op : version cible == courante
 
 func TestSelfUpdateSameVersionIsNoop(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -245,7 +245,7 @@ func TestSelfUpdateSameVersionIsNoop(t *testing.T) {
 	}
 }
 
-// ── Hash KO : jamais d'écriture, jamais de swap ──────────────────────────────
+// Hash KO : jamais d'écriture, jamais de swap
 
 func TestSelfUpdateHashMismatchNeverWritesNeverSwaps(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -273,7 +273,7 @@ func TestSelfUpdateHashMismatchNeverWritesNeverSwaps(t *testing.T) {
 	}
 }
 
-// ── Signature KO : binaire stagé mais jamais swappé ──────────────────────────
+// Signature KO : binaire stagé mais jamais swappé
 
 func TestSelfUpdateSignatureInvalidNeverSwaps(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -299,7 +299,7 @@ func TestSelfUpdateSignatureInvalidNeverSwaps(t *testing.T) {
 	}
 }
 
-// ── Download : serveur injoignable → skip propre ─────────────────────────────
+// Download : serveur injoignable → skip propre
 
 func TestSelfUpdateServerUnreachableSkips(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -323,7 +323,7 @@ func TestSelfUpdateServerUnreachableSkips(t *testing.T) {
 	}
 }
 
-// ── Download tronqué (>16 Mio) → hash divergent → jeté ───────────────────────
+// Download tronqué (>16 Mio) → hash divergent → jeté
 
 func TestSelfUpdateTruncatedDownloadIsRejectedByHash(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -352,11 +352,10 @@ func TestSelfUpdateTruncatedDownloadIsRejectedByHash(t *testing.T) {
 	}
 }
 
-// ── Échec de swap (SwapAndRestart renvoie une erreur) → report, pas de panique ─
 // Au niveau de l'orchestration shared/, un swap KO = SwapAndRestart renvoie une
 // erreur → l'échec est rapporté (item agent_update), le cycle continue. Le VRAI
 // anti-brique (rollback : ancien binaire intact, triggerRestart jamais appelé)
-// est testé directement sur shared.PerformSwap dans swap_test.go (AC3, #6/M6).
+// est testé directement sur shared.PerformSwap dans swap_test.go.
 func TestSelfUpdateSwapFailureReportsAndAgentStaysInPlace(t *testing.T) {
 	f := newFakeReleaseServer(t)
 	stubs := &updateStubs{swapErr: fmt.Errorf("dépose du neuf KO, rollback effectué (ancien binaire en place intact)")}
@@ -372,7 +371,7 @@ func TestSelfUpdateSwapFailureReportsAndAgentStaysInPlace(t *testing.T) {
 	}
 }
 
-// ── 401 sur le download → arrêt (portée machine), pas de swap ────────────────
+// 401 sur le download → arrêt (portée machine), pas de swap
 
 func TestSelfUpdate401OnBinaryStops(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -406,7 +405,7 @@ func TestSelfUpdate401OnManifestStops(t *testing.T) {
 	}
 }
 
-// ── M4 (Option 1) : 403 release → update SAUTÉ, PAS de quarantaine globale ─────
+// 403 release → update SAUTÉ, PAS de quarantaine globale.
 // Un 403 sur le canal release (manifest OU download, ring gelé) ne met PAS le
 // poste en quarantaine globale : il saute seulement l'update. Le poste continue
 // son cycle normal et ENVOIE son report (la quarantaine globale — qui supprime
@@ -454,8 +453,8 @@ func TestSelfUpdate403OnBinarySkipsUpdateNoQuarantine(t *testing.T) {
 	}
 }
 
-// ── M4 : 403 release dans un cycle COMPLET → pas de quarantaine, report émis ───
-// La preuve « Option 1 » de bout en bout, à travers le vrai runCycle : le canal
+// 403 release dans un cycle COMPLET → pas de quarantaine, report émis.
+// La preuve de bout en bout, à travers le vrai runCycle : le canal
 // principal /state répond 200, mais le canal release répond 403 (ring gelé).
 // Attendu : l'update est sauté, le poste N'est PAS mis en quarantaine globale,
 // et le POST /report a bien lieu (le poste reste visible sur sa conformité) —
@@ -485,7 +484,7 @@ func TestRunCycle403ReleaseSkipsUpdateButStillReports(t *testing.T) {
 	if swapCalls != 0 {
 		t.Error("M4 : aucun swap sur 403 release (update sauté)")
 	}
-	// L'invariant CENTRAL de M4 : le report a bien lieu malgré le 403 release.
+	// L'invariant CENTRAL : le report a bien lieu malgré le 403 release.
 	if f.reportCalls != 1 || f.lastReport == nil {
 		t.Errorf("M4 : le POST /report doit avoir lieu (poste non muet), reportCalls=%d", f.reportCalls)
 	}
@@ -508,7 +507,7 @@ func TestRunCycle403ReleaseSkipsUpdateButStillReports(t *testing.T) {
 	}
 }
 
-// ── Quarantaine active → sauté ───────────────────────────────────────────────
+// Quarantaine active → sauté
 
 func TestSelfUpdateSkippedInQuarantine(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -523,7 +522,7 @@ func TestSelfUpdateSkippedInQuarantine(t *testing.T) {
 	}
 }
 
-// ── Pas de primitives (Linux/test sans stub) → no-op ─────────────────────────
+// Pas de primitives (Linux/test sans stub) → no-op
 
 func TestSelfUpdateWithoutPrimitivesIsNoop(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -546,7 +545,7 @@ func TestSelfUpdateWithoutPrimitivesIsNoop(t *testing.T) {
 	}
 }
 
-// ── Report d'échec : item agent_update présent dans le rapport du cycle ───────
+// Report d'échec : item agent_update présent dans le rapport du cycle
 
 func TestUpdateFailureSurfacesAsReportItem(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -575,7 +574,7 @@ func TestUpdateFailureSurfacesAsReportItem(t *testing.T) {
 	}
 }
 
-// ── Version dans le rapport (AC4, contract.go déjà en place) ──────────────────
+// Version dans le rapport (contract.go déjà en place)
 
 func TestReportCarriesAgentVersion(t *testing.T) {
 	raw, err := BuildReport("PC01", "uuid", nil, time.Now())
@@ -591,7 +590,7 @@ func TestReportCarriesAgentVersion(t *testing.T) {
 	}
 }
 
-// ── Un seul download par cycle (pas de boucle) ───────────────────────────────
+// Un seul download par cycle (pas de boucle)
 
 func TestSelfUpdateSingleDownloadPerCall(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -611,7 +610,7 @@ func TestSelfUpdateSingleDownloadPerCall(t *testing.T) {
 	}
 }
 
-// ── Token/cache survivent au swap (simulé) ───────────────────────────────────
+// Token/cache survivent au swap (simulé)
 
 func TestTokenSurvivesUpdate(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -628,7 +627,7 @@ func TestTokenSurvivesUpdate(t *testing.T) {
 	}
 }
 
-// ── url manifest verbatim : filename extrait, jamais reconstruit ──────────────
+// url manifest verbatim : filename extrait, jamais reconstruit
 
 func TestReleaseFilenameFromURL(t *testing.T) {
 	cases := []struct {
@@ -656,8 +655,6 @@ func TestReleaseFilenameFromURL(t *testing.T) {
 		}
 	}
 }
-
-// ── #5 : binaire déjà stagé et valide → AUCUN download HTTP ──────────────────
 
 func TestSelfUpdateSkipsDownloadWhenStagedValid(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -696,8 +693,6 @@ func TestSelfUpdateSkipsDownloadWhenStagedValid(t *testing.T) {
 	}
 }
 
-// ── #5 (bis) : un staging au mauvais hash NE court-circuite PAS le download ───
-
 func TestSelfUpdateStaledStagedWrongHashStillDownloads(t *testing.T) {
 	f := newFakeReleaseServer(t)
 	stubs := &updateStubs{}
@@ -722,8 +717,6 @@ func TestSelfUpdateStaledStagedWrongHashStillDownloads(t *testing.T) {
 		t.Errorf("swap attendu après re-download, got %d", stubs.swapCalls)
 	}
 }
-
-// ── #2 : fail-closed — swap possible mais VerifyAuthenticode non câblée ───────
 
 func TestSelfUpdateFailsClosedWhenVerifyNotWired(t *testing.T) {
 	f := newFakeReleaseServer(t)
@@ -754,8 +747,6 @@ func TestSelfUpdateFailsClosedWhenVerifyNotWired(t *testing.T) {
 	}
 }
 
-// ── #4 : truncateDetail tronque sur frontière de rune (UTF-8 valide) ─────────
-
 func TestTruncateDetailKeepsUTF8Valid(t *testing.T) {
 	// Detail entièrement composé de « é » (2 octets chacun) plus long que la
 	// limite : une troncature à l'octet couperait une séquence UTF-8.
@@ -777,7 +768,7 @@ func TestTruncateDetailKeepsUTF8Valid(t *testing.T) {
 	}
 }
 
-// ── parse manifest : rejet des manifests incomplets/malformés ────────────────
+// parse manifest : rejet des manifests incomplets/malformés
 
 func TestParseReleaseManifestRejectsIncomplete(t *testing.T) {
 	cases := []string{
@@ -785,7 +776,7 @@ func TestParseReleaseManifestRejectsIncomplete(t *testing.T) {
 		`{"success":true,"version":"2.2.1","hash":"","url":"http://x/y"}`,
 		`{"success":true,"version":"2.2.1","hash":"` + strings.Repeat("a", 64) + `","url":""}`,
 		`{"success":true,"version":"2.2.1","hash":"tooshort","url":"http://x/y"}`,
-		// success=false ou absent (contrat 25.1) : jamais traité comme cible.
+		// success=false ou absent (contrat) : jamais traité comme cible.
 		`{"success":false,"version":"2.2.1","hash":"` + strings.Repeat("a", 64) + `","url":"http://x/y"}`,
 		`{"version":"2.2.1","hash":"` + strings.Repeat("a", 64) + `","url":"http://x/y"}`,
 		`not json`,
@@ -796,7 +787,7 @@ func TestParseReleaseManifestRejectsIncomplete(t *testing.T) {
 		}
 	}
 
-	// Le golden 25.1 doit parser.
+	// Le golden doit parser.
 	golden, err := os.ReadFile("../../tests/Fixtures/Agent/release-manifest.v1.json")
 	if err != nil {
 		t.Fatal(err)
@@ -810,7 +801,7 @@ func TestParseReleaseManifestRejectsIncomplete(t *testing.T) {
 	}
 }
 
-// ── Store : répertoire de staging update\ (ACL SYSTEM, idempotent) ───────────
+// Store : répertoire de staging update\ (ACL SYSTEM, idempotent)
 
 func TestEnsureUpdateDirACLAndIdempotent(t *testing.T) {
 	store := newTestStore(t)
@@ -842,7 +833,7 @@ func TestEnsureUpdateDirACLAndIdempotent(t *testing.T) {
 	}
 }
 
-// ── Intégration boucle : un échec d'update rejoint le POST /report ───────────
+// Intégration boucle : un échec d'update rejoint le POST /report
 
 func TestRunCycleSurfacesUpdateFailureInReport(t *testing.T) {
 	// Serveur d'auto-update qui sert un binaire au hash divergent → échec

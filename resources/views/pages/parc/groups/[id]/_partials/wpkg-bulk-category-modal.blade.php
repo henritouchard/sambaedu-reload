@@ -66,10 +66,9 @@
                     </label>
                     <select class="select select-bordered" wire:model="bulkExistingProfileId">
                         <option value="">— Sélectionnez —</option>
-                        {{-- Story 15.4 / Correction post-review #M1 : computed
-                             property du composant Livewire parent (via @include
-                             $this reste accessible) — supprime la query
-                             Eloquent inline anti-pattern. --}}
+                        {{-- Computed property du composant Livewire parent (via
+                             @include, $this reste accessible) — évite une query
+                             Eloquent inline dans la vue. --}}
                         @foreach ($this->bulkProfileOptions as $p)
                             <option value="{{ $p->id }}">{{ $p->name }}</option>
                         @endforeach

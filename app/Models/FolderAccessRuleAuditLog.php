@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
- * Story 36.4 (D7) — Entrée d'audit APPEND-ONLY d'une règle d'accès aux dossiers.
+ * Entrée d'audit APPEND-ONLY d'une règle d'accès aux dossiers.
  *
  * Consigne chaque create / update / delete (activation-désactivation et mutation
  * d'assignations = `update`). La trace est écrite DANS LA MÊME transaction que la

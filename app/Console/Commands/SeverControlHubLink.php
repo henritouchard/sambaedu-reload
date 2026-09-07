@@ -9,19 +9,16 @@ use App\Services\ControlHub\ControlHubContractSeveranceService;
 use Illuminate\Console\Command;
 
 /**
- * Story 32.1 (FR7 + NFR5) — Réception MANUELLE du signal de rupture du lien amont
+ * Réception MANUELLE du signal de rupture du lien amont
  * (controlHub) via la ligne de commande.
  *
  * Point d'invocation EXPLICITE et IDEMPOTENT (un re-jeu sur un contrat déjà
  * `severed` ou en standalone est un no-op). Partage le service UNIQUE
- * {@see ControlHubContractSeveranceService} avec l'endpoint controlHub authentifié
- * (Q4). Délègue toute la logique (transition + matérialisation + audit + event) au
+ * {@see ControlHubContractSeveranceService} avec l'endpoint controlHub authentifié.
+ * Délègue toute la logique (transition + matérialisation + audit + event) au
  * service ; n'affiche que le récapitulatif.
  *
- * NFR3 — sans contrat amont actif : message standalone + exit 0, rien d'écrit.
- *
- * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit.
- * [Source: prd-contrat-manage-se5.md#R3]
+ * Sans contrat amont actif : message standalone + exit 0, rien d'écrit.
  */
 class SeverControlHubLink extends Command
 {

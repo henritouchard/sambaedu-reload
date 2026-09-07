@@ -11,7 +11,6 @@ use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * Story 16.10 — AC2.1.
  *
  * Émet des access tokens JWT RS256 et des refresh tokens (clear + sha256
  * hash) pour les postes Sambaedu lors d'un enrôlement / refresh.
@@ -133,7 +132,6 @@ class WorkstationJwtIssuer
             );
         }
 
-        // Garde-fou prod (D3 / dev notes).
         $forbidTestInProd = (bool) config('auth_v1.safety.forbid_test_keys_in_production', true);
         if ($forbidTestInProd && app()->environment() !== 'testing' && app()->environment() !== 'local') {
             if (str_contains($path, '/tests/fixtures/')) {

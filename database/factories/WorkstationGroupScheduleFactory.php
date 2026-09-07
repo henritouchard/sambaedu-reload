@@ -10,7 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 4-4 — Factory schedule avec états recurring / oneShot / completedOneShot.
+ * -4 — Factory schedule avec états recurring / oneShot / completedOneShot.
  *
  * @extends Factory<WorkstationGroupSchedule>
  */

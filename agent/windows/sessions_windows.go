@@ -10,14 +10,11 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Énumération des sessions interactives — côté SYSTEM (Story 24.6,
-// décision n° 2 : WTS API en Win32 plat, zéro COM, zéro parsing localisé —
-// remplace le CIM Win32_LogonSession du spike PS ; jamais quser, sortie
-// localisée).
+// Énumération des sessions interactives — côté SYSTEM, par l'API WTS en Win32
+// plat : zéro COM, et aucun parsing d'une sortie localisée (jamais quser).
 //
 // L'identité est résolue ICI, côté SYSTEM — le processus user ne déclare
-// jamais la sienne (anti-usurpation par construction). Filtres ACQUIS de la
-// review 24.3 #1 :
+// jamais la sienne (anti-usurpation par construction). Filtres :
 //   - liste BLANCHE `S-1-5-21-` : seuls les comptes users réels (domaine OU
 //     locaux) portent un SID S-1-5-21-<machine/domaine>-RID. Tout le reste
 //     (pseudo-sessions DWM S-1-5-90-, UMFD S-1-5-96-, comptes virtuels de
@@ -27,11 +24,10 @@ import (
 //     produirait un fetch `?user=` vide + cache parasite ;
 //   - dédoublonnage par SID (un user peut avoir plusieurs sessions).
 //
-// Résolution du double-lookup SID (review 24.3 #6, résolu AU PORTAGE) : le
-// fetch résout le SID par LookupAccountName (LookupSID) sur DOMAIN\user, le
-// compagnon par le SID de SON token de processus — les deux sortent du même
-// sous-système de sécurité Win32 (LSA), contrairement au couple
-// CIM Win32_Account.SID / WindowsIdentity du spike. L'équivalence est
+// Double-lookup du SID : le fetch résout le SID par LookupAccountName
+// (LookupSID) sur DOMAIN\user, le compagnon par le SID de SON token de
+// processus — les deux sortent du même sous-système de sécurité Win32
+// (LSA). L'équivalence est
 // documentée dans session-companion.md §10 (limite résiduelle AzureAD
 // S-1-12-1-* : hors liste blanche des deux côtés, donc cohérent).
 
@@ -42,8 +38,8 @@ const (
 )
 
 var (
-	modWtsapi32                  = windows.NewLazySystemDLL("wtsapi32.dll")
-	procWTSQuerySessionInformat  = modWtsapi32.NewProc("WTSQuerySessionInformationW")
+	modWtsapi32                 = windows.NewLazySystemDLL("wtsapi32.dll")
+	procWTSQuerySessionInformat = modWtsapi32.NewProc("WTSQuerySessionInformationW")
 )
 
 // wtsQuerySessionString : WTSQuerySessionInformationW → string Go (UTF-16).
@@ -67,8 +63,8 @@ func wtsQuerySessionString(sessionID uint32, infoClass uint32) (string, error) {
 
 // enumerateInteractiveSessions : retourne les sessions interactives
 // {login COURT, SID} — états Active et Disconnected (un user déconnecté
-// reste loggé : son état de session reste à tirer, iso CachedInteractive du
-// spike). Le login court vient de WTSUserName (jamais DOMAIN\user vers
+// reste loggé : son état de session reste à tirer). Le login court vient de
+// WTSUserName (jamais DOMAIN\user vers
 // `?user=` — le strip du domaine est structurel, pas du parsing).
 func enumerateInteractiveSessions() ([]shared.Session, error) {
 	var sessionInfo *windows.WTS_SESSION_INFO
@@ -91,7 +87,6 @@ func enumerateInteractiveSessions() ([]shared.Session, error) {
 		if err != nil {
 			continue // session système/transitoire : rien à tirer
 		}
-		// Garde login non vide (review 24.3 #1).
 		if strings.TrimSpace(login) == "" {
 			continue
 		}
@@ -107,7 +102,7 @@ func enumerateInteractiveSessions() ([]shared.Session, error) {
 		}
 		sidString := sid.String()
 
-		// Liste BLANCHE (review 24.3 #1) + dédoublonnage par SID.
+		// Liste BLANCHE + dédoublonnage par SID.
 		if !strings.HasPrefix(sidString, "S-1-5-21-") || bySid[sidString] {
 			continue
 		}
@@ -119,8 +114,8 @@ func enumerateInteractiveSessions() ([]shared.Session, error) {
 }
 
 // interactiveSessionIDs : SessionID WTS des sessions interactives (Active ou
-// Disconnected) — Story 27.1bis. Réutilise l'énumération WTS vet-clean de
-// 24.6 (WTSEnumerateSessions, Pointer→uintptr uniquement) plutôt que de
+// disconnected) —. Réutilise l'énumération WTS vet-clean de
+// (WTSEnumerateSessions, Pointer→uintptr uniquement) plutôt que de
 // déréférencer le lpEventData (uintptr→Pointer interdit par vet) d'un
 // session-change. Sur un logon, la nouvelle session apparaît dans cette
 // énumération : le service écrit overlay.json pour chacune (idempotent, cheap).
@@ -136,7 +131,7 @@ func interactiveSessionIDs() ([]uint32, error) {
 
 	ids := make([]uint32, 0, count)
 	for _, entry := range entries {
-		// On inclut DÉLIBÉRÉMENT les sessions Disconnected (#5, limite assumée) :
+		// On inclut DÉLIBÉRÉMENT les sessions Disconnected (limite assumée) :
 		// un user verrouillé/déconnecté (RDP détaché, bascule rapide) garde un
 		// profil monté dont l'overlay doit rester à jour pour son retour. La
 		// (ré)écriture est idempotente et cheap (overlay.json par session) — pas
@@ -150,8 +145,8 @@ func interactiveSessionIDs() ([]uint32, error) {
 	return ids, nil
 }
 
-// currentProcessSID : SID du token du PROCESSUS COURANT (compagnon —
-// décision n° 2) : même sous-système de sécurité que LookupSID côté fetch.
+// currentProcessSID : SID du token du PROCESSUS COURANT (compagnon) — même
+// sous-système de sécurité que LookupSID côté fetch.
 // Uniquement pour trouver SON cache et SON drop, jamais transmis à personne.
 func currentProcessSID() (string, error) {
 	token, err := windows.OpenCurrentProcessToken()

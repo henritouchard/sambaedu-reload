@@ -33,20 +33,20 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 31.2 — Déclenchement d'install en DÉSIR D'ÉTAT (FR6).
+ * Déclenchement d'install en DÉSIR D'ÉTAT.
  *
  * Un ORDRE d'install amont = un `controlhub_contract_items` `type='applications'`,
- * `key=<app_id>`, `enforcement_state` non-`absent`, cible `instance|label` (28.1/28.2
- * l'acceptent DÉJÀ). 31.2 le PROJETTE dans l'ensemble `applications` désiré du poste
+ * `key=<app_id>`, `enforcement_state` non-`absent`, cible `instance|label` (
+ * l'acceptent DÉJÀ). le PROJETTE dans l'ensemble `applications` désiré du poste
  * via {@see UpstreamContractSource::orderedApplicationAppIds()} (3ᵉ accesseur lecture
  * seule) unionné à l'ensemble cible d'{@see ApplicationsStateProvider} AVANT
  * hydratation — payload `{app_id, name}` IDENTIQUE quelle que soit la source ⇒ dédup
- * aggregate naturelle (idempotence). Pont au niveau ENSEMBLE (D3), JAMAIS via
+ * aggregate naturelle (idempotence). Pont au niveau ENSEMBLE, JAMAIS via
  * adaptateur (anti double-injection / anti doublon de `name`).
  *
- * Couvre : injection instance (AC1), ciblage label porté/non porté (AC2), dédup +
- * idempotence/`travel()` (AC3), standalone & contrat-sans-item-applications court-circuit
- * zéro requête (AC4), déterminisme de l'union (AC5), accesseur unitaire 3 états + `absent`
+ * Couvre : injection instance, ciblage label porté/non porté, dédup +
+ * idempotence/`travel`, standalone & contrat-sans-item-applications court-circuit
+ * zéro requête, déterminisme de l'union, accesseur unitaire 3 états + `absent`
  * non projeté. Le contrat agent figé (golden/`ContractV1`) est validé par sa propre suite
  * (aucun contrat dans les fixtures ⇒ aucun ordre injecté).
  *
@@ -74,7 +74,7 @@ class UpstreamInstallOrderTest extends TestCase
         parent::tearDown();
     }
 
-    // ── AC1 — injection d'un ordre d'install cible `instance` ──────────────
+    // — injection d'un ordre d'install cible `instance`
 
     #[Test]
     public function instance_order_injects_the_ordered_app_into_the_machine_scope(): void
@@ -105,8 +105,8 @@ class UpstreamInstallOrderTest extends TestCase
     #[Test]
     public function permissive_install_order_is_also_projected(): void
     {
-        // D1 — pour un ordre d'install, `locked` ET `permissive` signifient tous
-        // deux « app présente » : l'accesseur 31.2 n'inspecte PAS l'`enforcement_state`
+        // Pour un ordre d'install, `locked` ET `permissive` signifient tous
+        // deux « app présente » : l'accesseur n'inspecte PAS l'`enforcement_state`
         // (aggregate, rien à arbitrer). Ce test VERROUILLE cette décision : un futur
         // filtre `enforcement_state` qui perdrait le `permissive` le casserait.
         $this->newApp('vlc', 'VLC');
@@ -126,7 +126,7 @@ class UpstreamInstallOrderTest extends TestCase
         self::assertSame(['vlc'], $this->appIdsOf($this->provider()->itemsFor($this->ctx($ws))));
     }
 
-    // ── AC2 — ciblage par label : porté vs non porté ──────────────────────
+    // — ciblage par label : porté vs non porté
 
     #[Test]
     public function label_order_applies_only_to_a_workstation_carrying_the_label(): void
@@ -147,7 +147,7 @@ class UpstreamInstallOrderTest extends TestCase
         self::assertSame([], $this->appIdsOf($this->provider()->itemsFor($this->ctx($other))), 'le poste ne portant pas le label ne la reçoit pas');
     }
 
-    // ── AC3 — dédup (source locale ∪ amont) + idempotence ─────────────────
+    // — dédup (source locale ∪ amont) + idempotence
 
     #[Test]
     public function locally_assigned_and_upstream_ordered_app_yields_exactly_one_item(): void
@@ -190,8 +190,6 @@ class UpstreamInstallOrderTest extends TestCase
             'même ordre d\'install + même contexte → même hash (idempotence d\'état, NFR4)',
         );
     }
-
-    // ── AC4 — standalone byte-identique + court-circuit NFR3 ───────────────
 
     #[Test]
     public function standalone_emits_zero_contract_item_query_and_an_unchanged_set(): void
@@ -246,7 +244,7 @@ class UpstreamInstallOrderTest extends TestCase
         self::assertSame(0, $this->countQueries($log, 'controlhub_label'), 'court-circuit avant labelsCarriedBy() : zéro requête « labels portés » (NFR3)');
     }
 
-    // ── AC5 — déterminisme de l'union (tri strcasecmp) ────────────────────
+    // — déterminisme de l'union (tri strcasecmp)
 
     #[Test]
     public function the_ordered_union_is_deterministically_sorted(): void
@@ -269,7 +267,7 @@ class UpstreamInstallOrderTest extends TestCase
         self::assertSame(['alpha', 'bravo', 'charlie'], $appIds, 'union triée déterministe (NFR4)');
     }
 
-    // ── Accesseur unitaire `orderedApplicationAppIds()` ────────────────────
+    // Accesseur unitaire `orderedApplicationAppIds()`
 
     #[Test]
     public function ordered_app_ids_returns_empty_when_standalone(): void
@@ -332,15 +330,13 @@ class UpstreamInstallOrderTest extends TestCase
         self::assertSame([], (new UpstreamContractSource([]))->orderedApplicationAppIds($this->ctx($ws)));
     }
 
-    // ── D4 amont — ghost `app_id` ordonné sans ligne `Application` ────────
-
     #[Test]
     public function upstream_order_for_unknown_app_id_is_skipped(): void
     {
-        // Caractérisation du CONTRAT DE SURFACE de 31.3 : un ordre d'install amont
+        // Caractérisation du CONTRAT DE SURFACE : un ordre d'install amont
         // vers un `app_id` SANS ligne `Application` correspondante est exposé par
-        // l'accesseur (31.2 ne MATÉRIALISE rien — c'est 31.3) mais ÉCARTÉ de
-        // l'ensemble final du provider (skip + warn D4 — rien à hydrater).
+        // l'accesseur (rien n'est MATÉRIALISÉ ici) mais ÉCARTÉ de
+        // l'ensemble final du provider (skip + warn — rien à hydrater).
         Log::spy();
 
         $contract = ControlHubContract::factory()->create();
@@ -348,7 +344,7 @@ class UpstreamInstallOrderTest extends TestCase
 
         $ws = Workstation::create(['name' => 'PC31-2-GHOST', 'status' => 'active']);
 
-        // L'accesseur expose l'ordre brut (31.2 ne crée pas l'Application).
+        // L'accesseur expose l'ordre brut, sans créer l'Application.
         self::assertSame(
             ['ghost-app'],
             (new UpstreamContractSource([]))->orderedApplicationAppIds($this->ctx($ws)),
@@ -366,13 +362,13 @@ class UpstreamInstallOrderTest extends TestCase
             ->once();
     }
 
-    // ── #A — chemin de PRODUCTION : décorateur `UpstreamAwareProvider` ────
+    // #A — chemin de PRODUCTION : décorateur `UpstreamAwareProvider`
 
     #[Test]
     public function decorated_provider_emits_exactly_one_item_per_ordered_app(): void
     {
         // Exerce le CÂBLAGE RÉEL (AgentServiceProvider) : ApplicationsStateProvider
-        // enrobé par UpstreamAwareProvider, partageant LA MÊME source 28.3 (singleton
+        // enrobé par UpstreamAwareProvider, partageant LA MÊME source (singleton
         // en prod). La source enregistre les adaptateurs réels — mais AUCUN pour
         // `applications` (garde anti double-injection). Le décorateur est donc un
         // NO-OP pour ce type : l'union amont passe UNIQUEMENT par l'accesseur du
@@ -400,7 +396,7 @@ class UpstreamInstallOrderTest extends TestCase
         self::assertSame(['firefox'], $this->appIdsOf($items));
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────
+    // Helpers
 
     private function newApp(string $appId, ?string $name = null): Application
     {
@@ -422,7 +418,7 @@ class UpstreamInstallOrderTest extends TestCase
 
     private function orderInstancePermissive(ControlHubContract $contract, string $appId): ControlHubContractItem
     {
-        // Patron d'`orderInstance()` mais en `permissive` (D1 : même projection).
+        // Patron d'`orderInstance()` mais en `permissive` (même projection).
         return ControlHubContractItem::factory()->permissive()->create([
             'controlhub_contract_id' => $contract->id,
             'type' => Application::TYPE_APPLICATIONS,
@@ -446,7 +442,7 @@ class UpstreamInstallOrderTest extends TestCase
 
     private function groupWithLabel(string $name, string $label): WorkstationGroup
     {
-        // Parc LOGIQUE (is_physical=false) porteur d'un label refnum (30.2).
+        // Parc LOGIQUE (is_physical=false) porteur d'un label refnum.
         return WorkstationGroup::create(['name' => $name, 'controlhub_label' => $label]);
     }
 
@@ -485,9 +481,9 @@ class UpstreamInstallOrderTest extends TestCase
     {
         $hasher ??= new StateHasher();
 
-        // Story 43.3 — STUB du résolveur TTL (pas de mock réel) : ce harnais
+        // STUB du résolveur TTL (pas de mock réel) : ce harnais
         // (WpkgSchemaBootstrapper) ne crée PAS les tables `capabilities` /
-        // `capability_assignments` (shim Story 15.2, antérieur au modèle de
+        // `capability_assignments` (shim, antérieur au modèle de
         // capacités) — un vrai AgentTtlResolver y échouerait (« no such table »).
         $ttlResolver = $this->createMock(AgentTtlResolver::class);
         $ttlResolver->method('ttlSeconds')->willReturn(3600);

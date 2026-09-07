@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 6.1 — Couche métier SER pour les imprimantes (option B 2026-04-27).
+ * Couche métier SER pour les imprimantes.
  *
  * Complète CUPS sans le remplacer : CUPS reste source de vérité runtime pour
  * nom/URI/état/PPD/file. Cette table porte uniquement :

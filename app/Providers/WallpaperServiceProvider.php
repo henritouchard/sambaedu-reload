@@ -10,10 +10,10 @@ use App\Services\Wallpaper\Contracts\WallpaperContextRepository;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Service provider pour le module Wallpaper (Story 4.7).
+ * Service provider pour le module Wallpaper.
  *
  * Bind le contrat `WallpaperContextRepository` vers l'implémentation Cache
- * (Story 16.15 — migration cache APCu vers `CacheWallpaperContextRepository`).
+ * (migration cache APCu vers `CacheWallpaperContextRepository`).
  *
  * Post-review #A : binde aussi `UserSessionsService` en singleton (utilisé
  * par le Composer pour la détection multi-session).

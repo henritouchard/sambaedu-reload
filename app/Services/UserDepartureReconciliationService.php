@@ -14,16 +14,14 @@ use Illuminate\Support\Facades\Log;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Story 49.3 — réconciliation des DÉPARTS : un utilisateur absent d'un balayage
+ * Réconciliation des DÉPARTS : un utilisateur absent d'un balayage
  * AD complet, réussi ET non tronqué, est désactivé en base et déchu de ses
  * appartenances.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * « Rétrogradation » n'est PAS un geste distinct (relecture du cadrage epic)
- * ─────────────────────────────────────────────────────────────────────────────
- * L'AC-skeleton de l'epic parlait de `removeRole(<cible mappée>)`. Cette
- * formulation est ANTÉRIEURE à la Story 49.1 : depuis, le profil de droits est
- * PORTÉ par le groupe, et l'appartenance EST l'attribution. Retirer les
+ * « Rétrogradation » n'est PAS un geste distinct
+ * le cadrage initial parlait de `removeRole(<cible mappée>)`. Cette formulation
+ * est périmée : le profil de droits est PORTÉ par le groupe, et l'appartenance EST
+ * l'attribution. Retirer les
  * appartenances suffit donc — les events pivot déclenchent
  * `UserGroupUserPivotObserver` → `GroupRightsProfileService::reconcile()`, qui
  * retire les profils devenus injustifiés.
@@ -31,19 +29,19 @@ use Spatie\Permission\PermissionRegistrar;
  * Conséquences, toutes volontaires :
  *
  *  - `syncRoles()` et `removeRole()` DIRECTS sont INTERDITS sur ce chemin. Le
- *    volet rôles est intégralement délégué à 49.1 : une seconde logique
+ *  volet rôles est intégralement délégué : une seconde logique
  *    d'écriture Spatie divergerait tôt ou tard de la première.
- *  - Les DÉLÉGATIONS MANUELLES survivent au départ (NFR-R2), par construction :
+ *  - Les DÉLÉGATIONS MANUELLES survivent au départ, par construction :
  *    `GroupRightsProfileService` ne révoque que les rôles portés par ≥ 1 groupe
- *    (`carriedRoleIds()`). Un professeur également `user-admin` qui quitte
+ *  (`carriedRoleIds()`). Un professeur également `user-admin` qui quitte
  *    l'établissement garde `user-admin` en base, sur un compte INACTIF — c'est
- *    le guard runtime (Story 49.2) qui lui refusera la session, pas une
+ * le guard runtime qui lui refusera la session, pas une
  *    déchéance de droits qu'on ne saurait pas remonter.
  *  - Le `detach()` passe par Eloquent (pivot custom `UserGroupUserPivot`), et
- *    JAMAIS par un `DB::table('user_group_user')->delete()` : sans events, ni
- *    les profils portés ni la synchro FS des classes ne seraient traités —
+ *  JAMAIS par un `DB::table('user_group_user')->delete()` : sans events, ni
+ *  les profils portés ni la synchro FS des classes ne seraient traités
  *    sinistre silencieux.
- *  - Les events pivot restent ACTIFS pendant la passe (D5) : le détachement
+ *  - Les events pivot restent ACTIFS pendant la passe : le détachement
  *    nocturne doit produire EXACTEMENT les mêmes effets que celui du read-back
  *    5 min, qui serait de toute façon arrivé (l'utilisateur a disparu des
  *    member lists AD).
@@ -70,7 +68,7 @@ use Spatie\Permission\PermissionRegistrar;
  * utilisateur parti est désactivé par l'un ou par l'autre, et le re-run est un
  * no-op. Aucune synchronisation inter-processus n'est requise.
  *
- * ### La garde (NFR-R1) prime sur tout le reste
+ * ### La garde prime sur tout le reste
  *
  * Voir {@see self::guard()} : la passe abandonne en no-op TOTAL, avec log
  * critique et code de sortie dédié, dès que la santé du balayage est douteuse.
@@ -97,7 +95,7 @@ class UserDepartureReconciliationService
      * Réconcilie les départs.
      *
      * @param array{present_guids?: string[], present_logins?: string[]} $presence
-     *        Identifiants PRÉSENTS au balayage (les deux familles, D6).
+     *        Identifiants PRÉSENTS au balayage (GUID et login).
      * @param array{fetch_failed?: bool, fetch_groups_failed?: int, main_groups_found?: int} $health
      *        Santé du balayage — c'est ce qui rend la garde clairvoyante.
      * @param null|callable(string, string):void $logger (niveau, message)
@@ -142,7 +140,7 @@ class UserDepartureReconciliationService
         // Hors périmètre : comptes ACTIFS que la passe ne regardera jamais
         // (fédérés, compte protégé, comptes système). Affiché au compte-rendu
         // pour que « présents AD » et « actifs base » ne paraissent pas
-        // incohérents (AC9).
+        // incohérents.
         $stats['skipped'] = max(User::query()->where('is_active', true)->count() - $stats['active_base'], 0);
         $stats['threshold'] = $this->disableThreshold($stats['active_base']);
 
@@ -228,7 +226,7 @@ class UserDepartureReconciliationService
     }
 
     /**
-     * Garde anti-désactivation en masse (AC3 / NFR-R1) — LA pièce maîtresse.
+     * Garde anti-désactivation en masse — LA pièce maîtresse.
      *
      * Fonction PURE : elle ne lit rien, elle décide sur des compteurs. Retourne
      * la raison d'abandon, ou `null` si la passe peut s'exécuter.
@@ -250,7 +248,7 @@ class UserDepartureReconciliationService
 
         // 2. Un seul groupe principal en échec suffit : ses membres
         //    apparaîtraient TOUS absents (le compteur n'existait pas avant
-        //    49.3 — l'échec était un warning avalé, la garde aurait été aveugle).
+        //  — l'échec était un warning avalé, la garde aurait été aveugle).
         if ((int) ($health['fetch_groups_failed'] ?? 0) > 0) {
             return self::ABORT_GROUP_FETCH_FAILED;
         }
@@ -291,7 +289,7 @@ class UserDepartureReconciliationService
 
     /**
      * Utilisateurs candidats au départ : actifs, dans le périmètre, et absents
-     * du balayage sur les DEUX identifiants (D6).
+     * du balayage sur les DEUX identifiants (GUID et login).
      *
      * @param string[] $presentGuids  GUID normalisés présents à l'AD
      * @param string[] $presentLogins Logins (lowercase) présents à l'AD
@@ -336,14 +334,14 @@ class UserDepartureReconciliationService
     /**
      * Applique un départ, dans sa PROPRE transaction.
      *
-     * En production elle est TOP-LEVEL : par construction (D9), la passe court
+     * En production elle est TOP-LEVEL : par construction, la passe court
      * après le commit de l'import, sans transaction englobante — ne pas croire,
      * en lisant « imbriquée », qu'un SAVEPOINT explicite existerait ici. Elle
      * ne devient imbriquée (donc un SAVEPOINT sur Postgres) que sous une
      * transaction appelante, ce qui est le cas dans les tests hôte enveloppés
      * par `RefreshDatabase`. Dans les deux cas le résultat est le même et c'est
      * le seul qui compte : l'échec d'une ligne est isolé et n'avorte pas la
-     * passe (piège 25P02 — une transaction englobante avortée ferait échouer en
+     * passe (SQLSTATE 25P02 — une transaction englobante avortée ferait échouer en
      * cascade TOUTES les désactivations suivantes). Le pattern est celui de
      * `GroupRightsProfileService::reconcileSafely()`.
      *
@@ -364,7 +362,7 @@ class UserDepartureReconciliationService
                 $user->role = 'autre';
                 $user->save();
 
-                // Events pivot ACTIFS (D5) → observer 49.1 → retrait des
+                // Events pivot ACTIFS → observer → retrait des
                 // profils PORTÉS. Jamais un delete brut sur le pivot.
                 $user->groups()->detach();
 
@@ -395,18 +393,14 @@ class UserDepartureReconciliationService
         return $this->inScopeQuery()->where('is_active', true)->count();
     }
 
-    // ========================================================================
-    // INTERNES
-    // ========================================================================
-
     /**
-     * Périmètre de la réconciliation (AC5).
+     * Périmètre de la réconciliation.
      *
      * Exclus, définitivement :
      *  - les comptes `source != 'ad'` (techniciens fédérés) — ils n'existent
      *    dans AUCUN balayage AD par nature : sans cette borne, chaque nuit les
      *    désactiverait. `null` est traité `'ad'` (défaut de la colonne, cohérent
-     *    avec `GroupRightsProfileService::isInScope()`) ;
+     *  avec `GroupRightsProfileService::isInScope()`) ;
      *  - le compte protégé `admin`, dont `removeRole()` LÈVE ;
      *  - les comptes système : ils sont filtrés du fetch, donc « absents » à
      *    chaque passe — une ligne `users` résiduelle (reprise legacy) serait
@@ -414,7 +408,7 @@ class UserDepartureReconciliationService
      *  - **les comptes rattachés à un AUTRE établissement** (correction de
      *    review). C'est la même règle que les deux précédentes, appliquée à un
      *    troisième filtre du balayage : quand un code établissement est
-     *    configuré, `fetchUsersFromAd()` écarte des sets de présence tout
+     *  configuré, `fetchUsersFromAd()` écarte des sets de présence tout
      *    utilisateur qui ne matche pas `establishmentDn`. Un compte d'un autre
      *    établissement est donc absent de CHAQUE balayage par construction, et
      *    serait déclaré parti toutes les nuits.

@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 34.1 → 60.4 — l'ORCHESTRATEUR des répertoires réseau gérés, AU-DESSUS de
+ * → — l'ORCHESTRATEUR des répertoires réseau gérés, AU-DESSUS de
  * la ligne de contrat.
  *
  * **Ce service ne sait plus rien du serveur de fichiers.** Il ne dérive aucun nom
@@ -34,14 +34,13 @@ use Throwable;
  * NOMMAGE, neutre), projeter le répertoire en PLAN, résoudre l'autorité d'écriture
  * PAR LA COLONNE, et déléguer. Tout le reste est descendu dans
  * {@see PosixFileBackend} — c'est la coupe
- * de l'epic, et le piège du chantier était précisément de déplacer la dérivation
+ * du modèle, et le piège du chantier était précisément de déplacer la dérivation
  * des permissions en laissant ses appelants au-dessus.
  *
  * Une règle d'architecture nommée le VÉRIFIE : aucun marqueur du serveur de
  * fichiers (commande, mode de permission, entrée de liste d'accès, chemin absolu,
  * nom d'exécution) n'a le droit d'apparaître dans ce fichier.
  *
- * ---------------------------------------------------------------------------
  * **DEUX RÉGIMES D'EXÉCUTION, ET UNE SEULE RAISON DE LES SÉPARER.**
  *
  * La pose de droits est QUADRATIQUE en nombre d'entrées nominatives (mesuré :
@@ -57,16 +56,15 @@ use Throwable;
  * serait un instantané périmé au moment de son exécution, et une assignation
  * ajoutée entre-temps serait ÉCRASÉE par le rejeu. La projection se refait dans le
  * traitement. Quant aux rapports, ils REFUSENT la sérialisation native (garde de
- * la story 60.3) : le dernier passage voyage en tableau, dans le cache.
+ * la) : le dernier passage voyage en tableau, dans le cache.
  *
- * ---------------------------------------------------------------------------
  * **L'AUDIT RESTE ICI, ET C'EST DÉLIBÉRÉ.** Le contrat de backend exclut
  * explicitement l'auteur de l'action : il dit l'état désiré et ce qu'il en est
  * advenu, pas la traçabilité. Or la ligne d'audit est indexée sur le RÉPERTOIRE
  * (une entité de base que le backend ne reçoit pas) et sur l'AUTEUR (que le
  * contrat refuse de porter). L'écrire sous la ligne aurait donc perdu en silence
  * l'auteur passé par les commandes — un signal qui n'atteint plus son
- * destinataire, exactement le défaut que cet epic traque. Elle est donc écrite
+ * destinataire, exactement le défaut traqué ici. Elle est donc écrite
  * ici, où les deux informations existent.
  *
  * **Aucun booléen ne vient d'un rapport.** Les adaptations `bool` conservées pour
@@ -100,10 +98,6 @@ class NetworkShareService
         private readonly TreePlanService $treePlans = new TreePlanService,
     ) {}
 
-    // =========================================================================
-    // Nommage
-    // =========================================================================
-
     /**
      * Valide un `directory_name` : alphanumérique + `._-`, premier caractère
      * différent de `.`. Aucune espace, aucun métacaractère.
@@ -114,10 +108,6 @@ class NetworkShareService
             && $name !== ''
             && preg_match(self::DIRECTORY_NAME_PATTERN, $name) === 1;
     }
-
-    // =========================================================================
-    // Réconciliation
-    // =========================================================================
 
     /**
      * Réconciliation SYNCHRONE — commandes hors requête et traitement enfilé.
@@ -156,8 +146,8 @@ class NetworkShareService
             // Le laisser en cache ferait dire à l'écran « réconciliation engagée »
             // pour toujours : le geste a échoué, personne ne lève d'exception
             // au-dessus (ce bloc l'absorbe), donc la file ne réessaie ni ne
-            // consigne rien. C'est la forme exacte du défaut que cet epic
-            // traque — un signal qui n'atteint pas son destinataire.
+            // consigne rien. C'est la forme exacte du défaut traqué ici — un
+            // signal qui n'atteint pas son destinataire.
             $this->rememberFailure($share, $e->getMessage());
 
             return null;
@@ -286,10 +276,6 @@ class NetworkShareService
         return $revoked;
     }
 
-    // =========================================================================
-    // Relecture et écart
-    // =========================================================================
-
     /** RELIT l'état, sans rien écrire. */
     public function inspect(NetworkShare $share): InspectionReport
     {
@@ -299,7 +285,7 @@ class NetworkShareService
     /**
      * ÉCART entre le désiré et le constaté, en vocabulaire de plan.
      *
-     * Remplace l'audit de dérive de l'Epic 34 : les quatre statuts agrégés sont
+     * Remplace l'audit de dérive précédent : les quatre statuts agrégés sont
      * conservés (un contrôleur d'environnement les consomme), mais le détail n'est
      * plus une liste de lignes de permission — c'est, par nœud, la liste des
      * sujets dont l'accès attendu et l'accès constaté diffèrent.
@@ -334,7 +320,7 @@ class NetworkShareService
      * Dernier rapport de réconciliation connu, en TABLEAU.
      *
      * Un rapport ne se reconstruit pas depuis un tableau sans repasser par sa
-     * fabrique et son plan — c'est ce que la garde de la story 60.3 protège. Tant
+     * fabrique et son plan — c'est ce que la garde de la protège. Tant
      * qu'il s'agit de l'AFFICHER, le tableau suffit et personne n'a besoin de
      * l'objet.
      *
@@ -347,12 +333,8 @@ class NetworkShareService
         return is_array($data) ? $data : null;
     }
 
-    // =========================================================================
-    // Interne
-    // =========================================================================
-
     /**
-     * Story 60.5 — LE ROUTAGE : deux origines, un seul plan.
+     * LE ROUTAGE : deux origines, un seul plan.
      *
      * Un partage ORDINAIRE se projette comme il l'a toujours fait : sa racine, ses
      * assignations, rien d'autre. Un partage issu d'une RECETTE se projette par
@@ -365,8 +347,8 @@ class NetworkShareService
      * C'est ce qui laisse à l'administrateur la main sur un cas particulier sans
      * toucher à la recette de tout le parc.
      *
-     * **Aucun partage en place ne change de plan**, et c'est un garde-fou d'epic
-     * testé : sans origine, on ne passe même pas par la recette.
+     * **Aucun partage en place ne change de plan**, et c'est un garde-fou testé :
+     * sans origine, on ne passe même pas par la recette.
      *
      * @throws PlanResolutionException
      */
@@ -411,7 +393,7 @@ class NetworkShareService
      *
      * Fabriquer ici un rapport « tout rouge » serait plus commode pour l'écran,
      * mais il n'aurait été confronté à aucun plan : c'est précisément le
-     * contournement de fabrique que la story 60.3 a fermé. La vérité de ce
+     * contournement de fabrique que la a fermé. La vérité de ce
      * moment, c'est « il n'y a pas de rapport, et voici pourquoi ». On l'écrit
      * telle quelle, et le rapport périmé est retiré.
      */

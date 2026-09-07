@@ -15,14 +15,14 @@ use RuntimeException;
  * Port natif d'`import_gpo` (legacy `sambaedu/includes/gpo.inc.php:962`) pour
  * les templates de config packagées (forme répertoire `sambaedu-gpo/<name>/`).
  *
- * Story 38.4 (AC1) — remplace la dépendance runtime au shim legacy
+ * Remplace la dépendance runtime au shim legacy
  * `import_gpo` de {@see AgentBootstrapPublisher}. Reproduit la séquence :
  *   1. résolution de la GPO par displayName ({@see GpoService::findByDisplayName}) ;
  *      absente → création ({@see GpoService::create} — branche `gpocreate`) ;
  *   2. idempotence de version (template GPT.INI vs `versionNumber` AD, skip si
  *      pas plus récent et `!$force`) — **abandon de `/etc/sambaedu/applications/
  *      gpos.json`** (état de version local legacy, remplacé par la lecture AD) ;
- *   3. spécialisation des placeholders `###_<PARAM>_###` (texte ASCII pur —
+ *  3. spécialisation des placeholders `###_<PARAM>_###` (texte ASCII pur
  *      pas de `Registry.pol` pour `SE_agent_bootstrap`, donc pas de codec PReg) ;
  *   4. calcul de version parité legacy (`v_u*0x10000 + v_m + increment`) et
  *      réécriture du `GPT.INI` en CRLF ;
@@ -97,9 +97,8 @@ class NativeGpoPublisher
         // (2) Idempotence de version. Contrairement au legacy (qui comparait à
         // la version template stockée dans gpos.json, SANS increment), la
         // baseline est reconstituée en retranchant l'increment du versionNumber
-        // AD — sinon un bump unitaire du template (le geste nominal de
-        // republication, project_gpo_template_edit_needs_version_bump) serait
-        // absorbé par l'inflation et skippé (review 38.4 #1).
+        // AD — sinon un bump unitaire du template, qui est le geste nominal de
+        // republication, serait absorbé par l'inflation et skippé.
         [$tplU, $tplM] = $this->gpoVersion($templateVersion);
         [$adU, $adM] = $this->gpoVersion((string) $adVersion);
         if (! $force && $tplU <= $adU - $incU && $tplM <= $adM - $incM) {

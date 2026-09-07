@@ -12,7 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 61.1 — LE PROVISIONNEMENT NEXTCLOUD, ENFILÉ.
+ * LE PROVISIONNEMENT NEXTCLOUD, ENFILÉ.
  *
  * **Pourquoi enfiler.** Le balayage du stock est linéaire en nombre d'utilisateurs,
  * et chaque compte non encore résolu coûte jusqu'à deux allers-retours réseau vers
@@ -20,8 +20,7 @@ use Illuminate\Support\Facades\Log;
  * l'administrateur sans rien lui apprendre — et le premier timeout HTTP laisserait
  * un provisionnement à moitié fait dont personne ne saurait où il s'est arrêté.
  *
- * ---------------------------------------------------------------------------
- * **LA CHARGE UTILE NE PORTE QUE DES IDENTIFIANTS** (patron 60.4). Pas de rapport,
+ * **LA CHARGE UTILE NE PORTE QUE DES IDENTIFIANTS**. Pas de rapport,
  * pas de configuration, pas de secret. Deux raisons indépendantes :
  *
  *  1. **La configuration serait périmée.** L'autorité est l'état persisté
@@ -32,7 +31,6 @@ use Illuminate\Support\Facades\Log;
  *     et survit à l'exécution ; y déposer l'app password admin le rendrait lisible
  *     à quiconque lit la file, et à toute sauvegarde de la base. Le seul domicile
  *     du secret est `service_credentials`, chiffré.
- * ---------------------------------------------------------------------------
  *
  * Le traitement ne rend rien : le dernier rapport est mis en cache par le service,
  * en tableau, et l'écran le relit au rafraîchissement suivant.
@@ -50,13 +48,12 @@ class ProvisionNextcloudJob implements ShouldQueue
     public const CONNECTION = 'database';
 
     /**
-     * ---------------------------------------------------------------------------
      * **LE DÉLAI MAXIMAL EST DÉCLARÉ ICI, ET IL EST INFÉRIEUR AU TTL DU VERROU.**
      *
      * Les unités des ouvriers (`scripts/config/laravel-queue-*.service`) lancent
      * `queue:work` avec `--max-time` mais **sans `--timeout`** : sans cette
      * propriété, le délai par job resterait le défaut du framework — 60 secondes.
-     * Or l'AC8 anticipe explicitement de très grandes populations, chaque compte
+     * Or l' anticipe explicitement de très grandes populations, chaque compte
      * non résolu coûtant jusqu'à deux allers-retours réseau. Passé le délai,
      * l'ouvrier envoie un SIGKILL, que PHP ne peut pas intercepter : le
      * `finally { $lock->release(); }` du service **ne s'exécute jamais**.
@@ -68,7 +65,6 @@ class ProvisionNextcloudJob implements ShouldQueue
      * pose son verrou. L'inverse (timeout ≥ TTL) rendrait la file muette pendant
      * jusqu'à une demi-heure, avec un écran sans aucune trace de l'exécution
      * interrompue. Un test de garde casse si quelqu'un désaligne les deux valeurs.
-     * ---------------------------------------------------------------------------
      */
     public int $timeout = 1500;
 

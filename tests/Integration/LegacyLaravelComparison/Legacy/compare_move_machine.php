@@ -11,10 +11,6 @@
  * - Ajouter la machine aux groupes CN des nouvelles salles parentes
  */
 
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -29,10 +25,6 @@ $config = get_config();
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ P8 - Test de comparaison : Déplacer une machine vers une salle │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
-
-// ============================================================================
-// PHASE 1 : PRÉPARATION - Créer les salles et trouver une machine
-// ============================================================================
 
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 1: Préparation de l'environnement de test                │\n";
@@ -141,10 +133,6 @@ echo "✓ Machine déplacée vers la salle source\n\n";
 
 sleep(1);
 
-// ============================================================================
-// PHASE 2 : TEST LARAVEL - Déplacer la machine vers la salle destination
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 2: Test Laravel - Déplacement machine                    │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -226,10 +214,6 @@ echo "  - Ajoutée au groupe dest: " . ($laravel_added_to_dest ? "✓" : "❌") 
 
 $laravel_success = $laravel_result['success'] && $laravel_machine_moved && $laravel_removed_from_source && $laravel_added_to_dest;
 
-// ============================================================================
-// PHASE 3 : NETTOYAGE
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 3: Nettoyage                                             │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -259,10 +243,6 @@ if ($machine_created) {
 
 // Ne pas supprimer les salles existantes - on les a juste utilisées pour le test
 echo "✓ Salles existantes conservées (non supprimées)\n\n";
-
-// ============================================================================
-// VERDICT FINAL
-// ============================================================================
 
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ VERDICT FINAL                                                  │\n";

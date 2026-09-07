@@ -10,7 +10,6 @@ use App\Services\Filesystem\Plan\PlanGrant;
  * Ce qu'une autorité d'écriture REND d'un octroi — demandé AVANT qu'elle ne
  * l'écrive, pour que l'écran de composition dise la vérité de celle qui exécutera.
  *
- * ---------------------------------------------------------------------------
  * **CE N'EST PAS UNE DÉCLARATION DE CAPACITÉS**, et la distinction porte tout le
  * reste. Une table déclarative est un second endroit où la vérité est écrite : un
  * backend peut la remplir de travers sans que rien ne le contredise. Ici, chaque
@@ -19,7 +18,6 @@ use App\Services\Filesystem\Plan\PlanGrant;
  * diverger de l'écriture sans que l'écriture ait changé, et un test l'aligne
  * backend par backend sur les seize combinaisons de verbes.
  *
- * ---------------------------------------------------------------------------
  * **QUATRE CONSTATS QUI NE SE CONFONDENT PAS.**
  *
  *  - `$missing` — les verbes non rendus SUR CE NŒUD. Constat local.

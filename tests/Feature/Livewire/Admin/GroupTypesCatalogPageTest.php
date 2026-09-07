@@ -22,10 +22,10 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 /**
- * Story 62.2 — l'onglet « Types de groupes » de /admin/settings/groups.
+ * L'onglet « Types de groupes » de /admin/settings/groups.
  *
- * Couvre AC9 (page hôte, onglet, liste + usages + accrochages, modales, double
- * garde), AC6 (l'invariant d'arbre DIT à l'écran) et AC10 (accès : `server.admin`
+ * Couvre (page hôte, onglet, liste + usages + accrochages, modales, double
+ * garde) (l'invariant d'arbre DIT à l'écran) et (accès : `server.admin`
  * SEUL, aucune route nouvelle).
  */
 class GroupTypesCatalogPageTest extends TestCase
@@ -63,10 +63,6 @@ class GroupTypesCatalogPageTest extends TestCase
         Gate::before(fn ($user, string $ability) => in_array($ability, $abilities, true) ? true : null);
     }
 
-    // =========================================================================
-    // AC10 — accès
-    // =========================================================================
-
     #[Test]
     public function a_non_admin_is_forbidden_at_mount(): void
     {
@@ -76,14 +72,10 @@ class GroupTypesCatalogPageTest extends TestCase
     #[Test]
     public function no_new_route_is_introduced(): void
     {
-        // La page EXISTE depuis 62.1 : cette story y ajoute un onglet, rien de plus.
+        // La page EXISTE déjà : on y ajoute un onglet, rien de plus.
         $this->assertSame('/admin/settings/groups', route('admin.settings.groups', absolute: false));
         $this->assertNull(\Illuminate\Support\Facades\Route::getRoutes()->getByName('admin.settings.group-types'));
     }
-
-    // =========================================================================
-    // AC9 — la page hôte et son onglet
-    // =========================================================================
 
     #[Test]
     public function the_types_tab_is_reachable_by_query_parameter(): void
@@ -132,7 +124,7 @@ class GroupTypesCatalogPageTest extends TestCase
     }
 
     /**
-     * AC6 — l'écran DIT l'invariant : une recette d'ARBRE, plusieurs plates.
+     * L'écran DIT l'invariant : une recette d'ARBRE, plusieurs plates.
      */
     #[Test]
     public function the_tab_shows_the_attached_tree_and_counts_the_flat_ones(): void
@@ -152,10 +144,6 @@ class GroupTypesCatalogPageTest extends TestCase
         $component->assertSeeHtml('data-testid="tree-attachment-note"')
             ->assertSee('recette d\'arborescence', escape: false);
     }
-
-    // =========================================================================
-    // AC2 / AC9 — création, édition, ordre
-    // =========================================================================
 
     #[Test]
     public function creating_a_type_derives_and_freezes_its_key(): void
@@ -260,10 +248,6 @@ class GroupTypesCatalogPageTest extends TestCase
         $this->assertSame(['custom', 'classe'], array_slice(array_column($component->get('rows'), 'key'), 0, 2));
     }
 
-    // =========================================================================
-    // AC7 — les refus de suppression, à l'écran
-    // =========================================================================
-
     #[Test]
     public function deleting_a_structural_type_is_refused_without_a_confirmation_modal(): void
     {
@@ -359,10 +343,6 @@ class GroupTypesCatalogPageTest extends TestCase
         $this->assertSame(1, GroupType::where('key', 'club')->count());
     }
 
-    // =========================================================================
-    // AC9 — la double garde sur CHAQUE écriture
-    // =========================================================================
-
     #[Test]
     public function every_write_re_checks_server_admin(): void
     {
@@ -370,7 +350,7 @@ class GroupTypesCatalogPageTest extends TestCase
         // seul `mount()` laisserait passer toutes les écritures suivantes.
         // Fermeture CLASSIQUE et capture par référence : une fonction fléchée
         // capturerait `$allowed` par valeur et le droit ne serait jamais retiré —
-        // le test passerait alors sans rien prouver (patron 62.1).
+        // le test passerait alors sans rien prouver.
         $allowed = true;
         Gate::before(function ($user, string $ability) use (&$allowed) {
             return ($ability === 'server.admin' && $allowed) ? true : null;
@@ -398,10 +378,6 @@ class GroupTypesCatalogPageTest extends TestCase
         $this->assertSame(9, GroupType::count());
         $this->assertSame($before, GroupType::orderBy('sort_order')->orderBy('id')->pluck('key')->all());
     }
-
-    // =========================================================================
-    // AC9 — la carte du sommaire des paramètres
-    // =========================================================================
 
     #[Test]
     public function the_settings_card_mentions_group_types_without_a_new_card(): void

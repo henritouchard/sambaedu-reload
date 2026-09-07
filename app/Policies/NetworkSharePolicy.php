@@ -10,12 +10,12 @@ use App\Policies\Traits\RegistersGates;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Story 34.2 (Q5) — Policy DÉDIÉE des « lecteurs réseau gérés » (`network_shares`).
+ * Policy DÉDIÉE des « lecteurs réseau gérés » (`network_shares`).
  *
  * Calquée 1:1 sur {@see SharePolicy} (traits `RegistersGates`/`ChecksPermissions`)
  * mais sur des permissions DÉDIÉES `networkshare.view` / `networkshare.manage` —
  * volontairement DISTINCTES de `share.view`/`share.manage` :
- *  - le `ReferentNumerique` (pilote de la story 34.2) n'a AUCUNE permission
+ * - le `ReferentNumerique` (pilote des lecteurs réseau) n'a AUCUNE permission
  *    `share.*` : réutiliser `share.view` l'aurait exclu ;
  *  - `share.manage` gouverne aussi les partages de CLASSE : la réutiliser
  *    aurait sur-octroyé le refnum aux partages de classe.

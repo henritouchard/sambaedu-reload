@@ -15,9 +15,9 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 8.1 — Garde-fou architectural sur `App\Services\Network\*`.
+ * Garde-fou architectural sur `App\Services\Network\*`.
  *
- * Pattern aligné `WpkgDeploymentNamespaceTest` (Story 15.1).
+ * Pattern aligné `WpkgDeploymentNamespaceTest`.
  *
  * Vérifie qu'aucune classe sous `App\Services\Network\*` n'importe :
  *  - `LdapRecord\*`, `App\LdapModels\*`, `App\Services\Ad\*` (rappel

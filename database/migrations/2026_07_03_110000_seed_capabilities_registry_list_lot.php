@@ -5,49 +5,49 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 35.2 — lot `registry_list` (GPO spéciales CD95, palier B) : les deux
+ * Lot `registry_list` (GPO spéciales CD95, palier B) : les deux
  * GPO à SOUS-VALEURS INDEXÉES `\1..\N` deviennent des capacités. Pattern iso
  * lot CD95 (`2026_07_02_100000`) : `updateOrInsert` par `key` puis par
  * `(capability_id, os, mechanism)`, idempotent, garde `hasTable`, `down()` par
  * suppression des `key` (FK cascade → projections + assignments).
  *
- * ── BI-PROJECTION (D5) ──────────────────────────────────────────────────────
+ * **BI-PROJECTION**
  * `blocked_executables` inaugure la bi-projection : l'unique
  * `(capability_id, os, mechanism)` autorise UNE ligne `registry` (le flag
  * `DisallowRun = 1` qui ARME la policy) + UNE ligne `registry_list` (les
  * entrées `DisallowRun\1..N`). Chaque provider ne voit que la sienne.
  *
- * ── « OFF » HONNÊTE (invariant on/off) ──────────────────────────────────────
- * `off` est une VRAIE action combinée : le flag est SUPPRIMÉ (marqueur 35.1
+ * **« OFF » HONNÊTE (invariant on/off)**
+ * `off` est une VRAIE action combinée : le flag est SUPPRIMÉ (marqueur
  * `{"$ensure": "absent"}` — littéral dupliqué ici, les migrations ne
- * référencent pas le code applicatif, décision 35.1) ET les entrées numérotées
+ * référencent pas le code applicatif, décision) ET les entrées numérotées
  * sont PURGÉES (liste vide `[]` = l'idiome « off » d'une liste — le marqueur
  * $ensure n'existe PAS en registry_list).
  *
- * ── DONNÉES ISO-GPO (vérifiées à la source Registry.xml CD95) ───────────────
+ * **DONNÉES ISO-GPO (vérifiées à la source Registry.xml CD95)**
  *   - Chrome Forcelist entrée `1` = `pgpjajcmfbfdmcgjlbiengidaknopaok`
  *     (id SEUL — pas d'URL : le Chrome Web Store est le défaut Chrome) ;
  *   - Edge Forcelist entrée `1` = `pgpjajcmfbfdmcgjlbiengidaknopaok;https://
- *     clients2.google.com/service/update2/crx` (Edge exige l'update_url CRX —
+ *  clients2.google.com/service/update2/crx` (Edge exige l'update_url CRX
  *     l'extension Pix vient du Web Store, y compris pour Edge).
  *
- * ── cmd.exe ≈ DisableCMD (iso-intention CD95) ───────────────────────────────
+ * **cmd.exe ≈ DisableCMD (iso-intention CD95)**
  * La GPO « Blocages élèves » posait `DisableCMD` en laissant les scripts
  * autorisés (« Désactiver aussi les scripts : Non ») : bloquer l'EXÉCUTABLE
  * interactif via `DisallowRun` + `cmd.exe` est iso-intention. ⚠️ Commentaire
- * d'origine FAUX (corrigé par la Story 35.7) : le tree
+ * d'origine FAUX, corrigé ici : le tree
  * `HKCU\…\CurrentVersion\Policies` est LUI AUSSI en lecture seule pour
  * l'utilisateur standard sur poste joint au domaine (TOUT `HKCU\…\Policies\*`
  * est durci, pas seulement `Software\Policies`) — défaut « Accès refusé »
  * confirmé en runtime. Ces clés sont appliquées par le SERVICE SYSTEM via le
- * marqueur `writer: system` (retrofit `2026_07_13_100000`, Story 35.7). Zéro
- * broker d'élévation (décision de cadrage epic 35).
+ * marqueur `writer: system` (retrofit `2026_07_13_100000`). Zéro
+ * broker d'élévation (décision de cadrage).
  *
- * ── ARMEMENT = DONNÉE, PAS CE SEED ──────────────────────────────────────────
+ * **ARMEMENT = DONNÉE, PAS CE SEED**
  * Les deux capacités naissent OPT-IN (`default_value = 'unmanaged'`, sentinelle
  * hors map ⇒ rien en broadcast). La cible métier de `blocked_executables` est
  * un OVERRIDE UserGroup élèves : le rattachement effectif (IDs propres à
- * chaque établissement) est de la donnée + le geste UI UserGroup (Story 35.4).
+ * chaque établissement) est de la donnée + le geste UI UserGroup.
  */
 return new class extends Migration
 {
@@ -60,7 +60,7 @@ return new class extends Migration
         $now = now();
 
         // Tree restrictions user. ⚠️ Commentaire d'origine FAUX (« writable
-        // par le compagnon ») corrigé par la Story 35.7 : lecture seule pour
+        // par le compagnon ») corrigé ici : lecture seule pour
         // l'utilisateur standard sur poste joint au domaine — appliqué par
         // SYSTEM via `writer: system` (retrofit 2026_07_13_100000).
         $userPoliciesExplorer = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';
@@ -124,8 +124,8 @@ return new class extends Migration
                     'default_value' => 'unmanaged',
                     'warning' => null,
                 ],
-                // BI-PROJECTION D5 : flag (registry) + entrées (registry_list).
-                // NB garde-fou AC3 : le flag vit dans la clé PARENTE
+                // BI-PROJECTION : flag (registry) + entrées (registry_list).
+                // NB garde-fou : le flag vit dans la clé PARENTE
                 // (`…\Policies\Explorer`, name `DisallowRun`) — path DISTINCT du
                 // conteneur ENFANT (`…\Policies\Explorer\DisallowRun`) : pas de
                 // collision scalaire↔conteneur.
@@ -138,7 +138,7 @@ return new class extends Migration
                                 'path' => $userPoliciesExplorer,
                                 'name' => 'DisallowRun',
                                 'type' => 'REG_DWORD',
-                                // off = flag SUPPRIMÉ (marqueur 35.1) — Windows
+                                // off = flag SUPPRIMÉ (marqueur) — Windows
                                 // reprend son défaut (aucune restriction).
                                 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']],
                             ],

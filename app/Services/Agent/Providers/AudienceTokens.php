@@ -8,7 +8,7 @@ use App\Constants\Ldap\MainGroups;
 use App\Models\UserGroup;
 
 /**
- * Story 36.1 (D6 / Q1) — jetons d'audience `fs_acl` : ENUM FERMÉ EN DUR.
+ * Jetons d'audience `fs_acl` : ENUM FERMÉ EN DUR.
  *
  * Un `trustee` de projection `windows/fs_acl` peut être :
  *   - un **jeton** `@eleves | @profs | @personnels` — résolu par CONVENTION
@@ -21,19 +21,20 @@ use App\Models\UserGroup;
  *     — parti VERBATIM au payload : c'est l'AGENT qui le résout via LSA sur le
  *     poste joint (échec ⇒ erreur d'item, visible).
  *
- * **Décision Henri Q1 (36-questions.md) : TOUT EN DUR, v1 minimal.** Aucune UI
- * d'admin, aucune table d'audiences, aucun mapping configurable. Le ciblage par
- * un groupe SQL ARBITRAIRE (picker) est le formulaire 36.4 — PAS un jeton.
+ * **Vocabulaire EN DUR.** Aucune UI d'admin, aucune table d'audiences, aucun
+ * mapping configurable : les trois jetons ci-dessus sont l'enum entier. Le
+ * ciblage par un groupe SQL ARBITRAIRE passe par le picker du formulaire, PAS
+ * par un jeton.
  *
  * Service PUR côté serveur (Postgres uniquement : une requête d'existence
- * mémoïsée) — jamais l'AD / LdapRecord / APCu (critère Keycloak, NFR7). La
+ * mémoïsée) — jamais l'AD / LdapRecord / APCu (critère Keycloak). La
  * résolution SID reste 100 % côté POSTE (LSA), le serveur ne manipule que des
- * NOMS. RÉUTILISABLE tel quel par 36.2+ (map publique).
+ * NOMS. RÉUTILISABLE tel quel (map publique).
  */
 final class AudienceTokens
 {
     /**
-     * Jetons d'audience → nom de groupe conventionnel (enum FERMÉ, Q1). Les
+     * Jetons d'audience → nom de groupe conventionnel (enum FERMÉ). Les
      * valeurs réutilisent les constantes `MainGroups` (groupes principaux
      * globaux du domaine) : une SEULE source du vocabulaire.
      *
@@ -71,9 +72,9 @@ final class AudienceTokens
      * Résout un trustee de `spec` vers le NOM à émettre au payload, ou `null`
      * si irrésoluble (jeton inconnu OU groupe conventionnel absent de
      * `user_groups`) — l'appelant N'ÉMET alors PAS l'entrée + loggue un
-     * warning (JAMAIS de payload avec un jeton brut, Q1).
+     * warning : un jeton brut n'atteint JAMAIS le payload.
      *
-     *   - trustee littéral (pas de préfixe `@`) ⇒ renvoyé VERBATIM (piège #15) ;
+     *   - trustee littéral (pas de préfixe `@`) ⇒ renvoyé VERBATIM ;
      *   - jeton connu dont le groupe conventionnel EXISTE ⇒ nom conventionnel ;
      *   - jeton inconnu OU groupe absent ⇒ `null`.
      *
@@ -82,13 +83,13 @@ final class AudienceTokens
     public function resolve(string $trustee): ?string
     {
         if (! self::isToken($trustee)) {
-            // Littéral : verbatim — l'agent le résout via LSA (piège #15).
+            // Littéral : verbatim — l'agent le résout via LSA.
             return $trustee;
         }
 
         $conventional = self::TOKENS[strtolower($trustee)] ?? null;
         if ($conventional === null) {
-            return null; // jeton hors enum fermé (Q1).
+            return null; // jeton hors enum fermé.
         }
 
         return $this->groupExists($conventional) ? $conventional : null;

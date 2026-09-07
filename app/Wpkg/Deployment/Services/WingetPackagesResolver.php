@@ -9,17 +9,15 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * @legacy-port path="sambaedu/wpkg/winget_out.php"
- * @see _bmad-output/implementation-artifacts/17-6-portage-endpoints-wpkg-linux-winget.md
  *
- * Story 17.6 / AC2 / D5 — Logique de mapping winget portée fidèlement depuis
- * `winget_out.php:61-194`.
+ * Logique de mapping winget portée fidèlement depuis `winget_out.php:61-194`.
  *
  * `resolve($machine, $localApps)` retourne `['install'=>[], 'upgrade'=>[],
  * 'uninstall'=>[]]` (clés **omises** si vides, parité legacy où
  * `$winget['install'][]` n'est créé que s'il y a au moins une entrée).
  *
  * Étapes (parité stricte, dans l'ordre legacy) :
- *   1. Liste winget demandée pour le poste = `WorkstationPackagesResolver::resolve()`
+ *  1. Liste winget demandée pour le poste = `WorkstationPackagesResolver::resolve()`
  *      → noeuds `<windows type="winget">` (via `ApplicationXmlReader`).
  *   2. Merge `add.json` (`/etc/` + `/usr/share/`), priorité légacy au même Id,
  *      puis retrait des Id déjà présents dans la liste XML.
@@ -28,13 +26,12 @@ use Illuminate\Support\Facades\Log;
  *   4. uninstall (merge `remove.json`, croisement avec `$localApps`).
  *
  * **Aucune écriture `/tmp`** (les `file_put_contents("/tmp/winget_*.json")` du
- * legacy étaient du debug, non porté — D5 / AC2.6).
+ * legacy étaient du debug, non portés).
  *
  * Note parité (priorité add/remove) : le code legacy donne la priorité aux
  * entrées `/usr/share/` sur `/etc/` **pour un même Id** (`winget_out.php:115-119`
- * : on `unset` l'entrée `/etc/` quand son Id existe dans `/usr/share/`). La
- * phrase D5 « /etc/ prioritaire » simplifie : on reproduit fidèlement le code
- * legacy (source de vérité), documenté en Completion Notes (écart de formulation).
+ * : on `unset` l'entrée `/etc/` quand son Id existe dans `/usr/share/`). C'est
+ * ce code legacy, et non la formulation « /etc/ prioritaire », qui fait foi ici.
  */
 final class WingetPackagesResolver
 {
@@ -126,7 +123,7 @@ final class WingetPackagesResolver
         );
 
         // Parité :115-119 — pour un même Id, l'entrée /usr/share l'emporte :
-        // on retire de $lAdd (/etc/) les Id présents dans $add (/usr/share/).
+        // on retire de $lAdd (etc/) les Id présents dans $add (usr/share/).
         $lAdd = $this->removeByIds($lAdd, $this->idsOf($add));
 
         // Parité :121 — $add = array_merge($add, $l_add).
@@ -153,8 +150,8 @@ final class WingetPackagesResolver
             (string) config('sambaedu.wpkg.winget_catalog_remove_default', '/usr/share/sambaedu/applications/winget/remove.json')
         );
 
-        // Parité :176-180 — on retire de $l_poubelle (/etc/) les Id présents
-        // dans $poubelle (/usr/share/).
+        // Parité :176-180 — on retire de $l_poubelle (etc/) les Id présents
+        // dans $poubelle (usr/share/).
         $lPoubelle = $this->removeByIds($lPoubelle, $this->idsOf($poubelle));
 
         // Parité :182 — $poubelle = array_merge($poubelle, $l_poubelle).

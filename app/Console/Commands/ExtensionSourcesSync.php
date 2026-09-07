@@ -11,7 +11,7 @@ use App\Services\Extensions\RemoteCatalogSyncService;
 use Illuminate\Console\Command;
 
 /**
- * Story 56.1 (AC7, AR1) — `php artisan ext:sources:sync {key?}`.
+ * `php artisan ext:sources:sync {key?}`.
  *
  * Synchronise une source distante (par sa clé) ou TOUTES les sources distantes
  * actives. **Même moteur que le bouton « Actualiser » de la page des sources**
@@ -19,14 +19,14 @@ use Illuminate\Console\Command;
  * synchro, donc pas de comportement qui diverge entre l'UI et la planification
  * (doctrine AR1).
  *
- * Rejouable sans risque : la synchro est idempotente (invariant 54.1 #3), et
+ * Rejouable sans risque : la synchro est idempotente, et
  * une source injoignable ou un catalogue refusé ne suppriment RIEN — ils
  * marquent seulement le statut de la source.
  *
  * Codes retour : `0` si toutes les sources traitées sont `ok`, `1` si au moins
  * une est `unreachable` ou `error` — de quoi faire remonter un dépôt qui
  * décroche dans une supervision, sans jamais empêcher SE5 de fonctionner
- * (NFR7 : le dernier catalogue vérifié reste en place).
+ * — le dernier catalogue vérifié reste en place.
  */
 class ExtensionSourcesSync extends Command
 {

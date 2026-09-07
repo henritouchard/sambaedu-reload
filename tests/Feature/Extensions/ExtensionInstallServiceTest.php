@@ -27,14 +27,14 @@ use Tests\Support\FakeExtensionHelperRunner;
 use Tests\TestCase;
 
 /**
- * Story 56.2 — Le moteur d'installation, prouvé sur l'HÔTE.
+ * Le moteur d'installation, prouvé sur l'HÔTE.
  *
  * Ce que cette suite verrouille, dans l'ordre d'importance :
  *
  *  1. **La frontière fail-closed.** Un paquet dont le sha256 ne correspond pas
- *     — ou une source qui ne propose plus rien, ou un bloc `install` absent —
+ *  — ou une source qui ne propose plus rien, ou un bloc `install` absent
  *     produit **ZÉRO appel au helper**. C'est l'affirmation littérale de « la
- *     vérification a lieu avant TOUTE exécution » (FR7) : la première exécution
+ *     vérification a lieu avant TOUTE exécution » : la première exécution
  *     de code tiers étant le maintainer script d'apt, si le runner n'est jamais
  *     appelé, rien de tiers n'a tourné.
  *  2. **Les compensations.** Un test PARAMÉTRÉ fait échouer CHAQUE étape
@@ -71,7 +71,7 @@ class ExtensionInstallServiceTest extends TestCase
      * ⚠️ Un SEUL `Http::fake()`, qui lit cette table à chaque requête :
      * `Http::fake()` FUSIONNE ses stubs et le premier motif gagne, donc re-faker
      * en cours de test servirait l'ancien contenu et un test « le paquet a
-     * changé » vérifierait que rien n'a changé (piège documenté en 56.1).
+     * changé » vérifierait que rien n'a changé (piège documenté).
      *
      * @var array<string, array{body: string, status: int, headers: array<string, string>}|Closure>
      */
@@ -117,10 +117,6 @@ class ExtensionInstallServiceTest extends TestCase
         @rmdir($dir);
     }
 
-    // =====================================================================
-    // Faux dépôt
-    // =====================================================================
-
     private function serve(Request $request): mixed
     {
         $url = $request->url();
@@ -138,10 +134,6 @@ class ExtensionInstallServiceTest extends TestCase
     {
         $this->files[$url] = ['body' => $body, 'status' => $status, 'headers' => $headers];
     }
-
-    // =====================================================================
-    // Fixtures
-    // =====================================================================
 
     private function service(): ExtensionInstallService
     {
@@ -198,7 +190,7 @@ class ExtensionInstallServiceTest extends TestCase
                     'icon' => 'fa-solid fa-hand',
                     'publisher' => 'QA',
                     'description' => 'Extension de test.',
-                    // Story 56.4 — les scopes DEMANDÉS par le manifest sont
+                    // Les scopes DEMANDÉS par le manifest sont
                     // ce que l'installation accordera au client OIDC.
                     'scopes' => $scopes,
                     'dependencies' => [],
@@ -211,10 +203,6 @@ class ExtensionInstallServiceTest extends TestCase
 
         return $extension;
     }
-
-    // =====================================================================
-    // AC2 — chemin nominal
-    // =====================================================================
 
     #[Test]
     public function the_privileged_sequence_is_exactly_the_documented_order(): void
@@ -257,7 +245,7 @@ class ExtensionInstallServiceTest extends TestCase
 
         // Une re-synchro de catalogue publie une nouvelle version : elle ne doit
         // JAMAIS toucher ce qui tourne (c'est ce qui rendra la détection de mise
-        // à jour possible en 56.3).
+        // à jour possible).
         $extension = Extension::where('key', 'hello')->firstOrFail();
         $extension->fill(['version' => '2.0.0'])->save();
 
@@ -310,10 +298,6 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::where('action', ExtensionAuditLog::ACTION_INSTALL_FAILED)->count());
     }
 
-    // =====================================================================
-    // NFR3 — le secret ne sort que par stdin
-    // =====================================================================
-
     #[Test]
     public function the_oidc_secret_travels_only_through_stdin_and_never_through_argv(): void
     {
@@ -332,7 +316,7 @@ class ExtensionInstallServiceTest extends TestCase
         }
 
         // Ni dans le journal d'audit, ni dans la base des clients (seul le hash
-        // sha256 y est persisté — doctrine 55.1).
+        // sha256 y est persisté — doctrine).
         foreach (ExtensionAuditLog::all() as $log) {
             self::assertStringNotContainsString($secret, (string) $log->details);
         }
@@ -387,10 +371,6 @@ class ExtensionInstallServiceTest extends TestCase
         // serait un équivalent-root.
         self::assertNull($this->helper->stdinFor(ExtensionInstallService::HELPER_WRITE_FRAGMENT));
     }
-
-    // =====================================================================
-    // AC3 — fail-closed : ZÉRO exécution
-    // =====================================================================
 
     #[Test]
     public function a_mismatching_sha256_stops_everything_before_any_privileged_call(): void
@@ -567,7 +547,7 @@ class ExtensionInstallServiceTest extends TestCase
     #[Test]
     public function an_unreachable_source_can_still_install_its_last_verified_catalog(): void
     {
-        // Contre-épreuve NFR7 : `unreachable` n'est PAS un refus de contenu.
+        // Contre-épreuve : `unreachable` n'est PAS un refus de contenu.
         // Le paquet, lui, reste vérifié par son sha256.
         $this->installable(source: $this->source(['unreachable' => []]));
 
@@ -576,10 +556,6 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame('', $result['error']);
         self::assertTrue($result['changed']);
     }
-
-    // =====================================================================
-    // AC4 — compensations exactes, en ordre inverse
-    // =====================================================================
 
     /** @return array<string, array{0: string, 1: list<string>}> */
     public static function failingSteps(): array
@@ -637,9 +613,9 @@ class ExtensionInstallServiceTest extends TestCase
 
         // Aucune trace d'acte réussi ; une trace d'échec exploitable.
         //
-        // ⚠️ Deux catégories légitimes ici, et pas une de moins (review 56.3
-        // #1) : « échec à l'étape X » quand le nettoyage a pu être mené à
-        // bien, et `ERROR_CLEANUP_INCOMPLETE` quand une compensation a échoué
+        // ⚠️ Deux catégories légitimes ici, et pas une de moins : « échec à
+        // l'étape X » quand le nettoyage a pu être mené à bien, et
+        // `ERROR_CLEANUP_INCOMPLETE` quand une compensation a échoué
         // à son tour — cas réellement atteint par le jeu de données
         // `reload-apache`, où la sous-commande en échec est aussi celle dont
         // la compensation a besoin. L'assertion n'est pas relâchée : elle
@@ -694,7 +670,7 @@ class ExtensionInstallServiceTest extends TestCase
         $first = $this->service()->install('hello');
         self::assertNotSame('', $first['error']);
 
-        // Le paquet VÉRIFIÉ survit à l'échec (décision #6) : la relance ne
+        // Le paquet VÉRIFIÉ survit à l'échec : la relance ne
         // re-télécharge pas.
         self::assertFileExists($this->staging.'/hello/'.hash('sha256', self::PACKAGE_BODY).'.deb');
 
@@ -742,10 +718,6 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame(0, OidcClient::where('enabled', true)->count());
     }
 
-    // =====================================================================
-    // AC2 — no-op, unicité, ambiguïté, ports
-    // =====================================================================
-
     #[Test]
     public function installing_an_already_installed_extension_is_a_silent_no_op(): void
     {
@@ -784,15 +756,14 @@ class ExtensionInstallServiceTest extends TestCase
     #[Test]
     public function an_integrated_link_of_the_same_name_does_not_block_an_app(): void
     {
-        // Review 56.2 #3 — ce que la clé RÉSERVE, c'est un paquet, une unité
+        // Ce que la clé RÉSERVE, c'est un paquet, une unité
         // systemd, un fragment et un préfixe `/ext/<key>`. Une `link` n'occupe
         // rien de tout cela : elle ne doit pas faire échouer l'installation
         // d'une `app` homonyme publiée par une autre source.
         // Deux lignes portent la clé `hello` : la résolution reste
         // légitimement ambiguë (l'opérateur précise `--source`), ce que ce test
         // ne conteste pas. Ce qu'il verrouille, c'est l'étape d'APRÈS : le
-        // refus « clé déjà installée » ne doit plus se déclencher sur une
-        // `link`.
+        // refus « clé déjà installée » ne doit plus se déclencher sur une `link`.
         $linkSource = $this->source();
         $linkSource->key = 'depot-des-liens';
         $linkSource->save();
@@ -915,10 +886,6 @@ class ExtensionInstallServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
-    // =====================================================================
-    // AC5 — désinstallation
-    // =====================================================================
-
     #[Test]
     public function removing_replays_the_installation_backwards(): void
     {
@@ -965,7 +932,7 @@ class ExtensionInstallServiceTest extends TestCase
         $this->service()->install('hello');
 
         // Fantôme d'une installation avortée antérieure : un client actif que
-        // personne ne connaît plus (décision #5).
+        // personne ne connaît plus.
         OidcClient::query()->create([
             'extension_key' => 'hello',
             'name' => 'Client fantôme',
@@ -1018,12 +985,12 @@ class ExtensionInstallServiceTest extends TestCase
     #[Test]
     public function a_removal_failing_after_the_system_teardown_never_throws_and_stays_replayable(): void
     {
-        // Review 56.2 #2 — la révocation OIDC, la purge du staging et
+        // La révocation OIDC, la purge du staging et
         // `markAppRemoved()` étaient HORS du filet : une erreur de base y
         // remontait nue jusqu'à `ext:remove` (qui n'attrape
         // qu'ExtensionInstallException), en laissant les composants système
         // déjà retirés et la base disant encore « installée ». On simule la
-        // panne par la disparition de la table d'audit, patron 54.2.
+        // panne par la disparition de la table d'audit.
         $this->installable();
         $this->service()->install('hello');
 
@@ -1101,10 +1068,6 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame(8600, $result['port']);
     }
 
-    // =====================================================================
-    // Story 56.4 — l'OCTROI des scopes à l'installation
-    // =====================================================================
-
     #[Test]
     public function the_installation_grants_exactly_the_scopes_of_the_manifest(): void
     {
@@ -1172,13 +1135,9 @@ class ExtensionInstallServiceTest extends TestCase
         self::assertSame(0, OidcClient::count());
     }
 
-    // =====================================================================
-    // Story 56.5 (AC6) — legs review 56.3 #4 : un échec d'écriture d'audit
-    // laisse un SIGNAL exploitable
-    // =====================================================================
     //
     // ⚠️ Ajouts en FIN de fichier, aucune assertion existante retouchée. Le
-    // comportement arbitré en 56.3 est CONSERVÉ à l'identique : un refus déjà
+    // comportement arbitré est CONSERVÉ à l'identique : un refus déjà
     // compensé ne redevient jamais une exception nue. Ce qui change, c'est que
     // l'incident de journalisation cesse d'être invisible.
 
@@ -1195,7 +1154,7 @@ class ExtensionInstallServiceTest extends TestCase
         $result = $this->service()->install('hello');
 
         // 1. Le refus est TOUJOURS rapporté, avec la MÊME catégorie qu'avec la
-        //    table présente (comportement 56.3 inchangé).
+        //  table présente (comportement inchangé).
         self::assertFalse($result['changed']);
         self::assertSame(ExtensionInstallService::ERROR_UNSUPPORTED_SCOPES, $result['error']);
 

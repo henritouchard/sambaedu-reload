@@ -7,14 +7,12 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.4 — AC5.5.
- *
  * Validation permissive du body de `GET|POST /ipxe/installation-linux`.
- * Règles iso `IpxeAdminRequest` (3.2) — le firmware iPXE pose des params
+ * Règles iso `IpxeAdminRequest` — le firmware iPXE pose des params
  * variés et la validation business est déléguée aux normalizers.
  *
  * `authorize()` retourne `true` — l'auth est portée par le middleware
- * `auth.v1.lan-only` (D3).
+ * `auth.v1.lan-only`.
  */
 class IpxeInstallationLinuxRequest extends FormRequest
 {

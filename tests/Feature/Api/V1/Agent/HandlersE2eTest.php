@@ -24,14 +24,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature e2e handlers — Story 24.4 (AC7).
+ * Tests Feature e2e handlers.
  *
  * LA boucle complète avec des items RÉELS : `GET /state` sert des règles
  * wallpaper + overlay réelles (tables métier), puis `POST /report` rapporte
  * les 4 statuts du contrat avec les hashes EXACTEMENT comme l'agent les
  * construit (exclusive = hash d'item verbatim ; aggregate = empreinte
  * SHA-256 de la concaténation des hashes opaques, ordre serveur — décision
- * n° 7). Vérifie les comportements 24.1 (états upsertés, événements sur
+ * n° 7). Vérifie les comportements (états upsertés, événements sur
  * transition, rapport identique = zéro événement) SUR CES items réels.
  *
  * Le serveur ne connaît PAS la convention d'empreinte d'agrégat (il compare
@@ -158,7 +158,7 @@ final class HandlersE2eTest extends TestCase
         ];
     }
 
-    // ── L'état servi porte les règles réelles (aller) ─────────────────────
+    // L'état servi porte les règles réelles (aller)
 
     #[Test]
     public function state_serves_real_wallpaper_rule_and_overlay_with_identity_first(): void
@@ -167,7 +167,7 @@ final class HandlersE2eTest extends TestCase
 
         $state = $this->state($d['token'], '?user=' . $d['user']->login)->assertOk()->json();
 
-        // Wallpaper : payload {asset, checksum} de la biblio (figé 23.4).
+        // Wallpaper : payload {asset, checksum} de la biblio (figé).
         $wallpapers = $this->sessionItemsOfType($state, 'wallpaper');
         self::assertCount(1, $wallpapers);
         self::assertSame('exclusive', $wallpapers[0]['semantics']);
@@ -183,7 +183,7 @@ final class HandlersE2eTest extends TestCase
         self::assertSame('aggregate', $overlays[0]['semantics']);
         self::assertSame(
             [
-                // Story 27.10 (D1) : l'item identity ne porte plus que login +
+                // L'item identity ne porte plus que login +
                 // fullname ; `room` est désormais émis en portée MACHINE par
                 // OverlayMachineStateProvider (propriété du poste, pas du user).
                 'kind' => 'identity',
@@ -209,7 +209,7 @@ final class HandlersE2eTest extends TestCase
         self::assertNotContains('identity', $kinds);
     }
 
-    // ── La boucle complète : state → report 4 statuts → états/événements ──
+    // La boucle complète : state → report 4 statuts → états/événements
 
     #[Test]
     public function full_loop_reports_real_items_through_all_four_statuses(): void
@@ -249,7 +249,7 @@ final class HandlersE2eTest extends TestCase
         $eventsAfterConvergence = AgentReportEvent::where('workstation_id', $ws->id)->count();
         self::assertSame(4, $eventsAfterConvergence);
 
-        // Rapport 3 : STRICT (Story 27.8) — l'élève change son fond, l'agent le
+        // Rapport 3 : STRICT — l'élève change son fond, l'agent le
         // RÉAPPLIQUE (drift, plus de drifted_allowed) + le handler overlay
         // échoue (error, detail OBLIGATOIRE).
         $this->report($d['token'], $this->reportPayload($ws, [

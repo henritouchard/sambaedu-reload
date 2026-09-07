@@ -10,15 +10,13 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Story 61.1 — LE SEUL POINT DE SORTIE HTTP VERS NEXTCLOUD (code nouveau).
+ * LE SEUL POINT DE SORTIE HTTP VERS NEXTCLOUD (code nouveau).
  *
- * ---------------------------------------------------------------------------
  * **NIVEAU DE PRIVILÈGE REQUIS : ADMINISTRATEUR DE L'INSTANCE.** Ce n'est pas
  * une précaution, c'est une contrainte de l'API : les montages globaux
  * (`files_external`) et la gestion des comptes (`cloud/users`) sont refusés à un
- * compte ordinaire. Le cadrage 61.2 le dit d'avance, la sonde le vérifie, et un
+ * compte ordinaire. Le cadrage le dit d'avance, la sonde le vérifie, et un
  * 401/403 nomme l'opération refusée plutôt que de dégrader en silence.
- * ---------------------------------------------------------------------------
  *
  * **Pourquoi une classe et pas des appels dispersés.** Le chemin existant
  * (`UserService::configureUserCloud`) parle à Nextcloud en `curl` nu : aucun test
@@ -26,12 +24,11 @@ use Illuminate\Support\Facades\Http;
  * vérification TLS est enfouie dans le code. Tout le code NOUVEAU passe donc par
  * ici, sur le client HTTP du framework — **falsifiable par `Http::fake()`**, donc
  * testable sans réseau, sur sqlite, à chaque exécution de la suite. Le chemin
- * `curl` legacy n'est PAS réécrit par cette story (legs nommé) ; il n'est pas non
- * plus étendu.
+ * `curl` legacy n'est PAS réécrit ici ; il n'est pas non plus étendu.
  *
- * **Deux familles d'appels, et l'une des deux est le pari de la story.**
+ * **Deux familles d'appels, et l'une des deux est un pari.**
  *  - **OCS** (`ocs/v1.php`, `ocs/v2.php`) : comptes, résolution d'identité, mise à
- *    jour de mot de passe. Doublement éprouvée — spike 60.0 et production SE4.
+ *    jour de mot de passe. Doublement éprouvée — sondage et production SE4.
  *  - **L'endpoint d'administration des montages globaux**
  *    (`index.php/apps/files_external/globalstorages`) : `files_external` n'expose
  *    PAS d'API OCS d'écriture. Sa lecture OCS existe (`api/v1/mounts`, montages de
@@ -39,7 +36,7 @@ use Illuminate\Support\Facades\Http;
  *    `nc-spike` (Nextcloud 34.0.2)** : l'authentification basic admin passe,
  *    aucune protection anti-CSRF ne s'y oppose — `GET` → `200`, `POST` → `201`,
  *    `DELETE` → `204`, corps d'écriture en `application/x-www-form-urlencoded`.
- *    La règle d'arrêt de la story ne s'est donc pas déclenchée ; la branche `412`
+ *    La règle d'arrêt ne s'est donc pas déclenchée ; la branche `412`
  *    de la sonde reste en place parce qu'une AUTRE instance, autrement
  *    configurée, pourrait la produire — et il vaut mieux la nommer que la
  *    découvrir.
@@ -61,21 +58,21 @@ use Illuminate\Support\Facades\Http;
  * requêtes d'API, et Nextcloud s'en sert pour ne pas exiger d'état de session.
  *
  * **Idempotence normalisée.** Le statuscode OCS `102` (« existe déjà »), mesuré au
- * spike 60.0, est traduit en « déjà conforme » ({@see NextcloudResult::conforming()}),
+ * spike, est traduit en « déjà conforme » ({@see NextcloudResult::conforming()}),
  * jamais en exception : rejouer le provisionnement est une opération normale.
  *
- * **Ce que ce client N'A PAS, et c'est un invariant testé (AC4).** Aucune méthode
+ * **Ce que ce client N'A PAS, et c'est un invariant testé.** Aucune méthode
  * de partage OCS, aucune méthode de groupe Nextcloud, aucune méthode de dossier
  * d'équipe. La zone que ce client sert est montée depuis le serveur de fichiers, et
  * la seule instance qui y tranche un accès est Samba/POSIX, avec les identifiants
  * de l'utilisateur de session. Ajouter une de ces méthodes ne serait pas une
  * extension, ce serait un second plan de permissions sur une zone qui en a déjà un.
  *
- * **Story 61.3 — UNE méthode s'ajoute, et une seule : le plafond d'un COMPTE.**
+ * **UNE méthode s'ajoute, et une seule : le plafond d'un COMPTE.**
  * Elle n'est pas un droit — c'est un budget de personne, et c'est ici que vit
  * l'état par-utilisateur (compte, mot de passe). Le plafond d'une ZONE, lui, est
  * l'affaire du backend de fichiers, qui n'a aucun chemin vers les comptes : c'est
- * la frontière D8, et elle est tenue des deux côtés par un test d'architecture.
+ * la frontière, et elle est tenue des deux côtés par un test d'architecture.
  *
  * **Le secret ne sort jamais.** Il n'entre dans aucun message, aucun journal,
  * aucune exception : les messages sont construits à partir de l'OPÉRATION et de la
@@ -112,12 +109,8 @@ final class NextcloudAdminClient
     {
     }
 
-    // =========================================================================
-    // AC1 / AC9 — la sonde de connexion
-    // =========================================================================
-
     /**
-     * Trois diagnostics distincts (AC1) : instance injoignable, privilège
+     * Trois diagnostics distincts : instance injoignable, privilège
      * insuffisant, app « Stockage externe » absente.
      *
      * Deux appels, dans cet ordre, parce que chacun isole UNE cause :
@@ -188,7 +181,7 @@ final class NextcloudAdminClient
 
         if ($status === 412) {
             // Protection anti-CSRF sur une route `index.php`. C'est EXACTEMENT le
-            // scénario de la règle d'arrêt de l'AC10 : on le nomme, avec son code,
+            // scénario de la règle d'arrêt : on le nomme, avec son code,
             // et on n'essaie rien d'autre.
             return NextcloudConnectionProbe::rejected(
                 'L\'instance a refusé la requête d\'administration des montages (HTTP 412, protection '
@@ -207,10 +200,6 @@ final class NextcloudAdminClient
 
         return NextcloudConnectionProbe::ok();
     }
-
-    // =========================================================================
-    // AC3 — les montages external storage
-    // =========================================================================
 
     /**
      * Liste les montages globaux déclarés sur l'instance.
@@ -312,17 +301,13 @@ final class NextcloudAdminClient
             : $this->httpFailure($operation, $response);
     }
 
-    // =========================================================================
-    // AC5 / AC6 / AC7 — les comptes
-    // =========================================================================
-
     /**
      * Crée un compte Nextcloud. Le statuscode OCS `102` (« l'utilisateur existe
      * déjà ») est rendu comme **déjà conforme** — c'est l'adoption, pas une erreur.
      *
      * L'identifiant du compte EST le login SE5 : c'est nous qui l'envoyons, donc
      * c'est nous qui le connaissons — première étape de la résolution d'identité
-     * (AC6), et la seule qui ne coûte aucun appel supplémentaire.
+     * et la seule qui ne coûte aucun appel supplémentaire.
      */
     public function createUser(string $login, string $password): NextcloudResult
     {
@@ -365,13 +350,14 @@ final class NextcloudAdminClient
     }
 
     /**
-     * Story 61.3 — LE PLAFOND D'UNE PERSONNE (frontière D8, côté personnes).
+     * LE PLAFOND D'UNE PERSONNE — la frontière, côté personnes.
      *
      * **Pourquoi cette méthode vit ICI et pas dans le backend de fichiers.** Il y a
      * DEUX plafonds dans ce produit, et ils ne portent pas sur le même objet : une
      * recette de partage plafonne une ZONE, une règle de quota budgète une PERSONNE
      * sur l'instance. Rattacher le second au backend ferait écrire un quota
-     * d'utilisateur par une recette de partage — la violation exacte que D8 nomme.
+     * d'utilisateur par une recette de partage — exactement ce que cette frontière
+     * interdit.
      * Le balayage de provisionnement est déjà le lieu où l'on converge l'état
      * PAR-UTILISATEUR (compte, mot de passe) ; le plafond s'y range, et un test
      * d'architecture tient la frontière des deux côtés.
@@ -394,7 +380,7 @@ final class NextcloudAdminClient
     /**
      * Résolution d'identité par autocomplétion (précédent SE4 `cloud.inc.php:989`).
      *
-     * **L'absence est SILENCIEUSE côté API** — mesure du spike 60.0 : un login
+     * **L'absence est SILENCIEUSE côté API** — mesure du spike : un login
      * inconnu rend zéro résultat, pas une erreur. Elle ne doit donc jamais rester
      * silencieuse côté SE5 : l'appelant compte l'introuvable.
      *
@@ -422,10 +408,6 @@ final class NextcloudAdminClient
 
         return NextcloudResult::ok(['matches' => $matches], $result->httpStatus, $result->ocsStatusCode);
     }
-
-    // =========================================================================
-    // La synchro d'annuaire de l'instance
-    // =========================================================================
 
     /**
      * Active une app de l'instance. **Idempotent** — mesuré le 2026-08-17 sur
@@ -498,10 +480,6 @@ final class NextcloudAdminClient
             ['configData' => $keys],
         );
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     /**
      * Un appel OCS, de bout en bout : émission, traduction des échecs de
@@ -634,7 +612,7 @@ final class NextcloudAdminClient
      * OCS, vérification TLS conforme au réglage, délai borné.
      *
      * **Aucun retry.** Un refus de privilège rejoué reste un refus, et un retry
-     * silencieux masquerait la cause qu'on veut nommer (AC9). Le client HTTP du
+     * silencieux masquerait la cause qu'on veut nommer. Le client HTTP du
      * framework ne lève pas non plus sur 4xx/5xx par défaut : les codes sont
      * TRADUITS ici, en résultats typés, pas convertis en exceptions.
      */
@@ -674,7 +652,7 @@ final class NextcloudAdminClient
     }
 
     /**
-     * Échec d'une ÉCRITURE de montage — avec le quatrième diagnostic (AC1/AC9).
+     * Échec d'une ÉCRITURE de montage — avec le quatrième diagnostic.
      *
      * **Mesuré sur `nc-spike` le 2026-08-08** : quand l'hôte de l'instance n'a ni
      * le binaire `smbclient` ni l'extension `php-smbclient`, l'endpoint répond

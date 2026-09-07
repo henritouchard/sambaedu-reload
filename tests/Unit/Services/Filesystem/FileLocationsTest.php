@@ -14,16 +14,13 @@ use ReflectionClass;
 use ReflectionMethod;
 
 /**
- * Story 63.1 — AC3/AC4/AC5 : la matrice des gardes de `FileLocations::make()`.
+ * La matrice des gardes de `FileLocations::make`.
  *
  * `TestCase` PUR, aucune application, aucune base — c'est ce qui prouve
- * l'AC5 : `FileLocations` ne fait aucune I/O.
+ * `FileLocations` ne fait aucune I/O.
  */
 class FileLocationsTest extends TestCase
 {
-    // =========================================================================
-    // Constructeur privé — la garde est structurelle
-    // =========================================================================
 
     #[Test]
     public function le_constructeur_est_prive_make_est_l_unique_porte_d_entree(): void
@@ -55,10 +52,6 @@ class FileLocationsTest extends TestCase
         self::assertSame(['posix', 'nextcloud', 'opencloud'], FileLocations::acceptableAuthorityValues());
         self::assertNotContains('preview', FileLocations::acceptableAuthorityValues());
     }
-
-    // =========================================================================
-    // AC4 — combinaisons acceptées
-    // =========================================================================
 
     #[Test]
     public function posix_et_posix_avec_aucun_cloud_est_accepte(): void
@@ -97,10 +90,6 @@ class FileLocationsTest extends TestCase
         self::assertSame(FileBackendName::Nextcloud, $locations->espacePerso);
         self::assertSame(FileBackendName::Nextcloud, $locations->espacePartage);
     }
-
-    // =========================================================================
-    // AC4 — les trois refus
-    // =========================================================================
 
     #[Test]
     public function preview_n_est_jamais_un_emplacement_pour_l_espace_perso(): void
@@ -167,10 +156,6 @@ class FileLocationsTest extends TestCase
         FileLocations::make(FileBackendName::Posix, FileBackendName::OpenCloud, ActiveCloud::Nextcloud);
     }
 
-    // =========================================================================
-    // AC5 — lectures dérivées, et rien de plus
-    // =========================================================================
-
     #[Test]
     public function espace_perso_sur_smb_vaut_vrai_uniquement_pour_posix(): void
     {
@@ -210,7 +195,7 @@ class FileLocationsTest extends TestCase
 
     /**
      * AUCUNE lettre de lecteur, AUCUN UNC, AUCUN chemin n'apparaît dans cet
-     * objet — c'est l'AC5, épinglé sur la surface publique de la classe.
+     * objet — c'est l', épinglé sur la surface publique de la classe.
      */
     #[Test]
     public function la_surface_publique_ne_porte_ni_lettre_ni_unc_ni_chemin(): void

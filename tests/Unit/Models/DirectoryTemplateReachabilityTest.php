@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 62.5 — **UNE RECETTE QUI DÉCRIT UN DOSSIER OÙ PERSONNE N'ARRIVE EST
+ * **UNE RECETTE QUI DÉCRIT UN DOSSIER OÙ PERSONNE N'ARRIVE EST
  * REFUSÉE.**
  *
  * Le compilateur travaille nœud par nœud : il ne voit jamais l'arbre. Une recette
@@ -93,10 +93,6 @@ class DirectoryTemplateReachabilityTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    // =========================================================================
-    // RÈGLE 1 — l'ancêtre doit être déclaré
-    // =========================================================================
-
     #[Test]
     public function a_node_whose_ancestor_is_not_declared_is_refused_by_name(): void
     {
@@ -123,7 +119,7 @@ class DirectoryTemplateReachabilityTest extends TestCase
 
     /**
      * **LE NŒUD RACINE N'EST PAS EXIGÉ**, et ce n'est pas un oubli : c'est l'état
-     * livré par la story 60.5, et les décors de test purs du plan en dépendent. La
+     * livré, et les décors de test purs du plan en dépendent. La
      * règle ne porte que sur les préfixes STRICTS.
      */
     #[Test]
@@ -137,10 +133,6 @@ class DirectoryTemplateReachabilityTest extends TestCase
         // Et le décor réel des tests purs du plan, qui n'a pas de racine non plus.
         $this->assertAccepted($this->classTreeTemplate());
     }
-
-    // =========================================================================
-    // RÈGLE 2 — rien sous un contenu libre
-    // =========================================================================
 
     #[Test]
     public function a_node_declared_under_a_free_content_node_is_refused(): void
@@ -167,10 +159,6 @@ class DirectoryTemplateReachabilityTest extends TestCase
             $this->node(['path' => '_travail/devoirs', 'label' => 'Devoirs', 'nature' => 'contenu_libre']),
         ]));
     }
-
-    // =========================================================================
-    // RÈGLE 3 — deux énumérations qui ne parlent pas des mêmes personnes
-    // =========================================================================
 
     #[Test]
     public function two_nested_per_member_nodes_targeting_different_edge_roles_are_refused(): void
@@ -222,10 +210,6 @@ class DirectoryTemplateReachabilityTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // RÈGLE 4 — la couverture des membres énumérés
-    // =========================================================================
-
     /**
      * **LA CONTREPARTIE STATIQUE DU « LE NOMINATIF NE DÉRIVE PAS ».** Sans audience
      * couvrante sur la racine, chaque élève aurait un dossier personnel dont il ne
@@ -258,14 +242,13 @@ class DirectoryTemplateReachabilityTest extends TestCase
     }
 
     /**
-     * Review 62.5 #2 — une audience qui ne LIT pas ne couvre rien.
+     * Une audience qui ne LIT pas ne couvre rien.
      *
-     * La règle cherchait un rôle couvrant par sa STRATÉGIE, sans jamais regarder ce
-     * qu'il accorde. Un octroi `supprimer` seul — liste non vide, donc parfaitement
-     * valide depuis 62.4 — suffisait à déclarer l'ancêtre couvert : le dossier
-     * personnel en dessous était validé « atteignable », compilait « conforme », et
-     * restait un mirage. Le défaut que cette story existe pour éliminer, réintroduit
-     * par sa propre validation.
+     * Chercher un rôle couvrant par sa seule STRATÉGIE, sans regarder ce qu'il
+     * accorde, laisse passer un octroi `supprimer` seul : la liste n'est pas
+     * vide, l'ancêtre passe pour couvert, le dossier personnel en dessous est
+     * déclaré « atteignable » et compile « conforme » — alors qu'il reste un
+     * mirage. C'est le défaut même que cette validation existe pour éliminer.
      */
     #[Test]
     public function an_ancestor_audience_that_cannot_read_covers_nobody(): void
@@ -378,10 +361,6 @@ class DirectoryTemplateReachabilityTest extends TestCase
             '« eleves »',
         );
     }
-
-    // =========================================================================
-    // Non-régression : l'existant reste valide, et les messages d'hier survivent
-    // =========================================================================
 
     /**
      * **LES CINQ RECETTES LIVRÉES RESTENT VALIDES, SANS UNE MODIFICATION.** C'est

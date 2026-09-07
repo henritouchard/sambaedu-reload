@@ -11,24 +11,21 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 57.1 — **FR33 : « ZÉRO ACCÈS PRIVILÉGIÉ » EST UNE PROPRIÉTÉ, PAS UNE
- * INTENTION.**
+ * **« ZÉRO ACCÈS PRIVILÉGIÉ » EST UNE PROPRIÉTÉ, PAS UNE INTENTION.**
  *
- * L'AC3 de la story dit : « l'extension ne consomme que SSO + claims ». Tant que
- * cette phrase n'échoue pas bruyamment le jour où quelqu'un la contredit, elle
+ * L'intention est : « l'extension ne consomme que SSO + claims ». Tant que cette
+ * phrase n'échoue pas bruyamment le jour où quelqu'un la contredit, elle
  * ne vaut rien. Ce fichier la rend mécanique.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI LE VERROU EST ICI, DANS LA SUITE DU CORE
  *
- *  `extensions/bbb/` vit dans le dépôt SE5 (décision D4) : c'est commode pour
+ *  `extensions/bbb/` vit dans le dépôt SE5 : c'est commode pour
  *  le cycle de développement, et c'est exactement ce qui rend la dérive facile.
  *  Un jour, quelqu'un aura « juste besoin » de lire un modèle plutôt que
  *  d'appeler l'API — et l'extension cessera d'être une extension. Le test vit
  *  donc dans la suite du CORE, où personne ne peut le désactiver en même temps
  *  qu'il écrit le code fautif : la suite autonome de l'extension
  *  (`extensions/bbb/phpunit.xml`) ne le connaît pas.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * Trois volets :
  *
@@ -53,8 +50,8 @@ class ExtensionBbbIsolationTest extends TestCase
      * leur nom court — ce qui est de toute façon la bonne façon de décrire un
      * voisin dont on n'a pas le droit de dépendre.
      *
-     * ⚠️ Le jeu de règles est CELUI DE L'ÉNONCÉ (FR33 / décision D4), ni plus ni
-     * moins. Les règles « conteneur » d'`ExtensionIsolationTest` (`app(`,
+     * ⚠️ Le jeu de règles se limite à ce que l'extension n'a pas le droit de
+     * toucher, ni plus ni moins. Les règles « conteneur » d'`ExtensionIsolationTest` (`app(`,
      * `resolve(`) n'ont aucun sens ici : il n'y a pas de conteneur dans du PHP
      * nu, et `app(` frapperait des identifiants légitimes.
      *
@@ -126,10 +123,6 @@ class ExtensionBbbIsolationTest extends TestCase
         return $violations;
     }
 
-    // =====================================================================
-    // Volet 1 — la quarantaine de l'extension BBB
-    // =====================================================================
-
     #[Test]
     public function the_bbb_extension_never_reaches_into_sambaedu(): void
     {
@@ -158,8 +151,8 @@ class ExtensionBbbIsolationTest extends TestCase
             }
         }
 
-        // Méta-test #1 : sans ce garde-fou, un répertoire renommé ou déplacé
-        // ferait passer le test À VIDE, indéfiniment — et au vert.
+        // Sans ce plancher, un répertoire renommé ou déplacé ferait passer le
+        // test À VIDE, indéfiniment — et au vert.
         self::assertGreaterThanOrEqual(
             20,
             $inspected,
@@ -180,7 +173,7 @@ class ExtensionBbbIsolationTest extends TestCase
     {
         // La quarantaine textuelle ne dit rien du `composer.json` : une
         // extension pourrait n'écrire aucun nom interdit ET tirer tout Laravel.
-        // La dépendance UNIQUE est le fork BigBlueButton (décision D2).
+        // La dépendance UNIQUE autorisée est le fork BigBlueButton.
         $composer = json_decode(
             (string) file_get_contents(self::repoPath('extensions/bbb/composer.json')),
             true,
@@ -201,10 +194,6 @@ class ExtensionBbbIsolationTest extends TestCase
             self::assertStringNotContainsString('illuminate/', $package);
         }
     }
-
-    // =====================================================================
-    // Volet 2 — les méta-tests : le scanner mord, et seulement où il faut
-    // =====================================================================
 
     #[Test]
     public function the_quarantine_scanner_actually_detects_a_violation(): void
@@ -296,10 +285,6 @@ class ExtensionBbbIsolationTest extends TestCase
         self::assertSame([], $this->quarantineViolations($obfuscated));
     }
 
-    // =====================================================================
-    // Volet 3 — le manifest RÉEL de l'extension
-    // =====================================================================
-
     /**
      * @return array<string, mixed>
      */
@@ -334,7 +319,7 @@ class ExtensionBbbIsolationTest extends TestCase
     {
         // `ext:update` ne re-négocie JAMAIS les scopes : les déclarer plus tard
         // imposerait un désinstaller/réinstaller au parc. `groups` est déclaré
-        // MAINTENANT parce que la story suivante en dépend.
+        // MAINTENANT parce que la suite en dépend.
         $scopes = (new ExtensionManifestValidator())->validate(self::manifest())['scopes'];
 
         self::assertSame(['profile', 'groups'], $scopes);
@@ -372,7 +357,7 @@ class ExtensionBbbIsolationTest extends TestCase
         self::assertStringContainsString('sambaedu-ext-bbb', $install['package']);
 
         // 64 hexadécimaux MINUSCULES — le validateur refuse les majuscules, et
-        // c'est une signature de défaut connue de l'Epic 56.
+        // c'est une signature de défaut connue.
         self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $install['sha256']);
         self::assertSame(strtolower($install['sha256']), $install['sha256']);
     }
@@ -380,7 +365,7 @@ class ExtensionBbbIsolationTest extends TestCase
     #[Test]
     public function the_committed_sha256_is_a_placeholder_that_can_never_match_a_real_package(): void
     {
-        // DÉCISION DE STORY, écrite plutôt que tue : le `sha256` réel n'est
+        // Décision écrite plutôt que tue : le `sha256` réel n'est
         // connaissable qu'à la CONSTRUCTION du paquet. Le manifest commité porte
         // donc un remplissage de 64 zéros — forme valide (le validateur l'exige)
         // et impossible à confondre avec un vrai condensat.
@@ -422,7 +407,7 @@ class ExtensionBbbIsolationTest extends TestCase
     public function the_unit_never_enables_itself_and_keeps_its_state_through_a_volatile_uid(): void
     {
         // Deux invariants de l'unité livrée par le paquet :
-        //  - le paquet n'active ni ne démarre JAMAIS son service (contrat 56.2) ;
+        //  - le paquet n'active ni ne démarre JAMAIS son service (contrat) ;
         //  - `DynamicUser=yes` impose `StateDirectory=` : un `chown` figé au
         //    postinst désignerait un UID qui n'existe plus au redémarrage
         //    suivant.

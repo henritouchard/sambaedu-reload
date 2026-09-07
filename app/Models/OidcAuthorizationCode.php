@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 55.1 — Un CODE D'AUTORISATION à usage unique (TTL 60 s).
+ * Un CODE D'AUTORISATION à usage unique (TTL 60 s).
  *
  * C'est la seule chose qui transite par la barre d'adresse du navigateur entre
  * `/oidc/authorize` et le client : un identifiant opaque, à durée de vie très
@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * sujet) pour que l'échange puisse tout re-vérifier.
  *
  * ⚠️ **`code_hash` est dans `$hidden` et stocke un sha256** : le code CLAIR ne
- * touche jamais la base ni les logs (NFR3). Un vol de la base ne donne aucun
+ * touche jamais la base ni les logs. Un vol de la base ne donne aucun
  * code utilisable.
  *
  * ⚠️ **Usage unique** : `consumed_at` est posé DANS la transaction d'échange
@@ -68,7 +68,7 @@ class OidcAuthorizationCode extends Model
         'created_at',
     ];
 
-    /** NFR3 : le hash du code ne sort jamais d'une sérialisation. */
+    /** Le hash du code ne sort jamais d'une sérialisation. */
     protected $hidden = [
         'code_hash',
     ];

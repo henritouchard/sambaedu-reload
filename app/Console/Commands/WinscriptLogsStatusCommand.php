@@ -8,11 +8,11 @@ use App\Console\Commands\Concerns\ManagesScriptLoggingFlag;
 use Illuminate\Console\Command;
 
 /**
- * Story 17.5 / AC1.3 — Affiche l'état effectif du logging centralisé des
+ * Affiche l'état effectif du logging centralisé des
  * scripts d'applications (lecture seule, AUCUNE écriture fichier).
  *
  * Lit la valeur via `config('sambaedu.scripts.logging.enabled', false)`
- * (source de vérité partagée avec l'Assembler 17.2) et affiche l'URL
+ * (source de vérité partagée avec l'Assembler) et affiche l'URL
  * d'ingestion résolue pour aider l'opérateur à vérifier la cible.
  */
 final class WinscriptLogsStatusCommand extends Command

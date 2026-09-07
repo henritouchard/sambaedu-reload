@@ -19,7 +19,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC3.2 + AC6.3 — Tests des KPIs globaux du dashboard.
+ * + — Tests des KPIs globaux du dashboard.
  */
 final class DashboardKpiTest extends TestCase
 {

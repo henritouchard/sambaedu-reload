@@ -9,29 +9,24 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — Réglages de déploiement WPKG (Story 15.6).
+ * Page Livewire SFC — Réglages de déploiement WPKG.
  * Servie sous `/admin/settings/gpo/wpkg-deployment`.
  *
- * Story 27.14 — l'AUDIT de cohérence de la GPO `se4_wpkg` (story 16.6, via
+ * L'AUDIT de cohérence de la GPO `se4_wpkg` (via
  * `WpkgGpoSynchronizer`) a été RETIRÉ avec l'extinction du canal de config
- * legacy : la GPO `se4_wpkg` n'est plus un transport (27.5 — l'agent déclenche
+ * legacy : la GPO `se4_wpkg` n'est plus un transport (l'agent déclenche
  * `wpkg-client.vbs`) et les endpoints `/wpkg/hosts.xml` + `/wpkg/profiles.xml`
- * ont été supprimés (27.5). Il ne reste que la carte « Réglages de
+ * ont été supprimés. Il ne reste que la carte « Réglages de
  * déploiement » (toggle winget + allowlist IP) qui gate les endpoints WPKG
- * `linux_out`/`winget_out` (HORS scope 27.14, conservés).
+ * `linux_out`/`winget_out` (HORS scope, conservés).
  *
  * Permission : `server.admin` (middleware route + abort_unless mount).
  *
  * **PIÈGE AUDIT** : les mutations Livewire ne passent PAS par le middleware HTTP
  * → l'audit des réglages doit être émis explicitement depuis les actions
- * (Story 15.6 / AC5).
  */
 new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     use WithToasts;
-
-    // =========================================================================
-    // Partie réglages déploiement (Story 15.6)
-    // =========================================================================
 
     /** Valeur courante du toggle winget (résolue DB > env > défaut). */
     public bool $wingetEnabled = false;
@@ -57,10 +52,6 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     /** IP/CIDR en attente de confirmation dans la modale. */
     public string $pendingCidr = '';
 
-    // =========================================================================
-    // Mount
-    // =========================================================================
-
     public function mount(): void
     {
         abort_unless(
@@ -72,33 +63,23 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         $this->loadDeploymentSettings();
     }
 
-    // =========================================================================
-    // Chargement des réglages déploiement
-    // =========================================================================
-
     private function loadDeploymentSettings(): void
     {
         /** @var WpkgDeploymentSettings $settings */
         $settings = app(WpkgDeploymentSettings::class);
 
-        // winget_enabled
         $this->wingetEnabled = $settings->wingetEnabled();
         $this->wingetSource = SystemSetting::get('wpkg.winget_enabled') !== null ? 'db' : 'env';
 
-        // allowed_ips
         $this->allowedIps = $settings->allowedIps();
         $this->allowedIpsSource = SystemSetting::get('wpkg.allowed_ips') !== null ? 'db' : 'env';
     }
 
-    // =========================================================================
-    // Actions réglages déploiement (Story 15.6)
-    // =========================================================================
-
     /**
-     * Toggle winget_enabled (Story 15.6 / AC4.2).
+     * Toggle winget_enabled.
      *
-     * Persiste via SystemSetting + toast + audit explicite (D5 / AC5).
-     * Pas de modale (action simple — D8).
+     * Persiste via SystemSetting + toast + audit explicite.
+     * Pas de modale : l'action est simple.
      */
     public function toggleWinget(): void
     {
@@ -111,7 +92,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         $this->wingetEnabled = $newValue;
         $this->wingetSource = 'db';
 
-        // Audit explicite (AC5 — le middleware HTTP ne voit pas les mutations Livewire).
+        // Audit explicite (le middleware HTTP ne voit pas les mutations Livewire).
         $this->emitSettingChangedAudit(
             setting: 'wpkg.winget_enabled',
             old: $oldValue,
@@ -125,7 +106,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     }
 
     /**
-     * Démarre l'ajout d'un CIDR : valide la syntaxe puis ouvre la modale (D8).
+     * Démarre l'ajout d'un CIDR : valide la syntaxe puis ouvre la modale.
      *
      * La modale rappelle que l'endpoint est non authentifié.
      */
@@ -159,7 +140,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     }
 
     /**
-     * Confirmation de l'ajout CIDR depuis la modale (AC4.3).
+     * Confirmation de l'ajout CIDR depuis la modale.
      */
     public function confirmAddCidr(): void
     {
@@ -182,7 +163,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         $this->newIpEntry = '';
         $this->newIpError = null;
 
-        // Audit explicite (AC5).
+        // Audit explicite.
         $this->emitSettingChangedAudit(
             setting: 'wpkg.allowed_ips',
             old: $oldIps,
@@ -202,7 +183,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     }
 
     /**
-     * Suppression d'une entrée de l'allowlist (AC4.3 — pas de modale au retrait).
+     * Suppression d'une entrée de l'allowlist (pas de modale au retrait).
      */
     public function removeIp(string $ip): void
     {
@@ -215,7 +196,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         $this->allowedIps = $newIps;
         $this->allowedIpsSource = 'db';
 
-        // Audit explicite (AC5).
+        // Audit explicite.
         $this->emitSettingChangedAudit(
             setting: 'wpkg.allowed_ips',
             old: $oldIps,
@@ -226,9 +207,9 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     }
 
     /**
-     * Émet l'audit explicite du changement de réglage (AC5.1 + AC5.2).
+     * Émet l'audit explicite du changement de réglage ( +).
      *
-     * - Log structuré sur le channel `wpkg-deploy` (AC5.2).
+     * - Log structuré sur le channel `wpkg-deploy`.
      * - Pas de table DB dédiée : le log structuré est le pattern projet pour
      *   cet événement (cf. WorkstationOptionsService qui log de même façon).
      */
@@ -262,7 +243,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         return $error;
     }
 
-    // Story 27.14 — la partie AUDIT GPO `se4_wpkg` (story 16.6 : `audit()`,
+    // La partie AUDIT GPO `se4_wpkg` ( : `audit`,
     // `refresh()`, modale re-publish, `getSeverityClassProperty`,
     // `getBearerSummaryProperty`) a été SUPPRIMÉE avec `WpkgGpoSynchronizer` et
     // l'extinction du canal de config legacy. Seuls les réglages de déploiement
@@ -431,7 +412,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
         </div>
 
     </div>
-    {{-- Modale confirmation ajout CIDR allowlist (Story 15.6 / D8) --}}
+    {{-- Modale confirmation ajout CIDR allowlist --}}
     <x-molecules.modal wire:model="isAddCidrModalOpen" size="max-w-lg" height="h-auto"
         title="Confirmer l'élargissement de l'allowlist WPKG" icon="fa-shield-halved text-warning">
         <x-molecules.modal.section dense>

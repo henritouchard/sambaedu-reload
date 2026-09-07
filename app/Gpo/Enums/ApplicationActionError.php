@@ -22,13 +22,12 @@ use InvalidArgumentException;
  * define('SAMBAEDU_WPKG_ERROR',          32768);
  * ```
  *
- * Story 16.7 — décision user D4 (2026-05-12) : ces constantes sont **100%
+ * Ces constantes sont **100%
  * internes serveur** (consommées par `MachineBootLog::error` + UI admin) et
  * **n'apparaissent jamais sur la fil HTTP** côté postes Windows → migration
  * en BackedEnum int safe (aucune rupture binaire client).
  *
  * @legacy-port path="sambaedu/includes/config.inc.php:36-44"
- * @see \App\Gpo\Services\ApplicationLoggerService::logScripts() Consommateur primaire.
  */
 enum ApplicationActionError: int
 {

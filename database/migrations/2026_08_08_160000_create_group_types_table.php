@@ -9,16 +9,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 62.2 — LE CATALOGUE DE TYPES DE GROUPES devient un objet de premier
+ * LE CATALOGUE DE TYPES DE GROUPES devient un objet de premier
  * niveau.
  *
  * **Pourquoi une table.** `user_groups.type` est un `string(50)` NOT NULL depuis
- * la story 4.x — et une CHAÎNE LIBRE : rien, nulle part, n'a jamais borné son
+ * la.x — et une CHAÎNE LIBRE : rien, nulle part, n'a jamais borné son
  * vocabulaire. `UserGroupService::validateData()` n'exigeait qu'un non-vide ≤ 50 ;
  * les `<select>` des deux formulaires bornaient de fait, mais le balayage AD
  * écrivait ce que sa détection de préfixe produisait, et une migration de reprise
  * de 2026-03 y a versé deux valeurs de plus. Résultat : une colonne référencée par
- * `directory_templates.attached_group_type` (story 60.2) sans qu'il existe aucune
+ * `directory_templates.attached_group_type` sans qu'il existe aucune
  * table à référencer — le docblock de cette migration-là l'écrivait noir sur
  * blanc (« Pas de clé étrangère : il n'existe pas de table des types »). Cette
  * phrase cesse d'être vraie ici.
@@ -48,7 +48,7 @@ use Illuminate\Support\Facades\Schema;
  * casse ou l'orthographe serait réécrire silencieusement le sens de groupes
  * réels, et l'appariement d'accrochage se ferait sur une valeur que plus personne
  * ne stocke. La migration LIT `user_groups` ; elle n'y écrit JAMAIS (garde-fou
- * d'epic 62 : « aucune valeur perdue ni renommée »).
+ * D' : « aucune valeur perdue ni renommée »).
  *
  * **Pourquoi `DB::table` et pas le modèle.** {@see \App\Models\GroupType} porte une
  * garde `saving` qui exige un slug snake_case : elle protège les créations
@@ -58,8 +58,8 @@ use Illuminate\Support\Facades\Schema;
  * que pour ce qu'on écrit à partir d'aujourd'hui.
  *
  * **Pourquoi la référence est la CLÉ et pas un id, sans clé étrangère.** Cohérence
- * avec le catalogue de rôles de la story 62.1 et décision D2 de l'epic : une
- * valeur lisible en base vaut mieux qu'une jointure, la clé est immuable par
+ * avec le catalogue de rôles : une valeur lisible en base vaut mieux qu'une
+ * jointure, la clé est immuable par
  * construction, et le refus de suppression est NOMMÉ (« 42 groupes portent ce
  * type ») — ce qu'un `RESTRICT` ne saurait pas formuler.
  *
@@ -72,7 +72,7 @@ return new class extends Migration
      * Les NEUF clés statiques, dans l'ordre des `<select>` historiques (parité
      * d'ordre : le picker ne doit pas se réordonner sous les doigts des
      * utilisateurs). Les libellés sont ceux de la forme la plus RICHE des `match`
-     * d'affichage qui meurent avec cette story — celui de la fiche utilisateur,
+     * d'affichage qui meurent ici — celui de la fiche utilisateur,
      * seul à connaître « Rôle » et « Fonction ».
      *
      * @var list<array{key: string, label: string, icon: string, sort_order: int}>
@@ -190,7 +190,7 @@ return new class extends Migration
             $discovered[] = [
                 'key' => $raw,
                 // `ucfirst` et pas `Str::title` : c'est le repli EXACT des `match`
-                // d'affichage remplacés par cette story. La parité d'écran prime
+                // d'affichage que cette table remplace. La parité d'écran prime
                 // sur l'élégance typographique.
                 'label' => ucfirst($raw),
                 'icon' => null,

@@ -1,9 +1,9 @@
-{{-- Story 3.7 - port iso-legacy `sambaedu/ipxe/actions/clonezilla_live.php`.
+{{-- Port iso-legacy `sambaedu/ipxe/actions/clonezilla_live.php`.
      Le legacy n'a PAS de bloc `params` iPXE (handshake fait amont par le
      menu clonezilla - cf. `IpxeMenuRenderer::renderClonezillaMenu()`). Les
      doubles espaces ci-dessous (`nomodeset  ocs_prerun`,
-     `keyboard-layouts="fr"  locales`) sont preserves iso-legacy (post-review
-     #3 - 2026-05-22). Le firmware iPXE tolere le whitespace, mais on garde la
+     `keyboard-layouts="fr"  locales`) sont preserves iso-legacy
+     volontairement. Le firmware iPXE tolere le whitespace, mais on garde la
      parite textuelle stricte pour faciliter les diffs legacy/SE5. --}}
 {!! $shebang !!}
 kernel {{ $osUrl }}/clonezilla/vmlinuz

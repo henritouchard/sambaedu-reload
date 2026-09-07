@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.4 (D7) — Audit APPEND-ONLY des règles d'accès aux dossiers.
+ * Audit APPEND-ONLY des règles d'accès aux dossiers.
  *
  * Chaque create / update / delete (activation-désactivation et mutation
  * d'assignations comprises = `update`) écrit une ligne DANS la transaction de la

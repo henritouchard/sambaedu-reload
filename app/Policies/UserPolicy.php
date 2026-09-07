@@ -10,7 +10,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 /**
  * Policy pour la gestion des utilisateurs.
  *
- * Story 7.2 (AC7, décisions a/b du 2026-04-23) : `resetPassword` ET `view`
+ * `resetPassword` ET `view`
  * sont désormais **scopées classe** pour le rôle `Prof`. Un Prof ne peut
  * réinitialiser le mot de passe / consulter le profil que des users membres
  * d'une `Classe_X` (type='classe') dont il est rattaché à l'équipe pédagogique
@@ -31,9 +31,8 @@ class UserPolicy
     /**
      * Rôles dont les permissions user.* sont globales (pas de scoping classe).
      *
-     * Correction review 7.2 #6 : `eleve-admin` retiré — désormais scopé classe
-     * comme `prof` pour reproduire le comportement legacy `sovajon_is_admin`
-     * (bits UserPasswordInit|UserRead|UserModify, scoping via `sovajon_is_admin`
+     * `eleve-admin` n'en fait PAS partie : il est scopé classe comme `prof`,
+     * iso-legacy `sovajon_is_admin` (bits UserPasswordInit|UserRead|UserModify,
      * strictement class-bound).
      */
     public const GLOBAL_USER_ROLES = [
@@ -44,8 +43,7 @@ class UserPolicy
 
     /**
      * Rôles soumis au scoping classe strict (aucun accès admin global).
-     *
-     * Correction review 7.2 #6 : `eleve-admin` ajouté — iso-legacy.
+     * Iso-legacy `sovajon_is_admin`.
      */
     private const CLASS_SCOPED_ROLES = [
         'prof',
@@ -75,14 +73,14 @@ class UserPolicy
     /**
      * Vérifie si l'utilisateur peut voir un user cible.
      *
-     * Story 7.2 — Décision (b) : `Prof` scopé classe. Sans `$target`, on se
+     * Décision (b) : `Prof` scopé classe. Sans `$target`, on se
      * rabat sur le droit global (liste de résultats → le contrôleur/listing
      * filtre en amont si besoin).
      */
     public function view(?Authenticatable $actor, ?User $target = null): bool
     {
         // Normalise l'acteur vers l'Eloquent User pour que le scoping classe
-        // fonctionne quelle que soit la façon dont il a été résolu (Story 49.2 :
+        // fonctionne quelle que soit la façon dont il a été résolu ( :
         // le wrapper LDAP `AuthUser` n'existe plus, mais un `Authenticatable`
         // tiers peut toujours arriver ici — tests, guards alternatifs).
         $actor = $this->resolveEloquentActor($actor);
@@ -132,7 +130,7 @@ class UserPolicy
     }
 
     /**
-     * Story 7.2 (AC7, décision a) — `Prof` scopé classe pour `user.password.init`.
+     * `Prof` scopé classe pour `user.password.init`.
      */
     public function resetPassword(?Authenticatable $actor, ?User $target = null): bool
     {
@@ -141,7 +139,7 @@ class UserPolicy
         }
 
         // Normalise l'acteur vers l'Eloquent User pour que le scoping classe
-        // fonctionne quelle que soit la façon dont il a été résolu (Story 49.2 :
+        // fonctionne quelle que soit la façon dont il a été résolu ( :
         // le wrapper LDAP `AuthUser` n'existe plus, mais un `Authenticatable`
         // tiers peut toujours arriver ici — tests, guards alternatifs).
         $actor = $this->resolveEloquentActor($actor);
@@ -178,10 +176,6 @@ class UserPolicy
         return $this->canAssignRights($user);
     }
 
-    // ========================================================================
-    // Helpers privés — scoping classe (décisions a/b Story 7.2)
-    // ========================================================================
-
     /**
      * Normalise l'acteur en `App\Models\User` Eloquent.
      *
@@ -198,8 +192,8 @@ class UserPolicy
      * Indique si l'acteur porte au moins un rôle "admin global" parmi
      * `GLOBAL_USER_ROLES`. Ces rôles ne sont pas soumis au scoping classe.
      *
-     * Correction review 7.2 #M2 : remplace le dead-code `instanceof Trait`
-     * (toujours false en PHP) par un check `class_uses_recursive` propre.
+     * Le check passe par `class_uses_recursive` : un `instanceof <trait>` est
+     * toujours faux en PHP.
      */
     private function hasGlobalUserRole(?Authenticatable $actor): bool
     {
@@ -220,8 +214,7 @@ class UserPolicy
      * admin global. Si un Prof est aussi UserAdmin, il accède à tout via le
      * rôle admin (capturé dans `hasGlobalUserRole`).
      *
-     * Correction review 7.2 #6 : renommée depuis `isProfOnly` pour couvrir
-     * aussi `eleve-admin` (iso-legacy `sovajon_is_admin`).
+     * Couvre aussi `eleve-admin`, iso-legacy `sovajon_is_admin`.
      */
     private function isClassScopedOnly(?Authenticatable $actor): bool
     {
@@ -235,7 +228,7 @@ class UserPolicy
      * Décisions (a) et (b) : un prof voit/reset une cible élève si tous deux
      * sont membres d'une même classe (`type='classe'`, même nom nu).
      *
-     * Story 4.13 — Recâblage post-fold. L'import AD→SQL replie désormais
+     * Recâblage post-fold. L'import AD→SQL replie désormais
      * `Classe_X`/`Equipe_X`/`PP_X` en UNE seule ligne au NOM NU `X`
      * (`type='classe'`) : il n'existe plus de distinction `Equipe_`/`Classe_`
      * côté SQL. Prof ET élève sont co-membres de la MÊME ligne nue ; la

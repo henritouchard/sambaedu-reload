@@ -54,7 +54,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public array $selectedGroupMachineIds = [];
     public bool $allGroupMachinesSelected = false;
 
-    // ── État modale Programmations (story 4-4) ─────────────────────────────
+    // État modale Programmations (-4)
     public bool $scheduleModalOpen = false;
     public ?int $editingScheduleId = null;
     public string $formMode = 'recurring'; // 'recurring' | 'one_shot' (D7)
@@ -67,7 +67,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public string $formRunAtTime = '08:00'; // one-shot time (H:i)
     public bool $formEnabled = true;
 
-    // ── État batch async (story 4-3) ───────────────────────────────────────
+    // État batch async (-3)
     // Ces propriétés pilotent le polling Livewire `wire:poll.{N}s` de la
     // vue groupe. Tant que $batchRunning est true, un unique `wire:poll`
     // est rendu et appelle pollGroupReadiness() à l'intervalle configuré.
@@ -85,7 +85,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public bool $batchSummaryVisible = false;
     public bool $batchTimeoutFired = false;
 
-    // ── Story 15.4 / Décision A — Onglet « Applications WPKG » ─────────────
+    // / Décision A — Onglet « Applications WPKG »
     #[Url(as: 'tab', keep: true)]
     public string $tab = 'general';
 
@@ -97,7 +97,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public array $selectedWpkgAppIdsToAdd = [];
     public string $wpkgAppSearch = '';
 
-    // ── Onglet « Raccourcis » — assignation raccourci ↔ groupe de postes ──────
+    // Onglet « Raccourcis » — assignation raccourci ↔ groupe de postes
     public bool $showAttachShortcutModal = false;
     public array $selectedShortcutIdsToAdd = [];
     public string $shortcutSearch = '';
@@ -156,7 +156,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 return;
             }
 
-            // Story 7.1 — AC3 : blocage d'accès direct hors périmètre.
+            // Blocage d'accès direct hors périmètre.
             // Si la Policy `view` refuse (ni droit global, ni délégation positive),
             // on redirige silencieusement vers /parc + toast d'erreur, sans
             // révéler l'existence du groupe (pas de 403 explicite).
@@ -197,7 +197,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function addMachines(): void
     {
-        // Story 7.1 — Gate serveur (review #1) : bloquer les mutations hors périmètre
+        // Gate serveur : bloquer les mutations hors périmètre
         // même si l'UI est masquée côté Blade. Throws AuthorizationException → 403.
         Gate::authorize('update-workstationGroup', $this->group);
 
@@ -210,7 +210,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             if ($this->group->is_physical) {
                 // Salle physique : « ajouter » = déplacer le poste DANS cette
                 // salle → swap transactionnel du service sur le pivot global
-                // `workstation_group_workstation` (Story 4.11 : un poste n'a
+                // `workstation_group_workstation` ( : un poste n'a
                 // qu'une seule salle, il quitte sa salle précédente). La
                 // propagation OU AD est dispatchée par le service
                 // (`WorkstationMembershipAdSyncJob::move`).
@@ -229,7 +229,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             $this->selectedMachines = [];
             $this->loadGroup();
         } catch (\App\Exceptions\ControlHub\UpstreamLockCollisionException $e) {
-            // Story 30.5 — collision verrou/verrou prédite : message explicite.
+            // Collision verrou/verrou prédite : message explicite.
             $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[GroupShow] Erreur ajout machines: ' . $e->getMessage());
@@ -239,7 +239,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function removeMachine(int $machineId): void
     {
-        // Story 7.1 — Gate serveur (review #1) : bloquer les mutations hors périmètre.
+        // Gate serveur : bloquer les mutations hors périmètre.
         Gate::authorize('update-workstationGroup', $this->group);
 
         try {
@@ -260,7 +260,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 27.2 (décision Henri n° 5) — bascule le drapeau « imprimante par
+     * Bascule le drapeau « imprimante par
      * défaut » de l'attachement imprimante↔WG (colonne pivot `is_default`).
      *
      * Valable pour un WG physique (salle) COMME logique (parc). Exclusif AU SEIN
@@ -385,9 +385,9 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 4-3 — dispatch batch async.
+     * -3 — dispatch batch async.
      *
-     * Flow (AC2/AC6/AC7) :
+     * Flow :
      *  1. Guard gate Spatie `computer.control` + guard $batchRunning (double-dispatch).
      *  2. Sélection non vide + action ≠ 'remote' (remote exclu du dropdown batch).
      *  3. Appel du service qui crée 1 MachinePowerActionTask + 1 job par machine
@@ -398,7 +398,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
      */
     public function executeSelectedGroupMachinesAction(string $action): void
     {
-        // Guard serveur-side : cochée même si @can masque côté Blade (AC11).
+        // Guard serveur-side : cochée même si @can masque côté Blade.
         if (!Gate::allows('computer.control')) {
             $this->toastAccessDenied();
             return;
@@ -409,7 +409,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        // remote n'est pas batchable (token par machine, AC6) : l'UI n'expose
+        // Remote n'est pas batchable (token par machine) : l'UI n'expose
         // pas l'entrée mais on garde un garde-fou serveur.
         if ($action === 'remote') {
             $this->toastError('L\'accès distant n\'est pas disponible en action batch. Utilisez le dropdown unitaire.');
@@ -505,7 +505,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 4-3 — action unitaire depuis la vue groupe, async (parité vue machine 4-2).
+     * -3 — action unitaire depuis la vue groupe, async (parité vue machine 4-2).
      *
      * Respecte l'idempotence : si une task est déjà active sur la machine, le
      * service retourne code=409 → on convertit en toast warning sans échouer.
@@ -521,7 +521,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         // réponses structurées (409 / 404 / 202) sans dupliquer la logique
         // avec le batch.
         try {
-            // L'accès distant reste synchrone (contrat D5 story 4-3 / AC6).
+            // L'accès distant reste synchrone.
             if ($action === 'remote') {
                 $result = $this->parcService->executeGroupMachinesAction($this->id, [$machineId], 'remote');
                 $this->handleRemoteAccessResult($result);
@@ -586,7 +586,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Polling Livewire (AC3/AC4/AC5 story 4-3).
+     * Polling Livewire (-3).
      *
      * Appelé par `wire:poll.{N}s` sur la vue tant que $batchRunning est true.
      *
@@ -594,7 +594,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
      *  1. Guard rapide : no-op si pas de batch en cours.
      *  2. Timeout global : si elapsed ≥ config('parc.machine_readiness_timeout_seconds'),
      *     marquer toutes les tasks encore actives de ce batch comme failed,
-     *     appeler logReadinessTimeout() pour chaque machine, toast warning unique.
+     *  appeler logReadinessTimeout() pour chaque machine, toast warning unique.
      *  3. Un SEUL SELECT sur machine_power_action_tasks du batch courant
      *     (with('workstation') pour éviter les N+1 quand on résout la phase restart).
      *  4. Pour chaque task active, appliquer la logique per-action :
@@ -604,10 +604,10 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
      *       restart (waiting-up)      → ping true → completed
      *  5. Si plus aucune task active pour le batch → stopBatchPolling().
      *
-     * Invariant (review #8/#12) : on ne ping QUE les tasks en STATUS_RUNNING.
+     * Invariant : on ne ping QUE les tasks en STATUS_RUNNING.
      * Les tasks queued/dispatched sont skippées : tant que le worker n'a pas
      * pris la task (et donc pas envoyé la commande shell), pinger est inutile
-     * et coûteux (ping série bloquant — 50 machines × 1.4s = ~70s sur un tick
+     * et coûteux (ping série bloquant — 50 machines × = ~70s sur un tick
      * Livewire). Exige en prod `QUEUE_CONNECTION=database` + `php artisan queue:work`.
      */
     public function pollGroupReadiness(): void
@@ -806,7 +806,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Résumé du batch courant (AC4) — recalculé à chaque rendu.
+     * Résumé du batch courant — recalculé à chaque rendu.
      *
      * Compteurs + liste nominative des échecs. Requête unique avec eager-loading
      * pour éviter les N+1. Utilisé par le partial `_partials/batch-summary.blade.php`.
@@ -870,9 +870,8 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
      * de chaque ligne. Partage la collection memoïsée avec getBatchSummaryProperty
      * pour éviter un double SELECT par cycle de rendu.
      *
-     * Note (review #15 — en attente) : ne couvre PAS les tasks actives hors
-     * batch courant (autre opérateur). Extension possible dans une story UX
-     * multi-opérateur dédiée.
+     * Ne couvre PAS les tasks actives hors batch courant (autre opérateur).
+     * L'extension multi-opérateur reste à faire.
      *
      * @return array<int, MachinePowerActionTask>
      */
@@ -909,7 +908,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Ferme l'encart résumé (AC4 — bouton "Effacer").
+     * Ferme l'encart résumé (bouton "Effacer").
      * Les rows machine_power_action_tasks restent en DB pour l'audit.
      */
     public function clearBatchSummary(): void
@@ -933,7 +932,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Actions exposées dans le dropdown BATCH (AC6) : toutes sauf `remote`.
+     * Actions exposées dans le dropdown BATCH : toutes sauf `remote`.
      * Le dropdown unitaire par ligne continue d'exposer les 5 actions.
      */
     public function getBatchMachineActionsProperty(): Collection
@@ -954,7 +953,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /* ================================================================
-     * Story 3.11 — Réinstallation OS pilotée (salle / groupe — fan-out).
+     * Réinstallation OS pilotée (salle / groupe — fan-out).
      * ================================================================ */
 
     public bool $reinstallModalOpen = false;
@@ -1009,7 +1008,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     /**
      * Arme la réinstallation de tous les postes du groupe (fan-out, liste figée
-     * à l'instant — D3). Skip protégés + doublons actifs. Retour de fan-out clair.
+     * à l'instant). Skip protégés + doublons actifs. Retour de fan-out clair.
      */
     public function armReinstall(): void
     {
@@ -1102,12 +1101,8 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         // No-op : la simple réception de l'event force le re-render Livewire.
     }
 
-    // ========================================
-    // Story 4-4 — Programmations (crons)
-    // ========================================
-
     /**
-     * Computed : liste des schedules du groupe avec tri AC24.
+     * Computed : liste des schedules du groupe avec tri.
      *
      * Ordre : récurrents actifs d'abord (par heure), puis one-shots futurs
      * (par run_at asc), puis one-shots terminés (par completed_at desc).
@@ -1370,7 +1365,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function deleteGroup(): void
     {
-        // Story 7.1 — Gate serveur (review #1) : bloquer la suppression hors périmètre.
+        // Gate serveur : bloquer la suppression hors périmètre.
         Gate::authorize('delete-workstationGroup', $this->group);
 
         try {
@@ -1389,16 +1384,12 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         }
     }
 
-    // ============================================================
-    // Story 15.4 — Onglet Applications WPKG (Décision A)
-    // ============================================================
-
     public function setTab(string $tab): void
     {
-        // Onglets capacités/associations (27.12/27.3bis) : gestes par
+        // Onglets capacités/associations : gestes par
         // WorkstationGroup, réservés à app.customize — l'onglet n'est cliquable que
         // si la permission est accordée (sinon retombe sur « general »).
-        // Story 37.1 — onglet « État cible » : consultation pure, INCONDITIONNEL
+        // Onglet « État cible » : consultation pure, INCONDITIONNEL
         // (aucun droit supplémentaire ; visible sous le gate de page existant).
         $allowed = ['general', 'wpkg', 'shortcuts', 'state'];
         if (auth()->user()?->can('app.customize')) {
@@ -1409,10 +1400,10 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 / AC3 — Panneau conformité du groupe : par type de ressource
+     * Panneau conformité du groupe : par type de ressource
      * rapporté, « n/N conformes » + la liste des SEULES exceptions, datées
-     * (décision n° 4). Lecture agrégée via ConformityService, relue à chaque
-     * cycle wire:poll (retour auto à compliant — AC4).
+     * Lecture agrégée via ConformityService, relue à chaque
+     * cycle wire:poll (retour auto à compliant —).
      *
      * @return array<int, array{type:string, total:int, compliant:int, exceptions:array}>
      */
@@ -1426,7 +1417,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 / AC1 (compteurs groupe) — résumé de conformité du périmètre
+     * Résumé de conformité du périmètre
      * du groupe (postes enrôlés membres).
      *
      * @return array{enrolled:int, compliant:int, exceptions:int, never_reported:int, silent:int}
@@ -1434,7 +1425,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public function getConformitySummaryProperty(): array
     {
         if (! $this->group) {
-            // Story 27.8 : clé `drifted_allowed` retirée (mécanisme strict/default supprimé).
+            // Clé `drifted_allowed` retirée (mécanisme strict/default supprimé).
             return ['enrolled' => 0, 'compliant' => 0, 'exceptions' => 0, 'never_reported' => 0, 'silent' => 0];
         }
 
@@ -1442,15 +1433,15 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 / AC5 — « Forcer la synchro » de tous les membres ENRÔLÉS
-     * NON en quarantaine du groupe (mécanique PULL, décision n° 1). Les
-     * postes non enrôlés / en quarantaine sont ignorés silencieusement
-     * (piège 6) ; le toast récapitule demandés / ignorés.
+     * « Forcer la synchro » de tous les membres ENRÔLÉS
+     * NON en quarantaine du groupe (mécanique PULL). Les postes non enrôlés
+     * ou en quarantaine sont ignorés silencieusement ; le toast récapitule
+     * demandés / ignorés.
      */
     public function forceSyncGroup(SyncRequestService $syncRequests): void
     {
         // Guard serveur-side : même gate que les autres mutations de la page
-        // (executeSelectedGroupMachinesAction & co — review 24.7 #1).
+        // (executeSelectedGroupMachinesAction & co).
         if (! Gate::allows('computer.control')) {
             $this->toastAccessDenied();
             return;
@@ -1515,7 +1506,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return collect();
         }
         $existing = $this->group->appProfiles()->pluck('app_profiles.id')->toArray();
-        // Story 15.4 / Correction post-review #2 : eager-load `applications`
+        // Eager-load `applications`
         // pour le sous-texte « N application(s) » de attach-profiles-modal
         // (évite le N+1).
         $query = AppProfile::query()
@@ -1570,8 +1561,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 15.4 / Correction post-review #M1 — Liste des AppProfile actifs
-     * pour le sélecteur « Profil existant » de la modale bulk catégorie.
+     * Liste des AppProfile actifs pour le sélecteur « Profil existant » de la modale bulk catégorie.
      * Extraction de la query Eloquent inline qui était dans la vue
      * `_partials/wpkg-bulk-category-modal.blade.php` (anti-pattern : query
      * exécutée à chaque render Livewire).
@@ -1686,9 +1676,6 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         }
     }
 
-    // ============================================================
-    // Onglet Raccourcis — assignation raccourci ↔ groupe de postes
-    // ============================================================
     //
     // Miroir de l'assignation gérée côté page raccourci
     // (shortcuts/[id] : `Shortcut::workstationGroups()`). Ici on opère depuis
@@ -1754,7 +1741,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             $lockedCount = $selected->count() - $attachable->count();
 
             // syncWithoutDetaching : idempotent, n'écrase pas les assignations
-            // existantes (parité avec le versant raccourci, Story 27.8 STRICT).
+            // existantes (parité avec le versant raccourci STRICT).
             $this->group->shortcuts()->syncWithoutDetaching($attachable->pluck('id')->all());
 
             $message = $attachable->count() . ' raccourci(s) attribué(s) au groupe';
@@ -1849,7 +1836,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 }
             }
 
-            // Story 15.4 / Correction post-review #M2 : atomicité bulk catégorie.
+            // Atomicité du bulk catégorie.
             // L'enchaînement createProfile (ou find) + addApplications + addWorkstationGroups
             // doit être atomique : en cas d'échec d'une mutation, rien ne doit être persisté
             // (sinon état corrompu : profil créé sans rattachement, ou apps attachées sans
@@ -1910,14 +1897,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 15.4 — Preview du diff clone parc → parc.
+     * Preview du diff clone parc → parc.
      *
-     * @note Race condition (Correction post-review #6) : le diff affiché ici
-     *       est indicatif. Entre cette preview et l'execute (executeClone()),
+     * @note Race condition : le diff affiché ici
+     *  est indicatif. Entre cette preview et l'execute (executeClone()),
      *       un autre admin peut modifier source ou cible. L'execute recalcule
      *       systématiquement le diff depuis la BDD ; le toast de confirmation
      *       affiche le delta réel (potentiellement différent du preview).
-     *       Mitigation hash de config hors scope MVP — voir review 15.4 #6.
+     *       Un hash de configuration fermerait la fenêtre ; hors périmètre.
      */
     public function previewCloneTo(int $targetGroupId, AppProfileService $appProfileService): void
     {
@@ -1958,7 +1945,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     private function ensureWpkgAssignAuthorized(): void
     {
         try {
-            // Story 29.1 — Gate SCOPÉ par périmètre (salle physique) : remplace
+            // Gate SCOPÉ par périmètre (salle physique) : remplace
             // l'ancien `Gate::authorize('wpkg.assign')` GLOBAL aveugle au parc.
             // Une délégation WPKG sur cette salle est désormais opposable ; le
             // droit global reste un fallback (admin/technicien — non-régression).
@@ -2107,14 +2094,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         {{-- Modale réutilisable de création / édition de groupe (ici : mode édition). --}}
         <livewire:pages::parc.groups._partials.group-form-modal :key="'group-form-modal-' . $group->id" />
 
-        {{-- Story 3.11 — Panneau des réinstallations en cours de la salle. --}}
+        {{-- Panneau des réinstallations en cours de la salle. --}}
         @include('pages.parc.groups.[id]._partials.reinstall-panel')
 
-        {{-- Story 3.11 — Modale de réinstallation (fan-out salle/groupe). --}}
+        {{-- Modale de réinstallation (fan-out salle/groupe). --}}
         @can('computer.install')
-            {{-- Fix review #5 — compte EXACT des postes impactés : armReinstall
-                 arme TOUS les membres de la salle (D3 liste figée), en excluant
-                 les postes protégés (D10). Littéral server-side stable. --}}
+            {{-- Compte EXACT des postes impactés : armReinstall arme TOUS les
+                 membres de la salle (liste figée), en excluant les postes
+                 protégés. Littéral server-side stable. --}}
             @php
                 $reinstallImpactCount = $group->members
                     ->reject(fn ($m) => $m->isProtected())
@@ -2155,7 +2142,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                         Groupe logique
                                     </span>
                                 @endif
-                                {{-- Story 30.3 — Badge lecture seule « imposé par le contrat amont ».
+                                {{-- Badge lecture seule « imposé par le contrat amont ».
                                      Couvre TOUS les groupes managed_by_control_hub, y compris le cas
                                      « adopted » (groupe pré-existant verrouillé root, AC4) où le verrou
                                      affiché reste root mais le groupe est tout de même imposé et non
@@ -2274,7 +2261,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg).
+            {{-- Décision A — Onglets de premier niveau (général | wpkg).
                  Story 27.12 / 27.3bis — Options/Capacités et Associations, réservés
                  à app.customize : la visibilité conditionnelle se gère en amont en
                  n'ajoutant pas l'onglet au tableau (convention x-molecules.tabs). --}}
@@ -2338,20 +2325,20 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     @include('pages.parc.groups.[id]._partials.attach-shortcuts-modal')
                 @endif
             @elseif ($tab === 'capabilities')
-                {{-- Story 27.12 — onglet Options/Capacités, composant Livewire scopé au groupe. --}}
+                {{-- Onglet Options/Capacités, composant Livewire scopé au groupe. --}}
                 <livewire:pages::parc.groups._partials.capabilities-tab :group-id="$group->id" :key="'capabilities-tab-'.$group->id" />
             @elseif ($tab === 'associations')
-                {{-- Story 27.3bis — onglet associations par défaut, composant Livewire scopé au groupe. --}}
+                {{-- Onglet associations par défaut, composant Livewire scopé au groupe. --}}
                 <livewire:pages::parc.groups._partials.associations-tab :group-id="$group->id" :key="'associations-tab-'.$group->id" />
             @elseif ($tab === 'state')
-                {{-- Story 37.1 — onglet « État cible » scopé au groupe. Partial sous
+                {{-- Onglet « État cible » scopé au groupe. Partial sous
                      groups/[id]/_partials/ ⇒ inclusion via @livewire (crochets [id],
                      piège #6). --}}
                 @livewire('pages::parc.groups.[id]._partials.desired-state-tab', ['groupId' => $group->id], key('state-'.$group->id))
             @else
                 @include('pages.parc.groups.[id]._partials.batch-summary')
                 @include('pages.parc.groups.[id]._partials.machines-list')
-                {{-- Story 24.7 — panneau conformité (règles → exceptions) --}}
+                {{-- Panneau conformité (règles → exceptions) --}}
                 @include('pages.parc.groups.[id]._partials.conformity-panel')
                 @include('pages.parc.groups.[id]._partials.schedules-panel')
                 @include('pages.parc.groups.[id]._partials.wallpaper-modal')

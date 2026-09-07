@@ -10,12 +10,12 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4.14 — Fusion des lignes `user_groups` HÉRITÉES (bases importées AVANT
- * le fold de 4.13) vers la forme « 1 ligne SQL = 1 classe au nom nu ».
+ * Fusion des lignes `user_groups` HÉRITÉES (bases importées AVANT
+ * le fold) vers la forme « 1 ligne SQL = 1 classe au nom nu ».
  *
- * Une base déjà importée avant 4.13 peut contenir jusqu'à 3 lignes physiques
+ * Une base déjà importée avant peut contenir jusqu'à 3 lignes physiques
  * `Classe_<X>` / `Equipe_<X>` / `PP_<X>` (chacune avec ses pivots, son `ad_guid`,
- * son `ad_dn`). Le fold de 4.13 ne réécrit que le flux d'import ; il ne touche
+ * son `ad_dn`). Le fold ne réécrit que le flux d'import ; il ne touche
  * pas l'existant déjà persisté. Cette action **converge** cet existant SQL vers
  * la forme produite par `UserGroupService::buildFoldedGroups`.
  *
@@ -29,14 +29,14 @@ use Illuminate\Support\Facades\Schema;
  * Invariants garantis :
  * - **Aucun membre perdu** : les pivots des lignes redondantes sont reportés
  *   sur la survivante AVANT toute suppression (`insertOrIgnore`, PK composite).
- * - **Survivante déterministe** (D1) : ligne nue `X` préexistante > `Classe_X`
- *   > `Equipe_X` > `PP_X` (ordre D2 de 4.13).
+ * - **Survivante déterministe** : ligne nue `X` préexistante > `Classe_X`
+ *   > `Equipe_X` > `PP_X`.
  * - **Garde anti-collision** sur `user_groups.name` UNIQUE : on ne renomme
  *   jamais vers un `name` déjà pris — si la ligne nue existe, c'est ELLE la
  *   survivante (pas un rename).
  * - **`is_head_teacher`** posé `true` pour les membres issus de la ligne
  *   `PP_<X>` (avant suppression de cette ligne), `false` pour les autres.
- * - **`Equipe_` orphelin (D3)** : une ligne `Equipe_<Y>` sans `Classe_`/`PP_`
+ * - **`Equipe_` orphelin** : une ligne `Equipe_<Y>` sans `Classe_`/`PP_`
  *   héritée et sans ligne nue classe/équipe préexistante n'est PAS fusionnée ;
  *   elle est juste renommée au nom nu `Y` (type `equipe`).
  * - **Idempotente** : un 2e run (ou un run sur une base déjà foldée) est un
@@ -45,7 +45,7 @@ use Illuminate\Support\Facades\Schema;
 class MergeLegacyUserGroups
 {
     /**
-     * Préfixes de fold, dans l'ordre de priorité canonique (D2/D1 de 4.13).
+     * Préfixes de fold, dans l'ordre de priorité canonique.
      * `Classe_` est canonique ; `Equipe_` puis `PP_` en fallback déterministe.
      *
      * @var array<int,string>
@@ -68,19 +68,19 @@ class MergeLegacyUserGroups
             'skipped_collisions' => 0,
         ];
 
-        // Story 42.1 (review #4) — la migration 4.14 (2026_06_25) n'invoque PAS
+        // La migration (2026_06_25) n'invoque PAS
         // cette action (geste manuel/ops via tinker, documenté dans la
         // migration elle-même) : le scénario réel de la garde est une
-        // invocation manuelle sur une base pré-42.1, où la colonne `role`
+        // invocation manuelle sur une base antérieur, où la colonne `role`
         // (2026_07_13) n'existe pas encore → toute écriture de `role` reste
-        // derrière `Schema::hasColumn`. Sans la colonne : comportement 4.14
+        // derrière `Schema::hasColumn`. Sans la colonne : comportement
         // strictement intact. Avec : miroir `role` ⇔ `is_head_teacher`.
         $hasRoleColumn = Schema::hasColumn('user_group_user', 'role');
 
         // 1) Charger toutes les lignes une fois, indexer par baseKey (lower).
         //    On groupe à la fois les lignes préfixées (Classe_/Equipe_/PP_) ET
-        //    les éventuelles lignes nues de type classe/équipe préexistantes —
-        //    ces dernières sont la survivante prioritaire (D1).
+        //  les éventuelles lignes nues de type classe/équipe préexistantes
+        //    ces dernières sont la survivante prioritaire.
         $rows = DB::table('user_groups')
             ->select(['id', 'name', 'type', 'ad_guid', 'ad_dn'])
             ->get();
@@ -133,7 +133,7 @@ class MergeLegacyUserGroups
                     static fn (object $r): bool => (int) $r->id !== (int) $survivor->id
                 ));
 
-                // --- Equipe_ orphelin (D3) : une SEULE ligne, préfixée Equipe_,
+                // --- Equipe_ orphelin : une SEULE ligne, préfixée Equipe_,
                 //     pas d'ancre Classe_/PP_ ni de ligne nue → renommer en nom
                 //     nu type equipe, sans fusion. (Si plusieurs lignes, on passe
                 //     par le chemin de fusion standard ci-dessous.)
@@ -179,11 +179,11 @@ class MergeLegacyUserGroups
                     ->all();
 
                 if (count($redundantUserIds) > 0) {
-                    // Story 42.1 — rôle miroir des membres reportés : `member`
+                    // Rôle miroir des membres reportés : `member`
                     // par défaut, `manager` pour les profs (lecture COLONNE
                     // `users.role`, zéro LDAP). Les PP passeront `owner` à
                     // l'étape (c) ci-dessous. Sans colonne `role` : `false`
-                    // uniquement (comportement 4.14).
+                    // uniquement (comportement).
                     $roleByUser = [];
                     if ($hasRoleColumn) {
                         $roleByUser = DB::table('users')
@@ -219,7 +219,7 @@ class MergeLegacyUserGroups
                 //     survivante (ils sont désormais tous présents sur la
                 //     survivante via le report (b) ou y étaient déjà).
                 if (count($ppUserIds) > 0) {
-                    // Story 42.1 — miroir : PP → `owner` en même temps que le
+                    // Miroir : PP → `owner` en même temps que le
                     // flag (invariant `owner` ⇔ `is_head_teacher=true`).
                     $ppUpdate = ['is_head_teacher' => true];
                     if ($hasRoleColumn) {
@@ -252,7 +252,7 @@ class MergeLegacyUserGroups
     }
 
     /**
-     * Choisit la ligne survivante d'un groupe de base selon D1 :
+     * Choisit la ligne survivante d'un groupe de base :
      * ligne nue préexistante (type classe/équipe) > `Classe_` > `Equipe_` > `PP_`.
      *
      * @param array<int, object> $group
@@ -289,7 +289,7 @@ class MergeLegacyUserGroups
     private function resolveBareName(array $group): string
     {
         // 1) Si une ligne NUE préexiste, son `name` EST le nom nu canonique (et
-        //    c'est la survivante D1) — on s'aligne dessus pour éviter toute
+        //    c'est la survivante) — on s'aligne dessus pour éviter toute
         //    divergence de casse avec le lookup post-sync de 4.13.
         foreach ($group as $row) {
             if ($this->foldPrefixOf((string) $row->name) === null) {
@@ -300,7 +300,7 @@ class MergeLegacyUserGroups
         // 2) Sinon, stripper depuis le CN le PLUS PRIORITAIRE disponible
         //    (Classe_ > Equipe_ > PP_, ordre canonique de `chooseSurvivor`).
         //    Déterministe quel que soit l'ordre de retour SQL (pas d'ORDER BY
-        //    sur le get()) et BYTE-IDENTIQUE à `UserGroupService::stripClasseLikePrefix`
+        //  sur le get()) et BYTE-IDENTIQUE à `UserGroupService::stripClasseLikePrefix`
         //    → la migration et le sync produisent le même nom nu (cf. M3).
         foreach (self::FOLD_PREFIXES as $prefix) {
             foreach ($group as $row) {
@@ -317,7 +317,7 @@ class MergeLegacyUserGroups
     /**
      * Promeut la survivante : nom nu + type + GUID/DN canoniques. Si la
      * survivante est une ligne préfixée, ses propres `ad_guid`/`ad_dn`
-     * correspondent déjà au CN le plus prioritaire disponible (D1) — on les
+     * correspondent déjà au CN le plus prioritaire disponible — on les
      * conserve. On ne touche au `name` que s'il diffère (anti-collision : la
      * cible nue n'existe pas comme AUTRE ligne, sinon elle aurait été choisie
      * comme survivante).
@@ -341,7 +341,7 @@ class MergeLegacyUserGroups
 
     /**
      * Renomme une ligne préfixée ISOLÉE (pas de fusion) vers son nom nu en
-     * conservant son type métier (D3 : `Equipe_` orphelin → `equipe`). No-op si
+     * conservant son type métier (`Equipe_` orphelin → `equipe`). No-op si
      * la ligne est déjà nue. Garde anti-collision : si une AUTRE ligne porte
      * déjà le nom nu cible, on n'écrit rien (laisse la base en l'état plutôt
      * que de violer l'unicité — situation non attendue, la ligne nue aurait
@@ -377,7 +377,7 @@ class MergeLegacyUserGroups
             return;
         }
 
-        // Type métier : Equipe_ orphelin → equipe (D3) ; Classe_/PP_ isolé →
+        // Type métier : Equipe_ orphelin → equipe ; Classe_/PP_ isolé →
         // classe (cohérent avec le fold qui produit type=classe).
         $type = $prefix === 'Equipe_' ? 'equipe' : 'classe';
 
@@ -387,10 +387,10 @@ class MergeLegacyUserGroups
 
         // Un `PP_<X>` ISOLÉ (sans Classe_/Equipe_/nue associée) reste
         // sémantiquement un groupe de professeurs principaux : ses membres
-        // SONT des PP. On pose le flag d'arête, sinon 4.15 (écriture SQL→AD)
+        // SONT des PP. On pose le flag d'arête, sinon (écriture SQL→AD)
         // raterait ces PP tant qu'aucun `syncFromAd` n'a reposé le flag.
         if ($prefix === 'PP_') {
-            // Story 42.1 — miroir `owner` ⇔ `is_head_teacher` (garde hasColumn).
+            // Miroir `owner` ⇔ `is_head_teacher` (garde hasColumn).
             $ppUpdate = ['is_head_teacher' => true];
             if ($hasRoleColumn) {
                 $ppUpdate['role'] = UserGroupUserPivot::ROLE_OWNER;

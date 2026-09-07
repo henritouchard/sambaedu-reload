@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 20.1 — garde-fou architectural du login fédéré.
+ * Garde-fou architectural du login fédéré.
  *
  *  1. La route `POST /auth/federated/callback` est déclarée AVANT le catchall
  *     legacy `{path}` dans `routes/web.php` (cohabitation route native /
@@ -101,7 +101,7 @@ class FederatedRouteTest extends TestCase
             ->in(realpath(__DIR__ . '/../../app/Auth/Federated'))
             ->name('*.php');
 
-        // Epic 39 (couture controlHub↔SE5) : `FederatedJwtVerifier` résout
+        // `FederatedJwtVerifier` résout
         // désormais l'IdP fédéré et l'uuid d'instance depuis la connexion
         // controlHub (`ControlHubConnection::current()`, `config('controlHub…')`).
         // Ce couplage est assumé par design — le fichier est donc exclu du

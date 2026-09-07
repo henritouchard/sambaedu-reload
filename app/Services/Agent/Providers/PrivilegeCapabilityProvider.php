@@ -9,49 +9,49 @@ use App\Models\CapabilityProjection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 35.6 — provider `privilege` CAPABILITY-FIRST, portée **Machine** (le
+ * Provider `privilege` CAPABILITY-FIRST, portée **Machine** (le
  * service SYSTEM est le SEUL acteur de la LSA locale ; le compagnon n'a pas les
  * droits, et le type n'existe pas côté session).
  *
  * Troisième mécanisme HORS-REGISTRE (jumeau structurel de
  * {@see FsAclCapabilityProvider} / {@see FirewallCapabilityProvider}, doctrine
- * Epic 36 : « mécanisme = code payé une fois, capacité = donnée »). Il EXPANSE
+ * « mécanisme = code payé une fois, capacité = donnée »). Il EXPANSE
  * une capacité → AU PLUS UN item de contrat CONCRET 2 clés
  * `{privilege, accounts}` (§7.9) — `privilege` ∈ enum FERMÉ des 5 droits
  * `SeDeny*` ({@see PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES}), `accounts` =
  * liste TRIÉE de NOMS Windows. Il SURCHARGE l'interpréteur `expand()` du
- * provider abstrait sans toucher `StateCompiler` (D2) et réutilise
+ * provider abstrait sans toucher `StateCompiler` et réutilise
  * `resolveKeyValue()` (map/littéral) + `UNMANAGED` hérités ; lecture Postgres
- * pure (NFR7 — la résolution SID est côté POSTE, LSA D5).
+ * pure — la résolution SID est côté POSTE, via LSA.
  *
- * **Propriété du CONTENEUR SANS store (D4, iso `firewall` — PAS `fs_acl`).**
+ * **Propriété du CONTENEUR SANS store** (iso `firewall`, PAS `fs_acl`).
  * Un privilège LSA porte une liste de titulaires ÉNUMÉRABLE
  * (`LsaEnumerateAccountsWithUserRight`) : l'agent possède la liste EN ENTIER et
  * la réconcilie à chaque cycle (accorde les manquants, révoque les
  * surnuméraires) — AUCUN store n'est nécessaire. Le « conteneur » est le
  * privilège lui-même. C'est SÛR uniquement parce que les `SeDeny*` sont VIDES
- * par défaut ET que l'authoring interdit tout droit *grant* (piège #3 — un
- * « owns-entire-list » sur un grant verrouillerait la machine).
+ * par défaut ET que l'authoring interdit tout droit *grant* : un
+ * « owns-entire-list » sur un grant verrouillerait la machine.
  *
  * **`exclusiveKey() = <privilège>` minuscule (1 segment)** : la maille la plus
- * spécifique gagne la liste `accounts` ENTIÈRE — NON cumulatif (piège #4,
- * contrairement aux ACE `fs_acl` cumulables). C'est VOULU : le ciblage « qui
+ * spécifique gagne la liste `accounts` ENTIÈRE — NON cumulatif,
+ * contrairement aux ACE `fs_acl` cumulables. C'est VOULU : le ciblage « qui
  * est refusé » vit DANS la liste (`@eleves` seul → les profs, absents de la
  * liste, gardent le RDP), pas dans un ciblage par utilisateur.
  *
- * **Jetons d'audience (D6, RÉUTILISE {@see AudienceTokens} de 36.1).** Un
+ * **Jetons d'audience** (RÉUTILISE {@see AudienceTokens}). Un
  * compte `@eleves|@profs|@personnels` est résolu par convention vers le groupe
  * principal global SI ce groupe existe dans `user_groups`. Jeton irrésoluble ⇒
  * **item ENTIER non émis + log warning** (jamais une liste partielle qui
- * SOUS-REFUSERAIT — piège #8/#10 : un item émis sans l'élève irrésoluble
+ * SOUS-REFUSERAIT : un item émis sans l'élève irrésoluble
  * laisserait un trou silencieux). Un compte littéral (`Domain Users`) part
  * VERBATIM — l'agent le résout via LSA (échec ⇒ erreur d'item, visible).
  *
  * **`accounts: []` (off) est ÉMIS** : l'agent VIDE le privilège (révoque tous
- * les titulaires) — c'est le retrait PROPRE (piège #6 : `unmanaged` cesse
+ * les titulaires) — c'est le retrait PROPRE (`unmanaged` cesse
  * d'émettre → le handler n'est plus invoqué → privilège orphelin).
  *
- * **Pas de ciblage par utilisateur (piège #11).** `scope() = Machine` ⇒ le
+ * **Pas de ciblage par utilisateur.** `scope() = Machine` ⇒ le
  * service SYSTEM fetch sans `?user` (`userGroupIds = []`) : un override
  * UserGroup/User d'une capacité `privilege` est SANS EFFET.
  *
@@ -89,8 +89,8 @@ final class PrivilegeCapabilityProvider extends AbstractCapabilityStateProvider
 
     /**
      * Identité d'un privilège géré exclusif : le NOM du privilège en minuscules
-     * (1 segment — piège #4 : la maille gagnante prend la liste ENTIÈRE).
-     * Normalisé pour la STABILITÉ de la sélection (déterministe, ETag 23.5).
+     * (1 segment : la maille gagnante prend la liste ENTIÈRE).
+     * Normalisé pour la STABILITÉ de la sélection (déterministe, ETag).
      */
     public function exclusiveKey(array $payload): string
     {
@@ -102,18 +102,18 @@ final class PrivilegeCapabilityProvider extends AbstractCapabilityStateProvider
      * `spec = { "privilege": "SeDeny…", "accounts": <liste OU map valeur-capacité> }` :
      *   - `privilege` est borné à l'enum SeDeny* (défensif — le guard refuse
      *     déjà en amont) : hors domaine ⇒ item NON émis ;
-     *   - `accounts` est résolu par {@see resolveKeyValue()} : liste littérale
+     *  - `accounts` est résolu par {@see resolveKeyValue()} : liste littérale
      *     OU map `{capValue: [comptes]}` ; clé de map absente ⇒ UNMANAGED ⇒
      *     item non émis (sentinelle) ; forme inattendue (scalaire, assoc
      *     imbriquée) ⇒ non émis défensif, jamais d'exception au render ;
-     *   - chaque compte passe par {@see AudienceTokens} (INJECTÉ, réutilisé de
-     *     36.1) : jeton irrésoluble ⇒ item ENTIER non émis + warning (jamais
-     *     une liste partielle qui sous-refuserait, piège #8/#10) ; littéral
+     *   - chaque compte passe par {@see AudienceTokens} (INJECTÉ, réutilisé) :
+     *     jeton irrésoluble ⇒ item ENTIER non émis + warning (jamais
+     *     une liste partielle qui sous-refuserait) ; littéral
      *     verbatim ;
      *   - une liste résolue VIDE (valeur `off`) est ÉMISE (privilège vidé).
      * Le payload résultant est CONCRET : EXACTEMENT 2 clés, `accounts` liste
-     * TRIÉE de strings (byte-identité du hash, piège #13), zéro float, jamais
-     * d'id de capacité (invariant 27.12).
+     * TRIÉE de strings (byte-identité du hash), zéro float, jamais
+     * d'id de capacité (invariant).
      *
      * @return list<array<string,mixed>> zéro ou un payload 2 clés
      */
@@ -175,7 +175,7 @@ final class PrivilegeCapabilityProvider extends AbstractCapabilityStateProvider
         }
 
         // Liste TRIÉE (l'ordre n'est pas porteur de sens — byte-identité du
-        // hash et comparaison anti-drift, piège #13). Une liste VIDE est ÉMISE
+        // hash et comparaison anti-drift). Une liste VIDE est ÉMISE
         // (off réel : l'agent vide le privilège).
         $accounts = array_values(array_unique($accounts));
         sort($accounts, SORT_STRING);
@@ -188,7 +188,7 @@ final class PrivilegeCapabilityProvider extends AbstractCapabilityStateProvider
 
     /**
      * Le nom est-il un des 5 SeDeny* (insensible à la casse) ? Délègue le
-     * VOCABULAIRE à la constante du guard (une seule autorité, D3).
+     * VOCABULAIRE à la constante du guard (une seule autorité).
      */
     private function isAllowedPrivilege(string $privilege): bool
     {

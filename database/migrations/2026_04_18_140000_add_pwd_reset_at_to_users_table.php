@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     /**
      * Ajoute la colonne pwd_reset_at — timestamp du dernier reset
-     * de mot de passe (bulk ou unitaire) pour traçabilité RGPD (NFR8).
+     * de mot de passe (bulk ou unitaire) pour traçabilité RGPD.
      *
      * On n'y stocke JAMAIS le mot de passe : uniquement la date.
      */

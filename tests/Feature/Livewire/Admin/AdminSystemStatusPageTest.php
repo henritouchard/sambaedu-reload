@@ -218,7 +218,7 @@ class AdminSystemStatusPageTest extends TestCase
     }
 
     /**
-     * Story 56.5 (AC3) — la section « Extensions » est bien câblée dans
+     * La section « Extensions » est bien câblée dans
      * `CHECK_SECTIONS`, avec ses trois checks.
      *
      * ⚠️ Ajout en fin de fichier : les tests ci-dessus restent verbatim. Le

@@ -15,9 +15,9 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Tests Feature permission `/admin/settings/gpo/wpkg-deployment` — Story 16.6 (AC5.2, AC3.5) + Story 16.9.
+ * Tests Feature permission `/admin/settings/gpo/wpkg-deployment` — +.
  *
- * 4 cas iso 16.5 : 200 admin / 403 user / 403 unauthenticated / 403 route HTTP.
+ * 4 cas iso : 200 admin / 403 user / 403 unauthenticated / 403 route HTTP.
  */
 class WpkgDeploymentPagePermissionTest extends TestCase
 {
@@ -31,7 +31,7 @@ class WpkgDeploymentPagePermissionTest extends TestCase
             config(['app.key' => 'base64:' . base64_encode(random_bytes(32))]);
         }
         $this->bootstrapSpatieTables();
-        // Story 15.6 : le composant charge system_settings dans mount().
+        // Le composant charge system_settings dans mount.
         if (! Schema::hasTable('system_settings')) {
             Schema::create('system_settings', function (Blueprint $table): void {
                 $table->id();
@@ -49,7 +49,7 @@ class WpkgDeploymentPagePermissionTest extends TestCase
         parent::tearDown();
     }
 
-    // Story 27.14 — les helpers `bindSyncOk()` / `bindSyncExpectNoCalls()`
+    // Les helpers `bindSyncOk` / `bindSyncExpectNoCalls`
     // (mock `WpkgGpoSynchronizer`) ont été retirés : l'audit GPO `se4_wpkg` a
     // été supprimé de la page. La page (réglages de déploiement) n'injecte plus
     // le synchronizer ; le test de permission reste valable sur la page existante.

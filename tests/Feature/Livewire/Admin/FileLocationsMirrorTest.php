@@ -25,7 +25,7 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Story 63.3 AC5 — LE MIROIR DÉRIVÉ, ET LE FAIT QU'AUCUN RÉGLAGE PERSISTÉ N'EST
+ * LE MIROIR DÉRIVÉ, ET LE FAIT QU'AUCUN RÉGLAGE PERSISTÉ N'EST
  * PERDU.
  *
  * `files.locations` est la SOURCE ; les quatre booléens de `files.policy` en
@@ -74,10 +74,6 @@ class FileLocationsMirrorTest extends TestCase
             'client_natif',
         );
     }
-
-    // =====================================================================
-    // Les trois positions d'`ActiveCloud` × les quatre combinaisons
-    // =====================================================================
 
     public static function decisions(): array
     {
@@ -150,10 +146,6 @@ class FileLocationsMirrorTest extends TestCase
             self::assertSame($cloud === ActiveCloud::OpenCloud, $capabilities['opencloud']);
         }
     }
-
-    // =====================================================================
-    // LE TEST DE REPRISE — aucun réglage persisté n'est perdu
-    // =====================================================================
 
     /**
      * **LE TEST QUI COMPTE.** Sur une instance en place — les huit réglages de
@@ -259,10 +251,6 @@ class FileLocationsMirrorTest extends TestCase
         self::assertNotNull($published, 'la publication a lieu au geste d\'administration');
         self::assertFileExists($served.'/'.$published['asset']);
     }
-
-    // =====================================================================
-    // LA SOURCE ET SON MIROIR SONT ATOMIQUES (correction de revue)
-    // =====================================================================
 
     /**
      * **L'ÉTAT INTERMÉDIAIRE EST CELUI QUI COÛTE.** Entre les deux écritures, la

@@ -21,9 +21,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.2 (AC1/AC2/AC3) — `ExtensionLifecycleService` : les deux
+ * `ExtensionLifecycleService` : les deux
  * transitions du type `link` (`available ⇄ integrated`), leur trace d'audit,
- * l'idempotence NFR8 et le fail-closed.
+ * l'idempotence et le fail-closed.
  */
 class ExtensionLifecycleServiceTest extends TestCase
 {
@@ -43,7 +43,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         return app(ExtensionLifecycleService::class);
     }
 
-    // ── AC1 — intégrer ───────────────────────────────────────────────────
+    // — intégrer
 
     #[Test]
     public function integrate_transitions_available_to_integrated_and_writes_one_audit_line(): void
@@ -70,7 +70,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         self::assertNotNull($log->created_at);
     }
 
-    // ── AC2 — désinstaller ───────────────────────────────────────────────
+    // — désinstaller
 
     #[Test]
     public function uninstall_transitions_integrated_to_available_and_writes_one_audit_line(): void
@@ -92,7 +92,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         self::assertSame($extension->id, $log->extension_id);
     }
 
-    // ── AC3 — idempotence NFR8 : no-op propre ────────────────────────────
+    // — idempotence : no-op propre
 
     #[Test]
     public function integrating_an_already_integrated_extension_is_a_clean_noop(): void
@@ -122,7 +122,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC3 — fail-closed ─────────────────────────────────────────────────
+    // — fail-closed
 
     #[Test]
     public function integrating_a_non_link_type_is_refused_without_mutation_or_audit(): void
@@ -174,7 +174,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         }
     }
 
-    // ── 56.1 review #1 — le fail-closed n'est pas qu'un filtre d'affichage ─
+    // ── Le fail-closed n'est pas qu'un filtre d'affichage ─
     //
     // La bibliothèque MASQUE les extensions `available` d'une source gelée ou
     // en `error`. Mais `integrate(<id>)` est une méthode Livewire publique qui
@@ -228,7 +228,7 @@ class ExtensionLifecycleServiceTest extends TestCase
     #[Test]
     public function an_unreachable_source_still_lets_its_last_verified_catalog_be_integrated(): void
     {
-        // NFR7 — le registre EST le cache : `unreachable` n'invalide pas ce qui
+        // Le registre EST le cache : `unreachable` n'invalide pas ce qui
         // a DÉJÀ été vérifié. Contre-épreuve des deux tests ci-dessus : la
         // garde refuse le non-vérifié, pas le hors-ligne.
         $actor = $this->actor();
@@ -261,7 +261,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         self::assertSame(ExtensionStatus::Available, $extension->fresh()->status);
     }
 
-    // ── AC3 — atomicité acte ↔ trace ─────────────────────────────────────
+    // — atomicité acte ↔ trace
 
     #[Test]
     public function when_the_audit_table_is_gone_the_transaction_rolls_back_the_status_mutation(): void
@@ -292,15 +292,15 @@ class ExtensionLifecycleServiceTest extends TestCase
         }
     }
 
-    // ── AC3 — la trace SURVIT à la disparition de l'extension ─────────────
+    // — la trace SURVIT à la disparition de l'extension
 
     #[Test]
     public function the_audit_trail_survives_the_catalog_prune_of_its_extension(): void
     {
         // C'est LE scénario qui justifie `nullOnDelete()` et les colonnes
         // dénormalisées `extension_key`/`extension_name` — il n'était couvert
-        // par aucun test, alors que c'est le seul endroit où 54.2 peut casser un
-        // comportement de 54.1 : `pruneDisappeared()` fait `$extension->delete()`
+        // par aucun test, alors que c'est le seul endroit où peut casser un
+        // comportement : `pruneDisappeared()` fait `$extension->delete()`
         // sans try/catch, et une extension intégrée PUIS désinstallée est
         // `available` (donc prunable) TOUT EN portant 2 lignes d'audit. Si la
         // clause `ON DELETE SET NULL` n'était pas correctement émise, ou
@@ -332,7 +332,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         self::assertSame(2, ExtensionAuditLog::query()->count());
         self::assertSame(ExtensionStatus::Available, $extension->fresh()->status);
 
-        // Le manifest disparaît : le prune de 54.1 emporte la ligne `available`.
+        // Le manifest disparaît : le prune emporte la ligne `available`.
         unlink($root.'/doc/manifest.json');
         rmdir($root.'/doc');
 
@@ -353,7 +353,7 @@ class ExtensionLifecycleServiceTest extends TestCase
         @rmdir($root);
     }
 
-    // ── AC3 — journal append-only ─────────────────────────────────────────
+    // — journal append-only
 
     #[Test]
     public function updating_an_existing_audit_log_row_throws(): void
@@ -372,10 +372,6 @@ class ExtensionLifecycleServiceTest extends TestCase
         $log->action = ExtensionAuditLog::ACTION_UNINSTALL;
         $log->save();
     }
-
-    // =====================================================================
-    // Story 56.2 (AC6) — transitions `app`, levée MAÎTRISÉE du filtre `link`
-    // =====================================================================
 
     #[Test]
     public function mark_app_installed_transitions_and_records_what_was_actually_posed(): void
@@ -484,7 +480,7 @@ class ExtensionLifecycleServiceTest extends TestCase
     #[Test]
     public function integrate_still_refuses_an_app_verbatim(): void
     {
-        // Régression 54.2 : la levée du filtre `link` est MAÎTRISÉE — elle passe
+        // Régression : la levée du filtre `link` est MAÎTRISÉE — elle passe
         // par de nouvelles méthodes, pas par un assouplissement d'`integrate()`.
         // Un clic dans l'UI ne peut donc pas déclencher une installation `app`.
         $actor = $this->actor();
@@ -505,10 +501,6 @@ class ExtensionLifecycleServiceTest extends TestCase
 
         $this->service()->uninstall($extension->id, $actor);
     }
-
-    // =====================================================================
-    // Story 56.3 — `markAppUpdated()` et l'empreinte du paquet posé
-    // =====================================================================
 
     #[Test]
     public function mark_app_installed_records_the_fingerprint_of_the_posted_package(): void

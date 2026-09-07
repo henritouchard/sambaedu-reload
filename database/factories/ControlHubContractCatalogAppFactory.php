@@ -9,7 +9,7 @@ use App\Models\ControlHubContractCatalogApp;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 28.1 — Factory d'application du catalogue d'un contrat amont controlHub.
+ * Factory d'application du catalogue d'un contrat amont controlHub.
  *
  * @extends Factory<ControlHubContractCatalogApp>
  */

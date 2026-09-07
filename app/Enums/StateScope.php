@@ -13,7 +13,8 @@ namespace App\Enums;
  *   par poste pour un utilisateur donné).
  *
  * Les valeurs `string` sont aussi les **clés de l'enveloppe JSON**
- * (`machine`, `session`, `machine_user`). Identifiants figés (NFR12).
+ * (`machine`, `session`, `machine_user`). Identifiants figés : une valeur
+ * publiée ne se renomme jamais.
  */
 enum StateScope: string
 {

@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.6 — AC3.* — Tests unitaires de WindowsIsoSourcesReader.
+ * .* — Tests unitaires de WindowsIsoSourcesReader.
  *
  * Pattern : on utilise un répertoire temporaire isolé (`sys_get_temp_dir()`)
  * pour simuler les 4 dossiers `Win{10,11}{,-old}/version`. Pas de mock complexe.

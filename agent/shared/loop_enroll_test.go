@@ -9,8 +9,7 @@ import (
 )
 
 // enrollFakeServer : serveur SE5 minimal couvrant l'enrôlement porte 2 +
-// state/report, pour exercer la boucle « token absent » de bout en bout (Story
-// 25.4).
+// state/report, pour exercer la boucle « token absent » de bout en bout.
 type enrollFakeServer struct {
 	mu sync.Mutex
 
@@ -146,7 +145,7 @@ func TestCycleNoTokenNetworkErrorBacksOff(t *testing.T) {
 
 // Non-régression : un token PRÉSENT mais corrompu reste un échec de cycle
 // (backoff), JAMAIS un déclencheur d'auto-enroll (un poste enrôlé ne se
-// ré-enrôle jamais auto — FR22).
+// ré-enrôle jamais auto).
 func TestCycleCorruptTokenDoesNotTriggerEnroll(t *testing.T) {
 	f := newEnrollFakeServer(t)
 	agent, store, cfg := newEnrollAgent(t, f)

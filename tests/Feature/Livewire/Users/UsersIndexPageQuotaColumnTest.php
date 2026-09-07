@@ -13,8 +13,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests Feature Livewire de la colonne Utilisation sur le listing /users
- * (story 5.1b — AC 9 cas 1-3).
+ * Tests Feature Livewire de la colonne Utilisation sur le listing /users.
  *
  * Couvre les 3 seuils de coloration :
  *   1. percent < 70 → badge-success (vert)
@@ -121,8 +120,8 @@ class UsersIndexPageQuotaColumnTest extends TestCase
     }
 
     /**
-     * Story 26.3 — AC #2 : pastille « profil itinérant volumineux » au-delà du
-     * seuil. La valeur provient EXCLUSIVEMENT du cache (colonne profile_snapshot).
+     * Pastille « profil itinérant volumineux » au-delà du seuil. La valeur
+     * provient EXCLUSIVEMENT du cache (colonne profile_snapshot).
      */
     public function test_it_shows_large_profile_badge_above_threshold(): void
     {
@@ -168,9 +167,9 @@ class UsersIndexPageQuotaColumnTest extends TestCase
     }
 
     /**
-     * AC #2 : un user SANS entrée de cache (`profile_snapshot = null`) n'affiche
-     * AUCUN badge profil (ni erreur). Verrouille le chemin NULL explicitement
-     * (review 26.3 #7) — distinct du cas « sous le seuil ».
+     * Un user SANS entrée de cache (`profile_snapshot = null`) n'affiche AUCUN
+     * badge profil (ni erreur). Verrouille le chemin NULL explicitement,
+     * distinct du cas « sous le seuil ».
      */
     public function test_it_shows_no_profile_badge_when_snapshot_null(): void
     {

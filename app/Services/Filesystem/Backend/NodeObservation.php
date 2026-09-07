@@ -9,7 +9,7 @@ use App\Exceptions\Filesystem\InvalidBackendReportException;
 use App\Services\Filesystem\Plan\GroupNameNormalizer;
 
 /**
- * Story 60.3 — état RELU d'un nœud, tel que le backend le voit.
+ * État RELU d'un nœud, tel que le backend le voit.
  *
  * **Le plafond a DEUX champs, et il en faut deux.** `plafond` porte la valeur
  * observée (`null` = aucun plafond posé) ; `plafondObserve` dit si le backend a
@@ -20,11 +20,12 @@ use App\Services\Filesystem\Plan\GroupNameNormalizer;
  * `plafond !== null ⇒ plafondObserve === true` est vérifié au constructeur : dire
  * une valeur sans avoir regardé n'est pas une observation.
  *
- * **Ce que `plafondObserve = false` veut dire, dans les DEUX cas** (correction
- * Henri, 2026-08-04) — et pourquoi l'observation ne suffit pas à trancher :
+ * **Ce que `plafondObserve = false` veut dire, dans les DEUX cas** — et
+ * pourquoi l'observation ne suffit pas à trancher :
  *  - backend dont le plafond est **non implémenté** (POSIX aujourd'hui : le
- *    système de fichiers SAIT plafonner, nous ne le pilotons pas, la story est
- *    suspendue) : un plafond posé à la main est un ÉCART RÉEL qu'on choisit de ne
+ *    système de fichiers SAIT plafonner, nous ne le pilotons pas, et ce
+ *    branchement est suspendu) : un plafond posé à la main est un ÉCART RÉEL
+ *    qu'on choisit de ne
  *    pas observer pour l'instant. Dette visible et datée. Le jour où le pilotage
  *    arrive, il devient observable et c'est un écart ordinaire ;
  *  - backend dont le plafond est **non supporté** (modèle sans plafond de zone) :
@@ -41,10 +42,9 @@ use App\Services\Filesystem\Plan\GroupNameNormalizer;
  * « non observable » qui porterait des octrois affirmerait avoir lu ce qu'il n'a
  * pas lu — le constructeur le refuse.
  *
- * ---------------------------------------------------------------------------
- * **STORY 61.3 — LA CLÔTURE DEVIENT OBSERVABLE, ET C'EST STRICTEMENT ADDITIF.**
+ * **LA CLÔTURE DEVIENT OBSERVABLE, ET C'EST STRICTEMENT ADDITIF.**
  *
- * Le docblock du comparateur d'état l'annonçait depuis la story 60.4 : « c'est un
+ * Le docblock du comparateur d'état l'annonçait : « c'est un
  * backend à PROPAGATION qui devra matérialiser la clôture — et c'est là seulement
  * qu'elle deviendra comparable ». Ce moment est arrivé.
  *
@@ -64,7 +64,7 @@ use App\Services\Filesystem\Plan\GroupNameNormalizer;
  * même chose. Faire de `null` un `[]` par défaut ferait déclarer à ces deux-là
  * qu'ils ne referment personne — donc un écart sur chaque nœud à clôture, pour
  * chaque partage existant. Le paramètre est optionnel et sa sérialisation
- * rétrocompatible : un rapport écrit avant cette story se relit à l'identique.
+ * rétrocompatible : un rapport écrit avant ce champ se relit à l'identique.
  *
  * Un sujet ne peut pas être à la fois dans `$grants` et dans `$closure` sur le même
  * nœud : « on lui a posé quelque chose » et « on a refermé sur lui » sont deux
@@ -91,7 +91,7 @@ final class NodeObservation
     public readonly ?string $detail;
 
     /**
-     * Story 61.3 — les sujets que l'état relu REFERME sur ce nœud. `null` = ce
+     * Les sujets que l'état relu REFERME sur ce nœud. `null` = ce
      * backend ne dit rien de la clôture (voir le docblock de classe).
      *
      * @var list<\App\Services\Filesystem\Plan\PlanSubject>|null
@@ -258,7 +258,7 @@ final class NodeObservation
             'plafond_observe' => $this->plafondObserve,
             'detail' => $this->detail,
             // ADDITIF et RÉTROCOMPATIBLE : la clé n'apparaît QUE si le backend a
-            // quelque chose à dire. Un rapport sérialisé avant la story 61.3 se
+            // quelque chose à dire. Un rapport sérialisé avant la se
             // relit donc à l'identique, et un backend qui ne l'observe pas
             // n'écrit pas une donnée qu'il n'a pas.
             ...($this->closure === null ? [] : [

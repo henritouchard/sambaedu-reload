@@ -7,13 +7,12 @@ namespace App\Auth\Oidc\Support;
 use App\Models\User;
 
 /**
- * Story 55.2 — **LE CONTRAT DE CLAIMS MÉTIER v1, ET SON POINT UNIQUE DE
+ * **LE CONTRAT DE CLAIMS MÉTIER v1, ET SON POINT UNIQUE DE
  * RÉSOLUTION.**
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  ⚠️ CONTRAT PUBLIC GELÉ (NFR11)
+ *  ⚠️ CONTRAT PUBLIC GELÉ
  *
- *  À partir de la première extension intégrée (55.3), ce qui sort d'ici est
+ *  À partir de la première extension intégrée, ce qui sort d'ici est
  *  consommé par du code que nous n'écrivons pas et que nous ne redéployons
  *  pas. La règle est asymétrique :
  *
@@ -26,12 +25,11 @@ use App\Models\User;
  *  clés émises est verrouillée par test
  *  ({@see \Tests\Feature\Oidc\OidcIdTokenClaimsTest}) — pas seulement par des
  *  `assertArrayNotHasKey`, qui n'attrapent que ce à quoi on a pensé.
- * ══════════════════════════════════════════════════════════════════════════
  *
  *  Scope       | Claims produits | Source (SQL UNIQUEMENT, zéro LDAP)
  *  ------------|-----------------|-------------------------------------------
- *  `openid`    | `sub`           | {@see OidcSubjectResolver::for()} — PAS ICI
- *  `profile`   | `name`, `role`  | `display_name` ; `businessRoles()[0]`
+ *  `openid` | `sub` | {@see OidcSubjectResolver::for()} — PAS ICI
+ *  `profile` | `name`, `role` | `display_name` ; `businessRoles()[0]`
  *  `groups`    | `groups`        | `user_groups` types `classe` + `equipe`
  *
  * **`sub` ne se résout JAMAIS ici.** Il a son point unique
@@ -52,22 +50,19 @@ use App\Models\User;
  * complet justifiera un claim `roles` ADDITIF, jamais un changement de type.
  *
  * **Pas d'`email`, même sous `profile`** — dérogation ASSUMÉE au scope OIDC
- * standard. La population contient des élèves mineurs et NFR5 dit « identité,
- * rôle, groupes du contexte — rien d'autre ». Ni `email`, ni `given_name` /
+ * standard. La population contient des élèves mineurs et le contrat se limite à
+ * « identité, rôle, groupes du contexte — rien d'autre ». Ni `email`, ni `given_name` /
  * `family_name` (le `display_name` suffit à « Bonjour {name} »), ni aucun
  * attribut d'annuaire (`ad_guid`, `dn`, `memberOf`), ni aucune permission
  * Spatie. Un intégrateur qui cherche `email` doit comprendre que c'est un
  * CHOIX, pas un oubli.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  UN CLAIM EST UNE **DONNÉE**, PAS UNE AUTORISATION
  *
  *  `role=prof` n'ouvre aucun droit — ni dans SE5, ni dans l'extension. C'est
- *  la même distinction que la tuile du lanceur (54.3 / FR14 : afficher n'est
- *  pas protéger). L'autorisation réelle reste côté extension, sur la base de
+ *  la même distinction que la tuile du lanceur : afficher n'est pas protéger. L'autorisation réelle reste côté extension, sur la base de
  *  SES règles. Une extension qui traiterait la présence d'un claim comme une
  *  permission se tromperait de contrat.
- * ══════════════════════════════════════════════════════════════════════════
  */
 final class OidcClaimsResolver
 {
@@ -88,8 +83,8 @@ final class OidcClaimsResolver
     ];
 
     /**
-     * Types de `user_groups` qui constituent « les groupes du contexte »
-     * (NFR5) : la classe et l'équipe pédagogique — exactement ce dont un salon
+     * Types de `user_groups` qui constituent « les groupes du contexte » :
+     * la classe et l'équipe pédagogique — exactement ce dont un salon
      * BBB par classe a besoin.
      *
      * ⚠️ Les types `custom` / `role` / `function` sont des artefacts
@@ -140,7 +135,7 @@ final class OidcClaimsResolver
      * à l'émetteur, qui les impose par-dessus ce tableau
      * ({@see \App\Auth\Oidc\Jwt\OidcIdTokenIssuer::issueIdToken()}).
      *
-     * Un scope non demandé ne produit RIEN — c'est la minimisation NFR5, et
+     * Un scope non demandé ne produit RIEN — c'est la minimisation attendue, et
      * c'est vérifié par la liste exacte des clés en test.
      *
      * @return array<string, mixed>
@@ -178,7 +173,7 @@ final class OidcClaimsResolver
     /**
      * Noms NUS des classes et équipes de l'utilisateur — UNE requête SQL.
      *
-     * Calque élargi de {@see User::classGroupNames()} (post-fold 4.13, une
+     * Calque élargi de {@see User::classGroupNames()} (post-fold, une
      * classe est UNE ligne au nom nu : prof et élèves y sont co-membres — le
      * claim d'un prof porte donc ses classes, celui d'un élève la sienne).
      *

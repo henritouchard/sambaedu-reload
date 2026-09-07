@@ -8,7 +8,7 @@ use App\Enums\FileBackendName;
 use RuntimeException;
 
 /**
- * Story 60.3 — la résolution d'un backend a échoué, et elle le dit.
+ * La résolution d'un backend a échoué, et elle le dit.
  *
  * **Fail-closed, toujours.** Il n'existe aucun repli sur un backend par défaut :
  * résoudre `posix` en `preview` « pour que ça passe » ferait croire à une
@@ -19,8 +19,8 @@ use RuntimeException;
  * Deux causes, deux messages :
  *  - une valeur de colonne HORS VOCABULAIRE ({@see self::unknownValue()}) ;
  *  - un nom du vocabulaire dont l'implémentation n'est pas encore livrée
- *    ({@see self::notImplemented()}) — c'est le cas de `posix` dans cette story,
- *    et le message nomme la story qui le lèvera.
+ *  ({@see self::notImplemented()}) — c'est le cas de `posix` aujourd'hui, et le
+ *    message nomme ce qui le lèvera.
  */
 final class UnknownFileBackendException extends RuntimeException
 {

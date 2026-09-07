@@ -7,7 +7,7 @@ namespace App\Exceptions;
 use RuntimeException;
 
 /**
- * Story 56.3 — Refus de l'ORCHESTRATEUR de runs
+ * Refus de l'ORCHESTRATEUR de runs
  * ({@see \App\Services\Extensions\ExtensionOperationRunner}).
  *
  * ⚠️ Distinction avec {@see ExtensionInstallException} : celle-là est levée par
@@ -30,7 +30,7 @@ final class ExtensionOperationException extends RuntimeException
     /**
      * Une opération est DÉJÀ en cours sur l'instance.
      *
-     * Le verrou du moteur étant GLOBAL (décision 56.2 #2), la garde de
+     * Le verrou du moteur étant GLOBAL, la garde de
      * l'orchestrateur l'est aussi : ce n'est pas « cette extension est
      * occupée », c'est « le moteur est occupé ». Le message le dit tel quel,
      * pour que l'admin ne cherche pas ce qu'il aurait fait de travers.
@@ -48,7 +48,7 @@ final class ExtensionOperationException extends RuntimeException
 
     /**
      * Le canal de fond n'existe QUE pour le type `app` : une `link` s'intègre
-     * et se désintègre instantanément (54.2), il n'y a rien à installer.
+     * et se désintègre instantanément, il n'y a rien à installer.
      */
     public static function notAnApp(): self
     {

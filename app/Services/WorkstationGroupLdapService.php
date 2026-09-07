@@ -669,16 +669,16 @@ class WorkstationGroupLdapService
      * Actuellement, seule l'OU est renommée. Pour un renommage complet, il faudra :
      * 
      * 1. GESTION DES MACHINES (si le groupe contient des machines)
-     *    - Lister toutes les machines du groupe via list_members_parc()
+     *  - Lister toutes les machines du groupe via list_members_parc()
      *    - Créer une OU temporaire pour stocker les machines
      *    - Déplacer les machines vers l'OU temporaire
      *    - Renommer l'OU du groupe
      *    - Remettre les machines dans l'OU renommée
      *    - Supprimer l'OU temporaire
-     *    @see rename_salle() dans includes/ldap.inc.php lignes 3674-3741
+     *  @see rename_salle() dans includes/ldap.inc.php lignes 3674-3741
      * 
      * 2. GESTION DES SOUS-GROUPES (si le groupe a des enfants)
-     *    - Récupérer récursivement tous les sous-groupes via list_salle_childrens()
+     *  - Récupérer récursivement tous les sous-groupes via list_salle_childrens()
      *    - Appliquer la même logique de déplacement temporaire pour chaque niveau
      *    - Traiter du niveau le plus profond vers la racine
      * 
@@ -686,7 +686,7 @@ class WorkstationGroupLdapService
      *    - Chercher le groupe LDAP correspondant dans ou=Parcs (DeviceGroupTagModel)
      *    - Modifier son samaccountname: $newName . $config['suffix']
      *    - Renommer son CN: move_ad vers "CN=$newName,ou=Parcs,..."
-     *    @see rename_parc() dans includes/ldap.inc.php lignes 3837-3850
+     *  @see rename_parc() dans includes/ldap.inc.php lignes 3837-3850
      * 
      * 4. MISE À JOUR DES RÉFÉRENCES
      *    - Mettre à jour les références dans les GPO si applicable
@@ -746,26 +746,8 @@ class WorkstationGroupLdapService
                     ];
                 }
 
-                // TODO: Vérifier si le groupe contient des machines
-                // $machines = $this->getDeviceGroupMachines($groupName);
-                // if (!empty($machines['machines'])) {
-                //     // Implémenter la logique de déplacement temporaire des machines
-                //     // Voir rename_salle() dans le legacy
-                // }
-
-                // TODO: Vérifier si le groupe a des sous-groupes
-                // $children = $this->getDeviceGroupChildren($groupName);
-                // if (!empty($children)) {
-                //     // Implémenter la logique récursive pour les sous-groupes
-                // }
-
-                // TODO: Synchroniser le groupe LDAP dans ou=Parcs si existant
-                // $parcTag = DeviceGroupTagModel::query()
-                //     ->where('cn', '=', $groupName)
-                //     ->first();
-                // if ($parcTag) {
-                //     // Modifier samaccountname et renommer CN
-                // }
+                // TODO: le renommage ne traite ni les machines du groupe, ni ses
+                // sous-groupes, ni son miroir dans `ou=Parcs`.
 
                 // Sauvegarder d'abord la description si elle a changé
                 if ($hasChanges) {
@@ -1256,7 +1238,6 @@ class WorkstationGroupLdapService
     public function getParcStats(string $parcId): array
     {
         try {
-            // Récupération du parc
             $parc = $this->getParcById($parcId);
             if (!$parc) {
                 return [

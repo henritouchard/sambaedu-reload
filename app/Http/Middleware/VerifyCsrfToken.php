@@ -19,14 +19,14 @@ class VerifyCsrfToken extends Middleware
         'annu2*',
         'api*',
         'api2*',
-        // Story 20.1 — login fédéré : POST cross-site auto-soumis par l'IdP
+        // Login fédéré : POST cross-site auto-soumis par l'IdP
         // externe (façon SAML POST binding). Pas de session SE5 préexistante,
         // donc pas de token CSRF possible. La preuve d'authenticité est le JWT
         // signé RS256 vérifié par le controller (anti-rejeu jti).
         'auth/federated/*',
         'auth.php*',
         'barre.php*',
-        // Story 57.4 / AR12 — `bbb*` et `visio*` RETIRÉS avec le module legacy
+        // AR12 — `bbb*` et `visio*` RETIRÉS avec le module legacy
         // qu'ils exemptaient. Sans consommateur, une exception de vérification
         // anti-CSRF n'est pas un vestige inoffensif : c'est une porte ouverte à
         // la première route SE5 native dont le chemin commencerait par `bbb` ou

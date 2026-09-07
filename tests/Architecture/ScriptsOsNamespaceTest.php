@@ -17,7 +17,7 @@ use ReflectionNamedType;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 16.12 — AC8.3 / D14 / D15.
+ * D14 / D15.
  *
  * Garde-fous architecturaux pour le namespace `App\ScriptsOs\*` :
  *
@@ -26,7 +26,7 @@ use Symfony\Component\Finder\Finder;
  *     `IngestScriptExecutionLogRequest` typée (pas `Request`).
  *  3. La route `/api/v1/script-execution-logs` est protégée par
  *     `'auth.v1.workstation'` (textuel dans routes/api.php).
- *  4. Les routes legacy `/api/v1/agent/*` 16.10 / 16.11 ne sont pas
+ *  4. Les routes legacy `/api/v1/agent/*` ne sont pas
  *     impactées (non-régression — chaîne `agent.v1.` toujours présente).
  *  5. Les 4 enums sont `BackedEnum` avec backing `string`.
  */
@@ -45,7 +45,6 @@ class ScriptsOsNamespaceTest extends TestCase
 
         foreach ($finder as $file) {
             $code = $file->getContents();
-            // require/include de legacy/*
             if (preg_match('/(?:require|include)(?:_once)?\s*\(?[\'"][^\'"]*legacy\//i', $code) === 1) {
                 $violations[] = sprintf('%s include legacy/*', $file->getRelativePathname());
             }
@@ -102,13 +101,13 @@ class ScriptsOsNamespaceTest extends TestCase
     {
         $apiRoutes = (string) file_get_contents(__DIR__ . '/../../routes/api.php');
 
-        // Routes 16.10 doivent rester présentes
+        // Routes doivent rester présentes
         self::assertStringContainsString("agent.v1.", $apiRoutes);
         self::assertStringContainsString('/enroll', $apiRoutes);
         self::assertStringContainsString('/refresh', $apiRoutes);
         self::assertStringContainsString('/ping', $apiRoutes);
 
-        // Story 27.14 — l'assertion sur le prefix `/api/v1/workstation-config`
+        // L'assertion sur le prefix `/api/v1/workstation-config`
         // a été retirée : ce groupe (canal de config legacy) a été supprimé.
     }
 

@@ -19,14 +19,14 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesPrintersSchema;
 
 /**
- * Story 6.1 — Tests Feature de PrinterPolicy::manage.
+ * Tests Feature de PrinterPolicy::manage.
  *
- * Fix #11 (décision produit 2026-04-28) : seuls les administrateurs globaux
+ * Seuls les administrateurs globaux
  * (`server.admin`) peuvent modifier les imprimantes. Les délégués scopés
  * (server.admin sur un parc) peuvent VOIR les imprimantes de leur périmètre
  * mais ne peuvent pas les modifier.
  *
- * Couvre AC8 :
+ * Couvre :
  *  - admin global → peut manage TOUTES les imprimantes (y compris orphan).
  *  - délégué scopé → ne peut PAS manage même une imprimante rattachée à son parc.
  *  - utilisateur sans délégation → refus.
@@ -103,7 +103,7 @@ class PrinterPolicyDelegationTest extends TestCase
     #[Test]
     public function delegated_user_cannot_manage_printer_even_attached_to_their_group(): void
     {
-        // Fix #11 : décision produit — les délégués ne peuvent pas modifier les imprimantes,
+        // Les délégués ne peuvent pas modifier les imprimantes,
         // seuls les admins globaux et les "Référents numériques" (server.admin global) le peuvent.
         $delegate = $this->makeUser('delegate');
         $group = $this->makeGroup('salle_a');

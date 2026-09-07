@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests feature E2E — flux bulk-reset mdp (story 2.6, AC 1, 4, 6).
+ * Tests feature E2E — flux bulk-reset mdp.
  *
  * Couvre :
  *   - génération de l'export (PDF + CSV) sans fichier persistant sur disque

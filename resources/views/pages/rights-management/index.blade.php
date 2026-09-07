@@ -35,7 +35,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     /** Sélection multi sur l'onglet Délégations actives. */
     public array $selectedDelegations = [];
 
-    // Story 7.1 — Onglet Historique (4ᵉ onglet)
+    // Onglet Historique (4ᵉ onglet)
     #[Url]
     public string $historyActionFilter = '';
     #[Url]
@@ -46,19 +46,15 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     public string $historyToFilter = '';
     public int $historyPerPage = 25;
 
-    // ------------------------------------------------------------------
-    // Story 7.2 / 49.1 — Onglet Profils
-    // ------------------------------------------------------------------
-
     /**
-     * Story 49.1 (AC7) — section PRINCIPALE : les groupes qui PORTENT un profil
+     * Section PRINCIPALE : les groupes qui PORTENT un profil
      * de droits. C'est la réponse au recadrage « l'onglet liste les groupes
      * porteurs, pas des objets indépendants ».
      */
     public array $carrierGroupsList = [];
 
     /**
-     * Story 49.1 (AC7 / D7) — section secondaire : les profils portés par AUCUN
+     * Section secondaire : les profils portés par AUCUN
      * groupe (délégations `user-admin`/`technicien`, réserve de profils custom).
      * Sans elle, ces profils n'auraient plus AUCUN point d'entrée d'édition ni
      * de suppression, alors que les drawers continuent de les attribuer.
@@ -128,7 +124,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
             return;
         }
 
-        // Story 7.1 — Review #8 : ILIKE n'existe pas en SQLite (CI/tests).
+        // ILIKE n'existe pas en SQLite (CI/tests).
         // On réutilise le même pattern qu'au niveau `getHistoryEntriesProperty`.
         $likeOp = \Illuminate\Support\Facades\DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
 
@@ -159,13 +155,11 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         // Permissions directes
         $directPermissions = $user->getDirectPermissions()->pluck('name')->toArray();
 
-        // Permissions via rôles
         $rolePermissions = $user->getPermissionsViaRoles()->pluck('name')->toArray();
 
         // Toutes les permissions effectives
         $allPermissions = $user->getAllPermissions()->pluck('name')->toArray();
 
-        // Délégations
         $delegations = $permissionService->getUserDelegations($user)
             ->map(fn(Delegation $d) => [
                 'id' => $d->id,
@@ -179,7 +173,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         // Bitmask legacy
         $bitmask = $permissionService->permissionsToBitmask($user);
 
-        // Story 7.1 — historique des 10 dernières opérations sur ce user cible.
+        // Historique des 10 dernières opérations sur ce user cible.
         $userHistory = DelegationHistory::forTarget($user)
             ->with(['actor', 'workstationGroup'])
             ->latest('created_at')
@@ -223,7 +217,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
 
     public function revokeDelegation(int $delegationId): void
     {
-        // Story 7.1 — Review #C / #5c : defense-in-depth. Le middleware route
+        // Review #C / #5c : defense-in-depth. Le middleware route
         // bloque déjà l'accès à la page, mais un guard explicite protège contre
         // un appel Livewire forgé côté admin compromis (log explicite + 403).
         abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
@@ -239,7 +233,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $permName = $delegation->permission->name;
         $isNegative = (bool) $delegation->is_negative;
 
-        // Story 7.1 — passer l'acteur explicite (auth()->user()) pour l'historique.
+        // Passer l'acteur explicite (auth->user) pour l'historique.
         $actor = auth()->user();
         $actorEloquent = $actor instanceof EloquentUser ? $actor : null;
 
@@ -252,11 +246,11 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
             return;
         }
 
-        // Toast succès (WithToasts) — AC8
+        // Toast succès (WithToasts)
         $label = $isNegative ? 'Exclusion' : 'Délégation';
         $this->toastSuccess("{$label} {$permName} révoquée sur {$group->name}");
 
-        // Story 7.1 — Review #4 (Option B) : alerte si l'audit best-effort a échoué.
+        // Alerte si l'audit best-effort a échoué.
         if ($permissionService->lastAuditFailed) {
             $this->toastWarning("Délégation révoquée mais la traçabilité n'a pas été enregistrée. Contactez l'administrateur.");
         }
@@ -336,7 +330,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     }
 
     /**
-     * Story 7.2 — recharge la liste des délégations actives quand la modale
+     * Recharge la liste des délégations actives quand la modale
      * partagée a appliqué une action (édition ouverte par clic ligne).
      */
     #[\Livewire\Attributes\On('delegations-changed')]
@@ -346,10 +340,6 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $this->dataLoaded = false;
         $this->loadData();
     }
-
-    // ========================================================================
-    // Story 7.1 — Onglet Historique (AC6)
-    // ========================================================================
 
     /**
      * Propriété computed : paginator de l'historique filtrable.
@@ -431,12 +421,8 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $this->resetPage('historyPage');
     }
 
-    // ========================================================================
-    // Story 7.2 — Onglet Profils (AC3)
-    // ========================================================================
-
     /**
-     * Recharge les DEUX sections de l'onglet Profils (Story 49.1 AC7).
+     * Recharge les DEUX sections de l'onglet Profils.
      *
      * Appelée à la 1ère ouverture de l'onglet, au retour depuis les pages
      * dédiées de création/édition, et après chaque pose/changement/retrait de
@@ -506,7 +492,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     /**
      * Supprime plusieurs profils sélectionnés depuis le menu actions de la page.
      *
-     * Story 49.1 (AC6) — la garde « profil PORTÉ par au moins un groupe » passe
+     * La garde « profil PORTÉ par au moins un groupe » passe
      * AVANT la garde `isSeeded` existante, et son message NOMME les groupes
      * porteurs : une suppression silencieuse retirerait des droits à tout un
      * parc. Le filet DB (`restrictOnDelete`) couvre les chemins hors UI.
@@ -570,10 +556,6 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $this->selectedProfiles = [];
         $this->loadProfiles();
     }
-
-    // ========================================================================
-    // Story 49.1 (AC7) — donner / changer / retirer le profil porté d'un groupe
-    // ========================================================================
 
     /** Ouvre la modale « Donner des permissions à un groupe ». */
     public function openAssignProfileModal(): void
@@ -680,7 +662,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
 
     /**
      * Pose ou change le profil porté par le groupe, et re-projette ses membres
-     * DANS LE MÊME GESTE (AC4, piège du dernier porteur couvert par le service).
+     * DANS LE MÊME GESTE (piège du dernier porteur couvert par le service).
      */
     public function submitProfileAssignment(): void
     {
@@ -1022,7 +1004,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                                 @endif
                             </div>
 
-                            {{-- Story 7.1 — Historique des 10 dernières opérations sur ce user cible (AC6) --}}
+                            {{-- Historique des 10 dernières opérations sur ce user cible --}}
                             <div>
                                 <h4 class="text-sm font-bold mb-2">
                                     <i class="fa-solid fa-clock-rotate-left mr-1 text-info"></i>
@@ -1173,14 +1155,14 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         @endif
 
         {{-- ============================================================ --}}
-        {{-- ONGLET HISTORIQUE — Story 7.1 (AC6) --}}
+        {{-- ONGLET HISTORIQUE — --}}
         {{-- ============================================================ --}}
         @if ($activeTab === 'history')
             @include('pages.rights-management._partials.history-tab')
         @endif
 
         {{-- ============================================================ --}}
-        {{-- ONGLET PROFILS — Story 7.2 (AC3) --}}
+        {{-- ONGLET PROFILS — --}}
         {{-- ============================================================ --}}
         @if ($activeTab === 'profiles')
             <div wire:init="loadProfiles" class="flex flex-col flex-1 min-h-0">
@@ -1191,7 +1173,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     </div>
 
     {{-- ================================================================ --}}
-    {{-- Story 49.1 (AC7) — modale « Donner des permissions à un groupe » --}}
+    {{-- Modale « Donner des permissions à un groupe » --}}
     {{-- (mode `assign`) / « Changer le profil » (mode `change`, groupe figé) --}}
     {{-- ================================================================ --}}
     <x-molecules.modal wire:model="showProfileAssignModal"
@@ -1284,7 +1266,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- Story 49.1 (AC7) — confirmation de RETRAIT du profil porté. --}}
+    {{-- Confirmation de RETRAIT du profil porté. --}}
     <x-molecules.modal wire:model="showProfileRemoveModal"
         title="Retirer le profil de droits du groupe"
         icon="fa-link-slash text-error"
@@ -1315,7 +1297,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- Story 7.2 — modale délégation partagée avec /app/users (clic ligne sur
+    {{-- Modale délégation partagée avec /app/users (clic ligne sur
          le tableau Délégations actives ouvre cette modale en mode édition). --}}
     <livewire:pages::users._partials.delegation-modal />
 </x-organisms.page>

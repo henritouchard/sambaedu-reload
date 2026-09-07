@@ -26,7 +26,7 @@ use Tests\TestCase;
  *   - open($statusId) avec workstation + log présent → $visible = true, contenu populé
  *   - open($statusId) avec workstation sans log_path → $installLogMissing = true
  *   - open($statusId) avec status inexistant → $installLogMissing = true
- *   - close() → tout reset, $visible = false
+ *  - close() → tout reset, $visible = false
  */
 class InstallLogModalTest extends TestCase
 {
@@ -51,10 +51,6 @@ class InstallLogModalTest extends TestCase
         }
         parent::tearDown();
     }
-
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
 
     private function createTablesIfNeeded(): void
     {
@@ -150,10 +146,6 @@ class InstallLogModalTest extends TestCase
             'reported_at'    => now(),
         ]);
     }
-
-    // ------------------------------------------------------------------
-    // Tests
-    // ------------------------------------------------------------------
 
     public function test_mount_initial_state_is_hidden_and_no_log(): void
     {
@@ -266,10 +258,6 @@ class InstallLogModalTest extends TestCase
             ->assertSet('installLogTruncated', false)
             ->assertSet('installLogFilename', null);
     }
-
-    // ------------------------------------------------------------------
-    // Ouverture depuis « État rapporté par type » (onglet Agent)
-    // ------------------------------------------------------------------
 
     /**
      * Le tableau tronque le détail à 80 caractères — or c'est là que se trouve la

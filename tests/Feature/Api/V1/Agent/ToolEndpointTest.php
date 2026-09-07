@@ -15,11 +15,11 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Tests\TestCase;
 
 /**
- * Tests Feature `GET /api/v1/agent/tools/{filename}` — Story 27.1bis (AC1, AC6).
+ * Tests Feature `GET /api/v1/agent/tools/{filename}`.
  *
  * Route DÉDIÉE (`agent.v1.tools.download`) pour l'artefact d'OUTIL DE RENDU
  * portable (Rainmeter), distincte de `/releases` (réservé au binaire agent +
- * auto-update 25.2). Chaîne complète `auth.v1.secure-headers` +
+ * auto-update). Chaîne complète `auth.v1.secure-headers` +
  * `throttle:60,1` + `agent.token` (conventions `AssetEndpointTest`/
  * `ReleaseEndpointTest`). Répertoire réel sur disque pointé par
  * `agent.tools_path` : le 200 est un VRAI BinaryFileResponse. 404 INDISTINCT
@@ -75,7 +75,7 @@ final class ToolEndpointTest extends TestCase
         file_put_contents($this->toolsDir . '/' . self::ARTIFACT, $content);
     }
 
-    // ── AC1/AC6 — 200 : contenu binaire de l'artefact ────────────────────
+    // — 200 : contenu binaire de l'artefact
 
     #[Test]
     public function valid_token_serves_the_exact_binary_content_of_the_artifact(): void
@@ -105,7 +105,7 @@ final class ToolEndpointTest extends TestCase
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
 
-    // ── AC6 — 404 : inconnu / malformé / traversal, jamais d'oracle ──────
+    // — 404 : inconnu / malformé / traversal, jamais d'oracle
 
     #[Test]
     public function wellformed_but_missing_artifact_returns_404(): void
@@ -154,7 +154,7 @@ final class ToolEndpointTest extends TestCase
         $this->tool($token, self::ARTIFACT)->assertStatus(404);
     }
 
-    // ── AC6 — sécurité du canal (middleware inchangé) ────────────────────
+    // — sécurité du canal (middleware inchangé)
 
     #[Test]
     public function missing_bearer_returns_401_with_middleware_error_format(): void
@@ -185,7 +185,7 @@ final class ToolEndpointTest extends TestCase
     #[Test]
     public function due_rotation_token_survives_the_binary_200(): void
     {
-        // Invariant D5 : le middleware pose X-Agent-New-Token sur TOUTE
+        // Le middleware pose X-Agent-New-Token sur TOUTE
         // réponse 2xx — BinaryFileResponse compris.
         [$ws, $token] = $this->enrolledWorkstation();
         $this->putArtifact();

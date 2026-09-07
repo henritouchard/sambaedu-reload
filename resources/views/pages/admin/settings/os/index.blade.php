@@ -20,7 +20,7 @@ use Livewire\Component;
  * vers la page de gestion des ISO dédiée (`admin/ipxe/iso-windows`).
  *
  * Extrait de « État du système » (les distros ne sont pas un diagnostic
- * environnement mais des sources d'installation — décision Henri 2026-07-18).
+ * environnement mais des sources d'installation).
  *
  * Sécurité : middleware can:server.admin sur la route + double guard mount()/
  * actions (defense in depth).

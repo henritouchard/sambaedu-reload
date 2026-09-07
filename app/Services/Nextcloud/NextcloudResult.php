@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 /**
- * Story 61.1 — LE RÉSULTAT TYPÉ D'UN APPEL, ET SES TROIS ISSUES.
+ * LE RÉSULTAT TYPÉ D'UN APPEL, ET SES TROIS ISSUES.
  *
  * Trois issues, jamais deux :
  *  1. **abouti** — l'appel a fait ce qu'on lui demandait ;
- *  2. **déjà conforme** — l'objet existait (statuscode OCS `102`, mesuré au spike
- *     60.0) : c'est un ÉTAT, pas une erreur, et l'appelant qui rejoue
+ *  2. **déjà conforme** — l'objet existait (statuscode OCS `102`, mesuré) :
+ *     c'est un ÉTAT, pas une erreur, et l'appelant qui rejoue
  *     `nextcloud:provision` doit pouvoir compter dessus sans try/catch ;
  *  3. **échec**, avec sa cause nommée ({@see NextcloudFailure}).
  *

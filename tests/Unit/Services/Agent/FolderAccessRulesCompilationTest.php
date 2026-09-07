@@ -27,8 +27,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC3) — compilation BOUT-EN-BOUT via le `StateCompiler` INTOUCHÉ
- * (D1/D2). Prouve l'arbitrage règle↔capacité par la sélection exclusive UNIQUE
+ * Compilation BOUT-EN-BOUT via le `StateCompiler`, que ce provider ne modifie
+ * pas. Prouve l'arbitrage règle↔capacité par la sélection exclusive UNIQUE
  * (deux flux, UN provider) : (a) règle de parc bat le défaut Broadcast d'une
  * capacité de même identité ; (b) sur maille ÉGALE, la récence tranche ; (c) deux
  * identités distinctes coexistent ; (d) sans règle, byte-identité avec le
@@ -138,7 +138,7 @@ class FolderAccessRulesCompilationTest extends TestCase
         'ensure' => ['on' => 'present', 'off' => 'absent'],
     ]];
 
-    // ── (a) Règle de parc bat le défaut Broadcast (identité ÉGALE) ────────
+    // (a) Règle de parc bat le défaut Broadcast (identité ÉGALE)
 
     #[Test]
     public function rule_on_parc_beats_capability_broadcast_default_on_equal_identity(): void
@@ -153,7 +153,7 @@ class FolderAccessRulesCompilationTest extends TestCase
         self::assertSame('Classe_3A', $items[0]['payload']['trustee']);
     }
 
-    // ── (b) Maille ÉGALE : la récence tranche ─────────────────────────────
+    // (b) Maille ÉGALE : la récence tranche
 
     #[Test]
     public function on_equal_maille_recency_decides(): void
@@ -180,7 +180,7 @@ class FolderAccessRulesCompilationTest extends TestCase
         self::assertSame('absent', $items[0]['payload']['ensure'], 'à maille égale, la règle plus récente (absent) gagne');
     }
 
-    // ── (c) Identités distinctes COEXISTENT (cumul, piège #2) ─────────────
+    // (c) Identités distinctes COEXISTENT (cumul)
 
     #[Test]
     public function distinct_identities_coexist(): void
@@ -200,7 +200,7 @@ class FolderAccessRulesCompilationTest extends TestCase
         self::assertSame(['Classe_3A', 'Profs'], $trustees);
     }
 
-    // ── (d) Sans règle : byte-identité avec le provider capacités nu ──────
+    // (d) Sans règle : byte-identité avec le provider capacités nu
 
     #[Test]
     public function without_rules_compiles_identically_to_the_bare_capability_provider(): void

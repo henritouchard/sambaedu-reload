@@ -7,19 +7,19 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.4 — Règles d'accès aux dossiers (feature à formulaire, D8).
+ * Règles d'accès aux dossiers, saisies par formulaire.
  *
- * SECONDE surface d'authoring du mécanisme `fs_acl` (36.1) : le référent
+ * SECONDE surface d'authoring du mécanisme `fs_acl` : le référent
  * numérique crée des règles « interdire/autoriser CE dossier à CE groupe » via un
  * formulaire 100 % métier. Chaque règle active se PROJETTE en items `fs_acl`
  * IDENTIQUES à ceux d'une capacité (aucune nouvelle notion côté agent/contrat) —
- * calque STRUCTUREL des lecteurs réseau (34.1 : `network_shares` +
+ * calque STRUCTUREL des lecteurs réseau (`network_shares` +
  * `network_share_assignables`, canal `drives` bi-alimenté).
  *
  * Deux tables :
  *  - `folder_access_rules` : la règle {path, user_group_id (VRAI picker SQL,
  *    cascadeOnDelete — un groupe supprimé emporte ses règles, fenêtre d'orphelin
- *    documentée piège #3), ace_type, rights, applies_to, label, is_active,
+ *    documentée plus bas), ace_type, rights, applies_to, label, is_active,
  *    created_by_user_id}. Domaines validés APPLICATIVEMENT (constantes du guard
  *    `FsAclAuthoringGuard` — SQLite n'applique pas les varchar/checks, mémoire
  *    `sqlite_tests_no_varchar_enforcement`).
@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Schema;
  *    niveau est dans `rights`). v1 : `WorkstationGroup` seul autorisé
  *    (`FolderAccessRule::ALLOWED_ASSIGNABLE_TYPES`), extensible SANS migration.
  *
- * Retrait propre (piège #3 36.1) : désactiver une règle (`is_active=false`)
+ * Retrait propre : désactiver une règle (`is_active=false`)
  * n'éteint PAS son émission — elle émet ses items avec `ensure:'absent'` (off
  * réel). La suppression d'une règle ACTIVE est refusée côté service.
  */
@@ -41,10 +41,10 @@ return new class extends Migration
             $table->id();
             // Chemin Windows absolu (validé applicativement `^[A-Za-z]:\` — miroir
             // du guard). Le trustee n'est PAS stocké : il est DÉRIVÉ du groupe
-            // (D9, CN de `ad_dn`) à l'émission.
+            // (CN de `ad_dn`) à l'émission.
             $table->string('path');
             // VRAI picker de groupe SQL (PAS un jeton) — cascadeOnDelete : un
-            // groupe supprimé emporte ses règles (fenêtre d'orphelin piège #3).
+            // groupe supprimé emporte ses règles (fenêtre d'orphelin).
             $table->foreignId('user_group_id')
                 ->constrained('user_groups')
                 ->cascadeOnDelete();

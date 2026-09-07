@@ -19,7 +19,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire de la page `/rights-management` (Story 7.1 — AC6, AC8, AC10).
+ * Tests Feature Livewire de la page `/rights-management`.
  *
  * On teste via `Livewire::test(livewire-component, ...)` en chargeant la SFC
  * Blade directement. Pattern hérité des tests Parc (createTablesIfNeeded).
@@ -194,7 +194,7 @@ class RightsManagementPageTest extends TestCase
 
         Permission::firstOrCreate(['name' => 'computer.view', 'guard_name' => 'web']);
         Permission::firstOrCreate(['name' => 'computer.control', 'guard_name' => 'web']);
-        // Story 7.1 — Review #5 : la permission `user.assign.right` est exigée
+        // La permission `user.assign.right` est exigée
         // pour tout appel Livewire du `rights-management` (route + guards méthodes).
         Permission::firstOrCreate(['name' => 'user.assign.right', 'guard_name' => 'web']);
     }
@@ -209,7 +209,7 @@ class RightsManagementPageTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #5 : donne la permission `user.assign.right` à un user
+     * Donne la permission `user.assign.right` à un user
      * pour qu'il puisse déclencher les guards Livewire (revokeDelegation, etc.).
      */
     private function grantAdminPermission(User $user): User
@@ -236,10 +236,6 @@ class RightsManagementPageTest extends TestCase
         // Namespace filesystem Livewire du projet : "pages::<slug>..."
         return 'pages::rights-management.index';
     }
-
-    // ========================================================================
-    // Onglets
-    // ========================================================================
 
     public function test_can_switch_between_4_tabs(): void
     {
@@ -333,10 +329,6 @@ class RightsManagementPageTest extends TestCase
             ->assertSet('historyToFilter', '');
     }
 
-    // ========================================================================
-    // Révocation (AC8)
-    // ========================================================================
-
     public function test_revoke_delegation_button_removes_delegation_and_creates_audit(): void
     {
         $actor = $this->grantAdminPermission($this->makeUser('rev-actor'));
@@ -367,7 +359,7 @@ class RightsManagementPageTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #5 / #C : sans `user.assign.right`, revokeDelegation
+     * Sans `user.assign.right`, revokeDelegation
      * doit lever 403 (HttpException via abort_unless).
      *
      * Note : Livewire absorbe HttpException dans les tests — on utilise
@@ -400,7 +392,7 @@ class RightsManagementPageTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #8 : searchUser doit fonctionner sur SQLite (LIKE)
+     * searchUser doit fonctionner sur SQLite (LIKE)
      * ET Postgres (ILIKE). Le pattern conditionnel sur `DB::getDriverName()`
      * doit pouvoir remonter le user par login ou fullname.
      */

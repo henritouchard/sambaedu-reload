@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — T1.5.
+ * T1.5.
  *
  * Tests d'intégrité des fragments preseed copiés depuis
  * `sambaedu/ipxe/linux/*.cfg` vers `resources/ipxe/linux/*.cfg`.
@@ -17,9 +17,9 @@ use Tests\TestCase;
  *  1. Tous les fragments listés sont présents et lisibles.
  *  2. Chaque fragment est non vide.
  *  3. Chaque placeholder `###_<KEY>_###` trouvé dans les fragments est
- *     soit dans le catalogue `PreseedPlaceholders::catalog()`, soit dans
+ *  soit dans le catalogue `PreseedPlaceholders::catalog()`, soit dans
  *     la liste blanche des placeholders par-poste (HOSTNAME, UUID,
- *     ETAB_OU, etc.) injectés par `LinuxPreseedService::generate()`.
+ *  ETAB_OU, etc.) injectés par `LinuxPreseedService::generate()`.
  */
 class LinuxPreseedFragmentsTest extends TestCase
 {

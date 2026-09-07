@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-// --- ParseState ---------------------------------------------------------------
-
 func TestParseStateGoldenFile(t *testing.T) {
 	state, err := ParseState(goldenFile(t, "state.v1.json"))
 	if err != nil {
@@ -26,40 +24,40 @@ func TestParseStateGoldenFile(t *testing.T) {
 	if state.TtlSeconds != 3600 {
 		t.Errorf("ttl_seconds : got %d, want 3600", state.TtlSeconds)
 	}
-	// Story 27.2 : portée session = 4 items réels (wallpaper, overlay identity,
-	// printers, drives). Story 27.3 : +1 item `registry` (HKCU) → session = 5.
-	// Story 27.3bis : +1 item `associations` (HKCU/UserChoice) → session = 6.
-	// Story 27.10 : la SALLE passe en portée machine — nouvel item overlay
+	// Portée session = 4 items réels (wallpaper, overlay identity,
+	// printers, drives). +1 item `registry` (HKCU) → session = 5.
+	// +1 item `associations` (HKCU/UserChoice) → session = 6.
+	// La SALLE passe en portée machine — nouvel item overlay
 	// `{kind:"machine", room}` (préchargement poste+salle au logon) → machine = 1.
-	// Story 27.4 : +1 item `app_config` (policies.json FF/TB, aggregate). Correctif
-	// post-review 2026-06-17 (review #1) : `app_config` est en portée MACHINE
+	// +1 item `app_config` (policies.json FF/TB, aggregate) :
+	// `app_config` est en portée MACHINE
 	// (`policies.json` machine-wide, admin-write, écrit par le service SYSTEM ;
 	// résolu PAR PARC) → machine = 2, session reste 6.
-	// Story 27.5 : +1 item `applications` (aggregate, portée MACHINE — l'agent
+	// +1 item `applications` (aggregate, portée MACHINE — l'agent
 	// DÉCLENCHE WPKG, qui installe machine-wide) → machine = 3, session reste 6.
 	// Lecteurs natifs (2026-06-29) : `drives` passe d'1 à 2 items (K: home +
 	// H: classes) → session = 7.
-	// Story 35.1 : +1 item `registry` de SUPPRESSION (`ensure:"absent"`, payload
+	// +1 item `registry` de SUPPRESSION (`ensure:"absent"`, payload
 	// 4 clés sans type/value) en portée MACHINE → machine = 4.
-	// Story 35.2 : +1 item `registry_list` (conteneur Forcelist Chrome, payload
+	// +1 item `registry_list` (conteneur Forcelist Chrome, payload
 	// 4 clés {hive, path, entry_type, values}) en portée MACHINE → machine = 5.
-	// Story 36.1 : +1 item `fs_acl` (deny list_folder folder_only sur C:\Program
+	// +1 item `fs_acl` (deny list_folder folder_only sur C:\Program
 	// Files, payload 6 clés) en portée MACHINE → machine = 6.
-	// Story 36.2 : +1 item `firewall` (internet-block, payload 6 clés) en portée
+	// +1 item `firewall` (internet-block, payload 6 clés) en portée
 	// MACHINE → machine = 7.
-	// Story 35.6 : +1 item `privilege` (SeDenyRemoteInteractiveLogonRight refusé
+	// +1 item `privilege` (SeDenyRemoteInteractiveLogonRight refusé
 	// au groupe Eleves, payload 2 clés {privilege, accounts}) en portée MACHINE
 	// → machine = 8.
-	// Story 38.3 : +1 item `legacy_cleanup` (nettoyage crochets legacy SE4,
-	// payload 1 clé {mozilla: "vanilla"} — Q5-a) en portée MACHINE → machine = 9.
-	// Story 43.2 : +1 item `registry_list` (conteneur DisallowRun, payload 4
+	// +1 item `legacy_cleanup` (nettoyage crochets legacy SE4,
+	// payload 1 clé {mozilla: "vanilla"}) en portée MACHINE → machine = 9.
+	// +1 item `registry_list` (conteneur DisallowRun, payload 4
 	// clés + `refresh` optionnel additif) en portée SESSION → session = 8.
 	// L'item `registry` HideFileExt existant gagne aussi `refresh` (champ
 	// additif, ne change PAS le COMPTE d'items).
-	// Story 36.5 : +1 item `app_profile` (redirection profil Firefox → home
+	// +1 item `app_profile` (redirection profil Firefox → home
 	// réseau, aggregate, payload {app, link, server, profile_name, install_hash,
 	// cache_local}) en portée SESSION → session = 9.
-	// Story 58.1 : +1 item `folders` (redirection du dossier shell Bureau vers
+	// +1 item `folders` (redirection du dossier shell Bureau vers
 	// `User Shell Folders`, exclusive, payload {folder, path}) en portée
 	// MACHINE_USER → machine_user = 2, aux côtés de l'item `shortcuts` avec
 	// lequel il partage le MÊME chemin (poser les `.lnk` et rediriger le shell
@@ -170,8 +168,6 @@ func TestDebugFromStateCacheFile(t *testing.T) {
 	}
 }
 
-// --- ValidSchema ----------------------------------------------------------------
-
 func TestValidSchema(t *testing.T) {
 	valid := []string{"se5.desired-state/v1", "se5.desired-state/v1.1"}
 	invalid := []string{"se5.desired-state/v2", "se5.desired-state/", "v1", "", "se5.desired-state/vX"}
@@ -187,8 +183,6 @@ func TestValidSchema(t *testing.T) {
 		}
 	}
 }
-
-// --- BuildReport ----------------------------------------------------------------
 
 func TestBuildReportSkeleton(t *testing.T) {
 	now := time.Date(2026, 6, 12, 8, 5, 0, 0, time.FixedZone("CEST", 2*3600))
@@ -230,7 +224,7 @@ func TestBuildReportSkeleton(t *testing.T) {
 
 func TestBuildReportEmptyUuidAccepted(t *testing.T) {
 	// Firmware sans UUID SMBIOS : champ déclaratif, le rapport part quand même
-	// (comportement 24.2/24.4 conservé — l'identité réelle est le token).
+	// (comportement conservé — l'identité réelle est le token).
 	raw, err := BuildReport("PC", "", nil, time.Now())
 	if err != nil {
 		t.Fatalf("uuid vide doit être admis : %v", err)
@@ -264,22 +258,20 @@ func TestBuildReportWithItemsAndDetail(t *testing.T) {
 	}
 }
 
-// --- Constantes du contrat --------------------------------------------------------
-
 func TestContractConstantsAreFrozen(t *testing.T) {
 	if ContractSchema != "se5.desired-state/v1" {
 		t.Errorf("ContractSchema modifié : %q — le contrat est FIGÉ (NFR12)", ContractSchema)
 	}
-	// Story 35.2 : +1 type `registry_list` (ajout ADDITIF D1) → 11.
-	// Story 36.1 : +1 type `fs_acl` (ajout ADDITIF D1, mécanisme hors-registre) → 12.
-	// Story 36.2 : +1 type `firewall` (ajout ADDITIF D1, mécanisme hors-registre) → 13.
-	// Story 35.6 : +1 type `privilege` (ajout ADDITIF D1, mécanisme hors-registre) → 14.
-	// Story 38.3 : +1 type `legacy_cleanup` (ajout ADDITIF D1, nettoyage crochets legacy) → 15.
-	// Story 36.5 : +1 type `app_profile` (ajout ADDITIF D1, mécanisme hors-registre — redirection profil) → 16.
+	// +1 type `registry_list` (ajout ADDITIF) → 11.
+	// +1 type `fs_acl` (ajout ADDITIF, mécanisme hors-registre) → 12.
+	// +1 type `firewall` (ajout ADDITIF, mécanisme hors-registre) → 13.
+	// +1 type `privilege` (ajout ADDITIF, mécanisme hors-registre) → 14.
+	// +1 type `legacy_cleanup` (ajout ADDITIF, nettoyage crochets legacy) → 15.
+	// +1 type `app_profile` (ajout ADDITIF, mécanisme hors-registre — redirection profil) → 16.
 	if len(ResourceTypes) != 16 {
 		t.Errorf("16 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
-	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
+	// `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {
 		t.Errorf("3 statuts (§6), got %d", len(ResourceStatuses))
 	}

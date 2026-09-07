@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 23.5 — `GET /api/v1/agent/state` (route `agent.v1.state`).
+ * `GET /api/v1/agent/state` (route `agent.v1.state`).
  *
  * Premier endpoint authentifié du canal agent desired-state : sert
  * l'enveloppe `se5.desired-state/v1` compilée pour (poste authentifié,
@@ -23,28 +23,28 @@ use Illuminate\Support\Str;
  * wrapper SE5 `{success, …}` : l'agent parse le contrat v1, et l'ETag est
  * calculé sur l'enveloppe (un wrapper fausserait le hash).
  *
- * Controller mince : la compilation vit dans {@see StateCompiler} (D2),
+ * Controller mince : la compilation vit dans {@see StateCompiler},
  * l'auth et toutes les écritures `agent_*` (check-in, rotation) dans le
  * middleware `agent.token` — ici AUCUNE écriture, aucune précédence.
  *
- * Réponse conditionnelle (FR6) : ETag = `StateHasher::hashState()` (forme
+ * Réponse conditionnelle : ETag = `StateHasher::hashState()` (forme
  * quotée RFC 7232 via `setEtag()`), `If-None-Match` correspondant → 304
  * sans corps via `isNotModified()` (qui gère guillemets, `W/`, listes, `*`).
  * L'ETag est opaque de bout en bout : l'agent stocke le header verbatim,
  * un cache par couple (poste, user) — cf. docs/agent/state-endpoint.md.
  *
- * Story 24.7 — « forcer la synchro » (FR11, décision n° 1) : si une demande
+ * « forcer la synchro » : si une demande
  * de resynchronisation est PENDANTE (`agent_sync_requested_at` non null),
  * `isNotModified()` est BYPASSÉ — on renvoie 200 corps complet même si
  * `If-None-Match` concorde, AVEC le MÊME ETag et l'enveloppe contrat BRUTE
  * inchangée (rien d'autre ne change : pas de wrapper, pas de recalcul de
- * hash — piège 3). Effet poste : le cache `state.json` est réécrit → mtime
- * change → le compagnon rejoue les handlers. ZÉRO write ici (piège 4) : la
+ * hash). Effet poste : le cache `state.json` est réécrit → mtime
+ * change → le compagnon rejoue les handlers. ZÉRO write ici : la
  * demande est soldée au `POST /report` ({@see ReportController}). Le bypass
  * couvre TOUS les contextes du cycle (machine ET `?user=`).
  *
  * Middlewares (routes/api.php) : `auth.v1.secure-headers` + `throttle:60,1`
- * + `agent.token`. Erreurs 401/403 = formats du middleware 23.2, intouchés.
+ * + `agent.token`. Erreurs 401/403 = formats du middleware, intouchés.
  */
 class StateController extends Controller
 {
@@ -66,7 +66,7 @@ class StateController extends Controller
         $response = response()->json($state, 200, [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $response->setEtag($this->compiler->hashState($state));
 
-        // Story 24.7 — « forcer la synchro » : une demande pendante force le
+        // « forcer la synchro » : une demande pendante force le
         // 200 corps complet (bypass du 304) sans rien changer d'autre — même
         // ETag, enveloppe brute. ZÉRO write ici (la lecture du flag ne
         // consomme PAS la demande : elle vit pour TOUS les contextes du cycle
@@ -95,7 +95,7 @@ class StateController extends Controller
     }
 
     /**
-     * Résolution du user de session (décision n° 1) : `?user=<login>`,
+     * Résolution du user de session : `?user=<login>`,
      * lookup case-insensitive. Login inconnu ou compte local (admin local,
      * compte hors SE5 — cas légitime du compagnon) → compilation
      * machine-only, JAMAIS d'erreur : une session locale doit recevoir un
@@ -115,7 +115,7 @@ class StateController extends Controller
             Log::channel('agent')->info('[StateController] agent.state.unknown_user', [
                 'action_type' => 'agent.state.unknown_user',
                 'workstation_id' => $workstation->id,
-                // Input client non authentifié : borné avant log (P5 23.2).
+                // Input client non authentifié : borné avant log (P5).
                 'login' => Str::limit($login, 255),
             ]);
         }

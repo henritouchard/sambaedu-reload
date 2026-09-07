@@ -20,13 +20,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.3 (AC2) — Tests Unit du provider `legacy_cleanup` CAPABILITY-FIRST.
+ * Tests Unit du provider `legacy_cleanup` CAPABILITY-FIRST.
  *
  * Le provider EXPANSE la capacité de gating → AU PLUS un item CONCRET 1 clé
- * `{mozilla: "vanilla"}` (enum FERMÉ §7.10, Q5-a VANILLA). `exclusiveKey()`
- * FIXE `legacy_cleanup` (un seul nettoyage par poste). Lecture Postgres pure
- * (NFR7 — le catalogue d'artefacts est DANS l'agent, D3). Invariant central
- * 27.12 : jamais d'id/key de capacité au payload.
+ * `{mozilla: "vanilla"}` (enum FERMÉ : `vanilla` en est la seule valeur).
+ * `exclusiveKey()` FIXE `legacy_cleanup` (un seul nettoyage par poste). Lecture
+ * Postgres pure : le catalogue des artefacts à nettoyer est DANS l'agent.
+ * Invariant central : jamais d'id/key de capacité au payload.
  */
 class CapabilityLegacyCleanupProviderTest extends TestCase
 {
@@ -87,7 +87,7 @@ class CapabilityLegacyCleanupProviderTest extends TestCase
         return $cap;
     }
 
-    // ── Type / sémantique / portée / identité ────────────────────────────
+    // Type / sémantique / portée / identité
 
     #[Test]
     public function provider_declares_legacy_cleanup_exclusive_machine(): void
@@ -106,7 +106,7 @@ class CapabilityLegacyCleanupProviderTest extends TestCase
         self::assertSame('legacy_cleanup', $p->exclusiveKey([]), 'identité FIXE : un seul nettoyage par poste');
     }
 
-    // ── Expansion : payload EXACTEMENT 1 clé, jamais d'id de capacité ─────
+    // Expansion : payload EXACTEMENT 1 clé, jamais d'id de capacité
 
     #[Test]
     public function on_emits_exactly_one_item_with_the_one_key_vanilla_payload(): void
@@ -155,7 +155,7 @@ class CapabilityLegacyCleanupProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()), 'spec corrompue ⇒ non émis, jamais d\'exception');
     }
 
-    // ── Override parc (patron défaut Broadcast + override parc) ───────────
+    // Override parc (patron défaut Broadcast + override parc)
 
     #[Test]
     public function parc_override_on_arms_the_cleanup_over_broadcast_unmanaged(): void

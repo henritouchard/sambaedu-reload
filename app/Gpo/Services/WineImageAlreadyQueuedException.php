@@ -11,7 +11,7 @@ namespace App\Gpo\Services;
  *
  * Capturée par le SFC Livewire `/admin/settings/gpo/wine` → toast warning.
  *
- * Story 16.3c — discrepance SM (a) tranchement.
+ * Discrepance SM (a) tranchement.
  */
 final class WineImageAlreadyQueuedException extends \RuntimeException
 {

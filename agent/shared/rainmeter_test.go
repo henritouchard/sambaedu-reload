@@ -13,8 +13,6 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// --- Conversion UTF-16 LE + BOM (D6) ------------------------------------------
-
 func TestToUTF16LEWithBOM_BOMAndRoundTrip(t *testing.T) {
 	src := "Salle B-12 · élève éàü"
 
@@ -63,16 +61,14 @@ func TestToUTF16LEWithBOM_NonASCIIEncodedNotMojibake(t *testing.T) {
 	}
 }
 
-// --- Rainmeter.ini durci (D4) -------------------------------------------------
-
 func TestBuildHardenedRainmeterIni_LockdownDirectives(t *testing.T) {
 	ini := BuildHardenedRainmeterIni()
 
 	mustContain := []string{
-		"TrayIcon=0",                         // pas d'icône de tray pilotable
-		"Draggable=0",                        // non déplaçable
-		"ClickThrough=1",                     // clics traversent
-		"KeepOnScreen=1",                     // épinglée
+		"TrayIcon=0",        // pas d'icône de tray pilotable
+		"Draggable=0",       // non déplaçable
+		"ClickThrough=1",    // clics traversent
+		"KeepOnScreen=1",    // épinglée
 		"[SambaEduOverlay]", // section d'instance = dossier de config relatif à Skins\
 		"Active=1",
 	}
@@ -89,7 +85,7 @@ func TestBuildHardenedRainmeterIni_Deterministic(t *testing.T) {
 	}
 }
 
-// TestBuildHardenedRainmeterIni_SkinPath (Story 27.1ter) : en mode installé, le
+// TestBuildHardenedRainmeterIni_SkinPath : en mode installé, le
 // Rainmeter.ini durci doit déclarer SkinPath pointant l'arbre des skins
 // verrouillées sous ProgramData (les settings vivant désormais en %APPDATA%,
 // Rainmeter ne peut plus déduire l'emplacement des skins). Le SkinPath doit être
@@ -124,14 +120,12 @@ func TestBuildHardenedRainmeterIni_SkinPath(t *testing.T) {
 	}
 }
 
-// --- Rainmeter.ini per-user (mode installé, %APPDATA%) ------------------------
-
 func TestBuildUserRainmeterIniBytes_HardenedUTF16(t *testing.T) {
 	got, err := BuildUserRainmeterIniBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// UTF-16 LE + BOM (iso 27.1bis, homogénéité Rainmeter).
+	// UTF-16 LE + BOM (iso, homogénéité Rainmeter).
 	if len(got) < 2 || got[0] != 0xFF || got[1] != 0xFE {
 		t.Fatalf("Rainmeter.ini per-user doit être en UTF-16 LE + BOM : % x", got[:min(2, len(got))])
 	}
@@ -142,7 +136,7 @@ func TestBuildUserRainmeterIniBytes_HardenedUTF16(t *testing.T) {
 	}
 }
 
-// TestWriteUserRainmeterIni_WritableAtomicIdempotent (Story 27.1ter) : le .ini
+// TestWriteUserRainmeterIni_WritableAtomicIdempotent : le.ini
 // per-user est écrit (atomique, dossier créé), WRITABLE (aucune ACL/perm
 // restrictive posée par nous), et idempotent (2e passage = no-op).
 func TestWriteUserRainmeterIni_WritableAtomicIdempotent(t *testing.T) {
@@ -187,7 +181,7 @@ func TestWriteUserRainmeterIni_WritableAtomicIdempotent(t *testing.T) {
 	}
 
 	// Divergence (l'user a édité son writable .ini) → réécriture (réimposition du
-	// durci au logon suivant, D5).
+	// durci au logon suivant).
 	if err := os.WriteFile(path, []byte("tampered"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +196,6 @@ func TestWriteUserRainmeterIni_WritableAtomicIdempotent(t *testing.T) {
 		t.Fatal("le durci doit être réimposé après divergence")
 	}
 }
-
-// --- Idempotence de pose (fileMatchesContent) --------------------------------
 
 func TestFileMatchesContent(t *testing.T) {
 	dir := t.TempDir()
@@ -223,8 +215,6 @@ func TestFileMatchesContent(t *testing.T) {
 		t.Fatal("contenu divergent (1 octet) ne doit pas matcher (UTF-16 sensible à l'octet)")
 	}
 }
-
-// --- Extraction portable + zip-slip ------------------------------------------
 
 func makeZip(t *testing.T, entries map[string]string) []byte {
 	t.Helper()
@@ -291,8 +281,6 @@ func TestExtractPortableZip_Idempotent(t *testing.T) {
 	}
 }
 
-// --- RainmeterStore : install-if-absent --------------------------------------
-
 func TestRainmeterStore_InstalledMarkerSentinel(t *testing.T) {
 	dir := t.TempDir()
 	store := &RainmeterStore{Root: dir}
@@ -302,7 +290,7 @@ func TestRainmeterStore_InstalledMarkerSentinel(t *testing.T) {
 	}
 
 	// Rainmeter.exe SEUL (extraction partielle interrompue avant le marqueur)
-	// ne doit PAS compter comme installé (#10) : sinon le cycle suivant ne
+	// ne doit PAS compter comme installé : sinon le cycle suivant ne
 	// rejoue pas l'extraction et le poste reste avec un portable cassé.
 	if err := os.MkdirAll(store.AppDir(), 0o700); err != nil {
 		t.Fatal(err)
@@ -324,7 +312,7 @@ func TestRainmeterStore_InstalledMarkerSentinel(t *testing.T) {
 }
 
 func TestRainmeterStore_PortableLayoutFlat(t *testing.T) {
-	// Structure portable RÉELLE (#7/M1) : Rainmeter.exe ET Rainmeter.ini À LA
+	// Structure portable RÉELLE : Rainmeter.exe ET Rainmeter.ini À LA
 	// RACINE (pas de sous-dossier app/), Skins/ au même niveau.
 	store := &RainmeterStore{Root: `/tmp/rm`}
 	if store.ExePath() != filepath.Join(`/tmp/rm`, "Rainmeter.exe") {
@@ -342,7 +330,7 @@ func TestRainmeterStore_PortableLayoutFlat(t *testing.T) {
 }
 
 // TestRainmeterIni_NoFormulaInWindowPosition vérifie qu'aucune variable/formule
-// non résolue ne fuit dans le Rainmeter.ini de settings (#18/M2) : WindowX/Y
+// non résolue ne fuit dans le Rainmeter.ini de settings : WindowX/Y
 // doivent rester des entiers bruts (le placement fin est délégué à la skin).
 func TestRainmeterIni_NoFormulaInWindowPosition(t *testing.T) {
 	ini := BuildHardenedRainmeterIni()
@@ -353,7 +341,7 @@ func TestRainmeterIni_NoFormulaInWindowPosition(t *testing.T) {
 	}
 }
 
-// TestExtractPortableZip_TotalBytesBound vérifie la borne TOTALE cumulée (#9) :
+// TestExtractPortableZip_TotalBytesBound vérifie la borne TOTALE cumulée :
 // une archive dont la somme des entrées dépasse rainmeterUnzipMaxTotalBytes est
 // rejetée même si chaque entrée reste sous la borne par entrée.
 func TestExtractPortableZip_TotalBytesBound(t *testing.T) {

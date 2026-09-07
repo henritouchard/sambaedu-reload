@@ -7,13 +7,13 @@ namespace App\Gpo\Support;
 use Illuminate\Support\Str;
 
 /**
- * Façade des logs GPO — Epic 16.
+ * Façade des logs GPO.
  *
  * Entrée unique pour démarrer une action loggée. Chaque appel retourne un
  * {@see GpoActionLog} qui doit recevoir un `success()` ou un `failure()`
  * pour clôturer l'action.
  *
- * Convention : voir `app/Gpo/README.md` § Convention de logging Epic 16 pour
+ * Convention : voir `app/Gpo/README.md` § Convention de logging pour
  * le catalogue complet des `action_type`.
  *
  * Exemple d'utilisation :

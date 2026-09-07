@@ -12,27 +12,27 @@ use App\Services\AuthenticationService;
 use Illuminate\Http\Request;
 
 /**
- * Story 4.10 — Helper de test pour les endpoints iPXE sensibles.
+ * Helper de test pour les endpoints iPXE sensibles.
  *
- * Avant la story 4.10, les endpoints `/ipxe/admin`, `/ipxe/maintenance`,
+ * Autrefois, les endpoints `/ipxe/admin`, `/ipxe/maintenance`,
  * `/ipxe/action/*`, `/ipxe/installation-*`, `/ipxe/clonezilla-menu` et
- * `/ipxe/enrollment/*` ne vérifiaient pas l'auth. La story restaure le
+ * `/ipxe/enrollment/*` ne vérifiaient pas l'auth. Le contrôle est restauré
  * contrôle via {@see IpxeAuthService::authorize()} (bind LDAP + permission
  * Spatie `computer.install`). Les tests Feature existants POSTent sans
  * `username/password` — ce trait permet de stub l'auth pour préserver le
  * scope de chaque test.
  *
- * **Correctif review #12** : on stubbe désormais via l'interface
- * {@see IpxeAuthorizes} (et non plus via une sous-classe anonyme de la
- * classe concrète, qui exigeait de retirer `final`). La classe stub
- * `StubIpxeAuthService` n'a aucune dépendance LDAP/Spatie.
+ * Le stub passe par l'interface {@see IpxeAuthorizes}, et non par une
+ * sous-classe anonyme de la classe concrète, qui exigerait d'en retirer
+ * `final`. La classe stub `StubIpxeAuthService` n'a aucune dépendance
+ * LDAP ni Spatie.
  */
 trait IpxeAuthTestHelper
 {
     /**
      * Remplace l'implémentation de `IpxeAuthorizes` par un stub qui retourne
      * TOUJOURS `Allowed`. À appeler en `setUp()` des tests qui ne ciblent PAS
-     * la story 4.10 (auth).
+     * la (auth).
      */
     protected function bypassIpxeAuth(): void
     {
@@ -59,7 +59,7 @@ trait IpxeAuthTestHelper
 }
 
 /**
- * Story 4.10 (correctif review #12) — Stub iPXE auth « always allow ».
+ * Stub iPXE auth « always allow ».
  *
  * Implémente {@see IpxeAuthorizes} sans aucune dépendance (pas de LDAP,
  * pas de Spatie). À utiliser exclusivement en tests via

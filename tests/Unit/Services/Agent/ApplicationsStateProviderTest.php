@@ -31,20 +31,20 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ApplicationsStateProvider` — Story 27.5 (AC1, AC7).
+ * Tests Unit `ApplicationsStateProvider`.
  *
  * Type figé `applications` (aggregate / scope MACHINE — WPKG installe
  * machine-wide). Projection en LECTURE SEULE de l'ensemble cible WPKG
  * ({@see WorkstationPackagesResolver::computePackages}, méthode NON CACHÉE),
  * un item par `app_id` affecté, payload concret `{app_id, name}` (jamais un id
- * de catalogue/pivot/scope), maille `Broadcast` (résolution déjà finale — D4).
- * Lecture PG-pure : aucun AD/APCu/Cache (NFR7).
+ * de catalogue/pivot/scope), maille `Broadcast` (la résolution WPKG est déjà
+ * finale). Lecture PG-pure : aucun AD/APCu/Cache.
  */
 class ApplicationsStateProviderTest extends TestCase
 {
     // Schéma géré 100% par WpkgSchemaBootstrapper (create en setUp / drop en
     // tearDown), iso WorkstationPackagesResolverTest. On NE combine PAS
-    // RefreshDatabase : sous SQLite :memory: + PHP 8.4 (transaction DEFERRED), le
+    // RefreshDatabase : sous SQLite :memory: + PHP (transaction DEFERRED), le
     // wrap transactionnel de RefreshDatabase entre en conflit avec les
     // create/drop manuels du bootstrapper (« cannot start a transaction within a
     // transaction » / drop FK order) → faux échecs au tearDown.
@@ -54,15 +54,15 @@ class ApplicationsStateProviderTest extends TestCase
     {
         parent::setUp();
         // Projection Postgres-pure : aucune synchro AD à déclencher (host sans
-        // LDAP, iso NFR7). Pattern aligné sur AppConfigStateProviderTest (27.4).
+        // LDAP). Pattern aligné sur AppConfigStateProviderTest.
         WorkstationGroupObserver::disableSync();
 
         WpkgSchemaBootstrapper::bootstrap();
         Cache::flush();
 
-        // Story 31.2 — 2ᵉ dépendance : SOURCE des ordres d'install amont. Sans
+        // 2ᵉ dépendance : SOURCE des ordres d'install amont. Sans
         // contrat actif (ces tests n'en créent aucun), `orderedApplicationAppIds()`
-        // court-circuite (NFR3) → l'ensemble cible reste inchangé vs 27.5.
+        // court-circuite : l'ensemble cible reste celui que résout WPKG seul.
         $this->provider = new ApplicationsStateProvider(
             new WorkstationPackagesResolver(),
             new UpstreamContractSource([]),
@@ -94,7 +94,7 @@ class ApplicationsStateProviderTest extends TestCase
         self::assertSame(Application::TYPE_APPLICATIONS, $this->provider->type());
         self::assertSame('applications', $this->provider->type());
         self::assertSame(ResourceSemantics::Aggregate, $this->provider->semantics());
-        // Portée MACHINE : WPKG installe machine-wide (leçon 🔴 27.4 #1).
+        // Portée MACHINE : WPKG installe machine-wide.
         self::assertSame(StateScope::Machine, $this->provider->scope());
     }
 
@@ -181,7 +181,7 @@ class ApplicationsStateProviderTest extends TestCase
         $vlc = $candidates->first(fn (StateCandidate $c) => $c->payload['app_id'] === 'vlc');
 
         self::assertNotNull($vlc);
-        // Maille Broadcast (D4 : la résolution WPKG est déjà finale).
+        // Maille Broadcast : la résolution WPKG est déjà finale.
         self::assertSame(StateMaille::Broadcast, $vlc->maille);
         // sourceId déterministe & injectif = la PK Application (ordre aggregate / ETag stable).
         self::assertSame($app->id, $vlc->sourceId);
@@ -198,13 +198,13 @@ class ApplicationsStateProviderTest extends TestCase
         self::assertCount(0, $candidates);
     }
 
-    // ── Story 27.17 — apps « défaut parc » (is_parc_default → Broadcast) ──────
+    // — apps « défaut parc » (is_parc_default → Broadcast)
 
     #[Test]
     public function parc_default_apps_are_emitted_for_a_workstation_without_specific_config(): void
     {
         // Un poste SANS aucun rattachement (ni poste, ni parc, ni profil) reçoit
-        // tout de même les apps marquées is_parc_default (couche Broadcast 27.17).
+        // tout de même les apps marquées is_parc_default (couche Broadcast).
         $sevenZip = $this->newApp('7za', '7-Zip CLI');
         $sevenZip->is_parc_default = true;
         $sevenZip->save();
@@ -248,8 +248,8 @@ class ApplicationsStateProviderTest extends TestCase
     #[Test]
     public function no_parc_default_and_no_config_emits_no_candidate_regression(): void
     {
-        // NON-RÉGRESSION 27.17 : aucune app défaut parc + aucune config spécifique
-        // ⇒ le state Broadcast reste VIDE, exactement comme avant la story.
+        // NON-RÉGRESSION : aucune app défaut parc + aucune config spécifique
+        // ⇒ le state Broadcast reste VIDE, exactement comme auparavant.
         $this->newApp('vlc', 'VLC'); // existe mais is_parc_default = false (défaut migration)
 
         $ws = Workstation::create(['name' => 'PCREG', 'status' => 'active']);
@@ -259,7 +259,7 @@ class ApplicationsStateProviderTest extends TestCase
         self::assertCount(0, $candidates, 'sans défaut parc ni config, le state reste inchangé (vide)');
     }
 
-    // ── Story 63.5 — le CLIENT DE SYNCHRONISATION, troisième source d'union ──
+    // — le CLIENT DE SYNCHRONISATION, troisième source d'union
 
     /** Une recette WPKG qui DÉCRIT une désinstallation (garde prédictive AC3). */
     private static function recipeWithRemove(string $appId): string
@@ -538,7 +538,7 @@ class ApplicationsStateProviderTest extends TestCase
         $ws = Workstation::create(['name' => 'PCNOROW', 'status' => 'active']);
         $ws->applications()->attach([$assigned->id]);
 
-        // Aucune ligne `files.locations` : les défauts 63.1 (`cloud.actif = aucun`)
+        // Aucune ligne `files.locations` : les défauts (`cloud.actif = aucun`)
         // s'appliquent, et rien ne lève.
         self::assertSame(['alpha'], $this->appIdsFor($ws));
     }
@@ -546,7 +546,7 @@ class ApplicationsStateProviderTest extends TestCase
     #[Test]
     public function provider_reads_no_cache_uncached_resolution_only(): void
     {
-        // PG-pur (NFR7) : le provider lit la résolution NON CACHÉE. Aucune entrée
+        // PG-pur : le provider lit la résolution NON CACHÉE. Aucune entrée
         // de cache WPKG ne doit être écrite par itemsFor (contrairement à
         // resolve() qui wrappe Cache::remember).
         $app = $this->newApp('zip', '7-Zip');

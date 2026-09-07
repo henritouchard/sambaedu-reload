@@ -23,7 +23,7 @@ use Tests\Feature\OidcWitness\Concerns\ReentersTheTestKernel;
 use Tests\TestCase;
 
 /**
- * Story 55.3 — **AC1** : le parcours de bout en bout de l'app-témoin.
+ * Le parcours de bout en bout de l'app-témoin.
  *
  * Le flux est déroulé POUR DE VRAI, à travers HTTP : le témoin découvre le
  * fournisseur (`/.well-known/openid-configuration`), fabrique `state`, `nonce`
@@ -33,7 +33,7 @@ use Tests\TestCase;
  * ({@see ReentersTheTestKernel}).
  *
  * ⚠️ Bypass du guard `sambaedu.auth` sur `/oidc/authorize` UNIQUEMENT : il lit
- * `$_SESSION` et le LDAP, inatteignables sur l'hôte (patron 55.1
+ * `$_SESSION` et le LDAP, inatteignables sur l'hôte (patron
  * `OidcAuthorizationFlowTest`). Le témoin, lui, n'est derrière AUCUN garde —
  * c'est ce qui rend la preuve « sans re-saisie d'identifiants » non circulaire.
  */
@@ -84,7 +84,7 @@ class WitnessFlowTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     /** Provisionne le témoin par SA commande — pas par un raccourci de test. */
     private function provision(): void
@@ -160,10 +160,6 @@ class WitnessFlowTest extends TestCase
         return $this->withUnencryptedCookie(WitnessController::STATE_COOKIE, $cookie)->get($uri);
     }
 
-    // =====================================================================
-    // AC1 — le parcours nominal
-    // =====================================================================
-
     #[Test]
     public function the_witness_walks_the_whole_sso_and_renders_the_verified_claims(): void
     {
@@ -186,7 +182,7 @@ class WitnessFlowTest extends TestCase
         // ⚠️ Le `code_verifier` PKCE ne doit JAMAIS partir à l'autorisation.
         self::assertArrayNotHasKey('code_verifier', $query);
 
-        // FR17 — aucune re-saisie d'identifiants : on repart chez le témoin,
+        // Aucune re-saisie d'identifiants : on repart chez le témoin,
         // pas vers un formulaire de connexion.
         self::assertStringStartsWith('/sso-demo/callback?', $walk['callback_uri']);
         self::assertStringNotContainsString('/login', $walk['callback_uri']);
@@ -203,7 +199,7 @@ class WitnessFlowTest extends TestCase
         self::assertStringContainsString('3A', (string) $html);
         self::assertStringContainsString('Retour au lanceur', (string) $html);
 
-        // ── La preuve que TOUT est passé par HTTP ────────────────────────
+        // La preuve que TOUT est passé par HTTP
         $paths = $this->witnessHttpPaths();
 
         self::assertContains('/.well-known/openid-configuration', $paths, 'la découverte se fait par HTTP');
@@ -258,7 +254,7 @@ class WitnessFlowTest extends TestCase
     #[Test]
     public function a_user_without_a_resolvable_role_sees_the_role_as_unresolved(): void
     {
-        // AC1 — un `role` absent (AC4 de 55.2) s'affiche comme absent, jamais
+        // Un `role` absent s'affiche comme absent, jamais
         // comme une valeur inventée.
         $this->provision();
 
@@ -280,10 +276,6 @@ class WitnessFlowTest extends TestCase
         self::assertStringContainsString('Bonjour Agent Polyvalent', $html);
         self::assertStringContainsString('(non résolu)', $html);
     }
-
-    // =====================================================================
-    // AC2 — le `state` au callback : le pendant client de `redirect_uri`
-    // =====================================================================
 
     #[Test]
     public function a_diverging_state_is_refused_without_any_code_exchange(): void
@@ -338,7 +330,7 @@ class WitnessFlowTest extends TestCase
     #[Test]
     public function an_oversized_state_cookie_is_refused_rather_than_decoded(): void
     {
-        // Piège 55.1 #3 transposé : rien n'est persisté en colonne ici, mais la
+        // Rien n'est persisté en colonne ici, mais la
         // taille acceptée du cookie est bornée explicitement plutôt que laissée
         // au décodeur JSON.
         $this->provision();
@@ -354,7 +346,7 @@ class WitnessFlowTest extends TestCase
     #[Test]
     public function a_replayed_callback_is_refused_by_the_provider_before_the_witness_even_looks(): void
     {
-        // Le code d'autorisation est à usage unique (55.1) : rejouer le MÊME
+        // Le code d'autorisation est à usage unique : rejouer le MÊME
         // callback échoue à l'échange. Le témoin le signale explicitement — il
         // n'affiche jamais de claims issus d'un échange raté.
         $this->provision();
@@ -370,10 +362,6 @@ class WitnessFlowTest extends TestCase
         self::assertStringContainsString(WitnessErrorCodes::TOKEN_EXCHANGE_FAILED, (string) $replay->getContent());
         self::assertStringNotContainsString('Bonjour', (string) $replay->getContent());
     }
-
-    // =====================================================================
-    // AC1 / AC4 — fail-closed : non provisionné, client révoqué
-    // =====================================================================
 
     #[Test]
     public function an_unprovisioned_witness_fails_with_an_explicit_503(): void
@@ -432,10 +420,6 @@ class WitnessFlowTest extends TestCase
 
         $this->get('/sso-demo')->assertStatus(503);
     }
-
-    // =====================================================================
-    // Task 1 — la tuile : le témoin est atteint par le lanceur, pas par une URL
-    // =====================================================================
 
     #[Test]
     public function the_sso_demo_tile_reaches_the_launcher_once_integrated(): void

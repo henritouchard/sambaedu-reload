@@ -65,10 +65,6 @@ class UserServiceCreateTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // Tests createHomeDirectory()
-    // =========================================================================
-
     #[Test]
     public function createHomeDirectory_rejects_invalid_login_with_special_chars(): void
     {
@@ -114,10 +110,6 @@ class UserServiceCreateTest extends TestCase
         $this->assertTrue(true);
     }
 
-    // =========================================================================
-    // Tests PasswordService::determinePassword()
-    // =========================================================================
-
     #[Test]
     public function determinePassword_returns_provided_password_when_given(): void
     {
@@ -158,10 +150,6 @@ class UserServiceCreateTest extends TestCase
         $this->assertNotEmpty($result);
         $this->assertGreaterThanOrEqual(8, strlen($result));
     }
-
-    // =========================================================================
-    // Tests generateLogin() via createUser() validation
-    // =========================================================================
 
     #[Test]
     public function createUser_fails_with_empty_nom(): void
@@ -241,10 +229,6 @@ class UserServiceCreateTest extends TestCase
         $this->assertStringContainsString('existe déjà', $result['message']);
     }
 
-    // =========================================================================
-    // Tests persistUserToSql() - mapping rôle et données
-    // =========================================================================
-
     #[Test]
     public function roleMap_is_case_insensitive(): void
     {
@@ -273,10 +257,6 @@ class UserServiceCreateTest extends TestCase
         $this->assertEquals('Jean', trim("Jean "));
         $this->assertEquals('Jean Dupont', trim("Jean Dupont"));
     }
-
-    // =========================================================================
-    // Tests createHomeDirectory() - copie skel avec dotfiles
-    // =========================================================================
 
     #[Test]
     public function skel_copy_uses_dot_not_glob_star(): void

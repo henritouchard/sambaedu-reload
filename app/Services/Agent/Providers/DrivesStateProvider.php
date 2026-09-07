@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Type `drives` (contrat §7, identifiant DÉJÀ figé — NFR12) — **projection en
+ * Type `drives` (contrat §7, identifiant figé) — **projection en
  * lecture seule** des partages réseau standards SambaEdu vers des montages de
  * lecteur, gérés NATIVEMENT par l'agent (et non plus par l'attribut AD
  * `homeDrive`/`homeDirectory` ni la GPO « lecteurs reseau » legacy).
@@ -30,8 +30,8 @@ use Illuminate\Support\Facades\Log;
  * (appliqué par Windows au logon), pas de SE5. L'agent doit devenir l'autorité
  * sur les lecteurs (successeur de GPO/AD) — sinon deux mécanismes se marchent
  * dessus (l'ancien provider posait un lecteur de CLASSE sur K:, écrasant le home
- * natif pour les élèves). Décision Henri (2026-06-29) : l'agent émet le jeu
- * standard iso-legacy, lettres FIXES.
+ * natif pour les élèves). L'agent émet donc le jeu standard iso-legacy, sur
+ * des lettres FIXES.
  *
  * **Lettres figées serveur** (iso-legacy `individuel.php`) :
  *  - `K:` = **home** de l'utilisateur (partage `users`, sous-dossier = login) —
@@ -46,7 +46,7 @@ use Illuminate\Support\Facades\Log;
  * relève d'un futur système de partages/ACL (cf. module legacy `acls/`,
  * restauration au déploiement via `/admin/sync-from-ad`).
  *
- * **Story 34.1 — répertoires réseau gérés CONFIGURABLES.** En PLUS du jeu fixe
+ * **répertoires réseau gérés CONFIGURABLES.** En PLUS du jeu fixe
  * K:/H:, le provider émet un candidat par `network_shares` applicable au
  * {@see TargetContext} : la lettre s'affiche pour TOUTE maille assignée
  * (`User` / `UserGroup` / `WorkstationGroup`) — l'union/dédup/précédence du
@@ -54,7 +54,7 @@ use Illuminate\Support\Facades\Log;
  * gouverné par l'ACL POSIX côté serveur ({@see \App\Services\Filesystem\NetworkShareService}),
  * PAS par le payload : le payload v1 reste `{letter, unc, label}` INCHANGÉ.
  * Lecture **Postgres only** (relations/ids du contexte) — zéro AD/LdapRecord,
- * zéro re-requête d'appartenance (NFR7, critère Keycloak).
+ * zéro re-requête d'appartenance (critère Keycloak).
  *
  * **Lettre auto-assignée** : si `network_shares.letter` est null, le provider
  * attribue déterministiquement la première lettre libre du pool `M..Z` (exclut
@@ -66,7 +66,7 @@ use Illuminate\Support\Facades\Log;
  * Machine-only (`user` null) → aucun lecteur : un montage dépend du login de
  * session (les shares assignés à un WG ne s'affichent donc qu'EN session user).
  *
- * **Story 63.2 — UNE LETTRE NE DÉSIGNE QUE DU SMB.** Le provider ne lit plus des
+ * **UNE LETTRE NE DÉSIGNE QUE DU SMB.** Le provider ne lit plus des
  * capacités mais les EMPLACEMENTS ({@see FileLocationService::current()}) : `K:`
  * si et seulement si l'espace perso est servi par le serveur de fichiers, `H:` si
  * et seulement si l'espace partagé l'est. Un espace qui a déménagé au cloud n'a
@@ -75,7 +75,7 @@ use Illuminate\Support\Facades\Log;
  *
  * **Les répertoires réseau gérés ne sont gouvernés par AUCUN des deux
  * emplacements** : leur autorité est la leur, choisie à leur création
- * (`network_shares.backend`, D9). Le plan de fichiers ne la lit pas, ne la dérive
+ * (`network_shares.backend`). Le plan de fichiers ne la lit pas, ne la dérive
  * pas, ne l'écrase pas — il refuse seulement une lettre à ce qui n'est pas
  * `posix`. Ils sont donc émis dès qu'ils sont applicables, y compris quand
  * l'espace partagé est au cloud.
@@ -87,7 +87,7 @@ use Illuminate\Support\Facades\Log;
  * dépendant du login), appliqué par le compagnon de session.
  *
  * Payload v1 : `{letter, unc, label}` — tokens `<se4fs>`/`<user>` substitués
- * LOCALEMENT par l'agent (iso 27.1). Toujours des strings (§4.1).
+ * LOCALEMENT par l'agent. Toujours des strings (§4.1).
  */
 final class DrivesStateProvider implements StateProvider
 {
@@ -95,7 +95,7 @@ final class DrivesStateProvider implements StateProvider
      * Lettres réservées (jamais auto-assignées) : `K:`/`H:` émis ici en dur,
      * `I:`/`L:` legacy (Docs/Progs), `A:`/`B:` floppy, `C:`/`D:` disques locaux.
      *
-     * Story 34.2 (finding 34.1 #4, Q4) — `public` : foyer canonique unique de la
+     * `public` : foyer canonique unique de la
      * liste des lettres réservées, CONSOMMÉE par la validation prédictive
      * {@see \App\Services\Filesystem\NetworkShareValidator} (refus à la saisie
      * d'une lettre explicite réservée). Aucune nouvelle abstraction (mémoire
@@ -143,7 +143,7 @@ final class DrivesStateProvider implements StateProvider
             return collect();
         }
 
-        // Les DEUX emplacements de l'instance (Story 63.2). Réglage GLOBAL, une
+        // Les DEUX emplacements de l'instance. Réglage GLOBAL, une
         // ligne de `system_settings` relue à chaque compilation — aucune
         // mémoïsation, aucun cache (patron du dépôt pour les réglages globaux).
         //
@@ -185,7 +185,7 @@ final class DrivesStateProvider implements StateProvider
             );
         }
 
-        // Répertoires réseau gérés (Story 34.1) — HORS des deux gardes
+        // Répertoires réseau gérés — HORS des deux gardes
         // ci-dessus : leur autorité est la leur (`network_shares.backend`), pas
         // celle de l'espace partagé. Déplacer l'espace partagé au cloud retire
         // `H:` ET RIEN D'AUTRE. Leur `sourceId` reste `2 + pivot_id`, donc leur
@@ -232,20 +232,20 @@ final class DrivesStateProvider implements StateProvider
                         ->whereIn('nsa.assignable_id', $wgIds));
                 }
             })
-            // Story 61.3 (D7), généralisée en 63.2 — **AUCUNE LETTRE POUR UN
-            // RÉPERTOIRE QUE LE SERVEUR DE FICHIERS NE SERT PAS.** Ce n'est pas une
+            // **AUCUNE LETTRE POUR UN RÉPERTOIRE QUE LE SERVEUR DE FICHIERS
+            // NE SERT PAS.** Ce n'est pas une
             // coupe de périmètre : il n'y a pas de chemin SMB au-dessus d'un dossier
             // d'équipe hébergé par un cloud, et c'est une impossibilité vérifiée.
             // Émettre une lettre monterait un lecteur vers un partage qui n'existe
             // pas côté serveur de fichiers : l'utilisateur verrait un lecteur en
             // erreur, et l'écran, lui, dirait que tout est en place — la signature
-            // de défaut que cet epic traque. L'accès réel de ces répertoires est le
+            // de défaut traqué ici. L'accès réel de ces répertoires est le
             // web et le client de synchronisation ; le montage local du poste est un
             // chantier d'agent, nommé et non promis ici.
             //
             // Le filtre est une LISTE BLANCHE, et pas l'exclusion nominative d'un
             // produit : `!= nextcloud` laissait déjà passer `opencloud` (vocabulaire
-            // ouvert en 61.4) et laisserait passer tout backend futur. Ce qui est
+            // ouvert) et laisserait passer tout backend futur. Ce qui est
             // vrai ici est « seul POSIX a un chemin SMB », pas « ce produit-là n'en
             // a pas ».
             ->where('ns.backend', FileBackendName::Posix->value)
@@ -327,13 +327,13 @@ final class DrivesStateProvider implements StateProvider
             if ($bare === null) {
                 continue;
             }
-            // Garde lettres réservées (piège #4) : une lettre explicite
+            // Garde lettres réservées : une lettre explicite
             // K/H/I/L/A-D écraserait un lecteur fixe (home K:, classes H:) ou un
             // disque local. On NE la résout PAS — le share bascule en
             // auto-assignation (passe 2) sur une lettre sûre du pool, au lieu
             // d'être émis avec une lettre collisionnant silencieusement le home.
             // (La collision lettre↔lettre entre deux répertoires DIFFÉRENTS reste
-            // volontairement déléguée à la validation prédictive 34.2 — piège #3.)
+            // volontairement déléguée à la validation prédictive.)
             if (in_array($bare, self::RESERVED_LETTERS, true)) {
                 Log::channel('agent')->warning(
                     '[DrivesStateProvider] Lettre explicite réservée ignorée (bascule auto-assignation)',
@@ -420,7 +420,7 @@ final class DrivesStateProvider implements StateProvider
      * Étiquetage de la maille d'une ligne d'assignation. La distinction
      * physique/logique d'un `WorkstationGroup` se fait par les listes du
      * contexte (la requête a déjà restreint aux groupes du poste) —
-     * étiquetage, PAS précédence (D2 = compilateur seul).
+     * étiquetage, PAS précédence : celle-ci reste au compilateur.
      */
     private function mailleFor(\stdClass $row, TargetContext $ctx): StateMaille
     {

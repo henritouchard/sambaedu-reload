@@ -1,16 +1,15 @@
-// Impl Windows de LegacyCleanupOps (Story 38.3, contrat §7.10) — service
+// Impl Windows de LegacyCleanupOps (contrat §7.10) — service
 // SYSTEM seul. La LOGIQUE (catalogue, gardes, idempotence) vit dans
 // agent/shared/handler_legacy_cleanup.go ; ce fichier n'apporte que les
 // primitives OS :
 //   - fichiers : os.* (Remove ciblé JAMAIS récursif ; RemoveAll réservé par le
-//     handler à C:\Netinst — %WINDIR%\Web\SE4 en forme conservatrice, review
-//     38.3 #2) ;
+//     handler à C:\Netinst — %WINDIR%\Web\SE4 en forme conservatrice) ;
 //   - reparse points : détection iso provision_windows.go (Lstat + repli
 //     locale-agnostique `fsutil reparsepoint query`) — un vrai dossier
-//     `%WinDir%\install` (provisioning natif 27.20) reste INTOUCHABLE ;
-//   - tâches planifiées : shell-out powershell (échappatoire admise par
-//     l'addendum architecture, iso tasks_windows.go — le Task Scheduler natif
-//     est du COM) : lecture de l'ACTION (garde de contenu) + Unregister ;
+//     `%WinDir%\install` (provisioning natif) reste INTOUCHABLE ;
+//   - tâches planifiées : shell-out powershell (échappatoire assumée, iso
+//     tasks_windows.go — le Task Scheduler natif est du COM) : lecture de
+//     l'ACTION (garde de contenu) + Unregister ;
 //   - registre : DÉLÈGUE au registryOps existant (RegistryOps.Read/Delete de
 //     handler_registry_windows.go — jamais la clé-conteneur).
 package main
@@ -62,10 +61,8 @@ func newLegacyCleanupHandler(logger *shared.Logger) *shared.LegacyCleanupHandler
 	}
 }
 
-// --- Fichiers -------------------------------------------------------------------
-
 // Glob : équivalent filepath.Glob mais INSENSIBLE à la casse sur le dernier
-// segment (review 38.3 #4) — NTFS est insensible, filepath.Match ne l'est pas
+// segment — NTFS est insensible, filepath.Match ne l'est pas
 // (un `Applications-Logon.CMD` échapperait au motif minuscule). Un seul
 // ReadDir, pas de fsutil (contrairement à ListDir, réservé aux gardes reparse).
 func (o *legacyCleanupOps) Glob(pattern string) ([]string, error) {
@@ -100,7 +97,7 @@ func (o *legacyCleanupOps) WriteFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// Remove : suppression CIBLÉE (fichier, lien/jonction — le lien seul —, ou
+// Remove : suppression CIBLÉE (fichier, lien/jonction — le lien seul, ou
 // dossier vide). Déjà absent ⇒ nil (idempotent, contrat de l'op).
 func (o *legacyCleanupOps) Remove(path string) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -111,7 +108,7 @@ func (o *legacyCleanupOps) Remove(path string) error {
 }
 
 // RemoveAll : récursif — le handler ne l'appelle QUE sur C:\Netinst et
-// %WINDIR%\Web\SE4 (piège #4, chemins exclusivement legacy).
+// %WINDIR%\Web\SE4 (chemins exclusivement legacy).
 func (o *legacyCleanupOps) RemoveAll(path string) error {
 	return os.RemoveAll(path)
 }
@@ -128,7 +125,7 @@ func (o *legacyCleanupOps) Stat(path string) (shared.LegacyPathInfo, error) {
 	// fsutil (spawn) UNIQUEMENT pour les entrées non régulières : les jonctions
 	// visées (install/rapports/Netinst) ne sont jamais des fichiers réguliers —
 	// éviter un spawn par fichier staté (profiles.ini de CHAQUE profil, chaque
-	// convergence — review 38.3 #3).
+	// convergence).
 	isReparse := info.Mode()&os.ModeSymlink != 0
 	if !isReparse && !info.Mode().IsRegular() {
 		isReparse = isLegacyReparsePoint(path)
@@ -180,8 +177,6 @@ func isLegacyReparsePoint(path string) bool {
 	return cmd.Run() == nil
 }
 
-// --- Tâches planifiées ------------------------------------------------------------
-
 // TaskAction : lit l'ACTION (Execute + Arguments) d'une tâche à la RACINE du
 // Task Scheduler — la GARDE de contenu (référence gpo/applications.php|wpkg)
 // est évaluée côté shared. Tâche absente ⇒ ("", false, nil).
@@ -232,8 +227,6 @@ func runPowershellOutput(script string) (string, int, error) {
 
 	return string(out), 0, nil
 }
-
-// --- Registre (délégation au registryOps existant) ---------------------------------
 
 func (o *legacyCleanupOps) RegistryRead(hive, path, name string) (shared.RegistryValue, bool, error) {
 	return o.reg.Read(hive, path, name)

@@ -33,16 +33,17 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.6 — l'onglet « Arborescences » de /admin/settings/groups.
+ * L'onglet « Arborescences » de /admin/settings/groups.
  *
- * Couvre AC1 (l'onglet et la liste des types), AC2 (ouvrir ne modifie RIEN),
- * AC3 (la saisie), AC4 (la matrice et les audiences dans les DEUX régimes Q5),
- * AC5 (l'inexprimable grisé ET expliqué, jamais réécrit), AC7 (les refus métier,
- * qui n'écrivent rien), AC8 (la double garde) et AC9 (enregistrer n'exécute rien).
+ * Couvre l'onglet et la liste des types, l'ouverture qui ne modifie RIEN, la
+ * saisie, la matrice et les audiences dans les deux régimes (instance nue et
+ * profil de rôles posé), l'inexprimable grisé ET expliqué, jamais réécrit, les
+ * refus métier qui n'écrivent rien, la double garde, et l'enregistrement qui
+ * n'exécute rien.
  *
  * **Le test PIVOT est ici** : `opening_and_previewing_leave_the_stored_row_untouched`.
  * Il compare les structures STOCKÉES, pas une équivalence « à normalisation
- * près » — c'est l'oracle anti-normalisation de toute la story.
+ * près » — c'est l'oracle anti-normalisation.
  *
  * **Aucun libellé scolaire n'est supposé.** Le profil de rôles est OPT-IN : les
  * tests de régime « fermé » l'installent eux-mêmes par la commande dédiée, les
@@ -92,10 +93,6 @@ class DirectoryTreesTabTest extends TestCase
     {
         return DB::table('directory_templates')->where('key', $key)->first();
     }
-
-    // =========================================================================
-    // AC8 — accès et double garde
-    // =========================================================================
 
     #[Test]
     public function a_non_admin_is_forbidden_at_mount(): void
@@ -153,10 +150,6 @@ class DirectoryTreesTabTest extends TestCase
             $this->assertSame(403, $e->getStatusCode());
         }
     }
-
-    // =========================================================================
-    // AC1 — l'onglet et la liste
-    // =========================================================================
 
     #[Test]
     public function the_trees_tab_is_reachable_by_query_parameter(): void
@@ -237,10 +230,6 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertStringContainsString('data-testid="flat-recipes-note"', $html);
     }
 
-    // =========================================================================
-    // AC2 — LE TEST PIVOT : ouvrir (et prévisualiser) ne modifie RIEN
-    // =========================================================================
-
     #[Test]
     public function opening_and_previewing_leave_the_stored_row_untouched(): void
     {
@@ -318,10 +307,6 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertStringContainsString('inatteignable', $component->get('previewError'));
         $this->assertEquals($before, $this->storedRow());
     }
-
-    // =========================================================================
-    // AC3 — la saisie
-    // =========================================================================
 
     #[Test]
     public function the_closed_placeholder_vocabulary_is_offered_by_click(): void
@@ -506,10 +491,6 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertSame('projet_arbre_2026', $component->get('previewKey'));
     }
 
-    // =========================================================================
-    // AC4 — la matrice et les audiences, dans les DEUX régimes Q5
-    // =========================================================================
-
     #[Test]
     public function matrix_columns_are_the_recipe_roles_not_the_catalog(): void
     {
@@ -532,7 +513,7 @@ class DirectoryTreesTabTest extends TestCase
     }
 
     /**
-     * **Régime Q5 « instance fraîche »** : la table des déclarations est VIDE,
+     * **Régime « instance fraîche »** : la table des déclarations est VIDE,
      * aucun type n'est fermé, tout le catalogue est proposé.
      */
     #[Test]
@@ -556,7 +537,7 @@ class DirectoryTreesTabTest extends TestCase
     }
 
     /**
-     * **Régime Q5 « profil posé »** : le type est FERMÉ à ses rôles déclarés, et
+     * **Régime « profil posé »** : le type est FERMÉ à ses rôles déclarés, et
      * l'écran DIT ce qu'il ne propose pas, avec le chemin pour l'ajouter.
      */
     #[Test]
@@ -614,7 +595,7 @@ class DirectoryTreesTabTest extends TestCase
 
         $role = $component->get('rolesSpec')[0];
 
-        // Le jeton du MENU est `@groupe` ; la clé STOCKÉE reste `groupe` (décision SM 2).
+        // Le jeton du MENU est `@groupe` ; la clé STOCKÉE reste `groupe`.
         $this->assertSame('groupe', $role['key']);
         $this->assertSame(UserGroup::class, $role['maille']);
         $this->assertSame('projet', $role['group_type']);
@@ -642,7 +623,7 @@ class DirectoryTreesTabTest extends TestCase
     }
 
     /**
-     * Review 62.6 #2 — un rôle du catalogue peut légitimement s'appeler « Groupe » :
+     * Un rôle du catalogue peut légitimement s'appeler « Groupe » :
      * `GroupRole::KEY_PATTERN` n'a aucun mot réservé, et le slug est `groupe`.
      *
      * Il ne doit PAS écraser l'entrée « tout le groupe » du menu. Sans le jeton
@@ -672,13 +653,13 @@ class DirectoryTreesTabTest extends TestCase
         );
 
         // …et « tout le groupe » se heurte alors à la clé STOCKÉE déjà prise :
-        // refus métier, pas une seconde audience homonyme (décision SM 2).
+        // refus métier, pas une seconde audience homonyme.
         $component->set('pendingAudience', '@groupe')->call('addAudience');
         $this->assertCount(1, $component->get('rolesSpec'));
     }
 
     /**
-     * Review 62.6 #3 — AC7 : la clé est vérifiée AVANT l'écriture
+     * La clé est vérifiée AVANT l'écriture
      * (`where('key')->exists()`), donc deux soumissions concurrentes peuvent se
      * disputer la même clé. La perdante doit recevoir un message MÉTIER, jamais un
      * SQLSTATE brut, et ne rien écrire.
@@ -774,10 +755,6 @@ class DirectoryTreesTabTest extends TestCase
         $grant = $component->get('nodesSpec')[3]['grants'][1];
         $this->assertSame(['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE]], $grant);
     }
-
-    // =========================================================================
-    // AC5 — l'inexprimable : grisé ET expliqué, jamais réécrit
-    // =========================================================================
 
     #[Test]
     public function supprimer_without_creer_is_greyed_and_explained(): void
@@ -885,7 +862,6 @@ class DirectoryTreesTabTest extends TestCase
             ['role' => 'classe', 'verbs' => [PlanGrant::VERB_LIRE, PlanGrant::VERB_CREER]],
         ];
 
-        // --- espace partagé sur le serveur de fichiers historique -------------
         $this->decideSharedSpace(FileBackendName::Posix);
 
         $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
@@ -903,7 +879,6 @@ class DirectoryTreesTabTest extends TestCase
             'la suppression sans création doit rester grisée sur le serveur historique',
         );
 
-        // --- la même recette, espace partagé sur le dossier d'équipe ----------
         $this->decideSharedSpace(FileBackendName::Nextcloud);
 
         $component = Livewire::test(self::EDITOR, ['type' => 'classe']);
@@ -958,10 +933,6 @@ class DirectoryTreesTabTest extends TestCase
         $creer = collect($cells)->firstWhere('verb', PlanGrant::VERB_CREER);
         $this->assertFalse($creer['disabled']);
     }
-
-    // =========================================================================
-    // AC7 — les refus métier, et le fait qu'ils n'écrivent RIEN
-    // =========================================================================
 
     /**
      * @return array<string, array{0: callable, 1: string}>
@@ -1053,7 +1024,7 @@ class DirectoryTreesTabTest extends TestCase
     }
 
     /**
-     * Règle 4 de 62.5 : un dossier par membre dont l'ancêtre n'octroie rien à une
+     * Règle 4 : un dossier par membre dont l'ancêtre n'octroie rien à une
      * audience qui contient ces membres.
      */
     #[Test]
@@ -1106,10 +1077,6 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertSame($count, DirectoryTemplate::count(), 'un refus a créé une recette');
     }
 
-    // =========================================================================
-    // AC9 — enregistrer arme la matérialisation FUTURE, et n'exécute rien
-    // =========================================================================
-
     #[Test]
     public function saving_writes_the_recipe_and_triggers_no_materialisation(): void
     {
@@ -1118,8 +1085,8 @@ class DirectoryTreesTabTest extends TestCase
         UserGroup::create(['name' => 'Classe_3emeA', 'type' => 'classe']);
         $shares = NetworkShare::count();
 
-        // La création du groupe, elle, a bien enfilé sa réconciliation (story
-        // 60.5) : on repart d'une file NEUVE pour ne mesurer que l'enregistrement.
+        // La création du groupe, elle, a bien enfilé sa réconciliation : on repart
+        // d'une file NEUVE pour ne mesurer que l'enregistrement.
         Queue::fake();
 
         $component = Livewire::test(self::EDITOR, ['type' => 'classe'])
@@ -1177,10 +1144,6 @@ class DirectoryTreesTabTest extends TestCase
         $this->assertTrue($created->materializesOnGroupCreation());
         $this->assertSame('classes', (string) $created->root_anchor);
     }
-
-    // =========================================================================
-    // L'ARBRE — une vue ordonnée, et les gestes qui en découlent
-    // =========================================================================
 
     /**
      * L'arbre se lit parent puis enfants, et la profondeur DÉCOULE du chemin.

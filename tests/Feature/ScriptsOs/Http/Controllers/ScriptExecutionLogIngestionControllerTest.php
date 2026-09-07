@@ -13,7 +13,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.12 — AC2.3 / AC2.4 (≥10 cas).
+ * (≥10 cas).
  */
 class ScriptExecutionLogIngestionControllerTest extends TestCase
 {
@@ -176,9 +176,7 @@ class ScriptExecutionLogIngestionControllerTest extends TestCase
     #[Test]
     public function missing_correlation_id_returns_422(): void
     {
-        // Story 16.12 post-review Q3 (Opus-A) — `correlation_id` est désormais
-        // **required** (mitigation replay JWT). L'ancien test happy-path sans
-        // correlation_id est remplacé par un test 422 explicite.
+        // `correlation_id` est **required** (mitigation replay JWT).
         $token = $this->authToken();
         $payload = $this->validPayload();
         unset($payload['correlation_id']);

@@ -13,10 +13,10 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 55.1 — Endpoints PUBLICS de découverte du fournisseur OIDC.
+ * Endpoints PUBLICS de découverte du fournisseur OIDC.
  *
  *  - `GET /.well-known/openid-configuration` — le document de discovery
- *    (OpenID Connect Discovery 1.0 §4) ;
+ *  (OpenID Connect Discovery §4) ;
  *  - `GET /oidc/jwks` — le JWKS (RFC 7517) qui permet à n'importe quel client
  *    de vérifier la signature d'un id_token SANS secret partagé.
  *
@@ -28,11 +28,11 @@ use Throwable;
  * ⚠️ **Ces deux documents sont un CONTRAT PUBLIC gelé à la première
  * publication** : une extension déployée lit la discovery une fois et met en
  * cache. Retirer ou renommer une clé casse les intégrations existantes — on
- * n'AJOUTE que des clés (NFR11).
+ * n'AJOUTE que des clés.
  *
- * Story 55.2 : `userinfo_endpoint` est désormais annoncé (l'endpoint existe),
+ * `userinfo_endpoint` est désormais annoncé (l'endpoint existe),
  * `scopes_supported` reflète l'ensemble FERMÉ des scopes acceptés et
- * `claims_supported` s'enrichit de `name`/`role`/`groups`. Aucune clé de 55.1
+ * `claims_supported` s'enrichit de `name`/`role`/`groups`. Aucune clé
  * n'a été retirée ni renommée — l'additivité est vérifiée par test.
  *
  * ⚠️ Le JSON est en anglais normatif (contrat standard), contrairement aux
@@ -57,7 +57,7 @@ class DiscoveryController extends Controller
             'token_endpoint' => route('oidc.token'),
             'jwks_uri' => route('oidc.jwks'),
 
-            // Story 55.2 — annoncé SEULEMENT maintenant que l'endpoint existe.
+            // Annoncé SEULEMENT maintenant que l'endpoint existe.
             'userinfo_endpoint' => route('oidc.userinfo'),
 
             // UN SEUL flux est supporté : Authorization Code + PKCE. Les flux
@@ -70,7 +70,7 @@ class DiscoveryController extends Controller
             'subject_types_supported' => ['public'],
             'id_token_signing_alg_values_supported' => ['RS256'],
 
-            // Story 55.2 — ensemble FERMÉ, servi par la source UNIQUE du
+            // Ensemble FERMÉ, servi par la source UNIQUE du
             // mapping scope→claims : un scope annoncé ici est un scope
             // accepté à l'autorisation, et réciproquement. Deux listes
             // divergentes annonceraient un contrat non tenu.
@@ -85,8 +85,8 @@ class DiscoveryController extends Controller
                 'client_secret_post',
             ],
 
-            // Story 55.2 — ÉVOLUTION ADDITIVE (NFR11) : les 7 claims standards
-            // publiés en 55.1 restent présents, à l'identique et dans le même
+            // ÉVOLUTION ADDITIVE : les 7 claims standards
+            // publiés restent présents, à l'identique et dans le même
             // ordre ; `name`, `role` et `groups` s'ajoutent APRÈS. Retirer ou
             // renommer l'un d'eux casserait les extensions déjà intégrées.
             'claims_supported' => [

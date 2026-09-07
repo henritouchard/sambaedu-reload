@@ -10,7 +10,7 @@ use Livewire\Component;
 /**
  * Édition SQL d'un groupe d'utilisateurs.
  *
- * **Story 62.2 — le choix de type vient du CATALOGUE.** La liste d'`<option>`
+ * **le choix de type vient du CATALOGUE.** La liste d'`<option>`
  * écrite en dur ici OMETTAIT `matiere_classe` — un type que le balayage
  * d'annuaire produit pourtant tout seul : rouvrir cette page sur un groupe
  * `Matiere_x@y` et enregistrer sans y toucher le déclassait silencieusement.

@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 16.11 — AC7.1 / T7.1.
+ * T7.1.
  *
  * Commande `migration:health-check` — vérifie la santé de la migration
  * auto-bootstrap (`workstation_migration_attempts`) sur une fenêtre
@@ -123,7 +123,7 @@ class MigrationHealthCheck extends Command
             }
         }
 
-        // Commande informative — exit 0 même en cas d'alerte (anti-pattern D8).
+        // Commande informative : exit 0 même en cas d'alerte.
         return self::SUCCESS;
     }
 

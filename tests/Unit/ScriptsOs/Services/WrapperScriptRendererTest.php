@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.12 — AC3.1 (≥4 cas).
+ * (≥4 cas).
  */
 class WrapperScriptRendererTest extends TestCase
 {
@@ -52,7 +52,7 @@ class WrapperScriptRendererTest extends TestCase
             ScriptExecutionOs::LINUX,
         );
 
-        // Post review Q5 — `-k` retiré (TLS strict Phase 2, CA SambaEdu requis).
+        // TLS strict : pas de `-k`, la CA SambaEdu doit être validée.
         self::assertStringContainsString('curl -fsS', $out);
         self::assertStringNotContainsString('curl -kfsS', $out);
         self::assertStringContainsString('jq', $out);
@@ -109,9 +109,9 @@ class WrapperScriptRendererTest extends TestCase
     }
 
     /**
-     * Story 16.12 post-review Q5 — TLS strict Phase 2.
-     * Le wrapper Windows ne doit plus contenir `-SkipCertificateCheck`
-     * (validation CA root SambaEdu requise — fail-closed si CA absent).
+     * TLS strict : le wrapper Windows ne doit pas contenir
+     * `-SkipCertificateCheck`. La CA racine SambaEdu doit être validée, et son
+     * absence doit faire échouer l'appel plutôt que le laisser passer.
      */
     #[Test]
     public function windows_wrapper_does_not_skip_certificate_check(): void
@@ -128,8 +128,9 @@ class WrapperScriptRendererTest extends TestCase
     }
 
     /**
-     * Story 16.12 post-review Q2 (F2) — Wrapper Windows b64 splitté en chunks
-     * de 4000 chars max avec `>> echo` multiples (cmd.exe limite 8191/ligne).
+     * Le base64 du wrapper Windows est découpé en tronçons de 4000 caractères
+     * au plus, écrits par `>> echo` successifs : cmd.exe plafonne une ligne à
+     * 8191 caractères.
      *
      * Vérifie qu'un script user de 8 KB (b64 ~10.6 KB) produit :
      *   - au moins 3 lignes `>>"%B64_FILE%" echo ...`

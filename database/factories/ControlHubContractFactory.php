@@ -9,7 +9,7 @@ use App\Models\ControlHubContract;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 28.1 — Factory de contrat amont controlHub (état `active` par défaut).
+ * Factory de contrat amont controlHub (état `active` par défaut).
  *
  * @extends Factory<ControlHubContract>
  */

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 36.5 (AC1/AC4) — Tests Unit du garde-fou d'authoring `app_profile`.
+ * Tests Unit du garde-fou d'authoring `app_profile`.
  * Service PUR (aucune DB) : projections en entrée, violations nommées en sortie.
  */
 class AppProfileAuthoringGuardTest extends TestCase
@@ -89,7 +89,7 @@ class AppProfileAuthoringGuardTest extends TestCase
     #[Test]
     public function sambaedu_radical_is_refused_everywhere(): void
     {
-        // piège n°1 (AC4) : un nom bâti sur sambaedu collisionnerait avec
+        // Un nom bâti sur le radical sambaedu collisionnerait avec
         // legacy_cleanup (referencesSambaeduProfile).
         $app = [
             'app' => 'firefox',
@@ -178,7 +178,7 @@ class AppProfileAuthoringGuardTest extends TestCase
     #[Test]
     public function enabled_boolean_is_accepted(): void
     {
-        // Story 36.7 (AC2) — `enabled` booléen strict (true/false) accepté.
+        // `enabled` booléen strict (true/false) accepté.
         $on = $this->validFirefox();
         $on['enabled'] = true;
         self::assertSame([], $this->violationsFor([$on]));
@@ -191,7 +191,7 @@ class AppProfileAuthoringGuardTest extends TestCase
     #[Test]
     public function enabled_absent_is_accepted(): void
     {
-        // Story 36.7 (AC2) — `enabled` ABSENT vaut `true` (défaut, 36.5 préservé).
+        // `enabled` ABSENT vaut `true` (défaut, préservé).
         $app = $this->validFirefox();
         unset($app['enabled']);
         self::assertSame([], $this->violationsFor([$app]));
@@ -200,7 +200,7 @@ class AppProfileAuthoringGuardTest extends TestCase
     #[Test]
     public function non_boolean_enabled_is_refused(): void
     {
-        // Story 36.7 (AC2) — `enabled` non-booléen (ex. "on", 1, null) refusé :
+        // `enabled` non-booléen (ex. "on", 1, null) refusé :
         // le filtre du provider (`enabled === false`) exige un vrai booléen.
         foreach (['on', 1, 0, 'true', null] as $bad) {
             $app = $this->validFirefox();

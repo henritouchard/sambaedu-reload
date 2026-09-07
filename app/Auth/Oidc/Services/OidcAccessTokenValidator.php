@@ -10,14 +10,13 @@ use App\Models\User;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 55.2 — Verdict sur un **access token OPAQUE** présenté en `Bearer`.
+ * Verdict sur un **access token OPAQUE** présenté en `Bearer`.
  *
  * Patron du namespace : **on rend un verdict, on ne lève pas d'exception de
  * contrôle** ({@see OidcAuthorizationService}). Un jeton refusé n'est pas une
  * anomalie du serveur : c'est un cas nominal du protocole, et il doit produire
  * une réponse normalisée, pas une trace d'erreur.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  SIX CAUSES DE REFUS, UNE SEULE RÉPONSE
  *
  *  absent · inconnu · expiré · client révoqué · utilisateur disparu ·
@@ -27,7 +26,7 @@ use Illuminate\Support\Carbon;
  *  contrôleur n'en rend qu'un `401 invalid_token` indistinct — même doctrine
  *  que le token endpoint : ne jamais offrir d'oracle à qui teste des jetons.
  *
- *  ⚠️ **Résidu assumé (review 55.2 #2)** : le nombre de requêtes SQL avant
+ *  ⚠️ **Résidu assumé** : le nombre de requêtes SQL avant
  *  verdict diffère selon la cause (1 pour un jeton inconnu, 2 pour un client
  *  révoqué, 3 pour un utilisateur disparu ou désactivé). La réponse HTTP est
  *  indistincte — corps et en-têtes identiques — mais le temps de traitement ne
@@ -37,10 +36,9 @@ use Illuminate\Support\Carbon;
  *  soit deux requêtes supplémentaires sur CHAQUE jeton invalide, ce qui offre à
  *  qui sonde des jetons une amplification de charge gratuite. On échangerait un
  *  canal non exploitable contre un vecteur de charge réel.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **« Révoquer un client rend ses jetons inutilisables »** : la promesse de
- * 55.1 devient OBSERVABLE ici. Un access token opaque se révoque parce qu'il
+ * Le choix d'un jeton opaque devient OBSERVABLE ici. Un access token opaque se révoque parce qu'il
  * n'est qu'une clé de ligne — c'est exactement pourquoi il n'est pas un JWT
  * auto-porteur.
  *
@@ -49,7 +47,7 @@ use Illuminate\Support\Carbon;
  *
  * ⚠️ **Aucune borne de longueur à poser ici** : le jeton présenté n'est jamais
  * PERSISTÉ — il est haché (sha256, longueur fixe 64) puis comparé. La leçon
- * « SQLite n'applique aucune borne VARCHAR » (review 55.1 #3) ne s'applique
+ * « SQLite n'applique aucune borne VARCHAR » ne s'applique
  * qu'aux valeurs entrantes ÉCRITES en colonne bornée ; ce n'est pas le cas.
  */
 class OidcAccessTokenValidator
@@ -100,7 +98,7 @@ class OidcAccessTokenValidator
             return $this->refusal(OidcErrorCodes::USER_MISSING, true, $prefix);
         }
 
-        // Correctif review 55.2 — SYMÉTRIE avec `$client->enabled` ci-dessus.
+        // Correctif review — SYMÉTRIE avec `$client->enabled` ci-dessus.
         // Un compte désactivé pendant la vie du jeton doit mourir avec lui,
         // exactement comme une extension révoquée : sans ce contrôle,
         // `/userinfo` continuait de servir nom, rôle et groupes d'un compte
@@ -113,7 +111,7 @@ class OidcAccessTokenValidator
             return $this->refusal(OidcErrorCodes::USER_INACTIVE, true, $prefix);
         }
 
-        // Story 56.4 — clé ADDITIVE : le scope EFFECTIF, recalculé À CHAQUE
+        // Clé ADDITIVE : le scope EFFECTIF, recalculé À CHAQUE
         // usage depuis les scopes accordés du client
         // ({@see \App\Models\OidcClient::effectiveScopeFor()}).
         //

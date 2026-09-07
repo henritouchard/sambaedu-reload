@@ -8,7 +8,7 @@ use App\Models\Workstation;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 4.9 — Factory minimale pour Workstation, utilisée par les tests
+ * Factory minimale pour Workstation, utilisée par les tests
  * d'observation ({@see \Tests\Feature\Observers\WorkstationObserverTest}).
  *
  * @extends Factory<Workstation>

@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Service Provider du pipeline déploiement WPKG (Story 15.1).
+ * Service Provider du pipeline déploiement WPKG.
  *
  * Au boot : tente de créer les 4 chemins partage WPKG (deploy / ini / inbox /
  * archive) s'ils n'existent pas, puis vérifie qu'ils sont accessibles en
@@ -53,19 +53,19 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Story 15.2 — Listeners du pipeline (cache invalidation + regen .ini).
+        // Listeners du pipeline (cache invalidation + regen.ini).
         // Enregistrés ici plutôt que dans EventServiceProvider pour garder la
         // cohésion namespace `App\Wpkg\Deployment`. Actifs en testing aussi
         // pour permettre le test feature dispatch sans fake.
         $this->registerWpkgListeners();
 
-        // Story 15.5 — Commandes Artisan dédiées au pipeline 15.x. Enregistrées
+        // Commandes Artisan dédiées au pipeline 15.x. Enregistrées
         // ici (et non par auto-load) pour rester dans le namespace
         // `App\Wpkg\Deployment\Console\Commands` (cohérence test archi).
         if ($this->app->runningInConsole()) {
             $this->commands([
                 RotateWpkgReportArchivesCommand::class,
-                // Story 27.14 — `WpkgGpoSyncCommand` (`wpkg:gpo:sync`, publiait la
+                // `WpkgGpoSyncCommand` (`wpkg:gpo:sync`, publiait la
                 // GPO `se4_wpkg`) retiré avec l'extinction du canal de config legacy
                 // (la GPO `se4_wpkg` n'est plus un transport — l'agent déclenche WPKG).
             ]);
@@ -115,7 +115,7 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
     }
     
     /**
-     * Story 15.2 / AC4.5 — Routing des events WPKG vers leurs listeners.
+     * Routing des events WPKG vers leurs listeners.
      */
     private function registerWpkgListeners(): void
     {
@@ -128,7 +128,7 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         Event::listen(WorkstationActivated::class, $cacheInvalidator);
         Event::listen(WorkstationArchived::class, $cacheInvalidator);
 
-        // Story 15.4 / AC4.0 — events additifs.
+        // Events additifs.
         Event::listen(AppProfileApplicationsChanged::class, $cacheInvalidator);
         Event::listen(WorkstationGroupApplicationsChanged::class, $cacheInvalidator);
         Event::listen(WorkstationApplicationsChanged::class, $cacheInvalidator);
@@ -138,10 +138,10 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
             [RegenerateWorkstationIniOnOptionsChanged::class, 'handle'],
         );
 
-        // Story 15.5 / AC4.4 — re-évaluation manuelle depuis le dashboard.
+        // Re-évaluation manuelle depuis le dashboard.
         // Cache packages purgé par `InvalidateWorkstationPackagesCache` (étendu)
         // ET .ini régénéré par un listener dédié (sémantique distincte des
-        // events 15.2/15.4 — origine manuelle traçable).
+        // events — origine manuelle traçable).
         Event::listen(WorkstationManualReevaluationRequested::class, $cacheInvalidator);
         Event::listen(
             WorkstationManualReevaluationRequested::class,

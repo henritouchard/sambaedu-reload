@@ -5,28 +5,27 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 60.3 — VOCABULAIRE de la colonne `network_shares.backend` : qui est
+ * VOCABULAIRE de la colonne `network_shares.backend` : qui est
  * l'autorité d'écriture des droits d'un partage.
  *
  * Enum FERMÉE, et c'est le point. Une valeur hors vocabulaire n'est jamais
  * ramenée à un défaut : elle fait échouer la résolution en nommant ce qui était
  * attendu ({@see \App\Exceptions\Filesystem\UnknownFileBackendException}). Un
  * repli silencieux sur `posix` écrirait des permissions POSIX pour un partage que
- * l'administrateur croit hébergé ailleurs — la pire forme du défaut que cet epic
- * combat : le signal qui n'atteint pas son destinataire.
+ * l'administrateur croit hébergé ailleurs — la pire forme du défaut combattu
+ * ici : le signal qui n'atteint pas son destinataire.
  *
  * **IL N'Y A PAS DE CASE « NEXTCLOUD DÉLÉGUÉ », ET IL N'Y EN AURA JAMAIS**
- * (story 61.3, recadrage du 2026-08-08). La story 60.3 annonçait ici `nextcloud`
+ * (recadrage du 2026-08-08). La annonçait ici `nextcloud`
  * ET `nextcloud_delegue` — le second devait servir une instance sur laquelle SE5
  * n'aurait qu'un compte ordinaire. Il n'existera pas : mesuré contre une instance
  * réelle, un compte ordinaire ne peut créer ni Team folder (HTTP 200 avec un 403
  * dans le corps OCS, rien créé), ni groupe, et un partage visant un groupe échoue.
  * Sans Team folder, pas de clôture — donc pas de cloisonnement, qui est le
  * problème que tout le plan de fichiers existe pour résoudre. Une case déclarée
- * que le produit ne sait pas tenir est exactement le défaut que cet epic combat ;
+ * que le produit ne sait pas tenir est exactement le défaut combattu ici ;
  * on ne l'ouvre donc pas, ni maintenant ni plus tard.
  *
- * ---------------------------------------------------------------------------
  * **LA LISTE PASSE DE TROIS À QUATRE CASES, ET ON LE DIT.**
  *
  * Ce docblock affirmait « TROIS cases, et il n'y en aura pas de quatrième pour
@@ -46,14 +45,13 @@ namespace App\Enums;
  * L'invariant permanent, lui, ne bouge pas d'un pouce : **chaque case du
  * vocabulaire résout dans le registre**, et c'est ce que le test épingle — pas le
  * nombre de cases, qui n'est qu'un état daté.
- * ---------------------------------------------------------------------------
  *
- * Les cases arrivent PAR CODE (D6 : l'adaptateur est natif, par produit ; le
+ * Les cases arrivent PAR CODE (l'adaptateur est natif, par produit ; le
  * runtime, lui, est une extension) — jamais par configuration.
  *
- * **Ce que cette colonne achète** (décision Q-D, 2026-08-04) : POSIX est conservé
+ * **Ce que cette colonne achète** : POSIX est conservé
  * et deviendra retirable. Le jour venu, le retirer sera basculer cette valeur et
- * lancer une migration explicite (D9), pas réécrire le domaine.
+ * lancer une migration explicite, pas réécrire le domaine.
  *
  * Cases PascalCase, valeurs snake_case (convention maison).
  */
@@ -61,9 +59,9 @@ enum FileBackendName: string
 {
     /**
      * L'autorité historique : permissions POSIX + partage SMB. VALEUR LÉGITIME
-     * DE COLONNE dès cette story (c'est ce que sont tous les partages existants),
-     * mais SANS implémentation ici — la descente de l'exécution sous la ligne de
-     * contrat est la story 60.4.
+     * DE COLONNE (c'est ce que sont tous les partages existants), mais SANS
+     * implémentation ici : la descente de l'exécution sous la ligne de contrat
+     * reste à faire.
      */
     case Posix = 'posix';
 
@@ -73,23 +71,23 @@ enum FileBackendName: string
      * n'est pas POSIX déguisé.
      *
      * Il ne prouve pas, à lui seul, que le contrat est bon : n'exécutant rien, il
-     * satisfait n'importe quel contrat (D3). C'est le double propagateur des
+     * satisfait n'importe quel contrat. C'est le double propagateur des
      * tests et le squelette Nextcloud jetable qui portent cette preuve-là.
      */
     case Preview = 'preview';
 
     /**
-     * Story 61.3 — L'AUTORITÉ BASCULE : le plan devient un Team folder Nextcloud,
+     * L'AUTORITÉ BASCULE : le plan devient un Team folder Nextcloud,
      * les octrois des permissions de groupe, et la clôture des règles de masque.
      *
      * **Ce que ce choix change POUR L'UTILISATEUR** — et c'est ce que dit la
-     * description : un partage servi par ce backend n'a AUCUN chemin SMB (D7 :
-     * impossibilité vérifiée, pas une coupe de périmètre). Il se consulte au web
+     * description : un partage servi par ce backend n'a AUCUN chemin SMB
+     * (impossibilité vérifiée, pas une coupe de périmètre). Il se consulte au web
      * et se synchronise par le client de bureau. Aucune lettre de lecteur n'est
      * émise pour lui.
      *
      * **SE5 exige un compte ADMINISTRATEUR de l'instance.** La configuration qui
-     * ne le permet pas est refusée à la saisie (61.2), et la capacité « Accès
+     * ne le permet pas est refusée à la saisie, et la capacité « Accès
      * Nextcloud » doit être active pour que cette case soit seulement posable.
      */
     case Nextcloud = 'nextcloud';
@@ -102,7 +100,7 @@ enum FileBackendName: string
      *
      * **Ce que ce choix change POUR L'UTILISATEUR** — et c'est ce que dit la
      * description : un répertoire servi par ce backend n'a AUCUN chemin SMB
-     * (D7 : impossibilité vérifiée, pas une coupe de périmètre — les droits ne
+     * (impossibilité vérifiée, pas une coupe de périmètre — les droits ne
      * sont pas sur le disque, et le mode de stockage à noms réels ne supporte pas
      * ce protocole). Il se consulte au web et se synchronise par le client de
      * bureau. Aucune lettre de lecteur n'est émise pour lui.
@@ -114,7 +112,7 @@ enum FileBackendName: string
      */
     case OpenCloud = 'opencloud';
 
-    /** Libellé FR — aucune valeur technique brute à l'écran (iso 42.3 D1). */
+    /** Libellé FR — aucune valeur technique brute à l'écran. */
     public function label(): string
     {
         return match ($this) {

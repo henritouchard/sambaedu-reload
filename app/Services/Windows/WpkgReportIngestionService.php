@@ -20,10 +20,10 @@ use Illuminate\Support\Facades\Log;
 /**
  * Service d'ingestion des rapports WPKG.
  *
- * Story 9.4 — pipeline texte legacy : SHA → idempotence → parser →
+ * Pipeline texte legacy : SHA → idempotence → parser →
  * persist `workstation_application_status`.
  *
- * Story 15.5 — extensions :
+ * Extensions :
  *   - Archivage brut via `WpkgReportArchiver` AVANT parsing (best-effort).
  *   - Parser durci graceful : capture `Duration:`/`ErrorCode:` quand
  *     présents, retourne un statut `unknown` plutôt qu'un parse_failed
@@ -67,18 +67,18 @@ class WpkgReportIngestionService
                 return IngestionResult::unchanged($hostname);
             }
 
-            // Story 15.5 / AC1.3 — archivage brut AVANT parsing (best-effort).
+            // Archivage brut AVANT parsing (best-effort).
             // Si l'archive échoue, on continue : la BDD reste source de vérité.
             $archivePath = $this->archiver->archive($hostname, $rawReport, $sha256);
 
-            // Parser le contenu — Story 15.5 / AC2.3 : graceful unknown
+            // Parser le contenu : graceful unknown
             // plutôt que parse_failed pour formats inhabituels.
             $parsed = $this->parseReport($rawReport, $workstation->id, $hostname);
             $parserWarning = false;
 
             if ($parsed === null) {
                 // Format vraiment incompréhensible (header invalide) : on
-                // préserve le 422 de 9.4 pour les vraies erreurs (test régression).
+                // préserve le 422 pour les vraies erreurs (test régression).
                 Log::channel('wpkg-deploy')->warning('[WpkgReportIngestionService] format inconnu', [
                     'event' => 'wpkg_report_parser_warning',
                     'hostname' => $hostname,
@@ -98,12 +98,12 @@ class WpkgReportIngestionService
                 ]);
             }
 
-            // Persister le statut par-app (9.4 — inchangé).
+            // Persister le statut par-app (inchangé).
             $this->updateWorkstationReport($workstation->fresh(), $parsed, $sha256);
             $workstation->refresh();
 
-            // Story 15.5 / AC1.4 — corrélation deployment_id post-persistance.
-            // La table wpkg_deployments est mandatoire (migration 15.1 déployée).
+            // Corrélation deployment_id post-persistance.
+            // La table wpkg_deployments est mandatoire (migration déployée).
             $deploymentId = null;
             $clientStatus = $this->aggregateClientStatus($parsed['packages'], $parserWarning);
             $deployment = $this->activeDeploymentQuery->find($workstation->id);
@@ -145,16 +145,16 @@ class WpkgReportIngestionService
      * Revision: version
      * Reboot: true|false
      * Status: Installed|Not Installed|Error
-     * [Duration: <ms>]      // Story 15.5 / AC2.4
-     * [ErrorCode: <code>]   // Story 15.5 / AC2.4
-     * [ErrorMessage: ...]   // Story 15.5 / AC2.4
+     * [Duration: <ms>]
+     * [ErrorCode: <code>]
+     * [ErrorMessage: ...]
      * ---
      * ```
      *
      * Le rapport réel du poste (`queryAllPackages`) n'émet pas de `---` et
      * préfixe chaque bloc du nom du paquet — cf. {@see splitPackageBlocks()}.
      *
-     * Story 15.5 / AC2.3 : graceful unknown — si une ligne d'un bloc package
+     * Graceful unknown — si une ligne d'un bloc package
      * est inconnue, elle est conservée dans `_parser_warnings` (sentinelle
      * interne) sans bloquer l'ingestion.
      *
@@ -281,13 +281,13 @@ class WpkgReportIngestionService
             'date'        => ($parts[0] ?? '') . ' ' . ($parts[1] ?? ''),
             'hostname'    => $parts[2] ?? '',
             'mac_address' => $parts[3] ?? '',
-            // Le rapport de test encadre l'IP de `[]`, le rapport client de `()`.
+            // Le rapport de test encadre l'IP de `[]`, le rapport client de ``.
             'ip'          => isset($parts[4]) ? trim($parts[4], '[]()') : null,
         ];
     }
 
     /**
-     * Story 15.5 / AC2.3-AC2.4 — Parse un bloc package, capture les champs
+     * Parse un bloc package, capture les champs
      * additionnels Duration/ErrorCode/ErrorMessage, log les clés inconnues.
      *
      * @param  list<string>  $warnings  ref accumulator
@@ -328,7 +328,7 @@ class WpkgReportIngestionService
             'status'   => $this->mapStatus($data['Status'] ?? 'Not Installed'),
         ];
 
-        // Story 15.5 / AC2.4 — champs additionnels (extraits si présents,
+        // Champs additionnels (extraits si présents,
         // pas de schema rigide ; persistés dans `details` JSON de
         // wpkg_deployment_workstation_status uniquement).
         if (isset($data['Duration']) && is_numeric($data['Duration'])) {
@@ -459,7 +459,7 @@ class WpkgReportIngestionService
     }
 
     /**
-     * Story 15.5 / AC1.4 — Agrège le `client_status` à partir des packages parsés.
+     * Agrège le `client_status` à partir des packages parsés.
      */
     private function aggregateClientStatus(array $packages, bool $parserWarning): string
     {
@@ -494,7 +494,7 @@ class WpkgReportIngestionService
     }
 
     /**
-     * Story 15.5 / AC1.4 — Upsert d'une ligne `wpkg_deployment_workstation_status`
+     * Upsert d'une ligne `wpkg_deployment_workstation_status`
      * pour le déploiement matché.
      */
     private function upsertDeploymentWorkstationStatus(
@@ -569,7 +569,7 @@ class WpkgReportIngestionService
     }
 
     /**
-     * Story 15.5 / AC1.4 — Recalcule `summary` + transition status d'un
+     * Recalcule `summary` + transition status d'un
      * déploiement après ingestion d'un rapport corrélé.
      *
      * Sémantique :

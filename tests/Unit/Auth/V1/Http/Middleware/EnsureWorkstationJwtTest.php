@@ -17,7 +17,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC4.1 / T5.6.
+ * T5.6.
  */
 class EnsureWorkstationJwtTest extends TestCase
 {

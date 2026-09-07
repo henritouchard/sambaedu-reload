@@ -16,7 +16,6 @@ use Illuminate\Console\Command;
 /**
  * RATTACHER L'INSTANCE NEXTCLOUD À L'ANNUAIRE, PAR UNE COMMANDE.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI CETTE COMMANDE EXISTE.** Les comptes Nextcloud du stock existant ne
  * peuvent pas venir de SE5 : le provisionnement refuse par conception d'inventer
  * un mot de passe ({@see \App\Services\Nextcloud\NextcloudUserProvisioner}), et le
@@ -28,7 +27,6 @@ use Illuminate\Console\Command;
  * doctrine du dépôt est qu'une opération multi-instance est une COMMANDE : une
  * procédure à rejouer n'est pas un mécanisme, elle diverge dès la deuxième
  * instance et personne ne sait plus laquelle est à jour.
- * ---------------------------------------------------------------------------
  *
  * **AUCUNE VALEUR N'EST SAISIE.** Tout est dérivé de `sambaedu.conf` (URL, port,
  * DN de base, compte de lecture, RDN des utilisateurs) et de la connexion Nextcloud

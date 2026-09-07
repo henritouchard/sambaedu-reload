@@ -97,7 +97,7 @@ class SyncFromAdImportCommand extends Command
         }
 
         // 2. Contexte établissement : posé même si aucun import scopé (inoffensif),
-        //    requis par la garde ensureEstablishmentContextSelected() des étapes scopées.
+        //  requis par la garde ensureEstablishmentContextSelected() des étapes scopées.
         $needsEtab = $this->anyScoped($selected, $definitions);
         $etab = $this->resolveEstablishment($establishmentRepository, $needsEtab);
         $this->primeEstablishmentContext($etab);

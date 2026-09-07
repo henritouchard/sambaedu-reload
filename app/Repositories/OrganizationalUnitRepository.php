@@ -139,7 +139,7 @@ class OrganizationalUnitRepository
     }
 
     /**
-     * Liste toutes les OUs du domaine (Story 16.5 — UI liaison GPO ↔ OU).
+     * Liste toutes les OUs du domaine (UI liaison GPO ↔ OU).
      *
      * Retourne un tableau associatif `[dn => displayName]` trié alphabétiquement
      * par displayName. Mise en cache 5 min pour éviter de bombarder l'AD à

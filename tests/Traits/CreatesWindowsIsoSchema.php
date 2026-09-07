@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 3.6 — Trait de bootstrap SQLite :memory: pour les tests `windows_iso_downloads`.
+ * Trait de bootstrap SQLite :memory: pour les tests `windows_iso_downloads`.
  *
  * Pattern iso `CreatesPermissionSchema` / `CreatesDhcpSchema`.
  */
@@ -51,13 +51,11 @@ trait CreatesWindowsIsoSchema
                 $t->timestamp('completed_at')->nullable();
                 $t->integer('exit_code')->nullable();
                 $t->text('error')->nullable();
-                // Q2 Henri 2026-05-21 — nullable + nullOnDelete (iso migration).
                 $t->unsignedBigInteger('initiated_by_user_id')->nullable();
                 $t->string('host_ip', 45)->nullable();
                 $t->timestamps();
                 $t->index(['status', 'created_at'], 'wid_status_created_idx');
                 $t->index(['version', 'status'], 'wid_version_status_idx');
-                // Opus-G — index sur created_at seul (iso migration).
                 $t->index('created_at', 'wid_created_idx');
             });
             $this->createdIsoTables[] = 'windows_iso_downloads';

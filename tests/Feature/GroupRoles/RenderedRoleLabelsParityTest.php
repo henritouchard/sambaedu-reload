@@ -21,7 +21,7 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.1 — LA PARITÉ SUR CE QUI EST RENDU, pas seulement sur la fonction.
+ * LA PARITÉ SUR CE QUI EST RENDU, pas seulement sur la fonction.
  *
  * `RoleCatalogParityTest` épingle les libellés à la SORTIE du point de lecture.
  * Celui-ci les épingle à l'ÉCRAN : la suppression de la table de libellés a traversé
@@ -47,7 +47,7 @@ class RenderedRoleLabelsParityTest extends TestCase
 
         $this->seed(PermissionSeeder::class);
         $this->seed(GroupRoleSeeder::class);
-        // Story 62.3 — les libellés scolaires que ces écrans rendent ne sont plus
+        // Les libellés scolaires que ces écrans rendent ne sont plus
         // posés par la migration : ils sont un PROFIL qu'on installe. La parité de
         // RENDU vaut pour une instance qui l'a installé, on l'installe donc ici.
         $this->installCollegeRoleProfile();

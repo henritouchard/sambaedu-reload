@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Observer de synchronisation SQL → AD des WorkstationGroup.
  *
- * ── Asymétrie `OU=Parcs` / `OU=Computers` (Story 38.7) ───────────────────────
+ * **Asymétrie `OU=Parcs` / `OU=Computers`**
  * `OU=Parcs` est devenu un vestige SE4 en LECTURE SEULE : on le LIT à l'import
  * de migration (`sync-from-ad`), on n'y ÉCRIT plus rien. Les groupes LOGIQUES
  * (`is_physical = false`) sont purement SQL — cet observer ne dispatche donc
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Log;
  * de ces salles dans `OU=Parcs` n'est plus écrit (cf. {@see \App\Services\AdSync\AdSyncService}).
  *
  * La création automatique d'`AppProfile` (profil WPKG) à la création d'un groupe
- * a été RETIRÉE en 38.7 : un profil se crée désormais dans /parc-settings/profiles
+ * a été RETIRÉE : un profil se crée désormais dans /parc-settings/profiles
  * et s'attache explicitement — un profil est réutilisable entre parcs. La colonne
  * `workstation_groups.app_profile_name` subsiste mais est inerte.
  */

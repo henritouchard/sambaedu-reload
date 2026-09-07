@@ -115,8 +115,6 @@ func resolvedUNC(raw string) string {
 	return strings.TrimRight(unc, `\`)
 }
 
-// --- Set cible + idempotence -------------------------------------------------
-
 func TestDrivesApplyMapsTargetSetThenIdempotent(t *testing.T) {
 	ops := newFakeDriveOps()
 	h := &DrivesHandler{Ops: ops}
@@ -163,8 +161,6 @@ func TestDrivesLetterNormalization(t *testing.T) {
 	}
 }
 
-// --- Suppression level-triggered (sortie des règles) -------------------------
-
 func TestDrivesUnmapsManagedDriveDroppedFromRules(t *testing.T) {
 	ops := newFakeDriveOps()
 	h := &DrivesHandler{Ops: ops}
@@ -190,8 +186,6 @@ func TestDrivesUnmapsManagedDriveDroppedFromRules(t *testing.T) {
 		t.Fatalf("attendu 1 démontage, obtenu %d", ops.unmapCalls)
 	}
 }
-
-// --- Un montage UTILISATEUR n'est jamais démonté/écrasé ----------------------
 
 func TestDrivesNeverTouchesUserMappedLetter(t *testing.T) {
 	ops := newFakeDriveOps()
@@ -228,8 +222,6 @@ func TestDrivesNeverTouchesUserMappedLetter(t *testing.T) {
 	}
 }
 
-// --- Lettre montée vers le mauvais UNC (dérive) → remontée -------------------
-
 func TestDrivesRemapsDivergentLetter(t *testing.T) {
 	ops := newFakeDriveOps()
 	// K: gérée mais montée vers le mauvais partage.
@@ -255,8 +247,6 @@ func TestDrivesRemapsDivergentLetter(t *testing.T) {
 	}
 }
 
-// --- Item error isolé : serveur de fichiers injoignable ----------------------
-
 func TestDrivesServerUnreachableIsError(t *testing.T) {
 	ops := newFakeDriveOps()
 	ops.resolveErr[`\\<se4fs>\Classe_3A\<user>\`] = fmt.Errorf("serveur de fichiers injoignable")
@@ -270,8 +260,6 @@ func TestDrivesServerUnreachableIsError(t *testing.T) {
 		t.Fatalf("serveur injoignable : erreur attendue de Apply")
 	}
 }
-
-// --- Payload invalide → error (enveloppe) ------------------------------------
 
 func TestDrivesInvalidPayloadIsError(t *testing.T) {
 	ops := newFakeDriveOps()
@@ -295,8 +283,6 @@ func TestDrivesInvalidPayloadIsError(t *testing.T) {
 		})
 	}
 }
-
-// --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestDrivesThroughEngineSection5(t *testing.T) {
 	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)}
@@ -352,8 +338,6 @@ func TestDrivesThroughEngineSection5(t *testing.T) {
 	}
 }
 
-// --- Empreinte d'agrégat stable, ordre serveur (réutilise le moteur) ----------
-
 func TestDrivesAggregateHashIsServerOrderConcat(t *testing.T) {
 	items := []StateItem{
 		driveItem("K", `\\<se4fs>\Classe_3A\<user>\`),
@@ -367,8 +351,6 @@ func TestDrivesAggregateHashIsServerOrderConcat(t *testing.T) {
 		t.Fatalf("empreinte non déterministe")
 	}
 }
-
-// --- Label : changement de label seul = dérive, réappliqué (sans démontage) ---
 
 func TestDrivesRelabelsOnLabelDriftOnly(t *testing.T) {
 	ops := newFakeDriveOps()

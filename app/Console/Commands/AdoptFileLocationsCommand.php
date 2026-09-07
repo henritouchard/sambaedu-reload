@@ -406,7 +406,7 @@ final class AdoptFileLocationsCommand extends Command
      * fondre les deux rendrait illisible la distinction entre « capacité
      * éteinte » et « capacité active, connexion incomplète ».
      *
-     * @param  callable(): (NextcloudConnectionConfig|OpenCloudConnectionConfig)  $resolve
+     * @param callable(): (NextcloudConnectionConfig|OpenCloudConnectionConfig) $resolve
      * @param  class-string<NextcloudConfigurationException|OpenCloudConfigurationException>  $exceptionClass
      * @return array{capability: bool, capabilityLabel: string, connectionComplete: bool, configured: bool, missing: ?string, url: ?string}
      */

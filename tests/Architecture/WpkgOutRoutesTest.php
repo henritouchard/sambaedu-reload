@@ -8,15 +8,15 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 17.6 / AC6.4 / D8 — Garde-fous architecturaux des 2 routes
- * `/wpkg/linux_out.php` et `/wpkg/winget_out.php`.
+ * Garde-fous architecturaux des 2 routes `/wpkg/linux_out.php` et
+ * `/wpkg/winget_out.php`.
  *
  * Tests (lecture textuelle de `routes/web.php`, pattern iso `IpxeNamespaceTest`) :
  *   1. Les 2 routes sont enregistrées et référencent leurs controllers.
  *   2. Elles sont déclarées AVANT le catchall legacy `{path}` (sinon le shim
  *      PHP-FPM legacy les intercepte silencieusement).
- *   3. Elles N'ONT PAS le middleware `auth.v1.workstation` (assertion négative,
- *      D2 — postes pas encore enrôlés JWT).
+ *   3. Elles N'ONT PAS le middleware `auth.v1.workstation` (assertion négative :
+ *      les postes ne sont pas encore enrôlés JWT quand ils les appellent).
  *   4. Elles ONT le middleware `local.request` (+ throttle).
  */
 class WpkgOutRoutesTest extends TestCase
@@ -36,7 +36,7 @@ class WpkgOutRoutesTest extends TestCase
     }
 
     /**
-     * AC6.4 #1 — Les 2 routes sont enregistrées et référencent leurs controllers.
+     * Les 2 routes sont enregistrées et référencent leurs controllers.
      */
     #[Test]
     public function the_two_wpkg_out_routes_are_registered(): void
@@ -65,7 +65,7 @@ class WpkgOutRoutesTest extends TestCase
     }
 
     /**
-     * AC6.4 #2 — Les 2 routes sont déclarées AVANT le catchall legacy `{path}`.
+     * Les 2 routes sont déclarées AVANT le catchall legacy `{path}`.
      */
     #[Test]
     public function the_two_wpkg_out_routes_are_declared_before_catchall(): void
@@ -97,8 +97,8 @@ class WpkgOutRoutesTest extends TestCase
     }
 
     /**
-     * AC6.4 #3 — Les 2 routes N'ONT PAS le middleware `auth.v1.workstation`
-     * (assertion négative, D2 — postes pas enrôlés JWT à l'install/boot).
+     * Les 2 routes N'ONT PAS le middleware `auth.v1.workstation` : à l'install
+     * et au boot, le poste n'est pas encore enrôlé JWT.
      */
     #[Test]
     public function the_two_wpkg_out_routes_do_not_have_jwt_middleware(): void
@@ -126,7 +126,7 @@ class WpkgOutRoutesTest extends TestCase
     }
 
     /**
-     * AC6.4 #4 — Les 2 routes ONT le middleware `local.request` (+ throttle).
+     * Les 2 routes ONT le middleware `local.request` (+ throttle).
      */
     #[Test]
     public function the_two_wpkg_out_routes_have_local_request_middleware(): void

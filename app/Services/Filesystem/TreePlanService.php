@@ -20,9 +20,9 @@ use App\Services\Filesystem\Plan\PlanResolver;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 60.2 — LA CHAÎNE COMPLÈTE : un groupe réel → son plan de fichiers.
+ * LA CHAÎNE COMPLÈTE : un groupe réel → son plan de fichiers.
  *
- * Ce service est « l'appelant » que la story 60.1 annonçait. Le résolveur de plan
+ * Ce service est « l'appelant » que la annonçait. Le résolveur de plan
  * est PUR : il ne requête rien, tout lui arrive assemblé. Assembler, c'est le
  * travail d'ici — et c'est pour cela que ce service vit HORS du namespace du plan.
  * L'y mettre diluerait la propriété qui rend la résolution testable sans base ;
@@ -32,11 +32,10 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * requête SQL, et rien d'autre.
  *
  * **SQL seulement, jamais l'annuaire.** Les rôles et les appartenances sont dans
- * PostgreSQL depuis l'Epic 49 ; l'annuaire est une projection. Une résolution qui
+ * postgreSQL ; l'annuaire est une projection. Une résolution qui
  * irait le lire réintroduirait une dépendance réseau dans un calcul qui doit être
  * rejouable et comparable.
  *
- * ---------------------------------------------------------------------------
  * **LA GARDE DE LA MESURE — pourquoi une audience est un sujet ABSTRAIT.**
  *
  * C'est ICI qu'elle se tient, et nulle part ailleurs. Le résolveur pur ne peut pas
@@ -46,7 +45,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * désignation nominative légitime d'une audience énumérée à tort. C'est le choix
  * du sujet qui se garde, et le choix du sujet se fait ici.
  *
- * La mesure, faite en ouverture d'epic sur une arborescence de 631 entrées : poser
+ * La mesure, faite sur une arborescence de 631 entrées : poser
  * récursivement des entrées d'accès NOMINATIVES coûte 0,026 s à 30 entrées, 0,32 s
  * à 200, **7,16 s à 1 000, 63,07 s à 3 000** — le coût est QUADRATIQUE (chaque
  * entrée réécrit l'attribut étendu entier sur chaque entrée du système de
@@ -60,7 +59,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * « les membres de ce groupe qui portent ce rôle » — et JAMAIS l'énumération de
  * ces membres. Le nombre de sujets est indépendant de l'effectif : trois membres
  * et trois cents membres produisent exactement les mêmes sujets. Le backend
- * compilera cette abstraction comme il veut (groupe dérivé, story 60.4) ; le plan
+ * compilera cette abstraction comme il veut (groupe dérivé) ; le plan
  * dit QUI, le backend décide COMMENT.
  *
  * L'énumération nominative reste légitime là où elle coûte UNE entrée par nœud :
@@ -68,9 +67,8 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * légitime aussi pour une cible DÉSIGNÉE de maille utilisateur, cardinalité un —
  * une personne nommément désignée n'est pas une audience.
  *
- * ---------------------------------------------------------------------------
  * **LE FAIT DE TERRAIN QUI FONDE LA STRATÉGIE D'ARÊTE.** Depuis le repliement de
- * la story 4.13, les noms d'annuaire `Classe_X`, `Equipe_X` et `PP_X` donnent UNE
+ * la, les noms d'annuaire `Classe_X`, `Equipe_X` et `PP_X` donnent UNE
  * SEULE ligne `user_groups`, au nom nu, et le statut de chacun vit sur l'arête
  * d'appartenance (`member` élève, `manager` enseignant, `owner` professeur
  * principal). **L'équipe pédagogique n'a plus de ligne à elle** : « les membres de
@@ -78,16 +76,14 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * stratégie d'arête n'est donc pas une commodité parmi quatre — c'est le mécanisme
  * qui remplace les groupes multiples de l'ancien système.
  *
- * ---------------------------------------------------------------------------
- * ---------------------------------------------------------------------------
- * **STORY 60.5 — LA CHAÎNE EST BRANCHÉE.** Ce service n'est plus dormant : la
+ * **LA CHAÎNE EST BRANCHÉE.** Ce service n'est plus dormant : la
  * création d'un groupe de classe matérialise son arbre, un changement
  * d'appartenance enfile sa réconciliation, et une commande peuple le parc
  * existant. Trois consommateurs, un seul chemin.
  *
- * **Ce qui reste hors de cette story, et le restera jusqu'à la story de
- * MIGRATION** : l'arbre de classe HISTORIQUE. Il continue d'être servi, écrit et
- * gouverné par le chemin figé de la story 5.2, auquel rien d'ici ne touche. Les
+ * **Ce qui reste dehors jusqu'à la MIGRATION** : l'arbre de classe HISTORIQUE. Il
+ * continue d'être servi, écrit et gouverné par son chemin figé, auquel rien d'ici
+ * ne touche. Les
  * deux arbres vivent côte à côte, dans des zones DISJOINTES, chacun avec son
  * autorité d'écriture — et c'est cette disjonction qui rend « une seule autorité
  * par zone » vraie sans qu'aucune des deux ne cède.
@@ -107,7 +103,7 @@ final class TreePlanService
      * Tout le reste est un échec EXPLICITE : nom de groupe inexploitable, groupe
      * apparenté introuvable, recette invalide ou non accrochable. Jamais un plan
      * partiel — un plan amputé se comparerait « conforme » à un état incomplet, et
-     * la détection d'écart (story 60.4) validerait silencieusement une fuite.
+     * la détection d'écart validerait silencieusement une fuite.
      *
      * @throws InvalidTreeSpecException recette invalide ou non auto-résolvable
      * @throws PlanResolutionException  données de résolution inexploitables
@@ -125,7 +121,7 @@ final class TreePlanService
         }
 
         // Une recette accrochée doit savoir se résoudre seule : c'est la création
-        // du groupe qui l'appelle (story 60.5), et il n'y a personne pour saisir une
+        // du groupe qui l'appelle, et il n'y a personne pour saisir une
         // cible à ce moment-là. On le revérifie à la LECTURE, pas seulement à
         // l'écriture : un accrochage peut arriver par un chemin qui ne passe pas
         // par le modèle (import, correction manuelle en base).
@@ -137,7 +133,7 @@ final class TreePlanService
     /**
      * Le plan du groupe d'après une recette DONNÉE, cibles désignées comprises.
      *
-     * C'est le pont avec le flux manuel de la story 34.3, qui ne change pas : une
+     * C'est le pont avec le flux manuel, qui ne change pas : une
      * recette non accrochée y reste résoluble, ses rôles en cible désignée
      * recevant leurs sujets de l'appelant.
      *
@@ -160,7 +156,7 @@ final class TreePlanService
     }
 
     /**
-     * Story 60.5 — le plan d'un partage PLAT dont les octrois viennent d'une
+     * Le plan d'un partage PLAT dont les octrois viennent d'une
      * RECETTE.
      *
      * **Pourquoi ce cas existe, et pourquoi il n'est pas un arbre.** La recette
@@ -206,7 +202,7 @@ final class TreePlanService
                 continue;
             }
 
-            // Story 62.4 — les verbes du rôle. L'absence de la clé vaut « lire »
+            // Les verbes du rôle. L'absence de la clé vaut « lire »
             // seul : c'est le plancher historique d'un rôle qui ne se prononce pas,
             // et la validation de recette refuse déjà l'ancienne clé scalaire.
             $verbs = is_array($role['verbs'] ?? null) ? array_values($role['verbs']) : [PlanGrant::VERB_LIRE];
@@ -293,10 +289,6 @@ final class TreePlanService
         );
     }
 
-    // =========================================================================
-    // Les quatre stratégies
-    // =========================================================================
-
     /**
      * Sujets d'UN rôle de recette, selon sa stratégie de résolution.
      *
@@ -348,7 +340,7 @@ final class TreePlanService
      * explicite entre groupes (une arête groupe→groupe) reste un chantier futur.
      *
      * Rappel de portée : cette stratégie ne peut PAS retrouver l'équipe
-     * pédagogique d'une classe, puisque le repliement 4.13 lui a retiré sa ligne.
+     * pédagogique d'une classe, puisque le repliement lui a retiré sa ligne.
      * C'est la stratégie d'arête qui porte ce cas, et c'est pour cela que
      * l'apparenté par motif reste hors du chemin critique.
      *
@@ -420,21 +412,17 @@ final class TreePlanService
         return $subjects;
     }
 
-    // =========================================================================
-    // Lecture SQL
-    // =========================================================================
-
     /**
      * Membres du groupe avec leur RÔLE D'ARÊTE.
      *
      * Une seule source : `user_group_user.role`. Le drapeau booléen de professeur
-     * principal est mort depuis la story 42.2 — il n'est plus écrit, donc plus
+     * principal est mort depuis la — il n'est plus écrit, donc plus
      * jamais lu ici.
      *
      * Un rôle d'arête vide ou hors vocabulaire (donnée héritée) est ramené à
      * `member`. Ce n'est pas un relâchement de la doctrine « jamais de plan
      * partiel » : c'est la MÊME normalisation que celle des écrans de groupes
-     * depuis la story 42.3, et `member` est déjà le défaut applicatif du
+     * depuis la, et `member` est déjà le défaut applicatif du
      * rattachement. Refuser tout le plan pour une ligne héritée rendrait la chaîne
      * inutilisable sur les instances en place, sans rien protéger — le membre
      * apparaît de toute façon, avec le rôle le moins doté.

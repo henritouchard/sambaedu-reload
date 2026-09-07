@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 20.2 — D-1 / D-6 / D-8.
+ * D-1 / D-6 / D-8.
  *
  * Purge RGPD des identités externes fédérées dont la rétention PII a expiré.
  * Calquée sur {@see TrashPurgeCommand} (patron éprouvé) : `--dry-run`,
@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Log;
  * `last_login_at < now - pii_ttl_days` ET non encore anonymisée, on délègue à
  * {@see ExternalIdentityLifecycleService::anonymize()} qui vide la PII, réécrit
  * `external_sub` en `anon:<hmac-sha256>` (D-5), pose `anonymized_at`, désactive les
- * `User` liés et soft-delete la ligne (qui SURVIT pour l'audit 20.4 + les FK).
+ * `User` liés et soft-delete la ligne (qui SURVIT pour l'audit + les FK).
  *
  * GARDE-FOU (D-8) : tant que `federated_auth.retention.anonymize_enabled` est
  * `false`, OU que `pii_ttl_days <= 0` sans `--force`, la commande est NO-OP SAFE
@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Log;
  * n'est retourné que si TOUTES les anonymisations candidates ont échoué.
  *
  * Logs (channel `federated-auth`) : AUCUNE PII — id interne + hash de sub
- * uniquement (AC16). L'anonymisation effective est tracée par le service.
+ * uniquement. L'anonymisation effective est tracée par le service.
  *
  * Planifiée dans `Console\Kernel::schedule()` quotidiennement, conditionnée par
  * `->when()` lisant le toggle config (prise d'effet sans redéploiement).
@@ -179,7 +179,7 @@ class FederatedPurgeIdentitiesCommand extends Command
 
     /**
      * Mode --dry-run : affichage sans toucher la DB. AUCUNE PII (id + hash de
-     * sub uniquement — AC16).
+     * sub uniquement —).
      *
      * @param  \Illuminate\Support\Collection<int,ExternalIdentity>  $candidates
      */

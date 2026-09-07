@@ -23,7 +23,7 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.3 — AC2/AC5/AC9 : les gardes du modèle, les refus NOMMÉS, et ce que
+ * Les gardes du modèle, les refus NOMMÉS, et ce que
  * la suppression d'un type emporte.
  */
 class GroupTypeRoleGuardsTest extends TestCase
@@ -35,7 +35,7 @@ class GroupTypeRoleGuardsTest extends TestCase
     {
         parent::setUp();
         $this->seed(GroupRoleSeeder::class);
-        // Story 62.3 — les gardes éprouvées ici (refus de retrait chiffré,
+        // Les gardes éprouvées ici (refus de retrait chiffré,
         // immuabilité de la paire, `owner` sur `classe`) portent sur des
         // déclarations EXISTANTES. La migration n'en pose plus : on installe le
         // profil scolaire, qui en fournit sept.
@@ -67,10 +67,6 @@ class GroupTypeRoleGuardsTest extends TestCase
 
         return $group;
     }
-
-    // =========================================================================
-    // AC2 — les gardes du modèle
-    // =========================================================================
 
     #[Test]
     public function a_role_outside_the_catalog_is_refused(): void
@@ -119,7 +115,7 @@ class GroupTypeRoleGuardsTest extends TestCase
     }
 
     /**
-     * PIÈGE NOMMÉ (review 62.2 #1) — une clé de type HÉRITÉE n'est pas un slug, et
+     * PIÈGE — une clé de type HÉRITÉE n'est pas un slug, et
      * la garde ne doit vérifier que son EXISTENCE.
      */
     #[Test]
@@ -153,10 +149,6 @@ class GroupTypeRoleGuardsTest extends TestCase
         $this->edge('custom', 'manager', 'anim.custom');
         $this->assertNotNull($declaration->removalRefusal());
     }
-
-    // =========================================================================
-    // AC5 — le refus de retrait, nommé et chiffré
-    // =========================================================================
 
     #[Test]
     public function removing_a_declaration_carried_by_edges_is_refused_with_the_count(): void
@@ -235,10 +227,6 @@ class GroupTypeRoleGuardsTest extends TestCase
         $this->assertNotNull($refusal, 'une arête sur « Classe » doit compter pour « classe »');
     }
 
-    // =========================================================================
-    // AC9 — suppressions croisées
-    // =========================================================================
-
     /**
      * Un rôle DÉCLARÉ n'est pas supprimable du catalogue : il faut d'abord le
      * retirer des types qui le déclarent, et le message dit où aller.
@@ -311,16 +299,12 @@ class GroupTypeRoleGuardsTest extends TestCase
         $this->assertSame(1, DB::table('group_type_roles')->where('group_type_key', 'club')->count());
     }
 
-    // =========================================================================
-    // Review 62.3 #1 — `owner` ne se déclare que sur `classe`
-    // =========================================================================
-
     /**
      * Le défaut : rien n'empêchait de DÉCLARER `owner` sur un projet, et le bouton
      * « tous les rôles du catalogue » de la modale le faisait en un clic. La
-     * déclaration était mort-née — la règle D3 bloque de toute façon l'attribution
+     * déclaration était mort-née — la garde du professeur principal bloque de toute façon l'attribution
      * aux trois points humains — mais `assignableKeys('projet')` rendait `owner`,
-     * un badge « Propriétaire » s'affichait, et **62.6** aurait construit sa matrice
+     * un badge « Propriétaire » s'affichait, et l'éditeur d'arborescences aurait construit sa matrice
      * rôles × verbes sur cette promesse vide.
      */
     #[Test]

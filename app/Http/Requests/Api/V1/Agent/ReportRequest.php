@@ -10,10 +10,10 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 24.1 — payload de `POST /api/v1/agent/report` (schéma report FIGÉ
- * 23.1, `docs/agent/contract-v1.md` §6 + golden `report.v1.json`).
+ * Payload de `POST /api/v1/agent/report` (schéma report FIGÉ
+ * `docs/agent/contract-v1.md` §6 + golden `report.v1.json`).
  *
- * C'est ICI que se résout le defer review 23.1 : l'entrée agent est validée
+ * C'est ICI que se résout le defer review : l'entrée agent est validée
  * AVANT tout traitement — l'ingestion ne hashe JAMAIS le payload (un body
  * UTF-8 invalide / NAN / INF ne peut donc plus produire de `JsonException`
  * 500 ; un JSON malformé décode en `[]` → 422 de validation).
@@ -53,7 +53,7 @@ class ReportRequest extends FormRequest
             'workstation.hostname' => ['nullable', 'string', 'max:255'],
             'workstation.uuid' => ['nullable', 'string', 'max:64'],
             // `present` (pas `required`) : `items: []` est un rapport valide
-            // (agent sans rien à rapporter — décision n° 9).
+            // (agent sans rien à rapporter).
             'items' => ['present', 'array'],
             // `reportableTypes()` et NON `RESOURCE_TYPES` : le serveur accepte
             // aussi les canaux de signalement de l'agent (`agent_update`,
@@ -62,9 +62,9 @@ class ReportRequest extends FormRequest
             // rapport ENTIER en 422 — le signal détruisait son porteur.
             'items.*.type' => ['required', 'string', Rule::in(StateContract::reportableTypes()), 'distinct'],
             'items.*.status' => ['required', Rule::enum(AgentResourceStatus::class)],
-            // /D : sans lui, `$` PCRE tolère un \n traînant → 65 octets
-            // passeraient la validation (varchar(64) PG = 22001/500,
-            // comparaison de hash jamais vraie). Review 24.1 #1.
+            // Modificateur /D : sans lui, `$` PCRE tolère un \n traînant → 65
+            // octets passeraient la validation (varchar(64) PG = 22001/500,
+            // comparaison de hash jamais vraie).
             'items.*.hash' => ['required', 'string', 'regex:/^[0-9a-f]{64}$/D'],
             'items.*.detail' => [
                 'nullable',
@@ -72,12 +72,12 @@ class ReportRequest extends FormRequest
                 'max:2000',
                 'required_if:items.*.status,' . AgentResourceStatus::Error->value,
             ],
-            // Story 27.5 — AC4 : champ ADDITIF optionnel `inventory` sur l'item
+            // Champ ADDITIF optionnel `inventory` sur l'item
             // `applications` (résultat PAR APP : {app_id, status, detail?}).
             // Évolution MINEURE §9 (champ ajouté = reste v1 ; un vieux serveur
             // l'ignorerait). Le verdict du TYPE reste PAR TYPE (items.*.status,
             // worst-status) — l'inventaire est une DONNÉE additive, pas un
-            // verdict (grain 27.8 intact). `nullable` : les autres types ne
+            // verdict (grain intact). `nullable` : les autres types ne
             // portent pas d'inventaire.
             'items.*.inventory' => ['nullable', 'array'],
             'items.*.inventory.*.app_id' => ['required', 'string', 'max:191'],

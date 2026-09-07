@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4.11 — Unification de l'appartenance poste↔groupe dans le pivot global.
+ * Unification de l'appartenance poste↔groupe dans le pivot global.
  *
  * Backfill : chaque couple (poste, salle FK) `workstations.physical_room_id`
  * devient une ligne du pivot `workstation_group_workstation`, puis la colonne
@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        // --- Backfill FK → pivot ---------------------------------------
         // On lit les couples valides (JOIN écarte les orphelins) puis on
         // insère avec timestamps explicites via insertOrIgnore (cross-driver :
         // ON CONFLICT DO NOTHING en PG, INSERT OR IGNORE en SQLite).
@@ -46,7 +45,6 @@ return new class extends Migration {
             DB::table('workstation_group_workstation')->insertOrIgnore($rows);
         }
 
-        // --- Drop de la FK + index + colonne ---------------------------
         if (Schema::hasColumn('workstations', 'physical_room_id')) {
             Schema::table('workstations', function (Blueprint $table) {
                 // L'ordre importe : FK puis index puis colonne.
@@ -70,7 +68,6 @@ return new class extends Migration {
 
     public function down(): void
     {
-        // --- Recréer la colonne + FK -----------------------------------
         if (!Schema::hasColumn('workstations', 'physical_room_id')) {
             Schema::table('workstations', function (Blueprint $table) {
                 $table->foreignId('physical_room_id')->nullable()
@@ -86,7 +83,6 @@ return new class extends Migration {
             });
         }
 
-        // --- Repeupler la FK depuis le pivot (groupes physiques) -------
         // Un poste peut être dans plusieurs groupes logiques + au plus une
         // salle physique (invariant service) : on ne restaure que la salle.
         $physicalLinks = DB::table('workstation_group_workstation as pivot')

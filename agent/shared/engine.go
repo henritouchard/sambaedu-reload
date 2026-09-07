@@ -7,37 +7,37 @@ import (
 	"time"
 )
 
-// Moteur de convergence générique (Story 24.6 — portage fidèle de
-// ConvergenceEngine.ps1, design validé en review 24.4).
+// Moteur de convergence générique (portage fidèle de
+// ConvergenceEngine.ps1, design validé en review).
 //
 // Cœur PORTABLE (contrainte n° 5 du cahier des charges) : AUCUNE dépendance
 // Windows ici — uniquement la machine d'états du contrat §5 (convergence
-// STRICT inconditionnelle — Story 27.8), l'isolation par item et les
+// STRICT inconditionnelle), l'isolation par item et les
 // conventions de hash du rapport. Les handlers spécifiques OS (registre,
 // SystemParametersInfo, chemins %LOCALAPPDATA%) vivent dans agent/windows/
 // derrière l'interface Handler.
 //
 // Ce que fait Engine.RunPass :
-//   - itère les items DANS L'ORDRE du payload serveur (AC epic / FR18 —
-//     jamais d'ordre inventé, jamais de parallélisme), groupés par type (un
+//  - itère les items DANS L'ORDRE du payload serveur (jamais d'ordre
+//     inventé, jamais de parallélisme), groupés par type (un
 //     type = un verdict, le rapport exige des types UNIQUES — contrat §6) ;
 //   - dispatch vers le handler enregistré par type ; type sans handler =
 //     ignoré + log DEBUG (contrat §8 : « ne touche pas ») ;
 //   - isolation PAR type (recover au point de dispatch) : un échec/panic
-//     produit {status: error, detail} et la passe CONTINUE (AC epic) ;
+//     produit {status: error, detail} et la passe CONTINUE ;
 //   - applique la machine d'états §5 (cf. ResolveItemStatus — STRICT
-//     inconditionnel depuis 27.8) ; le store applied-state injecté par
+//  inconditionnel) ; le store applied-state injecté par
 //     l'appelant (per-user pour le compagnon) trace le dernier-appliqué ;
 //   - produit les items de rapport {type, status, hash[, detail]}.
 //
-// Conventions de hash du rapport (24.4, conservées À L'IDENTIQUE — en
+// Conventions de hash du rapport (conservées À L'IDENTIQUE — en
 // changer fausserait les transitions agent_report_events côté serveur au
 // premier rapport Go) :
 //   - type `exclusive` : le hash d'item opaque du serveur, VERBATIM ;
-//   - type `aggregate` : le serveur ne fournit PAS de hash d'ensemble —
+//  - type `aggregate` : le serveur ne fournit PAS de hash d'ensemble
 //     l'agent construit une EMPREINTE déterministe : SHA-256 hex de la
 //     concaténation des hashes opaques des items du type, dans l'ordre du
-//     payload serveur. Ce n'est PAS un recalcul de hash d'item (interdit —
+//  payload serveur. Ce n'est PAS un recalcul de hash d'item (interdit
 //     le hash serveur reste opaque, et l'agent ne hashe JAMAIS depuis sa
 //     propre sérialisation) : c'est une empreinte d'agrégat sur des chaînes
 //     opaques, que le serveur ne compare qu'au rapport PRÉCÉDENT.
@@ -47,7 +47,7 @@ const detailMaxLength = 2000
 
 // StateItem est un item du contrat (§3) vu par le moteur : champs extraits
 // de l'enveloppe parsée, payload laissé brut pour les handlers. Le Hash est
-// OPAQUE (fourni serveur) — jamais recalculé. Story 27.8 : plus de champ
+// OPAQUE (fourni serveur) — jamais recalculé. : plus de champ
 // `Mode` (le mécanisme strict/default est supprimé — convergence STRICT
 // inconditionnelle) ; un éventuel champ `mode` du payload serveur est ignoré.
 type StateItem struct {
@@ -88,8 +88,7 @@ func ItemsFromScope(raw []any, log *Logger) []StateItem {
 	return items
 }
 
-// Handler est le contrat d'un handler de type de ressource (interface TYPÉE
-// — le dispatch durci de la review 24.4 #4 est réglé structurellement en Go).
+// Handler est le contrat d'un handler de type de ressource.
 //
 // Test répond « le réel correspond-il à la cible ? » ; Apply converge
 // (IDEMPOTENT — rejouable sans effet cumulatif). L'un comme l'autre peuvent
@@ -101,11 +100,11 @@ type Handler interface {
 }
 
 // InventoryReporter : interface OPTIONNELLE qu'un handler peut implémenter pour
-// joindre un inventaire PAR SOUS-ENTITÉ à son item de rapport (Story 27.5, AC4 —
-// le handler `applications` rapporte le résultat par app). Le moteur l'appelle
+// joindre un inventaire PAR SOUS-ENTITÉ à son item de rapport
+// (le handler `applications` rapporte le résultat par app). Le moteur l'appelle
 // APRÈS le dispatch (Test/Apply) et n'attache l'inventaire que si non vide. Cela
 // NE change PAS le verdict du type (status/hash restent worst-status par type —
-// grain 27.8 intact) : l'inventaire est une DONNÉE additive.
+// grain intact) : l'inventaire est une DONNÉE additive.
 type InventoryReporter interface {
 	// ReportInventory : inventaire par sous-entité du DERNIER Test/Apply (vidé
 	// par le moteur dans le ReportItem du cycle). Vide → champ omis.
@@ -114,11 +113,11 @@ type InventoryReporter interface {
 
 // DetailReporter : interface OPTIONNELLE qu'un handler peut implémenter pour
 // joindre un `detail` à son item de rapport sur les chemins de SUCCÈS
-// (compliant/drift — Story 38.3, AC5 : l'item `legacy_cleanup` en drift liste
+// (compliant/drift : l'item `legacy_cleanup` en drift liste
 // les artefacts supprimés). Le moteur l'appelle APRÈS le dispatch (Test/Apply)
 // et n'attache le détail que s'il est non vide, borné à 2000 runes (contrat
 // §6). Le chemin d'ERREUR reste INCHANGÉ (le detail y est le message d'erreur,
-// errorReportItem). Cela NE change PAS le verdict du type (grain 27.8 intact) :
+// errorReportItem). Cela NE change PAS le verdict du type (grain intact) :
 // le détail est une DONNÉE additive — un handler « silencieux » (poste sain)
 // retourne "" et l'item reste sans detail (dédup serveur par hash préservée).
 type DetailReporter interface {
@@ -146,7 +145,7 @@ type Verdict struct {
 }
 
 // ResolveItemStatus implémente la machine d'états du contrat §5 — STRICT
-// inconditionnel (Story 27.8 : le mécanisme strict/default est SUPPRIMÉ, la
+// inconditionnel ( : le mécanisme strict/default est SUPPRIMÉ, la
 // cible fait TOUJOURS loi) :
 //
 //	réel = cible → compliant ; réel ≠ cible → APPLIQUE → drift.
@@ -156,8 +155,8 @@ type Verdict struct {
 // `lastAppliedHash` au verdict).
 //
 // ShouldPersist : la cible devient le dernier-appliqué après compliant ou
-// apply réussi (empreinte persistée pour la traçabilité, décision 24.4 n° 9,
-// conservée même sans incidence de verdict — Story 27.8 D-B).
+// apply réussi (empreinte persistée pour la traçabilité, même sans
+// incidence sur le verdict).
 func ResolveItemStatus(isCompliant bool) Verdict {
 	if isCompliant {
 		return Verdict{Status: "compliant", ShouldPersist: true}
@@ -184,7 +183,7 @@ func AggregateHash(items []StateItem) string {
 // items de rapport.
 type Engine struct {
 	// Handlers : type → Handler. Tout type absent de la map est ignoré
-	// (contrat §8) — les types suivants arrivent avec l'Epic 27.
+	// (contrat §8).
 	Handlers map[string]Handler
 	Log      *Logger
 
@@ -234,7 +233,7 @@ func (e *Engine) RunPass(items []StateItem, applied AppliedState) []ReportItem {
 			semantics = "exclusive"
 		}
 
-		// Hash rapporté (conventions 24.4) : exclusive = hash d'item
+		// Hash rapporté (conventions) : exclusive = hash d'item
 		// verbatim ; aggregate = empreinte déterministe, ordre serveur.
 		var targetHash string
 		if semantics == "aggregate" {
@@ -251,8 +250,8 @@ func (e *Engine) RunPass(items []StateItem, applied AppliedState) []ReportItem {
 
 		reportItem, persist := e.dispatch(handler, typ, typeItems, targetHash)
 		if persist {
-			// Persistance du dernier-appliqué (traçabilité, décision 24.4 n° 9 ;
-			// conservée Story 27.8 D-B même sans incidence de verdict).
+			// Persistance du dernier-appliqué (traçabilité, même sans
+			// incidence sur le verdict).
 			applied[typ] = AppliedEntry{
 				Hash:      targetHash,
 				AppliedAt: e.now().UTC().Format(time.RFC3339),
@@ -266,10 +265,10 @@ func (e *Engine) RunPass(items []StateItem, applied AppliedState) []ReportItem {
 
 // dispatch : Test → machine d'états §5 → Apply éventuel, ISOLÉ par type —
 // erreur OU panic d'un handler devient {status: error, detail} et la passe
-// continue (AC epic isolation). persist n'est vrai qu'après un Test/Apply
+// continue. persist n'est vrai qu'après un Test/Apply
 // réussi (un Apply en échec ne persiste jamais la cible).
 func (e *Engine) dispatch(handler Handler, typ string, typeItems []StateItem, targetHash string) (item ReportItem, persist bool) {
-	// recover au POINT DE DISPATCH (décision n° 4) : aucun handler ne peut
+	// recover au POINT DE DISPATCH : aucun handler ne peut
 	// tuer la passe.
 	defer func() {
 		if r := recover(); r != nil {
@@ -303,7 +302,7 @@ func (e *Engine) dispatch(handler Handler, typ string, typeItems []StateItem, ta
 }
 
 // withDetail joint le détail d'un handler (s'il implémente DetailReporter,
-// ex. `legacy_cleanup` — Story 38.3) à son item de rapport de SUCCÈS
+// ex. `legacy_cleanup` —) à son item de rapport de SUCCÈS
 // (compliant/drift). Jamais sur le chemin d'erreur (le detail y est déjà le
 // message d'erreur — errorReportItem, appelé avant withDetail n'est pas
 // concerné). Vide → champ omis (omitempty) ; borné à 2000 runes (contrat §6).
@@ -319,9 +318,9 @@ func (e *Engine) withDetail(handler Handler, item ReportItem) ReportItem {
 
 // withInventory joint l'inventaire PAR SOUS-ENTITÉ d'un handler (s'il implémente
 // InventoryReporter, ex. `applications`) à son item de rapport — sur TOUS les
-// chemins de sortie, y compris `error` (Story 27.5, AC4 : un verdict de type
+// chemins de sortie, y compris `error` ( : un verdict de type
 // `error`/`drift` porte quand même les résultats par app — fondation des
-// licences à pool). N'altère PAS le verdict par type (grain 27.8 intact) : donnée
+// licences à pool). N'altère PAS le verdict par type (grain intact) : donnée
 // additive. Vide → champ omis (omitempty).
 func (e *Engine) withInventory(handler Handler, item ReportItem) ReportItem {
 	if reporter, ok := handler.(InventoryReporter); ok {

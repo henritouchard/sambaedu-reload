@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.5 (AC1) — `php artisan ext:health:check {key?}` et sa planification.
+ * `php artisan ext:health:check {key?}` et sa planification.
  *
  * La commande CONSTATE : elle rend 0 même quand un backend est mort (un `exit 1`
  * toutes les 5 minutes remplirait la supervision d'alertes pour un état que
@@ -32,7 +32,7 @@ class ExtensionHealthCheckCommandTest extends TestCase
 
         Http::preventStrayRequests();
 
-        // Fake UNIQUE délégant à une closure remplaçable (leçon 56.1 : les
+        // Fake UNIQUE délégant à une closure remplaçable (leçon : les
         // stubs fusionnent, le premier motif gagne).
         $this->responder = static fn (): mixed => Http::response('', 200);
         Http::fake(['127.0.0.1:*' => fn ($request): mixed => ($this->responder)($request)]);
@@ -48,9 +48,7 @@ class ExtensionHealthCheckCommandTest extends TestCase
             ->create(['key' => $key, 'name' => ucfirst($key)]);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Toutes les extensions
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function it_reports_nothing_to_probe_on_an_empty_registry(): void
@@ -106,9 +104,7 @@ class ExtensionHealthCheckCommandTest extends TestCase
             ->assertExitCode(0);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Une seule clé
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function it_probes_a_single_extension_by_key(): void
@@ -159,9 +155,7 @@ class ExtensionHealthCheckCommandTest extends TestCase
         Http::assertNothingSent();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Planification
-    // ══════════════════════════════════════════════════════════════════════
 
     /**
      * La sonde est planifiée toutes les 5 minutes.
@@ -186,8 +180,7 @@ class ExtensionHealthCheckCommandTest extends TestCase
     /**
      * Contrat de cohérence : le seuil de péremption est DÉRIVÉ de la période de
      * sonde (3 passages tolérés). Ce test empêche les deux valeurs de diverger
-     * en silence — la leçon de la review 56.3 #2 (`LOCK_SECONDS` vs
-     * `job_timeout`).
+     * en silence.
      */
     #[Test]
     public function the_stale_threshold_stays_consistent_with_the_probe_period(): void

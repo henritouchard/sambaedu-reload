@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `EnrollmentMatchService` — Story 25.3 (AC1, AC3).
+ * Tests Unit `EnrollmentMatchService`.
  *
  * Faisceau de preuves : MAC = ancre fiable (normalisée tirets/colons/nu),
  * hostname = corroborant, uuid = jamais suffisant seul. Candidat UNIQUE exigé.
@@ -34,7 +34,7 @@ class EnrollmentMatchServiceTest extends TestCase
         $this->tokens = new TokenRotationService();
     }
 
-    // ── match() : MAC = ancre, normalisation ────────────────────────────
+    // match() : MAC = ancre, normalisation
 
     #[Test]
     public function matches_known_workstation_by_mac_whatever_the_separator(): void
@@ -83,7 +83,7 @@ class EnrollmentMatchServiceTest extends TestCase
         self::assertNull($this->matcher->match(['mac' => 'aa:bb:cc:dd:ee:ff']));
     }
 
-    // ── isConcordant() : invariant anti-usurpation ──────────────────────
+    // isConcordant() : invariant anti-usurpation
 
     #[Test]
     public function concordant_when_mac_matches_hostname_coherent_and_not_enrolled(): void

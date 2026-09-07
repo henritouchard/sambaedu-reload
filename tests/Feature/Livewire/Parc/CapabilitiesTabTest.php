@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.12 (AC6, AC9) — onglet « Options / Capacités » d'un WorkstationGroup.
+ * Onglet « Options / Capacités » d'un WorkstationGroup.
  *
  * Édite les OVERRIDES de VALEUR DE CAPACITÉ par parc (capability_assignments).
  * Couvre : n'affiche que les overrides, ajout/édition/retrait, validation serveur,
@@ -227,7 +227,7 @@ class CapabilitiesTabTest extends TestCase
     }
 
     /**
-     * Garde serveur (#1/#7) : un client peut muter directement `editingCapabilityId`
+     * Garde serveur : un client peut muter directement `editingCapabilityId`
      * (propriété publique) et appeler `saveOverride` sans passer par `openAdd()`.
      * Le garde front (addableCapabilities) ne suffit pas — `saveOverride()` doit
      * refuser un NOUVEL override sur une capacité gelée.
@@ -253,7 +253,7 @@ class CapabilitiesTabTest extends TestCase
     }
 
     /**
-     * Garde serveur (#7) : aucun override ne doit être écrit sur une capacité
+     * Garde serveur : aucun override ne doit être écrit sur une capacité
      * INACTIVE (la computed `editingCapability` ne filtrait pas `is_active`).
      */
     #[Test]

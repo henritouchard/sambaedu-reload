@@ -9,7 +9,7 @@ use App\Wpkg\Deployment\Rules\SafeIpCidrRule;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.6 — Résolveur centralisé des réglages de déploiement WPKG.
+ * Résolveur centralisé des réglages de déploiement WPKG.
  *
  * Précédence stricte : **DB (`SystemSetting`) > env (`config()`) > défaut codé**.
  *
@@ -19,13 +19,13 @@ use Illuminate\Support\Facades\Log;
  *
  * **Non-régression** : si aucune clé DB n'est définie, les méthodes retournent
  * exactement les valeurs `config()` actuelles (comportement strictement
- * inchangé par rapport à la situation pré-15.6).
+ * inchangé par rapport à la situation antérieur).
  *
- * **Pas de cache en v1** : `SystemSetting::get` lit la DB à chaque appel
- * (effet immédiat garanti). Si le profilage montrait un coût, ajouter un
- * cache request-scoped invalidé à l'écriture (cf. D6 story 15.6).
+ * **Pas de cache** : `SystemSetting::get` lit la DB à chaque appel (effet
+ * immédiat garanti). Si le profilage montrait un coût, ajouter un cache
+ * request-scoped invalidé à l'écriture.
  *
- * @see app/Wpkg/Deployment/README.md — section « Réglages runtime (Story 15.6) »
+ * @see app/Wpkg/Deployment/README.md — section « Réglages runtime »
  */
 final class WpkgDeploymentSettings
 {
@@ -53,7 +53,7 @@ final class WpkgDeploymentSettings
      *
      * Entrées vides ou non-string filtrées automatiquement.
      *
-     * **Fail-closed (Story 15.6 / correction post-review)** : chaque entrée est
+     * **Fail-closed** : chaque entrée est
      * repassée par `SafeIpCidrRule::isSafe()` en lecture. Toute entrée invalide ou
      * trop large (ex. `0.0.0.0/0` injecté directement en DB) est silencieusement
      * écartée avec un warning loggé. `127.0.0.1` et `::1` sont préservés s'ils

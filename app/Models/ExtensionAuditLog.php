@@ -14,7 +14,7 @@ use LogicException;
 use Throwable;
 
 /**
- * Story 54.2 (FR36 socle) — Entrée d'audit append-only du cycle de vie d'une
+ * Entrée d'audit append-only du cycle de vie d'une
  * extension.
  *
  * Écrite EXCLUSIVEMENT par {@see \App\Services\Extensions\ExtensionLifecycleService}
@@ -24,7 +24,7 @@ use Throwable;
  * AUCUNE ligne — le journal trace des transitions réelles, pas des clics.
  *
  * Table append-only : toute tentative d'UPDATE lève une LogicException (calque
- * {@see CapabilityOverrideAuditLog} 29.5 / {@see ControlHubLinkAuditLog} 32.1).
+ * {@see CapabilityOverrideAuditLog} / {@see ControlHubLinkAuditLog}).
  * Les FK sont `nullOnDelete` pour garder la ligne lisible après suppression des
  * entités référencées ; les colonnes dénormalisées (`extension_key`,
  * `extension_name`, `actor_login`) préservent la lisibilité.
@@ -34,17 +34,17 @@ use Throwable;
  *
  * ⚠️ GARDE-FOU : aucun mot « central ». Vocabulaire « amont » / `Upstream`.
  *
- * ## Story 56.1 — événements de SOURCE (FR36)
+ * ## Événements de SOURCE
  *
  * La table est ÉTENDUE, pas doublée : `action` est un string libre
- * EXPRESSÉMENT prévu extensible (docblock de la migration 54.2). Les actes
+ * EXPRESSÉMENT prévu extensible (docblock de la migration). Les actes
  * d'administration d'une source (`source_add`, `source_enable`,
  * `source_disable`, `source_remove`) et l'échec de vérification d'un catalogue
  * (`source_sync_failed`) s'écrivent par la fabrique dédiée {@see self::logSource()},
  * avec `extension_id = null` et `extension_key` / `extension_name` à `''` — la
  * cible est la SOURCE, pas une extension.
  *
- * Même discipline que 54.2 : la trace est écrite DANS la transaction de l'acte,
+ * Même discipline que : la trace est écrite DANS la transaction de l'acte,
  * un no-op (désactiver une source déjà désactivée) n'écrit AUCUNE ligne, et
  * `source_sync_failed` n'est consigné qu'à la **transition** vers l'état
  * d'erreur — un re-échec quotidien de la synchro planifiée n'empile pas de
@@ -59,7 +59,7 @@ use Throwable;
  * @property int|null $extension_source_id
  * @property string $source_key
  * @property string $action           'integrate' | 'uninstall' | 'source_*' | 'install' | 'remove' | 'install_failed' (string libre)
- * @property string $details          catégorie COURTE d'échec — jamais d'URL, jamais de secret (56.2)
+ * @property string $details catégorie COURTE d'échec — jamais d'URL, jamais de secret
  * @property int|null $actor_user_id
  * @property string|null $actor_login
  * @property \Carbon\Carbon $created_at
@@ -76,11 +76,11 @@ class ExtensionAuditLog extends Model
     public $timestamps = false;
 
     // Actions reconnues — dérivées CÔTÉ SERVEUR (jamais du flag client).
-    // String libre en base (pas d'enum() DB) : l'Epic 56 étend sans migration.
+    // String libre en base (pas d'enum DB) : l' étend sans migration.
     public const ACTION_INTEGRATE = 'integrate';
     public const ACTION_UNINSTALL = 'uninstall';
 
-    // Story 56.1 — actes d'administration d'une SOURCE (fabrique `logSource()`).
+    // Actes d'administration d'une SOURCE (fabrique `logSource`).
     public const ACTION_SOURCE_ADD = 'source_add';
     public const ACTION_SOURCE_ENABLE = 'source_enable';
     public const ACTION_SOURCE_DISABLE = 'source_disable';
@@ -89,7 +89,7 @@ class ExtensionAuditLog extends Model
     /** Échec de VÉRIFICATION d'un catalogue distant — consigné à la TRANSITION seulement. */
     public const ACTION_SOURCE_SYNC_FAILED = 'source_sync_failed';
 
-    // Story 56.2 — cycle d'une extension `app` (moteur `ext:install` / `ext:remove`).
+    // Cycle d'une extension `app` (moteur `ext:install` / `ext:remove`).
     public const ACTION_INSTALL = 'install';
     public const ACTION_REMOVE = 'remove';
 
@@ -100,12 +100,12 @@ class ExtensionAuditLog extends Model
      * ⚠️ Contrairement à `source_sync_failed`, il n'y a PAS de dédoublonnage à
      * la transition : une synchro est une tâche planifiée qui se répète toute
      * seule, une installation est un ACTE de l'opérateur. Chaque tentative
-     * mérite sa ligne (décision 56.2 #7).
+     * mérite sa ligne.
      */
     public const ACTION_INSTALL_FAILED = 'install_failed';
 
     /**
-     * Story 56.3 — mise à jour d'une extension `app` déjà installée
+     * Mise à jour d'une extension `app` déjà installée
      * (`ext:update` / bouton « Mettre à jour »).
      *
      * Acte à part entière, distinct d'`install` : ce qu'il change, c'est la
@@ -119,7 +119,7 @@ class ExtensionAuditLog extends Model
     public const ACTION_UPDATE_FAILED = 'update_failed';
 
     /**
-     * Story 56.4 — RÉVOCATION d'un scope accordé à une extension (FR23/FR36).
+     * RÉVOCATION d'un scope accordé à une extension.
      *
      * `details` porte le scope révoqué, et rien d'autre : ni URL, ni
      * `client_id`, ni secret. C'est un acte de confidentialité — « qui a retiré
@@ -132,9 +132,9 @@ class ExtensionAuditLog extends Model
     public const ACTOR_SYSTEM = 'system';
 
     /**
-     * Story 56.5 — Clé du marqueur « une écriture d'audit a été perdue ».
+     * Clé du marqueur « une écriture d'audit a été perdue ».
      *
-     * ⚠️ Store **fichier** DÉLIBÉRÉ (décision n° 5 de la story) : si `log()`
+     * ⚠️ Store **fichier** DÉLIBÉRÉ : si `log()`
      * lève, la cause plausible est la base de données elle-même — un signal
      * stocké en DB coulerait avec elle. Le cache fichier est le store de secours
      * établi du domaine (le verrou du moteur d'installation y vit déjà) ; APCu
@@ -165,10 +165,6 @@ class ExtensionAuditLog extends Model
         'created_at' => 'datetime',
     ];
 
-    // ========================================================================
-    // APPEND-ONLY GUARD (calque CapabilityOverrideAuditLog / ControlHubLinkAuditLog)
-    // ========================================================================
-
     /**
      * Bloque tout UPDATE : la table est append-only.
      *
@@ -187,23 +183,19 @@ class ExtensionAuditLog extends Model
         return parent::save($options);
     }
 
-    // ========================================================================
-    // FABRIQUE (calque CapabilityOverrideAuditLog::log)
-    // ========================================================================
-
     /**
      * Consigne une transition du cycle de vie. Appelée DANS la transaction de
      * la mutation `status` (atomicité acte ↔ trace).
      *
-     * Story 56.2 — signature ÉLARGIE, jamais dupliquée : `$details` est
-     * optionnel (`''` pour les actes 54.2, une CATÉGORIE courte pour un
+     * Signature ÉLARGIE, jamais dupliquée : `$details` est
+     * optionnel (`''` pour les actes, une CATÉGORIE courte pour un
      * `install_failed`) et `$actorUserId` accepte `null` avec
-     * `$actorLogin = self::ACTOR_SYSTEM` pour l'acteur CLI. Les appels 54.2
+     * `$actorLogin = self::ACTOR_SYSTEM` pour l'acteur CLI. Les appels
      * existants continuent de passer un `int` et restent valides verbatim — on
      * ne crée pas une seconde fabrique là où un paramètre par défaut suffit.
      *
-     * ⚠️ `$details` ne doit JAMAIS porter d'URL ni de secret (règle `last_error`
-     * de 56.1) : le journal d'audit est lisible par tout admin, et une URL de
+     * ⚠️ `$details` ne doit JAMAIS porter d'URL ni de secret (même règle que
+     * `last_error`) : le journal d'audit est lisible par tout admin, et une URL de
      * dépôt peut porter un jeton. Le détail complet va dans `Log::`.
      */
     public static function log(
@@ -228,7 +220,7 @@ class ExtensionAuditLog extends Model
     }
 
     /**
-     * Story 56.1 — Consigne un acte portant sur une SOURCE (ajout, activation,
+     * Consigne un acte portant sur une SOURCE (ajout, activation,
      * désactivation, retrait, échec de vérification du catalogue).
      *
      * Appelée DANS la transaction de l'acte (atomicité acte ↔ trace). Les
@@ -259,9 +251,6 @@ class ExtensionAuditLog extends Model
         ]);
     }
 
-    // ========================================================================
-    // MARQUEUR D'ÉCHEC D'ÉCRITURE (Story 56.5 — legs review 56.3 #4)
-    // ========================================================================
     //
     // « Exposer un signal “écriture d'audit en échec” plutôt que de compter sur
     // un grep de logs. » Ces trois statiques vivent ICI, à côté des fabriques,
@@ -279,8 +268,7 @@ class ExtensionAuditLog extends Model
      * **Best-effort par construction** : appelée depuis un `catch`, elle
      * n'aggrave JAMAIS l'incident qu'elle signale — toute défaillance du cache
      * est avalée ici, silencieusement. Un signal qu'on ne peut pas poser ne doit
-     * pas transformer un refus déjà compensé en exception nue (c'était le
-     * finding #2 de la review 56.2, corrigé — on ne le réintroduit pas).
+     * pas transformer un refus déjà compensé en exception nue.
      */
     public static function recordWriteFailure(): void
     {
@@ -340,7 +328,7 @@ class ExtensionAuditLog extends Model
      * Acquittement admin : le marqueur est effacé.
      *
      * ⚠️ **N'écrit AUCUNE ligne d'audit** — et c'est une décision, pas un oubli
-     * (décision n° 5 de la story) : le marqueur est un signal d'EXPLOITATION
+     * assumée : le marqueur est un signal d'EXPLOITATION
      * (« va voir les logs, N lignes ont pu se perdre »), pas une donnée de
      * conformité. L'auditer créerait une boucle absurde : que faire si l'audit
      * de l'acquittement échoue à son tour ?
@@ -355,10 +343,6 @@ class ExtensionAuditLog extends Model
             ]);
         }
     }
-
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
 
     /** La source concernée (peut être null si retirée du registre). */
     public function source(): BelongsTo
@@ -377,10 +361,6 @@ class ExtensionAuditLog extends Model
     {
         return $this->belongsTo(User::class, 'actor_user_id');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     public function scopeForAction(Builder $query, string $action): Builder
     {

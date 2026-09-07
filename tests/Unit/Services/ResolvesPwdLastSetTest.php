@@ -13,13 +13,11 @@ use Tests\TestCase;
 /**
  * Tests unitaires du trait ResolvesPwdLastSet.
  *
- * Couvre les 4 cas D7 pour resolvePwdLastSetRaw() + pwdLastSetToCarbon() :
+ * Couvre les 4 cas de resolvePwdLastSetRaw() + pwdLastSetToCarbon() :
  *   1. 0 → null (changement obligatoire)
  *   2. valeur FILETIME valide > 0 → Carbon UTC avec valeur attendue
- *   3. -1 → now() best-effort
+ *  3. -1 → now() best-effort
  *   4. valeur absente / null → null
- *
- * Story 14.4 — AC13 / Tâche 6.3
  */
 class ResolvesPwdLastSetTest extends TestCase
 {
@@ -46,10 +44,6 @@ class ResolvesPwdLastSetTest extends TestCase
             }
         };
     }
-
-    // =========================================================================
-    // resolvePwdLastSetRaw — normalisation de la valeur brute LDAP
-    // =========================================================================
 
     #[Test]
     public function it_returns_zero_for_null_raw_value(): void
@@ -78,10 +72,10 @@ class ResolvesPwdLastSetTest extends TestCase
     #[Test]
     public function it_returns_minus_one_for_carbon_with_positive_timestamp(): void
     {
-        // Post-review #1 : Carbon (auto-cast LdapRecord) → -1 pour que
-        // pwdLastSetToCarbon(-1) retourne Carbon::now() (sémantique D7 cas 3).
-        // Auparavant retournait 1, ce qui produisait un unix_ts négatif et
-        // déclenchait le garde-fou → password_changed_at NULL silencieux.
+        // Un Carbon (auto-cast LdapRecord) donne -1, pour que
+        // pwdLastSetToCarbon(-1) retourne Carbon::now(). Retourner 1 produirait
+        // un unix_ts négatif et déclencherait le garde-fou, laissant
+        // password_changed_at à NULL sans le dire.
         $carbon = Carbon::createFromTimestamp(1700000000);
         $this->assertSame(-1, $this->resolver->resolveRaw($carbon));
     }
@@ -96,7 +90,7 @@ class ResolvesPwdLastSetTest extends TestCase
     #[Test]
     public function it_returns_minus_one_for_array_containing_carbon(): void
     {
-        // Post-review #1 : cohérence array → Carbon → -1
+        // Cohérence array → Carbon → -1
         $carbon = Carbon::createFromTimestamp(1700000000);
         $this->assertSame(-1, $this->resolver->resolveRaw([$carbon]));
     }
@@ -113,21 +107,17 @@ class ResolvesPwdLastSetTest extends TestCase
         $this->assertSame(0, $this->resolver->resolveRaw([]));
     }
 
-    // =========================================================================
-    // pwdLastSetToCarbon — conversion D7
-    // =========================================================================
-
     #[Test]
     public function it_returns_null_for_pwdLastSet_zero(): void
     {
-        // D7 : 0 = changement obligatoire au prochain login → NULL
+        // 0 = changement obligatoire au prochain login → NULL
         $this->assertNull($this->resolver->toCarbon(0));
     }
 
     #[Test]
     public function it_returns_now_for_pwdLastSet_minus_one(): void
     {
-        // D7 : -1 = compte admin/service sans expiration → now() best-effort
+        // -1 = compte admin/service sans expiration → now() best-effort
         $before = Carbon::now()->subSecond();
         $result = $this->resolver->toCarbon(-1);
         $after = Carbon::now()->addSecond();
@@ -140,7 +130,7 @@ class ResolvesPwdLastSetTest extends TestCase
     #[Test]
     public function it_converts_filetime_to_correct_carbon_utc(): void
     {
-        // D7 — valeur hardcodée pour valider la conversion FILETIME → Unix timestamp
+        // Valeur hardcodée pour valider la conversion FILETIME → Unix timestamp
         //
         // pwdLastSet = 133000000000000000 (valeur AD-FILETIME)
         // Unix = (133000000000000000 - 116444736000000000) / 10_000_000
@@ -178,7 +168,7 @@ class ResolvesPwdLastSetTest extends TestCase
     #[Test]
     public function it_logs_warning_when_filetime_out_of_range(): void
     {
-        // Post-review #12 : le garde-fou doit émettre un Log::warning pour
+        // Le garde-fou doit émettre un Log::warning pour
         // tracer les FILETIME aberrants (AD corrompu, attribut mal interprété, etc.).
         Log::spy();
 
@@ -198,7 +188,7 @@ class ResolvesPwdLastSetTest extends TestCase
     #[Test]
     public function it_logs_warning_when_filetime_gives_negative_unix_timestamp(): void
     {
-        // Post-review #12 : même garde-fou pour timestamp négatif.
+        // Même garde-fou pour timestamp négatif.
         Log::spy();
 
         $result = $this->resolver->toCarbon(100000000);

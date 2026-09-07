@@ -40,7 +40,7 @@ var consoleAttached = true
 // interactive → Windows lui ouvre une fenêtre, qui resterait affichée toute
 // la session (processus résident) et qu'un user pourrait fermer (= tuer le
 // compagnon) ; un clic dedans (quick-edit) gèle même les écritures stdout —
-// constaté lab ws 49 (T12 24.6). FreeConsole détache le processus : la
+// constaté lab ws 49 (T12). FreeConsole détache le processus : la
 // fenêtre se ferme aussitôt (bref flash au logon, assumé). Best-effort : en
 // debug manuel (`agent.exe companion` depuis un terminal), l'effet est de
 // rendre la main au shell — tout le diagnostic vit dans companion.log.
@@ -50,7 +50,7 @@ func detachConsole() {
 }
 
 // attachConsole : RÉ-alloue une console à un processus qui a déjà appelé
-// FreeConsole (Story 2.12.3). Sans elle, la décision console du compagnon était
+// freeConsole. Sans elle, la décision console du compagnon était
 // IRRÉVERSIBLE — un seul point de lecture du drapeau `debug`, à t≈0, et plus
 // aucun chemin de retour ensuite.
 //
@@ -153,13 +153,13 @@ func hardenConsole() {
 	_, _, _ = procDeleteMenu.Call(menu, scClose, mfByCommand)
 }
 
-// Câblage Windows du compagnon de session (Story 24.6) — sous-commande
+// Câblage Windows du compagnon de session — sous-commande
 // `agent.exe companion`, lancée par la tâche planifiée
 // SambaEduAgent-SessionCompanion (principal BUILTIN\Users, At log on,
 // résident — sans limite d'exécution).
 //
 // AUCUN code réseau ni lecture de token dans ce chemin (frontière de
-// confiance NFR5) : le compagnon ne construit JAMAIS de shared.Client — il
+// confiance) : le compagnon ne construit JAMAIS de shared.Client — il
 // lit son cache per-SID (alimenté par session-fetch SYSTEM) et écrit profil
 // user + drop. Toute la logique vit dans shared.Companion (testée hôte) ;
 // ce fichier ne fait que résoudre le SID (token de processus), les chemins
@@ -181,8 +181,8 @@ func runCompanion() error {
 	// companion.log (aucune élévation, aucune ACL — profil user).
 	logger := &shared.Logger{Dir: user.Root, FileName: user.CompanionLogFile()}
 
-	// SON SID, résolu localement (token de processus — décision n° 2) :
-	// uniquement pour trouver SON cache et SON drop. Jamais transmis.
+	// SON SID, lu dans le token du processus courant : uniquement pour trouver
+	// SON cache et SON drop. Jamais transmis.
 	sid, err := currentProcessSID()
 	if err != nil {
 		detachConsole()
@@ -223,24 +223,24 @@ func runCompanion() error {
 		Engine: &shared.Engine{
 			Handlers: map[string]shared.Handler{
 				"wallpaper": &wallpaperHandler{AssetsDir: store.AssetsDir()},
-				// Story 27.1bis (D1) : l'overlay a QUITTÉ la map du compagnon.
+				// L'overlay a QUITTÉ la map du compagnon.
 				// overlay.json est désormais composé ET écrit par le SERVICE
 				// SYSTEM au logon (overlay_logon_windows.go), possédé SYSTEM +
-				// ACL <SID>:R — infalsifiable par l'élève (NFR5). Le compagnon
+				// ACL <SID>:R — infalsifiable par l'élève. Le compagnon
 				// (droits user) ne le touche plus. La composition
 				// (ComposeOverlayDocument) reste réutilisée à l'identique côté
 				// SYSTEM (golden inchangé).
-				// Story 27.1 — raccourcis (aggregate / machine_user) : pose les
-				// `.lnk` au chemin résolu serveur (fix Bug C), level-triggered,
+				// Raccourcis (aggregate / machine_user) : pose les
+				// `.lnk` au chemin résolu serveur, level-triggered,
 				// COM IShellLink natif.
 				"shortcuts": &shared.ShortcutsHandler{
-					// Story 27.7 : iconsDir = cache local des icônes uploadées
+					// IconsDir = cache local des icônes uploadées
 					// content-addressed (pré-téléchargées en SYSTEM par
 					// SyncShortcutIcons). Le compagnon pointe l'IconLocation dessus.
 					Ops: &shortcutOps{log: logger, iconsDir: store.IconsDir()},
 					Log: logger,
 				},
-				// Story 27.2 — imprimantes (aggregate / session) : connexion au
+				// Imprimantes (aggregate / session) : connexion au
 				// partage Samba imprimante (AddPrinterConnection natif), defaut
 				// pose sur l'item is_default ; level-triggered, marqueur de
 				// perimetre = serveur SambaEdu.
@@ -248,26 +248,26 @@ func runCompanion() error {
 					Ops: &printerOps{log: logger},
 					Log: logger,
 				},
-				// Story 27.2 — lecteurs reseau (aggregate / session) : montage
+				// Lecteurs reseau (aggregate / session) : montage
 				// lettre->UNC des classes du user (WNetAddConnection2 natif),
 				// level-triggered, marqueur de perimetre = serveur SambaEdu.
 				"drives": &shared.DrivesHandler{
 					Ops: &driveOps{log: logger},
 					Log: logger,
 				},
-				// Story 36.5 — app_profile (aggregate / session) : le COMPAGNON
+				// App_profile (aggregate / session) : le COMPAGNON
 				// redirige le profil applicatif (Firefox/Thunderbird) vers le home
 				// reseau (lien de dossier vers UNC + paire d'ini + marqueur de
-				// version). Donnee d'UTILISATEUR, jamais le service SYSTEM (AC2).
+				// version). Donnee d'UTILISATEUR, jamais le service SYSTEM.
 				// Report SE4 Roaming->Server (acces direct serveur sans copie).
 				// Home injoignable => item error, jamais de suppression locale
-				// (AC6). Le nom de profil managed.default est neuf/hors radical
-				// sambaedu => jamais efface par legacy_cleanup (38.3).
+				// . Le nom de profil managed.default est neuf/hors radical
+				// sambaedu => jamais efface par legacy_cleanup.
 				"app_profile": &shared.AppProfileHandler{
 					Ops: &appProfileOps{log: logger},
 					Log: logger,
 				},
-				// Story 58.1 — folders (exclusive par dossier / machine_user) :
+				// Folders (exclusive par dossier / machine_user) :
 				// le COMPAGNON redirige les dossiers shell (User Shell Folders)
 				// vers le chemin emis par le serveur — le MEME que celui ou
 				// `shortcuts` ci-dessus pose les `.lnk`. Successeur du script GPO
@@ -282,7 +282,7 @@ func runCompanion() error {
 					Registry: &registryOps{log: logger},
 					Log:      logger,
 				},
-				// Story 27.3 — registre HKCU (exclusive par cle / session) : le
+				// Registre HKCU (exclusive par cle / session) : le
 				// COMPAGNON applique les reglages de la ruche utilisateur (effet
 				// Explorer immediat). Les items HKLM (portee machine) sont
 				// appliques par le SERVICE SYSTEM (machine_windows.go), JAMAIS
@@ -291,8 +291,8 @@ func runCompanion() error {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
-				// Story 35.2 — listes registre a sous-valeurs indexees `\1..\N`
-				// (contrat §7.6, reconciliation de cle-conteneur D3). Le
+				// Listes registre a sous-valeurs indexees `\1..\N`
+				// (contrat §7.6, reconciliation de cle-conteneur). Le
 				// COMPAGNON reconcilie les conteneurs HKCU (ex. Policies\
 				// Explorer\DisallowRun de blocked_executables — effet Explorer
 				// au LOGON SUIVANT). Changement effectif => rafraichissement
@@ -301,48 +301,48 @@ func runCompanion() error {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
-				// Story 27.3bis — associations de fichiers/protocoles (exclusive
+				// Associations de fichiers/protocoles (exclusive
 				// par identifiant / session) : le COMPAGNON impose le ProgId par
 				// defaut sous HKCU UserChoice + le HASH anti-tamper (calcule
 				// agent-side a partir du SID/temps/experience du poste). ProgId
 				// absent => choix utilisateur PRESERVE (pas de clobber), error non
-				// fatal (D-Henri n5). Level-triggered, idempotent.
+				// fatal. Level-triggered, idempotent.
 				"associations": &shared.AssociationsHandler{
 					Ops: &associationsOps{log: logger},
 					Log: logger,
 				},
-				// Story 27.4 — config d'app declarative : le handler `app_config`
-				// a QUITTE la map du compagnon (correctif post-review 2026-06-17,
-				// review #1). policies.json est ecrit sous %ProgramFiles%\...\
-				// distribution\ (machine-wide, admin-write) — un compagnon aux
-				// droits user prend ACCESS_DENIED a chaque logon. Il est desormais
+				// Config d'app declarative : le handler `app_config`
+				// a QUITTE la map du compagnon. policies.json est ecrit sous
+				// %ProgramFiles%\...\distribution\ (machine-wide, admin-write)
+				// — un compagnon aux droits user prend ACCESS_DENIED a chaque
+				// logon. Il est desormais
 				// porte par le MachineEngine SYSTEM (main_windows.go), iso le
-				// handler `registry` HKLM (27.3). Le par-user de Firefox = le
+				// handler `registry` HKLM. Le par-user de Firefox = le
 				// PROFIL (mecanisme B / roaming), PAS policies.json — donc aucun
 				// niveau user perdu (resolution serveur niveaux 1-4 par parc).
 			},
 			Log: logger,
 		},
-		// Story 27.1bis (D5) : watchdog Rainmeter côté compagnon (droits user) —
+		// Watchdog Rainmeter côté compagnon (droits user)
 		// relance Rainmeter.exe (pointant la skin verrouillée ProgramData) s'il
 		// disparaît, idempotent + borné, meurt au logoff. Le portable + la
 		// config sont posés par le SERVICE SYSTEM (provisioning au bootstrap) ;
 		// le compagnon ne fait que maintenir le rendu vivant.
 		Watchdog: newRainmeterWatchdog(rainmeterPortableStore(), logger),
-		// Story 27.1ter (mode installé, D2) : avant le lancement de Rainmeter par
+		// Avant le lancement de Rainmeter par
 		// le watchdog, le compagnon (droits user) (ré)impose le Rainmeter.ini
 		// durci dans %APPDATA%\Rainmeter\, WRITABLE — supprime les modales « not
 		// writable » / « Safe Start » sur un user standard. Le SYSTEM a, lui,
 		// retiré tout Rainmeter.ini de l'arbre ProgramData (mode installé).
 		EnsureUserRainmeterIni: func() error { return ensureUserRainmeterIni(logger) },
-		// Story 43.1 : échelle de rafraîchissement de session (shell_notify <
+		// Échelle de rafraîchissement de session (shell_notify <
 		// policy_broadcast < explorer_restart) — UN geste max en fin de passe,
 		// le plus fort requis par les items HKCU effectivement changés
 		// (RefreshRequester des handlers registry/registry_list). Injectée ICI
 		// SEULEMENT : le MachineEngine SYSTEM (main_windows.go) n'a AUCUNE ops
-		// de refresh — jamais de geste en session 0 (piège n° 2).
+		// de refresh — jamais de geste en session 0.
 		Refresh: &refreshOps{log: logger},
-		// Story 2.12.3 : le drapeau `debug` est RELU à chaque passe et la console
+		// Le drapeau `debug` est RELU à chaque passe et la console
 		// suit — première observation (rattrapage de la course au logon d'un poste
 		// réinstallé) comme bascule en cours de session.
 		OnDebugChange: func(debug bool) {

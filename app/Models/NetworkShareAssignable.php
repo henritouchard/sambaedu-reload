@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
- * Story 34.1 — ligne du pivot polymorphe `network_share_assignables`.
+ * Ligne du pivot polymorphe `network_share_assignables`.
  *
  * Modèle dédié (plutôt qu'un simple `MorphPivot`) pour exposer `assignments()`
  * comme un `hasMany` itérable côté {@see NetworkShareService} (chaque ligne

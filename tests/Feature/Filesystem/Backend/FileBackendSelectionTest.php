@@ -20,10 +20,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.3 — CE QUI EST POSABLE, ET CE QUI NE SE BASCULE JAMAIS.
+ * CE QUI EST POSABLE, ET CE QUI NE SE BASCULE JAMAIS.
  *
- * Deux propriétés, et la seconde est celle qui tient D9 : une case n'est proposée
- * que si le système peut la tenir, et une fois posée, elle ne change plus.
+ * Deux propriétés : une case n'est proposée que si le système peut la tenir,
+ * et une fois posée, elle ne change plus.
  */
 class FileBackendSelectionTest extends TestCase
 {
@@ -98,10 +98,6 @@ class FileBackendSelectionTest extends TestCase
         $this->selection()->resolve('nextcloud_delegue');
     }
 
-    // =========================================================================
-    // D9 — le choix se fait à la création, et jamais après
-    // =========================================================================
-
     /** La matérialisation d'une recette porte le choix, et l'écrit hors du remplissage de masse. */
     #[Test]
     public function a_materialised_share_carries_the_chosen_backend(): void
@@ -153,7 +149,7 @@ class FileBackendSelectionTest extends TestCase
      * **AUCUN CHEMIN DE BASCULE.** La colonne reste hors du remplissage de masse : un
      * `create()` ou un `fill()` ne peut pas la faire entrer, et le seul écrivain est
      * le geste de création. La migration outillée d'un partage provisionné est le
-     * chantier D9 — cette story la rend nécessaire, elle ne la livre pas.
+     * chantier suivant : rendue nécessaire ici, elle n'est pas livrée ici.
      */
     #[Test]
     public function a_provisioned_share_never_switches_backend(): void

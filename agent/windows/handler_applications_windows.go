@@ -17,20 +17,20 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `applications` (Story 27.5) — DÉCLENCHE le moteur
-// WPKG local à la place de la GPO `se4_wpkg`, en SERVICE SYSTEM (portée MACHINE,
-// leçon 🔴 27.4 #1 : WPKG installe machine-wide).
+// Câblage Windows du handler `applications` — DÉCLENCHE le moteur
+// WPKG local à la place de la GPO `se4_wpkg`, en SERVICE SYSTEM (portée
+// MACHINE : WPKG installe machine-wide).
 //
 // « UN TUYAU, DEUX OUTILS » : l'agent donne l'URL du bundle au bootstrap +
-// DÉPOSE le profil par-hôte localement (D9) + DÉCLENCHE `wpkg-client.vbs` ; c'est
+// DÉPOSE le profil par-hôte localement + DÉCLENCHE `wpkg-client.vbs` ; c'est
 // le CLIENT qui télécharge le bundle depuis Apache (l'agent ne télécharge pas :
-// ni blocage, ni goroutine, zéro charge Laravel — D7). WPKG reste le moteur
+// ni blocage, ni goroutine, zéro charge Laravel). WPKG reste le moteur
 // déclaratif (résolution de dépendances, `<check>/<install>/<upgrade>`) — non
 // absorbé. Le SHELL-OUT vers le moteur WPKG est la SEULE exception justifiée à
 // « API native, zéro shell-out » : déclencher un moteur externe ne s'écrit pas en
 // Win32.
 //
-// AUCUNE dépendance AD (NFR7, vérifié) : `wpkg-client.vbs`/`wpkg-se4.js` ne
+// AUCUNE dépendance AD (vérifié) : `wpkg-client.vbs`/`wpkg-se4.js` ne
 // lisent l'AD que via `getHostGroups()` (`WinNT://…`) wrappé try/catch JAMAIS
 // utilisé (matching par NOM). L'identité du poste = locale
 // (`WScript.Network.ComputerName`). Le seul prérequis posé ici est la variable
@@ -46,12 +46,12 @@ type applicationsOps struct {
 	// store : accès à la config locale (`server_url`) — l'URL du bundle est
 	// dérivée à CHAUD au déclenchement (server_url + WpkgBundlePath), donnée au
 	// bootstrap via l'environnement du process déclenché. L'agent ne télécharge
-	// PAS (D7). nil = bundle URL vide (le client retombera sur son défaut).
+	// PAS. nil = bundle URL vide (le client retombera sur son défaut).
 	store *shared.Store
 }
 
 // bundleURL : URL du sous-dossier Apache servant le bundle WPKG pré-substitué
-// (D10). Dérivée de `server_url` (config locale) + {@link shared.WpkgBundlePath}.
+// Dérivée de `server_url` (config locale) + {@link shared.WpkgBundlePath}.
 // Donnée au bootstrap — l'agent ne télécharge PAS. Vide si la config est
 // illisible (best-effort : le client a son propre défaut).
 func (o *applicationsOps) bundleURL() string {
@@ -67,7 +67,7 @@ func (o *applicationsOps) bundleURL() string {
 }
 
 // toolsURL : base URL de l'alias Apache servant les OUTILS PARTAGÉS WPKG + leur
-// `manifest.json` (Story 27.20). Dérivée de `server_url` + {@link
+// `manifest.json`. Dérivée de `server_url` + {@link
 // shared.WpkgToolsPath} — EXACTEMENT comme bundleURL dérive WpkgBundlePath.
 // Contrairement au bundle, c'est l'AGENT qui pilote ce provisioning (fetch du
 // manifeste + provision.Reconcile, AVANT de déclencher WPKG). Vide si la config
@@ -205,7 +205,7 @@ func (o *applicationsOps) resolveSe4fs() string {
 }
 
 // ListInstalled lit la base d'état locale de WPKG (`wpkg.xml`) — source de
-// vérité PAR PAQUET (D5). Spike : on tente les DEUX chemins communs (le
+// vérité PAR PAQUET. On tente les DEUX chemins communs (le
 // `settings_file_path = null` de `wpkg-se4.js` fait chercher le fichier dans le
 // dossier système, mais l'emplacement varie) :
 //
@@ -274,7 +274,7 @@ func (o *applicationsOps) DeployedProfileAppIds() ([]string, error) {
 	return ids, nil
 }
 
-// wpkgXMLCandidatePaths : chemins candidats de `wpkg.xml` (D5), dans l'ordre
+// wpkgXMLCandidatePaths : chemins candidats de `wpkg.xml`, dans l'ordre
 // de préférence. Chemin réel (prioritaire) : `%SystemRoot%\system32\wpkg.xml`
 // — `wpkg-se4.js::getSettingsPath()` résout `fso.GetSpecialFolder(1)` =
 // System32 quand `settings_file_path = null` (défaut, ligne 531 du script).
@@ -306,7 +306,7 @@ func (o *applicationsOps) wpkgXMLCandidatePaths() []string {
 	return paths
 }
 
-// TriggerWpkg dépose le profil par-hôte (D9) puis DÉCLENCHE le moteur WPKG local.
+// TriggerWpkg dépose le profil par-hôte puis DÉCLENCHE le moteur WPKG local.
 // L'agent ne télécharge PAS le bundle : il pose `profiles.xml`/`hosts.xml` en
 // local (générés depuis l'ensemble cible — il a déjà la liste) et lance
 // `cscript //B //NoLogo wpkg-client.vbs /NOTempo` ; le client télécharge le
@@ -320,12 +320,12 @@ func (o *applicationsOps) TriggerWpkg(specs []shared.ApplicationsSpec) (shared.W
 		}
 	}
 	// Un hostname vide produirait profiles.xml/hosts.xml avec id="" non matchable
-	// par wpkg-se4.js → jamais un faux compliant (leçon 🟠 27.4 #7).
+	// par wpkg-se4.js → jamais un faux compliant.
 	if hostname == "" {
 		return shared.WpkgResult{}, fmt.Errorf("hostname indéterminable (COMPUTERNAME absent + os.Hostname() en échec) — le profil wpkg.xml ne serait pas matché par wpkg-se4.js")
 	}
 
-	// 1. Déposer le profil par-hôte localement (D9) — zéro endpoint Laravel.
+	// 1. Déposer le profil par-hôte localement — zéro endpoint Laravel.
 	if err := o.dropHostProfile(hostname, specs); err != nil {
 		return shared.WpkgResult{}, fmt.Errorf("dépôt du profil par-hôte : %w", err)
 	}
@@ -338,8 +338,8 @@ func (o *applicationsOps) TriggerWpkg(specs []shared.ApplicationsSpec) (shared.W
 		return shared.WpkgResult{}, err
 	}
 
-	// 2bis. Stager les OUTILS PARTAGÉS WPKG (Story 27.20) AVANT le run : l'agent
-	//    fetch le manifeste (/wpkg/tools/manifest.json), réconcilie par hash et
+	// 2bis. Stager les OUTILS PARTAGÉS WPKG AVANT le run : l'agent
+	//  fetch le manifeste (wpkg/tools/manifest.json), réconcilie par hash et
 	//    dépose les outils sous %WinDir%\install\wpkg\tools\ (= %Z%\wpkg\tools\).
 	//    FAIL-SOFT : un manifeste/outil en échec ne bloque JAMAIS le déclenchement
 	//    (les recettes qui en dépendent échoueront côté poste, pas le run global).
@@ -370,7 +370,7 @@ func (o *applicationsOps) TriggerWpkg(specs []shared.ApplicationsSpec) (shared.W
 	out, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		// Code de sortie d'échec global du moteur WPKG → error (les autres types
-		// convergent ; jamais un faux compliant, leçon 🟠 27.4 #7).
+		// convergent ; jamais un faux compliant).
 		o.logf("Déclenchement WPKG (%s) en échec : %v — sortie : %s", vbs, runErr, truncate(string(out), 500))
 
 		return shared.WpkgResult{}, fmt.Errorf("cscript wpkg-client.vbs : %w", runErr)
@@ -386,9 +386,10 @@ func (o *applicationsOps) TriggerWpkg(specs []shared.ApplicationsSpec) (shared.W
 	return shared.WpkgResult{Triggered: true, Installed: installed}, nil
 }
 
-// dropHostProfile écrit `profiles.xml` + `hosts.xml` dans `%ProgramData%\SambaEdu\wpkg`
-// (D9) depuis l'ensemble cible. Le schéma matche EXACTEMENT le serving SE5
-// (ProfilesXmlController / HostsXmlController) : `<profiles><profile id=HOST>
+// dropHostProfile écrit `profiles.xml` + `hosts.xml` dans
+// `%ProgramData%\SambaEdu\wpkg` depuis l'ensemble cible. Le schéma matche
+// EXACTEMENT le serving SE5 (ProfilesXmlController / HostsXmlController) :
+// `<profiles><profile id=HOST>
 // <package package-id=…/></profile></profiles>` et `<wpkg><host name=HOST
 // profile-id=HOST/></wpkg>`. Écriture atomique (tmp + rename) — le client ne lit
 // jamais un fichier à demi écrit.
@@ -440,8 +441,6 @@ func (o *applicationsOps) dropHostProfile(hostname string, specs []shared.Applic
 	return nil
 }
 
-// --- Sérialisation XML du profil par-hôte (schéma iso serving SE5) -----------
-
 type xmlProfiles struct {
 	XMLName  xml.Name     `xml:"profiles"`
 	Profiles []xmlProfile `xml:"profile"`
@@ -491,8 +490,6 @@ func marshalXMLDoc(v any) ([]byte, error) {
 	return append([]byte(xml.Header), append(body, '\n')...), nil
 }
 
-// --- Lecture de wpkg.xml (état installé par paquet) ---------------------------
-
 // parseWpkgXMLInstalled extrait l'ensemble des `package-id` installés de la base
 // d'état locale de WPKG. WPKG stocke chaque paquet installé en `<package id="…"
 // …/>` (namespace `http://www.wpkg.org/settings`) ; on lit l'attribut `id` de
@@ -527,8 +524,6 @@ func parseWpkgXMLInstalled(raw []byte) ([]string, error) {
 
 	return ids, nil
 }
-
-// --- Helpers ------------------------------------------------------------------
 
 // writeFileAtomicLocal : écriture atomique locale (tmp + rename) — le client ne
 // lit jamais un fichier à demi écrit. Nettoie le tmp sur tout échec.

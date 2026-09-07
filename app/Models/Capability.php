@@ -11,11 +11,10 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Carbon;
 
 /**
- * Epic 27 — Capacité : intention métier OS-agnostique donnée aux postes
- * (rewrite « capability-first » du registre, décision 2026-06-17).
+ * Capacité : intention métier OS-agnostique donnée aux postes.
  *
  * Source d'autorité de l'authoring (remplace l'ancien modèle `RegistrySetting`,
- * superseded en 27.12). Une
+ * superseded). Une
  * capacité porte son modèle de valeur (toggle/enum/scalar), son défaut diffusé,
  * ses métadonnées (warning, applicabilité OS) ; sa MATÉRIALISATION par OS/
  * mécanisme vit dans {@see CapabilityProjection}. Le `key`/`id` ne fuite JAMAIS
@@ -200,16 +199,16 @@ class Capability extends Model
     }
 
     /**
-     * Story 43.2 (D6) — hint de rafraîchissement le plus FORT parmi les
+     * Hint de rafraîchissement le plus FORT parmi les
      * projections windows `registry`/`registry_list` dont le `spec` porte un
      * `refresh` VALIDE (vocabulaire fermé) — la bi-projection (ex.
      * `blocked_executables`) prend le max. `null` si aucune projection ne porte
      * de hint valide (comportement legacy : effet au prochain logon).
      *
      * Lit la relation `projections` DÉJÀ eager-loaded par l'appelant (zéro
-     * requête ajoutée, D6) — un appelant qui n'a chargé qu'un sous-ensemble de
+     * requête ajoutée) — un appelant qui n'a chargé qu'un sous-ensemble de
      * mécanismes ne verra que les hints de ce sous-ensemble (sans impact
-     * pratique aujourd'hui : le retrofit 43.2 pose le MÊME hint dans les deux
+     * pratique aujourd'hui : le retrofit pose le MÊME hint dans les deux
      * specs d'une bi-projection).
      */
     public function refreshHint(): ?string
@@ -247,7 +246,7 @@ class Capability extends Model
 
     /**
      * Une projection windows registry/registry_list de cette capacité porte-t-elle
-     * AU MOINS une clé/conteneur `hive: HKCU` ? (D5 — condition d'affichage d'un
+     * AU MOINS une clé/conteneur `hive: HKCU` ? (condition d'affichage d'un
      * badge : une capacité 100 % machine/HKLM/HKU — firewall, fs_acl, machine-only…
      * — n'a AUCUNE clé HKCU registre et n'affiche donc jamais de badge de
      * temporalité, sous peine de mensonge inverse.)
@@ -279,8 +278,8 @@ class Capability extends Model
     }
 
     /**
-     * Story 43.2 (D5/D6, FR-A3) — temporalité d'effet affichée en UI. `null` =
-     * AUCUN badge (D5 : capacité sans clé HKCU registre — machine-only, firewall,
+     * Temporalité d'effet affichée en UI. `null` =
+     * AUCUN badge (capacité sans clé HKCU registre — machine-only, firewall,
      * fs_acl… — afficher « à la prochaine session » y serait un mensonge inverse).
      * Sinon : `shell_notify`/`policy_broadcast` → « Immédiat » ; `explorer_restart`
      * → « Immédiat (le bureau redémarre) » ; hint ABSENT (mais ≥ 1 clé HKCU) →

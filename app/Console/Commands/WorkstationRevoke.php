@@ -15,21 +15,18 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.10 — T7.1 / D4.
- *
  * Commande Artisan `workstation:revoke <uuid>` :
  *
  *  - Marque révoqués **tous** les refresh tokens actifs du `workstation_uuid`
  *    via `WorkstationJwtRefreshService::revokeAllRefreshesForWorkstation`.
  *  - Insère une entrée `workstation_jwt_revocations` "marker" par workstation
- *    (jti synthétique unique + `revoked_at = now()` qui sert de cutoff pour
- *    le check workstation-wide du `WorkstationJwtRevocationChecker` — Q3
- *    review 16.10).
+ *  (jti synthétique unique + `revoked_at = now()` qui sert de cutoff pour
+ *    le check workstation-wide du `WorkstationJwtRevocationChecker`).
  *  - Push le flag cache APCu workstation-wide (clé `jwt:revoked_ws:<uuid>`
  *    valeur = timestamp `revoked_at`, TTL `manual_revoke_cache_ttl` default
  *    3600s) pour invalidation rapide multi-workers.
  *
- * **Effet sur les access tokens en cours (Q3 review 16.10)** : grâce au
+ * **Effet sur les access tokens en cours** : grâce au
  * check workstation-wide du Checker (`isRevoked($jti, $sub, $iat)`), tous
  * les JWT émis avec `iat <= revoked_at` pour ce poste sont désormais
  * invalidés en moins de 60s (TTL cache APCu). Plus de fenêtre 10h résiduelle
@@ -111,7 +108,6 @@ class WorkstationRevoke extends Command
         // 2. Cascade refresh
         $count = $refreshService->revokeAllRefreshesForWorkstation($uuid, $reason, $by);
 
-        // 3. Marker
         $this->insertMarkerRevocation($uuid, $reason, $by, $checker);
 
         $this->info(sprintf('Revoked %d refresh token(s) for workstation %s', $count, $uuid));

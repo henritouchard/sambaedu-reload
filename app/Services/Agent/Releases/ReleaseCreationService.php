@@ -12,37 +12,35 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 25.1 — Cycle de vie des releases agent côté serveur (D6, FR24, AC1).
+ * Cycle de vie des releases agent côté serveur.
  *
  * SEUL écrivain des tables `agent_releases` / `agent_release_rings` (les
- * commandes artisan 25.1 et l'UI 25.5 passent par lui). Trois opérations :
+ * commandes artisan et l'UI passent par lui). Trois opérations :
  *
  *  - {@see create()} — création VÉRIFIÉE : le `--hash` déclaré (produit par
- *    le pipeline de build 24.5) est contre-vérifié par `hash_file('sha256')`
+ *  le pipeline de build) est contre-vérifié par `hash_file('sha256')`
  *    sur le fichier réel de `releases_path`. Toute incohérence (fichier
  *    absent/illisible, hash divergent, version dupliquée, formats invalides)
  *    = refus AVANT toute écriture ({@see ReleaseOperationException}, log
  *    `agent.release.rejected`) — impossible de publier un artefact
- *    incohérent. Piège n° 5 assumé : le SHA-256 d'un FICHIER binaire n'est
- *    pas un hash d'ÉTAT — `hash_file()` standard est l'outil correct ici,
- *    l'anti-pattern « hash ad hoc » (enforcement n° 2) vise les hashes JSON
- *    canonicalisés, domaine exclusif de `StateHasher`.
+ *    incohérent. Le SHA-256 d'un FICHIER binaire n'est PAS un hash d'ÉTAT :
+ *    `hash_file()` standard est l'outil correct ici, l'interdit du « hash ad
+ *    hoc » ne vise que les hashes de JSON canonicalisé, domaine exclusif de
+ *    `StateHasher`.
  *  - {@see promote()} — déplace le pointeur stable (au plus une ligne à
  *    true, invariant TRANSACTIONNEL — pas de contrainte partielle PG,
- *    parité SQLite des tests). C'est le rollback du défaut parc avant
- *    l'UI 25.5.
+ *    parité SQLite des tests). C'est le rollback du défaut parc.
  *  - {@see target()} — cible un ring (UN WorkstationGroup existant) sur une
- *    version : `updateOrCreate` + `touch()` — le touch garantit le
+ *  version : `updateOrCreate` + `touch()` — le touch garantit le
  *    rafraîchissement d'`updated_at` même si la ligne est inchangée
  *    (re-ciblage de la même version = cas rollback), cohérent avec la règle
- *    de récence (décision n° 4).
+ *    de récence.
  *
  * Domaines fermés validés EN CODE (regex) — SQLite n'applique pas les
- * varchar en test (piège n° 9). Frontière AC5 : aucune écriture hors
+ * varchar en test. Frontière : aucune écriture hors
  * `agent_*` (le ciblage LIT le WorkstationGroup passé par l'appelant).
  * Intégrité : SHA-256 à la création (ici) ; la vérification de SIGNATURE
- * Authenticode avant exécution = l'agent (25.2), jamais le serveur
- * (décision n° 8).
+ * Authenticode avant exécution revient à l'agent, jamais au serveur.
  */
 class ReleaseCreationService
 {
@@ -56,7 +54,7 @@ class ReleaseCreationService
     private const HASH_PATTERN = '/^[0-9a-f]{64}$/';
 
     /**
-     * Crée une release après contre-vérification du hash déclaré (AC1).
+     * Crée une release après contre-vérification du hash déclaré.
      * Refus = exception, AUCUNE écriture.
      *
      * @throws ReleaseOperationException
@@ -99,7 +97,7 @@ class ReleaseCreationService
             ));
         }
 
-        // Piège n° 5 : hash de FICHIER binaire — hash_file() standard, PAS
+        // Hash de FICHIER binaire — hash_file() standard, PAS
         // StateHasher (réservé aux hashes d'état JSON canonicalisé).
         $computed = hash_file('sha256', $path);
         if ($computed === false) {
@@ -129,7 +127,7 @@ class ReleaseCreationService
         $release = DB::transaction(function () use ($version, $filename, $declaredHash, $stable): AgentRelease {
             if ($stable) {
                 // Invariant « au plus une stable » : swap transactionnel,
-                // sérialisé par verrou (review 25.1 #1 — deux publications
+                // sérialisé par verrou (deux publications
                 // simultanées passent l'une après l'autre, jamais 2 stables).
                 $this->lockStablePointer();
                 AgentRelease::query()->where('is_stable', true)->update(['is_stable' => false]);
@@ -154,7 +152,7 @@ class ReleaseCreationService
     }
 
     /**
-     * Déplace le pointeur stable sur une version existante (décision n° 5).
+     * Déplace le pointeur stable sur une version existante.
      *
      * @throws ReleaseOperationException version inconnue
      */
@@ -184,7 +182,7 @@ class ReleaseCreationService
     }
 
     /**
-     * Cible un ring (= un WorkstationGroup) sur une version (décision n° 6).
+     * Cible un ring (= un WorkstationGroup) sur une version.
      * Idempotent ; rafraîchit TOUJOURS `updated_at` (donnée de récence —
      * un re-ciblage de la même version doit regagner la précédence).
      *
@@ -216,7 +214,7 @@ class ReleaseCreationService
     }
 
     /**
-     * Refus AC1 : log warning `agent.release.rejected` (raison machine +
+     * Refus : log warning `agent.release.rejected` (raison machine +
      * contexte borné — input opérateur) puis exception, AUCUNE écriture.
      */
     private function reject(string $reason, string $version, string $filename, string $message): ReleaseOperationException
@@ -232,7 +230,7 @@ class ReleaseCreationService
     }
 
     /**
-     * Sérialise les écritures du pointeur stable (review 25.1 #1). Un
+     * Sérialise les écritures du pointeur stable. Un
      * lockForUpdate sur les lignes stables ne suffit pas (phantom : deux
      * create --stable sans stable existante ne se verraient pas) — verrou
      * advisory PG lié à la transaction. SQLite (tests) sérialise déjà

@@ -11,7 +11,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 5.2 (D5=D + AC 11) — Filet de sécurité bulk pour la re-synchronisation
+ * Filet de sécurité bulk pour la re-synchronisation
  * des partages de classe (`/var/sambaedu/Classes/Classe_<name>`).
  *
  * Reproduit le pattern legacy "bouton Mise à jour des classes" de
@@ -20,30 +20,30 @@ use Illuminate\Support\Facades\Log;
  *
  * Modes :
  *  - Sans `--class=` : itère sur tous les `UserGroup::where('type','classe')`
- *    actifs et applique `ShareService::createClassShare()` (idempotent : pas
+ *  actifs et applique `ShareService::createClassShare()` (idempotent : pas
  *    de destruction, juste re-application des ACLs canoniques).
  *  - Avec `--class=<name>` : ciblage par nom (string) ; permet de scoper la
  *    réparation à une seule classe (cas de dérive locale après opération
  *    manuelle shell).
  *  - `--dry-run` : affiche la liste des classes qui seraient traitées sans
- *    rien appliquer (cohérent pattern `quota:seed-from-legacy --dry-run` 5.1d).
+ *  rien appliquer (cohérent pattern `quota:seed-from-legacy --dry-run`).
  *  - `--performed-by=<value>` : trace l'auteur dans `quota_audit_logs`
  *    (D10=A) ; défaut `'shares:resync-class'`. Validé par regex anti-log
  *    poisoning (cohérent `trash:purge --performed-by`).
  *
  * Verrouillage (cohérent `ShareService::createClassShare`) : `ShareService`
  * acquiert lui-même un `Cache::lock('shares:resync:'.$groupId, 60)` per-class.
- * On NE pose PAS de lock additionnel ici (review 5.2 #2 Q3) — un double-lock
+ * On NE pose PAS de lock additionnel ici — un double-lock
  * créait une race condition microseconde entre release+re-acquire dans le
  * service. `createClassShare` retourne `false` en cas de lock non disponible :
  * comptabilisé en `failed` (pas en `locked`). Le compteur `locked` du rapport
  * agrège les retours `false` du service quand sa cause est un lock concurrent
  * (best-effort lecture des logs, pas d'API explicit pour le moment).
  *
- * Codes de retour (review 5.2 #2 Q3) :
+ * Codes de retour :
  *  - `0` (SUCCESS)       : `$resynced > 0` ou aucune classe à traiter (no-op).
  *  - `1` (FAILURE)       : `$failed > 0` (au moins une classe en erreur).
- *  - `2`                 : `$resynced === 0 && $failed === 0 && $locked > 0` —
+ *  - `2` : `$resynced === 0 && $failed === 0 && $locked > 0`
  *                          toutes les classes étaient verrouillées par une autre
  *                          opération en cours. À monitorer en cron : un retour 2
  *                          systématique = lock orphelin ou race chronique.
@@ -152,7 +152,7 @@ class SharesResyncClassCommand extends Command
         }
 
         // Application réelle.
-        // Note review 5.2 #2 Q3 : pas de double-lock. `ShareService::createClassShare`
+        // Pas de double-lock : `ShareService::createClassShare`
         // gère lui-même un `Cache::lock` per-class. On distingue `locked` de `failed`
         // via une heuristique sur le code de retour : `null` = lock indisponible
         // (réservé futur), `false` = échec, `true` = succès. À l'instant T,
@@ -252,7 +252,7 @@ class SharesResyncClassCommand extends Command
             ));
         }
 
-        // Codes de retour (review 5.2 #2 Q3) :
+        // Codes de retour :
         //   - 1 (FAILURE) si au moins une classe a échoué.
         //   - 2           si toutes verrouillées (rien fait, le cron doit alerter).
         //   - 0 (SUCCESS) sinon (au moins une classe re-synchronisée OU no-op trivial).

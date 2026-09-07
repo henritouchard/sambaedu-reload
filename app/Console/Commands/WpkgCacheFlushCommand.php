@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.2 / AC6.2 — Flush ciblé des caches packages WPKG.
+ * Flush ciblé des caches packages WPKG.
  */
 final class WpkgCacheFlushCommand extends Command
 {

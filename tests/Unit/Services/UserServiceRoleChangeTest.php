@@ -65,10 +65,6 @@ class UserServiceRoleChangeTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // Tests changeUserRole() — Permissions
-    // =========================================================================
-
     #[Test]
     public function changeUserRole_rejects_when_no_permission(): void
     {
@@ -78,10 +74,6 @@ class UserServiceRoleChangeTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('droits', $result['message']);
     }
-
-    // =========================================================================
-    // Tests changeUserRole() — Validation
-    // =========================================================================
 
     #[Test]
     public function changeUserRole_rejects_administratif_without_fonction(): void
@@ -109,10 +101,6 @@ class UserServiceRoleChangeTest extends TestCase
         $this->assertStringContainsString('introuvable', $result['message']);
     }
 
-    // =========================================================================
-    // Tests moveUserDn() — Pas de move si inchangé
-    // =========================================================================
-
     #[Test]
     public function moveUserDn_returns_success_when_no_change_needed(): void
     {
@@ -134,10 +122,6 @@ class UserServiceRoleChangeTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertStringContainsString('Aucun déplacement', $result['message']);
     }
-
-    // =========================================================================
-    // Tests moveUserDn() — Déplacement effectif
-    // =========================================================================
 
     #[Test]
     public function moveUserDn_calls_ensureOUsExist_and_attempts_ldap_rename(): void
@@ -171,10 +155,6 @@ class UserServiceRoleChangeTest extends TestCase
         $this->assertFalse($result['success']);
         // Mockery vérifie que ensureUserOUsExist a été appelé une fois avec les bons params
     }
-
-    // =========================================================================
-    // Tests cas spéciaux Documentaliste/AESH
-    // =========================================================================
 
     #[Test]
     public function moveUserDn_places_documentaliste_under_profs(): void
@@ -239,10 +219,6 @@ class UserServiceRoleChangeTest extends TestCase
         // ensureUserOUsExist appelé avec 'Profs' vérifié par Mockery
         $this->assertFalse($result['success']); // fake connection
     }
-
-    // =========================================================================
-    // Tests syncRoleGroups()
-    // =========================================================================
 
     #[Test]
     public function syncRoleGroups_removes_old_category_group_and_adds_new(): void

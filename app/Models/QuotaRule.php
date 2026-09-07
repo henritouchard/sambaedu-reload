@@ -45,7 +45,6 @@ class QuotaRule extends Model implements Wireable
     /**
      * LE DÉFAUT D'INSTANCE — une ligne par partition, `target` à `null`.
      *
-     * ---------------------------------------------------------------------------
      * **IL A REMPLACÉ QUATRE TYPES** (`…_eleve`, `…_prof`, `…_admin`,
      * `…_itinerant`), et ce n'est pas une simplification cosmétique : ces quatre-là
      * n'étaient attachés à RIEN. Le type retenu pour un compte se devinait par deux
@@ -61,7 +60,6 @@ class QuotaRule extends Model implements Wireable
      *
      * La bascule des lignes existantes est faite UNE FOIS par la migration
      * `2026_08_15_100000_collapse_quota_profile_defaults`.
-     * ---------------------------------------------------------------------------
      */
     public const TYPE_DEFAULT = 'default';
 
@@ -144,9 +142,6 @@ class QuotaRule extends Model implements Wireable
         return (int) round(($this->quota_hard_mb - $this->quota_soft_mb) / $this->quota_soft_mb * 100);
     }
 
-    /**
-     * Retourne le label du type
-     */
     public function getTypeLabel(): string
     {
         return match ($this->type) {
@@ -157,9 +152,6 @@ class QuotaRule extends Model implements Wireable
         };
     }
 
-    /**
-     * Retourne le label de la partition
-     */
     public function getPartitionLabel(): string
     {
         return match ($this->partition) {

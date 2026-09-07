@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Oidc\Concerns;
 
 /**
- * Story 55.1 — Pointe `config('oidc.*')` sur la paire RS256 de test.
+ * Pointe `config('oidc.*')` sur la paire RS256 de test.
  *
  * On **réutilise** `tests/fixtures/auth-v1/{private,public}.pem` (paire TEST
  * ONLY déjà commitée) plutôt que de générer une clé au `setUp()` : la

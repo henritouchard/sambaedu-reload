@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 6.2 — Table SER pour les pilotes Windows associés aux imprimantes Samba.
+ * Table SER pour les pilotes Windows associés aux imprimantes Samba.
  *
  * Complète Samba sans le remplacer : `rpcclient enumdrivers` reste source de
  * vérité runtime pour la liste effective des drivers publiés sur `[print$]`.
@@ -21,11 +21,11 @@ use Illuminate\Support\Facades\Schema;
  *
  * PK composite : `(printer_cups_name, architecture)` — un même driver peut
  * être rattaché à plusieurs imprimantes (1 ligne par imprimante), et une
- * imprimante peut avoir des variantes x64 / x86 (D5 6.2 = x64 uniquement
- * en pratique, mais la PK ouvre la porte à 6.2bis sans migration).
+ * imprimante peut avoir des variantes x64 / x86 (x64 uniquement
+ * en pratique, mais la PK ouvre la porte sans migration).
  *
  * Réconciliation via `php artisan printer-drivers:sync` (planifié 03:35,
- * idempotent, skip orphan-marking si Samba down — cohérent fix #12 6.1).
+ * idempotent, skip orphan-marking si Samba down).
  */
 return new class extends Migration
 {

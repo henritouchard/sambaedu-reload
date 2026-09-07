@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.5 — AC4.1 / AC5.1 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/installation-windows`.
  */
@@ -73,7 +73,6 @@ class IpxeInstallationWindowsEndpointTest extends TestCase
         // Sections de chain.
         self::assertStringContainsString(':install_win11', $body);
         self::assertStringContainsString('/ipxe/action/install_win11##params', $body);
-        // Default = install_win11.
         self::assertStringContainsString('set menu-default install_win11', $body);
     }
 

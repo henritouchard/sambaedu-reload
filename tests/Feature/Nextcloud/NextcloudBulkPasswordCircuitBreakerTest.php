@@ -27,7 +27,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.1, revue #5 — LE DISJONCTEUR DE LOT DE LA PROPAGATION DE MOT DE PASSE.
+ * LE DISJONCTEUR DE LOT DE LA PROPAGATION DE MOT DE PASSE.
  *
  * `bulkResetPasswords` s'exécute **dans le cycle d'une requête HTTP** (la modale
  * de réinitialisation l'appelle synchrone). Chaque propagation vers une instance
@@ -84,7 +84,7 @@ class NextcloudBulkPasswordCircuitBreakerTest extends TestCase
         foreach (self::LOGINS as $login) {
             $user = User::query()->create(['login' => $login, 'role' => 'eleve', 'is_active' => true]);
             // L'identité Nextcloud est résolue : la propagation est donc ARMÉE
-            // pour chacun de ces comptes (double condition de l'AC7 tenue).
+            // pour chacun de ces comptes (double condition tenue).
             $user->nextcloud_user_id = $login . '-nc';
             $user->saveQuietly();
 

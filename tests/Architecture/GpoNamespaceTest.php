@@ -16,14 +16,14 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Epic 16 (Story 16.1 / AC2.2).
+ * Garde-fou architectural.
  *
  * Vérifie que le namespace `App\Gpo\*` respecte les invariants techniques :
  *
  * 1. **Pas d'import direct de `LdapRecord\*`** — la lecture AD passe par les
  *    shims existants (`App\LdapModels\*`) ou par `samba-tool gpo` via
  *    `GpoService` (= source de vérité GPO). Aucune exception whitelistée
- *    pour Story 16.1.
+ * pour.
  *
  * 2. **Pas d'appel `exec()` / `shell_exec()` / `passthru()` / `proc_open()`
  *    direct** dans les fichiers sous `app/Gpo/` autre que `SambaToolRunner`
@@ -33,10 +33,10 @@ use Symfony\Component\Finder\Finder;
  *    uniquement via `GpoService` qui passe par `SambaToolRunner`. Cela
  *    empêche le namespace `App\Gpo` de retomber dans le legacy.
  *
- * Limitations connues (cf. Story 15.1) :
+ * Limitations connues :
  *
  * - Seuls les `use` statements (Use_, GroupUse) sont scannés pour l'import
- *   LdapRecord. Les FQCN inline (`new \LdapRecord\Connection()`) ne sont
+ *  LdapRecord. Les FQCN inline (`new \LdapRecord\Connection()`) ne sont
  *   pas détectés. La couverture complète arrivera avec une PHPStan rule.
  * - La détection `exec()`/`shell_exec()`/`sambatool()` se fait via une regex
  *   sur le code source — détecte aussi les commentaires. Acceptable pour ce
@@ -44,7 +44,7 @@ use Symfony\Component\Finder\Finder;
  *   positifs sur commentaires, qu'il faut alors corriger).
  *
  * @todo Migrer vers ArchTest / PHPStan rule lorsqu'un de ces outils sera
- *       introduit dans le projet (ticket tooling séparé hors scope 16.1).
+ *  introduit dans le projet (ticket tooling séparé hors scope).
  */
 class GpoNamespaceTest extends TestCase
 {
@@ -57,12 +57,12 @@ class GpoNamespaceTest extends TestCase
      * Fichiers (basename) whitelistés pour la facade `Process` — utilisations
      * légitimes hors `SambaToolRunner` :
      *
-     * - `SambaToolRunner.php` (16.1) : point d'entrée samba-tool.
-     * - `GenerateWineImageJob.php` (16.3c) : invoque `make_wine_image.sh` en
+     * - `SambaToolRunner.php` : point d'entrée samba-tool.
+     * - `GenerateWineImageJob.php` : invoque `make_wine_image.sh` en
      *   mode array (audit §6.F F7). Pas une commande samba-tool, pas le bon
      *   niveau d'abstraction pour `SambaToolRunner`. Garde-fou de mode array
      *   maintenu via `it_uses_process_in_array_mode_in_generate_wine_image_job`.
-     * Story 27.14 : `ApplicationScriptsGenerator.php` (16.7) a été supprimé avec
+     * `ApplicationScriptsGenerator.php` a été supprimé avec
      * le canal de génération de scripts applications legacy — retiré de la
      * whitelist.
      */
@@ -76,8 +76,8 @@ class GpoNamespaceTest extends TestCase
      * Cas exceptionnel : portage iso-legacy d'une commande shell (avec pipe)
      * non trivialement convertible à `Process::run(array)` ou samba-tool.
      *
-     * Story 27.14 : `NetworkScriptGenerator.php` a été supprimé avec le canal
-     * de config legacy (lecteurs réseau portés au canal agent en 27.2) — la
+     * `NetworkScriptGenerator.php` a été supprimé avec le canal
+     * de config legacy (lecteurs réseau portés au canal agent) — la
      * whitelist est désormais vide.
      *
      * @var list<string>
@@ -116,7 +116,7 @@ class GpoNamespaceTest extends TestCase
      * @var list<array{pattern: string, label: string}>
      */
     private const FORBIDDEN_LEGACY_FUNCTIONS = [
-        // \b sambatool \s* \( — détecte sambatool() comme appel de fonction
+        // \b sambatool \s* \(détecte sambatool() comme appel de fonction
         // (préfixé éventuellement par `\` ou un espace), pas comme nom de
         // classe ou méthode (sambatool::).
         ['pattern' => '/(?<![A-Za-z0-9_:>])sambatool\s*\(/i', 'label' => 'fonction legacy sambatool()'],
@@ -229,7 +229,7 @@ class GpoNamespaceTest extends TestCase
 
             $code = $file->getContents();
 
-            // Suppression naïve des commentaires (// et /* */) pour limiter
+            // Suppression naïve des commentaires (/ et /* */) pour limiter
             // les faux positifs sur les docblocks qui mentionneraient exec().
             $stripped = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;
             $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
@@ -237,7 +237,7 @@ class GpoNamespaceTest extends TestCase
             // Règles interdites PARTOUT (exec/shell_exec/passthru/proc_open) —
             // même SambaToolRunner doit passer exclusivement par la facade Process.
             // Exception : fichiers explicitement listés dans EXEC_WHITELIST_FILES
-            // (portage iso-legacy avec pipe shell, replan story dédiée).
+            // (portage iso-legacy avec pipe shell, à replanifier).
             $isExecWhitelisted = in_array($basename, self::EXEC_WHITELIST_FILES, true);
             if (! $isExecWhitelisted) {
                 foreach (self::FORBIDDEN_EVERYWHERE as $rule) {
@@ -276,7 +276,7 @@ class GpoNamespaceTest extends TestCase
     }
 
     /**
-     * Story 16.3c — AC6.9. Vérifie que les fichiers sous `app/Gpo/Jobs/` :
+     * . Vérifie que les fichiers sous `app/Gpo/Jobs/` :
      *  - ne contiennent aucune référence à `LdapRecord\*` (pas d'AD direct
      *    dans les Jobs Wine — `GenerateWineImageJob` est pure FS + Process).
      *  - ne mentionnent ni `samba-tool` ni `samba_tool` (pas d'écriture AD
@@ -320,7 +320,7 @@ class GpoNamespaceTest extends TestCase
     }
 
     /**
-     * Story 16.3c — AC6.9. Vérifie que `GenerateWineImageJob` invoque
+     * . Vérifie que `GenerateWineImageJob` invoque
      * `Process::run(...)` ou `Process::timeout(...)->run(...)` en mode **array**
      * (pas de concaténation shell — audit §6.F F7 corrigé).
      */
@@ -341,7 +341,7 @@ class GpoNamespaceTest extends TestCase
         // 1. Doit contenir un appel `Process::...->run([...])` (mode array).
         // La classe `[^)]*` tolère `$this->timeout` (etc.) dans l'enchaînement
         // `Process::timeout($this->timeout)->run(...)` — l'ancienne classe
-        // `[A-Za-z0-9_:>()\s,.]` excluait le `$` et faisait faux négatif.
+        // `[A-Za-z0-9_:>\s,.]` excluait le `$` et faisait faux négatif.
         $hasArrayMode = preg_match('/Process::[^)]*\)?\s*(?:->[A-Za-z_]+\([^)]*\)\s*)*->\s*run\s*\(\s*\[/s', $stripped) === 1
             || preg_match('/Process::[^)]*\)?\s*(?:->[A-Za-z_]+\([^)]*\)\s*)*->\s*run\s*\(\s*\$[A-Za-z_]+\s*\)/s', $stripped) === 1;
 
@@ -360,7 +360,6 @@ class GpoNamespaceTest extends TestCase
     }
 
     /**
-     * Story 16.5 — AC1.5 / AC6.4.
      *
      * Vérifie que les méthodes d'écriture de `GpoService` (setLink, removeLink,
      * setInheritance, reorderLinks + helpers privés setLinkUnaudited /
@@ -439,13 +438,13 @@ class GpoNamespaceTest extends TestCase
         }
     }
 
-    // Story 27.14 — les tests `wpkg_gpo_synchronizer_respects_native_frontier`
+    // Les tests `wpkg_gpo_synchronizer_respects_native_frontier`
     // et `only_wpkg_gpo_synchronizer_references_legacy_import_gpo` (frontière
-    // 16.6 entre la couche native et le shim `import_gpo`) ont été retirés :
+    // entre la couche native et le shim `import_gpo`) ont été retirés :
     // `WpkgGpoSynchronizer` et `GpoPublisher` — seuls consommateurs du shim
     // `import_gpo`/`specialise_gpo` — ont été supprimés avec le canal de config
     // legacy. Plus aucune publication SYSVOL de templates de config (hors
-    // bootstrap 25.4, qui n'utilise pas ce shim).
+    // bootstrap, qui n'utilise pas ce shim).
 
     #[Test]
     public function no_call_to_legacy_sambatool_function(): void

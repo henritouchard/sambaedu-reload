@@ -118,10 +118,6 @@ class OpenCloudFileBackendTest extends TestCase
         return app(FileBackendRegistry::class)->get(FileBackendName::OpenCloud);
     }
 
-    // =========================================================================
-    // Le plan d'épreuve
-    // =========================================================================
-
     /**
      * @param  bool  $grantAtRoot  le plan octroie-t-il sur sa RACINE ? C'est la
      *                             variable qui décide de l'expressivité de la clôture.
@@ -214,10 +210,6 @@ class OpenCloudFileBackendTest extends TestCase
 
         self::fail('aucun espace ne porte le plan');
     }
-
-    // =========================================================================
-    // provision
-    // =========================================================================
 
     #[Test]
     public function a_plan_becomes_a_project_space_with_its_groups_tree_and_grants(): void
@@ -410,7 +402,6 @@ class OpenCloudFileBackendTest extends TestCase
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════
      * **LA PROPAGATION VIENT DE L'OCTROI SUR UN ITEM, PAS DE LA RACINE — ET À LA
      * PROFONDEUR 2, LA DIFFÉRENCE EST TOUT.**
      *
@@ -419,7 +410,6 @@ class OpenCloudFileBackendTest extends TestCase
      * c'est-à-dire afficherait un cloisonnement qui n'existe pas — le seul
      * résultat que le contrat déclare inacceptable. L'octroi vit sur `_travail`,
      * et le relevé dit qu'il rend `_travail/devoirs` navigable.
-     * ═══════════════════════════════════════════════════════════════════════
      */
     #[Test]
     public function a_closure_defeated_by_a_grant_on_a_non_root_ancestor_is_reported_and_names_the_ancestor(): void
@@ -667,10 +657,6 @@ class OpenCloudFileBackendTest extends TestCase
         self::assertSame([], $this->instance->spaces);
     }
 
-    // =========================================================================
-    // inspect
-    // =========================================================================
-
     #[Test]
     public function inspect_reprojects_every_node_root_included_and_says_the_closure(): void
     {
@@ -715,7 +701,7 @@ class OpenCloudFileBackendTest extends TestCase
     /**
      * **`absent` EST UN FAIT ; « je n'ai pas pu regarder » EN EST UN AUTRE.**
      *
-     * Le contrat a un mot pour chacun, et les confondre est le défaut que l'AC6
+     * Le contrat a un mot pour chacun, et les confondre est le défaut que l'
      * nomme : un nœud rapporté `absent` invite à le recréer, alors qu'il est
      * peut-être là avec tous ses octrois. Seule la lecture ABOUTIE autorise le mot
      * « absent ».
@@ -750,10 +736,6 @@ class OpenCloudFileBackendTest extends TestCase
             self::assertNotNull($observation->detail);
         }
     }
-
-    // =========================================================================
-    // quota
-    // =========================================================================
 
     #[Test]
     public function the_root_ceiling_becomes_the_space_quota_and_is_compared_on_the_readback(): void
@@ -813,10 +795,6 @@ class OpenCloudFileBackendTest extends TestCase
         return new FilePlan($plan->templateKey, $plan->rootPath, $plan->roles, $nodes);
     }
 
-    // =========================================================================
-    // deprovision
-    // =========================================================================
-
     /**
      * **RÉVOQUER, C'EST RETIRER LES OCTROIS — JAMAIS DÉTRUIRE.** L'espace reste,
      * son arborescence reste, ses données restent.
@@ -842,7 +820,6 @@ class OpenCloudFileBackendTest extends TestCase
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════
      * **UNE ARBORESCENCE ILLISIBLE NE VAUT PAS « RIEN À RÉVOQUER ».**
      *
      * Un `5xx` transitoire sur UNE requête suffirait sinon à faire disparaître
@@ -850,7 +827,6 @@ class OpenCloudFileBackendTest extends TestCase
      * « aucun octroi de ce plan n'était en place » — sur des accès parfaitement
      * intacts. C'est le fail-OPEN que le docblock de `deprovision` interdit
      * nommément, dans le sens qui compte le plus : un accès qu'on croit retiré.
-     * ═══════════════════════════════════════════════════════════════════════
      */
     #[Test]
     public function a_revocation_that_cannot_re_read_the_tree_fails_and_never_claims_conformity(): void
@@ -891,10 +867,6 @@ class OpenCloudFileBackendTest extends TestCase
             self::assertSame(FileBackendOutcome::Conforme, $entry->outcome);
         }
     }
-
-    // =========================================================================
-    // location
-    // =========================================================================
 
     #[Test]
     public function location_is_a_display_string_and_never_leaks_the_secret(): void

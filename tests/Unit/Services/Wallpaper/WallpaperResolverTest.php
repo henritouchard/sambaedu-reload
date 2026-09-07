@@ -24,9 +24,8 @@ use Tests\TestCase;
 /**
  * Tests unitaires du Resolver — 7 niveaux legacy + optimisation requêtes.
  *
- * Story 4.7 — AC 4, AC 12. Refonte bibliothèque (2026-06) : la résolution se
- * fait via les assignations DB jointes aux assets (`asset_id`). Plus de
- * fallback par convention de nom de fichier.
+ * La résolution se fait via les assignations DB jointes aux assets
+ * (`asset_id`) : aucun fallback par convention de nom de fichier.
  */
 class WallpaperResolverTest extends TestCase
 {
@@ -136,10 +135,6 @@ class WallpaperResolverTest extends TestCase
         ], $overrides));
     }
 
-    // ========================================================================
-    // NIVEAU 1 — default.jpg système seul
-    // ========================================================================
-
     #[Test]
     public function level1_system_default_when_nothing_else(): void
     {
@@ -160,10 +155,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertSame(WallpaperResolution::LEVEL_DEFAULT_SYSTEM, $res->level);
     }
 
-    // ========================================================================
-    // NIVEAU 2 — défaut étab DB bat système
-    // ========================================================================
-
     #[Test]
     public function level2_etab_default_from_db_beats_system(): void
     {
@@ -182,10 +173,6 @@ class WallpaperResolverTest extends TestCase
 
         $this->assertSame(WallpaperResolution::LEVEL_DEFAULT_ETAB, $res->level);
     }
-
-    // ========================================================================
-    // NIVEAU 3 — salle bat étab
-    // ========================================================================
 
     #[Test]
     public function level3_salle_beats_etab(): void
@@ -213,10 +200,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertSame(WallpaperResolution::LEVEL_SALLE, $res->level);
         $this->assertSame('salle_a', $res->ownerName);
     }
-
-    // ========================================================================
-    // NIVEAU 4 — type principal bat salle
-    // ========================================================================
 
     #[Test]
     public function level4_main_type_beats_salle(): void
@@ -247,10 +230,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertSame('Profs', $res->ownerName);
     }
 
-    // ========================================================================
-    // NIVEAU 5 — groupe AD (hors type principal)
-    // ========================================================================
-
     #[Test]
     public function level5_other_group_match(): void
     {
@@ -272,10 +251,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertSame(WallpaperResolution::LEVEL_GROUP, $res->level);
         $this->assertSame('classe_6A', $res->ownerName);
     }
-
-    // ========================================================================
-    // NIVEAU 6 — user bat tout
-    // ========================================================================
 
     #[Test]
     public function level6_user_wins(): void
@@ -311,10 +286,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertSame(WallpaperResolution::LEVEL_USER, $res->level);
         $this->assertSame('jdoe', $res->ownerName);
     }
-
-    // ========================================================================
-    // NIVEAU 7 — perso_wallpaper (home) bat user quand activé
-    // ========================================================================
 
     #[Test]
     public function level7_disabled_falls_back_to_level6_user(): void
@@ -389,10 +360,6 @@ class WallpaperResolverTest extends TestCase
         }
     }
 
-    // ========================================================================
-    // OVERRIDE QUOTA
-    // ========================================================================
-
     #[Test]
     public function quota_override_short_circuits(): void
     {
@@ -405,10 +372,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertTrue($res->isQuotaOverride);
         $this->assertSame(WallpaperResolution::LEVEL_QUOTA_OVERRIDE, $res->level);
     }
-
-    // ========================================================================
-    // LOCKSCREEN : niveaux 4/5/6/7 IGNORÉS
-    // ========================================================================
 
     #[Test]
     public function lockscreen_ignores_user_level(): void
@@ -471,10 +434,6 @@ class WallpaperResolverTest extends TestCase
         $this->assertSame(WallpaperResolution::LEVEL_SALLE, $res->level);
     }
 
-    // ========================================================================
-    // SOURCE PATH — résolu depuis la bibliothèque (library_path/filename)
-    // ========================================================================
-
     #[Test]
     public function source_path_points_to_library(): void
     {
@@ -512,10 +471,6 @@ class WallpaperResolverTest extends TestCase
 
         $this->assertSame(WallpaperResolution::LEVEL_DEFAULT_SYSTEM, $res->level);
     }
-
-    // ========================================================================
-    // PERF — ≤ 4 queries DB
-    // ========================================================================
 
     #[Test]
     public function resolver_issues_at_most_4_queries(): void

@@ -10,11 +10,11 @@ use JsonException;
 use RuntimeException;
 
 /**
- * Story 55.3 — **Le seul canal de données du témoin : HTTP.**
+ * **Le seul canal de données du témoin : HTTP.**
  *
  * Tout ce que le témoin sait de l'utilisateur passe par ici. C'est délibéré :
  * un témoin qui lirait un modèle ou la base validerait la session SE5, pas le
- * SSO (FR24). Cette classe existe donc surtout pour être un **point
+ * SSO. Cette classe existe donc surtout pour être un **point
  * d'injection** — en test, on lui substitue un client Guzzle dont le handler
  * ré-entre dans le kernel HTTP de PHPUnit, si bien que le VRAI token endpoint
  * s'exécute de bout en bout : on remplace le transport, jamais le protocole.

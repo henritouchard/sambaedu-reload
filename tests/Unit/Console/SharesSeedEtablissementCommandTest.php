@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Epic 34 (gap Docs/Progs) — Tests de `shares:seed-etablissement`.
+ * Tests de `shares:seed-etablissement`.
  */
 class SharesSeedEtablissementCommandTest extends TestCase
 {

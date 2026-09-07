@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / Décision B 2026-05-07 — Test STRUCTUREL d'extraction.
+ * Test STRUCTUREL d'extraction.
  *
  * Les 3 modales d'attach de `parc-settings/profiles` ont été extraites en
  * composants partagés sous `resources/views/components/organisms/wpkg/`.

@@ -12,7 +12,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC5.2 / AC7.2.
  *
  * Tests Feature `POST /api/v1/agent/refresh`.
  *

@@ -19,7 +19,7 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire — Page admin Wine `/admin/settings/gpo/wine` (Story 16.3c AC6.1 + Story 16.9).
+ * Tests Feature Livewire — Page admin Wine `/admin/settings/gpo/wine` ( +).
  */
 class WinePageTest extends TestCase
 {
@@ -80,7 +80,7 @@ class WinePageTest extends TestCase
     public function it_returns_403_for_user_without_server_admin(): void
     {
         // Bypass sambaedu.auth (vérifie $_SESSION['login'], non touché par
-        // `actingAs`) ET sambaedu.admin/RequireAdminRights (Story 16.9 :
+        // `actingAs`) ET sambaedu.admin/RequireAdminRights ( :
         // la route /admin/settings/gpo/wine est désormais dans le groupe
         // admin avec double middleware — bypass des deux pour atteindre
         // le `can:server.admin` qui doit retourner 403 pour user lambda).

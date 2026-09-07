@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.2 — les libellés RENDUS, pas seulement calculés.
+ * Les libellés RENDUS, pas seulement calculés.
  *
  * La parité en littéraux ({@see GroupTypeCatalogParityTest}) prouve que le
  * catalogue rend ce que les `match` rendaient. Ce fichier-ci prouve que les

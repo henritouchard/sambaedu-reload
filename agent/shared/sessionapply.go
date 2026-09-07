@@ -5,7 +5,7 @@ import (
 	"sort"
 )
 
-// Passe SYSTEM PAR-SESSION (Story 35.7, contrat §7.1/§7.6 — champ `writer`).
+// Passe SYSTEM PAR-SESSION (contrat §7.1/§7.6 — champ `writer`).
 //
 // Les capacités Session écrivant sous `HKCU\…\Policies\*` (blocage
 // d'exécutables, regedit) échouent en « Accès refusé » quand le COMPAGNON
@@ -16,19 +16,19 @@ import (
 // (par CLÉ) : le SERVICE SYSTEM les applique dans `HKU\<SID de la session dont
 // provient le contrat>` — comme une GPO user policy ; le compagnon les ÉCARTE.
 //
-// FRONTIÈRE STRUCTURANTE avec le fan-out HKU de 35.3 (piège n°3) :
-//   - 35.3 (`hive: HKU`, portée machine) : UNE cible logique appliquée à
+// FRONTIÈRE STRUCTURANTE avec le fan-out HKU :
+//  - (`hive: HKU`, portée machine) : UNE cible logique appliquée à
 //     `.DEFAULT` + TOUTES les ruches chargées, AUCUN ciblage user ;
-//   - 35.7 (`writer: system`, portée session/machine_user, hive HKCU) :
+//  - (`writer: system`, portée session/machine_user, hive HKCU) :
 //     UN SID — la ruche de LA session ciblée, les overrides UserGroup/User
 //     ATTEIGNENT l'item (state par-session `GET /state?user=`).
 // La traduction HKCU → `HKU\<SID>` est un DÉCORATEUR d'ops (sessionHiveOps),
 // invisible des handlers : RegistryHandler/RegistryListHandler sont réutilisés
-// TELS QUELS (réconciliation de conteneur D3/35.2 incluse), `engine.go` et les
-// parseurs restent byte-identiques — la partition vit AVANT le moteur (D4).
+// TELS QUELS (réconciliation de conteneur incluse), `engine.go` et les
+// parseurs restent byte-identiques — la partition vit AVANT le moteur.
 //
 // Le routage se décide sur le CHAMP `writer` du payload brut, JAMAIS par
-// path-sniffing (piège n°2 : le serveur DÉCLARE, l'agent ROUTE).
+// path-sniffing : le serveur DÉCLARE, l'agent ROUTE.
 
 // writerSystem : seule valeur publiée de l'enum fermé `writer` (§7.1). La
 // passe SYSTEM sélectionne sur ÉGALITÉ STRICTE ; le compagnon skippe sur
@@ -37,7 +37,7 @@ import (
 const writerSystem = "system"
 
 // payloadWriter : extrait le champ additif `writer` du payload BRUT d'un item
-// (générique tous types — le filtre vit avant le moteur, piège n°5).
+// (générique tous types — le filtre vit avant le moteur).
 // present=false si le payload n'est pas un objet ou ne porte pas le champ ;
 // une valeur non-string rend present=true avec writer="" (champ présent mais
 // hors enum : skippé par les deux acteurs, défensif).
@@ -56,7 +56,7 @@ func payloadWriter(item StateItem) (writer string, present bool) {
 }
 
 // SplitSystemWriterItems : partition des items d'une portée par EXÉCUTANT
-// (D4, piège n°5) — AVANT le moteur, sur le payload brut :
+// — AVANT le moteur, sur le payload brut :
 //   - companion : items SANS champ `writer` (l'exécutant par défaut de la
 //     portée reste le compagnon — chemin historique byte-identique) ;
 //   - system : items `writer == "system"` STRICTEMENT (passe SYSTEM
@@ -84,14 +84,14 @@ func SplitSystemWriterItems(items []StateItem) (companion, system []StateItem) {
 	return companion, system
 }
 
-// sessionHiveOps : DÉCORATEUR d'ops registre par session (D5) — traduit la
+// sessionHiveOps : DÉCORATEUR d'ops registre par session — traduit la
 // cible LOGIQUE `hive: HKCU` (la ruche de l'utilisateur ciblé, telle que le
 // serveur l'émet) vers la cible PHYSIQUE `{hive: "HKU", path: "<SID>\<path>"}`
 // que le service SYSTEM peut écrire. Type PUR (testable hôte) ; les handlers
 // ne voient JAMAIS la traduction (leurs specs restent HKCU — l'identité
 // logique et les logs sont ceux du payload).
 //
-// SONDE RACE-LOGOFF HÉRITÉE GRATUITEMENT (piège n°4, review 35.3 #1) : l'op
+// SONDE RACE-LOGOFF HÉRITÉE GRATUITEMENT : l'op
 // `Write` Windows sonde déjà la racine de fan-out HKU (premier segment du
 // path = ici le SID) avant d'écrire — ruche démontée entre l'énumération et
 // l'écriture ⇒ no-op nil, JAMAIS de clé orpheline matérialisée sous
@@ -102,7 +102,7 @@ func SplitSystemWriterItems(items []StateItem) (companion, system []StateItem) {
 // HKCU (isUserHive vrai) — SANS EFFET : la passe SYSTEM ne consomme JAMAIS
 // TakeRefreshRequest (iso MachineEngine — aucun geste depuis la session 0) et
 // les handlers sont instanciés PAR PASSE (l'accumulation meurt avec eux).
-// L'effet est au LOGON SUIVANT (comportement GPO user policy, AC7).
+// L'effet est au LOGON SUIVANT (comportement GPO user policy).
 type sessionHiveOps struct {
 	ops RegistryOps
 	sid string
@@ -142,23 +142,23 @@ func (o *sessionHiveOps) ValueNames(hive, path string) ([]string, error) {
 	return o.ops.ValueNames(h, p)
 }
 
-// UserHives : ERREUR FRANCHE (D5) — jamais appelé en contexte par-session.
+// UserHives : ERREUR FRANCHE — jamais appelé en contexte par-session.
 // Les items marqués restent `hive: HKCU` par construction (le guard serveur
 // refuse `writer` sur HKU) : un appel signifierait qu'un item HKU a atteint
-// la passe par-session — le fan-out 35.3 n'est PAS ce chemin (piège n°3).
+// la passe par-session — le fan-out n'est PAS ce chemin.
 func (o *sessionHiveOps) UserHives() ([]string, error) {
-	return nil, fmt.Errorf("UserHives jamais appelé en contexte par-session (items HKCU par construction — le fan-out multi-ruches 35.3 n'est pas ce chemin)")
+	return nil, fmt.Errorf("UserHives jamais appelé en contexte par-session (items HKCU par construction — le fan-out multi-ruches n'est pas ce chemin)")
 }
 
-// convergeSessionSystem : passe SYSTEM par-session (D6) — pour CHAQUE session
+// convergeSessionSystem : passe SYSTEM par-session — pour CHAQUE session
 // de la DERNIÈRE énumération WTS (celle de fetchSessionStates, `activeSIDs` —
-// jamais de second appel, piège n°12), applique les items `writer: "system"`
+// jamais de second appel), applique les items `writer: "system"`
 // des portées session + machine_user du cache `cache\sessions\<SID>\state.json`
 // dans `HKU\<SID>` via le décorateur d'ops.
 //
-// Deux déclencheurs, UN seul code (décision 24.3 n°4) : le cycle du service
+// Deux déclencheurs, UN seul code : le cycle du service
 // (après fetchSessionStates — verdicts drainés au POST /report du cycle via
-// machineReportItems + MergeReportItemsByType, piège n°9) ET la tâche
+// machineReportItems + MergeReportItemsByType) ET la tâche
 // at-logon `agent.exe session-fetch` (converge SANS rapporter — pas de canal
 // POST ; le cycle du service re-testera, level-triggered).
 //
@@ -169,8 +169,8 @@ func (o *sessionHiveOps) UserHives() ([]string, error) {
 //     aussi être TOMBÉ pendant le fetch, garde locale) ;
 //   - fetch en échec/offline : la passe applique sur le DERNIER cache
 //     existant (level-triggered, iso compagnon) ; cache absent = skip ;
-//   - applied-state PAR SID (`cache\sessions\<SID>\applied-state.json`,
-//     piège n°8) : ni l'applied-state machine, ni le per-user du compagnon —
+//   - applied-state PAR SID (`cache\sessions\<SID>\applied-state.json`) :
+//     ni l'applied-state machine ni le per-user du compagnon ne conviennent —
 //     sans lui chaque cycle serait un « premier passage §5 » et le drift ne
 //     serait jamais rapporté. Écrit par SYSTEM dans le répertoire per-SID
 //     existant (ACL héritée <SID>:R — lecture user inoffensive :
@@ -178,7 +178,7 @@ func (o *sessionHiveOps) UserHives() ([]string, error) {
 //   - isolation : une session en échec n'empêche ni les autres sessions ni le
 //     cycle (best-effort loggé, iso convergeMachine ; l'isolation par type
 //     vit déjà dans le moteur) ;
-//   - concurrence at-logon ⟷ cycle (Story 35.7 review #3) : les DEUX
+//   - concurrence at-logon ⟷ cycle : les DEUX
 //     déclencheurs peuvent converger le MÊME SID simultanément (le service
 //     in-process et le processus éphémère `session-fetch` sont distincts). Le
 //     double-apply est ASSUMÉ et sûr, PAS verrouillé (pas de sur-conception) :
@@ -210,7 +210,7 @@ func (a *Agent) convergeSessionSystem() {
 }
 
 // convergeSessionSid : la passe d'UNE session — lecture du cache per-SID,
-// partition D4, moteur registry+registry_list sur ops décorées D5,
+// partition par exécutant, moteur registry+registry_list sur ops décorées,
 // applied-state per-SID, verdicts vers machineReportItems.
 func (a *Agent) convergeSessionSid(sid string) {
 	raw, err := a.Store.ReadSessionStateCache(sid)
@@ -229,7 +229,7 @@ func (a *Agent) convergeSessionSid(sid string) {
 	}
 
 	// Mêmes portées que le compagnon (session + machine_user), ordre serveur —
-	// la partition retient le SOUS-ENSEMBLE writer=system (piège n°5).
+	// la partition retient le SOUS-ENSEMBLE writer=system.
 	items := ItemsFromScope(state.Session, a.Log)
 	items = append(items, ItemsFromScope(state.MachineUser, a.Log)...)
 	_, system := SplitSystemWriterItems(items)
@@ -239,7 +239,7 @@ func (a *Agent) convergeSessionSid(sid string) {
 
 	// Handlers instanciés PAR PASSE (l'accumulation refresh éventuelle meurt
 	// avec eux — jamais consommée : aucun geste depuis la session 0) sur les
-	// ops RÉELLES décorées par LE SID de cette session (ciblage un-SID, D5).
+	// ops RÉELLES décorées par LE SID de cette session (ciblage un-SID).
 	ops := &sessionHiveOps{ops: a.SessionSystemOps, sid: sid}
 	engine := &Engine{
 		Handlers: map[string]Handler{
@@ -249,7 +249,7 @@ func (a *Agent) convergeSessionSid(sid string) {
 		Log: a.Log,
 	}
 
-	// Dernier-appliqué PAR SID (piège n°8) — corrompu = repart sans mémoire
+	// Dernier-appliqué PAR SID — corrompu = repart sans mémoire
 	// (premier passage §5, jamais interprété comme une dérive humaine).
 	applied, corrupted := ReadAppliedState(a.Store.SessionAppliedStatePath(sid))
 	if corrupted {
@@ -264,7 +264,7 @@ func (a *Agent) convergeSessionSid(sid string) {
 		a.Log.Warningf("Persistance de l'applied-state par-session %s en échec : %v", sid, err)
 	}
 
-	// Verdicts vers le rapport du cycle service (piège n°9) : rejoignent les
+	// Verdicts vers le rapport du cycle service : rejoignent les
 	// items machine + drops compagnon — MergeReportItemsByType (pire statut
 	// gagne) préserve l'unicité des types §6. La tâche at-logon accumule sans
 	// jamais poster (processus éphémère sans canal POST).

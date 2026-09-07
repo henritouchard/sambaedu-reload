@@ -7,7 +7,7 @@ namespace App\Services\Filesystem\Backend\Posix;
 use App\Enums\FileBackendOutcome;
 
 /**
- * Story 60.4 — un octroi que la compilation N'A PAS écrit, et pourquoi.
+ * Un octroi que la compilation N'A PAS écrit, et pourquoi.
  *
  * Un refus n'est pas une exception : la compilation d'un nœud continue, les
  * autres octrois s'écrivent, et le refus remonte dans l'état du nœud. C'est la

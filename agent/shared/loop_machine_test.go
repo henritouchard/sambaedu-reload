@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Tests de l'ORCHESTRATION de la portée MACHINE (Story 27.3, review M2) :
+// Tests de l'ORCHESTRATION de la portée MACHINE :
 // convergeMachine + MachineEngine. Le handler registry et le moteur (engine.go)
 // sont testés ailleurs ; ici on couvre le câblage neuf — lecture du cache d'état
 // SYSTEM, extraction de la portée machine, persistance de l'applied-state
@@ -37,7 +37,7 @@ func newMachineAgent(t *testing.T, ops RegistryOps) (*Agent, *Store) {
 	return agent, store
 }
 
-// AC5 (portée machine) : le service SYSTEM applique le registre HKLM du cache,
+// Le service SYSTEM applique le registre HKLM du cache,
 // draine un item de rapport, et persiste l'applied-state machine — puis reste
 // idempotent (2e passe = zéro écriture, compliant).
 func TestConvergeMachineAppliesHklmDrainsReportThenIdempotent(t *testing.T) {
@@ -74,7 +74,7 @@ func TestConvergeMachineAppliesHklmDrainsReportThenIdempotent(t *testing.T) {
 	}
 }
 
-// AC6/AC5 : moteur machine nil (console de debug, plateforme sans registre) =
+// Moteur machine nil (console de debug, plateforme sans registre) =
 // no-op strict, jamais de panique, aucun item de rapport.
 func TestConvergeMachineNilEngineNoop(t *testing.T) {
 	store := newTestStore(t)

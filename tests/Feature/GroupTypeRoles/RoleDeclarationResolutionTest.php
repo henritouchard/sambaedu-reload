@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.3 — AC3/AC4 : la RÉSOLUTION lit la donnée, et le vocabulaire
+ * La RÉSOLUTION lit la donnée, et le vocabulaire
  * attribuable en découle.
  *
  * `RoleCatalogParityTest` prouve que rien n'a bougé à l'écran. Ce fichier prouve
@@ -31,18 +31,14 @@ class RoleDeclarationResolutionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        // Le catalogue de RÔLES vient du seeder (62.1) ; les DÉCLARATIONS, elles,
-        // viennent de la COMMANDE (62.3) — plus de la migration, qui laisse
+        // Le catalogue de RÔLES vient du seeder ; les DÉCLARATIONS, elles,
+        // viennent de la COMMANDE — plus de la migration, qui laisse
         // désormais la table vide. Ce fichier éprouve la résolution d'un type
         // DÉCLARÉ face à un type de repli : il lui faut donc des déclarations, et
         // il les installe comme un administrateur le ferait.
         $this->seed(GroupRoleSeeder::class);
         $this->installCollegeRoleProfile();
     }
-
-    // =========================================================================
-    // Le libellé LOCAL suit la donnée
-    // =========================================================================
 
     #[Test]
     public function editing_a_local_label_changes_what_that_type_reads(): void
@@ -62,9 +58,8 @@ class RoleDeclarationResolutionTest extends TestCase
 
     /**
      * Une déclaration à `label = null` lit le CATALOGUE — c'est ce qui sépare
-     * « déclaré » de « surchargé », et c'est aussi ce qui répare le point reporté
-     * par la review 62.1 #4 : un renommage administré n'est plus masqué là où
-     * aucune surcharge n'a été voulue.
+     * « déclaré » de « surchargé » : un renommage administré n'est ainsi jamais
+     * masqué là où aucune surcharge n'a été voulue.
      */
     #[Test]
     public function a_declaration_without_a_local_label_follows_the_catalog(): void
@@ -105,10 +100,6 @@ class RoleDeclarationResolutionTest extends TestCase
         $this->assertNotContains('owner', RoleCatalog::assignableKeys('projet'));
     }
 
-    // =========================================================================
-    // Les deux régimes : déclaré / repli
-    // =========================================================================
-
     #[Test]
     public function a_declared_type_restricts_to_its_declarations_in_catalog_order(): void
     {
@@ -147,7 +138,7 @@ class RoleDeclarationResolutionTest extends TestCase
 
     /**
      * Déclarer un rôle personnalisé le rend attribuable — c'est l'aboutissement
-     * du catalogue de 62.1, qui livrait un `tuteur` créable mais inattribuable.
+     * du catalogue, qui livrait un `tuteur` créable mais inattribuable.
      */
     #[Test]
     public function declaring_a_custom_role_makes_it_assignable_on_that_type_only(): void
@@ -166,10 +157,6 @@ class RoleDeclarationResolutionTest extends TestCase
         $this->assertSame(['member', 'manager', 'owner'], RoleCatalog::assignableKeys('classe'));
     }
 
-    // =========================================================================
-    // Normalisation et homonymie de casse
-    // =========================================================================
-
     #[Test]
     public function the_type_is_matched_case_insensitively_and_trimmed_for_assignability_too(): void
     {
@@ -183,7 +170,7 @@ class RoleDeclarationResolutionTest extends TestCase
      * HOMONYMIE DE CASSE — comportement DOCBLOCKÉ, pas laissé au hasard.
      *
      * `Custom` est une ligne légitime du catalogue de types (découverte en base
-     * par la migration 62.2), distincte de `custom`. Si les deux déclarent :
+     * par la migration), distincte de `custom`. Si les deux déclarent :
      *  - un groupe stocké `Custom` lit les déclarations de `Custom` (exact) ;
      *  - un groupe stocké `CUSTOM` — qui n'apparie exactement ni l'un ni l'autre —
      *    lit celles du PREMIER déclarant dans l'ordre du catalogue de types, et
@@ -192,9 +179,9 @@ class RoleDeclarationResolutionTest extends TestCase
     #[Test]
     public function an_exact_type_key_beats_its_case_homonym(): void
     {
-        // Ligne HÉRITÉE : elle entre comme la migration 62.2 l'insère — par
+        // Ligne HÉRITÉE : elle entre comme la migration l'insère — par
         // `DB::table`, sans passer par la garde de slug qui, elle, ne vaut que
-        // pour une clé SAISIE (review 62.2 #1).
+        // pour une clé SAISIE.
         $this->insertInheritedType('Custom', 'Custom hérité', 42);
         GroupRole::create(['key' => 'tuteur', 'label' => 'Tuteur', 'sort_order' => 9]);
 
@@ -216,7 +203,7 @@ class RoleDeclarationResolutionTest extends TestCase
     }
 
     /**
-     * Clé de type HÉRITÉE non-slug (review 62.2 #1) : déclarable, résoluble.
+     * Clé de type HÉRITÉE non-slug : déclarable, résoluble.
      */
     #[Test]
     public function an_inherited_non_slug_type_key_can_carry_declarations(): void
@@ -244,17 +231,12 @@ class RoleDeclarationResolutionTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // Mémo, flush, lecture défensive
-    // =========================================================================
-
     /**
      * La mémo des déclarations est vidée par le MÊME `flush()` que le catalogue.
      *
-     * C'est la leçon de la review 62.1 #1, appliquée d'emblée : une mémo séparée
-     * avec son propre vidage manquerait le `Queue::before` du provider et le
-     * `setUp()` des tests, et un worker au long cours resterait sur une carte
-     * périmée pendant une heure.
+     * Une mémo séparée avec son propre vidage manquerait le `Queue::before` du
+     * provider et le `setUp()` des tests, et un worker au long cours resterait
+     * sur une carte périmée pendant une heure.
      */
     #[Test]
     public function a_write_made_elsewhere_is_seen_after_the_single_flush(): void

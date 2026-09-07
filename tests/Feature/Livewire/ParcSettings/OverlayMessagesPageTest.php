@@ -57,7 +57,7 @@ class OverlayMessagesPageTest extends TestCase
             $t->unsignedBigInteger('workstation_group_id')->nullable()->index();
             $t->string('user_login')->nullable()->index();
             $t->timestamp('expires_at')->nullable()->index();
-            // Story 27.8 : plus de colonne `mode` (mécanisme strict/default retiré).
+            // Plus de colonne `mode` (mécanisme strict/default retiré).
             $t->timestamps();
         });
     }
@@ -196,7 +196,7 @@ class OverlayMessagesPageTest extends TestCase
     #[Test]
     public function publishing_creates_the_signal_without_any_mode(): void
     {
-        // Story 27.8 : le mécanisme strict/default est retiré — la publication
+        // Le mécanisme strict/default est retiré — la publication
         // crée le signal sans poser de `mode`, sans champ `mode` au formulaire.
         $this->actingAs($this->manager());
 

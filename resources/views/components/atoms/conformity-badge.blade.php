@@ -1,14 +1,14 @@
 @props([
-    // Statut de conformité agent (Story 24.7) :
+    // Statut de conformité agent :
     // valeurs enum AgentResourceStatus (compliant|drift|error)
     // + dérivés (never_reported|silent) + 'neutral' (poste non enrôlé / hors
-    // conformité). null = neutre. Story 27.8 : `drifted_allowed` retiré.
+    // conformité). null = neutre. : `drifted_allowed` retiré.
     'status' => null,
 ])
 
 @php
     // Mapping centralisé statut → badge DaisyUI (jamais dupliqué dans les
-    // vues). Story 27.8 : la cible fait toujours loi, plus de « dérive
+    // vues). : la cible fait toujours loi, plus de « dérive
     // tolérée » — seul l'écart réel (drift/error) existe.
     $map = [
         'compliant' => ['class' => 'badge-success', 'icon' => 'fa-circle-check', 'label' => 'Conforme'],

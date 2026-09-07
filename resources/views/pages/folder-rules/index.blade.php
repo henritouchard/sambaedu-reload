@@ -16,12 +16,12 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Story 36.4 — Page liste des règles d'accès aux dossiers + modale de création.
+ * Page liste des règles d'accès aux dossiers + modale de création.
  *
  * SFC Volt (calque `pages/shares/index.blade.php`). Pivot SQL pur (zéro CN AD au
- * chemin SQL). Gardée par la policy dédiée `folderrule.*` (D6) : la route impose
+ * chemin SQL). Gardée par la policy dédiée `folderrule.*` : la route impose
  * `can:folderrule.view`, les mutations vérifient `manage-folderrule`. Le
- * formulaire n'expose QUE des champs MÉTIER (D8) — les enums techniques sont
+ * formulaire n'expose QUE des champs MÉTIER — les enums techniques sont
  * mappés depuis des mots métier.
  */
 new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Component {
@@ -41,7 +41,6 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
     public int $totalRules = 0;
     public ?array $pagination = null;
 
-    // --- Modale de création (champs 100 % métier, D8) -----------------------
     public bool $isCreateOpen = false;
     public string $label = '';
     public string $path = '';
@@ -70,7 +69,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
 
     public function mount(): void
     {
-        // Correction review #1 : gate policy-backed `viewAny-folderrule` (accepte
+        // Gate policy-backed `viewAny-folderrule` (accepte
         // le délégué scopé parc, patron `WorkstationGroupPolicy::viewAny`), pas la
         // permission Spatie nue.
         abort_unless(Gate::allows('viewAny-folderrule'), 403);
@@ -97,7 +96,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
         try {
             $query = FolderAccessRule::query()->with('userGroup');
 
-            // Correction review #1 : un délégué scopé (sans droit global) ne voit
+            // Un délégué scopé (sans droit global) ne voit
             // QUE les règles dont au moins un parc lui est délégué (comme la page
             // parc filtre par `scopedUser`). L'admin global voit tout.
             $scoped = $this->scopedUser();
@@ -176,7 +175,6 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
         $this->loadRules();
     }
 
-    // --- Picker de groupe (SQL pur, zéro CN AD) -----------------------------
 
     /**
      * @return array<int, array{id:int,label:string}>
@@ -195,7 +193,6 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
             ->all();
     }
 
-    // --- Création -----------------------------------------------------------
 
     public function openCreate(): void
     {
@@ -254,7 +251,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
         $validated = $this->validate($this->createRules(), $this->createMessages());
 
         // Confirmation d'implications OBLIGATOIRE pour un `deny` (patron warning
-        // capacités : l'acquittement est bloquant côté formulaire — D4/piège #10).
+        // capacités : l'acquittement est bloquant côté formulaire).
         if ($this->sens === 'deny' && ! $this->denyAcknowledged) {
             $this->addError('denyAcknowledged', 'Vous devez confirmer les implications de cette règle « Interdire ».');
             return;
@@ -272,7 +269,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
             ], $this->currentUser());
         } catch (FsAclAuthoringException $e) {
             // Violations du guard → messages FR explicites (racines protégées,
-            // principals système, 8.3, enums…).
+            // principals système,, enums…).
             foreach ($e->violations as $violation) {
                 $this->toastError($violation);
             }
@@ -294,7 +291,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
     {
         $validator = app(FolderAccessRuleValidator::class);
 
-        // Recouvrement d'une capacité catalogue ACTIVE (D5) — non bloquant.
+        // Recouvrement d'une capacité catalogue ACTIVE — non bloquant.
         $overlaps = $validator->capabilityOverlaps($rule->path, $rule->trusteeName(), $rule->ace_type);
         foreach ($overlaps as $capabilityKey) {
             $this->toastWarning(
@@ -302,7 +299,7 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
             );
         }
 
-        // Groupe sans correspondance AD connue (D9/piège #4) — non bloquant.
+        // Groupe sans correspondance AD connue — non bloquant.
         if ($validator->missingAdDn((int) $rule->user_group_id)) {
             $this->toastWarning(
                 "Groupe sans correspondance AD connue — la règle pourrait ne pas s'appliquer (résolution du nom impossible sur le poste)."

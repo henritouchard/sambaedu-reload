@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Story 6.1 — Modèle SER pour les imprimantes CUPS.
+ * Modèle SER pour les imprimantes CUPS.
  *
  * Couche métier complémentaire à CUPS (pas un remplacement) :
  *  - PK string `cups_name` (15 chars max, `[a-zA-Z0-9_-]{1,15}`).
@@ -36,8 +36,8 @@ class Printer extends Model
     protected $keyType = 'string';
 
     /**
-     * Story 27.2 — identifiant figé du type d'état `printers` (contrat §7,
-     * NFR12), iso `Wallpaper::TYPE_WALLPAPER`. Consommé par
+     * Identifiant figé du type d'état `printers` (contrat §7),
+     * iso `Wallpaper::TYPE_WALLPAPER`. Consommé par
      * `App\Services\Agent\Providers\PrintersStateProvider::type()`. snake_case,
      * jamais renommé.
      */
@@ -53,10 +53,6 @@ class Printer extends Model
     protected $casts = [
         'orphan' => 'boolean',
     ];
-
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
 
     /**
      * Parcs rattachés à cette imprimante (N:N).
@@ -85,7 +81,7 @@ class Printer extends Model
     }
 
     /**
-     * Story 6.2 — Pilotes Windows associés à cette imprimante (HasMany).
+     * Pilotes Windows associés à cette imprimante (HasMany).
      *
      * 1:N par construction (`printer_drivers.printer_cups_name` FK CASCADE
      * depuis `printers.cups_name`) : un même driver peut équiper plusieurs
@@ -98,10 +94,6 @@ class Printer extends Model
     {
         return $this->hasMany(PrinterDriver::class, 'printer_cups_name', 'cups_name');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     /**
      * Imprimantes non-orphan (présentes dans CUPS au dernier sync).
@@ -128,7 +120,7 @@ class Printer extends Model
      *    autorisé par `PermissionService::getAuthorizedWorkstationGroups($user, 'server.admin')`.
      *
      * Note : la matrice profiles-rights-matrix.md ne définit pas de permission
-     * `printer.manage` distincte. La policy 7.2 a couché toutes les actions sur
+     * `printer.manage` distincte. La policy a couché toutes les actions sur
      * `server.admin` (aligné legacy `SE_ADMIN`). Pour le scope délégué, on
      * réutilise donc `server.admin` comme nom de permission scopable.
      */

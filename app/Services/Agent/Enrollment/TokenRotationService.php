@@ -8,10 +8,10 @@ use App\Models\Workstation;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 23.2 — Cycle de vie du token agent (FR12-FR15).
+ * Cycle de vie du token agent.
  *
  * Service unique d'écriture des colonnes `agent_*` de `workstations` :
- * émission, rotation glissante (D5), confirmation de rotation, révocation
+ * émission, rotation glissante, confirmation de rotation, révocation
  * par événement, quarantaine anti-clonage. Aucun autre code ne doit écrire
  * ces colonnes (règle d'enforcement, cf. docs/agent/token-lifecycle.md).
  *
@@ -20,9 +20,9 @@ use Illuminate\Support\Facades\Log;
  *  - Token = 64 hex (`bin2hex(random_bytes(32))`), seul le SHA-256 hex est
  *    persisté (iso `WorkstationRefreshToken`). Le clair est retourné une
  *    seule fois au caller et n'est JAMAIS loggé.
- *  - Fenêtre de grâce D5 : à la rotation, l'ancien hash glisse en
+ *  - Fenêtre de grâce : à la rotation, l'ancien hash glisse en
  *    `agent_previous_token_hash` et reste valide jusqu'au premier usage du
- *    nouveau token ({@see confirmRotation()}). Pas d'expiration calendaire
+ *  nouveau token ({@see confirmRotation()}). Pas d'expiration calendaire
  *    sèche : un token jamais rotaté côté poste s'authentifie toujours et
  *    déclenche une rotation au check-in suivant.
  *  - Toutes les transitions sont loggées channel `agent`, actions
@@ -30,7 +30,8 @@ use Illuminate\Support\Facades\Log;
  *
  * Consommateurs : middleware {@see \App\Http\Middleware\AuthenticateAgentToken}
  * (rotation/confirmation au check-in), UI page machine (révocation),
- * Story 23.3 (enrôlement iPXE → `issueFor()`, réinstall → `revokeFor()`).
+ * {@see EnrollmentService} (enrôlement iPXE → `issueFor`, réinstall →
+ * `revokeFor`).
  */
 class TokenRotationService
 {
@@ -38,7 +39,7 @@ class TokenRotationService
      * Émet un token neuf pour le poste (enrôlement ou ré-enrôlement).
      *
      * Repart d'un état propre : efface la grâce et lève la quarantaine
-     * (un ré-enrôlement légitime — réinstallation 23.3 — réhabilite le poste).
+     * (un ré-enrôlement légitime — réinstallation — réhabilite le poste).
      *
      * @return string le token en clair (64 hex) — à transmettre au poste,
      *                jamais persisté, jamais loggé.
@@ -59,7 +60,7 @@ class TokenRotationService
     }
 
     /**
-     * Rotation glissante (D5) : le hash courant glisse en previous, un token
+     * Rotation glissante : le hash courant glisse en previous, un token
      * neuf devient courant.
      *
      * Si une grâce est déjà ouverte (réponse de rotation perdue, le poste
@@ -98,7 +99,7 @@ class TokenRotationService
     }
 
     /**
-     * Révocation par événement (FR14) : bouton UI, réinstallation (23.3).
+     * Révocation par événement : bouton UI, réinstallation.
      *
      * Efface les deux hash (le prochain appel du poste → 401, indistinct
      * d'un token inconnu — pas d'oracle) et lève la quarantaine.
@@ -115,10 +116,10 @@ class TokenRotationService
     }
 
     /**
-     * Quarantaine anti-clonage (FR15) : le token reste en place mais toute
-     * requête authentifiée répond 403 AGENT_QUARANTINED (check-ins légers,
-     * le poste reste visible). Levée via ré-enrôlement ({@see issueFor()})
-     * ou révocation ({@see revokeFor()}) — outillage dédié → Story 25.3.
+     * Quarantaine anti-clonage : le token reste en place mais toute requête
+     * authentifiée répond 403 AGENT_QUARANTINED (check-ins légers, le poste
+     * reste visible). Levée par un ré-enrôlement ({@see issueFor()}) ou une
+     * révocation ({@see revokeFor()}).
      */
     public function quarantine(Workstation $workstation, string $reason): void
     {

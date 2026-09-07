@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Process;
  * aux postes — **port du legacy `install-win-iso.sh`** (cf. paquet SE4
  * `sambaedu-config`) directement dans le code SE5.
  *
- * Pourquoi natif et plus un `.sh` externe (décision 2026-06-22) :
+ * Pourquoi natif et plus un `.sh` externe :
  *  - Le script legacy n'était dans aucun paquet déployé (loose, absent VM).
  *  - Il codait en dur l'ANCIEN chemin source `/var/sambaedu/.../os/iso/` —
  *    incompatible avec le déplacement des sources sous `storage/install/iso`
@@ -102,12 +102,12 @@ final class WindowsIsoExtractor
             // Parité legacy : boot.wim world-readable/writable (servi en SMB).
             @chmod($target . '/sources/boot.wim', 0666);
 
-            // Story 3.10 — Injection des pilotes NIC dans le boot.wim FRAÎCHEMENT
+            // Injection des pilotes NIC dans le boot.wim FRAÎCHEMENT
             // copié (donc pristine → idempotence par construction). No-op propre
             // si le pack est vide/absent (boot.wim stock préservé, zéro
             // régression NIC inbox). L'injection re-`chmod 0666` + re-chown
             // www-admin le wim qu'elle réécrit. Une WinpeDriverInjectionException
-            // remonte ici (PAS avalée par le `finally` umount) → le Job 3.6
+            // remonte ici (PAS avalée par le `finally` umount) → le Job
             // passe `failed` (parité avec WindowsIsoExtractionException).
             app(WinpeDriverInjector::class)->inject($target . '/sources/boot.wim', $timeout);
 
@@ -120,7 +120,7 @@ final class WindowsIsoExtractor
             $this->seedWinpeHelpers($base, $timeout);
 
             // Fichier `version` = nom de l'ISO (lu par WindowsIsoSourcesReader
-            // pour afficher la version courante). Story 3.10 (M2) : écrit EN
+            // pour afficher la version courante). (M2) : écrit EN
             // DERNIER, après l'injection des pilotes ET le seed des helpers, pour
             // que le marqueur « déployé » ne reflète QUE des déploiements
             // complets — une injection échouée à mi-parcours lève avant ici, donc

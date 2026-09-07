@@ -565,7 +565,7 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Story 15.4 / Décision B 2026-05-07 — Modales partagées sous
+        {{-- Modales partagées sous
              `components/organisms/wpkg/`. Comportement strictement équivalent
              aux anciens partials @include (test de non-régression
              ProfileAttachModalsRegressionTest). --}}

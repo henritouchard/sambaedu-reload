@@ -7,35 +7,35 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 54.2 (FR36 socle) — Audit append-only du cycle de vie des extensions.
+ * Audit append-only du cycle de vie des extensions.
  *
  * `ExtensionLifecycleService::integrate()` / `uninstall()` sont les DEUX SEULS
  * écrivains de `extensions.status` du projet. Cette table consigne CHAQUE
  * transition réelle (`available → integrated`, `integrated → available`),
- * jamais un clic sans effet (no-op = zéro ligne, NFR8). La trace est écrite
+ * jamais un clic sans effet (no-op = zéro ligne). La trace est écrite
  * DANS LA MÊME transaction que la mutation de `status` (atomicité acte ↔
  * trace) — un acte sans sa trace ne peut pas exister.
  *
- * Patron MAISON append-only (calque `capability_override_audit_logs` 29.5 /
- * `controlhub_link_audit_logs` 32.1, `QuotaAuditLog::log()` l'ancêtre — Spatie
+ * Patron MAISON append-only (calque `capability_override_audit_logs` /
+ * `controlhub_link_audit_logs`, `QuotaAuditLog::log()` l'ancêtre — Spatie
  * activitylog ABSENT du projet) :
  *  - un seul `created_at` (`useCurrent()`), PAS d'`updated_at` ;
  *  - FKs `extension_id` / `actor_user_id` en `nullOnDelete` (la trace survit à
- *    la suppression des entités référencées — le prune de `syncBundled()` peut
+ *  la suppression des entités référencées — le prune de `syncBundled()` peut
  *    supprimer une ligne `available` déjà tracée) ; les colonnes DÉNORMALISÉES
  *    `extension_key` / `extension_name` / `actor_login` préservent la
  *    lisibilité après suppression ;
  *  - `action` est un STRING LIBRE (pas d'`enum()` DB, convention projet) :
  *    `integrate` | `uninstall` aujourd'hui, extensible SANS migration par
- *    l'Epic 56 (`install`, `update`, `remove`, `signature_failure`,
+ * L' (`install`, `update`, `remove`, `signature_failure`,
  *    `scope_revoked`…) ;
  *  - le hardening append-only (UPDATE interdit) vit côté modèle Eloquent
  *    {@see \App\Models\ExtensionAuditLog}.
  *
  * Pourquoi une table DÉDIÉE plutôt que la réutilisation d'un journal existant :
  * aucun journal du projet n'a la bonne forme (quota = partitions, capability
- * override = polymorphe capacités, controlhub link = mono-événement), et NFR14
- * (isolement du registre d'extensions PAR CONSTRUCTION, aucune FK/service
+ * override = polymorphe capacités, controlhub link = mono-événement) ; l'isolement
+ * du registre d'extensions PAR CONSTRUCTION (aucune FK, aucun service
  * partagé avec un autre domaine) interdit de verser les traces d'extensions
  * dans le journal d'un autre domaine — voir le test frontière étendu
  * {@see \Tests\Feature\ControlHub\UpstreamSyncExtensionsBoundaryTest}.

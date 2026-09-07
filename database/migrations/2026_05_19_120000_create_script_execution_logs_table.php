@@ -8,20 +8,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 16.12 — AC1.1 / D2.
- *
  * Table `script_execution_logs` — logs centralisés d'exécution de scripts
  * côté postes (Windows/Linux). Alimentée via `POST /api/v1/script-execution-logs`
- * (protégé par JWT `tier=workstation` — middleware 16.10 réutilisé).
+ * (protégé par JWT `tier=workstation` — middleware réutilisé).
  *
  * Conventions importantes :
  *
  *  - **Pas de FK** vers `workstations`, `windows_scripts`, `linux_scripts` :
- *    soft refs polymorphes (iso 16.10 + 16.11). Un log peut arriver pour
+ *  soft refs polymorphes (iso +). Un log peut arriver pour
  *    un poste pas encore enregistré dans `workstations` Eloquent.
  *  - **UUID natifs Postgres** pour `id` et `correlation_id` (16 bytes,
  *    index plus rapides). `workstation_uuid` reste `string(36)` cohérence
- *    16.10 (`workstation_refresh_tokens.workstation_uuid`).
+ *  (`workstation_refresh_tokens.workstation_uuid`).
  *  - **`timestampTz`** partout (timezone-aware) — Postgres recommande.
  *  - **2 index composites** pour les requêtes UI les plus fréquentes :
  *    1. `(workstation_uuid, started_at)` — fiche poste triée date
@@ -29,7 +27,7 @@ use Illuminate\Support\Facades\Schema;
  *  - **UNIQUE partiel pgsql** sur `(workstation_uuid, correlation_id)
  *    WHERE correlation_id IS NOT NULL` : autorise les rows sans correlation
  *    (legacy postes non-wrapper) tout en dédupliquant les retransmissions
- *    idempotentes du wrapper. SQLite testing : fallback `unique()` standard
+ *  idempotentes du wrapper. SQLite testing : fallback `unique()` standard
  *    (qui n'admet qu'un seul NULL en SQLite — accepté car les tests ne
  *    créent jamais 2 rows null pour le même UUID).
  *

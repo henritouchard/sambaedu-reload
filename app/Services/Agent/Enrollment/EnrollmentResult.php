@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Agent\Enrollment;
 
 /**
- * Story 23.3 — résultat typé de {@see EnrollmentService::redeem()}.
+ * Résultat typé de {@see EnrollmentService::redeem}.
  *
  * Porte la décision métier (enrôlé / conflit / refus) pour que le controller
  * se contente de mapper HTTP (200 / 409 / 403) sans logique propre (règle
@@ -16,7 +16,7 @@ namespace App\Services\Agent\Enrollment;
  *    poste visé (uuid, à défaut mac) est déjà enrôlé — rien n'est écrasé.
  *  - `notAllowed` → 403 `AGENT_ENROLL_NOT_ALLOWED` : tout le reste, sans
  *    oracle distinguant ticket inconnu / expiré / déjà consommé (futur point
- *    d'accueil de la porte 2 — Story 25.3).
+ * D'accueil de la porte 2 —).
  */
 final class EnrollmentResult
 {

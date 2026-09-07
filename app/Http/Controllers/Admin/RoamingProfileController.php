@@ -9,7 +9,7 @@ use App\Services\RoamingProfileService;
 use Illuminate\Http\Response;
 
 /**
- * Controller — endpoint script de purge profils itinérants (story 1bis.18f).
+ * Controller — endpoint script de purge profils itinérants (.18f).
  *
  * Sert le bash `del-roam.sh` consommé par les logon scripts Windows. La
  * génération est en pur PHP (pas d'embarquement legacy `del_roam.php`).

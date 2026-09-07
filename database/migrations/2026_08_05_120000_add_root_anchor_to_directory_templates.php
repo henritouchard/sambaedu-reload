@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 60.5 — « dans quelle ZONE cet arbre vit-il ? ».
+ * « dans quelle ZONE cet arbre vit-il ? ».
  *
  * Une colonne ADDITIVE et NULLABLE : `root_anchor`. Elle porte un jeton d'un
  * vocabulaire FERMÉ ({@see App\Enums\PlanAnchor} — `reseau|classes`), JAMAIS un
@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Schema;
  * qui l'appelle, et rien dans la donnée ne dirait lequel est le bon.
  *
  * **`null` a un sens EXACT** : la zone par défaut, celle des répertoires réseau
- * nommés. Les 4 recettes seedées de 34.3 ne se prononcent pas et continuent donc de
+ * nommés. Les 4 recettes seedées ne se prononcent pas et continuent donc de
  * vivre là où elles ont toujours vécu — aucune reprise de données.
  */
 return new class extends Migration

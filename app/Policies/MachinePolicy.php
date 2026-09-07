@@ -9,7 +9,7 @@ use App\Services\PermissionService;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Story 7.2 (AC5) — Policy pour les machines (Workstation).
+ * Policy pour les machines (Workstation).
  *
  * Supporte le scoping par WorkstationGroup parent via `PermissionService::canOnWorkstationGroup`.
  * Un utilisateur délégué sur une salle physique peut agir sur les machines de

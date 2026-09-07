@@ -12,7 +12,7 @@ func overlayIdentityItem(fullname, login string) StateItem {
 		Payload: map[string]any{"kind": "identity", "fullname": fullname, "login": login}}
 }
 
-// overlayMachineItem : item overlay de portée MACHINE (Story 27.10) — porte la
+// OverlayMachineItem : item overlay de portée MACHINE — porte la
 // salle. La salle ne vient PLUS de l'item identity.
 func overlayMachineItem(room string) StateItem {
 	return StateItem{Type: "overlay", Semantics: "aggregate", Hash: "h-mc",
@@ -24,9 +24,9 @@ func overlayAlertItem(severity, title, text string) StateItem {
 		Payload: map[string]any{"kind": "signal", "severity": severity, "title": title, "text": text}}
 }
 
-// Golden byte-compatible 24.4 : le document ci-dessous reproduit À
+// Golden byte-compatible : le document ci-dessous reproduit À
 // L'IDENTIQUE la sortie de Build-OverlayDocument (handlers/Overlay.ps1,
-// spike 24.4) pour le même payload — transcription ligne à ligne du
+// spike) pour le même payload — transcription ligne à ligne du
 // sérialiseur PS (structure littérale, `": "` simple, UTF-8 brut, \n,
 // pas de \n final). Tout octet compte : le `test` du handler est une
 // comparaison de contenu (drift perpétuel sinon).
@@ -106,7 +106,7 @@ func TestComposeOverlayDocumentFirstMachineWins(t *testing.T) {
 }
 
 func TestComposeOverlayDocumentMachineRoomWithoutIdentity(t *testing.T) {
-	// CŒUR Story 27.10 (AC3/AC4) — préchargement : item MACHINE seul (room),
+	// CŒUR — préchargement : item MACHINE seul (room),
 	// AUCUN item identity (cache session absent au logon). Le document porte
 	// machine.room rempli + machine.name local, identity VIDE.
 	got := ComposeOverlayDocument([]StateItem{overlayMachineItem("Salle B-12")}, "SALLE101-PC03")
@@ -126,7 +126,7 @@ func TestComposeOverlayDocumentMachineRoomWithoutIdentity(t *testing.T) {
 
 func TestComposeOverlayDocumentIdentityWithoutMachineRoomEmpty(t *testing.T) {
 	// Symétrique : identity seul (cache machine absent) → room vide, jamais
-	// alimenté par l'identity (la salle ne vient QUE de l'item machine, D1).
+	// alimenté par l'identity (la salle ne vient QUE de l'item machine).
 	got := ComposeOverlayDocument([]StateItem{overlayIdentityItem("Jean", "jdoe")}, "PC")
 
 	if !strings.Contains(got, `"fullname": "Jean"`) {
@@ -201,8 +201,6 @@ func TestComposeOverlayDocumentNoVolatileField(t *testing.T) {
 	}
 }
 
-// --- Handler overlay (test/apply, Rainmeter gracieux) -------------------------------
-
 func TestOverlayHandlerTestApplyLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	h := &OverlayHandler{Path: dir + "/overlay.json", ComputerName: "PC"}
@@ -246,7 +244,7 @@ func TestOverlayHandlerNFCComparison(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Réécrit le fichier en NFD (ö → o + U+0308) : le contenu reste
-	// ÉQUIVALENT après normalisation NFC → conforme (piège n° 9).
+	// ÉQUIVALENT après normalisation NFC → conforme.
 	raw, _ := os.ReadFile(h.Path)
 	nfd := strings.ReplaceAll(string(raw), "ö", "ö")
 	if nfd == string(raw) {
@@ -275,8 +273,6 @@ func TestOverlayHandlerRainmeterAbsentGraceful(t *testing.T) {
 		t.Error("overlay.json doit être écrit même sans Rainmeter")
 	}
 }
-
-// --- Logique pure wallpaper -----------------------------------------------------------
 
 func TestResolveWallpaperAsset(t *testing.T) {
 	valid := strings.Repeat("a", 64) + ".jpg"

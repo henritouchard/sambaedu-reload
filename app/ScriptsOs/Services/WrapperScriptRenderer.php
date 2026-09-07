@@ -13,15 +13,13 @@ use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.12 — AC3.1 / D4.
- *
  * Génère le wrapper de script (cmd Windows / sh Linux) qui emballe un
  * script user pour capturer stdout/stderr/exit_code/duration et POST le
  * résultat sur `/api/v1/script-execution-logs` avec idempotence
  * `correlation_id` UNIQUE.
  *
- * **Consommé par Story 17.3** (résolution scripts managés). 16.12 livre
- * le service + les templates ; 17.3 appelle `wrap()` lors du rendu de
+ * **Consommé par** (résolution scripts managés). livre
+ * le service + les templates ; appelle `wrap()` lors du rendu de
  * `/api/v1/scripts/{id}/content`.
  *
  * **PAS de dépendance circulaire** : la signature prend un `string
@@ -30,7 +28,7 @@ use Illuminate\Support\Str;
  *
  * **PAS de secret dans le wrapper rendu** : le poste lit son `access_token`
  * depuis son storage local sécurisé (DPAPI HKLM Windows / fichier 0600
- * Linux — pattern iso 16.11 D11).
+ * Linux — pattern iso D11).
  *
  * **Cache statique** : le template Blade ne dépend pas du contenu user
  * (variables injectées) — on cache le template compilé par OS. `clearCache()`
@@ -122,7 +120,7 @@ class WrapperScriptRenderer
 
     /**
      * URL absolue de l'endpoint d'ingestion. Utilise la route nommée
-     * `scriptsos.logs.ingest` (D3) — fallback string fixe si la route
+     * `scriptsos.logs.ingest` — fallback string fixe si la route
      * n'est pas encore chargée (cas tests unit isolated).
      */
     private function resolveEndpointUrl(): string

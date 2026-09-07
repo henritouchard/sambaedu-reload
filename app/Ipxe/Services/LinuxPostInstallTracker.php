@@ -11,15 +11,13 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.4 — D6 / AC3.2.
- *
  * Hook fin d'install Linux : reçoit le callback `curl /ipxe/linux/action`
  * émis par debian-installer après le `preseed/late_command` (parité legacy
  * `preseed.cfg:83`) et met à jour le poste correspondant.
  *
  * **Port natif** de `sambaedu/ipxe/linux/action.php` (43 LOC) simplifié au
- * scope 3.4 (sans `set_progress` / `set_action` legacy — voir story 3.4 §
- * HORS-SCOPE granularité fine déférée Epic 17.4).
+ * scope (sans `set_progress` / `set_action` legacy — §
+ * HORS-SCOPE granularité fine déférée).
  *
  * **Workflow** :
  *
@@ -29,12 +27,12 @@ use Throwable;
  *      `preseed.php:84` `set_os($config, $machine['cn'], "linux")`).
  *   3. Pose un marqueur one-shot dans `Workstation::programmed_action`
  *      (`{type: linux_install_done|linux_install_failed, ret}`) consommé au
- *      prochain boot iPXE par {@see \App\Ipxe\Services\IpxeService::handleBoot()}
+ *  prochain boot iPXE par {@see \App\Ipxe\Services\IpxeService::handleBoot()}
  *      pour afficher l'écran « installation terminée » + compte à rebours.
  *      **NE touche PAS `status`** : domaine fermé `varchar(20)`
  *      (`active|inactive|protected`) — y écrire la phrase d'issue provoquait
  *      un SQLSTATE 22001 (value too long) → 500 sur le callback.
- *   4. `last_report_at = now()` (parité audit).
+ *  4. `last_report_at = now()` (parité audit).
  *   5. Insert `MachineBootLog` `action='ipxe_linux_report'`.
  *   6. Log info `ipxe.linux.action.success` ou warning
  *      `ipxe.linux.action.failure`.
@@ -68,7 +66,7 @@ final class LinuxPostInstallTracker
     public const ACTION_INSTALL_FAILED = 'linux_install_failed';
 
     /**
-     * Channel Monolog dédié (iso 3.1 D7).
+     * Channel Monolog dédié.
      */
     private function channel(): string
     {
@@ -102,9 +100,9 @@ final class LinuxPostInstallTracker
         // n'était alors jamais marqué). L'issue d'install est désormais tracée
         // via `os` + `last_report_at` + `MachineBootLog` (persistMachineBootLog
         // ci-dessous). Comme on ne réécrit plus `status`, la sémantique
-        // « préserver `protected` post-install » (décision Henri #M3 : le
-        // legacy `flag_poste=1` protège de la suppression mais ne bloque pas
-        // la réinstall) est respectée nativement, sans hack de restauration.
+        // « préserver `protected` post-install » est respectée nativement,
+        // sans hack de restauration : le `flag_poste=1` legacy protège de la
+        // suppression, il ne bloque pas la réinstall.
         $workstation->os = 'linux';
         $workstation->last_report_at = Carbon::now();
 
@@ -120,7 +118,7 @@ final class LinuxPostInstallTracker
 
         $this->persistMachineBootLog($workstation, $ret, $ip);
 
-        // Story 3.11 — consommation one-shot de la réinstallation armée (À CÔTÉ
+        // Consommation one-shot de la réinstallation armée (À CÔTÉ
         // du marqueur `programmed_action` ci-dessus, sans le toucher). Sur
         // succès, la requête active passe `done` → elle ne sera plus servie aux
         // boots suivants. Best-effort : ne jamais faire échouer le callback.
@@ -143,7 +141,7 @@ final class LinuxPostInstallTracker
             'action_type' => 'ipxe.linux.action.failure',
             'ip' => $ip,
             'workstation_id' => $workstation->id ?? null,
-            // Tronque à 16 chars iso D8.
+            // Tronque à 16 chars.
             'name' => substr($name, 0, 16),
             'ret' => $ret,
         ]);
@@ -154,7 +152,7 @@ final class LinuxPostInstallTracker
      * controller a appelé sans pouvoir résoudre la Workstation (poste non
      * enregistré qui rapporte un install — cas edge rare).
      *
-     * Pas d'update DB, pas d'insert MachineBootLog (D4 — silent).
+     * Pas d'update DB, pas d'insert MachineBootLog : silencieux côté poste.
      */
     public function recordUnknown(string $mac, string $uuid, string $ip): void
     {
@@ -167,7 +165,7 @@ final class LinuxPostInstallTracker
     }
 
     /**
-     * Story 3.11 — Marque `done` la réinstallation OS armée du poste (table
+     * Marque `done` la réinstallation OS armée du poste (table
      * dédiée `workstation_reinstall_requests`). Best-effort — jamais bloquant.
      */
     private function markReinstallDone(Workstation $workstation): void

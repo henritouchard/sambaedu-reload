@@ -19,9 +19,7 @@ use Illuminate\Support\Carbon;
  * Upsert au login fédéré, clé = `external_sub` (claim `sub` du JWT, stable
  * côté IdP). Une reconnexion réutilise le même enregistrement.
  *
- * --------------------------------------------------------------------------
- * CYCLE DE VIE (Story 20.2 — 4 états + transitions)
- * --------------------------------------------------------------------------
+ * CYCLE DE VIE (4 états + transitions)
  *
  *  1. **Active**       `is_active=true`, `deleted_at=null`, `anonymized_at=null`
  *                      → login autorisé (si JWT valide). État nominal au 1er
@@ -30,22 +28,22 @@ use Illuminate\Support\Carbon;
  *  2. **Désactivée**   `is_active=false`, `deleted_at=null`
  *                      → login refusé 403 (`identity_revoked`). L'identité est
  *                        CONSERVÉE ; un fresh login ne la réactive JAMAIS (la
- *                        réactivation est une action admin — Story 20.3).
+ * réactivation est une action admin —).
  *                        Transition : `deactivate(reason)`.
  *
  *  3. **Soft-deletée** `deleted_at != null`
  *                      → login refusé 403 ; ligne conservée pour l'audit,
- *                        résolvable via `withTrashed()` (corrélation 20.4).
+ *  résolvable via `withTrashed()` (corrélation).
  *                        Transition : `softDeleteWithReason(reason)`.
  *
  *  4. **Anonymisée**   `anonymized_at != null` (+ soft-deletée + `is_active=false`)
  *                      → PII (`name`/`email`/`login`) vidée, `external_sub`
  *                        réécrit en `anon:<hmac-sha256>` (D-5). La ligne SURVIT (FK
- *                        `users.external_identity_id` + audit 20.4), n'est plus
+ *  `users.external_identity_id` + audit), n'est plus
  *                        une donnée personnelle (RGPD). État TERMINAL introduit
- *                        par 20.2 (anti-résurrection D-4 : une reconnexion sur
+ *  par (anti-résurrection D-4 : une reconnexion sur
  *                        l'ancien `sub` ne matche plus et est refusée 403).
- *                        Transition : `anonymize()` (idempotente, jamais
+ *  Transition : `anonymize()` (idempotente, jamais
  *                        hard-delete).
  *
  * Toutes les transitions sont portées par
@@ -106,7 +104,7 @@ class ExternalIdentity extends Model
     }
 
     /**
-     * État « anonymisée » (Story 20.2) : la PII a été purgée en fin de
+     * État « anonymisée » : la PII a été purgée en fin de
      * rétention. `anonymized_at` fait foi (garde d'idempotence D-5).
      */
     public function isAnonymized(): bool
@@ -130,7 +128,7 @@ class ExternalIdentity extends Model
      * anonymisées : `last_login_at < now - ttlDays` (ou jamais connectée et
      * créée avant le seuil), `anonymized_at IS NULL`.
      *
-     * Base de sélection de `federated:purge-identities` (Story 20.2 — D-6).
+     * Base de sélection de `federated:purge-identities` (D-6).
      * `withTrashed()` est laissé à l'appelant : une identité déjà soft-deletée
      * mais non anonymisée peut encore porter de la PII à purger.
      *

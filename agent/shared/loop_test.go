@@ -22,9 +22,9 @@ type fakeServer struct {
 	stateEtag  string
 	reportCode int
 
-	// releaseCode : code HTTP du GET /api/v1/agent/release (canal release, Story
-	// 25.2). 0 = handler non monté → 404 par défaut du mux (no_release, l'agent
-	// ne tente rien). >0 = code servi (ex. 403 pour tester M4 dans runCycle).
+	// releaseCode : code HTTP du GET /api/v1/agent/release (canal release).
+	// 0 = handler non monté → 404 par défaut du mux (no_release, l'agent
+	// ne tente rien). >0 = code servi (ex. 403 pour tester le canal release).
 	releaseCode int
 
 	stateCalls   int
@@ -132,7 +132,7 @@ func TestCycleNominal200ThenReport(t *testing.T) {
 		t.Errorf("ETag verbatim : got %q, want %q", got, f.stateEtag)
 	}
 
-	// applied-state.json créé vide (infra 24.6).
+	// applied-state.json créé vide (infra).
 	raw, _ := os.ReadFile(store.AppliedStatePath())
 	if string(raw) != "{}" {
 		t.Errorf("applied-state : %q", raw)
@@ -252,7 +252,7 @@ func TestCycleUnknownMajorPreservesCacheAndKeepsCheckingIn(t *testing.T) {
 	f.stateEtag = `"autre-etag"`
 	outcome := agent.RunCycle(cfg)
 
-	// Piège n° 10 : log erreur, cache PRÉSERVÉ, check-ins maintenus (le
+	// Log erreur, cache PRÉSERVÉ, check-ins maintenus (le
 	// rapport part — signal de vie), cadence normale.
 	if outcome != OutcomeOK {
 		t.Fatalf("check-ins maintenus à cadence normale, got %v", outcome)
@@ -312,7 +312,7 @@ func TestCycle401Stops(t *testing.T) {
 }
 
 func TestCycleMissingTokenBacksOff(t *testing.T) {
-	// Story 25.4 : token absent → branche d'auto-enrôlement porte 2. Ce fake
+	// Token absent → branche d'auto-enrôlement porte 2. Ce fake
 	// serveur ne monte PAS /api/v1/agent/enrollment (404 par défaut du mux) →
 	// la demande échoue (EnrollError) → backoff. L'invariant testé reste : un
 	// token absent ne crashe JAMAIS le cycle (la bascule auto-enroll vivante
@@ -327,8 +327,6 @@ func TestCycleMissingTokenBacksOff(t *testing.T) {
 		t.Errorf("token absent + enrôlement injoignable : backoff (et jamais de crash), got %v", outcome)
 	}
 }
-
-// --- Backoff & jitter ------------------------------------------------------------
 
 func TestNextBackoffProgression(t *testing.T) {
 	interval := 3600 * time.Second
@@ -362,8 +360,6 @@ func TestJitterBounds(t *testing.T) {
 		t.Error("jitter toujours nul sur 1000 tirages : suspect")
 	}
 }
-
-// --- Run (boucle complète) ---------------------------------------------------------
 
 func TestRunStopsOnIrrecoverable401(t *testing.T) {
 	f := newFakeServer(t)
@@ -415,7 +411,7 @@ func TestRunStopsOnContextCancel(t *testing.T) {
 }
 
 func TestRunSurvivesMissingConfig(t *testing.T) {
-	// Config absente : log + retry en backoff — jamais de crash (AC2/AC4).
+	// Config absente : log + retry en backoff — jamais de crash.
 	f := newFakeServer(t)
 	agent, _, _ := newTestAgent(t, f)
 
@@ -450,7 +446,7 @@ func TestReportNotSentWhenStateUnreachable(t *testing.T) {
 	}
 }
 
-// ── Cadence pilotée serveur (ttl_seconds, 2.2.0) ─────────────────────────────
+// Cadence pilotée serveur (ttl_seconds, 2.2.0)
 
 // minimalEnvelope : enveloppe v1 valide minimale avec un ttl choisi.
 func minimalEnvelope(ttl int) string {
@@ -537,7 +533,7 @@ func TestPrimeServerTtlWithoutCacheIsANoop(t *testing.T) {
 	}
 }
 
-// ── Réveil au logon (Story 27.9) ─────────────────────────────────────────────
+// Réveil au logon
 
 // runWakeAgent : agent piloté pour les tests de réveil — cadence nominale très
 // longue (pour que SEUL un réveil puisse écourter la sieste), debounce ramené à
@@ -580,7 +576,7 @@ func reportCount(f *fakeServer) int {
 	return f.reportCalls
 }
 
-// TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed : AC1/AC3 — avec un dernier
+// TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed : — avec un dernier
 // cycle déjà ancien (> min-interval), un réveil interrompt la longue sieste et
 // déclenche un cycle frais quasi immédiatement (la fonction retourne true).
 func TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed(t *testing.T) {
@@ -603,7 +599,7 @@ func TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed(t *testing.T) {
 	}
 }
 
-// TestSleepUntilDueOrWakeDebouncedWhenTooRecent : AC3 — un réveil trop tôt après
+// TestSleepUntilDueOrWakeDebouncedWhenTooRecent : — un réveil trop tôt après
 // le dernier cycle ne lance PAS de cycle immédiat ; il est coalescé. Comme le
 // min-interval réel (60 s) est trop long pour un test rapide, on vérifie que la
 // fonction NE retourne PAS immédiatement true sur un wake « frais » (dernier
@@ -644,7 +640,7 @@ func TestSleepUntilDueOrWakeDebouncedWhenTooRecent(t *testing.T) {
 	}
 }
 
-// TestSleepUntilDueOrWakeCoalescesMultipleWakes : AC3 — plusieurs réveils
+// TestSleepUntilDueOrWakeCoalescesMultipleWakes : — plusieurs réveils
 // rapprochés pendant la fenêtre de debounce sont coalescés (au plus un cycle).
 // On vérifie que N RequestWake successifs ne provoquent qu'au plus une sortie
 // « cycle frais », et que le buffer 1 ne fait jamais bloquer RequestWake.
@@ -673,7 +669,7 @@ func TestSleepUntilDueOrWakeCoalescesMultipleWakes(t *testing.T) {
 	}
 }
 
-// TestRequestWakeNilSafe : AC6 — RequestWake sur un Agent sans canal (nil) ne
+// TestRequestWakeNilSafe : — RequestWake sur un Agent sans canal (nil) ne
 // panique pas et est un no-op (console de debug, plateformes sans sessions).
 func TestRequestWakeNilSafe(t *testing.T) {
 	agent := &Agent{Log: &Logger{}} // wake == nil
@@ -682,7 +678,7 @@ func TestRequestWakeNilSafe(t *testing.T) {
 	agent.RequestWake()
 }
 
-// TestRunNilWakeIsInert : AC6 — la boucle Run avec un canal wake nil tourne sans
+// TestRunNilWakeIsInert : — la boucle Run avec un canal wake nil tourne sans
 // panic et sort proprement sur ctx (le `case <-a.wake` sur nil bloque pour
 // toujours mais c'est juste une branche jamais prête : le timer/ctx restent
 // actifs).
@@ -709,7 +705,7 @@ func TestRunNilWakeIsInert(t *testing.T) {
 	}
 }
 
-// TestRunWakeNoRegressionContextCancel : AC5/non-régression — ctx.Done() sort
+// TestRunWakeNoRegressionContextCancel :/non-régression — ctx.Done sort
 // toujours proprement même avec un réveil concurrent posté juste avant.
 func TestRunWakeNoRegressionContextCancel(t *testing.T) {
 	f := newFakeServer(t)
@@ -740,7 +736,7 @@ func TestRunWakeNoRegressionContextCancel(t *testing.T) {
 	}
 }
 
-// TestSleepUntilDueOrWakeDebounceHonoredAfterDelay : AC3 — couvre la branche
+// TestSleepUntilDueOrWakeDebounceHonoredAfterDelay : — couvre la branche
 // nominale du debounce (debounceTimer.C → cycle frais). Dernier cycle posé juste
 // avant l'expiration du min-interval (reliquat ~60 ms) : le réveil ne part PAS
 // immédiatement (debounce actif) mais bien à l'expiration, et avant l'échéance
@@ -769,7 +765,7 @@ func TestSleepUntilDueOrWakeDebounceHonoredAfterDelay(t *testing.T) {
 	}
 }
 
-// Story 2.12.3 — rattrapage de convergence. Sous politique STRICT, un premier
+// Rattrapage de convergence. Sous politique STRICT, un premier
 // passage répare mais rapporte `drift` ; sans rattrapage, le retour à la
 // conformité attendait le cycle nominal (une heure constatée le 2026-07-20).
 func TestApplyConvergenceFollowUp(t *testing.T) {

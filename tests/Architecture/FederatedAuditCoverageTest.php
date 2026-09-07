@@ -10,15 +10,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 20.4 — garde-fou architectural (post-review P-5).
+ * Garde-fou architectural (post-review P-5).
  *
  * INVARIANT : toute route dont la pile de middleware (résolue, groupes inclus)
  * contient `sambaedu.auth` DOIT aussi contenir `federated.audit`.
  *
- * Raison d'être : un acteur fédéré actif (Story 20.1) peut atteindre TOUTE route
+ * Raison d'être : un acteur fédéré actif peut atteindre TOUTE route
  * protégée par `sambaedu.auth` (le guard valide l'identité externe au lieu du
  * LDAP). Si une telle route ne porte pas `federated.audit`, ses actions
- * mutantes / GET sensibles échappent au journal d'imputabilité (20.4). Ce test
+ * mutantes / GET sensibles échappent au journal d'imputabilité. Ce test
  * ferme l'angle mort de façon TOTALE (au-delà du seul `/test-auth` corrigé).
  *
  * Implémentation : on inspecte la pile RÉELLE via `Route::gatherMiddleware()`
@@ -45,8 +45,8 @@ class FederatedAuditCoverageTest extends TestCase
      * temporairement (clé = `uri`). NE PAS étendre sans décision explicite.
      *
      *  - `livewire/update` : endpoint POST Livewire enregistré
-     *    programmatiquement dans `AppServiceProvider::boot()` via
-     *    `Livewire::setUpdateRoute()` (+ variante préfixée proxy). Véritable
+     *  programmatiquement dans `AppServiceProvider::boot()` via
+     *  `Livewire::setUpdateRoute()` (+ variante préfixée proxy). Véritable
      *    canal mutant des composants → vraie lacune d'audit, mais correction
      *    sensible (impacte tout le front Livewire) à arbitrer.
      *  - `api/v1/health/detailed` : route API privée legacy (`routes/api.php`,

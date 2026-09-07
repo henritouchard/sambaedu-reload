@@ -15,7 +15,7 @@ use Tests\TestCase;
 use ZipArchive;
 
 /**
- * Story 25.6 — `AgentToolService` (AC1, AC2, AC3, D5).
+ * `AgentToolService`.
  *
  * SEUL écrivain de `agent_tools`. On valide : l'upload OK (SHA-256 CALCULÉ
  * SERVEUR, filename dérivé de la version, mono-version qui remplace), et les
@@ -112,7 +112,7 @@ class AgentToolServiceTest extends TestCase
         self::assertSame($before, AgentTool::query()->count(), 'aucune ligne ne doit être écrite sur refus');
     }
 
-    // ── AC2 — upload valide : SHA-256 serveur + filename dérivé ──────────
+    // — upload valide : SHA-256 serveur + filename dérivé
 
     #[Test]
     public function valid_upload_computes_server_sha256_and_derives_filename(): void
@@ -145,7 +145,7 @@ class AgentToolServiceTest extends TestCase
         self::assertStringNotContainsString('..', $tool->filename);
     }
 
-    // ── AC2 — refus : version, extension, MIME, taille, structure ────────
+    // — refus : version, extension, MIME, taille, structure
 
     #[Test]
     public function malformed_version_is_rejected(): void
@@ -211,8 +211,6 @@ class AgentToolServiceTest extends TestCase
         $this->assertRejected('invalid_zip', fn () => $this->service->upload($file, '1.0'));
     }
 
-    // ── AC2/D5 — mono-version : un nouvel upload remplace l'archive ──────
-
     #[Test]
     public function reupload_replaces_active_version_and_purges_old_file(): void
     {
@@ -238,8 +236,6 @@ class AgentToolServiceTest extends TestCase
         self::assertTrue($reuploaded->enabled, 'un re-upload d\'un outil déjà actif reste actif');
     }
 
-    // ── P8 — aucun fichier orphelin après refus / échec post-move ────────
-
     #[Test]
     public function rejected_upload_leaves_no_orphan_file_on_disk(): void
     {
@@ -264,7 +260,7 @@ class AgentToolServiceTest extends TestCase
 
         // Le fichier est posé sur disque par moveConfined, PUIS l'écriture DB
         // échoue (table absente → QueryException). Le .zip déplacé ne doit pas
-        // rester orphelin (P1).
+        // rester orphelin.
         \Illuminate\Support\Facades\Schema::drop('agent_tools');
 
         try {
@@ -276,8 +272,6 @@ class AgentToolServiceTest extends TestCase
 
         self::assertCount(0, glob($this->toolsDir . '/*'), 'le .zip déplacé doit être nettoyé après échec DB (aucun orphelin)');
     }
-
-    // ── AC3 — toggle GLOBAL ──────────────────────────────────────────────
 
     #[Test]
     public function toggle_flips_enabled_flag(): void

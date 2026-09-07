@@ -9,12 +9,12 @@ use RuntimeException;
 
 /**
  * Service PKI locale — génère et persiste le CA root, le cert serveur HTTPS,
- * et la paire RS256 dédiée à la signature JWT (Story 16.10, AC1.1, D1 + D3).
+ * et la paire RS256 dédiée à la signature JWT.
  *
- * **Outillage** (D1) :
+ * **Outillage** :
  *
  *  - Fonctions natives PHP `openssl_pkey_new()`, `openssl_csr_new()`,
- *    `openssl_csr_sign()`, `openssl_x509_export()`, `openssl_pkey_export()`
+ *  `openssl_csr_sign()`, `openssl_x509_export()`, `openssl_pkey_export()`
  *    sont utilisées en **priorité**. C'est le cas pour :
  *       - génération clé RSA (CA root, cert serveur, JWT)
  *       - génération CSR
@@ -23,14 +23,14 @@ use RuntimeException;
  *    **uniquement** quand l'API native PHP est insuffisante — typiquement
  *    pour appliquer des extensions x509v3 (SAN, basicConstraints CA:true,
  *    keyUsage critical, extendedKeyUsage). PHP <8.3 ne permet pas de passer
- *    ces extensions facilement via `openssl_csr_sign()` (le tableau `$configargs`
+ *  ces extensions facilement via `openssl_csr_sign()` (le tableau `$configargs`
  *    accepte `config` + `digest_alg` mais pas un v3 mapping fiable sur tous
  *    les Debian/PHP). Le fallback CLI reste **dans cette classe uniquement**
  *    (whitelist test archi `AuthV1NamespaceTest`).
  *  - Mode array obligatoire pour `Process::run([...])` (jamais string shell —
- *    audit Epic 16 §6.F).
+ * Audit §6.F).
  *
- * **Idempotence** (AC1.1) :
+ * **Idempotence** :
  *
  *  - `initIfMissing()` : si CA root + cert serveur + paire JWT déjà présents
  *    (3 fichiers cert + 3 fichiers clés), retourne sans rien faire.
@@ -38,7 +38,7 @@ use RuntimeException;
  *  - `regenerateServerOnly()` : régénère uniquement la paire serveur (signée
  *    par le CA existant). N'altère ni CA ni JWT keys.
  *
- * **Permissions** (D3) :
+ * **Permissions** :
  *
  *  - Clés privées chmod **0600** (CA, server, JWT private)
  *  - Certs + clés publiques chmod **0644**
@@ -260,10 +260,6 @@ class CaInitializer
 
         return true;
     }
-
-    // =========================================================================
-    // ÉTAPES INTERNES — Génération individuelle
-    // =========================================================================
 
     /**
      * Génère le CA root RSA (validité = `ca_validity_days`). Auto-signé.
@@ -507,10 +503,6 @@ class CaInitializer
         $this->applyWebOwnership($jwtDir);
     }
 
-    // =========================================================================
-    // HELPERS — Configuration, paths, logging
-    // =========================================================================
-
     /**
      * Résout un chemin via override constructeur > config('auth_v1.pki.*').
      */
@@ -751,7 +743,7 @@ INI;
 
     /**
      * Rend les blocs Apache/nginx à intégrer dans le vhost HTTPS local.
-     * AC1.2 — la commande Artisan détecte le serveur web actif via T0.5
+     * La commande Artisan détecte le serveur web actif via T0.5
      * et affiche le bloc pertinent. Ici on renvoie les deux pour permettre
      * à l'admin de choisir.
      *
@@ -763,7 +755,7 @@ INI;
         $key = $this->path('server_key');
 
         $apacheBlock = <<<APACHE
-# Apache vhost HTTPS local (Story 16.10 — à intégrer manuellement)
+# Apache vhost HTTPS local (à intégrer manuellement)
 SSLEngine               on
 SSLCertificateFile      {$crt}
 SSLCertificateKeyFile   {$key}
@@ -772,7 +764,7 @@ SSLHonorCipherOrder     on
 APACHE;
 
         $nginxBlock = <<<NGINX
-# nginx server block HTTPS local (Story 16.10 — à intégrer manuellement)
+# Nginx server block HTTPS local (à intégrer manuellement)
 ssl_certificate     {$crt};
 ssl_certificate_key {$key};
 ssl_protocols       TLSv1.2 TLSv1.3;

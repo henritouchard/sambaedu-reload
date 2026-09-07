@@ -23,7 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — **L'ÉPREUVE : les deux arbres, côte à côte.**
+ * **L'ÉPREUVE : les deux arbres, côte à côte.**
  *
  * Le seed est à la fois la livraison et le test. Si le langage de recette sait
  * exprimer le partage de classe historique, il est assez expressif ; sinon, c'est
@@ -37,7 +37,6 @@ use Tests\TestCase;
  * donc tomber ce test, et c'est toute sa valeur : si le langage ne savait pas dire
  * quelque chose, ça se verrait ici.
  *
- * ---------------------------------------------------------------------------
  * **L'ORACLE EST EXERCÉ, PAS RECOPIÉ.**
  *
  * L'état de l'arbre historique est obtenu en rejouant la SÉQUENCE EFFECTIVE du
@@ -46,7 +45,6 @@ use Tests\TestCase;
  * l'état final de la racine : c'est justement l'ajustement qui la façonne, et c'est
  * de lui que naît le seul écart documenté.
  *
- * ---------------------------------------------------------------------------
  * **L'UNIQUE ÉCART ATTENDU, mesuré sur instance réelle le 2026-08-05.**
  *
  * Sur la racine de la classe, et là seulement, l'ACL d'HÉRITAGE ne reflète pas
@@ -110,10 +108,6 @@ class ClassTreeComparisonTest extends TestCase
         UserGroupObserver::enableSync();
         parent::tearDown();
     }
-
-    // =========================================================================
-    // L'arbre HISTORIQUE, par REJEU de sa séquence
-    // =========================================================================
 
     /**
      * Applique la sémantique d'un ajustement additif sur un jeu d'ACL : une entrée
@@ -182,10 +176,6 @@ class ClassTreeComparisonTest extends TestCase
 
         return array_map(static fn (array $acls): array => AclFormat::normalizeSet($acls), $tree);
     }
-
-    // =========================================================================
-    // L'arbre NEUF, par la chaîne complète
-    // =========================================================================
 
     /**
      * @return array<string, list<string>> chemin de nœud => jeu d'ACL canonique
@@ -261,10 +251,6 @@ class ClassTreeComparisonTest extends TestCase
         return $diff;
     }
 
-    // =========================================================================
-    // Décor
-    // =========================================================================
-
     /** @param array<string, string> $members login => rôle d'arête */
     private function classGroup(string $name, array $members = [], ?string $adDn = null): UserGroup
     {
@@ -284,10 +270,6 @@ class ClassTreeComparisonTest extends TestCase
 
         return $this->plans->planUsing($group, $template, [], $nodeActivation);
     }
-
-    // =========================================================================
-    // L'AC DUR
-    // =========================================================================
 
     /**
      * **LE test pivot.** Diff global == l'unique écart documenté, sur la racine
@@ -382,10 +364,6 @@ class ClassTreeComparisonTest extends TestCase
             $diff,
         );
     }
-
-    // =========================================================================
-    // Les détails DUREMENT ACQUIS, chacun avec son assertion en littéraux
-    // =========================================================================
 
     /**
      * Le groupe d'administration d'annuaire porte un ESPACE, et il est échappé.
@@ -576,10 +554,6 @@ class ClassTreeComparisonTest extends TestCase
         self::assertSame([], $this->diff($this->legacyTree($group, []), $this->compiledTree($plan))['_travail'] ?? []);
     }
 
-    // =========================================================================
-    // AC8 — ce qui se passe QUAND ÇA SE PASSE MAL
-    // =========================================================================
-
     /**
      * Groupe d'annuaire introuvable : l'octroi n'est PAS écrit, l'échec NOMME le
      * groupe attendu, et **rien n'est purgé**. C'est le pré-contrôle de l'arbre
@@ -645,10 +619,6 @@ class ClassTreeComparisonTest extends TestCase
             );
         }
     }
-
-    // =========================================================================
-    // Le chemin RÉEL, et l'arbre auquel on n'écrit pas
-    // =========================================================================
 
     /**
      * Le partage d'arbre matérialisé vit dans la racine NEUVE, et son chemin réel

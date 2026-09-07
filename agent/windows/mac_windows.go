@@ -8,7 +8,7 @@ import (
 )
 
 // macAddress retourne le fournisseur d'adresse MAC du faisceau d'enrôlement
-// porte 2 (Story 25.4). Ancre fiable de rapprochement côté serveur (25.3) — le
+// porte 2. Ancre fiable de rapprochement côté serveur — le
 // serveur normalise via MacAddressNormalizer, donc le format brut importe peu :
 // on renvoie la MAC de la PREMIÈRE interface physique active (up, non-loopback,
 // MAC non vide), iso-legacy « adaptateur actif ».
@@ -16,8 +16,8 @@ import (
 // Implémentation pure-Go (net.Interfaces, zéro dépendance, zéro shell-out) :
 // l'ancre est l'adresse matérielle de la NIC, pas un GUID Windows. Échec /
 // aucune interface éligible → chaîne vide : la demande part QUAND MÊME (le
-// serveur la trace mais ne pourra pas l'auto-approuver — piège n° 5 : on ne
-// renvoie JAMAIS une MAC inventée).
+// serveur la trace mais ne pourra pas l'auto-approuver — on ne renvoie
+// JAMAIS une MAC inventée).
 func macAddress(log *shared.Logger) func() string {
 	return func() string {
 		ifaces, err := net.Interfaces()

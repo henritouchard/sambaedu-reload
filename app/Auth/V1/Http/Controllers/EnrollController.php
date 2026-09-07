@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * Story 16.10 — AC5.1.
  *
  * Endpoint `POST /api/v1/agent/enroll`.
  *
@@ -30,7 +29,7 @@ use RuntimeException;
  *   permettre au poste de pinner le CA et savoir où adresser les requêtes
  *   futures.
  *
- * **Idempotence** (AC5.1) : ré-enrôler le même UUID **n'invalide PAS** les
+ * **Idempotence** : ré-enrôler le même UUID **n'invalide PAS** les
  * sessions existantes. On émet une nouvelle paire fraîche, l'ancienne reste
  * valide jusqu'à sa propre rotation/révocation.
  *
@@ -53,12 +52,12 @@ use RuntimeException;
  * `success` + `message` ajoutés (cf. convention `architecture.md` —
  * réponse API toujours avec `success: true|false` + `message`).
  *
- * **Story 16.11 — upsert migration status** : en fin de flot enroll réussi,
+ * **upsert migration status** : en fin de flot enroll réussi,
  * upsert dans `workstations_migration_status` (unique sur `workstation_uuid`)
  * + insertion d'une row `workstation_migration_attempts` (status='enrolled').
- * Story 16.13bis : `MigrationController::serveFragment` consulte cette table
+ * `MigrationController::serveFragment` consulte cette table
  * pour décider de no-op (poste déjà migré) sur les prochaines requêtes
- * legacy `gpo/*_out.php`. Le middleware `InjectBootstrapFragment` 16.11
+ * legacy `gpo/*_out.php`. Le middleware `InjectBootstrapFragment`
  * a été supprimé — la logique est portée par `MigrationController`.
  */
 class EnrollController extends Controller
@@ -114,7 +113,7 @@ class EnrollController extends Controller
             // En prod : 503 strict — un enrollment sans CA root expose le poste à du MitM
             // (il pourrait basculer en mode skip-CA-verify, accepter n'importe quel cert).
             if (! app()->environment(['testing', 'local'])) {
-                // Story 16.11 Q2 (Opus-B) — tracer comme failed pour health-check.
+                // Tracer l'échec pour `migration:health-check`.
                 $this->attemptRecorder->recordFailure(
                     $request,
                     'pki.not_initialized',
@@ -133,10 +132,9 @@ class EnrollController extends Controller
             $caCertPem = '';
         }
 
-        // 4. Server base URL
         $serverBaseUrl = $this->resolveServerBaseUrl();
 
-        // Story 16.11 — upsert workstations_migration_status + log migration.
+        // Upsert workstations_migration_status + log migration.
         $this->recordMigrationSuccess($request, $workstationUuid, $os, (string) $access['jti']);
 
         Log::channel('auth-v1')->info('[EnrollController] auth.enroll.success', [
@@ -194,7 +192,7 @@ class EnrollController extends Controller
     }
 
     /**
-     * Story 16.11 — upsert `workstations_migration_status` + insert attempt
+     * Upsert `workstations_migration_status` + insert attempt
      * `enrolled` après un enroll réussi. Best-effort : si DB indispo, on log
      * et on ne fait pas crasher l'enroll lui-même.
      *
@@ -210,7 +208,7 @@ class EnrollController extends Controller
         string $os,
         string $jti,
     ): void {
-        // Correctif 2026-06-05 : normalisation lowercase obligatoire — Windows
+        // Normalisation lowercase obligatoire — Windows
         // déclare son UUID SMBIOS en MAJUSCULES, or `isMigrated()` (et tout le
         // module migration) compare en lowercase : sans normalisation, un
         // poste Windows enrôlé n'était jamais reconnu migré (fragment full

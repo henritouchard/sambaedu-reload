@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 43.2 (D6, AC1/AC6) — `Capability::refreshHint()` + `Capability::effectTiming()`.
+ * `Capability::refreshHint` + `Capability::effectTiming`.
  *
  * Les DEUX lisent la relation `projections` DÉJÀ chargée par l'appelant (zéro
  * requête ajoutée) : chaque test charge explicitement `projections` (comme les
@@ -56,8 +56,9 @@ class CapabilityRefreshHintTest extends TestCase
     #[Test]
     public function bi_projection_takes_the_strongest_hint_of_the_two_specs(): void
     {
-        // D1/D6 : ordre de force = REFRESH_HINTS (shell_notify < policy_broadcast
-        // < explorer_restart). La bi-projection prend le MAX des deux specs.
+        // L'ordre de force est celui de REFRESH_HINTS : shell_notify <
+        // policy_broadcast < explorer_restart. La bi-projection prend le MAX des
+        // deux specs.
         $cap = Capability::factory()->create();
         CapabilityProjection::factory()->for($cap)->create([
             'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
@@ -97,9 +98,8 @@ class CapabilityRefreshHintTest extends TestCase
     #[Test]
     public function effect_timing_is_null_without_any_hkcu_registry_key(): void
     {
-        // D5/piège n°8 : capacité machine-only (HKLM) — AUCUN badge, même si
-        // (hypothétiquement) un hint était posé (règle 5b du guard le refuserait
-        // de toute façon à l'authoring).
+        // Une capacité qui n'écrit qu'en HKLM ne porte AUCUN badge de délai :
+        // rien n'est appliqué à l'ouverture de session d'un utilisateur.
         $cap = Capability::factory()->create();
         CapabilityProjection::factory()->for($cap)->create([
             'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
@@ -122,7 +122,8 @@ class CapabilityRefreshHintTest extends TestCase
 
         self::assertNotNull($timing);
         self::assertSame('À la prochaine session', $timing['label']);
-        // D5 — pas de jargon (ni « logon », ni « HKCU », ni « broadcast »).
+        // Le libellé s'adresse à un exploitant : ni « logon », ni « HKCU », ni
+        // « broadcast ».
         self::assertStringNotContainsString('logon', $timing['tooltip']);
         self::assertStringContainsString('session Windows', $timing['tooltip']);
     }

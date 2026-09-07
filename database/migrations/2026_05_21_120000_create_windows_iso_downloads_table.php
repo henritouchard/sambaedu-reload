@@ -7,8 +7,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 3.6 — D9 / AC1.1.
- *
  * Table `windows_iso_downloads` — trace par tentative des téléchargements
  * d'ISO Windows (Win10/Win11) lancés depuis la page admin web SE5
  * `/admin/ipxe/iso-windows`.
@@ -22,11 +20,11 @@ use Illuminate\Support\Facades\Schema;
  *  - `completed_at`    : fin (success | failed | cancelled).
  *  - `exit_code`       : exit code du Process Symfony (null tant que running).
  *  - `error`           : stderr abrégé (≤ 2000 chars applicatif — text en DB).
- *  - `initiated_by_user_id` : FK users (Q2 Henri 2026-05-21 = nullOnDelete +
- *    nullable — conserve l'audit trail si l'admin est supprimé. La row n'est
- *    pas effacée, seul le pointeur user devient `null`).
+ *  - `initiated_by_user_id` : FK users en `nullOnDelete` + nullable — conserve
+ *    l'audit trail si l'admin est supprimé. La row n'est pas effacée, seul le
+ *    pointeur user devient `null`.
  *  - `host_ip`         : IP de l'admin (IPv4/IPv6, validée FILTER_VALIDATE_IP
- *    côté orchestrator — Opus-D — nullable car non garanti si requête atypique).
+ *    côté orchestrator — nullable car non garanti si requête atypique).
  *
  * Pas de FK vers `windows_iso_downloads` côté Workstation/MachineBootLog
  * (D12 — cible = opération serveur, pas machine).
@@ -34,7 +32,7 @@ use Illuminate\Support\Facades\Schema;
  * Indexes (UI = historique desc + filtre par status) :
  *  - (status, created_at) — bandeau "en cours" + listing récents.
  *  - (version, status)    — filtre Win10/Win11 + status.
- *  - (created_at)         — Opus-G — tri historique desc sans filtre status
+ *  - (created_at)         — tri historique desc sans filtre status
  *    (la requête `orderByDesc('created_at')->take(10)` est full-scan + sort
  *    sans cet index).
  */
@@ -51,16 +49,15 @@ return new class extends Migration {
             $t->timestamp('completed_at')->nullable();
             $t->integer('exit_code')->nullable();
             $t->text('error')->nullable();        // stderr abrégé (≤ 2000 chars applicatif)
-            // Q2 Henri 2026-05-21 : `nullOnDelete + nullable` — préserve
-            // l'historique d'audit si l'admin est supprimé (ne pas perdre la
-            // trace « qui a déclenché quel download »).
+            // `nullOnDelete + nullable` : préserve la trace « qui a déclenché quel
+            // download » même après suppression de l'admin.
             $t->foreignId('initiated_by_user_id')->nullable()->constrained('users')->nullOnDelete();
             $t->string('host_ip', 45)->nullable(); // IPv4 / IPv6
             $t->timestamps();
 
             $t->index(['status', 'created_at'], 'wid_status_created_idx');
             $t->index(['version', 'status'], 'wid_version_status_idx');
-            // Opus-G — index sur created_at seul pour le tri historique desc.
+            // Index sur created_at seul pour le tri historique desc.
             $t->index('created_at', 'wid_created_idx');
         });
     }

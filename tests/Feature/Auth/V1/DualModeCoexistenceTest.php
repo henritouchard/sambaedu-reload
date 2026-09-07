@@ -9,20 +9,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — D8 (dual-mode legacy + nouvelles routes /api/v1/agent/*).
+ * Dual-mode : routes legacy et nouvelles routes /api/v1/agent/*.
  *
  * Vérifie statiquement (par lookup du Router) que :
  *
  *  1. Les routes nouvelles `/api/v1/agent/{enroll,refresh,ping}` sont
  *     enregistrées avec les bons noms et middlewares.
- *  2. Les routes legacy `/gpo/*_out.php` (D8) sont **toujours** enregistrées
- *     dans le router (= pas supprimées par effet de bord 16.10).
+ *  2. Les routes legacy `/gpo/*_out.php` sont **toujours** enregistrées
+ *  dans le router (= pas supprimées par effet de bord).
  *  3. Aucun conflit de namespace entre `/api/v1/agent/*` (auth.v1.workstation)
  *     et `/api/v1/snapshot` etc. (controlhub.auth).
  *
  * On ne fait pas d'appel HTTP réel sur les routes legacy (elles dépendent
- * de samba-tool, LDAP, etc.) — c'est le boulot des suites Feature de 4.7,
- * 4.8, 16.3b/c, 16.7. On vérifie juste leur **présence**.
+ * de samba-tool, LDAP, etc.) — c'est le boulot des suites Feature dédiées.
+ * On vérifie juste leur **présence**.
  */
 class DualModeCoexistenceTest extends TestCase
 {
@@ -65,10 +65,10 @@ class DualModeCoexistenceTest extends TestCase
     #[Test]
     public function legacy_out_routes_are_extinguished(): void
     {
-        // Story 27.14 — le canal de config legacy `gpo/*_out.php` a été ÉTEINT
-        // EN BLOC (pas d'état transitoire legacy/agent). Story 38.2 : ces URIs
+        // Le canal de config legacy `gpo/*_out.php` a été ÉTEINT
+        // EN BLOC (pas d'état transitoire legacy/agent) : ces URIs
         // réapparaissent dans la table de routes MAIS uniquement comme
-        // TOMBSTONES inertes (réponses terminales typées — D1 epic 38 :
+        // TOMBSTONES inertes (réponses terminales typées :
         // tombstone ≠ canal maintenu ; comportement inerte verrouillé par
         // LegacyTombstoneRoutesTest/LegacyTombstoneEndpointsTest).
         // Invariant : chaque URI est soit ABSENTE, soit portée par une route

@@ -9,12 +9,12 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.5 / AC1.3 — Archivage best-effort des rapports WPKG bruts avant
+ * Archivage best-effort des rapports WPKG bruts avant
  * parsing.
  *
  * Architecture :
  *   - Path : `{config('sambaedu.wpkg.reports_archive')}/Y/m/d/{hostname}_{YmdHis}_{sha8}.txt`
- *   - Écriture atomique via `App\Support\AtomicFileWriter::write()`.
+ *  - Écriture atomique via `App\Support\AtomicFileWriter::write()`.
  *   - Best-effort : si l'écriture disque échoue → log warning sur `wpkg-deploy`,
  *     on ne lance PAS d'exception (la BDD reste source de vérité pour le
  *     dashboard ; l'archive est un audit forensic).

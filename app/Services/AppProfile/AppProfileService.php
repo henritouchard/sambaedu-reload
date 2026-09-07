@@ -168,11 +168,11 @@ final class AppProfileService
     /**
      * Ajoute des applications à un profil.
      *
-     * Story 15.4 / AC6.1 : dispatch d'un event pluriel `AppProfileApplicationsChanged`
+     * Dispatch d'un event pluriel `AppProfileApplicationsChanged`
      * APRÈS persistance (pattern post-commit via `DB::transaction`). Décision C
      * 2026-05-07 : 1 event pluriel plutôt que N events (cf. Dev Agent Record §
      * Decisions). Aucun event dispatché si `$applicationIds` est vide ou si le
-     * profil n'existe pas — invariant AC6.3.
+     * profil n'existe pas — invariant.
      */
     public function addApplications(int $profileId, array $applicationIds): bool
     {
@@ -188,8 +188,7 @@ final class AppProfileService
 
         DB::transaction(function () use ($profile, $profileId, $applicationIds) {
             $profile->applications()->syncWithoutDetaching($applicationIds);
-            // Story 15.4 / Correction post-review #1 + #3 + #M3 : dispatch
-            // post-commit pour garantir que les listeners (cache invalidation,
+            // Dispatch post-commit pour garantir que les listeners (cache invalidation,
             // regen .ini) ne voient jamais un état non persisté en cas de
             // transaction parente (Command/Job/bulk).
             DB::afterCommit(fn () => event(
@@ -238,8 +237,8 @@ final class AppProfileService
     /**
      * Ajoute des groupes de postes à un profil.
      *
-     * Story 15.4 / AC6.1 : dispatch d'un event `AppProfileWorkstationGroupChanged`
-     * par groupe (signature singulier 15.2 conservée — pas de cassure rétro-compat).
+     * Dispatch d'un event `AppProfileWorkstationGroupChanged`
+     * par groupe (signature singulier conservée — pas de cassure rétro-compat).
      */
     public function addWorkstationGroups(int $profileId, array $groupIds): bool
     {
@@ -253,7 +252,7 @@ final class AppProfileService
             return false;
         }
 
-        // Story 29.1 — defense-in-depth : un profil assigné à des parcs matérialise
+        // Defense-in-depth : un profil assigné à des parcs matérialise
         // une assignation WPKG par-parc. On garde CHAQUE parc cible ; un seul refus
         // hors-périmètre fait échouer toute l'opération (AuthorizationException).
         if (Auth::check()) {
@@ -294,7 +293,7 @@ final class AppProfileService
             return false;
         }
 
-        // Story 29.1 — defense-in-depth : retrait d'un profil d'un parc = mutation
+        // Defense-in-depth : retrait d'un profil d'un parc = mutation
         // WPKG scopée par-parc. On garde chaque parc cible.
         if (Auth::check()) {
             foreach ($groupIds as $groupId) {
@@ -334,7 +333,7 @@ final class AppProfileService
             return false;
         }
 
-        // Story 29.1 — defense-in-depth : attacher un profil à des postes matérialise
+        // Defense-in-depth : attacher un profil à des postes matérialise
         // une assignation WPKG par-poste (symétrique de addApplicationsToWorkstation).
         // On garde chaque poste sur sa salle physique ; un seul refus hors-périmètre
         // fait échouer toute l'opération avant écriture (AuthorizationException).
@@ -376,7 +375,7 @@ final class AppProfileService
             return false;
         }
 
-        // Story 29.1 — defense-in-depth : retrait d'un profil d'un poste = mutation
+        // Defense-in-depth : retrait d'un profil d'un poste = mutation
         // WPKG scopée par-poste. On garde chaque poste sur sa salle physique.
         if (Auth::check()) {
             foreach ($workstationIds as $workstationId) {
@@ -401,12 +400,8 @@ final class AppProfileService
         return true;
     }
 
-    // ============================================================
-    // STORY 15.4 — Mutations directes parc/poste (pas via AppProfile).
-    // ============================================================
-
     /**
-     * Story 15.4 / AC1.4 — Ajoute des applications directement à un parc
+     * Ajoute des applications directement à un parc
      * (pivot `application_workstation_group`).
      *
      * @return list<int>  IDs effectivement ajoutés (différence syncWithoutDetaching).
@@ -423,7 +418,7 @@ final class AppProfileService
             return [];
         }
 
-        // Story 29.1 — defense-in-depth : assignation scopée par parc.
+        // Defense-in-depth : assignation scopée par parc.
         $this->assertCanAssignWpkgOnGroup($group);
 
         $attached = DB::transaction(function () use ($group, $groupId, $applicationIds) {
@@ -449,7 +444,7 @@ final class AppProfileService
     }
 
     /**
-     * Story 15.4 / AC1.4 — Retire des applications directement d'un parc.
+     * Retire des applications directement d'un parc.
      *
      * @return int  Nombre de lignes pivot supprimées.
      */
@@ -465,7 +460,7 @@ final class AppProfileService
             return 0;
         }
 
-        // Story 29.1 — defense-in-depth : assignation scopée par parc.
+        // Defense-in-depth : assignation scopée par parc.
         $this->assertCanAssignWpkgOnGroup($group);
 
         $detached = DB::transaction(function () use ($group, $groupId, $applicationIds) {
@@ -488,7 +483,7 @@ final class AppProfileService
     }
 
     /**
-     * Story 15.4 / AC2.4 — Ajoute des applications directement à un poste
+     * Ajoute des applications directement à un poste
      * (pivot `application_workstation`).
      *
      * @return list<int>
@@ -505,7 +500,7 @@ final class AppProfileService
             return [];
         }
 
-        // Story 29.1 — defense-in-depth : scope = salle physique du poste
+        // Defense-in-depth : scope = salle physique du poste
         // (null si nomade → fallback global seul).
         $this->assertCanAssignWpkgOnGroup($workstation->physicalRoom);
 
@@ -532,7 +527,7 @@ final class AppProfileService
     }
 
     /**
-     * Story 15.4 / AC2.4 — Retire des applications directement d'un poste.
+     * Retire des applications directement d'un poste.
      */
     public function removeApplicationsFromWorkstation(int $workstationId, array $applicationIds): int
     {
@@ -546,7 +541,7 @@ final class AppProfileService
             return 0;
         }
 
-        // Story 29.1 — defense-in-depth : scope = salle physique du poste
+        // Defense-in-depth : scope = salle physique du poste
         // (null si nomade → fallback global seul).
         $this->assertCanAssignWpkgOnGroup($workstation->physicalRoom);
 
@@ -570,23 +565,22 @@ final class AppProfileService
     }
 
     /**
-     * Story 15.4 / AC4 — Clone synchrone de la configuration WPKG d'un parc source
+     * Clone synchrone de la configuration WPKG d'un parc source
      * vers un parc cible. Calcule le diff (added/removed) sur les profils ET sur
      * les applications directes, applique en transaction DB, dispatche les events
      * ciblés et insère une ligne `wpkg_deployments` avec UUID partagé pour les
      * logs `wpkg-deploy`.
      *
-     * @note Race condition preview/execute (Correction post-review #6) : le diff
-     *       calculé par previewCloneConfiguration() au moment T peut diverger
-     *       du diff réellement appliqué par cloneConfiguration() au moment T+N
-     *       si un autre admin modifie source ou cible entre-temps. La méthode
-     *       recalcule systématiquement le diff depuis la BDD à l'execute —
+     * @note Race condition preview/execute : le diff calculé par
+     *       previewCloneConfiguration() au moment T peut diverger du diff
+     *       réellement appliqué par cloneConfiguration() au moment T+N si un
+     *       autre admin modifie source ou cible entre-temps. La méthode
+     *       recalcule systématiquement le diff depuis la BDD à l'execute :
      *       l'état final reflète la BDD au moment de l'execute, pas au moment
-     *       du preview. Le toast de résultat affiche le delta réel (peut
-     *       différer du preview). Mitigation actuellement non implémentée :
-     *       hash de la configuration source au preview comparé à l'execute
-     *       permettrait d'alerter l'utilisateur. Hors scope MVP — voir
-     *       review 15.4 problème #6.
+     *       du preview, et le toast de résultat affiche le delta réel, qui
+     *       peut différer du preview. Rien ne détecte cette divergence
+     *       aujourd'hui ; un hash de la configuration source pris au preview
+     *       et comparé à l'execute permettrait d'en avertir l'utilisateur.
      *
      * @return array{
      *     deployment_id: string,
@@ -611,7 +605,7 @@ final class AppProfileService
             throw new \RuntimeException('Parc source ou cible introuvable.');
         }
 
-        // Story 29.1 — defense-in-depth : le clone n'écrit QUE sur le parc CIBLE
+        // Defense-in-depth : le clone n'écrit QUE sur le parc CIBLE
         // (la source est lue seule). On garde donc le périmètre cible. Appelée
         // depuis l'UI sous un user → le garde Auth::check() la couvre ; inerte
         // en contexte système (clone scripté/seed).
@@ -662,8 +656,7 @@ final class AppProfileService
                 'updated_at' => now(),
             ]);
 
-            // Story 15.4 / Correction post-review #1 + #M3 : dispatch events
-            // ciblés post-commit + log audit corrélé deployment_id. Garantit
+            // Events ciblés post-commit + log audit corrélé deployment_id. Garantit
             // qu'aucun event/log n'est émis si la transaction rollback (ligne
             // wpkg_deployments inexistante = pas de bruit dans les logs).
             DB::afterCommit(function () use (
@@ -738,12 +731,12 @@ final class AppProfileService
     }
 
     /**
-     * Story 29.1 — Garde defense-in-depth : refuse une assignation WPKG sur un
+     * Garde defense-in-depth : refuse une assignation WPKG sur un
      * parc hors du périmètre autorisé de l'utilisateur courant.
      *
      * INERTE hors contexte HTTP/Livewire (`Auth::check() === false` : console,
      * agent desired-state, seeders, clone système) — ces appelants non-web ne
-     * sont pas soumis au Gate scopé (non-régression, AC #6). En contexte
+     * sont pas soumis au Gate scopé. En contexte
      * authentifié, lève `AuthorizationException` si l'utilisateur n'a ni
      * délégation `wpkg.assign` active sur la salle ni le droit global (fallback).
      * `$group === null` (poste nomade sans salle) ⇒ fallback global seul, cf.
@@ -752,8 +745,7 @@ final class AppProfileService
      * Cette couche double l'enforcement posé sur les pages parc/machine
      * (`ensureWpkgAssignAuthorized`). Sur la page profils, en revanche, les
      * boutons d'assignation n'ont pas (encore) de garde UI : pour le chemin
-     * profil→parc/poste, ce garde service est le seul rempart — d'où son
-     * importance (Story 29.1, finding MANQUÉ-1).
+     * profil→parc/poste, ce garde service est le seul rempart.
      *
      * @throws \Illuminate\Auth\Access\AuthorizationException
      */
@@ -765,7 +757,6 @@ final class AppProfileService
 
         Gate::authorize('assign-wpkg-workstationGroup', $group);
     }
-
 
     /**
      * Normalise un array d'IDs : cast int, filtre > 0, dédoublonne.

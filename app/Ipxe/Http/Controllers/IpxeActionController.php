@@ -10,13 +10,11 @@ use App\Ipxe\Services\IpxeService;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.2 — AC2.1 / D2 / D9.
- *
  * Controller fin — délègue 100% à {@see IpxeService::handleAction()}.
  *
  * **Sert** : `GET|POST /ipxe/action/{action}` (port natif partiel du legacy
  * `sambaedu/ipxe/action.php` — whitelist enum {@see \App\Ipxe\Enums\IpxeAdminAction}
- * de 3 cases stricts en 3.2 : `rescuecd`, `winpe`, `factory_reset`).
+ * de 3 cases stricts : `rescuecd`, `winpe`, `factory_reset`).
  *
  * **Sécurité** :
  *
@@ -26,7 +24,7 @@ use Illuminate\Http\Response;
  *    finale — toute valeur hors whitelist retourne 404 + log warning
  *    `ipxe.action.unknown_action`.
  *
- * Pattern iso 3.1 `IpxeBootController` (DO-6).
+ * Pattern iso `IpxeBootController` (DO-6).
  */
 class IpxeActionController extends Controller
 {

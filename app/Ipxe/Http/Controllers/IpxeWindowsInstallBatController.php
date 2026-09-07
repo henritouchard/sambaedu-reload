@@ -14,22 +14,20 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.5 — AC5.3 / D2.
- *
  * Controller du endpoint `GET|POST /ipxe/windows/install.bat` (port natif
  * `sambaedu/ipxe/Win10/install.bat.php` 73 LOC).
  *
  * **Flow** :
  *  1. Valide les inputs via {@see IpxeWindowsInstallBatRequest}.
  *  2. Résout la Workstation via {@see WorkstationLocator}.
- *  3. Si null → 200 + body vide + log warning (D4 — parité legacy
+ *  3. Si null → 200 + body vide + log warning (parité legacy
  *     `install.bat.php:32` qui n'écrit rien sinon).
  *  4. Parse `version` via {@see WindowsVersion::fromString()}. Si null → 422 + log.
  *  5. Génère le bash via {@see WindowsInstallBatBuilder::build()}.
  *  6. Tracker {@see WindowsPostInstallTracker::recordInstallBatGenerated()}
  *     pour l'audit MachineBootLog `ipxe_win_install`.
  *  7. Log info `ipxe.windows.install_bat.generated` (sha256 only, jamais le bash).
- *  8. Response 200 text/plain + headers D10.
+ *  8. Response 200 text/plain.
  *
  * **Sécurité** : middleware `auth.v1.lan-only` (LAN scolaire) + matching
  * MAC/UUID strict via locator + sanitize shell-arg dans le builder.

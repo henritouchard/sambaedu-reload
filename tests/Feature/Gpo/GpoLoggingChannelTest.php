@@ -10,12 +10,12 @@ use Tests\TestCase;
 
 /**
  * Test d'intégration légère : vérifie que le channel `gpo` est configuré
- * conformément à AC1.1 (driver `daily`, path sous `storage/logs/gpo/`,
+ * conformément à (driver `daily`, path sous `storage/logs/gpo/`,
  * niveau pilotable par env `GPO_LOG_LEVEL` / rétention `GPO_LOG_DAYS`).
  *
  * Pas de test d'écriture réelle sur disque ici — le test resterait fragile
  * en CI (storage/logs non rotaté, conflits d'instance). Le contrat de
- * configuration suffit pour Story 16.1.
+ * configuration suffit pour.
  */
 class GpoLoggingChannelTest extends TestCase
 {
@@ -53,8 +53,8 @@ class GpoLoggingChannelTest extends TestCase
     #[Test]
     public function gpo_channel_default_level_is_debug_during_epic_16_transition(): void
     {
-        // GPO_LOG_LEVEL est attendu par defaut à `debug` (cf. AC1.1 — verbosité
-        // élevée volontaire pendant la phase de transition Epic 16).
+        // GPO_LOG_LEVEL est attendu par defaut à `debug` (verbosité
+        // élevée volontaire pendant la phase de transition).
         $cfg = config('logging.channels.gpo');
         $this->assertSame('debug', $cfg['level'] ?? null);
     }

@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 55.3 — **FR24 : la capacité NÉGATIVE est contractuelle.**
+ * **La capacité NÉGATIVE est contractuelle.**
  *
  * « Aucun code d'extension ne s'exécute dans le processus SE5, aucun
  * identifiant de base ou d'annuaire n'est exposé aux extensions » n'est pas une
@@ -32,9 +32,9 @@ use Symfony\Component\Finder\Finder;
  * **méta-test** : un scan qui ne détecte rien parce qu'il ne regarde rien
  * passerait sinon éternellement au vert.
  *
- * ⚠️ Ce que ce fichier NE prouve PAS : l'isolation par **processus** (NFR4
- * complet). Elle appartient aux extensions de type `app` (Epics 56/57). Ici,
- * c'est l'isolation par **CONTRAT** qui est verrouillée.
+ * ⚠️ Ce que ce fichier NE prouve PAS : l'isolation par **processus**, qui
+ * appartient aux extensions de type `app`. Ici, c'est l'isolation par
+ * **CONTRAT** qui est verrouillée.
  */
 class ExtensionIsolationTest extends TestCase
 {
@@ -58,14 +58,13 @@ class ExtensionIsolationTest extends TestCase
         'appel direct au query builder' => '/\bDB::/',
         'annuaire LDAP' => '/LdapRecord/',
 
-        // ⚠️ Correctif review 55.3 (#1) — le lookbehind était `(?<![\w\\])`,
-        // c'est-à-dire qu'il excluait aussi un ANTISLASH de tête. Or
+        // Le lookbehind est `(?<!\w)` seul, et surtout pas `(?<![\w\\])` :
         // `\auth()`, `\session()` et `\Illuminate\Support\Facades\Auth::` sont
-        // du PHP parfaitement légal (résolution globale / FQCN inline) : la
-        // règle laissait donc passer exactement la syntaxe qu'un contributeur
-        // pressé emploie. Le lookbehind ne doit exclure QUE les identifiants
-        // qui se terminent par le motif (`myAuth::`, `getauth(`), donc `\w`
-        // seul.
+        // du PHP parfaitement légal (résolution globale, FQCN inline). Exclure
+        // aussi l'antislash de tête laisserait passer exactement la syntaxe
+        // qu'un contributeur pressé emploie. Seuls les identifiants qui se
+        // TERMINENT par le motif (`myAuth::`, `getauth(`) doivent échapper à la
+        // règle.
         'utilisateur connecté (helper)' => '/(?<!\w)auth\s*\(/',
         'utilisateur connecté (façade)' => '/(?<!\w)Auth::/',
         'magasin d\'état serveur de SE5' => '/(?<!\w)session\s*\(/',
@@ -91,8 +90,8 @@ class ExtensionIsolationTest extends TestCase
     /**
      * Formes d'ÉVASION connues, à faire mordre par le méta-test.
      *
-     * Chaque entrée a été vérifiée comme NON détectée par le jeu de règles
-     * d'origine (review 55.3 #1). Les garder ici en dur est ce qui empêche la
+     * Chaque entrée est une variante syntaxique légale qui esquive la forme
+     * canonique visée par une règle. Les garder ici en dur est ce qui empêche la
      * régression : quelqu'un qui « simplifierait » une regex sans y penser
      * ferait rougir le méta-test, pas seulement le scan nominal.
      *
@@ -136,10 +135,6 @@ class ExtensionIsolationTest extends TestCase
         return $violations;
     }
 
-    // =====================================================================
-    // Volet 1 — la quarantaine de l'app-témoin
-    // =====================================================================
-
     #[Test]
     public function the_witness_namespace_cannot_reach_anything_but_the_public_contract(): void
     {
@@ -161,8 +156,8 @@ class ExtensionIsolationTest extends TestCase
             }
         }
 
-        // Méta-test #1 : sans ce garde-fou, un namespace renommé ou déplacé
-        // ferait passer le test À VIDE, indéfiniment.
+        // Sans ce plancher, un namespace renommé ou déplacé ferait passer le
+        // test À VIDE, indéfiniment.
         self::assertGreaterThanOrEqual(
             3,
             $inspected,
@@ -179,7 +174,7 @@ class ExtensionIsolationTest extends TestCase
     }
 
     /**
-     * Méta-test #2 — **le scan détecte réellement.**
+     * **Le scan détecte réellement.**
      *
      * Une assertion d'ABSENCE ne vaut rien tant qu'on n'a pas prouvé que la
      * présence, elle, serait vue. On injecte donc les aiguilles dans une chaîne
@@ -232,16 +227,15 @@ class ExtensionIsolationTest extends TestCase
             ),
         );
 
-        // Correctif review 55.3 (#1) — LES FORMES D'ÉVASION.
+        // LES FORMES D'ÉVASION.
         //
         // Les aiguilles ci-dessus prouvent que chaque règle mord sur SA syntaxe
-        // canonique. Elles ne prouvaient rien sur les variantes légales que PHP
+        // canonique. Elles ne prouvent rien sur les variantes légales que PHP
         // autorise — antislash de résolution globale, FQCN inline, alias
-        // d'import, conteneur. Le jeu de règles d'origine laissait passer les
-        // sept formes ci-dessous : le témoin pouvait lire la session SE5 sans
-        // qu'aucun test ne bronche, et la propriété centrale de la story
-        // (« la quarantaine est verrouillée par test, pas par convention »)
-        // était fausse.
+        // d'import, conteneur. Un jeu de règles qui laisse passer les sept
+        // formes ci-dessous permet au témoin de lire la session SE5 sans
+        // qu'aucun test ne bronche, et rend fausse la propriété centrale :
+        // « la quarantaine est verrouillée par test, pas par convention ».
         //
         // Chacune doit désormais produire AU MOINS une violation. On n'exige
         // pas quelle règle mord : ce qui compte est qu'aucune de ces formes ne
@@ -270,7 +264,7 @@ class ExtensionIsolationTest extends TestCase
      *
      * Ce test documente ce résidu et échouerait si quelqu'un le supprimait en
      * croyant la quarantaine hermétique. Même parti-pris que le canal de timing
-     * assumé en review 55.2 : un écart connu et écrit vaut mieux qu'une
+     * assumé en review : un écart connu et écrit vaut mieux qu'une
      * promesse absolue démentie par le code.
      */
     #[Test]
@@ -286,17 +280,13 @@ class ExtensionIsolationTest extends TestCase
         );
     }
 
-    // =====================================================================
-    // Volet 2 — le manifest ne porte rien d'exécutable
-    // =====================================================================
-
     /**
      * La forme normalisée d'un manifest v1 est une liste FERMÉE de métadonnées.
      *
      * C'est là que se joue « aucun code d'extension ne s'exécute in-process » :
      * tant que le manifest ne peut porter ni commande, ni script, ni classe, ni
-     * point d'accroche, il n'y a RIEN à exécuter. Le jour où une story ajouterait
-     * une clé, ce test l'obligerait à regarder cette propriété en face.
+     * point d'accroche, il n'y a RIEN à exécuter. Le jour où l'on ajouterait une
+     * clé, ce test obligerait à regarder cette propriété en face.
      */
     #[Test]
     public function the_manifest_contract_carries_no_executable_field(): void
@@ -400,7 +390,7 @@ class ExtensionIsolationTest extends TestCase
         foreach ($files as $name => $content) {
             foreach ($dangerous as $label => $pattern) {
                 if ($label === 'exécution système' && $name === self::PRIVILEGED_SEAM) {
-                    // Exemption UNIQUE, NOMMÉE et compensée (Story 56.2) — voir
+                    // Exemption UNIQUE, NOMMÉE et compensée — voir
                     // le test suivant, qui impose à ce fichier des contraintes
                     // PLUS strictes que la règle générale.
                     continue;
@@ -417,17 +407,17 @@ class ExtensionIsolationTest extends TestCase
 
     /**
      * Le SEUL fichier du registre autorisé à exécuter une commande système
-     * (Story 56.2) : l'implémentation réelle du seam privilégié.
+     * L'implémentation réelle du seam privilégié.
      */
     private const PRIVILEGED_SEAM = 'SudoExtensionHelperRunner.php';
 
     #[Test]
     public function the_only_privileged_seam_never_touches_a_manifest_and_escapes_everything(): void
     {
-        // ── Pourquoi une exemption, et pourquoi elle ne trahit pas la règle ──
+        // Pourquoi une exemption, et pourquoi elle ne trahit pas la règle
         //
-        // La règle FR24 dit : « un manifest ne doit JAMAIS devenir du code ».
-        // Le moteur d'installation (56.2) DOIT pourtant exécuter des commandes
+        // La règle générale dit : « un manifest ne doit JAMAIS devenir du code ».
+        // Le moteur d'installation DOIT pourtant exécuter des commandes
         // privilégiées (apt, systemd, Apache) — mais il les exécute par UN seul
         // point de passage, dont le binaire est FIXE (une clé de configuration,
         // pas une donnée de manifest) et dont chaque argument est échappé.
@@ -462,10 +452,6 @@ class ExtensionIsolationTest extends TestCase
         self::assertSame(1, preg_match_all('/\bproc_open\s*\(/', $content));
         self::assertSame(0, preg_match('/\b(shell_exec|passthru|popen|system)\s*\(/', $content));
     }
-
-    // =====================================================================
-    // Volet 3 — l'autoload ne s'étend à aucun répertoire d'extensions
-    // =====================================================================
 
     #[Test]
     public function composer_autoload_never_maps_an_extension_directory(): void

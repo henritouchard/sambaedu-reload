@@ -22,9 +22,9 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
 
 /**
- * Story 60.4 — LA COUPE TIENT AUSSI QUAND ÇA ÉCHOUE.
+ * LA COUPE TIENT AUSSI QUAND ÇA ÉCHOUE.
  *
- * La garde de neutralité des rapports existe depuis la story 60.3, mais elle
+ * La garde de neutralité des rapports existe de longue date, mais elle
  * n'avait jamais été exercée contre un backend qui EXÉCUTE. C'est la différence
  * qui compte : le seul texte libre d'un rapport est son `detail`, et un backend
  * réel a une source de texte que le backend d'aperçu n'a pas — la sortie d'erreur
@@ -36,7 +36,7 @@ use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
  * elle ne sert à rien. Ces tests font donc ÉCHOUER de vrais gestes avec de vraies
  * sorties d'erreur.
  *
- * La liste de marqueurs est celle des stories précédentes, RÉUTILISÉE : deux
+ * La liste de marqueurs est celle du trait `PlanNeutralityMarkers`, RÉUTILISÉE : deux
  * listes qui divergeraient seraient pires qu'une seule.
  */
 class PosixReportNeutralityTest extends TestCase
@@ -181,7 +181,7 @@ class PosixReportNeutralityTest extends TestCase
     }
 
     /**
-     * Story 62.4 — LA GARDE S'ÉTEND AUX TEXTES NOUVEAUX : les phrases d'un déclin
+     * LA GARDE S'ÉTEND AUX TEXTES NOUVEAUX : les phrases d'un déclin
      * par limite de modèle.
      *
      * Ce sont du texte LIBRE, écrit à la main, et il traverse la ligne de coupe
@@ -224,7 +224,7 @@ class PosixReportNeutralityTest extends TestCase
 
             // Le mot du mécanisme, nommément interdit : c'est le seul que la
             // liste partagée de marqueurs ne connaît pas encore, parce qu'il
-            // n'existait pas avant cette story.
+            // n'existait pas jusque-là.
             foreach (['sticky', 'drapeau', 'chmod', '+t'] as $mechanism) {
                 self::assertStringNotContainsStringIgnoringCase($mechanism, $text, $case . ' / ' . $mechanism);
             }
@@ -232,7 +232,7 @@ class PosixReportNeutralityTest extends TestCase
     }
 
     /**
-     * Story 62.5 — LA GARDE S'ÉTEND AUX DEUX TEXTES DU COULOIR DÉRIVÉ.
+     * LA GARDE S'ÉTEND AUX DEUX TEXTES DU COULOIR DÉRIVÉ.
      *
      * Ils sont écrits à la main, ils traversent la ligne de coupe, et ils parlent
      * d'un mécanisme dont le vocabulaire naturel est précisément celui qui est

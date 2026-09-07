@@ -17,7 +17,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC9) — Performance des @can (pas de N+1 sur listings).
+ * Performance des @can (pas de N+1 sur listings).
  *
  * Vérifie que sur un listing de 50 users, la résolution des permissions
  * Spatie via `$user->can(...)` ne génère PAS 50 queries (cache warmed).
@@ -76,9 +76,9 @@ class CanResolutionTest extends TestCase
     }
 
     /**
-     * Review 7.2 #5 — AC9 reformulé : test du rendu Livewire effectif du
-     * listing `/app/users` avec 20 users + 10 classes. Garantit qu'on ne tombe
-     * pas dans un N+1 à cause du nouveau scoping classe (review 7.2 #3).
+     * Test du rendu Livewire effectif du listing `/app/users` avec 20 users +
+     * 10 classes. Garantit qu'on ne tombe pas dans un N+1 à cause du scoping
+     * par classe.
      *
      * Seuil conservateur (< 50 queries) — l'objectif est de détecter les N+1
      * catastrophiques (~1 query/user). Le chiffre exact dépend du composant

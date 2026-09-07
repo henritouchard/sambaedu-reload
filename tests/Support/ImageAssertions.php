@@ -7,7 +7,7 @@ namespace Tests\Support;
 /**
  * Helpers d'assertions sur les blobs image (Imagick).
  *
- * Story 4.7 — tests structurels, pas de comparaison binaire (Imagick varie
+ * Tests structurels, pas de comparaison binaire (Imagick varie
  * entre versions). Vérifie format, dimensions, dominance de couleur par zone.
  */
 trait ImageAssertions

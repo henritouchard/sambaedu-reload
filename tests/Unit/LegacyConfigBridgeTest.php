@@ -75,7 +75,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Les constantes legacy sont définies.
+     * Les constantes legacy sont définies.
      */
     public function test_legacy_constants_are_defined(): void
     {
@@ -91,7 +91,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Le $config array est alimenté depuis la config Laravel.
+     * Le $config array est alimenté depuis la config Laravel.
      */
     public function test_config_array_is_populated_from_laravel(): void
     {
@@ -104,7 +104,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Le domaine est extrait du base_dn.
+     * Le domaine est extrait du base_dn.
      */
     public function test_domain_is_derived_from_base_dn(): void
     {
@@ -113,7 +113,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Les DNs sont construits correctement.
+     * Les DNs sont construits correctement.
      */
     public function test_dns_are_built_correctly(): void
     {
@@ -129,7 +129,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Le préfixe UAI est appliqué aux RDNs.
+     * Le préfixe UAI est appliqué aux RDNs.
      */
     public function test_uai_prefix_is_applied_to_rdns(): void
     {
@@ -140,7 +140,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Le suffix est calculé à partir de l'UAI.
+     * Le suffix est calculé à partir de l'UAI.
      */
     public function test_suffix_is_calculated_from_uai(): void
     {
@@ -149,7 +149,7 @@ class LegacyConfigBridgeTest extends TestCase
     }
 
     /**
-     * AC2 — Les timeouts par défaut sont définis.
+     * Les timeouts par défaut sont définis.
      */
     public function test_default_timeouts_are_set(): void
     {

@@ -17,14 +17,14 @@ use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
- * Story 33.1 — Schéma d'ÉCHANGE versionné du contrat amont (controlHub ↔ SE5).
+ * Schéma d'ÉCHANGE versionné du contrat amont (controlHub ↔ SE5).
  *
  * Couverture :
- * - #1/#2 payload conforme (version supportée) → accepté + version enregistrée (modèle + DTO).
- * - #3 payload SANS version → accepté, version par défaut = version courante (rétro-compat 28.2).
- * - #4 réception identique (même version) → no-op total : aucune écriture, aucun event (NFR4).
- * - #5 changement de version supportée → mutation (event 1×) — conditionnel ≥ 2 versions supportées.
- * - #7d garde-fou R3 : aucun identifiant livré par 33.1 ne contient « central ».
+ * - payload conforme (version supportée) → accepté + version enregistrée (modèle + DTO).
+ * - payload SANS version → accepté, version par défaut = version courante (rétro-compat).
+ * - réception identique (même version) → no-op total : aucune écriture, aucun event.
+ * - changement de version supportée → mutation (event 1×) — conditionnel ≥ 2 versions supportées.
+ * - règle de nommage : aucun identifiant livré ne contient « central ».
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM (sans pdo_sqlite).
  * ⚠️ Idempotence mesurée par comptage de lignes + `mutated` + dispatch d'event + timestamps
@@ -40,7 +40,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
     }
 
     /**
-     * Payload de référence (calque 28.2) ; `$overrides` permet d'ajouter/retirer `schema_version`.
+     * Payload de référence (calque) ; `$overrides` permet d'ajouter/retirer `schema_version`.
      *
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
@@ -63,9 +63,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
         ], $overrides);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #1 / #2 — Version conforme acceptée + enregistrée (modèle + DTO)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Version conforme acceptée + enregistrée (modèle + DTO)
 
     public function test_conforming_version_accepted_and_recorded(): void
     {
@@ -73,27 +71,25 @@ class ControlHubContractSchemaVersionTest extends TestCase
             'schema_version' => ControlHubContractSchema::CURRENT_VERSION,
         ]));
 
-        // Persistance 28.2 inchangée.
+        // Persistance inchangée.
         $this->assertTrue($result->contractCreated);
         $this->assertTrue($result->mutated);
         $this->assertDatabaseCount('controlhub_contracts', 1);
         $this->assertDatabaseCount('controlhub_contract_items', 1);
 
-        // AC #2(b) — version lisible sur le DTO.
+        // La version est lisible sur le DTO.
         $this->assertSame(ControlHubContractSchema::CURRENT_VERSION, $result->schemaVersion);
 
-        // AC #2(a) — version lisible sur le modèle (colonne + property).
+        // La version est lisible sur le modèle (colonne + property).
         $contract = ControlHubContract::firstOrFail();
         $this->assertSame(ControlHubContractSchema::CURRENT_VERSION, $contract->schema_version);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #3 — Version absente → défaut = version courante (rétro-compat 28.2)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Version absente → défaut = version courante (rétro-compat)
 
     public function test_absent_version_defaults_to_current(): void
     {
-        // Payload 28.2 « historique » : aucune clé schema_version.
+        // Payload « historique » : aucune clé schema_version.
         $payload = $this->payload();
         $this->assertArrayNotHasKey('schema_version', $payload);
 
@@ -109,7 +105,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
 
     public function test_blank_version_defaults_to_current(): void
     {
-        // Une chaîne vide est traitée comme absente (négociation tolérante 33.1).
+        // Une chaîne vide est traitée comme absente (négociation tolérante).
         $result = $this->service()->ingest($this->payload(['schema_version' => '']));
 
         $this->assertSame(ControlHubContractSchema::CURRENT_VERSION, $result->schemaVersion);
@@ -119,9 +115,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #4 — Réception identique (même version) = no-op total (NFR4)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Réception identique (même version) = no-op total
 
     public function test_identical_reception_is_noop_with_version(): void
     {
@@ -141,7 +135,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
         $result = $this->service()->ingest($payload);
 
         // No-op fonctionnel : enregistrer la version ne doit PAS transformer une réception
-        // identique en mutation (le cœur du risque de la story — NFR4).
+        // identique en mutation.
         $this->assertFalse($result->mutated, 'Une réception identique (même version) doit rester un no-op.');
         Event::assertNotDispatched(ControlHubContractChanged::class);
 
@@ -186,19 +180,17 @@ class ControlHubContractSchemaVersionTest extends TestCase
         Carbon::setTestNow();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #5 — Changement de version supportée = mutation (event 1×)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Changement de version supportée = mutation (event 1×)
 
     public function test_version_change_is_mutation(): void
     {
         // CONDITIONNEL : ce scénario n'est observable que s'il existe ≥ 2 versions supportées.
-        // En 33.1, SUPPORTED_VERSIONS ne contient que la version courante (Q2 fige une version
-        // unique). On NE fabrique PAS de 2ᵉ version factice (consigne story). La LOGIQUE de
+        // SUPPORTED_VERSIONS ne contient que la version courante. On NE fabrique PAS
+        // de 2ᵉ version factice. La LOGIQUE de
         // « changement de version = mutation » est néanmoins vérifiée :
         //   - directement, ci-dessous, dès qu'une 2ᵉ version existe ;
         //   - par construction sinon (le gating $mutated intègre `schema_version !== négociée`,
-        //     calqué sur received_at/link_state — voir ingest(), et test no-op AC #4 qui prouve
+        //  calqué sur received_at/link_state — voir ingest(), et le test de no-op qui prouve
         //     l'autre branche : version identique ⇒ aucune mutation).
         $others = array_values(array_filter(
             ControlHubContractSchema::SUPPORTED_VERSIONS,
@@ -234,14 +226,14 @@ class ControlHubContractSchemaVersionTest extends TestCase
     public function test_version_change_from_legacy_null_is_mutation(): void
     {
         // Exerce DIRECTEMENT la branche `$versionChanged = true` du service SANS fabriquer de 2ᵉ
-        // version supportée : on simule un contrat « legacy » antérieur à 33.1 (colonne nullable
+        // version supportée : on simule un contrat « legacy » antérieur (colonne nullable
         // ⇒ schema_version = NULL en base), puis on ré-ingère un contenu STRICTEMENT identique.
-        // Seule la version diffère (null → version courante) ⇒ mutation légitime (AC #5) + event 1×.
-        // Couvre aussi le 1er passage post-migration d'un contrat 28.2 (acquisition de sa version).
+        // Seule la version diffère (null → version courante) ⇒ mutation légitime + event 1×.
+        // Couvre aussi le 1er passage post-migration d'un contrat (acquisition de sa version).
         $payload = $this->payload(['schema_version' => ControlHubContractSchema::CURRENT_VERSION]);
         $this->service()->ingest($payload);
 
-        // Rétrograder silencieusement la version persistée à NULL (état d'un contrat legacy 28.2).
+        // Rétrograder silencieusement la version persistée à NULL (état d'un contrat legacy).
         // Mass-update via query builder : ne bump PAS updated_at (pas de fausse mutation injectée).
         ControlHubContract::query()->update(['schema_version' => null]);
         $this->assertNull(ControlHubContract::firstOrFail()->schema_version);
@@ -260,13 +252,11 @@ class ControlHubContractSchemaVersionTest extends TestCase
         Carbon::setTestNow();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
     // Référentiel de version — négociation (conforme / absente)
-    // ──────────────────────────────────────────────────────────────────────────
 
     public function test_negotiate_resolves_conforming_and_absent(): void
     {
-        // Absente / vide → version courante (Q1=A).
+        // Absente / vide → version courante.
         $this->assertSame(ControlHubContractSchema::CURRENT_VERSION, ControlHubContractSchema::negotiate(null));
         $this->assertSame(ControlHubContractSchema::CURRENT_VERSION, ControlHubContractSchema::negotiate(''));
 
@@ -282,7 +272,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
 
     public function test_unsupported_version_is_rejected_and_logged(): void
     {
-        // Story 33.2 — bascule du repli au REJET strict : une version DÉCLARÉE non supportée
+        // Bascule du repli au REJET strict : une version DÉCLARÉE non supportée
         // n'est plus tolérée (plus de retour CURRENT_VERSION). negotiate() trace l'écart puis
         // lève l'exception dédiée. (Le no-op/écriture est couvert dans UnsupportedSchemaVersionRejectionTest.)
         Log::spy();
@@ -302,9 +292,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #7d — Garde-fou R3 : aucun identifiant livré ne contient « central »
-    // ──────────────────────────────────────────────────────────────────────────
+    // Règle de nommage : aucun identifiant livré ne contient « central »
 
     public function test_r3_no_central_identifier(): void
     {
@@ -328,7 +316,7 @@ class ControlHubContractSchemaVersionTest extends TestCase
             foreach ($reflection->getConstants() as $constName => $constValue) {
                 $this->assertStringNotContainsStringIgnoringCase('central', (string) $constName);
                 // La VALEUR des constantes livrées (ex. CURRENT_VERSION, SUPPORTED_VERSIONS) ne doit
-                // pas non plus véhiculer « central » (R3 vise aussi les valeurs, pas que les noms).
+                // pas non plus véhiculer « central » : la règle vise les valeurs, pas que les noms.
                 foreach (\Illuminate\Support\Arr::flatten([$constValue]) as $constLeaf) {
                     if (is_string($constLeaf)) {
                         $this->assertStringNotContainsStringIgnoringCase('central', $constLeaf, "Valeur de {$fqcn}::{$constName} ne doit pas contenir « central ».");

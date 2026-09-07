@@ -26,8 +26,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC3) — provider composite `fs_acl` : bi-alimentation, exclusiveKey
- * DÉLÉGUÉE, émission des règles (maille/depth/trustee D9/absent/sourceId),
+ * Provider composite `fs_acl` : bi-alimentation, exclusiveKey
+ * DÉLÉGUÉE, émission des règles (maille/depth/trustee/absent/sourceId),
  * machine-only, PG-pur, byte-identité sans règles.
  */
 class FolderAccessRulesProviderTest extends TestCase
@@ -95,7 +95,7 @@ class FolderAccessRulesProviderTest extends TestCase
         return $rule;
     }
 
-    // ── Type / sémantique / portée / exclusiveKey DÉLÉGUÉS ────────────────
+    // Type / sémantique / portée / exclusiveKey DÉLÉGUÉS
 
     #[Test]
     public function delegates_type_semantics_scope_and_exclusive_key(): void
@@ -111,7 +111,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertSame($cap->exclusiveKey($payload), $p->exclusiveKey($payload), 'exclusiveKey DÉLÉGUÉE');
     }
 
-    // ── Émission d'une règle active à la maille du parc (logique) ─────────
+    // Émission d'une règle active à la maille du parc (logique)
 
     #[Test]
     public function emits_one_present_item_for_an_active_rule_on_a_logical_parc(): void
@@ -130,7 +130,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertSame('present', $c->payload['ensure']);
     }
 
-    // ── Off réel : règle inactive → item ABSENT (D3) ──────────────────────
+    // Off réel : règle inactive → item ABSENT
 
     #[Test]
     public function inactive_rule_still_emits_an_absent_item(): void
@@ -142,7 +142,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertSame('absent', $items->first()->payload['ensure'], 'off réel (D3)');
     }
 
-    // ── Maille physique AVEC profondeur (piège #8) ────────────────────────
+    // Maille physique AVEC profondeur
 
     #[Test]
     public function physical_parc_carries_the_context_depth(): void
@@ -154,7 +154,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertSame(0, $c->depth, 'salle directe = profondeur 0');
     }
 
-    // ── Trustee fallback verbatim quand ad_dn absent (D9) ─────────────────
+    // Trustee fallback verbatim quand ad_dn absent
 
     #[Test]
     public function trustee_falls_back_to_the_bare_name_without_ad_dn(): void
@@ -166,7 +166,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertSame('Profs', $c->payload['trustee']);
     }
 
-    // ── sourceId injectif (offset, piège #6) ──────────────────────────────
+    // sourceId injectif (offset)
 
     #[Test]
     public function rule_source_id_is_offset_by_the_pivot_id(): void
@@ -178,7 +178,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertSame(FolderAccessRulesStateProvider::RULE_SOURCE_ID_OFFSET + $pivotId, $c->sourceId);
     }
 
-    // ── Machine-only : les règles SORTENT (piège #7 — inverse de Drives) ──
+    // Machine-only : les règles SORTENT (à l'inverse de Drives)
 
     #[Test]
     public function rules_are_emitted_on_a_machine_only_compile(): void
@@ -197,7 +197,7 @@ class FolderAccessRulesProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
-    // ── Byte-identité sans règles (piège #5) ──────────────────────────────
+    // Byte-identité sans règles
 
     #[Test]
     public function without_any_rule_the_output_equals_the_bare_capability_provider(): void
@@ -222,7 +222,7 @@ class FolderAccessRulesProviderTest extends TestCase
         );
     }
 
-    // ── Postgres pur (NFR7) ───────────────────────────────────────────────
+    // Postgres pur
 
     #[Test]
     public function provider_source_has_no_ad_apcu_dependency(): void

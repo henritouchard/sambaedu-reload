@@ -8,40 +8,37 @@ use App\Models\ExtensionAuditLog;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 /**
- * Story 56.5 (AC5, FR36 complet) — **LECTURE** du journal d'audit des
+ * **LECTURE** du journal d'audit des
  * extensions.
  *
- * L'audit FR36 est intégralement ÉCRIT depuis 54.2 (`integrate`/`uninstall`),
- * 56.1 (`source_*`), 56.2 (`install`/`remove`/`install_failed`), 56.3
- * (`update`/`update_failed`) et 56.4 (`scope_revoke`) — il n'avait jamais été
- * LU. Ce service est ce chaînon, et rien d'autre : **AUCUNE écriture**, aucun
+ * Le journal est ÉCRIT ailleurs (`integrate`/`uninstall`, `source_*`,
+ * `install`/`remove`/`install_failed`, `update`/`update_failed`,
+ * `scope_revoke`) ; ce service ne fait que le LIRE : **AUCUNE écriture**, aucun
  * acte, aucun effet de bord.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  RENDU TOLÉRANT — l'inverse assumé du validateur de manifest
  *
- *  `action` est un string LIBRE par construction (docblock de la migration
- *  54.2 : « l'Epic 56 étend sans migration »). Cette page affichera donc un jour
- *  des actions qu'elle ne connaît pas — écrites par une story future, ou par une
- *  instance plus récente dont la base a été restaurée ici.
+ *  `action` est un string LIBRE par construction : un nouvel acte s'ajoute sans
+ *  migration. Cette page affichera donc un jour des actions qu'elle ne connaît
+ *  pas — écrites plus tard, ou par une instance plus récente dont la base a été
+ *  restaurée ici.
  *
  *  Une action absente du mapping est rendue TELLE QUELLE, avec un badge neutre.
  *  C'est l'exact opposé du rejet strict de `manifest_version` : là-bas on VALIDE
  *  un contrat d'entrée (fail-closed obligatoire), ici on AFFICHE de l'historique
  *  déjà écrit — refuser de l'afficher ne protégerait rien et effacerait de la
  *  trace de conformité à l'écran.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **CE QUI NE DOIT JAMAIS APPARAÎTRE** : URL de source (elle peut porter un
- * `?private_token=…` — règle `last_error` de 56.1), secret, `client_id`,
- * `installed_sha256`. C'est garanti à l'ÉCRITURE par toutes les stories amont
- * (`details` = catégorie courte) ; c'est garanti ici à la LECTURE en ne rendant
+ * `?private_token=…` — règle `last_error`), secret, `client_id`,
+ * `installed_sha256`. C'est garanti à l'ÉCRITURE par tous les écrivains du
+ * journal (`details` = catégorie courte) ; c'est garanti ici à la LECTURE en ne rendant
  * QUE les colonnes du journal — jamais `source->url`, jamais une relation au-delà
  * des dénormalisations (`extension_key`, `extension_name`, `source_key`,
  * `actor_login`). Ces dénormalisations sont aussi ce qui rend une ligne lisible
  * APRÈS suppression de sa cible (les FK sont `nullOnDelete`).
  *
- * **Rétention : AUCUNE purge automatique — décision assumée (n° 6 de la story).**
+ * **Rétention : AUCUNE purge automatique, et c'est assumé.**
  * Le volume est structurellement borné : actes humains, échecs PAR TENTATIVE
  * d'actes humains, et transitions DÉDUPLIQUÉES pour le répétitif planifié
  * (`source_sync_failed` à la transition seulement ; la santé, elle, n'écrit rien
@@ -56,7 +53,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
  * ce n'en vaut pas la peine sur ce volume (index spéculatif = coût d'écriture
  * permanent pour un gain nul).
  *
- * NFR15 : aucune entité Eloquent ne remonte à la vue — le paginateur est
+ * Aucune entité Eloquent ne remonte à la vue — le paginateur est
  * transformé par `through()` en tableaux plats.
  */
 class ExtensionAuditJournalService

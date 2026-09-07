@@ -10,16 +10,13 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests unitaires purs — NativeSectionResolver (Story 16.3a, AC1.3).
+ * Tests unitaires purs — NativeSectionResolver.
  *
  * Test pur PHPUnit : pas de bootstrap Laravel, pas de Spatie, pas de BDD.
- * Couverture : resolve(), hasMatch(), buildUrl() — 6+ cas + piège Décision D8.
+ * Couverture : resolve(), hasMatch() et buildUrl().
  */
 class NativeSectionResolverTest extends TestCase
 {
-    // =========================================================================
-    // resolve() — mappings simples (4 sections)
-    // =========================================================================
 
     #[Test]
     public function it_resolves_profils_itinerants_for_redirections_keyword(): void
@@ -57,10 +54,6 @@ class NativeSectionResolverTest extends TestCase
         self::assertSame('/app/parc-settings?tab=shortcuts', $result['shortcuts']['url']);
     }
 
-    // =========================================================================
-    // resolve() — multi-match (AC1.3 cas 5)
-    // =========================================================================
-
     #[Test]
     public function it_resolves_multiple_sections_for_multi_match_display_name(): void
     {
@@ -73,10 +66,6 @@ class NativeSectionResolverTest extends TestCase
         self::assertCount(3, $result);
     }
 
-    // =========================================================================
-    // resolve() — no-match (AC1.3 cas 6)
-    // =========================================================================
-
     #[Test]
     public function it_returns_empty_array_when_no_pattern_matches(): void
     {
@@ -85,10 +74,6 @@ class NativeSectionResolverTest extends TestCase
         self::assertSame([], $result);
     }
 
-    // =========================================================================
-    // resolve() — cas piège (Piège 10 — displayName vide)
-    // =========================================================================
-
     #[Test]
     public function it_returns_empty_array_for_empty_display_name(): void
     {
@@ -96,10 +81,6 @@ class NativeSectionResolverTest extends TestCase
 
         self::assertSame([], $result);
     }
-
-    // =========================================================================
-    // resolve() — matching case-insensitive
-    // =========================================================================
 
     #[Test]
     #[DataProvider('caseInsensitiveProvider')]
@@ -120,10 +101,6 @@ class NativeSectionResolverTest extends TestCase
         ];
     }
 
-    // =========================================================================
-    // hasMatch()
-    // =========================================================================
-
     #[Test]
     public function it_returns_true_when_display_name_matches(): void
     {
@@ -142,10 +119,6 @@ class NativeSectionResolverTest extends TestCase
         self::assertFalse(NativeSectionResolver::hasMatch(''));
     }
 
-    // =========================================================================
-    // buildUrl() — sans from_gpo
-    // =========================================================================
-
     #[Test]
     public function it_builds_url_without_from_gpo_param(): void
     {
@@ -162,10 +135,6 @@ class NativeSectionResolverTest extends TestCase
         self::assertSame('/app/parc-settings?tab=shortcuts', $url);
     }
 
-    // =========================================================================
-    // buildUrl() — avec from_gpo (AC1.3 — test dédié buildUrl + piège D8)
-    // =========================================================================
-
     #[Test]
     public function it_appends_from_gpo_with_question_mark_for_url_without_existing_query(): void
     {
@@ -179,7 +148,7 @@ class NativeSectionResolverTest extends TestCase
     public function it_appends_from_gpo_with_ampersand_for_profils_itinerants_url(): void
     {
         // L'URL '/admin/settings/files?tab=roaming' contient déjà un '?'
-        // → le paramètre doit être ajouté avec '&', pas '?' (Piège 8 / AC1.3).
+        // → le paramètre doit être ajouté avec '&', pas avec un second '?'.
         $url = NativeSectionResolver::buildUrl('profils-itinerants', '{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}');
 
         // Vérifie que le '&' est utilisé et non un second '?'
@@ -198,10 +167,6 @@ class NativeSectionResolverTest extends TestCase
         self::assertStringContainsString('%7D', $url);
     }
 
-    // =========================================================================
-    // buildUrl() — section inconnue
-    // =========================================================================
-
     #[Test]
     public function it_throws_invalid_argument_for_unknown_section_key(): void
     {
@@ -210,10 +175,6 @@ class NativeSectionResolverTest extends TestCase
 
         NativeSectionResolver::buildUrl('unknown-section');
     }
-
-    // =========================================================================
-    // resolve() — tous les patterns des 4 sections (robustesse)
-    // =========================================================================
 
     #[Test]
     #[DataProvider('allPatternMappingsProvider')]
@@ -227,21 +188,17 @@ class NativeSectionResolverTest extends TestCase
     public static function allPatternMappingsProvider(): array
     {
         return [
-            // profils-itinerants
             'roaming pattern'       => ['roaming-users-2024', 'profils-itinerants'],
             'profil pattern'        => ['profil-eleve', 'profils-itinerants'],
             'no_roam pattern'       => ['no_roam-policy', 'profils-itinerants'],
-            // wallpapers
             'fond-ecran pattern'    => ['fond-ecran-default', 'wallpapers'],
             'fond_ecran pattern'    => ['fond_ecran_salle_a', 'wallpapers'],
             'lockscreen pattern'    => ['lockscreen-cfg', 'wallpapers'],
-            // app-customizations
             'thunderbird pattern'   => ['thunderbird-conf', 'app-customizations'],
             'app-custom pattern'    => ['app-custom-local', 'app-customizations'],
             'applications pattern'  => ['applications-policy', 'app-customizations'],
-            // shortcuts
             'raccourci pattern'     => ['raccourci-bureau', 'shortcuts'],
-            // wine (Story 16.3c — T6.1 / D10)
+            // Wine (T6.1 / D10)
             'wine pattern simple'   => ['wine', 'wine'],
             'wine pattern se4_'     => ['se4_wine', 'wine'],
             'wine pattern complex'  => ['se4-wine-image', 'wine'],
@@ -249,9 +206,8 @@ class NativeSectionResolverTest extends TestCase
     }
 
     /**
-     * Story 16.3c — T6.1 / D10 : enrichissement `NativeSectionResolver::MAPPING`
-     * pour Wine. Le GPO `se4_wine` (et toute GPO contenant `wine`) doit
-     * pointer vers `/admin/settings/gpo/wine` (renommé par Story 16.9 D8).
+     * Le GPO `se4_wine`, et toute GPO dont le nom contient `wine`, pointe vers
+     * `/admin/settings/gpo/wine`.
      */
     #[Test]
     public function it_matches_wine_gpo_to_native_admin_settings_gpo_wine(): void

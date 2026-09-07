@@ -17,24 +17,24 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
- * Story 34.3 — matérialisation d'un « template de répertoire » en
+ * Matérialisation d'un « template de répertoire » en
  * {@see NetworkShare} + ses assignations par maille.
  *
- * **Couche de PRÉFABRICATION par-dessus 34.1/34.2 — socle figé INTOUCHÉ.** Un
- * template = une RECETTE (lue depuis la table `directory_templates`, Q3 option B)
+ * **Couche de PRÉFABRICATION par-dessus — socle figé INTOUCHÉ.** Un
+ * template = une RECETTE (lue depuis la table `directory_templates`)
  * qui produit des `NetworkShare` standards : ce service ne réinvente NI le
  * provisioning ({@see NetworkShareService::provision()}), NI la projection agent,
  * NI la validation prédictive ({@see NetworkShareValidator}). Il ASSIGNE le bon
- * `UserGroup`/`User` au bon niveau — les VERBES de la recette (story 62.4)
+ * `UserGroup`/`User` au bon niveau — les VERBES de la recette
  * traduits vers le vocabulaire binaire des assignations, voir
  * {@see assignmentAccessOf()} ; le socle mappe au groupe Unix à
- * `provision()` (piège #3 — on NE redérive AUCUN nom de groupe Unix ici).
+ * `provision()` — on NE redérive AUCUN nom de groupe Unix ici.
  *
  * **Invariant WG-montage-seul.** Une recette ne porte JAMAIS de maille
  * `WorkstationGroup` (POSIX ne sait pas exprimer « les users de la machine X »).
  * Le service refuse toute maille hors `User`/`UserGroup` (defense-in-depth).
  *
- * **Patron transaction + collision (review 34.2 #1).** La collision de lettre
+ * **Patron transaction + collision.** La collision de lettre
  * n'est calculable qu'une fois l'audience peuplée : on crée le share + ses
  * assignations DANS une `DB::transaction`, on invoque
  * {@see NetworkShareValidator::assertNoLetterCollision()} AVANT commit, et toute
@@ -52,26 +52,26 @@ class DirectoryTemplateService
     /**
      * Matérialise un template en un répertoire réseau + ses assignations.
      *
-     * **Story 60.4 — deux régimes de provisionnement, choisis par l'APPELANT.**
+     * **deux régimes de provisionnement, choisis par l'APPELANT.**
      * Appelée depuis un écran, la matérialisation ENFILE la pose des droits
      * (`$deferProvisioning = true`) : le cycle d'une requête n'est pas le bon
      * endroit pour un geste dont le coût est quadratique. Appelée hors requête,
      * elle l'exécute en direct. Le résultat DIT lequel des deux a eu lieu — il
      * n'affirme jamais un provisionnement accompli qui ne l'est pas.
      *
-     * **Story 60.5 — DEUX FLUX, choisis par la RECETTE.** Une recette
+     * **DEUX FLUX, choisis par la RECETTE.** Une recette
      * auto-résolvable et accrochée ne demande plus une cible par rôle : elle
      * demande UN groupe de matérialisation (`group_id`), et déduit tout le reste.
      * C'est ce qui répare « profs → élèves », dont l'audience « les enseignants de
      * cette classe » n'est pas un groupe mais un rôle porté sur l'arête — chose
      * qu'aucun sélecteur de groupe ne pourra jamais désigner.
      *
-     * **Story 61.3 — L'AUTORITÉ D'ÉCRITURE SE CHOISIT ICI, ET NULLE PART AILLEURS.**
+     * **L'AUTORITÉ D'ÉCRITURE SE CHOISIT ICI, ET NULLE PART AILLEURS.**
      * Le paramètre `backend` est optionnel et vaut le serveur de fichiers historique
      * par défaut — c'est ce que sont tous les répertoires existants. Il est refusé
      * s'il n'est pas posable (capacité éteinte), AVANT toute écriture. Il n'existe
      * AUCUN chemin pour changer cette valeur ensuite : un répertoire déjà
-     * provisionné ne bascule jamais (D9), la migration outillée est un chantier à
+     * provisionné ne bascule jamais, la migration outillée est un chantier à
      * part.
      *
      * @param  array{name?:string,directory_name?:string,label?:string|null,letter?:string|null,roles?:array<string,list<int>>,group_id?:int|null,backend?:string|null}  $params
@@ -90,9 +90,8 @@ class DirectoryTemplateService
         $label = isset($params['label']) ? trim((string) $params['label']) : '';
         $letter = $this->normalizedLetter($params['letter'] ?? null);
 
-        // --- Validation AVANT toute écriture (AC2) --------------------------
 
-        // Review 62.4 #1 — la recette elle-même d'abord, avant ses paramètres.
+        // La recette elle-même d'abord, avant ses paramètres.
         // `assertValidRoleVerbs()` refuse NOMMÉMENT l'ancienne clé `access` : c'est
         // la seule chose qui distingue une recette non migrée d'un rôle qui,
         // légitimement, ne se prononce pas (les deux se présentent ici comme une
@@ -101,12 +100,12 @@ class DirectoryTemplateService
         // accrochage : le chemin des recettes PLATES — celui que `materialize()`
         // emprunte réellement — retombait sur le plancher `lire`, et un rôle en
         // ÉCRITURE devenait un rôle en LECTURE sans un mot. Exactement le silence
-        // que la story dit traquer, et que son runbook (62.4-5a) promet bruyant.
+        // qu'on traque ici, et qu'on veut bruyant.
         // Atteignable par restauration d'une sauvegarde antérieure à la migration
         // sans la rejouer, ou par écriture SQL directe.
         $template->assertValidResolutionSpec();
 
-        // Story 61.3 — l'autorité d'écriture, refusée AVANT écriture si elle n'est
+        // L'autorité d'écriture, refusée AVANT écriture si elle n'est
         // pas posable. Une valeur hors vocabulaire ou une capacité éteinte lèvent
         // ici, en nommant ce qui manque, plutôt que de faire naître un répertoire
         // dont aucune réconciliation ne pourra jamais aboutir.
@@ -121,7 +120,7 @@ class DirectoryTemplateService
                 .'(sans espace), et ne peut pas commencer par « . ».'
             );
         }
-        // Unicité du `directory_name` (one-shot, Q4) : pré-check explicite pour que
+        // Unicité du `directory_name` : pré-check explicite pour que
         // tout appelant — UI *et* appel direct (future commande/API) — obtienne
         // l'InvalidArgumentException documentée plutôt qu'une QueryException brute
         // sur la contrainte `unique` DB (le rollback transactionnel resterait sûr,
@@ -138,7 +137,7 @@ class DirectoryTemplateService
             );
         }
 
-        // --- Plan d'assignations dérivé de la recette (Q6 : rôles du pattern) -
+        // --- Plan d'assignations dérivé des rôles de la recette ---
         $group = $this->materializationGroup($template, $params['group_id'] ?? null);
 
         $plan = $group !== null
@@ -155,16 +154,16 @@ class DirectoryTemplateService
                 'created_by_user_id' => $this->currentUserId(),
             ]);
 
-            // Story 61.3 — l'autorité d'écriture est posée HORS du remplissage de
+            // L'autorité d'écriture est posée HORS du remplissage de
             // masse : la colonne reste absente de `$fillable`, et ce geste de
             // création est son SEUL écrivain. C'est ce qui rend vraie la promesse
-            // « un répertoire provisionné ne bascule jamais » (D9).
+            // « un répertoire provisionné ne bascule jamais ».
             if ($backend !== \App\Enums\FileBackendName::Posix) {
                 $share->backend = $backend;
                 $share->save();
             }
 
-            // L'ORIGINE (story 60.5) : ce partage se projettera par SA RECETTE, pas
+            // L'ORIGINE : ce partage se projettera par SA RECETTE, pas
             // par ses seules assignations. Écrite hors de `create()` parce que ces
             // colonnes ne sont pas de la saisie d'écran — elles ne doivent jamais
             // entrer par un remplissage de masse.
@@ -190,7 +189,6 @@ class DirectoryTemplateService
             return $share;
         });
 
-        // --- Provisionnement APRÈS commit, direct ou enfilé (60.4) -----------
         if ($deferProvisioning) {
             $queued = $this->shareService->queueReconciliation($share, $performedBy);
             $state = $queued
@@ -210,7 +208,7 @@ class DirectoryTemplateService
     }
 
     /**
-     * Story 60.5 — le GROUPE DE MATÉRIALISATION d'une recette auto-résolvable, ou
+     * Le GROUPE DE MATÉRIALISATION d'une recette auto-résolvable, ou
      * `null` si la recette relève du flux à cibles saisies.
      *
      * Une recette accrochée et auto-résolvable dit « donne-moi un groupe de ce
@@ -250,7 +248,7 @@ class DirectoryTemplateService
     }
 
     /**
-     * Story 60.5 — les assignations d'une recette AUTO-RÉSOLVABLE.
+     * Les assignations d'une recette AUTO-RÉSOLVABLE.
      *
      * **Elles ne portent pas les droits, elles portent la VISIBILITÉ.** Les octrois
      * réels de ce partage viennent de la résolution de la recette, à la projection
@@ -306,7 +304,7 @@ class DirectoryTemplateService
     }
 
     /**
-     * Story 62.4 — L'AUTRE BORD DE LA FRONTIÈRE : une liste de VERBES redevient un
+     * L'AUTRE BORD DE LA FRONTIÈRE : une liste de VERBES redevient un
      * niveau BINAIRE d'assignation.
      *
      * La règle, en un mot : **est « Modifier » tout ce qui MUTE**. Un rôle dont les

@@ -34,7 +34,7 @@ class LegacyCatchallController extends Controller
             $path = '';
         }
 
-        // 0bis. Redirections natives (story 1bis.18f — pivot 2026-04-27).
+        // 0bis. Redirections natives (.18f — pivot 2026-04-27).
         // Pages legacy `gpo/no_roam.php`, `gpo/user_profile_stats.php` et
         // `gpo/del_roam.php` remplacées par l'onglet « Profils itinérants » de la
         // page native /admin/settings/files?tab=roaming + endpoint script natif.
@@ -61,10 +61,10 @@ class LegacyCatchallController extends Controller
         if (config('sambaedu.block_migrated_routes', true)) {
             $redirect = $this->findBlockedRouteRedirect($path);
             if ($redirect !== null) {
-                // Story 3.7 — Q-1 Henri — convention `gone:<message>` : retourner
+                // Convention `gone:<message>` : retourner
                 // 410 Gone + corps iPXE explicite (le firmware iPXE ne suit pas les
                 // redirects 302 — il faut un message textuel). Les routes iPXE legacy
-                // migrées en 3.1-3.7 utilisent cette convention.
+                // déjà migrées utilisent cette convention.
                 if (str_starts_with($redirect, 'gone:')) {
                     $message = substr($redirect, 5);
                     Log::channel('legacylog')->info('legacy.catchall.ipxe_gone', [
@@ -140,11 +140,11 @@ class LegacyCatchallController extends Controller
         // 4. Résolution legacy via proxy HTTP vers le vhost legacy (port 80)
         $legacyBasePath = config('sambaedu.legacy_path');
 
-        // Story 38.1 (D4) — Legacy absent = 404, jamais 500. Quand le FS legacy
+        // Legacy absent = 404, jamais 500. Quand le FS legacy
         // (`/var/www/sambaedu`) est absent ou invalide, on ne peut plus résoudre
         // aucune URL legacy : on saute la résolution FS, on logge selon `log_404`
         // (le monitoring d'extinction `legacy_catchall_logs` doit rester
-        // fonctionnel sans le FS legacy — cf. 38.6) et on répond 404, pas 500.
+        // fonctionnel sans le FS legacy) et on répond 404, pas 500.
         // L'ancien `abort(500)` faisait tomber TOUTE URL non matchée dès que le
         // legacy était supprimé, ce qui interdisait l'extinction observable.
         if (empty($legacyBasePath) || ! is_dir($legacyBasePath)) {

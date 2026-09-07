@@ -11,7 +11,6 @@ use App\Services\ServiceCredentials;
 /**
  * LE PILOTE DU DÉPLOIEMENT : idempotent, non destructeur, et il n'active RIEN.
  *
- * ---------------------------------------------------------------------------
  * **CE QU'IL FAIT, ET DANS QUEL ORDRE.**
  *
  *  1. il s'assure d'un secret d'administration — **généré** s'il n'existe pas,
@@ -26,7 +25,6 @@ use App\Services\ServiceCredentials;
  *     la connexion, puis choisir cette autorité à la création d'un répertoire
  *     sont trois gestes explicites, dans cet ordre. C'est la même doctrine que
  *     partout dans ce produit — rien ne se met à écrire tout seul.
- * ---------------------------------------------------------------------------
  *
  * **CE QU'IL NE FAIT PAS, ET NE PEUT PAS FAIRE.** Il ne supprime rien : ni
  * conteneur, ni volume, ni donnée. Le seam n'a aucun verbe pour cela, et aucun
@@ -219,10 +217,6 @@ final class OpenCloudDeploymentService
 
         return $run['exitCode'] === 0 ? $run['stdout'] : $run['stderr'];
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     /**
      * Pré-remplit l'adresse et l'identifiant d'administration, **sans jamais

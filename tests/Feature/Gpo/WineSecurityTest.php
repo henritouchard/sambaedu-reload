@@ -17,7 +17,7 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Tests Feature Sécurité Wine — Story 16.3c AC5.2 (audit §6.F F7 corrigé).
+ * Tests Feature Sécurité Wine — (audit §6.F F7 corrigé).
  *
  * Vérifie que la whitelist regex est appliquée AVANT tout dispatch Job.
  * Aucun input dangereux ne doit pouvoir atteindre `make_wine_image.sh`.

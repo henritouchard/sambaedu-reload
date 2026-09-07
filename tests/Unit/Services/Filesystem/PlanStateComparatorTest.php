@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 — LA TABLE DE COMPARAISON, ligne à ligne.
+ * LA TABLE DE COMPARAISON, ligne à ligne.
  *
  * Aucune base, aucun processus : le comparateur est PUR. Si un jour ce fichier
  * réclame une simulation d'exécution, c'est que la comparaison est redescendue
@@ -70,10 +70,6 @@ class PlanStateComparatorTest extends TestCase
         return $this->comparator()->compare($plan, $this->inspection($plan, $observed))['nodes'][0]['differences'];
     }
 
-    // =========================================================================
-    // Octroi ACTIF
-    // =========================================================================
-
     #[Test]
     public function an_active_grant_observed_at_the_same_access_is_conforme(): void
     {
@@ -115,10 +111,6 @@ class PlanStateComparatorTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Octroi SUSPENDU — les trois lignes qui comptent
-    // =========================================================================
-
     /**
      * LA FORME MATÉRIALISÉE DE LA SUSPENSION : entrée présente, accès nul. C'est
      * CONFORME — sans cette ligne, une désactivation se relirait comme une
@@ -159,10 +151,6 @@ class PlanStateComparatorTest extends TestCase
             $this->differencesFor($plan, []),
         );
     }
-
-    // =========================================================================
-    // En trop, et clôture
-    // =========================================================================
 
     #[Test]
     public function an_observed_entry_without_a_grant_in_the_plan_is_a_difference(): void
@@ -218,10 +206,6 @@ class PlanStateComparatorTest extends TestCase
         self::assertSame([], $result['nodes'][0]['differences']);
         self::assertSame(PlanStateComparator::STATUS_CONFORME, $result['status']);
     }
-
-    // =========================================================================
-    // Agrégats pour le contrôleur d'environnement
-    // =========================================================================
 
     #[Test]
     public function the_aggregate_gives_precedence_to_failure_then_absence_then_drift(): void
@@ -292,7 +276,7 @@ class PlanStateComparatorTest extends TestCase
     #[Test]
     public function the_display_labels_distinguish_none_from_nothing(): void
     {
-        // Story 62.4 — le libellé est celui d'une LISTE : un verbe, plusieurs verbes,
+        // Le libellé est celui d'une LISTE : un verbe, plusieurs verbes,
         // la liste vide (l'entrée présente qui ne donne rien) et l'absence pure.
         self::assertSame('Lire', PlanStateComparator::accessLabel([PlanGrant::VERB_LIRE]));
         self::assertSame('Lire + Éditer + Créer + Supprimer', PlanStateComparator::accessLabel(PlanGrant::VERBS));

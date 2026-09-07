@@ -12,7 +12,6 @@ namespace App\Services\OpenCloud\Deployment;
  * ce contenu sur l'entrée standard ». L'appelant ne choisit ni le binaire, ni le
  * shell, ni l'environnement, ni l'image de conteneur — le helper les tient tous.
  *
- * ══════════════════════════════════════════════════════════════════════════
  * **POURQUOI UNE INTERFACE DÉDIÉE ET NON CELLE DU SYSTÈME D'EXTENSIONS.**
  *
  * Elles ont la même FORME et des destinataires différents. Réutiliser l'autre
@@ -25,7 +24,6 @@ namespace App\Services\OpenCloud\Deployment;
  * Le SECRET d'administration ne transite que par `$stdin` : en argument, il
  * apparaîtrait dans `/proc/<pid>/cmdline`, dans un `ps` de n'importe quel
  * utilisateur, et dans le journal de `sudo`.
- * ══════════════════════════════════════════════════════════════════════════
  */
 interface OpenCloudHelperRunner
 {

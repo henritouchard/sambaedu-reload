@@ -6,14 +6,14 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Lot « GPO spéciales CD95 » — transformation des GPO ad-hoc du CD95 en capacités
- * (modèle capability-first, cf. lot ISO 27.12 dont ce seed reprend le pattern EXACT :
+ * (modèle capability-first, cf. lot ISO dont ce seed reprend le pattern EXACT :
  * `updateOrInsert` par `key` puis par `(capability_id, os, mechanism)`, idempotent).
  *
  * Source : arborescence GPO décodée (../GPO_spécialesCD95). Ne sont seedées ici que
  * les capacités PROJETABLES par le modèle actuel (mécanisme `registry`, ruches
  * HKLM/HKCU, types DWORD/SZ, valeur littérale ou MAP valeur-capacité → donnée).
  *
- * ── DÉFAUTS DE DIFFUSION ────────────────────────────────────────────────────
+ * **DÉFAUTS DE DIFFUSION**
  * Deux régimes :
  *   1. Hardening fleet-wide (iso convention du lot ISO : `default_value = on`,
  *      appliqué à toute la flotte) → news/LLMNR/OnlyOffice/numlock ;
@@ -24,13 +24,13 @@ use Illuminate\Support\Facades\Schema;
  *      capacités contextuelles (masquage lecteurs, action capot, ouvertures en
  *      cache) et pour les capacités CIBLÉES PAR GROUPE (Outlook, blocages élèves).
  *
- * ── SCALAR NON PROJETABLE ───────────────────────────────────────────────────
+ * **SCALAR NON PROJETABLE**
  * `CachedLogonsCount` est un nombre libre, mais l'interpréteur de `spec` ne sait
  * faire que littéral | map (pas de passthrough de la valeur saisie). On le modélise
  * donc en `enum` de préréglages (10/25/50) → passe par la map. Un vrai `scalar`
  * paramétrable nécessiterait d'étendre l'interpréteur (hors lot).
  *
- * ── EXCLUS DU LOT (nécessitent une évolution moteur — cf. analyse CD95) ──────
+ * **EXCLUS DU LOT (nécessitent une évolution moteur — cf. analyse CD95)**
  *   - ExtensionInstallForcelist (Pix Chrome/Edge) & DisallowRun (élèves) : listes
  *     à SOUS-CLÉS INDEXÉES `\1 \2` — non supportées (seul REG_MULTI_SZ mono-valeur
  *     existe). Palier B.
@@ -44,11 +44,11 @@ use Illuminate\Support\Facades\Schema;
  *   - Numlock écran de logon (`HKU\.DEFAULT`) : ruche ni HKLM ni HKCU → non projetée
  *     (seule la partie HKCU par session est seedée ci-dessous).
  *
- * ── CIBLAGE PAR GROUPE (décision produit : assignment UserGroup) ─────────────
+ * **CIBLAGE PAR GROUPE (décision produit : assignment UserGroup)**
  * Outlook (Direction/Secrétariat/VieScol) et blocage regedit (élèves) sont ciblés
  * par GROUPE : ce seed crée les capacités ASSIGNABLES (défaut `unmanaged` = rien en
  * broadcast) ; le rattachement effectif à des UserGroups (IDs propres à chaque
- * établissement) est de la DONNÉE + un geste UI UserGroup — story de suivi.
+ * établissement) est de la DONNÉE + un geste UI UserGroup, à faire ailleurs.
  */
 return new class extends Migration
 {
@@ -74,7 +74,7 @@ return new class extends Migration
 
         // Tree restrictions user (HKCU\Software\Microsoft\...\CurrentVersion\Policies).
         // ⚠️ Commentaire d'origine FAUX (« écrivable par le companion,
-        // CONTRAIREMENT à HKCU\Software\Policies ») corrigé par la Story 35.7 :
+        // CONTRAIREMENT à HKCU\Software\Policies ») corrigé ici :
         // sur poste joint au domaine, TOUT `HKCU\…\Policies\*` — y compris
         // CurrentVersion\Policies — est en LECTURE SEULE pour l'utilisateur
         // standard. Les clés Session de ce tree sont appliquées par le SERVICE
@@ -83,7 +83,7 @@ return new class extends Migration
         $userPoliciesSystem = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';
 
         $lot = [
-            // ── Hardening fleet-wide (default on) ────────────────────────────
+            // Hardening fleet-wide (default on)
             [
                 'key' => 'news_and_interests_off',
                 'label' => 'Désactiver Actualités et centres d\'intérêt',
@@ -147,7 +147,7 @@ return new class extends Migration
                 ],
             ],
 
-            // ── Enablers / hardening opt-in (default off, symétrique) ────────
+            // Enablers / hardening opt-in (default off, symétrique)
             [
                 'key' => 'appx_special_profiles_allowed',
                 'label' => 'Autoriser le déploiement Appx dans les profils spéciaux',
@@ -175,7 +175,7 @@ return new class extends Migration
                 ],
             ],
 
-            // ── Contextuel par parc : opt-in via enum (default unmanaged) ────
+            // Contextuel par parc : opt-in via enum (default unmanaged)
             [
                 'key' => 'hide_drives',
                 'label' => 'Masquer des lecteurs dans l\'Explorateur',
@@ -237,7 +237,7 @@ return new class extends Migration
                 ],
             ],
 
-            // ── Ciblé par groupe (opt-in, on-only) : override UserGroup ──────
+            // Ciblé par groupe (opt-in, on-only) : override UserGroup
             [
                 'key' => 'outlook_disable_o365_account_creation',
                 'label' => 'Bloquer la création de compte Office 365 simplifiée (Outlook)',
@@ -263,7 +263,7 @@ return new class extends Migration
                 'warning' => null,
                 'keys' => [
                     // ⚠️ Commentaire d'origine FAUX (« user-writable → OK
-                    // companion ») corrigé par la Story 35.7 : ce tree
+                    // companion ») corrigé ici : ce tree
                     // (`…\CurrentVersion\Policies\System`) est en lecture
                     // seule pour l'utilisateur standard sur poste joint au
                     // domaine — appliqué par SYSTEM via `writer: system`

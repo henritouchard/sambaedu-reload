@@ -4,14 +4,14 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
 /**
- * Story 27.17 — Onglet « Fond d'écran » de /admin/settings/parc-defaults.
+ * Onglet « Fond d'écran » de /admin/settings/parc-defaults.
  *
  * Édite le DÉFAUT établissement du wallpaper (couche Broadcast :
  * `wallpapers WHERE owner_id IS NULL AND is_default = true AND type='wallpaper'`)
  * en RÉUTILISANT le composant `wallpaper-card` (`isDefault=true`, `ownerType=null`)
  * et `WallpaperUploadService`. Aucune nouvelle table.
  *
- * Décision Henri : tout en `server.admin` sur cette page — on passe donc
+ * Tout est gardé par `server.admin` sur cette page — on passe donc
  * `gate="server.admin"` au composant (au lieu du `wallpaper.manage` des pages
  * ciblées d'origine). Garde mount() en plus du middleware route.
  */

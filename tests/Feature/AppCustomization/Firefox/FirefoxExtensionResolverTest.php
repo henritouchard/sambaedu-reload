@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests feature — FirefoxExtensionResolver (SSRF guard, AC 14).
+ * Tests feature — FirefoxExtensionResolver (garde SSRF).
  */
 class FirefoxExtensionResolverTest extends TestCase
 {

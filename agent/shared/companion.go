@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-// Compagnon de session — côté USER (Story 24.6, portage de
-// SessionCompanion.ps1 24.3/24.4). S'exécute DANS la session du user qui
+// Compagnon de session — côté USER (portage de
+// SessionCompanion.ps1). S'exécute DANS la session du user qui
 // ouvre, avec SES droits — jamais SYSTEM (tâche planifiée
 // `SambaEduAgent-SessionCompanion`, principal BUILTIN\Users, At log on).
 //
-// Frontière de confiance (NFR5, contrat 23.3 FIGÉ) — ce processus :
+// Frontière de confiance — ce processus :
 //   - ne lit JAMAIS le token (ACL SYSTEM+Administrators : illisible ici) ;
 //   - n'appelle JAMAIS le serveur (AUCUN code réseau dans ce fichier ni dans
 //     le chemin companion — le canal réseau est 100 % SYSTEM : session-fetch
@@ -20,14 +20,14 @@ import (
 //   - lit UNIQUEMENT son cache per-user cache\sessions\<SON SID>\state.json
 //     (lecture seule) et le cache d'assets (lecture seule, Users:R) ;
 //   - écrit dans %LOCALAPPDATA%\SambaEdu\Agent\ (log, applied-state,
-//     overlay.json) + UNE exception cadrée (décision 24.4 n° 7) : SON drop
+//     overlay.json) + UNE exception cadrée : SON drop
 //     reports\sessions\<SON SID>\session-report.json (ACL <SID>:M posée par
 //     SYSTEM — il n'écrit ni ne lit les drops des autres) ;
 //   - ne déclare jamais son identité : son SID est résolu localement (token
 //     de processus) UNIQUEMENT pour trouver SON cache/SON drop — l'identité
 //     envoyée au serveur a été résolue côté SYSTEM par énumération WTS.
 //
-// Boucle RÉSIDENTE (décision 24.4 n° 6 conservée) : passe initiale après
+// Boucle RÉSIDENTE : passe initiale après
 // attente bornée du cache frais, puis poll du mtime du cache (~60 s) et
 // re-test périodique (~5 min, level-triggered — détecte les dérives
 // locales). Le processus meurt au logoff ; MultipleInstances IgnoreNew
@@ -35,10 +35,10 @@ import (
 // converge sur son DERNIER cache (level-triggered, inoffensif — limitation
 // MVP documentée, reconduite).
 //
-// AUCUNE dépendance AD/Kerberos/LDAP (NFR7). Aucun message visible, jamais :
+// AUCUNE dépendance AD/Kerberos/LDAP. Aucun message visible, jamais :
 // tout passe par companion.log.
 type Companion struct {
-	// SID : le SID du processus courant (token de processus, décision n° 2)
+	// SID : le SID du processus courant (token de processus)
 	// — uniquement pour trouver SON cache et SON drop.
 	SID string
 
@@ -56,33 +56,33 @@ type Companion struct {
 	// Engine : moteur de convergence (handlers wallpaper + overlay).
 	Engine *Engine
 
-	// Watchdog : surveillance de Rainmeter côté compagnon (Story 27.1bis, D5) —
+	// Watchdog : surveillance de Rainmeter côté compagnon
 	// relance Rainmeter.exe s'il disparaît (idempotent, borné). nil = inerte
 	// (tests hôte, plateforme sans Rainmeter). Évalué à chaque tour de la
 	// boucle résidente, JAMAIS dans le chemin synchrone du logon.
 	Watchdog *RainmeterWatchdog
 
-	// EnsureUserRainmeterIni : primitive injectée (Story 27.1ter, D2) — écrit
+	// EnsureUserRainmeterIni : primitive injectée — écrit
 	// %APPDATA%\Rainmeter\Rainmeter.ini DURCI et WRITABLE (mode installé), au
 	// démarrage du compagnon, AVANT le lancement de Rainmeter par le watchdog
 	// (sinon Rainmeter lirait un .ini absent/ancien). Atomique + idempotent +
 	// sans ACL (le fichier appartient à l'user). nil = no-op (tests hôte,
 	// plateforme sans %APPDATA%/Rainmeter). Un échec est GRACIEUX (log, jamais de
-	// blocage — NFR1).
+	// blocage).
 	EnsureUserRainmeterIni func() error
 
-	// Refresh : gestes de rafraîchissement de session (Story 43.1, D4) —
-	// exécutés en TOUTE FIN de RunPass (après applied-state et drop, D5) : UN
+	// Refresh : gestes de rafraîchissement de session
+	// exécutés en TOUTE FIN de RunPass (après applied-state et drop) : UN
 	// seul geste par passe, le plus fort requis par les items EFFECTIVEMENT
 	// changés (RefreshRequester des handlers), zéro geste si passe stable.
 	// nil = no-op (tests hôte, non-Windows) — l'accumulation des handlers est
 	// DRAINÉE quand même (pas de geste fantôme si l'ops apparaît plus tard).
 	// Best-effort : un geste en échec = warning, JAMAIS une erreur de passe ni
-	// un statut d'item (D4). Purement local : ni réseau ni token (NFR5).
+	// un statut d'item. Purement local : ni réseau ni token.
 	Refresh RefreshOps
 
 	// OnDebugChange : notification du drapeau `debug` de l'enveloppe, à CHAQUE
-	// fois qu'il CHANGE — première observation incluse (Story 2.12.3). Le
+	// fois qu'il CHANGE — première observation incluse. Le
 	// câblage console du compagnon ne peut PAS se contenter d'une lecture au
 	// démarrage : sur un poste fraîchement réinstallé, cache\sessions\<SID>\
 	// n'existe pas encore quand le compagnon démarre (session-fetch SYSTEM et
@@ -105,19 +105,19 @@ type Companion struct {
 	Now func() time.Time
 
 	// NoticeLeadTime : délai de lecture entre l'affichage de la fenêtre
-	// d'avertissement et le kill d'Explorer (Story 43.4, D5). <= 0 = défaut
+	// D'avertissement et le kill d'Explorer. <= 0 = défaut
 	// restartNoticeLeadTime (~2 s). Injectable (tests) ; encouru UNIQUEMENT
 	// sur la branche explorer_restart réellement exécutée.
 	NoticeLeadTime time.Duration
 
 	// lastExplorerRestart : horodatage du dernier explorer_restart TENTÉ par
-	// CETTE instance (throttle anti-thrash, review 43.1 #1). En mémoire
+	// CETTE instance (throttle anti-thrash). En mémoire
 	// seulement, jamais persisté : le thrash visé est INTRA-vie du compagnon
 	// (drift récurrent re-convergé à chaque passe) — un redémarrage du
 	// compagnon ré-arme légitimement le premier restart.
 	lastExplorerRestart time.Time
 
-	// Cadences — défauts iso-24.3/24.4, injectables (tests).
+	// Cadences — défauts du contrat, injectables (tests).
 	PollInterval time.Duration // poll du cache frais (~2 s)
 	PollTimeout  time.Duration // attente bornée au démarrage (~60 s)
 	FreshWindow  time.Duration // « frais » = RÉCENT (< 5 min), pas « du logon courant »
@@ -149,10 +149,10 @@ func (c *Companion) noticeLeadTime() time.Duration {
 }
 
 // explorerRestartMinInterval : intervalle MINIMAL entre deux explorer_restart
-// par instance de Companion (review 43.1 #1, anti-thrash). En drift RÉCURRENT
+// par instance de Companion (anti-thrash). En drift RÉCURRENT
 // (une force externe réécrit une clé à CHAQUE passe : GPO tierce, antivirus,
 // script legacy), le geste le plus fort partirait à chaque cycle de re-test
-// (~5 min) → session cassée en boucle, à rebours de l'esprit NFR-A1. Dans la
+// (~5 min) → session cassée en boucle. Dans la
 // fenêtre d'interdiction, le geste est DÉGRADÉ en policy_broadcast + warning
 // explicite. Le premier restart d'une instance n'est JAMAIS throttlé.
 const explorerRestartMinInterval = 10 * time.Minute
@@ -166,9 +166,9 @@ func defaultDuration(v, fallback time.Duration) time.Duration {
 }
 
 // WaitForCache : attente bornée (poll) d'un state.json FRAIS dans le cache
-// de CE SID, sinon dernier cache existant, sinon absent (décision 24.3 n° 1).
+// de CE SID, sinon dernier cache existant, sinon absent.
 // « Frais » = RÉCENT (< FreshWindow), PAS « garanti du logon courant »
-// (review 24.3 #4) : la tâche session-fetch démarre en parallèle, son
+// car la tâche session-fetch démarre en parallèle, son
 // écriture peut précéder de peu le démarrage du compagnon — la fenêtre
 // accepte donc aussi un cache écrit par un cycle service juste avant.
 // Retourne (fresh, exists).
@@ -209,7 +209,7 @@ func (c *Companion) RunPass() (bool, error) {
 
 			return false, nil
 		}
-		// Course assumée (review 24.3 #4) : le fetch peut renommer
+		// Course assumée : le fetch peut renommer
 		// state.json pendant la lecture — loggée par l'appelant, re-tentée
 		// au tick suivant de la boucle résidente.
 		return false, err
@@ -221,31 +221,31 @@ func (c *Companion) RunPass() (bool, error) {
 	}
 
 	// Drapeau `debug` de l'enveloppe : notifié AVANT la convergence, pour que
-	// la console de diagnostic soit là quand les handlers parlent (Story
-	// 2.12.3). Level-triggered comme le reste : on ne notifie QUE les
+	// la console de diagnostic soit là quand les handlers parlent.
+	// Level-triggered comme le reste : on ne notifie QUE les
 	// changements, donc aucun geste console sur une passe stable.
 	c.notifyDebug(state.Debug)
 
-	// Partition des portées (piège n° 3) — JAMAIS de recouvrement :
+	// Partition des portées — JAMAIS de recouvrement :
 	//   service SYSTEM  → machine SEULEMENT ;
 	//   compagnon (ici) → session + machine_user SEULEMENT.
 	if n := len(state.Machine); n > 0 {
 		c.Log.Debugf("Portée machine ignorée (%d item(s)) : exclusivité du service SYSTEM.", n)
 	}
 
-	// Ordre SERVEUR (FR18) : items de la portée session puis machine_user,
+	// Ordre SERVEUR : items de la portée session puis machine_user,
 	// chacun dans l'ordre du payload — jamais d'ordre inventé.
 	items := ItemsFromScope(state.Session, c.Log)
 	items = append(items, ItemsFromScope(state.MachineUser, c.Log)...)
 
-	// Partition par EXÉCUTANT (Story 35.7, D4 — AVANT le moteur, engine.go
+	// Partition par EXÉCUTANT (AVANT le moteur, engine.go
 	// intouché) : les items porteurs du champ `writer` sont DÉLÉGUÉS au
 	// service SYSTEM (trees HKCU\…\Policies\* en lecture seule pour
 	// l'utilisateur standard sur poste joint au domaine — plus JAMAIS de
 	// tentative user-context, plus d'« Accès refusé »). Skip GÉNÉRIQUE sur
 	// PRÉSENCE du champ (tout type, valeur future inconnue incluse —
-	// forward-compat, piège n°5) ; les items non marqués suivent le chemin
-	// historique byte-identique. Conséquence 43.1 : ces items ne passent plus
+	// forward-compat) ; les items non marqués suivent le chemin
+	// historique byte-identique. Conséquence : ces items ne passent plus
 	// par les handlers du compagnon — l'échelle de rafraîchissement n'en
 	// reçoit plus rien (effet au logon suivant, comportement GPO user).
 	companionItems, systemItems := SplitSystemWriterItems(items)
@@ -277,7 +277,7 @@ func (c *Companion) RunPass() (bool, error) {
 	c.Log.Infof("Passe compagnon terminée : %d item(s) traité(s), %d statut(s) (generated_at=%s).",
 		len(items), len(reportItems), state.GeneratedAt)
 
-	// Échelle de rafraîchissement (Story 43.1, D5) : en TOUTE FIN de passe —
+	// Échelle de rafraîchissement : en TOUTE FIN de passe
 	// après applied-state et drop, pour qu'un SendMessageTimeout qui traîne ne
 	// retarde ni la persistance ni le rapport. UN geste max par passe.
 	c.runRefreshGesture()
@@ -286,7 +286,7 @@ func (c *Companion) RunPass() (bool, error) {
 }
 
 // notifyDebug : appelle OnDebugChange au PREMIER état observé puis à chaque
-// bascule. Best-effort et JAMAIS fatal (NFR1) : le câblage d'une console de
+// bascule. Best-effort et JAMAIS fatal : le câblage d'une console de
 // diagnostic ne doit sous aucun prétexte empêcher une passe de converger.
 func (c *Companion) notifyDebug(debug bool) {
 	if c.lastDebug != nil && *c.lastDebug == debug {
@@ -302,9 +302,9 @@ func (c *Companion) notifyDebug(debug bool) {
 
 // runRefreshGesture : collecte le besoin de rafraîchissement accumulé par les
 // handlers pendant la passe (RefreshRequester — interface optionnelle,
-// consommée ICI et jamais par le moteur : engine.go zéro diff, D1) et exécute
+// consommée ICI et jamais par le moteur) et exécute
 // LE geste le plus fort. Passe stable (aucun item effectivement changé) =
-// RefreshNone = aucun geste (NFR-A2, pas de « flicker »). Best-effort (D4) :
+// RefreshNone = aucun geste (pas de « flicker »). Best-effort :
 // échec = warning, la passe et le rapport sont déjà terminés.
 func (c *Companion) runRefreshGesture() {
 	// Toujours DRAINER l'accumulation (Take… remet à zéro), même sans ops
@@ -337,7 +337,7 @@ func (c *Companion) runRefreshGesture() {
 		}
 		c.Log.Infof("Rafraîchissement de session émis : policy_broadcast (WM_SETTINGCHANGE \"Policy\").")
 	case RefreshExplorerRestart:
-		// Throttle anti-thrash (review 43.1 #1) : jamais deux restarts en
+		// Throttle anti-thrash : jamais deux restarts en
 		// moins de explorerRestartMinInterval par instance — dans la fenêtre,
 		// DÉGRADATION en policy_broadcast (les clés sont écrites ; au pire
 		// l'effet plein attendra la fin de fenêtre ou le relogon).
@@ -356,28 +356,28 @@ func (c *Companion) runRefreshGesture() {
 		// Horodaté à la TENTATIVE (même en échec : le shell a pu être tué) —
 		// le throttle protège la session, pas le succès du geste.
 		c.lastExplorerRestart = c.now()
-		// Fenêtre d'avertissement (Story 43.4, D1/D2) : UNIQUEMENT ici — le
+		// Fenêtre d'avertissement : UNIQUEMENT ici — le
 		// seul chemin qui atteint réellement RestartExplorer (jamais sur les
 		// gestes faibles, jamais en passe stable, jamais sur le restart
 		// throttlé→dégradé ci-dessus : aucune perturbation à couvrir). La
 		// fenêtre vit dans le PROCESS du compagnon : elle SURVIT au kill
 		// d'explorer.exe, et c'est dismiss() qui la ferme APRÈS le retour de
 		// RestartExplorer (qui sonde déjà le retour du shell — poll ~3 s +
-		// grâce 1 s). Best-effort ABSOLU (D4) : une notice en échec rend un
+		// grâce 1 s). Best-effort ABSOLU : une notice en échec rend un
 		// dismiss no-op côté impl — le restart part QUAND MÊME.
 		shown, dismiss := c.Refresh.ShowRestartNotice(restartNoticeText)
 		if dismiss == nil {
 			dismiss = func() {} // défense : une impl rendant nil ne casse rien (D4)
 		}
-		// Bref délai de lecture (D5) — borné et constant : laisser lire le
+		// Bref délai de lecture — borné et constant : laisser lire le
 		// message avant le clignotement de la barre des tâches. UNIQUEMENT si la
 		// fenêtre s'est réellement affichée : pas de délai mort avant le kill
-		// quand la création a échoué (review 43.4 #2).
+		// quand la création a échoué.
 		if shown {
 			time.Sleep(c.noticeLeadTime())
 		}
 		err := c.Refresh.RestartExplorer()
-		// Fermée APRÈS le retour du geste (shell revenu, D2) — y compris en
+		// Fermée APRÈS le retour du geste (shell revenu) — y compris en
 		// échec du restart : jamais de fenêtre orpheline. dismiss est
 		// idempotent et borné (contrat ShowRestartNotice).
 		dismiss()
@@ -421,14 +421,14 @@ func (c *Companion) writeDrop(items []ReportItem) {
 // périodique level-triggered). Sortie propre sur ctx (fin de session : le
 // processus meurt avec elle). Aucune sortie n'est jamais visible du user.
 func (c *Companion) Run(ctx context.Context) {
-	c.Log.Infof("Compagnon de session démarré (sid=%s, agent %s) — après ouverture de session, jamais dans son chemin synchrone (NFR1). Boucle résidente (poll %d s, re-test %d s).",
+	c.Log.Infof("Compagnon de session démarré (sid=%s, agent %s) — après ouverture de session, jamais dans son chemin synchrone. Boucle résidente (poll %d s, re-test %d s).",
 		c.SID, Version, int(c.cachePoll()/time.Second), int(c.periodicPass()/time.Second))
 
-	// MODE INSTALLÉ (Story 27.1ter) : AVANT de lancer Rainmeter, on (ré)impose le
+	// MODE INSTALLÉ : AVANT de lancer Rainmeter, on (ré)impose le
 	// Rainmeter.ini per-user durci dans %APPDATA%\Rainmeter\ (writable, droits
 	// user). Il DOIT exister avant le lancement du watchdog ci-dessous, sinon
 	// Rainmeter lirait un .ini absent (Safe Start) ou ancien. Idempotent (réécrit
-	// seulement si divergent). GRACIEUX (NFR1) : un échec est loggé en warning et
+	// seulement si divergent). GRACIEUX : un échec est loggé en warning et
 	// n'interrompt RIEN — le watchdog tente quand même (au pire les modales
 	// reviennent, mais l'overlay rend). nil = no-op (tests hôte, non-Windows).
 	if c.EnsureUserRainmeterIni != nil {
@@ -444,7 +444,7 @@ func (c *Companion) Run(ctx context.Context) {
 	// WaitForCache. Sans ce Tick anticipé, l'overlay n'apparaît qu'APRÈS
 	// WaitForCache (jusqu'à PollTimeout, ~60 s). Idempotent (relance seulement si
 	// absent, back-off borné) : le Tick de la boucle résidente continue de
-	// surveiller. Toujours hors du chemin synchrone du logon (NFR1 : le compagnon
+	// surveiller. Toujours hors du chemin synchrone du logon (le compagnon
 	// est lancé par la tâche planifiée, pas dans la séquence de logon Windows).
 	if c.Watchdog != nil {
 		c.Watchdog.Tick()
@@ -455,7 +455,7 @@ func (c *Companion) Run(ctx context.Context) {
 	case !exists:
 		// Premier logon hors-ligne d'un user sans cache : on RESTE résident
 		// (le cycle du service peut écrire le cache mid-session) mais en
-		// silence — AUCUN message visible (décision 24.4 n° 7).
+		// silence — AUCUN message visible.
 		c.Log.Infof("Aucun cache de session (%s) après %d s : attente résidente, convergence dès qu'un cache apparaît.",
 			c.StatePath, int(c.pollTimeout()/time.Second))
 	case !fresh:
@@ -466,7 +466,7 @@ func (c *Companion) Run(ctx context.Context) {
 	var lastPassAt time.Time
 
 	for {
-		// Story 27.1bis (D5) : watchdog Rainmeter — relance le rendu s'il a
+		// Watchdog Rainmeter — relance le rendu s'il a
 		// disparu (idempotent, borné). Évalué AVANT la convergence du cache
 		// pour que l'overlay réapparaisse vite après un kill. nil = inerte.
 		if c.Watchdog != nil {

@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `PackagesXmlAssociationsReader` — Story 16.3c AC6.6.
+ * Tests Unit `PackagesXmlAssociationsReader` —.
  */
 class PackagesXmlAssociationsReaderTest extends TestCase
 {

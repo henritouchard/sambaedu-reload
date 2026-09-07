@@ -1,5 +1,5 @@
 {!! $shebang !!}
-{{-- Story 4.10  propagation auth iPXE iso `admin.blade.php`. --}}
+{{-- Propagation auth iPXE iso `admin.blade.php`. --}}
 params
 {{-- Variables iPXE SMBIOS (cf. name.blade.php) - pas les valeurs Laravel : un
      uuid SQL vide ferait basculer /ipxe/action sur le handshake -> chemin

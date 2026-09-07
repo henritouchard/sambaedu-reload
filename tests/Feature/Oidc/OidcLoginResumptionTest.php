@@ -15,11 +15,10 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — **AC4** : sans session SE5, login standard **puis reprise du
+ * Sans session SE5, login standard **puis reprise du
  * flux**.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  LE PIÈGE N°1 DE LA STORY
+ *  LE PIÈGE PRINCIPAL
  *
  *  `SambaEduAuthGuard::unauthorized()` stockait `$request->path()` dans
  *  `url.intended` — SANS la query string. Or TOUT le flux OIDC vit dans la
@@ -32,9 +31,8 @@ use Tests\TestCase;
  *  Correctif : `fullUrl()`. C'est le mécanisme STANDARD du projet
  *  (`url.intended` + `redirect()->intended()` d'`AuthController`) qu'on
  *  répare — pas un canal parallèle qu'on invente.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * ⚠️ Ce test est le SEUL de la story à laisser tourner le vrai guard : c'est
+ * ⚠️ Ce test est le SEUL à laisser tourner le vrai guard : c'est
  * lui qui est en cause. Le login LDAP réel est hors de portée de l'hôte, donc
  * la seconde moitié (la reprise) est jouée en re-visitant l'URL mémorisée avec
  * une session posée — le scénario humain complet est au runbook QA (Section 11).
@@ -129,7 +127,7 @@ class OidcLoginResumptionTest extends TestCase
     #[Test]
     public function the_memorised_url_is_host_relative_and_never_trusts_the_incoming_host_header(): void
     {
-        // Correctif review 55.1 (#2). `fullUrl()` reconstruit une URL ABSOLUE à
+        // `fullUrl()` reconstruit une URL ABSOLUE à
         // partir du header `Host` de la requête. Or `TrustHosts` est désactivé
         // dans le Kernel et le vhost Apache répond à n'importe quel `Host` : un
         // `Host` détourné serait recopié tel quel dans `url.intended`, puis SUIVI
@@ -139,7 +137,7 @@ class OidcLoginResumptionTest extends TestCase
         // OIDC (`client_id`, `state`, `nonce`, `code_challenge`).
         //
         // `getRequestUri()` rend un chemin RELATIF : la query est préservée
-        // (besoin de la story), l'hôte n'est jamais lu.
+        // (c'est le besoin), l'hôte n'est jamais lu.
         $client = $this->makeClient();
 
         $response = $this->get($this->authorizePath($client), ['Host' => 'attaquant.example']);
@@ -152,7 +150,7 @@ class OidcLoginResumptionTest extends TestCase
         self::assertStringNotContainsString('attaquant.example', $intended);
         self::assertStringNotContainsString('://', $intended, 'aucun scheme : rien à suivre hors de l\'instance');
 
-        // Le correctif de la story tient toujours : la query est intacte.
+        // Le correctif tient toujours : la query est intacte.
         self::assertStringContainsString('client_id='.$client->client_id, $intended);
         self::assertStringContainsString('code_challenge=', $intended);
     }

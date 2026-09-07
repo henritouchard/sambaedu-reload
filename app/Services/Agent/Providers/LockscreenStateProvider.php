@@ -29,7 +29,8 @@ use Illuminate\Support\Collection;
  * Aucun owner User/UserGroup (il n'y a pas d'utilisateur au verrouillage) —
  * c'est exactement la restriction « niveaux 1-3 » qu'applique
  * {@see \App\Services\Wallpaper\WallpaperResolver} au lockscreen pour le canal
- * legacy. Ici : zéro précédence (D2 = compilateur), simple étiquetage de maille.
+ * legacy. Ici : zéro précédence (elle reste au compilateur), simple étiquetage
+ * de maille.
  *
  * Payload v1 (iso wallpaper) : `{asset, checksum}` — `asset` = filename
  * content-addressed de la biblio, `checksum` = SHA-256 du fichier (servi par la

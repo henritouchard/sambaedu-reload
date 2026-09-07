@@ -23,9 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.6 — L'APERÇU : le premier consommateur VISIBLE du backend d'aperçu.
- *
- * Couvre AC6 entièrement, plus la moitié « aperçu » de l'AC2.
+ * L'APERÇU : le premier consommateur VISIBLE du backend d'aperçu.
  *
  * **Le test pivot de cette suite épingle le CHEMIN, pas seulement le résultat** :
  * le backend d'aperçu est obtenu par le REGISTRE, qui le résout par le conteneur.
@@ -39,7 +37,6 @@ class DirectoryTreePreviewTest extends TestCase
     use RefreshDatabase;
 
     private const TAB = 'pages::admin.settings.groups._partials.trees-tab';
-
 
     private const EDITOR = 'pages::admin.settings.groups.trees.[type].index';
 
@@ -77,10 +74,6 @@ class DirectoryTreePreviewTest extends TestCase
 
         return $group;
     }
-
-    // =========================================================================
-    // AC6 — le backend d'aperçu, consommé par le REGISTRE
-    // =========================================================================
 
     #[Test]
     public function the_preview_is_produced_by_the_preview_backend_obtained_from_the_registry(): void
@@ -195,7 +188,7 @@ class DirectoryTreePreviewTest extends TestCase
 
         $html = $component->html();
         $this->assertStringContainsString('data-testid="traversal-note"', $html);
-        // L'info-bulle qui explique le mot « couloir » (review 62.5).
+        // L'info-bulle qui explique le mot « couloir » (review).
         $this->assertStringContainsString('couloir', $html);
     }
 
@@ -208,10 +201,6 @@ class DirectoryTreePreviewTest extends TestCase
 
         $this->assertSame([], $component->get('previewData')['traversal']);
     }
-
-    // =========================================================================
-    // AC6 — les états limites
-    // =========================================================================
 
     #[Test]
     public function without_a_group_of_the_type_the_preview_says_what_to_do_and_saving_still_works(): void
@@ -282,10 +271,6 @@ class DirectoryTreePreviewTest extends TestCase
             'l\'aperçu a persisté l\'état du formulaire',
         );
     }
-
-    // =========================================================================
-    // Le PLAFOND : ce que le backend d'exécution en DÉCLARE
-    // =========================================================================
 
     /**
      * **La déclaration vient du BACKEND, jamais d'une constante d'écran.**

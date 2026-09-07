@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.10 — helper de tests.
+ * Helper de tests.
  *
  * Trait à inclure dans les tests qui ont besoin d'émettre un JWT
  * (Feature tests `PingControllerTest`, `RefreshControllerTest`, etc.).
@@ -23,7 +23,7 @@ use Illuminate\Support\Str;
  * Fournit :
  *
  *  - `configureTestKeyPair()` : pointe config('auth_v1.jwt.keys') vers les
- *    fixtures `tests/fixtures/auth-v1/*.pem`. À appeler dans `setUp()`.
+ *  fixtures `tests/fixtures/auth-v1/*.pem`. À appeler dans `setUp()`.
  *  - `issueTestJwt(array $overrides = [])` : émet un JWT signé avec la
  *    paire de tests, paramètres personnalisables (`sub`, `tier`, `exp`,
  *    `jti`, `iat`).
@@ -154,7 +154,7 @@ trait IssuesWorkstationJwt
             });
         }
 
-        // Story 16.11 — tables migration auto-bootstrap.
+        // Tables migration auto-bootstrap.
         if (! Schema::hasTable('workstations_migration_status')) {
             Schema::create('workstations_migration_status', function (Blueprint $table): void {
                 $table->bigIncrements('id');
@@ -184,7 +184,7 @@ trait IssuesWorkstationJwt
             });
         }
 
-        // Story 16.12 — table logs d'exécution scripts centralisés. Schéma
+        // Table logs d'exécution scripts centralisés. Schéma
         // dégradé SQLite : timestampTz → timestamp (SQLite n'a pas TZ natif),
         // UNIQUE composite standard (pas le partial WHERE pgsql).
         if (! Schema::hasTable('script_execution_logs')) {

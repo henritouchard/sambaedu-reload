@@ -25,8 +25,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.3 AC7 — LA GARDE D9 VUE DE L'ÉCRAN : refusée, expliquée, et ZÉRO
- * ÉCRITURE.
+ * LA GARDE VUE DE L'ÉCRAN : refusée, expliquée, et ZÉRO ÉCRITURE.
  *
  * Tant que le chantier de bascule n'a pas livré le déménagement des données,
  * déplacer un espace peuplé est refusé — et le refus n'écrit rien du tout : ni
@@ -100,10 +99,6 @@ class FileLocationsD9GuardTest extends TestCase
         User::query()->create(['login' => 'p.durand', 'role' => 'prof', 'is_active' => true]);
     }
 
-    // =====================================================================
-    // Le refus, son motif, et ZÉRO écriture
-    // =====================================================================
-
     #[Test]
     public function moving_a_populated_personal_space_is_refused_and_nothing_is_written(): void
     {
@@ -128,7 +123,7 @@ class FileLocationsD9GuardTest extends TestCase
 
         // ③ Le motif est porté par un toast d'erreur, et il NOMME le chantier.
         self::assertToastContains($component, 'l\'espace personnel porte déjà des données');
-        self::assertToastContains($component, 'Epic 64 — la bascule d\'autorité');
+        self::assertToastContains($component, 'la bascule d\'autorité');
     }
 
     #[Test]
@@ -146,10 +141,6 @@ class FileLocationsD9GuardTest extends TestCase
 
         self::assertToastContains($component, 'l\'espace partagé porte déjà des données');
     }
-
-    // =====================================================================
-    // L'instance NEUVE passe librement
-    // =====================================================================
 
     #[Test]
     public function a_brand_new_instance_saves_both_locations_freely(): void
@@ -170,11 +161,6 @@ class FileLocationsD9GuardTest extends TestCase
             FilePolicyService::capabilities(),
         );
     }
-
-    // =====================================================================
-    // LE RICOCHET — changer de cloud déplace un espace, donc retombe sous la
-    // garde
-    // =====================================================================
 
     /**
      * Basculer d'un produit à l'autre alors qu'un espace vit au cloud OBLIGE à
@@ -240,10 +226,6 @@ class FileLocationsD9GuardTest extends TestCase
         self::assertNoToastContains($component, 'porte déjà des données');
         self::assertSame('nextcloud', FileLocationService::current()->cloudActif->value);
     }
-
-    // =====================================================================
-    // La garde de POSABILITÉ est rejouée avant toute écriture
-    // =====================================================================
 
     /**
      * **LA SOUMISSION FORGÉE.** L'écran n'a jamais offert cette position — la

@@ -12,9 +12,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * @legacy-port path="sambaedu/wpkg/linux_out.php"
  * @legacy-port path="sambaedu/wpkg/winget_out.php"
- * @see _bmad-output/implementation-artifacts/17-6-portage-endpoints-wpkg-linux-winget.md
  *
- * Story 17.6 / D4 — Helper d'extraction des attributs depuis le fragment
+ * Helper d'extraction des attributs depuis le fragment
  * `Application::$xml` (parité DOM legacy `linux_out.php:26-43` /
  * `winget_out.php:70-100`).
  *
@@ -40,7 +39,7 @@ class ApplicationXmlReader
      * aux `app_id` fournis, indexées par `app_id` (parité : on conserve l'ordre
      * du resolver via le tableau d'entrée, pas l'ordre Eloquent).
      *
-     * Filtre `->installed()` (S1, décision Henri 2026-05-25) : parité stricte
+     * Filtre `->installed()` : parité stricte
      * avec le `packages.xml` legacy, régénéré côté natif depuis
      * `Application::installed()` (`PackagesXmlService:29`). Une app assignée au
      * poste mais au statut `Available`/`UpdateAvailable` est donc exclue — comme
@@ -72,8 +71,8 @@ class ApplicationXmlReader
             ->values()
             ->all();
 
-        // 1 requête — pas de N+1 (D4). Filtre `installed()` (S1, parité
-        // packages.xml) + match case-insensitive sur `app_id`
+        // 1 requête — pas de N+1. Filtre `installed()` (parité packages.xml)
+        // + match case-insensitive sur `app_id`
         // (`WHERE status = Installed AND LOWER(app_id) IN (...)`).
         $byAppId = Application::query()
             ->installed()
@@ -82,7 +81,7 @@ class ApplicationXmlReader
             // Index case-insensitive (parité legacy lowercase, robustesse collation).
             ->keyBy(static fn (Application $app): string => strtolower((string) $app->app_id));
 
-        // On réordonne selon l'ordre du resolver (alpha ASC, parité D1/D8),
+        // On réordonne selon l'ordre du resolver (alpha ASC, parité legacy),
         // match insensible à la casse.
         return $ordered
             ->map(static fn (string $appId) => $byAppId->get(strtolower($appId)))
@@ -176,7 +175,7 @@ class ApplicationXmlReader
                 continue;
             }
 
-            // #7 — `$app` est réinitialisé à CHAQUE noeud <windows>. Le legacy
+            // `$app` est réinitialisé à CHAQUE noeud <windows>. Le legacy
             // `winget_out.php` ne le réinitialise jamais (le `$app` d'un package
             // « bave » sur le suivant : attributs Version/Custom/Override/Source
             // hérités d'un package précédent quand le noeud courant ne les pose

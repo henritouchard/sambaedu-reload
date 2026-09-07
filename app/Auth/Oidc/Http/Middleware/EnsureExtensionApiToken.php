@@ -15,33 +15,30 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 56.4 — **La porte de l'API extensions `/api/ext/v1/`** (FR21, FR22, AR6).
+ * **La porte de l'API extensions `/api/ext/v1/`.**
  *
  * Alias router : `ext.token`, avec le scope requis en paramètre —
  * `ext.token:profile`, `ext.token:groups`. La règle « cet endpoint exige tel
  * scope » est donc DÉCLARÉE SUR LA ROUTE : lisible dans `routes/api.php`,
  * vérifiable par la table des routes, jamais enfouie dans un contrôleur.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  LE JETON EST LA SEULE IDENTITÉ DE LA REQUÊTE
  *
  *  Le sujet résolu par le jeton est injecté dans les attributs de requête ; les
  *  contrôleurs de ce canal n'acceptent JAMAIS d'identifiant d'utilisateur en
- *  entrée (doctrine `AuthenticateAgentToken`, story 23.2 — le précédent
+ * entrée (doctrine `AuthenticateAgentToken` — le précédent
  *  Bearer-opaque le plus proche du projet).
  *
  *   • `ext.user`            — l'utilisateur résolu ({@see \App\Models\User})
  *   • `ext.record`          — la ligne de jeton ({@see \App\Models\OidcAccessToken})
  *   • `ext.client`          — le client OIDC de l'extension
  *   • `ext.effective_scope` — le scope EFFECTIF, recalculé à cet instant
- * ══════════════════════════════════════════════════════════════════════════
  *
- * **Le « token de service » de FR22, c'est CE jeton** : l'access token opaque
- * émis à l'échange, lié au client — donc à l'extension —, borné par un scope et
+ * **Le « token de service » d'une extension, c'est CE jeton** : l'access token opaque
+ * émis à l'échange, lié au client — donc à l'extension, borné par un scope et
  * révocable (TTL 600 s). Pas de grant `client_credentials` : les deux endpoints
  * du v1 portent sur l'utilisateur courant, qu'un jeton machine n'a pas.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  DEUX REFUS, DEUX SENS — ET AUCUNE FUITE
  *
  *  • **401 `invalid_token`** : jeton absent, inconnu, expiré, client révoqué,
@@ -56,7 +53,6 @@ use Symfony\Component\HttpFoundation\Response;
  *  Rien de ce qui est journalisé ici n'est de la PII (README OIDC) : `client_id`
  *  — un identifiant public — et un préfixe de hash de 8 caractères, jamais le
  *  jeton, jamais le `sub`, le nom ou les groupes.
- * ══════════════════════════════════════════════════════════════════════════
  */
 class EnsureExtensionApiToken
 {
@@ -92,7 +88,7 @@ class EnsureExtensionApiToken
         $record = $verdict['record'];
         $effectiveScope = (string) $verdict['effective_scope'];
 
-        // ── Le scope requis par l'endpoint ─────────────────────────────────
+        // Le scope requis par l'endpoint
         //
         // Fail-closed sur la DÉCLARATION elle-même : une route de ce canal sans
         // scope requis, ou avec un scope hors du catalogue fermé, est un

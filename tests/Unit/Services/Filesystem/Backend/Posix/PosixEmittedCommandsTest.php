@@ -20,13 +20,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 — LE JEU DE COMMANDES ÉMIS, ÉNUMÉRÉ.
+ * LE JEU DE COMMANDES ÉMIS, ÉNUMÉRÉ.
  *
  * La promesse « aucune commande nouvelle » ne vaut que si elle est vérifiable.
  * Ce test parcourt les trois opérations du backend sur un plan représentatif et
  * ÉNUMÈRE les binaires effectivement invoqués.
  *
- * **L'addition de la story 60.4 est `getent`**, et elle est visible ici parce
+ * **L'addition de la est `getent`**, et elle est visible ici parce
  * qu'elle est dans la liste. C'est une LECTURE, SANS élévation de privilège, et
  * elle est exigée par la règle « jamais un nom de groupe inventé » : sans elle, le
  * backend poserait une entrée sur un nom que le système ne connaît pas — l'incident
@@ -34,8 +34,7 @@ use Tests\TestCase;
  * pire cas, l'entrée reste sans effet. Le même mécanisme est déjà en service dans
  * le dépôt pour le même besoin, sur le chemin figé des partages de classe.
  *
- * ---------------------------------------------------------------------------
- * **L'ADDITION DE LA STORY 62.4 EST `find`, ET VOICI POURQUOI ELLE APPARAÎT.**
+ * **L'ADDITION DE LA EST `find`, ET VOICI POURQUOI ELLE APPARAÎT.**
  *
  * Les quatre verbes rendent exprimables deux gestes que la pose récursive uniforme
  * ne sait pas faire, et qui ont tous deux besoin de SÉLECTIONNER des objets :
@@ -52,12 +51,11 @@ use Tests\TestCase;
  * ne produit que « lire » seul et les quatre verbes) : les tests ci-dessous les
  * provoquent donc délibérément, sans quoi l'addition serait déclarée sans jamais
  * être exercée. Sur une instance, `find` doit entrer dans la liste blanche
- * d'élévation avant l'écran de composition (story 62.6) ; d'ici là un octroi
+ * D'élévation avant l'écran de composition ; d'ici là un octroi
  * composé échouerait BRUYAMMENT, en nommant sa cause — jamais en posant un droit
  * approximatif. Le point est porté au runbook.
  *
- * Tout le reste appartient au jeu de l'Epic 34, déjà couvert par la liste blanche
- * d'élévation de privilège.
+ * Tout le reste est déjà couvert par la liste blanche d'élévation de privilège.
  */
 class PosixEmittedCommandsTest extends TestCase
 {
@@ -73,7 +71,7 @@ class PosixEmittedCommandsTest extends TestCase
         'chmod',
         'mv',
         'getent',
-        // Story 62.4 — la SÉLECTION d'objets par type. Voir le docblock de classe.
+        // La SÉLECTION d'objets par type. Voir le docblock de classe.
         'find',
     ];
 
@@ -206,7 +204,7 @@ class PosixEmittedCommandsTest extends TestCase
     }
 
     /**
-     * Story 62.4 — LES DEUX GESTES NOUVEAUX, PROVOQUÉS DÉLIBÉRÉMENT.
+     * LES DEUX GESTES NOUVEAUX, PROVOQUÉS DÉLIBÉRÉMENT.
      *
      * Aucune recette ne les atteint aujourd'hui. Les déclarer dans la liste sans
      * jamais les émettre reviendrait à élargir le jeu fermé sur une intention ;
@@ -264,7 +262,7 @@ class PosixEmittedCommandsTest extends TestCase
     }
 
     /**
-     * Story 62.4 — la restriction de suppression passe par `chmod`, déjà dans le
+     * La restriction de suppression passe par `chmod`, déjà dans le
      * jeu, et ne touche QUE les dossiers.
      */
     #[Test]

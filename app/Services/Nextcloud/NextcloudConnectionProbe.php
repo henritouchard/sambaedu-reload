@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 /**
- * Story 61.1 — LA SONDE DE CONNEXION : trois diagnostics, trois messages.
+ * LA SONDE DE CONNEXION : trois diagnostics, trois messages.
  *
  * « Ça ne marche pas » n'est pas un diagnostic. Les trois causes réelles se
  * corrigent à trois endroits différents, par trois personnes potentiellement
@@ -13,14 +13,13 @@ namespace App\Services\Nextcloud;
  *  - **instance injoignable** → réseau, DNS, TLS, ou l'instance est à l'arrêt ;
  *  - **privilège insuffisant** → le compte fourni existe peut-être, mais il n'est
  *    pas administrateur de l'instance ; or les montages globaux et la gestion des
- *    comptes SONT des opérations d'administration (cadrage 61.2) ;
+ *  comptes SONT des opérations d'administration (cadrage) ;
  *  - **app `files_external` absente** → `occ app:enable files_external` sur
  *    l'instance ; rien de ce que SE5 peut faire à distance.
  *
  * Les confondre ferait chercher au mauvais endroit — la panne la plus coûteuse
  * n'est pas celle qui échoue, c'est celle qui envoie ailleurs.
  *
- * ---------------------------------------------------------------------------
  * **LE QUATRIÈME DIAGNOSTIC N'EST PAS ICI, ET C'EST DÉLIBÉRÉ.** La mesure du
  * 2026-08-08 a fait apparaître une quatrième cause : le backend SMB indisponible
  * sur l'hôte de l'instance (`smbclient` / `php-smbclient` absent, et détection
@@ -36,7 +35,6 @@ namespace App\Services\Nextcloud;
  * écriture d'épreuve « pour tester » aurait été un geste qui MODIFIE l'instance
  * sous couvert de la sonder — précisément ce que le dépôt s'est déjà fait
  * reprocher une fois.
- * ---------------------------------------------------------------------------
  */
 final class NextcloudConnectionProbe
 {
@@ -77,7 +75,7 @@ final class NextcloudConnectionProbe
 
     /**
      * Refus que la sonde ne sait pas ranger dans les trois cas connus. Il EXISTE,
-     * et il porte son relevé : c'est ce qui permet à la règle d'arrêt de l'AC10 de
+     * et il porte son relevé : c'est ce qui permet à la règle d'arrêt de
      * s'appliquer sur des faits plutôt que sur une impression.
      */
     public static function rejected(string $detail, ?int $httpStatus = null): self

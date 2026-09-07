@@ -184,7 +184,7 @@
 </div>
 @endif
 
-{{-- Modale de création / édition (AC1, AC7, AC18) --}}
+{{-- Modale de création / édition --}}
 @if ($scheduleModalOpen)
     <div class="modal modal-open" wire:key="schedule-modal">
         <div class="modal-box max-w-2xl">
@@ -194,7 +194,7 @@
             </h3>
 
             <form wire:submit.prevent="saveSchedule" class="space-y-4">
-                {{-- Toggle mode récurrent / one-shot (D7) --}}
+                {{-- Toggle mode récurrent / one-shot --}}
                 <div class="flex gap-2 p-1 bg-base-200 rounded-lg" role="group" aria-label="Type de programmation">
                     <button type="button"
                         wire:click="toggleFormMode('recurring')"

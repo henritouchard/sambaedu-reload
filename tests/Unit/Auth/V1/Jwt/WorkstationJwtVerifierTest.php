@@ -16,16 +16,14 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC2.2 / AC7.1.
- *
  * Tests `WorkstationJwtVerifier` :
  *
  *  - happy path : JWT signé + tier valid + non revoqué = succès
- *  - 6 cas d'échec (D8) :
+ *  - 6 cas d'échec :
  *      missing (string vide), malformed (garbage), signature_invalid
  *      (signed avec autre clé), expired (exp < now), revoked (jti dans DB),
  *      wrong_tier
- *  - kid inconnu → rejet `jwt.signature_invalid` (D9)
+ *  - kid inconnu → rejet `jwt.signature_invalid`
  */
 class WorkstationJwtVerifierTest extends TestCase
 {

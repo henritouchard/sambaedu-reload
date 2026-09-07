@@ -24,10 +24,6 @@ class WorkstationGroupRepository
     ) {
     }
 
-    // ========================================
-    // LECTURE AD - SALLES (OU)
-    // ========================================
-
     /**
      * Récupère toutes les salles (OU) depuis l'AD
      */
@@ -79,10 +75,6 @@ class WorkstationGroupRepository
         }
     }
 
-    // ========================================
-    // MACHINES
-    // ========================================
-
     /**
      * Récupère toutes les machines avec pagination
      */
@@ -112,10 +104,10 @@ class WorkstationGroupRepository
             });
         }
 
-        // Story 16.13bis — filtre par statut de migration SE4 → SE5.
+        // Filtre par statut de migration SE4 → SE5.
         $this->applyMigrationFilter($query, $migrationFilter);
 
-        // Story 24.7 — filtre par conformité agent (worst-status / dérivés).
+        // Filtre par conformité agent (worst-status / dérivés).
         $this->applyConformityFilter($query, $conformityFilter);
 
         // Filtre par état de présence (allumé / éteint), dérivé du canal agent.
@@ -125,7 +117,7 @@ class WorkstationGroupRepository
         // clic sur les tuiles de statistiques de l'onglet Postes.
         $this->applyCardFilter($query, $cardFilter);
 
-        // Colonne « Déploiement » — canal natif de l'agent (Story 27.5,
+        // Colonne « Déploiement » — canal natif de l'agent (
         // AgentApplicationInventory). compliant/drift = installé, error = non
         // installé. Remplace le canal WPKG legacy (distribution via GPO) en
         // extinction, qui laissait les postes natifs à zéro.
@@ -134,7 +126,7 @@ class WorkstationGroupRepository
             'agentApplicationInventory as error_apps_count' => fn ($q) => $q->where('status', 'error'),
         ]);
 
-        // Story 16.13bis — eager loading de la relation pour éviter N+1
+        // Eager loading de la relation pour éviter N+1
         // dans le rendu du badge ✅/❌ par row.
         $query->with('migrationStatus');
 
@@ -169,7 +161,7 @@ class WorkstationGroupRepository
                 break;
 
             case 'without_group':
-                // Story 4.11 — appartenance globale : couvre salles ET parcs.
+                // Appartenance globale : couvre salles ET parcs.
                 $query->whereDoesntHave('groups');
                 break;
 
@@ -197,7 +189,7 @@ class WorkstationGroupRepository
     }
 
     /**
-     * Story 16.13bis — applique le filtre `migrationFilter` à la query.
+     * Applique le filtre `migrationFilter` à la query.
      */
     private function applyMigrationFilter(Builder $query, ?string $migrationFilter): void
     {
@@ -215,8 +207,8 @@ class WorkstationGroupRepository
     }
 
     /**
-     * Story 24.7 — applique le filtre `conformityFilter` à la query, aligné
-     * sur la sémantique du badge worst-status (décision n° 3, piège 8) :
+     * Applique le filtre `conformityFilter` à la query, aligné
+     * sur la sémantique du badge worst-status :
      *
      *  - `exceptions`     : poste enrôlé EN ÉCART (au moins une ressource
      *    `drift` ou `error`) — les muets non plus (ils priment, voir `silent`) ;
@@ -225,7 +217,7 @@ class WorkstationGroupRepository
      *  - `silent`         : enrôlé mais muet (dernier check-in >
      *    2 × `agent.ttl_seconds`).
      *
-     * Story 27.8 : le filtre `drifted_allowed` (dérive tolérée) est SUPPRIMÉ —
+     * Le filtre `drifted_allowed` (dérive tolérée) est SUPPRIMÉ
      * le mécanisme strict/default est retiré (la cible fait toujours loi).
      *
      * Tous les filtres sont bornés aux postes ENRÔLÉS (`agent_token_hash`
@@ -242,10 +234,10 @@ class WorkstationGroupRepository
         $exception = ['drift', 'error'];
         $threshold = now()->subSeconds(2 * (int) (config('agent.ttl_seconds') ?? 3600));
 
-        // Le « muet » prime sur le contenu rapporté (décision n° 7) : un poste
+        // Le « muet » prime sur le contenu rapporté : un poste
         // muet ne ressort QUE dans le filtre `silent`, jamais dans les filtres
         // de statut — même sémantique que le badge et les compteurs
-        // (ConformityService::summary, review 24.7 #2).
+        // (ConformityService::summary).
         $notSilent = function (Builder $q) use ($threshold): void {
             $q->whereNull('agent_last_checkin_at')
                 ->orWhere('agent_last_checkin_at', '>=', $threshold);
@@ -282,7 +274,7 @@ class WorkstationGroupRepository
      *  - `off` (Éteint)     : poste enrôlé ayant déjà rapporté, dont l'agent a
      *    signalé son extinction (`agent_reported_offline_at` ≥ dernier check-in)
      *    OU devenu muet au-delà du seuil (coupure brutale / injoignable). Réunit
-     *    les états `reported_off` et `silent` de `agentPresence()`.
+     *  les états `reported_off` et `silent` de `agentPresence()`.
      *
      * Les deux filtres sont bornés aux postes ENRÔLÉS (`agent_token_hash` non
      * null) avec un check-in connu : un poste sans agent est en présence
@@ -320,7 +312,7 @@ class WorkstationGroupRepository
     }
 
     /**
-     * Story 7.1 — variante scopée de `getMachines()` : restreint aux machines
+     * Variante scopée de `getMachines` : restreint aux machines
      * appartenant (via pivot `workstation_group_workstation`) à l'un des
      * WorkstationGroups autorisés.
      *
@@ -356,10 +348,10 @@ class WorkstationGroupRepository
             });
         }
 
-        // Story 16.13bis — filtre par statut de migration SE4 → SE5.
+        // Filtre par statut de migration SE4 → SE5.
         $this->applyMigrationFilter($query, $migrationFilter);
 
-        // Story 24.7 — filtre par conformité agent (worst-status / dérivés).
+        // Filtre par conformité agent (worst-status / dérivés).
         $this->applyConformityFilter($query, $conformityFilter);
 
         // Filtre par état de présence (allumé / éteint), dérivé du canal agent.
@@ -368,7 +360,7 @@ class WorkstationGroupRepository
         // Filtre rapide « carte » (clic sur les tuiles de statistiques).
         $this->applyCardFilter($query, $cardFilter);
 
-        // Colonne « Déploiement » — canal natif de l'agent (Story 27.5,
+        // Colonne « Déploiement » — canal natif de l'agent (
         // AgentApplicationInventory). compliant/drift = installé, error = non
         // installé. Remplace le canal WPKG legacy (distribution via GPO) en
         // extinction, qui laissait les postes natifs à zéro.
@@ -377,7 +369,7 @@ class WorkstationGroupRepository
             'agentApplicationInventory as error_apps_count' => fn ($q) => $q->where('status', 'error'),
         ]);
 
-        // Story 16.13bis — eager loading pour éviter N+1.
+        // Eager loading pour éviter N+1.
         $query->with('migrationStatus');
 
         return $query->orderBy('name')->paginate($perPage);
@@ -465,7 +457,7 @@ class WorkstationGroupRepository
      */
     public function getMachinesWithoutGroup(): Collection
     {
-        // Story 4.11 — l'appartenance « salle » vit désormais dans le pivot
+        // L'appartenance « salle » vit désormais dans le pivot
         // global ; `whereDoesntHave('groups')` couvre salles ET parcs. La
         // clause FK `physical_room_id` (supprimée) n'a plus lieu d'être.
         return Workstation::whereDoesntHave('groups')
@@ -492,10 +484,6 @@ class WorkstationGroupRepository
     {
         return Workstation::count();
     }
-
-    // ========================================
-    // GROUPES DE POSTES
-    // ========================================
 
     /**
      * Récupère tous les groupes avec pagination
@@ -524,7 +512,7 @@ class WorkstationGroupRepository
     }
 
     /**
-     * Story 7.1 — variante scopée de `getGroups()` : restreint aux IDs autorisés.
+     * Variante scopée de `getGroups` : restreint aux IDs autorisés.
      *
      * @param array<int,int> $authorizedGroupIds IDs autorisés par délégation.
      */
@@ -629,10 +617,6 @@ class WorkstationGroupRepository
     {
         return WorkstationGroup::count();
     }
-
-    // ========================================
-    // RELATIONS POSTES <-> GROUPES
-    // ========================================
 
     /**
      * Ajoute un poste à un groupe

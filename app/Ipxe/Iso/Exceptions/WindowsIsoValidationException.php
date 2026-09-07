@@ -7,7 +7,7 @@ namespace App\Ipxe\Iso\Exceptions;
 use RuntimeException;
 
 /**
- * Story 3.6 — D5 — Exception levée par {@see \App\Ipxe\Iso\Services\WindowsIsoUrlValidator}
+ * Exception levée par {@see \App\Ipxe\Iso\Services\WindowsIsoUrlValidator}
  * lorsqu'une URL ne respecte pas les contraintes de sécurité (regex iso-legacy,
  * allowlist host Microsoft, scheme HTTPS, extraction iso_name).
  *

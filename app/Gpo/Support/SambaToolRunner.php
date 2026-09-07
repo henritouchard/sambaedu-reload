@@ -14,18 +14,18 @@ use Illuminate\Support\Facades\Process;
  *
  * **Seul point du namespace `App\Gpo` autorisé à appeler `Illuminate\Support\Facades\Process`
  * ou des fonctions PHP `exec()`/`shell_exec()`/`passthru()`/`proc_open()`** —
- * cf. `tests/Architecture/GpoNamespaceTest.php` (garde-fou archi Story 16.1
- * AC2.2). Toute autre classe qui voudrait exécuter `samba-tool` doit
+ * Cf. `tests/Architecture/GpoNamespaceTest.php` (garde-fou archi).
+ * Toute autre classe qui voudrait exécuter `samba-tool` doit
  * passer par ce runner.
  *
  * Garanties :
  *
  * - Mode **array** pour `Process::run()` — pas de concaténation de string,
- *   échappement automatique des arguments (parité Story 15.1 / cf. risque
- *   d'injection identifié dans `sambaedu/includes/samba-tool.inc.php:54`).
+ *   échappement automatique des arguments (cf. risque d'injection identifié
+ *   dans `sambaedu/includes/samba-tool.inc.php:54`).
  * - Timeout configurable (default `config('sambaedu.gpo.samba_tool_timeout')`).
  * - Mode `dry-run` : ne lance pas le binaire, retourne la commande qui aurait
- *   été lancée. Utile pour tests + Stories 16.2 / 16.4.
+ *   été lancée. Utile pour les tests.
  * - Tous les appels sont logués sur le channel `gpo` (action_type
  *   `gpo.sambatool.exec` — niveau debug) avec stdout/stderr tronqués à 8 Ko.
  */
@@ -68,7 +68,7 @@ class SambaToolRunner
      * @param  list<string>  $args  Arguments en mode array — ex.
      *                              `['gpo', 'listall']` ou `['gpo', 'show', $name]`.
      * @param  GpoActionLog|null  $log  Si fourni, l'exécution est tracée via
-     *                                  {@see GpoActionLog::sambaToolExec()}.
+     *  {@see GpoActionLog::sambaToolExec()}.
      */
     public function run(array $args, ?GpoActionLog $log = null): ProcessResult
     {
@@ -131,7 +131,7 @@ class SambaToolRunner
      * groupe d'options `hostopts` de samba-tool : `samba-tool dns *` prend le
      * serveur en argument POSITIONNEL et rejette `-H` (« no such option »).
      * Les appelants historiques (`gpo *`, `computer *`) l'acceptent, d'où le
-     * défaut inchangé — cette bascule est strictement opt-in (Story 8.4).
+     * défaut inchangé — cette bascule est strictement opt-in.
      */
     public function withoutDirectoryUrl(): self
     {

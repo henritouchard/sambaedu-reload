@@ -21,17 +21,15 @@ use Throwable;
  * legacy (`gpo/wine.php:61`). Le legacy reposait sur une queue APCu primitive +
  * flush `/tmp/admin_script_*.sh` + cron — remplacé proprement par Laravel Queue.
  *
- * Story 16.3c — AC2.1, AC2.3, AC5.2.
- *
  * Sécurité (audit §6.F F7) :
  * - Validation regex `^[a-zA-Z0-9._-]*$` au constructeur (défense en profondeur)
  * - `Process::run(['/usr/share/sambaedu/scripts/make_wine_image.sh', $application])`
- *   en mode **array** — pas de concaténation shell, pas d'`exec()` direct.
+ *  en mode **array** — pas de concaténation shell, pas d'`exec()` direct.
  *
  * Idempotence : `Cache::lock('gpo:wine:generate-image:{application}', 1800)`
  * acquis dans `WineImageQueuer::dispatch` AVANT le push. Le lock est libéré
- * dans `handle()` / `failed()` du Job (ceinture + bretelles, cf. SM
- * discrepance (a) tranchement 2026-05-12 : lock côté queuer + release Job).
+ * dans `handle()` / `failed()` du Job : le lock est pris côté queuer et relâché
+ * côté Job, le dispatcher n'étant pas forcément le worker qui l'exécute.
  *
  * @legacy-port path="sambaedu/gpo/wine.php:61"
  */
@@ -94,7 +92,7 @@ class GenerateWineImageJob implements ShouldQueue
                 'script' => self::SCRIPT_PATH,
             ]);
 
-            // AC2.1 — Process::run MODE ARRAY (pas de concat shell). Audit §6.F F7 corrigé.
+            // Process::run MODE ARRAY (pas de concat shell). Audit §6.F F7 corrigé.
             $command = $this->application === ''
                 ? [self::SCRIPT_PATH]
                 : [self::SCRIPT_PATH, $this->application];
@@ -114,10 +112,9 @@ class GenerateWineImageJob implements ShouldQueue
                 'stdout_size_bytes' => strlen($result->output()),
             ]);
 
-            // Story 16.14 Q2 — invalider le cache santé GPO après la génération
-            // de l'image Wine (le script `make_wine_image.sh` peut modifier la GPO
-            // se4_wine côté SYSVOL). On ne sait pas précisément quelle GPO →
-            // flush global. Best-effort silencieux.
+            // Le script `make_wine_image.sh` peut modifier la GPO se4_wine côté
+            // SYSVOL. On ne sait pas laquelle → flush global du cache santé,
+            // best-effort silencieux.
             try {
                 app(\App\Gpo\Support\CachedGpoLookups::class)->forgetAll();
             } catch (Throwable) {

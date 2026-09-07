@@ -20,12 +20,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 43.3 (AC1, AC2, AC4) — `AgentTtlResolver::ttlSeconds()`.
+ * `AgentTtlResolver::ttlSeconds`.
  *
  * Feature (pas Unit) : le critère « bascule sensible » est SQL
  * (`capability_assignments`) — RefreshDatabase requis, iso patron
  * `AbstractCapabilityStateProvider::resolveOverrides()` dont ce résolveur est
- * le miroir (D3, mailles). Catalogue capacités VIDÉ en setUp (le lot seedé par
+ * le miroir. Catalogue capacités VIDÉ en setUp (le lot seedé par
  * migration brouillerait les assertions de slug/liste), une capacité de
  * travail `restrict_run` créée par test qui en a besoin.
  */
@@ -44,7 +44,7 @@ class AgentTtlResolverTest extends TestCase
 
         // Catalogue vide : la liste config par défaut (['restrict_run']) ne
         // doit matcher AUCUNE capacité tant qu'on n'en crée pas une nous-même
-        // (iso l'assertion de non-régression « 41.2 non livrée »).
+        // (iso l'assertion de non-régression « non livrée »).
         DB::table('capability_assignments')->delete();
         DB::table('capabilities')->delete();
 
@@ -59,7 +59,7 @@ class AgentTtlResolverTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Défaut global (comportement AUJOURD'HUI, AC2 non-régression) ───────
+    // Défaut global (comportement AUJOURD'HUI non-régression)
 
     #[Test]
     public function default_config_and_no_capability_seeded_yields_the_global_ttl_without_any_query(): void
@@ -112,7 +112,7 @@ class AgentTtlResolverTest extends TestCase
         self::assertSame(3600, $this->resolver->ttlSeconds($ctx));
     }
 
-    // ── Bascule sensible — mailles D3 (miroir resolveOverrides()) ──────────
+    // Bascule sensible (miroir de resolveOverrides())
 
     #[Test]
     public function sensitive_assignment_on_the_workstation_yields_the_short_ttl(): void
@@ -143,7 +143,7 @@ class AgentTtlResolverTest extends TestCase
     #[Test]
     public function sensitive_assignment_on_a_physical_ancestor_yields_the_short_ttl(): void
     {
-        // D3 — chaîne physique ÉTENDUE aux ancêtres : le poste est membre
+        // Chaîne physique ÉTENDUE aux ancêtres : le poste est membre
         // DIRECT de la salle enfant ; l'assignment vit sur le PARENT.
         $cap = Capability::factory()->create(['key' => 'restrict_run']);
         $ws = Workstation::factory()->create();
@@ -202,7 +202,7 @@ class AgentTtlResolverTest extends TestCase
     #[Test]
     public function machine_only_context_still_sees_sensitive_assignments_on_the_room(): void
     {
-        // D3 (piège n°1 de la story) : l'enveloppe MACHINE (user=null) doit
+        // L'enveloppe MACHINE (user=null) doit
         // AUSSI porter le TTL court quand l'assignment vit sur la salle — le
         // poste (SYSTEM) est l'autorité, pas seulement le compagnon de session.
         $cap = Capability::factory()->create(['key' => 'restrict_run']);
@@ -216,7 +216,7 @@ class AgentTtlResolverTest extends TestCase
         self::assertSame((int) config('agent.ttl_sensitive_seconds'), $ttl);
     }
 
-    // ── D2 — value non-null exigé ───────────────────────────────────────────
+    // Une value non-null est exigée
 
     #[Test]
     public function null_value_assignment_is_not_a_switch_yields_the_global_ttl(): void
@@ -230,7 +230,7 @@ class AgentTtlResolverTest extends TestCase
         self::assertSame(3600, $ttl);
     }
 
-    // ── AC2 — slug hors liste / capacité absente ────────────────────────────
+    // — slug hors liste / capacité absente
 
     #[Test]
     public function assignment_on_a_capability_key_outside_the_configured_list_yields_the_global_ttl(): void
@@ -259,7 +259,7 @@ class AgentTtlResolverTest extends TestCase
         self::assertSame(3600, $ttl);
     }
 
-    // ── D4/D5 — plancher serveur + défaut global inchangé ───────────────────
+    // Plancher serveur + défaut global inchangé
 
     #[Test]
     public function sensitive_ttl_is_floored_at_60_seconds(): void
@@ -285,7 +285,7 @@ class AgentTtlResolverTest extends TestCase
         self::assertSame(1, $ttl);
     }
 
-    // ── Piège n°5 — déterminisme (aucune horloge/aléa) ──────────────────────
+    // Déterminisme (aucune horloge/aléa)
 
     #[Test]
     public function ttl_is_deterministic_across_repeated_calls_on_the_same_context(): void
@@ -301,7 +301,7 @@ class AgentTtlResolverTest extends TestCase
         self::assertSame($first, $second);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function assign(Capability $cap, string $assignableType, int $assignableId, ?string $value): void
     {

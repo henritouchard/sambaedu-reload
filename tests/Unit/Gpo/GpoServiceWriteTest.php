@@ -15,19 +15,19 @@ use Tests\Support\FakesGpoService;
 use Tests\TestCase;
 
 /**
- * Story 16.5 — AC6.1 / Volet 6.
+ * Volet 6.
  *
  * Tests unitaires des méthodes d'écriture {@see GpoService::setLink},
- * `removeLink`, `setInheritance` et `reorderLinks` (Story 16.5).
+ * `removeLink`, `setInheritance` et `reorderLinks`.
  *
  * Stratégie : `Process::fake()` Laravel sur `SambaToolRunner` — `SambaToolRunner`
- * est final et non-mockable sans uopz/runkit (pattern iso Story 16.7
+ * est final et non-mockable sans uopz/runkit (pattern iso
  * `AdMachineManagerTest`).
  *
  * Couvre :
  * - succès / flags `--enforce` / `--disable`
  * - idempotence (already exists / does not exist)
- * - validation regex GUID + DN AVANT toute exec (AC5.1 / shouldNotReceive)
+ * - validation regex GUID + DN AVANT toute exec (shouldNotReceive)
  * - reorderLinks succès complet + rollback partiel
  */
 class GpoServiceWriteTest extends TestCase
@@ -48,10 +48,6 @@ class GpoServiceWriteTest extends TestCase
     {
         return FakesGpoService::makeService();
     }
-
-    // =====================================================================
-    // AC1.1 — setLink
-    // =====================================================================
 
     #[Test]
     public function set_link_invokes_samba_tool_setlink_with_basic_args(): void
@@ -150,10 +146,6 @@ class GpoServiceWriteTest extends TestCase
         Process::assertNothingRan();
     }
 
-    // =====================================================================
-    // AC1.2 — removeLink
-    // =====================================================================
-
     #[Test]
     public function remove_link_invokes_samba_tool_dellink(): void
     {
@@ -202,10 +194,6 @@ class GpoServiceWriteTest extends TestCase
 
         Process::assertNothingRan();
     }
-
-    // =====================================================================
-    // AC1.3 — setInheritance
-    // =====================================================================
 
     #[Test]
     public function set_inheritance_passes_inherit_when_enabled(): void
@@ -257,10 +245,6 @@ class GpoServiceWriteTest extends TestCase
 
         Process::assertNothingRan();
     }
-
-    // =====================================================================
-    // AC1.4 — reorderLinks
-    // =====================================================================
 
     #[Test]
     public function reorder_links_succeeds_when_all_steps_pass(): void
@@ -343,10 +327,6 @@ class GpoServiceWriteTest extends TestCase
 
         Process::assertNothingRan();
     }
-
-    // =====================================================================
-    // Story 16.5 review #S3 — Garde permutation complète
-    // =====================================================================
 
     #[Test]
     public function reorder_links_rejects_truncated_list(): void

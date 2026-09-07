@@ -26,7 +26,7 @@ use Tests\Support\FakeExtensionHelperRunner;
 use Tests\TestCase;
 
 /**
- * Story 56.3 (AC3) — `ExtensionInstallService::update()`, prouvé sur l'HÔTE.
+ * `ExtensionInstallService::update`, prouvé sur l'HÔTE.
  *
  * Ce que cette suite verrouille, dans l'ordre d'importance :
  *
@@ -40,7 +40,7 @@ use Tests\TestCase;
  *     `write-env`, ni `write-fragment`, ni `reload-apache`, ni
  *     `enable-service`. Le port, le fragment Apache et le client OIDC sont des
  *     invariants de la clé — les régénérer serait du churn à risque.
- *  3. **La frontière fail-closed de 56.2 vaut aussi ici** : un sha256 qui ne
+ *  3. **La frontière fail-closed vaut aussi ici** : un sha256 qui ne
  *     colle pas produit ZÉRO exécution privilégiée.
  *  4. **Un échec compense et ne ment pas** : l'ancien paquet est réinstallé, le
  *     service redémarré, `installed_*` reste VRAI en base, et l'audit consigne
@@ -66,7 +66,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
 
     /**
      * ⚠️ UN SEUL `Http::fake()` lisant cette table mutable : `Http::fake()`
-     * FUSIONNE ses stubs et le premier motif gagne (piège 56.1). Or ce test
+     * FUSIONNE ses stubs et le premier motif gagne (piège). Or ce test
      * fait précisément « le dépôt a publié une autre version » — re-faker
      * servirait l'ancien contenu et la suite entière vérifierait que rien n'a
      * changé.
@@ -132,10 +132,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     {
         $this->files[$url] = ['body' => $body, 'status' => $status, 'headers' => $headers];
     }
-
-    // =====================================================================
-    // Fixtures
-    // =====================================================================
 
     private function service(): ExtensionInstallService
     {
@@ -240,10 +236,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         ];
     }
 
-    // =====================================================================
-    // AC3 — chemin nominal : le paquet et le service, RIEN D'AUTRE
-    // =====================================================================
-
     #[Test]
     public function the_update_touches_exactly_the_package_and_the_service(): void
     {
@@ -331,10 +323,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         self::assertFileExists($this->staging.'/hello/'.hash('sha256', self::V2_BODY).'.deb');
     }
 
-    // =====================================================================
-    // AC3 — no-op signalés
-    // =====================================================================
-
     #[Test]
     public function updating_to_the_same_version_is_a_signalled_no_op(): void
     {
@@ -373,10 +361,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::count());
         Http::assertNothingSent();
     }
-
-    // =====================================================================
-    // AC3 — fail-closed : rien ne s'exécute sans garantie
-    // =====================================================================
 
     #[Test]
     public function a_mismatching_sha256_on_the_new_package_stops_everything(): void
@@ -596,16 +580,11 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         self::assertSame([], $this->helper->calls);
     }
 
-    // =====================================================================
-    // AC3 — compensations : retour à la version installée
-    // =====================================================================
-
     /**
      * Le plan de mise à jour n'a que DEUX étapes privilégiées ; on les fait
      * échouer l'une après l'autre, par RANG et non par sous-commande : la
      * compensation rejoue `install-package`, et la faire échouer elle aussi ne
-     * prouverait que la tolérance aux compensations ratées (déjà couverte
-     * en 56.2).
+     * prouverait que la tolérance aux compensations ratées (déjà couverte).
      *
      * @return array<string, array{0: int}>
      */
@@ -652,7 +631,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     #[Test]
     public function the_engine_lock_always_outlives_the_job_budget(): void
     {
-        // Review 56.3 #2 — le verrou du store `file` n'est pas lié à la vie du
+        // Le verrou du store `file` n'est pas lié à la vie du
         // processus : c'est une entrée à expiration. Un TTL plus COURT que le
         // budget du Job ouvre une fenêtre où un second run acquiert le « même »
         // verrou pendant que le premier travaille encore — deux allocations de
@@ -676,7 +655,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     #[Test]
     public function a_rollback_that_fails_says_so_instead_of_claiming_the_service_is_back(): void
     {
-        // Review 56.3 #1 — l'angle mort : l'échec DE LA COMPENSATION. Le
+        // L'angle mort : l'échec DE LA COMPENSATION. Le
         // redémarrage nominal échoue (appel 2), la compensation réinstalle
         // l'ancien paquet (appel 3) puis échoue à son tour au redémarrage
         // (appel 4). Jusqu'ici ce cas rendait EXACTEMENT le même message,
@@ -748,7 +727,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     {
         // La transaction finale est la DERNIÈRE étape : si elle échoue, le
         // système doit revenir à la version d'avant. On simule la panne par la
-        // disparition de la table d'audit (patron 54.2/56.2).
+        // disparition de la table d'audit.
         $this->installed();
         $this->publish();
 
@@ -786,10 +765,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         self::assertSame('2.0.0', Extension::where('key', 'hello')->firstOrFail()->installed_version);
         Http::assertSentCount(2, 'le paquet vérifié survit à l\'échec : pas de re-téléchargement');
     }
-
-    // =====================================================================
-    // AC2 — rapport de progression (le pont vers l'UI)
-    // =====================================================================
 
     #[Test]
     public function the_progress_callback_reports_every_completed_step_in_order(): void
@@ -833,7 +808,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     #[Test]
     public function the_install_progress_callback_reports_the_documented_step_order(): void
     {
-        // Non-régression du plan 56.2 : l'ajout du rapport ne réordonne rien.
+        // Non-régression du plan : l'ajout du rapport ne réordonne rien.
         $source = $this->source();
         Extension::factory()->for($source, 'source')->create([
             'key' => 'hello',
@@ -881,10 +856,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         ], $reported);
     }
 
-    // =====================================================================
-    // Libellés d'étapes : un seul énoncé, quatre consommateurs
-    // =====================================================================
-
     #[Test]
     public function every_step_of_every_operation_has_a_french_label(): void
     {
@@ -927,7 +898,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     #[Test]
     public function the_step_labels_of_install_and_remove_are_unchanged_by_the_refactor(): void
     {
-        // Verrou de non-régression des sorties CLI 56.2 : ces chaînes étaient
+        // Verrou de non-régression des sorties CLI : ces chaînes étaient
         // écrites en dur dans `ExtensionInstall` et `ExtensionRemove`.
         $install = ExtensionInstallService::stepLabels(\App\Models\ExtensionInstallRun::OPERATION_INSTALL);
         self::assertSame('paquet téléchargé et sha256 vérifié', $install[ExtensionInstallService::STEP_PACKAGE]);
@@ -947,10 +918,6 @@ class ExtensionInstallServiceUpdateTest extends TestCase
         self::assertSame('staging du paquet nettoyé', $remove[ExtensionInstallService::STEP_PACKAGE]);
         self::assertSame('registre mis à jour et acte journalisé', $remove[ExtensionInstallService::STEP_REGISTRY]);
     }
-
-    // =====================================================================
-    // Non-régression 56.2 — l'installation pose désormais l'empreinte
-    // =====================================================================
 
     #[Test]
     public function installing_records_the_fingerprint_of_the_package_actually_posted(): void
@@ -973,7 +940,7 @@ class ExtensionInstallServiceUpdateTest extends TestCase
     }
 
     /**
-     * Story 56.4 — les scopes ACCORDÉS sont un invariant de la clé, comme le
+     * Les scopes ACCORDÉS sont un invariant de la clé, comme le
      * client lui-même : une mise à jour ne les touche pas.
      *
      * Le cas qui compte : un manifest de nouvelle version qui demande PLUS que

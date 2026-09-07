@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.2 — AC2.1 / T5.3.
+ * T5.3.
  *
  * Smoke tests des 3 controllers fins — vérifie que la classe est instantiable
  * via le container Laravel (DI résolution OK).
@@ -45,7 +45,7 @@ class IpxeAdminControllerSmokeTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.3 — AC7.1 / T5.3 — smoke tests des 5 controllers enrollment
+     * T5.3 — smoke tests des 5 controllers enrollment
      * ------------------------------------------------------------------ */
 
     #[Test]

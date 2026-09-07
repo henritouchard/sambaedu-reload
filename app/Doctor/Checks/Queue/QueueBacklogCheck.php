@@ -12,12 +12,12 @@ use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
- * Story 60.5 — L'OUVRIER MORT, constaté A POSTERIORI.
+ * L'OUVRIER MORT, constaté A POSTERIORI.
  *
- * Depuis que la mise en place des droits est ENFILÉE (story 60.4), un ouvrier de
+ * Depuis que la mise en place des droits est ENFILÉE, un ouvrier de
  * file arrêté ne se manifeste par AUCUN symptôme : les écrans disent « engagé »,
  * les travaux s'empilent, et rien n'échoue jamais. C'est la forme la plus pure du
- * défaut que cet epic traque — un signal qui n'atteint pas son destinataire — et
+ * défaut traqué ici — un signal qui n'atteint pas son destinataire — et
  * elle est d'autant plus insidieuse qu'elle se lit comme un succès.
  *
  * **Le seuil porte sur l'ANCIENNETÉ, pas sur le volume.** Une file chargée mais

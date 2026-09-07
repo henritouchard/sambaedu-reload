@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Support;
 
 /**
- * Story 3.1 — D4 / AC2.2.
- *
  * Normalise un UUID vers la forme `lowercase trimmed`.
  *
  * **Pas** de validation regex stricte UUID v4 — le legacy `boot.php:24` fait

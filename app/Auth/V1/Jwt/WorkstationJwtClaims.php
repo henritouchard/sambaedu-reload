@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Auth\V1\Jwt;
 
 /**
- * Story 16.10 — AC2.2.
  *
  * DTO immutable représentant les claims d'un JWT poste validé. Retourné par
  * `WorkstationJwtVerifier::verify()`. Injecté dans

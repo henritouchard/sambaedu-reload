@@ -118,8 +118,8 @@ class ParcDefaultsCatalogBoundaryTest extends TestCase
     #[Test]
     public function removing_an_out_of_catalog_default_is_always_allowed(): void
     {
-        // D4 : le retrait n'est jamais borné (sinon on bloquerait le nettoyage d'un
-        // défaut posé avant le contrat).
+        // Le retrait n'est jamais borné par le catalogue amont : sinon on
+        // bloquerait le nettoyage d'un défaut posé avant le contrat.
         $this->actAsAdmin();
         $this->activeContractWithCatalog(['firefox']);
         $chrome = $this->makeApp('chrome', parcDefault: true); // défaut hérité hors catalogue
@@ -132,7 +132,7 @@ class ParcDefaultsCatalogBoundaryTest extends TestCase
     #[Test]
     public function standalone_allows_any_app_as_parc_default(): void
     {
-        // NFR3 : sans contrat actif, comportement 27.17 inchangé.
+        // Sans contrat actif, comportement inchangé.
         $this->actAsAdmin();
         $chrome = $this->makeApp('chrome');
 

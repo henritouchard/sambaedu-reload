@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 4-4 — Service CRUD + executeDue pour les programmations WorkstationGroup.
+ * -4 — Service CRUD + executeDue pour les programmations WorkstationGroup.
  *
  * Architecture `tick → enqueue → worker` :
  *  - La commande artisan `parc:execute-group-schedules` (everyMinute) appelle
@@ -24,13 +24,13 @@ use Illuminate\Support\Facades\Log;
  *  - On crée un `WorkstationGroupScheduleRun` par exécution (audit + idempotence).
  *  - Pour les one-shots : dans la même transaction que la création du run,
  *    on met à jour `enabled=false` + `completed_at=ran_at` pour éviter toute
- *    re-fire ultérieure (AC21, AC22).
+ * re-fire ultérieure.
  *
  * Idempotence multi-couches :
  *  1. Garde `exists()` côté service (ce fichier — méthode `runAlreadyExists`).
  *  2. Index unique DB `(schedule_id, ran_for_date, ran_for_time)` (migration).
  *  3. `withoutOverlapping(5)` côté scheduler (Kernel).
- *  4. Filtre 409 `WorkstationGroupService` (hérité 4.3 — machines déjà en cours).
+ *  4. Filtre 409 `WorkstationGroupService` (hérité — machines déjà en cours).
  */
 class WorkstationGroupScheduleService
 {
@@ -38,10 +38,6 @@ class WorkstationGroupScheduleService
         private WorkstationGroupService $groupService,
     ) {
     }
-
-    // ========================================
-    // CRUD
-    // ========================================
 
     /**
      * Crée un schedule récurrent.
@@ -113,7 +109,7 @@ class WorkstationGroupScheduleService
     /**
      * Met à jour un schedule existant.
      *
-     * Refuse la mutation sur un one-shot déjà complété (AC23).
+     * Refuse la mutation sur un one-shot déjà complété.
      *
      * @param array<string, mixed> $attributes
      * @throws \DomainException si schedule one-shot terminé
@@ -163,7 +159,7 @@ class WorkstationGroupScheduleService
     }
 
     /**
-     * Toggle enabled (flip). Refuse sur one-shot terminé (AC23).
+     * Toggle enabled (flip). Refuse sur one-shot terminé.
      *
      * @throws \DomainException si schedule one-shot terminé
      */
@@ -215,10 +211,6 @@ class WorkstationGroupScheduleService
         ]);
     }
 
-    // ========================================
-    // Execution (tick scheduler)
-    // ========================================
-
     /**
      * Exécute tous les schedules dus à l'instant `$now`.
      *
@@ -227,7 +219,7 @@ class WorkstationGroupScheduleService
      *  2. Filtre PHP isDueNow (minute-match tz-aware pour recurring)
      *  3. Pour chaque schedule :
      *     - Guard exists() : skip si déjà joué pour ce (date, time)
-     *     - Résolution machines du groupe au tick (D2 liveness)
+     *     - Résolution des machines du groupe au tick, jamais figée à l'armement
      *     - Appel WorkstationGroupService::executeGroupMachinesAction(..., initiatedBy)
      *     - Transaction : create Run + (si one_shot) update enabled=false, completed_at
      *
@@ -390,10 +382,6 @@ class WorkstationGroupScheduleService
             ->where('created_at', '<', Carbon::now()->subDays($retentionDays))
             ->delete();
     }
-
-    // ========================================
-    // Helpers privés
-    // ========================================
 
     private function runAlreadyExists(int $scheduleId, string $ranForDate, string $ranForTime): bool
     {

@@ -22,7 +22,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 — LA RELECTURE et la REPROJECTION INVERSE.
+ * LA RELECTURE et la REPROJECTION INVERSE.
  *
  * Ce que ce fichier tient : rien ne remonte en nom système, rien n'est inventé,
  * rien n'est tu, et une entrée vide est une observation à part entière.
@@ -205,7 +205,7 @@ class PosixInspectTest extends TestCase
     }
 
     /**
-     * Le balayage couvre la RACINE — la fuite mesurée en ouverture d'epic était
+     * Le balayage couvre la RACINE — la fuite mesurée en ouverture était
      * une relecture qui rendait les enfants sans elle.
      */
     #[Test]

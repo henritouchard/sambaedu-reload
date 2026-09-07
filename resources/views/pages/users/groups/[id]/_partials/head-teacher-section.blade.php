@@ -12,27 +12,27 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
- * Story 4.15 — Section « Professeur principal » Livewire de la fiche groupe
+ * Section « Professeur principal » Livewire de la fiche groupe
  * `/app/users/groups/[id]`.
  *
- * Pattern aligné sur `_partials/class-share-section.blade.php` (5.2) :
+ * Pattern aligné sur `_partials/class-share-section.blade.php` :
  *  - Component SFC anonyme via `new class extends Component`.
  *  - Double guard `update-group` (UI `@can` + serveur `Gate::authorize`) — la
- *    même permission qui régit l'édition du groupe (`user.modify`, D6).
- *  - Toasts `WithToasts` génériques (pas `$e->getMessage()` — leçon 5.1b #4).
- *  - Section affichée UNIQUEMENT si `$group->type === 'classe'` (D4). Un payload
+ *    même permission qui régit l'édition du groupe (`user.modify`).
+ *  - Toasts `WithToasts` génériques (jamais `$e->getMessage()`).
+ *  - Section affichée UNIQUEMENT si `$group->type === 'classe'`. Un payload
  *    Livewire forgé avec un groupId non-classe est rejeté en `mount` via abort.
  *
  * Fonction : désigner le(s) professeur(s) principal(aux) d'une classe. Le toggle
- * n'est proposé que pour les membres dont `users.role === 'prof'` (D5) — un élève
+ * n'est proposé que pour les membres dont `users.role === 'prof'` — un élève
  * PP n'a pas de sens métier (l'écriture service reste robuste si forcé :
  * intersection membres). Plusieurs PP autorisés.
  *
  * Persistance : `UserGroupService::updateGroup($id, [... 'head_teacher_ids'])` —
  * un seul aller-retour qui (1) projette la 3ᵉ cible AD `PP_<base>` (orthogonale
- * à `Equipe_`/`Classe_`) AVANT le read-back `syncFromAd` (D2), (2) fait converger
+ * à `Equipe_`/`Classe_`) AVANT le read-back `syncFromAd`, (2) fait converger
  * le pivot `is_head_teacher` au read-back. L'état lu pour cocher les toggles vient
- * du pivot `UserGroup::users()->pivot->is_head_teacher` (withPivot 4.14, D8).
+ * du pivot `UserGroup::users()->pivot->is_head_teacher` (withPivot).
  */
 new class extends Component {
     use WithToasts;
@@ -72,7 +72,7 @@ new class extends Component {
             // Cohérence avec la page parente qui abort 404 en mount.
             abort(404);
         }
-        // Story 4.15 (Q3) — gate lecture AVANT d'exposer quoi que ce soit. Sans
+        // Gate lecture AVANT d'exposer quoi que ce soit. Sans
         // ça, un utilisateur sans `user.read` pourrait instancier la section et
         // lire les membres profs via wire:call. `view-group` == `user.read`
         // (GroupPolicy). Le @can('view-group') du template restait UI-only.
@@ -120,7 +120,7 @@ new class extends Component {
             return;
         }
 
-        // Story 42.1 — la sélection PP se lit désormais sur le RÔLE d'arête
+        // La sélection PP se lit désormais sur le RÔLE d'arête
         // (`role === 'owner'`), miroir de `is_head_teacher`. Le canal de
         // projection (`save()` → `head_teacher_ids` → updateGroup) reste inchangé.
         $this->headTeacherIds = $group->users
@@ -132,14 +132,14 @@ new class extends Component {
 
     /**
      * Membres profs de la classe avec leur état PP courant. Le toggle PP n'est
-     * proposé QUE pour les profs (D5).
+     * proposé QUE pour les profs.
      *
-     * Story 49.2 — le filtre lit `users.role`, colonne DÉJÀ hydratée par la
+     * Le filtre lit `users.role`, colonne DÉJÀ hydratée par la
      * relation `users` : zéro requête supplémentaire. Il s'appuyait auparavant
      * sur `User::isProf()`, LDAP-first, soit **un aller-retour annuaire par
      * membre de la classe à chaque rendu** de cette section
      * (`project_isprof_iseleve_ldap_first_cost`). Même comparaison stricte que
-     * le reste de la page groupe (pattern 42.2).
+     * le reste de la page groupe (pattern).
      *
      * @return array<int,array{id:int,login:string,label:string,is_head_teacher:bool}>
      */
@@ -188,8 +188,8 @@ new class extends Component {
 
         $this->isLoading = true;
         try {
-            // Ne retenir que les PP qui sont effectivement membres profs (D5 UI ;
-            // le service ré-intersecte défensivement côté écriture AD).
+            // Ne retenir que les PP qui sont effectivement membres profs (le
+            // service ré-intersecte défensivement côté écriture AD).
             $allowed = collect($this->profMembers())->pluck('id')->map(static fn(mixed $v): int => (int) $v)->all();
             $ppIds = array_values(array_intersect(
                 array_map('intval', $this->headTeacherIds),
@@ -204,7 +204,7 @@ new class extends Component {
                 'head_teacher_ids' => $ppIds,
             ]);
 
-            // Story 4.15 (Q2) — toast honnête : ne claironner « mis à jour » que
+            // Toast honnête : ne claironner « mis à jour » que
             // si l'état persisté du SEUL groupe courant a réellement convergé
             // vers l'ensemble intendu ($ppIds). `updateGroup` est fail-soft sur
             // l'AD ; si le read-back syncFromAd n'a pas posé `is_head_teacher`
@@ -271,16 +271,15 @@ new class extends Component {
 };
 ?>
 
-{{-- Review 42.3 #1 — balise RACINE STABLE obligatoire : un @if de premier
-     niveau fait capturer un tag racine vide par SupportNestingComponents
-     (marqueur [if BLOCK] de SupportMorphAwareBladeCompilation) → ViewException
-     « Invalid Livewire child tag name » au re-render de la page parente
-     (cassait updateMemberRole 42.3 ET removeMember pré-existant). --}}
+{{-- Balise RACINE STABLE obligatoire : un @if de premier niveau fait capturer
+     un tag racine vide par SupportNestingComponents (marqueur [if BLOCK] de
+     SupportMorphAwareBladeCompilation) → ViewException « Invalid Livewire child
+     tag name » au re-render de la page parente. --}}
 <div>
 @if (! $isClasse)
     {{-- Le component n'affiche rien si le UserGroup n'est pas de type classe. --}}
 @else
-    {{-- Story 4.15 (refonte UI) — la désignation du PP n'est plus une card
+    {{-- La désignation du PP n'est plus une card
          permanente mais une MODALE déclenchée par l'action « Nommer un
          professeur principal » du menu Actions parent (event
          `open-head-teacher-modal`). L'état PP se lit dans la liste des membres

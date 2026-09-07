@@ -32,9 +32,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Story 3.1 — D1 — IpxeServiceProvider.
- *
- * Service Provider du module iPXE (boot réseau + déploiement OS — Epic 3).
+ * Service Provider du module iPXE (boot réseau + déploiement OS).
  *
  * **Décision DO-1** : le provider est placé dans `App\Providers\` (et non
  * `App\Ipxe\`) pour cohérence stricte avec les autres modules namespacés
@@ -70,7 +68,7 @@ class IpxeServiceProvider extends ServiceProvider
             'ipxe',
         );
 
-        // Services stateless réutilisables (parité 16.10/16.12).
+        // Services stateless réutilisables (parité).
         $this->app->singleton(WorkstationLocator::class, fn () => new WorkstationLocator());
 
         $this->app->singleton(IpxeMenuRenderer::class, fn ($app) => new IpxeMenuRenderer(
@@ -79,20 +77,19 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(WindowsInstallMenuBuilder::class),
         ));
 
-        // Story 3.2 — D9 / AC9.2 — résolveur d'actions whitelistées rendant
-        // les templates `ipxe.actions.*`.
+        // Résolveur d'actions whitelistées rendant les templates `ipxe.actions.*`.
         $this->app->singleton(IpxeActionResolver::class, fn ($app) => new IpxeActionResolver(
             $app->make(ViewFactory::class),
             $app->make(\App\Services\ServiceCredentials::class),
         ));
 
-        // Story 4.10 — IpxeAuthService centralise l'auth iPXE
+        // IpxeAuthService centralise l'auth iPXE
         // (AD bind + permission Spatie `computer.install`).
         $this->app->singleton(IpxeAuthService::class, fn ($app) => new IpxeAuthService(
             $app->make(\App\Services\AuthenticationService::class),
         ));
 
-        // Story 4.10 (correctif review #12) — binding contrat → impl concrète.
+        // Binding contrat → impl concrète.
         // Tous les consommateurs iPXE type-hintent désormais `IpxeAuthorizes`
         // (pas `IpxeAuthService`), ce qui permet de stubber l'auth en test
         // sans toucher au `final` de la classe concrète de prod.
@@ -106,7 +103,7 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(\App\Services\Parc\WorkstationReinstallService::class),
         ));
 
-        // Story 3.3 — D5/D6 — bindings enrollment.
+        // Bindings enrollment.
         $this->app->singleton(IpxeHostnameSanitizer::class, fn () => new IpxeHostnameSanitizer());
 
         $this->app->singleton(IpxeEnrollmentMenuBuilder::class, fn () => new IpxeEnrollmentMenuBuilder());
@@ -125,12 +122,12 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(IpxeAuthorizes::class),
         ));
 
-        // Story 3.4 — D11 / AC9.3 — bindings installation Linux.
+        // D11 / — bindings installation Linux.
         $this->app->singleton(LinuxPreseedService::class, fn () => new LinuxPreseedService());
         $this->app->singleton(LinuxInstallMenuBuilder::class, fn () => new LinuxInstallMenuBuilder());
         $this->app->singleton(LinuxPostInstallTracker::class, fn () => new LinuxPostInstallTracker());
 
-        // Story 3.5 — D11 / AC9.3 — bindings installation Windows.
+        // D11 / — bindings installation Windows.
         // se4install : mot de passe effectif (TOTP) via ServiceCredentials injecté.
         $this->app->singleton(WindowsUnattendBuilder::class, fn ($app) => new WindowsUnattendBuilder(
             $app->make(\App\Services\ServiceCredentials::class),
@@ -141,15 +138,15 @@ class IpxeServiceProvider extends ServiceProvider
         $this->app->singleton(WindowsInstallMenuBuilder::class, fn () => new WindowsInstallMenuBuilder());
         $this->app->singleton(WindowsPostInstallTracker::class, fn () => new WindowsPostInstallTracker());
 
-        // Story 3.8 — D8 / AC3.6 / AC9.2 — orchestrateur 6 builders cmd batch
-        // post-OOBE Windows (sysprep/nosysprep/join/renomme/post/wpkg).
+        // Orchestrateur des 6 builders cmd batch post-OOBE Windows
+        // (sysprep/nosysprep/join/renomme/post/wpkg).
         $this->app->singleton(WindowsActionCmdBuilder::class, fn ($app) => new WindowsActionCmdBuilder(
             $app->make(ViewFactory::class),
             $app->make(\App\Services\ServiceCredentials::class),
         ));
 
-        // Story 3.6 — D7 / AC6.4 — bindings gestion ISO Windows (sous-namespace
-        // dédié `App\Ipxe\Iso\*` pour cohérence frontière D1).
+        // Bindings de gestion des ISO Windows (sous-namespace dédié
+        // `App\Ipxe\Iso\*`).
         $this->app->singleton(WindowsIsoUrlValidator::class, fn () => new WindowsIsoUrlValidator());
         $this->app->singleton(WindowsIsoSourcesReader::class, fn ($app) => new WindowsIsoSourcesReader(
             $app->make(Filesystem::class),

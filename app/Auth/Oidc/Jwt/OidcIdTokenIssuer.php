@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 55.1 — Émission de l'**id_token RS256** et de l'**access_token opaque**.
+ * Émission de l'**id_token RS256** et de l'**access_token opaque**.
  *
  * **Frontière crypto** : c'est le SEUL fichier du namespace `App\Auth\Oidc`
  * autorisé à importer `Firebase\JWT\*` — verrouillé par
@@ -21,14 +21,13 @@ use Illuminate\Support\Str;
  * `App\Auth\V1` et `App\Auth\Federated`. La dépendance crypto ne doit fuir ni
  * dans les contrôleurs, ni dans les modèles.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  STRUCTURE DE L'ID_TOKEN — structure figée par 55.1, claims métier par 55.2
+ *  STRUCTURE DE L'ID_TOKEN — structure figée par, claims métier
  *
  *  header : { alg: "RS256", typ: "JWT", kid: "<active_kid>" }
  *  claims : { iss, sub, aud, exp, iat, jti, nonce? }
  *           + les claims MÉTIER scope-gatés fournis par l'appelant
  *             ({@see \App\Auth\Oidc\Support\OidcClaimsResolver} — `name`,
- *             `role`, `groups`, et RIEN d'autre : NFR5/NFR11).
+ *             `role`, `groups`, et RIEN d'autre).
  *
  *  ⚠️ **LES CLAIMS STANDARDS SONT INÉCRASABLES.** L'ordre du `array_merge` est
  *  LA garantie : `array_merge($metier, $standard)` — les claims standards sont
@@ -36,7 +35,6 @@ use Illuminate\Support\Str;
  *  jour compromis) qui renverrait `sub`, `aud` ou `exp` ne peut pas altérer
  *  l'identité, le destinataire ni la durée de vie du jeton. Vérifié par un
  *  test d'injection dédié.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **`sub`** est fourni par l'appelant, résolu par le point unique
  * {@see \App\Auth\Oidc\Support\OidcSubjectResolver} : cette classe ne décide
@@ -47,7 +45,7 @@ use Illuminate\Support\Str;
  * défense contre la confusion de destinataire.
  *
  * **`jti` = UUID v4** aléatoire (non corrélé au sujet ni au client) : le client
- * ou le SDK s'en sert pour détecter un rejeu (vérifié en 55.3).
+ * ou le SDK s'en sert pour détecter un rejeu (vérifié).
  *
  * **Fail-closed** : clé absente ⇒ exception explicite « lancer
  * `php artisan oidc:keys:init` ». Jamais d'émission dégradée, jamais de repli
@@ -70,7 +68,7 @@ class OidcIdTokenIssuer
      * @param  string  $nonce  Relayé s'il est non vide (anti-rejeu côté client).
      * @param  array<string, mixed>  $businessClaims  Claims MÉTIER déjà filtrés
      *                                                par scope
-     *                                                ({@see \App\Auth\Oidc\Support\OidcClaimsResolver::claimsFor()}).
+     *  ({@see \App\Auth\Oidc\Support\OidcClaimsResolver::claimsFor()}).
      *                                                Cette classe ne les
      *                                                interprète pas : elle
      *                                                garantit seulement qu'ils
@@ -138,7 +136,7 @@ class OidcIdTokenIssuer
      * Émet l'access_token OPAQUE (CSPRNG) et persiste son sha256.
      *
      * La réponse du token endpoint DOIT contenir un `access_token`
-     * (RFC 6749 §5.1). Story 55.2 : il est désormais CONSOMMÉ par `/userinfo`.
+     * (RFC 6749 §5.1). : il est désormais CONSOMMÉ par `/userinfo`.
      *
      * @param  string  $subject  Le `sub` DÉJÀ RÉSOLU (valeur publiée) — stocké
      *                           pour garantir l'égalité `sub` id_token ⇄
@@ -146,7 +144,7 @@ class OidcIdTokenIssuer
      * @param  int|null  $userId  La clé de jointure vers `users`. C'est ELLE
      *                            qui sert à recalculer les claims à l'appel de
      *                            `/userinfo` — jamais le `subject`, qui n'est
-     *                            pas une clé (55.2, migration `310000`).
+     *                            pas une clé (cf. migration `310000`).
      * @return array{clear: string, expires_in: int, expires_at: Carbon}
      */
     public function issueAccessToken(

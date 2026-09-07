@@ -37,7 +37,7 @@ class MachinePowerService
      * (cf. post-neofut : 135 ouvert, 445 filtré, ICMP bloqué).
      *
      * @param  string  $ip  Adresse IP ou hostname
-     * @param  float  $timeout  Timeout en secondes (par défaut 0.2s)
+     * @param float $timeout Timeout en secondes (par défaut)
      * @return string|false 'windows', 'linux', ou false
      */
     public function ping(string $ip, float $timeout = 0.2): string|false
@@ -413,13 +413,13 @@ class MachinePowerService
     }
 
     /**
-     * Logue un timeout de readiness post-WOL (AC4 story 4-2).
+     * Logue un timeout de readiness post-WOL (-2).
      *
      * Utilisé par le composant Livewire MachineShow quand le polling wire:poll.3s
      * n'a pas détecté la machine comme disponible dans les
      * MACHINE_READINESS_TIMEOUT_SECONDS (config/parc.php).
      *
-     * Correction review #11 (2026-04-20) : on ferme le log WOL ouvert (stopped_at
+     * On ferme le log WOL ouvert (stopped_at
      * null) plutôt que de créer une nouvelle ligne — sinon (a) le log WOL initial
      * reste ouvert indéfiniment et un futur shutdown le fermera erronément, (b)
      * on perd le started_at d'origine et la durée d'attente devient incalculable.

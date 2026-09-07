@@ -16,8 +16,6 @@ use Livewire\WithFileUploads;
 /**
  * Molecule Livewire SFC — carte d'upload / remplacement wallpaper.
  *
- * Story 4.7 — Task 4.2 (AC 8, 9, 10, 11).
- *
  * Props :
  *   - `type` : 'wallpaper' | 'lockscreen'
  *   - `ownerType` : null (défaut étab) | FQN de la classe Eloquent (User, UserGroup, WorkstationGroup)
@@ -47,10 +45,10 @@ new class extends Component {
     /**
      * Permission qui garde l'édition. Défaut `wallpaper.manage` (pages ciblées
      * d'origine — rétrocompat). La page « Configuration par défaut du parc »
-     * (Story 27.17) passe `server.admin` : décision Henri, tout en server.admin
-     * sur cette page de défauts.
+     * passe `server.admin` : toute cette page de défauts est gardée par
+     * `server.admin`.
      *
-     * `#[Locked]` (pattern iso-Story 16.5, page liaisons GPO) : la gate est fixée
+     * `#[Locked]` (pattern iso-, page liaisons GPO) : la gate est fixée
      * au mount, jamais mutée côté client — un acteur ne peut pas la rabaisser à
      * une permission qu'il détient via /livewire/update.
      */

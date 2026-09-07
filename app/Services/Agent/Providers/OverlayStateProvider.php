@@ -16,28 +16,25 @@ use Illuminate\Support\Collection;
 
 /**
  * Type `overlay` (contrat §7) — projection en lecture seule des signaux
- * **postés** (`overlay_signals`, POC f9b3ad9) vers des candidats d'état
- * (Story 23.4, AC4).
+ * **postés** (`overlay_signals`) vers des candidats d'état.
  *
- * Un item PAR signal actif (aggregate = union, décision n° 7), PLUS — depuis
- * la story 24.4 (décision n° 4) — un candidat synthétique `kind: "identity"`
+ * Un item PAR signal actif (aggregate = union), PLUS un candidat synthétique
+ * `kind: "identity"`
  * quand la compilation a un user : `{kind, login, fullname}` (la salle est
- * passée en portée MACHINE, Story 27.10 / {@see OverlayMachineStateProvider}).
+ * passée en portée MACHINE / {@see OverlayMachineStateProvider}).
  * C'est l'enrichissement serveur qui permet au handler overlay de composer
  * « identité user » sans aucun appel AD côté poste (critère Keycloak) : le
  * compagnon ne connaît localement pas le fullname.
  * Données STABLES (l'ETag ne bouge que si elles bougent — correct). Champ de
- * payload owné par la story provider (contrat §3.2) : PAS une évolution
- * d'enveloppe.
+ * payload owné par le provider (contrat §3.2) : PAS une évolution d'enveloppe.
  *
  * Les alertes dérivées (quota, multi-session — `OverlaySignalBuilder`)
  * restent HORS desired-state v1 : volatiles à chaque poll, elles
  * détruiraient l'ETag — la composition finale d'`overlay.json` est locale
- * (handler 24.4, cf. docs/agent/handlers-wallpaper-overlay.md).
+ * (handler, cf. docs/agent/handlers-wallpaper-overlay.md).
  *
  * Signal expiré (`expires_at` ≤ now) = exclu à la compilation : l'état
- * change réellement, l'ETag aussi — correct (piège n° 4 préservé, le hash ne
- * varie que quand l'état varie).
+ * change réellement, l'ETag aussi — le hash ne varie que quand l'état varie.
  */
 final class OverlayStateProvider implements StateProvider
 {
@@ -96,19 +93,19 @@ final class OverlayStateProvider implements StateProvider
     }
 
     /**
-     * Candidat synthétique `identity` (Story 24.4, décision n° 4) — maille
+     * Candidat synthétique `identity` — maille
      * User, émis UNIQUEMENT en contexte user (jamais en machine-only : pas
      * d'identité à afficher sans session).
      *
-     * Ne porte plus que `login` + `fullname` (Story 27.10, décision D1) : la
+     * Ne porte que `login` + `fullname` : la
      * salle (`room`) est désormais émise en portée MACHINE par
      * {@see OverlayMachineStateProvider} — source UNIQUE, propriété du POSTE
      * (pas du user), préchargée au logon depuis le cache machine sans attendre
      * ce fetch per-user. `fullname` retombe sur le login si vide (iso
      * `OverlayService::pollPayload`). Aucun float (§4.1).
      *
-     * `sourceId` 0 : ordre aggregate stable par `sourceId` asc (décision
-     * 23.4 n° 9) — l'identité sort TOUJOURS en tête, avant tout signal
+     * `sourceId` 0 : ordre aggregate stable par `sourceId` asc —
+     * l'identité sort TOUJOURS en tête, avant tout signal
      * (ids DB ≥ 1), quel que soit l'instant de compilation.
      */
     private function identityCandidate(TargetContext $ctx): ?StateCandidate
@@ -123,7 +120,7 @@ final class OverlayStateProvider implements StateProvider
             maille: StateMaille::User,
             payload: [
                 // Kind réservé — postSignal() reclasse tout signal posté qui
-                // le revendiquerait (review 24.4 #2).
+                // le revendiquerait.
                 'kind' => OverlayService::KIND_RESERVED_IDENTITY,
                 'login' => (string) $ctx->user->login,
                 'fullname' => $fullname !== '' ? $fullname : (string) $ctx->user->login,
@@ -134,7 +131,7 @@ final class OverlayStateProvider implements StateProvider
     }
 
     /**
-     * Étiquette maille d'un signal (décision n° 8) : un signal multi-critères
+     * Étiquette maille d'un signal : un signal multi-critères
      * est rangé dans sa maille la plus spécifique. Sans incidence de
      * précédence (aggregate = union) mais l'étiquette doit être cohérente
      * pour les logs et les tests.

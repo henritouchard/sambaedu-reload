@@ -14,10 +14,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 26.1 — AC2 : cast enum `environment` sur `WorkstationGroup`.
+ * Cast enum `environment` sur `WorkstationGroup`.
  *
  * Round-trip set/get (l'enum est persistée sous sa valeur string et relue en
- * instance d'enum), null → null (distinction « non déclaré » / déclaré, D2).
+ * instance d'enum), et null → null pour distinguer « non déclaré » de déclaré.
  */
 class WorkstationGroupEnvironmentCastTest extends TestCase
 {

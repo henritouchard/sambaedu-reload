@@ -13,7 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 55.2 — `GET|POST /oidc/userinfo` (FR21, OIDC Core §5.3).
+ * `GET|POST /oidc/userinfo` (OIDC Core §5.3).
  *
  * Le client présente l'access_token opaque obtenu à l'échange et reçoit
  * `{sub, …claims du scope du jeton}`. C'est le **canal de repli** du contrat de
@@ -22,14 +22,13 @@ use Illuminate\Support\Facades\Log;
  * ou dont les claims tiendraient mal dans un JWT (établissement à très forte
  * volumétrie de groupes).
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  DÉCISIONS FIGÉES
  *
  *  • **GET ET POST** — OIDC Core §5.3.1 impose les deux ; un client conforme
  *    peut utiliser l'un ou l'autre, il n'y a rien à gagner à en interdire un.
  *  • **Bearer dans l'en-tête `Authorization`, UNIQUEMENT.** Un
  *    `?access_token=…` finirait dans les logs du serveur, l'historique et le
- *    `Referer` (doctrine D-3 du login fédéré, reprise par 55.1 sur le token
+ *  `Referer` (doctrine D-3 du login fédéré, reprise par sur le token
  *    endpoint). RFC 6750 autorise la forme « URI query parameter » : SE5 ne la
  *    supporte PAS — un jeton en query est simplement IGNORÉ, donc traité comme
  *    absent.
@@ -45,11 +44,10 @@ use Illuminate\Support\Facades\Log;
  *    jeton est donc visible ici ; la staleness inverse (id_token figé) est
  *    explicitement acceptée par l'architecture (option C1) et bornée par le
  *    TTL de 600 s.
- *  • **Story 56.4 — filtrés par le scope EFFECTIF**, pas par le scope stocké
+ * • **filtrés par le scope EFFECTIF**, pas par le scope stocké
  *    sur le jeton : `scope du jeton ∩ (scopes accordés au client + openid)`.
  *    Un scope révoqué par l'admin cesse d'être servi ICI ET MAINTENANT, sans
  *    attendre l'expiration du jeton ni exiger sa purge.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * ⚠️ **EXCEPTION ASSUMÉE AU FORMAT DE RÉPONSE MAISON**, iso `TokenController` :
  * pas de `{success, message, …}`. L'interlocuteur est un client OIDC standard,
@@ -58,7 +56,7 @@ use Illuminate\Support\Facades\Log;
  *
  * ⚠️ **Aucune PII au journal.** `oidc.userinfo.served` ne porte que le
  * `client_id` et le préfixe de hash du jeton — ni `sub`, ni `name`, ni
- * `groups`. La doctrine 55.1 excluait déjà le `sub` ; `name` et `groups` sont
+ * `groups`. La doctrine excluait déjà le `sub` ; `name` et `groups` sont
  * exactement de la même nature.
  */
 class UserinfoController extends Controller
@@ -90,10 +88,10 @@ class UserinfoController extends Controller
         // résolveur de claims ne produit jamais de `sub` (par construction),
         // mais l'identité servie ne doit dépendre d'aucune promesse tenue
         // ailleurs — même garantie qu'à l'émission de l'id_token.
-        // ⚠️ Story 56.4 — les claims sont filtrés par le scope EFFECTIF, pas par
+        // ⚠️ — les claims sont filtrés par le scope EFFECTIF, pas par
         // le scope STOCKÉ sur le jeton. Sans cette ligne, un scope révoqué
         // continuerait de fuir par `/userinfo` pendant toute la vie du jeton
-        // (600 s) : la révocation FR23 promet un effet IMMÉDIAT, et `/userinfo`
+        // (600 s) : la révocation d'un scope promet un effet IMMÉDIAT, et `/userinfo`
         // est l'un des trois points où elle doit mordre.
         $payload = array_merge(
             OidcClaimsResolver::claimsFor($verdict['user'], $verdict['effective_scope']),
@@ -124,7 +122,7 @@ class UserinfoController extends Controller
     /**
      * Extrait le jeton du SEUL en-tête `Authorization: Bearer …`.
      *
-     * ⚠️ Story 56.4 — la règle a été extraite dans {@see OidcBearer} pour que
+     * ⚠️ — la règle a été extraite dans {@see OidcBearer} pour que
      * l'API extensions la PARTAGE au lieu de la recopier : c'est ici que se
      * décide « un jeton en query est ignoré », et cette décision ne doit
      * exister qu'à un seul endroit.

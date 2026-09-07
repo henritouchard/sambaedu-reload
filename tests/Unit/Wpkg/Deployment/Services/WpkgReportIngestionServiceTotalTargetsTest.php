@@ -22,9 +22,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / Fix #9 — Vérifie que `WpkgReportIngestionService::guessTotalTargets()`
- * fait bien un fanout DB sur `target_scope.group_ids` (et `profile_ids`),
- * et ne retombe plus à 0 quand seuls les groupes sont dans le scope.
+ * `WpkgReportIngestionService::guessTotalTargets` doit dérouler en base les
+ * `target_scope.group_ids` (et `profile_ids`), et ne pas rendre 0 quand le
+ * scope ne contient que des groupes.
  *
  * Cas testé :
  *   - 1 déploiement `pending` avec `target_scope = {"group_ids": [X]}` où X

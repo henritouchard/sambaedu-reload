@@ -37,18 +37,10 @@ class WorkstationMembershipAdSyncJob implements ShouldQueue
     ) {
     }
 
-    // ========================================================================
-    // FACTORY METHOD
-    // ========================================================================
-
     public static function move(int $workstationId, int $targetSalleId): self
     {
         return new self($workstationId, $targetSalleId, self::ACTION_MOVE);
     }
-
-    // ========================================================================
-    // HANDLER
-    // ========================================================================
 
     public function handle(AdSyncService $adSyncService): void
     {

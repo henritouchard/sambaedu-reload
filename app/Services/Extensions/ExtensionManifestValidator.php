@@ -8,8 +8,8 @@ use App\Enums\ExtensionType;
 use App\Exceptions\InvalidExtensionManifestException;
 
 /**
- * Story 54.1 (AC2) — Validation du **manifest v1**, contrat public du système
- * d'extensions (FR5, NFR11).
+ * Validation du **manifest v1**, contrat public du système
+ * d'extensions.
  *
  * Service **PUR** : il ne lit ni n'écrit aucune table, aucun fichier. Il reçoit
  * un tableau décodé, le valide, et renvoie une forme NORMALISÉE (défauts
@@ -45,18 +45,17 @@ use App\Exceptions\InvalidExtensionManifestException;
  * 1. **Version STRICTE d'abord.** `manifest_version` est validée AVANT tout
  *    contenu : un manifest émis sous une version future ne doit pas être
  *    interprété selon les règles de la v1 (une erreur de CONTENU masquerait la
- *    vraie cause). Aucun repli tolérant — iso-décision Story 33.2.
+ *    vraie cause). Aucun repli tolérant.
  * 2. **`visibility.roles` = rôles MÉTIER** (`admin`/`prof`/`eleve`), jamais des
- *    `SambaPermission` (AR8 : les enums fermées ne sont pas contractuelles). Le
- *    validateur exige un tableau NON VIDE de chaînes non vides, sans imposer de
- *    liste fermée de rôles. 54.1 stocke, 54.3 résout.
- * 3. **`scopes` affichés, jamais consommés** en 54.1 (FR3) — leur seule règle
+ *    `SambaPermission` : une enum fermée ne se prête pas à un contrat public.
+ *    Le validateur exige un tableau NON VIDE de chaînes non vides, sans imposer
+ *    de liste fermée de rôles.
+ * 3. **`scopes` affichés, jamais consommés** — leur seule règle
  *    ici est d'être une liste de chaînes.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  STORY 56.2 — EXTENSION ADDITIVE DU FORMAT v1 (NFR11)
+ * EXTENSION ADDITIVE DU FORMAT v1
  *
- *  Deux ajouts, tous deux **additifs** : un manifest 54.x/56.1 sans bloc
+ *  Deux ajouts, tous deux **additifs** : un manifest ancien sans bloc
  *  `install` reste valide VERBATIM, et aucun manifest publié n'est cassé.
  *
  *  1. **Bloc `install` OPTIONNEL** — ce qui rend une `app` installable :
@@ -78,9 +77,9 @@ use App\Exceptions\InvalidExtensionManifestException;
  *    télécharge donc TOUJOURS depuis le même hôte que l'index signé — pas de
  *    dépôt « proxy », pas de SSRF par le manifest.
  *  - `sha256` est le hash du paquet, en 64 hexadécimaux MINUSCULES. Étant porté
- *    par l'index déjà signé Ed25519 (56.1), il est transitivement couvert par
+ *  par l'index déjà signé Ed25519, il est transitivement couvert par
  *    la signature : le vérifier EST la vérification « contre la clé déclarée de
- *    sa source » (NFR2), patron apt `Release` → `Packages` → `.deb`. Aucun
+ *    sa source », patron apt `Release` → `Packages` → `.deb`. Aucun
  *    second format de signature n'est inventé.
  *  - `redirect_paths` (optionnel) borne les URI de redirection OIDC au préfixe
  *    `/ext/<id>/` — préfixe RECALCULÉ depuis l'`id` déjà validé, jamais lu du
@@ -88,18 +87,17 @@ use App\Exceptions\InvalidExtensionManifestException;
  *    client dont le callback pointe une AUTRE extension (vol de code
  *    d'autorisation).
  *
- *  2. **`type = app` ⇒ `entry_url === '/ext/<id>'`** (AR3). Contrainte posée
+ *  2. **`type = app` ⇒ `entry_url === '/ext/<id>'`**. Contrainte posée
  *  MAINTENANT parce qu'aucun manifest `app` n'a jamais été publié : la poser
- *  après publication casserait ses consommateurs (NFR11), exactement comme le
- *  durcissement d'`entry_url` de la review 54.3. C'est elle qui garantit que la
+ *  après publication casserait ses consommateurs.
+ *  C'est elle qui garantit que la
  *  tuile du lanceur pointe l'exposition RÉELLEMENT provisionnée par
  *  l'installation (le fragment Apache `ProxyPass /ext/<key>`) : sans elle, une
  *  `app` installée pourrait afficher une tuile vers n'importe où.
  *
  *  ⚠️ Le bloc `install` n'est PAS exigé pour qu'un manifest `app` soit VALIDE :
- *  le catalogue doit pouvoir AFFICHER une `app` non installable (56.1). C'est
+ *  le catalogue doit pouvoir AFFICHER une `app` non installable. C'est
  *  `ext:install` qui refuse fail-closed une `app` sans bloc.
- * ══════════════════════════════════════════════════════════════════════════
  */
 class ExtensionManifestValidator
 {
@@ -111,7 +109,7 @@ class ExtensionManifestValidator
     public const SUPPORTED_MANIFEST_VERSIONS = [1];
 
     /**
-     * Canaux d'installation supportés (Story 56.2). STRICT : un canal inconnu
+     * Canaux d'installation supportés. STRICT : un canal inconnu
      * est refusé, jamais dégradé. Extensible par ajout (AR2).
      *
      * @var list<string>
@@ -157,7 +155,7 @@ class ExtensionManifestValidator
      */
     public function validate(array $manifest): array
     {
-        // 1. VERSION d'abord (décision #1) — rejet strict, aucun repli.
+        // 1. VERSION d'abord — rejet strict, aucun repli.
         $version = $this->assertSupportedVersion($manifest);
 
         // 2. Identité.
@@ -188,7 +186,7 @@ class ExtensionManifestValidator
         $extensionVersion = $this->requiredString($manifest, 'version');
         $entryUrl = $this->assertEntryUrl($manifest);
 
-        // 4bis. Story 56.2 (AR3) — une `app` est SERVIE par SE5 sous `/ext/<id>`.
+        // 4bis. (AR3) — une `app` est SERVIE par SE5 sous `/ext/<id>`.
         if ($type === ExtensionType::App && $entryUrl !== self::appEntryUrl($id)) {
             throw InvalidExtensionManifestException::invalidField(
                 'entry_url',
@@ -198,10 +196,10 @@ class ExtensionManifestValidator
             );
         }
 
-        // 5. Visibilité (rôles métier — décision #2).
+        // 5. Visibilité (rôles métier).
         $roles = $this->assertVisibilityRoles($manifest);
 
-        // 6. Story 56.2 — bloc `install` OPTIONNEL (additif, NFR11).
+        // 6. Bloc `install` OPTIONNEL (additif).
         $install = $this->assertInstallBlock($manifest, $id);
 
         $normalized = [
@@ -243,7 +241,7 @@ class ExtensionManifestValidator
     }
 
     /**
-     * Bloc `install` (Story 56.2) — OPTIONNEL, strictement validé s'il est là.
+     * Bloc `install` — OPTIONNEL, strictement validé s'il est là.
      *
      * @param  array<string, mixed>  $manifest
      * @return array{channel: string, package: string, sha256: string, redirect_paths: list<string>}|null
@@ -266,7 +264,7 @@ class ExtensionManifestValidator
             );
         }
 
-        // ── channel : liste FERMÉE ────────────────────────────────────────
+        // channel : liste FERMÉE
         $channel = $install['channel'] ?? null;
         if (! is_string($channel) || ! in_array($channel, self::SUPPORTED_INSTALL_CHANNELS, true)) {
             $known = implode(', ', self::SUPPORTED_INSTALL_CHANNELS);
@@ -276,7 +274,7 @@ class ExtensionManifestValidator
             );
         }
 
-        // ── package : chemin RELATIF borné ────────────────────────────────
+        // package : chemin RELATIF borné
         $package = $install['package'] ?? null;
         if (! is_string($package)) {
             throw InvalidExtensionManifestException::missingField('install.package');
@@ -297,7 +295,7 @@ class ExtensionManifestValidator
             );
         }
 
-        // ── sha256 : forme canonique stricte ──────────────────────────────
+        // sha256 : forme canonique stricte
         $sha256 = $install['sha256'] ?? null;
         if (! is_string($sha256) || preg_match(self::SHA256_PATTERN, trim($sha256)) !== 1) {
             throw InvalidExtensionManifestException::invalidField(
@@ -386,7 +384,7 @@ class ExtensionManifestValidator
         $declared = $manifest['manifest_version'];
 
         // Un entier, ou une chaîne strictement numérique entière (« 1 ») : rien
-        // d'autre. Un « 1.0 » ou « v1 » n'est PAS la version 1 — le laisser
+        // d'autre. Un « » ou « v1 » n'est PAS la version 1 — le laisser
         // passer serait le repli tolérant qu'on refuse.
         $normalized = null;
         if (is_int($declared)) {
@@ -408,19 +406,18 @@ class ExtensionManifestValidator
     /**
      * `entry_url` : chemin absolu de l'instance (`/doc`) ou URL http(s).
      *
-     * Borné depuis la Story 54.3 : c'est elle qui a fait de `entry_url` un
-     * `href` CLIQUABLE dans le lanceur, exposé à tous les rôles visés — 54.1 et
-     * 54.2 se contentaient de l'afficher dans une fiche. Sans contrainte de
+     * Borné depuis que `entry_url` est un `href` CLIQUABLE dans le lanceur, exposé
+     * à tous les rôles visés — auparavant il n'était qu'affiché dans une fiche.
+     * Sans contrainte de
      * schéma, `javascript:…` ou `data:text/html,…` passaient la validation.
      * Blade échappe correctement (pas d'évasion d'attribut possible), donc ce
      * n'était pas une injection HTML : c'est le SCHÉMA d'URL qui n'était pas
      * borné.
      *
-     * Durci ici et pas reporté, pour la même raison que `array_is_list()` en
-     * review 54.1 : sans effet sur la source embarquée (dépôt contrôlé),
-     * décisif dès que des sources DISTANTES fourniront des manifests non
-     * contrôlés (Epic 56) — et un contrat public durci APRÈS publication casse
-     * ses consommateurs (NFR11).
+     * Durci ici et pas reporté, pour la même raison que `array_is_list()` :
+     * sans effet sur la source embarquée (dépôt contrôlé), décisif dès que des
+     * sources DISTANTES fourniront des manifests non contrôlés — et un contrat
+     * public durci APRÈS publication casse ses consommateurs.
      *
      * @param  array<string, mixed>  $manifest
      *
@@ -460,9 +457,9 @@ class ExtensionManifestValidator
         $roles = $visibility['roles'];
         // `array_is_list` : un OBJET JSON (`{"a":"admin"}`) décode en tableau
         // ASSOCIATIF PHP. L'accepter reviendrait à le ré-indexer silencieusement
-        // en liste — exactement le repli tolérant que la décision #1 refuse. Sans
+        // en liste — exactement le repli tolérant que ce validateur refuse. Sans
         // effet sur la source embarquée (dépôt contrôlé), décisif dès qu'une
-        // source DISTANTE fournira des manifests non contrôlés (Epic 56).
+        // source DISTANTE fournira des manifests non contrôlés.
         if (! is_array($roles) || ! array_is_list($roles) || $roles === []) {
             throw InvalidExtensionManifestException::invalidField(
                 'visibility.roles',

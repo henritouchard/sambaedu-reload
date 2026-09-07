@@ -7,8 +7,6 @@ namespace App\Ipxe\Exceptions;
 use RuntimeException;
 
 /**
- * Story 3.5 — T1.5 / AC2.1.
- *
  * Exception levée par {@see \App\Ipxe\Services\WindowsUnattendBuilder::build()}
  * en cas d'échec de l'assemblage de l'unattend.xml :
  *

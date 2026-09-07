@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.4 — AC4.1 / AC5.1 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/installation-linux`.
  */
@@ -84,7 +84,7 @@ class IpxeInstallationLinuxEndpointTest extends TestCase
         self::assertStringContainsString('/ipxe/admin##params', $body);
         // Aucun item install_deb_* affiché.
         self::assertStringNotContainsString('install_deb_gnome', $body);
-        // Post-review #2 — Pas de bloc `menu`/`choose` dans le body (syntaxe
+        // Pas de bloc `menu`/`choose` dans le body (syntaxe
         // iPXE invalide en cas de mix `echo`/`sleep`/`chain` dans un menu).
         self::assertStringNotContainsString('menu installation', $body);
         self::assertStringNotContainsString(':menu', $body);

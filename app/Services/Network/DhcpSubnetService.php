@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 8.3 — Service métier de gestion des sous-réseaux DHCP (VLAN).
+ * Service métier de gestion des sous-réseaux DHCP (VLAN).
  *
  * Encapsule :
  *  - validations pures et testables (CIDR, n° VLAN 1..999 + unicité,
@@ -28,14 +28,14 @@ use Illuminate\Support\Facades\Log;
  *  - rendu pur du fichier `dhcp-subnets.conf` (snapshotable) ;
  *  - lecture seule du sous-réseau par défaut (via `SambaEduConfig`).
  *
- * Réutilisation OBLIGATOIRE (story 8.1, ne rien réinventer) :
+ * Réutilisation OBLIGATOIRE (ne rien réinventer) :
  *  - `DhcpService::reloadService()` : LE reload (shellout sudo `make_dhcpd_conf.sh`) ;
- *  - `Cache::lock('dhcp.reload', 30)->block(15)` : MÊME clé que 8.1 pour
+ *  - `Cache::lock('dhcp.reload', 30)->block(15)` : MÊME clé que pour
  *    sérialiser sous-réseaux ET réservations sur le même verrou ;
  *  - `AtomicFileWriter` : écriture atomique du fichier de params ;
  *  - `DhcpValidationException` / `DhcpCommandException` : mêmes types de toasts.
  *
- * Mode dégradé (AC5, pattern AC6 de la 8.1) : un échec de reload N'annule PAS
+ * Mode dégradé (pattern) : un échec de reload N'annule PAS
  * la mutation SQL ni l'export fichier — `DhcpCommandException` remonte à l'UI
  * qui affiche un toast warning invitant au reload manuel.
  */
@@ -49,10 +49,6 @@ class DhcpSubnetService
         private readonly SambaEduConfig $config,
     ) {
     }
-
-    // ========================================================================
-    // VALIDATIONS PURES (utilisables côté UI Livewire ET service)
-    // ========================================================================
 
     /**
      * Valide + décompose un CIDR IPv4 (`A.B.C.D/P`).
@@ -142,7 +138,7 @@ class DhcpSubnetService
     /**
      * Valide `extra_option` : chemin absolu strict (liste blanche).
      *
-     * SÉCURITÉ (review 8.3 #1) — la valeur est rendue telle quelle dans
+     * SÉCURITÉ — la valeur est rendue telle quelle dans
      * `dhcp-subnets.conf` (`dhcp_extra_option_N = "<valeur>"`), fichier ensuite
      * sourcé sur la VM par `config.inc.sh::get_config()` qui réinjecte la valeur
      * entre apostrophes simples avant un `eval` exécuté en root (sudo
@@ -150,7 +146,7 @@ class DhcpSubnetService
      * double » laisse passer l'apostrophe simple ET l'expansion par accolades
      * bash (`{touch,/x}` — deux mots sans aucun espace) → RCE root. On impose
      * donc une liste blanche stricte de chemin absolu, seule protection correcte
-     * (aucune valeur INI avec espace de toute façon, cf. D5).
+     * (aucune valeur INI ne porte d'espace de toute façon).
      *
      * @throws DhcpValidationException
      */
@@ -175,10 +171,6 @@ class DhcpSubnetService
         }
         return $extraOption;
     }
-
-    // ========================================================================
-    // NORMALISATION + VALIDATION COMPOSITE
-    // ========================================================================
 
     /**
      * Normalise + valide l'ensemble des attributs d'un sous-réseau et retourne
@@ -311,7 +303,7 @@ class DhcpSubnetService
                 // Ligne corrompue en base (ne devrait jamais arriver — seul écrivain).
                 // On l'ignore pour ne pas bloquer la mutation, MAIS on trace :
                 // sinon un VLAN au réseau illisible échapperait silencieusement au
-                // contrôle de chevauchement (review 8.3 #6).
+                // contrôle de chevauchement.
                 Log::channel($this->logChannel())->warning(
                     'DhcpSubnetService: réseau illisible ignoré au contrôle de chevauchement',
                     ['id' => $other->id, 'vlan_id' => $other->vlan_id, 'network' => $other->network]
@@ -374,10 +366,6 @@ class DhcpSubnetService
         }
     }
 
-    // ========================================================================
-    // CRUD (mutation = SQL en transaction PUIS export fichier + reload sous lock)
-    // ========================================================================
-
     /**
      * @param  array<string,mixed>  $attrs
      *
@@ -424,19 +412,20 @@ class DhcpSubnetService
      * Section critique unique sous le lock `dhcp.reload` : validation + écriture
      * SQL + export fichier + reload.
      *
-     * CONCURRENCE (review 8.3 #3) — le lock est acquis AVANT la validation
+     * CONCURRENCE — le lock est acquis AVANT la validation
      * (contrôle de chevauchement inter-VLAN, unicité `vlan_id`, non-recouvrement
      * des réservations) et non plus seulement autour de l'export/reload : deux
      * mutations concurrentes de VLAN chevauchants (ou de même `vlan_id`) ne
      * peuvent plus toutes deux franchir la validation puis s'insérer (TOCTOU).
-     * MÊME clé que la 8.1 → sérialise aussi vis-à-vis des réservations.
+     * MÊME clé `dhcp.reload` que {@see DhcpService} → sérialise aussi vis-à-vis
+     * des réservations.
      *
-     * Mode dégradé (AC5) — la mutation SQL n'est PAS rollbackée si le reload
+     * Mode dégradé — la mutation SQL n'est PAS rollbackée si le reload
      * échoue (ne jamais perdre la saisie) : `DhcpCommandException` est propagée
      * à l'appelant après commit + export.
      *
      * @template TResult
-     * @param  \Closure():TResult  $mutate  validation + écriture SQL (retourne le sous-réseau ou void)
+     * @param \Closure():TResult $mutate validation + écriture SQL (retourne le sous-réseau ou void)
      * @param  array<string,mixed>  $extraLogCtx
      * @return TResult
      *
@@ -465,7 +454,7 @@ class DhcpSubnetService
             // Validation + écriture SQL DANS la section critique (ferme le TOCTOU).
             $result = $mutate();
 
-            // Export + reload (le reload peut échouer → mode dégradé AC5).
+            // Export + reload (le reload peut échouer → mode dégradé).
             $this->exportSubnetsFile();
             $this->dhcpService->reloadService();
 
@@ -481,10 +470,6 @@ class DhcpSubnetService
             optional($lock)->release();
         }
     }
-
-    // ========================================================================
-    // EXPORT / RENDER
-    // ========================================================================
 
     /**
      * Écrit atomiquement le fichier de params des sous-réseaux gérés.
@@ -509,7 +494,7 @@ class DhcpSubnetService
 
     /**
      * Rend le contenu du fichier `dhcp-subnets.conf` (sans I/O, pur).
-     * Format INI strict `clé = "valeur"` (D5 — parsé par `config.inc.sh`,
+     * Format INI strict `clé = "valeur"` (parsé par `config.inc.sh`,
      * word-split : aucune valeur avec espace). Trié par n° de VLAN.
      *
      * Pour chaque VLAN N :
@@ -528,7 +513,7 @@ class DhcpSubnetService
         // Commentaires INI : « ; » uniquement — parse_ini_file() ne reconnaît PAS « # »
         // et parserait ces lignes comme du contenu (crash sur « ( » etc.).
         $lines[] = '; /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf';
-        $lines[] = '; Fichier généré automatiquement par SambaEdu-Reload (Story 8.3).';
+        $lines[] = '; Fichier généré automatiquement par SambaEdu-Reload.';
         $lines[] = '; NE PAS éditer manuellement — écrasé à chaque mutation VLAN';
         $lines[] = '; depuis /app/network/dhcp (onglet Sous-réseaux).';
         $lines[] = '; Source de vérité : table SQL dhcp_subnets.';
@@ -545,7 +530,7 @@ class DhcpSubnetService
             } catch (DhcpValidationException) {
                 // Ligne corrompue — on ne casse pas tout l'export pour autant, MAIS
                 // on trace : le VLAN disparaîtrait sinon silencieusement du
-                // dhcpd.conf généré, postes plus servis (review 8.3 #6).
+                // dhcpd.conf généré, postes plus servis.
                 Log::channel($this->logChannel())->warning(
                     'DhcpSubnetService: réseau illisible exclu de l\'export dhcp-subnets.conf',
                     ['id' => $subnet->id, 'vlan_id' => $subnet->vlan_id, 'network' => $subnet->network]
@@ -582,10 +567,6 @@ class DhcpSubnetService
         return implode("\n", $lines);
     }
 
-    // ========================================================================
-    // SOUS-RÉSEAU PAR DÉFAUT (LECTURE SEULE — décision D3)
-    // ========================================================================
-
     /**
      * Retourne le sous-réseau par défaut (VLAN 0) en lecture seule, lu depuis
      * `sambaedu.conf` / `dhcp.conf` via `SambaEduConfig`. Jamais de parse_ini
@@ -603,10 +584,6 @@ class DhcpSubnetService
             'end_range' => (string) ($this->config->get('dhcp_end_range', '') ?? ''),
         ];
     }
-
-    // ========================================================================
-    // HELPERS internes
-    // ========================================================================
 
     /**
      * Décompose un CIDR déjà normalisé (`base/prefix`) sans normalisation

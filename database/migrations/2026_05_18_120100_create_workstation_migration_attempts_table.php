@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 16.11 — AC6.2 / T1.2.
+ * T1.2.
  *
  * Table `workstation_migration_attempts` : traçabilité fine de chaque
  * tentative de migration (succès OU échec).

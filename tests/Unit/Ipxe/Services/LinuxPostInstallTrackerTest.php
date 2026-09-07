@@ -13,7 +13,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC3.2 / T3.2.
+ * T3.2.
  *
  * Tests unitaires de {@see LinuxPostInstallTracker}.
  */
@@ -25,9 +25,8 @@ class LinuxPostInstallTrackerTest extends TestCase
     {
         parent::setUp();
         IpxeSchemaBootstrapper::bootstrap();
-        // Post-review #M4 — clock freeze pour rendre les assertions
-        // `last_report_at` déterministes (sinon `Carbon::now()` change à
-        // chaque appel et un bug `Carbon::yesterday()` resterait invisible).
+        // Horloge gelée : sans cela `Carbon::now()` change à chaque appel et une
+        // erreur du genre `Carbon::yesterday()` resterait invisible.
         Carbon::setTestNow('2026-05-21 10:00:00');
         $this->tracker = new LinuxPostInstallTracker();
     }
@@ -64,7 +63,6 @@ class LinuxPostInstallTrackerTest extends TestCase
         self::assertSame(LinuxPostInstallTracker::ACTION_INSTALL_DONE, $ws->programmed_action['type']);
         self::assertSame(0, $ws->programmed_action['ret']);
         self::assertNotNull($ws->last_report_at);
-        // Post-review #M4 — assertion déterministe sur le timestamp.
         self::assertTrue(
             Carbon::parse((string) $ws->last_report_at)->equalTo(Carbon::parse('2026-05-21 10:00:00')),
             'last_report_at doit valoir Carbon::now() au moment du record',
@@ -126,14 +124,13 @@ class LinuxPostInstallTrackerTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Post-review #M3 — préservation `status='protected'` post-install.
+     * Préservation de `status='protected'` après installation.
      *
-     * Décision Henri : le legacy `flag_poste=1` ne bloque JAMAIS la
-     * réinstall iPXE — il sert uniquement de protection anti-suppression
-     * DB. Depuis le fix install-debian, `record()` ne touche plus du tout
-     * `status` : la préservation de `'protected'` (comme de toute valeur
-     * lifecycle) est donc native. Les autres effets de l'install — os,
-     * last_report_at, programmed_action, MachineBootLog — sont conservés.
+     * Le `flag_poste=1` du legacy ne bloque JAMAIS une réinstallation iPXE : il
+     * ne protège que contre la suppression en base. `record()` ne touche pas du
+     * tout `status`, si bien que `'protected'` — comme toute autre valeur de
+     * cycle de vie — survit. Les autres effets de l'installation (os,
+     * last_report_at, programmed_action, MachineBootLog) restent, eux, appliqués.
      * ------------------------------------------------------------------ */
 
     #[Test]

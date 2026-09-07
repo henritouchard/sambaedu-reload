@@ -9,7 +9,6 @@ use App\Config\LdapConfig;
 /**
  * LA CONFIGURATION DE SYNCHRO D'ANNUAIRE DE L'INSTANCE, DÉRIVÉE DE LA NÔTRE.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI CETTE CLASSE EXISTE.** Les comptes Nextcloud du STOCK existant ne
  * peuvent pas venir de SE5 : {@see NextcloudUserProvisioner} n'invente jamais de
  * mot de passe, et le mot de passe n'est en main qu'à la création d'un compte SE5
@@ -20,7 +19,6 @@ use App\Config\LdapConfig;
  * Ce chemin se réglait à la main, écran par écran, instance par instance. Il se
  * règle désormais par une commande, parce qu'une procédure à rejouer n'est pas un
  * mécanisme : elle diverge dès la deuxième instance.
- * ---------------------------------------------------------------------------
  *
  * **AUCUNE VALEUR N'EST INVENTÉE ICI.** Tout vient de `sambaedu.conf` via
  * {@see LdapConfig} — l'URL, le port, le DN de base, le compte de lecture, le RDN
@@ -32,7 +30,7 @@ use App\Config\LdapConfig;
  * GROUPES.** Un groupe visible dans Nextcloud est un groupe sur lequel n'importe
  * quel utilisateur peut accrocher un partage Nextcloud — donc un SECOND plan de
  * permissions sur une zone que Samba arbitre déjà. C'est exactement la ligne que
- * le garde-fou d'architecture de l'Epic 61 tient
+ * le garde-fou d'architecture tient
  * ({@see \Tests\Architecture\NextcloudNamespaceTest}), et l'authentification n'en
  * a aucun besoin : le filtre de connexion suffit.
  *
@@ -140,7 +138,6 @@ final readonly class NextcloudLdapSyncSettings
         $baseDn = trim($ldap->baseDn);
 
         $keys = [
-            // --- La liaison ---------------------------------------------------
             'ldapHost' => trim($ldap->url),
             'ldapPort' => (string) $ldap->port,
 
@@ -150,7 +147,6 @@ final readonly class NextcloudLdapSyncSettings
             // lequel diffère d'un annuaire à l'autre.
             'ldapAgentName' => trim($ldap->adminName).'@'.trim($ldap->domain),
 
-            // --- Où chercher les personnes ------------------------------------
             'ldapBase' => $baseDn,
 
             // LE PÉRIMÈTRE EST RESTREINT AU CONTENEUR DES UTILISATEURS SE5, et ce
@@ -172,7 +168,6 @@ final readonly class NextcloudLdapSyncSettings
             'ldapUserFilterObjectclass' => 'user',
             'ldapUserFilter' => '(&(objectclass=user)(objectcategory=person))',
 
-            // --- Comment se connecte-t-on -------------------------------------
             // Le login saisi est comparé au `sAMAccountName`, parce que dans ce
             // produit le login SE5 EST le `sAMAccountName` : une seule identité,
             // du poste au cloud.
@@ -181,15 +176,12 @@ final readonly class NextcloudLdapSyncSettings
             'ldapLoginFilterEmail' => '0',
             'ldapExpertUsernameAttr' => self::USERNAME_ATTRIBUTE,
 
-            // --- Ce qu'on affiche ---------------------------------------------
             'ldapUserDisplayName' => 'displayName',
             'ldapEmailAttribute' => 'mail',
 
-            // --- Le certificat -------------------------------------------------
             'ldapTLS' => '0',
             'turnOffCertCheck' => $trustSelfSignedCertificate ? '1' : '0',
 
-            // --- Et c'est actif ------------------------------------------------
             'ldapConfigurationActive' => '1',
         ];
 

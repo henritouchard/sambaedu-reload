@@ -134,7 +134,7 @@ func TestSyncAssetsSkippedInQuarantine(t *testing.T) {
 }
 
 func TestSyncAssetsStaticTransportNeedsNoToken(t *testing.T) {
-	// Transport STATIQUE (calque 27.7) : le download passe par un GET simple
+	// Transport STATIQUE (calque) : le download passe par un GET simple
 	// sur /assets/wallpaper (Alias Apache), JAMAIS par le Client token'd. Sans
 	// aucun token sur disque, le sync doit donc réussir.
 	f := newFakeSessionServer(t)

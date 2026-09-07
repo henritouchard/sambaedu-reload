@@ -11,22 +11,21 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `app_config` (Story 27.4) — pose un `policies.json`
+// Câblage Windows du handler `app_config` — pose un `policies.json`
 // au chemin natif d'install de l'app (Firefox/Thunderbird) en ÉCRITURE ATOMIQUE
 // (fichier temporaire + rename), EN GO NATIF (pas de shell-out). UN SEUL
 // mécanisme : le `policies.json` enterprise natif — pas de registre, pas de
-// Chrome/Edge, pas de redirection de profil (recadrage 2026-06-17).
+// Chrome/Edge, pas de redirection de profil.
 //
-// Exécuté par le SERVICE SYSTEM (scope MACHINE, correctif post-review
-// 2026-06-17 review #1) : `policies.json` est machine-wide (sous Program Files,
-// admin-write) → SYSTEM peut l'écrire. Le compagnon aux droits user prenait
-// ACCESS_DENIED à chaque logon (défaut de conception corrigé). La résolution
+// Exécuté par le SERVICE SYSTEM (scope MACHINE) : `policies.json` est
+// machine-wide (sous Program Files, admin-write) → SYSTEM peut l'écrire. Un
+// compagnon aux droits user prend ACCESS_DENIED à chaque logon. La résolution
 // serveur est PAR PARC (niveaux 1-4 : template + auto + défaut étab + WG) ; le
-// par-user de Firefox = le PROFIL (mécanisme B / roaming, hors 27.4), PAS
+// par-user de Firefox = le PROFIL (mécanisme B / roaming, hors), PAS
 // `policies.json`. Si le dossier d'install est absent (app non installée) →
 // Write échoue → {status: error, detail} pour le SEUL type `app_config`, les
-// autres types convergent (isolation AC4). L'installation des apps (27.5) reste
-// hors 27.4 (couplage = limite connue).
+// autres types convergent (isolation). L'installation des apps reste
+// hors (couplage = limite connue).
 //
 // MARQUEUR de périmètre (shared.AppConfigManagedMarker) : l'agent ajoute une clé
 // d'extension `_sambaedu_managed: true` au document écrit. Firefox/Thunderbird
@@ -144,8 +143,8 @@ func (o *appConfigOps) Write(path string, spec shared.AppConfigSpec) error {
 
 	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
 
-	// Nettoyage du `.tmp` résiduel sur TOUT chemin d'échec (review #8 : disque
-	// plein en cours de WriteFile, rename refusé). `renamed` annule le defer
+	// Nettoyage du `.tmp` résiduel sur TOUT chemin d'échec (disque plein en
+	// cours de WriteFile, rename refusé). `renamed` annule le defer
 	// après un Rename réussi (le tmp n'existe plus, il EST devenu `path`).
 	renamed := false
 	defer func() {
@@ -175,8 +174,6 @@ func (o *appConfigOps) Remove(path string) error {
 
 	return err
 }
-
-// --- Sérialisation du document policies.json (marqueur de gestion) ----------
 
 // documentWithMarker construit les octets du `policies.json` à écrire : les
 // policies cibles + la clé d'extension `_sambaedu_managed: true`, clés triées
@@ -233,8 +230,7 @@ func canonicalWithoutMarker(raw []byte) ([]byte, bool, error) {
 	// MÊME fonction de canonicalisation que la forme CIBLE (shared.CanonicalJSON)
 	// → le `spec.Canonical` (cible) et le contenu réel relu (sans marqueur) sont
 	// comparables octet-à-octet, y compris quand les nombres sont des
-	// json.Number (UseNumber des deux côtés). Review #3 : plus de second
-	// canonicalizer divergent.
+	// json.Number (UseNumber des deux côtés).
 	canonical, err := shared.CanonicalJSON(doc)
 	if err != nil {
 		return nil, false, err

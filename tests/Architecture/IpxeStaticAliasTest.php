@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 38.1 — Garde-fous de la relocalisation des statiques iPXE.
+ * Garde-fous de la relocalisation des statiques iPXE.
  *
  * Tests par lecture textuelle des scripts (patron `WpkgOutRoutesTest`,
  * `ScriptsOsNamespaceTest`) + vérification de l'existence/intégrité des assets
@@ -19,8 +19,8 @@ use PHPUnit\Framework\TestCase;
  *     conserve `FallbackResource /index.php`.
  *  2. `scripts/update.sh` : la fonction `ensure_ipxe_statics` est déclarée ET
  *     appelée dans le bloc principal.
- *  3. Les 6 fichiers de l'AC 1 existent sous `resources/ipxe/static/` (tailles
- *     > 0) ; les md5 des 2 binaires TFTP sont conformes à l'inventaire VM.
+ *  3. Les 6 statiques existent sous `resources/ipxe/static/` (tailles > 0) et
+ *     les md5 des 2 binaires TFTP sont ceux des copies réelles.
  */
 class IpxeStaticAliasTest extends TestCase
 {
@@ -41,7 +41,7 @@ class IpxeStaticAliasTest extends TestCase
     }
 
     /**
-     * AC 3 — setupApache.sh : alias /ipxe repointé, plus de référence legacy,
+     * setupApache.sh : alias /ipxe repointé, plus de référence legacy,
      * FallbackResource conservé.
      */
     #[Test]
@@ -82,9 +82,9 @@ class IpxeStaticAliasTest extends TestCase
     }
 
     /**
-     * Review 38.1 #1 — le vhost FALLBACK config/apache/sambaedu.conf (utilisé
-     * par update.sh quand setupApache.sh est absent) doit rester EN PHASE :
-     * alias /ipxe repointé hors legacy, FallbackResource conservé.
+     * Le vhost de repli `config/apache/sambaedu.conf`, que `update.sh` pose
+     * quand `setupApache.sh` est absent, doit rester EN PHASE avec lui : alias
+     * /ipxe repointé hors legacy, FallbackResource conservé.
      */
     #[Test]
     public function apache_conf_fallback_template_stays_in_phase(): void
@@ -115,7 +115,7 @@ class IpxeStaticAliasTest extends TestCase
     }
 
     /**
-     * AC 2 — update.sh : ensure_ipxe_statics déclarée ET appelée.
+     * update.sh : ensure_ipxe_statics déclarée ET appelée.
      */
     #[Test]
     public function update_script_declares_and_calls_ensure_ipxe_statics(): void
@@ -136,7 +136,7 @@ class IpxeStaticAliasTest extends TestCase
     }
 
     /**
-     * AC 1 — les 6 statiques versionnés existent (tailles > 0).
+     * Les 6 statiques versionnés existent et ne sont pas vides.
      */
     #[Test]
     public function versioned_ipxe_statics_exist(): void
@@ -164,8 +164,8 @@ class IpxeStaticAliasTest extends TestCase
     }
 
     /**
-     * AC 1 — les md5 des 2 binaires TFTP sont conformes à l'inventaire VM
-     * (copies réelles de /var/lib/tftpboot/).
+     * Les md5 des 2 binaires TFTP sont ceux des copies réelles de
+     * /var/lib/tftpboot/.
      */
     #[Test]
     public function ipxe_binaries_have_expected_md5(): void

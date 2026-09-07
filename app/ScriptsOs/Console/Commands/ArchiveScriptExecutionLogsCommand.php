@@ -13,8 +13,6 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 16.12 — AC7.1 / D9.
- *
  * Archive les rows `script_execution_logs` antérieures à `--retention-days`
  * (90j par défaut) dans des fichiers mensuels gzip JSONL puis purge la DB.
  *
@@ -26,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  *  4. Pour chaque mois, ouvre `storage/archives/script-execution-logs-YYYY-MM.jsonl.gz`
  *     en mode `ab` (append-binary, idempotent — la 2ème exécution pour le
  *     même mois append les rows manquantes).
- *  5. Pour chaque row, écrit `json_encode(row->toArray()) . "\n"` via `gzwrite`.
+ *  5. Pour chaque row, écrit `json_encode(row->toArray()). "\n"` via `gzwrite`.
  *  6. Après écriture OK : `DELETE FROM script_execution_logs WHERE started_at < cutoff`.
  *  7. Si `--dry-run` : compte + log, mais n'écrit ni ne supprime.
  *  8. Log info `scriptsos.archive.rotated` (channel `scriptsos`).
@@ -86,7 +84,7 @@ final class ArchiveScriptExecutionLogsCommand extends Command
             ->orderBy('started_at')
             ->get(['started_at']);
 
-        // Post code-review F5 — élimine la sentinelle `'unknown'` qui
+        // Pas de sentinelle `'unknown'` ici : elle
         // provoquerait `Carbon::createFromFormat('Y-m', 'unknown')` →
         // InvalidArgumentException. `filter()` jette tous les null silencieux.
         $months = $monthsRows
@@ -121,8 +119,8 @@ final class ArchiveScriptExecutionLogsCommand extends Command
             }
         }
 
-        // Post code-review Opus-C — invalide le cache stats 60s du dashboard
-        // dès qu'on a effectivement supprimé des rows. Sinon les totaux/échecs
+        // Invalide le cache stats 60 s du dashboard dès qu'on a effectivement
+        // supprimé des rows. Sinon les totaux/échecs
         // affichés dans l'UI continuent à compter les lignes archivées
         // jusqu'à expiration TTL (UX trompeur post-rotation).
         if (! $dryRun && $totalDeleted > 0) {

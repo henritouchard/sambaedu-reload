@@ -37,7 +37,7 @@ class Depot extends Model implements Wireable
         'url',
         'is_primary',
         'is_active',
-        // Story 51.1 — dépôt imposé par le contrat amont (controlHub).
+        // Dépôt imposé par le contrat amont (controlHub).
         'is_imposed',
         'xml_hash',
     ];
@@ -48,7 +48,7 @@ class Depot extends Model implements Wireable
     protected $casts = [
         'is_primary' => 'boolean',
         'is_active' => 'boolean',
-        // Story 51.1 — cast booléen du marqueur de dépôt imposé.
+        // Cast booléen du marqueur de dépôt imposé.
         'is_imposed' => 'boolean',
     ];
 

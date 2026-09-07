@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
  * Rasterise les SVG sources de `resources/assets/wallpaper-icons/sources/`
  * en PNG 48×48 dans `resources/assets/wallpaper-icons/`.
  *
- * Story 4.7 — Task 2.4 bis. Build-time, les PNG sont commités pour éviter
+ * Task bis. Build-time, les PNG sont commités pour éviter
  * une dépendance runtime à librsvg sur la VM.
  */
 class WallpaperRebuildBadgesCommand extends Command

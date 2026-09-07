@@ -14,9 +14,9 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 60.1 — la recette STOCKÉE est bien formée, ou elle est refusée.
+ * La recette STOCKÉE est bien formée, ou elle est refusée.
  *
- * Deux validations distinctes vivent dans cette story, et elles ne se mélangent
+ * Deux validations distinctes coexistent, et elles ne se mélangent
  * pas : celle-ci porte sur la RECETTE (vocabulaire, cohérence interne), celle du
  * résolveur porte sur les DONNÉES DE RÉSOLUTION. Une recette impeccable peut
  * échouer à se résoudre sur un groupe au nom impossible ; l'inverse n'aurait
@@ -64,10 +64,6 @@ class DirectoryTemplateTreeSpecTest extends TestCase
         $template->assertValidTreeSpec();
     }
 
-    // =========================================================================
-    // Le vocabulaire d'arbre est accepté
-    // =========================================================================
-
     #[Test]
     public function the_class_share_recipe_is_a_valid_tree(): void
     {
@@ -88,10 +84,6 @@ class DirectoryTemplateTreeSpecTest extends TestCase
             'des nœuds sont déclarés sans motif de chemin',
         );
     }
-
-    // =========================================================================
-    // Enum fermée, drapeaux cohérents
-    // =========================================================================
 
     #[Test]
     public function an_unknown_nature_is_rejected(): void
@@ -152,10 +144,6 @@ class DirectoryTemplateTreeSpecTest extends TestCase
             $this->assertTrue($rejected, 'champ d\'octroi accepté à tort : ' . $field);
         }
     }
-
-    // =========================================================================
-    // Placeholders : vocabulaire FERMÉ
-    // =========================================================================
 
     #[Test]
     public function an_unknown_placeholder_is_rejected_in_the_pattern(): void
@@ -225,10 +213,6 @@ class DirectoryTemplateTreeSpecTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Rôle d'arête
-    // =========================================================================
-
     #[Test]
     public function a_per_member_node_needs_a_known_edge_role(): void
     {
@@ -259,12 +243,8 @@ class DirectoryTemplateTreeSpecTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Octrois
-    // =========================================================================
-
     /**
-     * Story 62.4 — la garde de vocabulaire, exercée sur les QUATRE formes fausses
+     * La garde de vocabulaire, exercée sur les QUATRE formes fausses
      * qu'un auteur de recette écrira vraiment : le mode système, le scalaire nu de
      * l'ancien vocabulaire, la liste vide et le doublon.
      */
@@ -296,7 +276,7 @@ class DirectoryTemplateTreeSpecTest extends TestCase
     }
 
     /**
-     * Story 62.4 — l'ancienne clé `access` est refusée par le vocabulaire de clés
+     * L'ancienne clé `access` est refusée par le vocabulaire de clés
      * FERMÉ. C'est ce qui rend une recette non migrée BRUYANTE au lieu de la faire
      * lire de travers (avec les verbes par défaut, c'est-à-dire en lecture seule).
      */
@@ -310,7 +290,7 @@ class DirectoryTemplateTreeSpecTest extends TestCase
     }
 
     /**
-     * Story 62.4 — même exigence côté RÔLES, où il n'y a pas de vocabulaire de clés
+     * Même exigence côté RÔLES, où il n'y a pas de vocabulaire de clés
      * fermé : sans cette garde, un rôle non migré aurait été lu avec les verbes par
      * défaut, et un rôle en écriture serait devenu un rôle en lecture SANS UN MOT.
      */
@@ -369,10 +349,6 @@ class DirectoryTemplateTreeSpecTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Plafond (posé maintenant, exécuté plus tard)
-    // =========================================================================
-
     #[Test]
     public function a_non_positive_quota_is_rejected(): void
     {
@@ -393,10 +369,6 @@ class DirectoryTemplateTreeSpecTest extends TestCase
         $this->template([$this->node(['plafond' => 1024])])->assertValidTreeSpec();
         $this->addToAssertionCount(1);
     }
-
-    // =========================================================================
-    // Invariant « aucun octroi d'arbre ne vise un parc »
-    // =========================================================================
 
     #[Test]
     public function a_recipe_whose_role_targets_a_workstation_group_cannot_carry_a_tree(): void

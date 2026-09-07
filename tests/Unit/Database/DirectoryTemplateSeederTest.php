@@ -17,11 +17,11 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 34.3 → 60.5 — catalogue des recettes et idempotence du seeder (Q3 option B).
+ * Catalogue des recettes livrées et idempotence du seeder.
  *
- * La story 60.5 ajoute la 5ᵉ recette (l'ARBRE de partage de classe) et RÉPARE
- * « profs → élèves ». Les trois autres ne doivent pas bouger d'un octet, et c'est
- * épinglé ci-dessous plutôt que promis.
+ * Les cinq recettes sont épinglées une à une plutôt que promises : rejouer le
+ * seeder ne doit ni en ajouter, ni en retirer, ni faire bouger un octet de
+ * celles qui existent.
  */
 class DirectoryTemplateSeederTest extends TestCase
 {
@@ -49,7 +49,6 @@ class DirectoryTemplateSeederTest extends TestCase
     #[Test]
     public function eleves_to_profs_template_is_not_seeded(): void
     {
-        // Q1 — casiers « élèves → profs » REPORTÉ à 34.x : pas de recette livrée.
         (new DirectoryTemplateSeeder())->run();
 
         $this->assertDatabaseMissing('directory_templates', ['key' => 'eleves_to_profs']);
@@ -108,10 +107,6 @@ class DirectoryTemplateSeederTest extends TestCase
         $this->assertSame(5, DirectoryTemplate::count());
     }
 
-    // =========================================================================
-    // Story 60.5 — ce qui change, et surtout ce qui ne change PAS
-    // =========================================================================
-
     /**
      * **Les TROIS recettes hors périmètre sont inchangées, octet pour octet.**
      *
@@ -126,7 +121,7 @@ class DirectoryTemplateSeederTest extends TestCase
 
         $expected = [
             DirectoryTemplate::KEY_DIRECTION_TO_ALL => [
-                // Story 62.4 — le référentiel FIGÉ dit désormais des verbes. Le
+                // Le référentiel FIGÉ dit désormais des verbes. Le
                 // mappage de migration est appliqué ici comme il l'a été en base :
                 // `rw` → les quatre, `ro` → « lire » seul. Rien d'autre n'a bougé.
                 ['source', UserGroup::class, null, PlanGrant::VERBS, 'one'],
@@ -188,7 +183,7 @@ class DirectoryTemplateSeederTest extends TestCase
     /**
      * **LE TEST D'ÉQUIVALENCE : le décor de test et le seed disent la même chose.**
      *
-     * Toute la lignée 60.1 → 60.4 s'appuie sur un décor de recette classe. S'il
+     * Toute la lignée → s'appuie sur un décor de recette classe. S'il
      * divergeait du seed, tous ces tests seraient faussement rassurants : ils
      * vérifieraient une recette que la production ne porte pas.
      */
@@ -290,7 +285,7 @@ class DirectoryTemplateSeederTest extends TestCase
             }
             foreach ($node['grants'] as $grant) {
                 if ($grant['role'] === 'classe') {
-                    // Story 62.4 — « lire » SEUL : le mappage de migration de `ro`.
+                    // « lire » SEUL : le mappage de migration de `ro`.
                     $this->assertSame([PlanGrant::VERB_LIRE], $grant['verbs']);
                 }
             }

@@ -193,9 +193,6 @@ class ControlHubApiClient
         $this->baseUrl = rtrim($baseUrl, '/');
     }
 
-    /**
-     * Obtenir l'URL de base actuelle
-     */
     public function getBaseUrl(): string
     {
         return $this->baseUrl;

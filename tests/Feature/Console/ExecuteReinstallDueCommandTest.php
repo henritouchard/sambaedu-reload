@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Tests feature du tick `parc:reinstall-due` (AC5/12).
+ * Tests feature du tick `parc:reinstall-due` (12).
  */
 class ExecuteReinstallDueCommandTest extends TestCase
 {
@@ -117,7 +117,7 @@ class ExecuteReinstallDueCommandTest extends TestCase
     }
 
     /**
-     * Fix review #3 — sweep temporel : une machine réellement morte (requête en
+     * Sweep temporel : une machine réellement morte (requête en
      * vol, jamais bootée) voit son slot libéré par le TEMPS, pas par un boot. Le
      * tick lui-même passe la requête expirée `failed` (sans update manuel du
      * statut) ET promeut la vague suivante.

@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 36.4 — dérivation du trustee (D9, piège #4). Le nom SQL est FOLDÉ au nom
- * nu ; le payload doit porter le CN AD que la LSA du poste résout.
+ * Dérivation du trustee. Le nom SQL est FOLDÉ au nom nu ; le payload doit porter
+ * le CN AD que la LSA du poste sait résoudre.
  */
 class FolderAccessRuleTest extends TestCase
 {
@@ -26,8 +26,8 @@ class FolderAccessRuleTest extends TestCase
     #[Test]
     public function it_keeps_an_escaped_comma_inside_the_cn(): void
     {
-        // Correction review #4 : `CN=Salle B\, annexe,OU=Groups` (RFC 4514) — la
-        // virgule échappée fait PARTIE du CN, elle ne le termine pas.
+        // RFC 4514 : dans `CN=Salle B\, annexe,OU=Groups`, la virgule échappée
+        // fait PARTIE du CN, elle ne le termine pas.
         self::assertSame(
             'Salle B, annexe',
             FolderAccessRule::deriveTrustee('CN=Salle B\\, annexe,OU=Groups', 'Salle B annexe'),

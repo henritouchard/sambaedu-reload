@@ -9,12 +9,12 @@ use App\Models\AppProfile;
 /**
  * Observer des AppProfile (profils WPKG).
  *
- * Story 38.7 — `OU=Parcs` est en LECTURE SEULE : un `AppProfile` n'a plus AUCUNE
+ * `OU=Parcs` est en LECTURE SEULE : un `AppProfile` n'a plus AUCUNE
  * représentation écrite dans l'AD. Les dispatches de `AppProfileAdSyncJob`
  * (create / rename / delete du `CN` dans `OU=Parcs`) ont été RETIRÉS, ainsi que
  * le service d'écriture `AppProfileAdSyncService`. Les seuls lecteurs du `CN`
  * d'un profil étaient l'importeur de migration (qui LIT `OU=Parcs`) et un badge
- * de synchronisation devenu sans objet — tous deux traités par la story.
+ * de synchronisation devenu sans objet — tous deux déjà traités.
  *
  * Le calcul des applications WPKG (`profiles.xml`) se fait intégralement depuis
  * SQL. Cet observer ne conserve que le drapeau de désactivation utilisé par

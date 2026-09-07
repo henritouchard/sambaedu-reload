@@ -11,12 +11,12 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 5.1c — Section Quota Livewire de la fiche groupe /app/users/groups/[id].
+ * Section Quota Livewire de la fiche groupe /app/users/groups/[id].
  *
  * Décalqué 1:1 sur `pages/users/[login]/_partials/quota-section.blade.php`
  * (5.1b post-review) : modale `<dialog class="modal">` + `@teleport('body')`
  * + `@entangle` + `modal-backdrop` + double guard server.admin + toasts
- * génériques (pas `$e->getMessage()` — leçon 5.1b post-review #4).
+ * génériques (jamais `$e->getMessage()`).
  *
  * Sources de données :
  * - `QuotaRule::where('type', TYPE_GROUP)->where('target', $groupName)` →
@@ -46,7 +46,6 @@ new class extends Component {
 
     public ?array $sambaeduRule = null;
 
-    // ----- Override modal state -----
     public bool $showOverrideModal = false;
 
     public string $overridePartition = '/home';
@@ -80,10 +79,6 @@ new class extends Component {
         $this->loadRules();
     }
 
-    // =========================================================================
-    // LECTURE
-    // =========================================================================
-
     private function loadRules(): void
     {
         if ($this->groupName === '') {
@@ -100,14 +95,10 @@ new class extends Component {
         // et au pré-remplissage initial de la modale d'override. Les writes
         // (`applyOverride`) reconstruisent le payload exclusivement à partir des
         // form fields validés `$override*` — ces snapshots ne sont JAMAIS
-        // consommés par les mutations (cf. review 5.1c #10).
+        // consommés par les mutations.
         $this->homeRule = $home?->only(['id', 'partition', 'quota_soft_mb', 'quota_hard_mb', 'is_active']);
         $this->sambaeduRule = $sambaedu?->only(['id', 'partition', 'quota_soft_mb', 'quota_hard_mb', 'is_active']);
     }
-
-    // =========================================================================
-    // OVERRIDE — réservé server.admin (double guard)
-    // =========================================================================
 
     public function openOverrideModal(string $partition): void
     {
@@ -187,7 +178,7 @@ new class extends Component {
                 // Le type "Personnalisé" avec soft=0 est ambigu : la convention
                 // projet `0 = illimité` ferait croire à l'utilisateur qu'il a
                 // illimité, alors qu'il a sélectionné "Personnalisé". Forcer
-                // l'utilisation explicite du type "Illimité" (cf. review 5.1c #6).
+                // l'utilisation explicite du type "Illimité".
                 if ($softMb === 0) {
                     $this->addError('overrideSoftMb', 'Pour un quota illimité, sélectionnez le type "Illimité".');
                     return;
@@ -222,10 +213,6 @@ new class extends Component {
             $this->toastError('Erreur lors de la mise à jour du quota groupe. Consultez les logs.');
         }
     }
-
-    // =========================================================================
-    // HELPERS RENDU
-    // =========================================================================
 
     public function formatQuotaMb(int $mb): string
     {

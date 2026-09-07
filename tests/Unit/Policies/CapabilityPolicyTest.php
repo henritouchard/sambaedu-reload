@@ -17,9 +17,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.2 / 29.8 — Gate `modify-capability` ({@see CapabilityPolicy::modify}).
+ * Gate `modify-capability` ({@see CapabilityPolicy::modify}).
  *
- * ⚠️ CONTRAT UNITAIRE RÉVISÉ par 29.8 (changement VOULU, pas une régression de
+ * ⚠️ CONTRAT UNITAIRE RÉVISÉ par (changement VOULU, pas une régression de
  * sécurité). Le plancher de droit GLOBAL `app.customize` a été RETIRÉ de la policy :
  * la fermeture du droit a MIGRÉ vers les surfaces (`guardCustomize` scopé /
  * `guardAdmin` global), prouvée par les suites Feature
@@ -67,7 +67,7 @@ class CapabilityPolicyTest extends TestCase
     #[Test]
     public function right_is_no_longer_enforced_at_policy_level(): void
     {
-        // Story 29.8 — CHANGEMENT DE CONTRAT VOULU : avant 29.8 ce cas (user SANS
+        // CHANGEMENT DE CONTRAT VOULU : avant ce cas (user SANS
         // `app.customize`, capacité non verrouillée) renvoyait `false` à cause du
         // plancher de droit GLOBAL. Le plancher a été RETIRÉ : le droit est désormais
         // filtré PAR SURFACE en amont (guardCustomize/guardAdmin), pas par la policy.
@@ -85,7 +85,7 @@ class CapabilityPolicyTest extends TestCase
     {
         $cap = $this->capabilityWithKey('HKCU', 'Software\\Ok', 'Allow');
         // Aucun contrat → non verrouillé. `user(true)` est désormais indifférent
-        // (le droit n'est plus évalué par la policy depuis 29.8).
+        // (le droit n'est plus évalué par la policy depuis).
         self::assertTrue($this->policy()->modify($this->user(true), $cap));
     }
 
@@ -119,8 +119,8 @@ class CapabilityPolicyTest extends TestCase
     #[Test]
     public function null_capability_is_always_allowed(): void
     {
-        // Story 29.8 — aucune capacité résolue ⇒ aucun verrou applicable ⇒ `true`
-        // quel que soit le droit (avant 29.8, `user(false)` renvoyait `false` via le
+        // Aucune capacité résolue ⇒ aucun verrou applicable ⇒ `true`
+        // quel que soit le droit (avant, `user(false)` renvoyait `false` via le
         // plancher retiré). Le droit migre vers les surfaces.
         self::assertTrue($this->policy()->modify($this->user(true), null));
         self::assertTrue($this->policy()->modify($this->user(false), null));

@@ -21,14 +21,14 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 4.15 — Tests Feature Livewire SFC `head-teacher-section`.
+ * Tests Feature Livewire SFC `head-teacher-section`.
  *
- * Couvre AC9 / AC10 / AC11 / AC12 :
+ * Couvre :
  *  - rendu conditionnel `type === 'classe'` (visible classe, absent cours)
  *  - abort en mount sur un groupId non-classe (anti-forge payload)
  *  - désignation d'un PP → toggle + save persiste le pivot + toast succès
- *  - toggle limité aux membres profs (`users.role === 'prof'` depuis 49.2 ;
- *    auparavant `isProf()`, LDAP-first) — les élèves n'ont pas de contrôle
+ *  - toggle limité aux membres profs (`users.role === 'prof'` depuis ;
+ *  auparavant `isProf()`, LDAP-first) — les élèves n'ont pas de contrôle
  *  - double guard `update-group` (toggle/save sans `user.modify` = readonly/403)
  */
 class HeadTeacherSectionTest extends TestCase
@@ -63,7 +63,6 @@ class HeadTeacherSectionTest extends TestCase
         UserGroupObserver::enableSync();
         UserGroupUserPivotObserver::enableSync();
 
-
         $this->dropPermissionSchema();
         Mockery::close();
         parent::tearDown();
@@ -84,7 +83,7 @@ class HeadTeacherSectionTest extends TestCase
                     $pp = array_flip(array_map('intval', $data['head_teacher_ids'] ?? []));
                     $payload = [];
                     foreach ($group->users as $u) {
-                        // Story 42.1 — le read-back réel écrit `role` en MIROIR de
+                        // Le read-back réel écrit `role` en MIROIR de
                         // `is_head_teacher` (owner ⇔ PP). Le fake reproduit le miroir.
                         $isPP = isset($pp[(int) $u->id]);
                         $payload[(int) $u->id] = [
@@ -101,7 +100,6 @@ class HeadTeacherSectionTest extends TestCase
             return $mock;
         });
     }
-
 
     private function makeAdmin(string $login = 'manager', array $perms = ['user.read', 'user.modify']): User
     {
@@ -135,10 +133,6 @@ class HeadTeacherSectionTest extends TestCase
     {
         return 'pages::users.groups.[id]._partials.head-teacher-section';
     }
-
-    // =========================================================================
-    // AC9 — rendu conditionnel + abort anti-forge
-    // =========================================================================
 
     #[Test]
     public function it_renders_section_for_classe_type(): void
@@ -175,10 +169,6 @@ class HeadTeacherSectionTest extends TestCase
         Livewire::test($this->componentPath(), ['groupId' => 99999]);
     }
 
-    // =========================================================================
-    // AC11 — toggle limité aux profs
-    // =========================================================================
-
     #[Test]
     public function it_only_lists_prof_members_as_toggleable(): void
     {
@@ -192,10 +182,6 @@ class HeadTeacherSectionTest extends TestCase
         $this->assertContains($prof2->id, $profMembers);
         $this->assertNotContains($eleve->id, $profMembers, 'un élève ne doit pas être proposé comme PP');
     }
-
-    // =========================================================================
-    // AC10 — désigner / retirer un PP persiste le pivot + toast
-    // =========================================================================
 
     #[Test]
     public function it_designates_a_head_teacher_and_persists_pivot(): void
@@ -219,7 +205,7 @@ class HeadTeacherSectionTest extends TestCase
     {
         $this->actingAs($this->makeAdmin());
         [$group, $prof1] = $this->makeClasseWithMembers('3A');
-        // Story 42.1 — état PP pré-existant : miroir `owner` ⇔ `is_head_teacher`.
+        // État PP pré-existant : miroir `owner` ⇔ `is_head_teacher`.
         $group->users()->updateExistingPivot($prof1->id, [
             'is_head_teacher' => true,
             'role' => UserGroupUserPivot::ROLE_OWNER,
@@ -233,10 +219,6 @@ class HeadTeacherSectionTest extends TestCase
 
         $this->assertFalse((bool) $group->users()->where('users.id', $prof1->id)->first()->pivot->is_head_teacher);
     }
-
-    // =========================================================================
-    // AC12 — double guard update-group
-    // =========================================================================
 
     #[Test]
     public function it_does_not_open_modal_for_viewer_without_modify_permission(): void
@@ -276,7 +258,7 @@ class HeadTeacherSectionTest extends TestCase
     #[Test]
     public function it_blocks_mount_without_read_permission(): void
     {
-        // Story 4.15 (Q3) — `mount()` est gardé par `Gate::authorize('view-group')`
+        // `mount` est gardé par `Gate::authorize('view-group')`
         // (== `user.read`). Un utilisateur SANS `user.read` ne peut PAS instancier
         // la section (et donc ne peut pas lire les membres profs via wire:call),
         // même s'il dispose de `user.modify`. En prod, tous les rôles seedés avec

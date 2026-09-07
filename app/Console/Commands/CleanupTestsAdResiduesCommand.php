@@ -17,8 +17,8 @@ use Illuminate\Console\Command;
  * (`tests/Integration/LegacyLaravelComparison/`).
  *
  * Deux familles de patterns :
- *   - `Test*_<10 digits>`  → suffixe `time()`        (scripts Legacy/compare_*)
- *   - `Test*_<13+ hex>`    → suffixe `uniqid()`      (PHPUnit)
+ *  - `Test*_<10 digits>` → suffixe `time()` (scripts Legacy/compare_*)
+ *  - `Test*_<13+ hex>` → suffixe `uniqid()` (PHPUnit)
  *
  * Les noms manuels (`testparcglobal`, `test_parc`, …) sans suffixe machine
  * ne matchent pas le pattern par défaut et sont préservés.
@@ -139,7 +139,7 @@ class CleanupTestsAdResiduesCommand extends Command
         $stats = ['parcs_cn' => 0, 'computers_ou' => 0, 'sql_group' => 0, 'sql_profile' => 0, 'errors' => 0];
 
         foreach ($parcsCns as $entry) {
-            // Story 38.7 — SE5 n'écrit plus dans OU=Parcs ; la suppression d'un
+            // SE5 n'écrit plus dans OU=Parcs ; la suppression d'un
             // résidu de test se fait par delete() direct sur l'objet LDAP (le
             // service d'écriture AppProfileAdSyncService a été retiré).
             try {

@@ -19,10 +19,10 @@ use Tests\TestCase;
  * Particularités documentées (limitations infra) :
  * - Les tests catchall (baux.php, config.php) peuvent retourner 500 à cause du
  *   re-bootstrap UrlGenerator quand fonc_parc.inc.php est chargé. C'est une
- *   limitation connue identique au module printers (story 1bis-15). On vérifie
+ * limitation connue identique au module printers (-15). On vérifie
  *   l'absence de Fatal error PHP dans le contenu, pas le code HTTP.
  * - Les endpoints scripts (import_reservations, dnsupdate) font exit() via
- *   header_authorize_script() — ils retournent une réponse vide ou 500 sans fatal.
+ *  header_authorize_script() — ils retournent une réponse vide ou 500 sans fatal.
  * - script_make_reservations.php utilise apcu_fetch/apcu_store/apcu_delete.
  *   Si APCu n'est pas chargé, ce fichier produit une fatal error → test skipped.
  * - Les exec système DHCP (systemctl, isc-dhcp-server, make_dhcpd_conf.sh) échouent
@@ -37,7 +37,7 @@ class LegacyModuleDhcpTest extends TestCase
 
         Config::set('sambaedu.block_migrated_routes', false);
 
-        // D6 (AC2, review 38.4 #2) : le FS legacy est FORCÉ absent — le module
+        // Le FS legacy est FORCÉ absent — le module
         // doit résoudre TOUS ses includes dans legacy/stubs/ in-repo. Sans ça,
         // sur un hôte où /var/www/sambaedu existe, un stub manquant serait
         // silencieusement masqué par le vrai legacy (faux-vert).
@@ -120,7 +120,7 @@ class LegacyModuleDhcpTest extends TestCase
         parent::tearDown();
     }
 
-    // ─── AC1 : Module copié et accessible ───────────────────────────────────
+    // : Module copié et accessible
 
     /**
      * Les 6 fichiers PHP du module DHCP sont présents dans legacy/modules/dhcp/.
@@ -157,12 +157,12 @@ class LegacyModuleDhcpTest extends TestCase
      *
      * Limitation connue : les pages qui chargent fonc_parc.inc.php peuvent
      * retourner 500 à cause du re-bootstrap UrlGenerator (même comportement
-     * que le module printers — story 1bis-15). On vérifie que la réponse
+     * que le module printers). On vérifie que la réponse
      * n'est pas un 404 (module non trouvé) et que si du contenu est présent,
      * il ne contient pas de "Fatal error" PHP legacy.
      *
      * Le test d'accès complet (200 avec layout SER) est validé via smoke test
-     * curl sur la VM (cf. Testing Strategy § Smoke test VM).
+     * curl sur la VM.
      */
     public function test_baux_loads_without_fatal(): void
     {
@@ -215,7 +215,7 @@ class LegacyModuleDhcpTest extends TestCase
         );
     }
 
-    // ─── AC5 : Endpoints scripts sans layout ────────────────────────────────
+    // : Endpoints scripts sans layout
 
     /**
      * make_reservations.php est accessible sans fatal error.
@@ -309,7 +309,7 @@ class LegacyModuleDhcpTest extends TestCase
         );
     }
 
-    // ─── AC2, AC6 : Shim LDAP + constantes ─────────────────────────────────
+    // : Shim LDAP + constantes
 
     /**
      * have_right($config, SE_ADMIN) ne lève pas de fatal error ou exception.
@@ -361,7 +361,7 @@ class LegacyModuleDhcpTest extends TestCase
         }
     }
 
-    // ─── AC5 : script_make_reservations (APCu) ──────────────────────────────
+    // : script_make_reservations (APCu)
 
     /**
      * script_make_reservations.php utilise apcu_fetch/apcu_store/apcu_delete.
@@ -397,7 +397,7 @@ class LegacyModuleDhcpTest extends TestCase
         );
     }
 
-    // ─── Tests authentifiés (actingAs) ──────────────────────────────────────
+    // Tests authentifiés (actingAs)
 
     /**
      * Crée un utilisateur 'admin' — list_rights() court-circuite pour ce login
@@ -471,7 +471,7 @@ class LegacyModuleDhcpTest extends TestCase
         );
     }
 
-    // ─── Shim DHCP : fonctions disponibles ──────────────────────────────────
+    // Shim DHCP : fonctions disponibles
 
     /**
      * Le shim DHCP (legacy/dhcp_shim.inc.php) déclare les fonctions métier
@@ -515,7 +515,7 @@ class LegacyModuleDhcpTest extends TestCase
         $this->assertFalse(valid_mac('gg:hh:ii:jj:kk:ll'));
     }
 
-    // ─── AC7 : Error logger propre ──────────────────────────────────────────
+    // : Error logger propre
 
     /**
      * Après chargement des pages DHCP, le error logger ne doit pas contenir

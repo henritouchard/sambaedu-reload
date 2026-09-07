@@ -8,7 +8,7 @@ use App\Enums\StateScope;
 use App\Models\CapabilityProjection;
 
 /**
- * Story 27.12 — provider `registry` CAPABILITY-FIRST de la ruche UTILISATEUR (HKCU).
+ * Provider `registry` CAPABILITY-FIRST de la ruche UTILISATEUR (HKCU).
  *
  * `scope()=Session` : les items sont appliqués par le COMPAGNON de session (ruche
  * HKCU de l'utilisateur connecté ; effet Explorer au logon suivant). Ce provider
@@ -16,7 +16,7 @@ use App\Models\CapabilityProjection;
  * SUPERSEDE l'ancien `RegistryUserStateProvider`. Toute la logique vit dans
  * {@see AbstractCapabilityStateProvider}.
  *
- * Note HKCR (D-piège « onedrive_hidden ») : le handler Go `registry` ne route que
+ * Note HKCR : le handler Go `registry` ne route que
  * HKLM (SYSTEM) / HKCU (compagnon). Les clés HKCR de la `spec` (ex. masquer
  * OneDrive) sont émises en portée SESSION sous HKCU\Software\Classes (vue fusionnée
  * HKCR = HKLM+HKCU\Software\Classes — le compagnon écrit la branche per-user). Le
